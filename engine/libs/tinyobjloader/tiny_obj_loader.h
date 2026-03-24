@@ -2518,7 +2518,11 @@ bool MaterialFileReader::operator()(const std::string &matId,
 
   } else {
     std::string filepath = matId;
-    std::ifstream matIStream(filepath.c_str());
+#ifdef TINYOBJLOADER_EXTERNAL_READER_FUNC
+      std::istringstream matIStream(FileReader::externalFunc(filepath.c_str()));
+#else
+      std::ifstream matIStream(filepath.c_str());
+#endif
     if (matIStream) {
       LoadMtl(matMap, materials, &matIStream, warn, err);
 
