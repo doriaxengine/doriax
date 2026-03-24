@@ -27,19 +27,11 @@ Model::Model(Scene* scene, Entity entity): Mesh(scene, entity){
 }
 
 Model::~Model(){
-    if (scene && isEntityOwned() && entity != NULL_ENTITY){
-        Signature signature = scene->getSignature(entity);
-        if (signature.test(scene->getComponentId<ModelComponent>())){
-            ModelComponent& model = getComponent<ModelComponent>();
+    if (isEntityOwned()){
+        ModelComponent& model = getComponent<ModelComponent>();
 
-            for (auto const& bone : model.bonesIdMapping){
-                scene->destroyEntity(bone.second);
-            }
-
-            for (int i = 0; i < model.animations.size(); i++){
-                scene->destroyEntity(model.animations[i]);
-            }
-        }
+        scene->getSystem<MeshSystem>()->clearBoneMapping(model);
+        scene->getSystem<MeshSystem>()->clearAnimationMapping(model);
     }
 }
 
@@ -61,15 +53,10 @@ bool Model::loadOBJ(const std::string& filename){
     MeshComponent& mesh = getComponent<MeshComponent>();
     ModelComponent& model = getComponent<ModelComponent>();
 
-    for (auto const& bone : model.bonesIdMapping){
-        scene->destroyEntity(bone.second);
+    if (isEntityOwned()){
+        scene->getSystem<MeshSystem>()->clearBoneMapping(model);
+        scene->getSystem<MeshSystem>()->clearAnimationMapping(model);
     }
-    model.bonesIdMapping.clear();
-    model.bonesNameMapping.clear();
-    for (int i = 0; i < model.animations.size(); i++){
-        scene->destroyEntity(model.animations[i]);
-    }
-    model.animations.clear();
 
     bool ret = scene->getSystem<MeshSystem>()->loadOBJ(entity, filename);
 
@@ -84,15 +71,10 @@ bool Model::loadGLTF(const std::string& filename){
     MeshComponent& mesh = getComponent<MeshComponent>();
     ModelComponent& model = getComponent<ModelComponent>();
 
-    for (auto const& bone : model.bonesIdMapping){
-        scene->destroyEntity(bone.second);
+    if (isEntityOwned()){
+        scene->getSystem<MeshSystem>()->clearBoneMapping(model);
+        scene->getSystem<MeshSystem>()->clearAnimationMapping(model);
     }
-    model.bonesIdMapping.clear();
-    model.bonesNameMapping.clear();
-    for (int i = 0; i < model.animations.size(); i++){
-        scene->destroyEntity(model.animations[i]);
-    }
-    model.animations.clear();
 
     bool ret = scene->getSystem<MeshSystem>()->loadGLTF(entity, filename);
 

@@ -73,6 +73,8 @@ namespace Supernova{
         void removeInstancedMesh(Entity entity);
         bool hasInstancedMesh(Entity entity) const;
 
+        void clearBoneMapping(ModelComponent& model);
+        void clearAnimationMapping(ModelComponent& model);
         void destroyModel(ModelComponent& model);
 
         bool createOrUpdateSprite(SpriteComponent& sprite, MeshComponent& mesh);

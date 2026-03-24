@@ -2659,16 +2659,26 @@ bool MeshSystem::hasInstancedMesh(Entity entity) const{
     return signature.test(scene->getComponentId<InstancedMeshComponent>());
 }
 
+void MeshSystem::clearBoneMapping(ModelComponent& model){
+    for (auto const& bone : model.bonesIdMapping){
+        scene->destroyEntity(bone.second);
+    }
+    model.bonesIdMapping.clear();
+    model.bonesNameMapping.clear();
+}
+
+void MeshSystem::clearAnimationMapping(ModelComponent& model){
+    for (int i = 0; i < model.animations.size(); i++){
+        scene->destroyEntity(model.animations[i]);
+    }
+    model.animations.clear();
+}
+
 void MeshSystem::destroyModel(ModelComponent& model){
     if (model.gltfModel){
         delete model.gltfModel;
         model.gltfModel = NULL;
     }
-
-    model.bonesIdMapping.clear();
-    model.bonesNameMapping.clear();
-
-    model.animations.clear();
 
     model.morphNameMapping.clear();
 
@@ -2770,7 +2780,6 @@ bool MeshSystem::createOrUpdateModel(Entity entity, ModelComponent& model, MeshC
             }
 
             if (ret){
-                mesh.needReload = true;
                 model.needUpdateModel = false;
             }else{
                 return false;
