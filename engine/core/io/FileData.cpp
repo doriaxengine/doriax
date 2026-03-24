@@ -67,16 +67,12 @@ bool FileData::beginWith(const std::string& path, const std::string& prefix){
 }
 
 std::string FileData::getBaseDir(const std::string& filepath){
-    size_t found;
+    size_t found = filepath.find_last_of("/\\");
 
-    found=filepath.find_last_of("/\\");
+    if (found == std::string::npos)
+        return "";
 
-    std::string result = filepath.substr(0,found);
-
-    if (filepath == result)
-        result= "";
-
-    return result + System::instance().getDirSeparator();
+    return filepath.substr(0, found);
 }
 
 std::string FileData::simplifyPath(const std::string& path) {
