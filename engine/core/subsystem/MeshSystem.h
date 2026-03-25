@@ -66,8 +66,8 @@ namespace Supernova{
         void createCylinder(MeshComponent& mesh, float baseRadius=1, float topRadius=1, float height=2, unsigned int slices=36, unsigned int stacks=18);
         void createCapsule(MeshComponent& mesh, float baseRadius=1, float topRadius=1, float height=2, unsigned int slices=36, unsigned int stacks=18);
         void createTorus(MeshComponent& mesh, float radius=1, float ringRadius=0.5, unsigned int sides=36, unsigned int rings=16);
-        bool loadGLTF(Entity entity, const std::string& filename, bool asyncLoad=false, bool skipEntities=false);
-        bool loadOBJ(Entity entity, const std::string& filename, bool asyncLoad=false);
+        bool loadGLTF(Entity entity, const std::string filename, bool asyncLoad=false, bool skipEntities=false);
+        bool loadOBJ(Entity entity, const std::string filename, bool asyncLoad=false);
 
         void createInstancedMesh(Entity entity);
         void removeInstancedMesh(Entity entity);

@@ -1672,7 +1672,7 @@ void MeshSystem::createTorus(MeshComponent& mesh, float radius, float ringRadius
         mesh.needReload = true;
 }
 
-bool MeshSystem::loadGLTF(Entity entity, const std::string& filename, bool asyncLoad, bool skipEntities){
+bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncLoad, bool skipEntities){
     MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
     ModelComponent& model = scene->getComponent<ModelComponent>(entity);
     Transform& transform = scene->getComponent<Transform>(entity);
@@ -2379,7 +2379,7 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string& filename, bool async
     return true;
 }
 
-bool MeshSystem::loadOBJ(Entity entity, const std::string& filename, bool asyncLoad){
+bool MeshSystem::loadOBJ(Entity entity, const std::string filename, bool asyncLoad){
     MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
     ModelComponent& model = scene->getComponent<ModelComponent>(entity);
     Transform& transform = scene->getComponent<Transform>(entity);
