@@ -79,6 +79,13 @@ bool Model::loadGLTF(const std::string& filename){
     bool ret = scene->getSystem<MeshSystem>()->loadGLTF(entity, filename);
 
     if (ret){
+        if (isEntityOwned()){
+            for (Entity anim : model.animations){
+                if (scene->getSignature(anim).test(scene->getComponentId<AnimationComponent>())){
+                    scene->getComponent<AnimationComponent>(anim).ownedActions = true;
+                }
+            }
+        }
         mesh.needReload = true;
     }
 
