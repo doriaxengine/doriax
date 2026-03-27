@@ -252,6 +252,10 @@ Entity EntityRegistry::findOldestParent(Entity entity){
 bool EntityRegistry::isParentOf(Entity parent, Entity child){
     auto transforms = componentManager.getComponentArray<Transform>();
 
+    if (!getSignature(parent).test(getComponentId<Transform>()) || !getSignature(child).test(getComponentId<Transform>())) {
+        return false;
+    }
+
     size_t index = transforms->getIndex(child);
     Entity lastParent = transforms->getComponentFromIndex(index).parent;
 
