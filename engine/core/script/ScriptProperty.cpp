@@ -45,7 +45,7 @@ namespace Supernova {
                         *static_cast<Vector4*>(memberPtr) = std::get<Vector4>(value);
                     }
                     break;
-                case ScriptPropertyType::EntityPointer:
+                case ScriptPropertyType::EntityReference:
                     // Intentionally no-op for runtime member sync
                     break;
             }
@@ -121,7 +121,7 @@ namespace Supernova {
                         lua_pushnil(L);
                     }
                     break;
-                case ScriptPropertyType::EntityPointer:
+                case ScriptPropertyType::EntityReference:
                     if (std::holds_alternative<EntityReference>(value)) {
                         lua_pushinteger(L, static_cast<lua_Integer>(std::get<EntityReference>(value).entity));
                     } else {
@@ -161,7 +161,7 @@ namespace Supernova {
                 case ScriptPropertyType::Color4:
                     value = *static_cast<Vector4*>(memberPtr);
                     break;
-                case ScriptPropertyType::EntityPointer:
+                case ScriptPropertyType::EntityReference:
                     // Intentionally no-op for runtime member sync
                     break;
             }
@@ -226,7 +226,7 @@ namespace Supernova {
                         }
                     }
                     break;
-                case ScriptPropertyType::EntityPointer: {
+                case ScriptPropertyType::EntityReference: {
                     uint32_t sid = std::holds_alternative<EntityReference>(value) ? std::get<EntityReference>(value).sceneId : 0;
                     if (lua_isinteger(L, -1)) {
                         value = EntityReference{static_cast<Entity>(lua_tointeger(L, -1)), sid};

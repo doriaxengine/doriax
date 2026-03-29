@@ -510,9 +510,9 @@ void LuaBinding::initializeLuaScripts(Scene* scene) {
             lua_pushinteger(L, static_cast<lua_Integer>(entity));
             lua_setfield(L, -2, "entity");
 
-            // Set script properties (skip EntityPointer for now — resolved in PASS 2)
+            // Set script properties (skip EntityReference for now — resolved in PASS 2)
             for (auto& prop : scriptEntry.properties) {
-                if (prop.type == ScriptPropertyType::EntityPointer) {
+                if (prop.type == ScriptPropertyType::EntityReference) {
                     lua_pushnil(L);
                     lua_setfield(L, -2, prop.name.c_str());
                     continue;
@@ -558,7 +558,7 @@ void LuaBinding::initializeLuaScripts(Scene* scene) {
             lua_rawgeti(L, LUA_REGISTRYINDEX, ref);
 
             for (auto& prop : scriptEntry.properties) {
-                if (prop.type != ScriptPropertyType::EntityPointer) continue;
+                if (prop.type != ScriptPropertyType::EntityReference) continue;
 
                 if (!std::holds_alternative<EntityReference>(prop.value)) {
                     lua_pushnil(L);

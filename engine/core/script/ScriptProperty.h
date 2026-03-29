@@ -34,7 +34,7 @@ namespace Supernova {
         Vector4,
         Color3,
         Color4,
-        EntityPointer
+        EntityReference
     };
 
     struct EntityReference {
