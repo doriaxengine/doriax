@@ -9,9 +9,12 @@
 #include <string>
 #include <functional>
 #include <vector>
+#include <map>
 #include <cstdint>
 
 namespace Supernova {
+
+    class Scene;
 
     // SceneManager allows registering named scene stacks and switching between them at runtime.
     // A "scene stack" corresponds to an editor SceneProject: one main Scene plus zero or more
@@ -37,6 +40,7 @@ namespace Supernova {
 
         static std::vector<SceneEntry> entries;
         static uint32_t currentId;
+        static std::map<uint32_t, Scene*> scenePtrs;
 
     public:
         // Register a named scene stack.
@@ -73,6 +77,15 @@ namespace Supernova {
 
         // Remove all registered scenes. Intended for editor use when resetting state.
         static void clearAll();
+
+        // Store a scene pointer associated with a scene ID for cross-scene entity resolution.
+        static void setScenePtr(uint32_t id, Scene* scene);
+
+        // Retrieve a stored scene pointer by ID. Returns nullptr if not found.
+        static Scene* getScenePtr(uint32_t id);
+
+        // Remove a stored scene pointer.
+        static void removeScenePtr(uint32_t id);
     };
 
 } // namespace Supernova

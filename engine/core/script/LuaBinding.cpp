@@ -8,6 +8,7 @@
 #include "System.h"
 #include "Engine.h"
 #include "Scene.h"
+#include "SceneManager.h"
 #include "component/ScriptComponent.h"
 #include "ScriptProperty.h"
 #include "object/EntityHandle.h"
@@ -569,36 +570,42 @@ void LuaBinding::initializeLuaScripts(Scene* scene) {
                 bool foundScript = false;
 
                 if (targetEntity != NULL_ENTITY) {
-                    ScriptComponent* targetScriptComp = scene->findComponent<ScriptComponent>(targetEntity);
-                    if (targetScriptComp) {
-                        if (!prop.ptrTypeName.empty()) {
-                            for (auto& targetScript : targetScriptComp->scripts) {
-                                if (targetScript.type == ScriptType::SCRIPT_LUA &&
-                                    targetScript.className == prop.ptrTypeName &&
-                                    targetScript.enabled && targetScript.instance) {
-                                    int targetRef = static_cast<int>(reinterpret_cast<intptr_t>(targetScript.instance));
-                                    lua_rawgeti(L, LUA_REGISTRYINDEX, targetRef);
-                                    foundScript = true;
-                                    break;
+                    Scene* targetScene = scene;
+                    if (prop.sceneId != 0) {
+                        targetScene = SceneManager::getScenePtr(prop.sceneId);
+                    }
+                    if (targetScene) {
+                        ScriptComponent* targetScriptComp = targetScene->findComponent<ScriptComponent>(targetEntity);
+                        if (targetScriptComp) {
+                            if (!prop.ptrTypeName.empty()) {
+                                for (auto& targetScript : targetScriptComp->scripts) {
+                                    if (targetScript.type == ScriptType::SCRIPT_LUA &&
+                                        targetScript.className == prop.ptrTypeName &&
+                                        targetScript.enabled && targetScript.instance) {
+                                        int targetRef = static_cast<int>(reinterpret_cast<intptr_t>(targetScript.instance));
+                                        lua_rawgeti(L, LUA_REGISTRYINDEX, targetRef);
+                                        foundScript = true;
+                                        break;
+                                    }
                                 }
+                                if (!foundScript)
+                                    foundScript = pushEntityHandleByType(L, targetScene, targetEntity, prop.ptrTypeName);
+                            } else {
+                                for (auto& targetScript : targetScriptComp->scripts) {
+                                    if (targetScript.type == ScriptType::SCRIPT_LUA &&
+                                        targetScript.enabled && targetScript.instance) {
+                                        int targetRef = static_cast<int>(reinterpret_cast<intptr_t>(targetScript.instance));
+                                        lua_rawgeti(L, LUA_REGISTRYINDEX, targetRef);
+                                        foundScript = true;
+                                        break;
+                                    }
+                                }
+                                if (!foundScript)
+                                    foundScript = pushEntityHandleByType(L, targetScene, targetEntity, prop.ptrTypeName);
                             }
-                            if (!foundScript)
-                                foundScript = pushEntityHandleByType(L, scene, targetEntity, prop.ptrTypeName);
                         } else {
-                            for (auto& targetScript : targetScriptComp->scripts) {
-                                if (targetScript.type == ScriptType::SCRIPT_LUA &&
-                                    targetScript.enabled && targetScript.instance) {
-                                    int targetRef = static_cast<int>(reinterpret_cast<intptr_t>(targetScript.instance));
-                                    lua_rawgeti(L, LUA_REGISTRYINDEX, targetRef);
-                                    foundScript = true;
-                                    break;
-                                }
-                            }
-                            if (!foundScript)
-                                foundScript = pushEntityHandleByType(L, scene, targetEntity, prop.ptrTypeName);
+                            foundScript = pushEntityHandleByType(L, targetScene, targetEntity, prop.ptrTypeName);
                         }
-                    } else {
-                        foundScript = pushEntityHandleByType(L, scene, targetEntity, prop.ptrTypeName);
                     }
                 }
 

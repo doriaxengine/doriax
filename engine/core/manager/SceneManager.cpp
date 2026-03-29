@@ -12,6 +12,7 @@ using namespace Supernova;
 
 std::vector<SceneManager::SceneEntry> SceneManager::entries;
 uint32_t SceneManager::currentId = 0;
+std::map<uint32_t, Scene*> SceneManager::scenePtrs;
 
 void SceneManager::registerScene(uint32_t id, const std::string& name, std::function<void()> factory) {
     // Overwrite if the id already exists
@@ -88,4 +89,22 @@ std::string SceneManager::getCurrentSceneName() {
 void SceneManager::clearAll() {
     entries.clear();
     currentId = 0;
+    scenePtrs.clear();
+}
+
+void SceneManager::setScenePtr(uint32_t id, Scene* scene) {
+    if (scene) {
+        scenePtrs[id] = scene;
+    } else {
+        scenePtrs.erase(id);
+    }
+}
+
+Scene* SceneManager::getScenePtr(uint32_t id) {
+    auto it = scenePtrs.find(id);
+    return (it != scenePtrs.end()) ? it->second : nullptr;
+}
+
+void SceneManager::removeScenePtr(uint32_t id) {
+    scenePtrs.erase(id);
 }

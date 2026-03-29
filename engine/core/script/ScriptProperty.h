@@ -62,6 +62,9 @@ namespace Supernova {
         // Optional: Store the actual type name for editor UI/debugging
         std::string ptrTypeName; // e.g., "Mesh*", "Object*", "EntityHandle*"
 
+        // For cross-scene entity references (0 = same scene)
+        uint32_t sceneId = 0;
+
         // Helper template to get typed value
         template<typename T>
         T getValue() const {
