@@ -233,6 +233,9 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
             preReserveTiles--;
         }
         TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
+        if (rectData.submeshId < 0 || (unsigned int)rectData.submeshId >= mesh.numSubmeshes){
+            continue;
+        }
         Texture& texture = mesh.submeshes[rectData.submeshId].material.baseColorTexture;
         Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
         if (!texture.empty()){
@@ -296,9 +299,10 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
             tilemap.height = static_cast<unsigned int>(tilemap.tiles[i].position.y + tilemap.tiles[i].height);
 
         TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
+        int submeshId = (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
         Rect& tileRect = rectData.rect;
 
-        Texture& texture = mesh.submeshes[rectData.submeshId].material.baseColorTexture;
+        Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
         Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
 
         unsigned int texWidth = 0;
@@ -351,12 +355,12 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
         mesh.buffer.addVector4(attColor, Vector4(1.0f, 1.0f, 1.0f, 1.0f));
         mesh.buffer.addVector4(attColor, Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 
-        indexMap[rectData.submeshId].push_back(0 + (i*4));
-        indexMap[rectData.submeshId].push_back(1 + (i*4));
-        indexMap[rectData.submeshId].push_back(2 + (i*4));
-        indexMap[rectData.submeshId].push_back(0 + (i*4));
-        indexMap[rectData.submeshId].push_back(2 + (i*4));
-        indexMap[rectData.submeshId].push_back(3 + (i*4));
+        indexMap[submeshId].push_back(0 + (i*4));
+        indexMap[submeshId].push_back(1 + (i*4));
+        indexMap[submeshId].push_back(2 + (i*4));
+        indexMap[submeshId].push_back(0 + (i*4));
+        indexMap[submeshId].push_back(2 + (i*4));
+        indexMap[submeshId].push_back(3 + (i*4));
 
     }
 
