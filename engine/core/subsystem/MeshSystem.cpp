@@ -389,7 +389,7 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
     calculateMeshAABB(mesh);
 
     if (mesh.loaded){
-        if (tilemap.renderedTiles < numTiles){
+        if (tilemap.renderedTiles != numTiles){
             mesh.needReload = true;
         }else{
             mesh.needUpdateBuffer = true; // buffer is not immutable
