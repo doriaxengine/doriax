@@ -48,11 +48,11 @@ namespace Supernova{
         static std::string getShaderFile(const std::string& shaderStr, const std::string& extension);
         static std::string getShaderName(const std::string& shaderStr);
 
-        static ShaderKey createShaderKey(ShaderType shaderType, uint32_t properties);
-
         static void addMissingShader(const std::string& shaderStr);
 
     public:
+        static ShaderKey getShaderKey(ShaderType shaderType, uint32_t properties);
+
         static std::shared_ptr<ShaderRender> get(ShaderType shaderType, uint32_t properties);
         static void remove(ShaderType shaderType, uint32_t properties);
 

@@ -159,7 +159,7 @@ std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties)
 	return str;
 }
 
-ShaderKey ShaderPool::createShaderKey(ShaderType shaderType, uint32_t properties) {
+ShaderKey ShaderPool::getShaderKey(ShaderType shaderType, uint32_t properties) {
     return ((uint64_t)shaderType << 32) | (properties & 0xFFFFFFFF);
 }
 
@@ -171,7 +171,7 @@ void ShaderPool::addMissingShader(const std::string& shaderStr) {
 }
 
 std::shared_ptr<ShaderRender> ShaderPool::get(ShaderType shaderType, uint32_t properties){
-    ShaderKey shaderKey = createShaderKey(shaderType, properties);
+    ShaderKey shaderKey = getShaderKey(shaderType, properties);
     auto& shared = getMap()[shaderKey];
 
     if (shared && shared->isCreated()){
@@ -215,7 +215,7 @@ std::shared_ptr<ShaderRender> ShaderPool::get(ShaderType shaderType, uint32_t pr
 }
 
 void ShaderPool::remove(ShaderType shaderType, uint32_t properties){
-	ShaderKey shaderKey = createShaderKey(shaderType, properties);
+	ShaderKey shaderKey = getShaderKey(shaderType, properties);
 	if (getMap().count(shaderKey)){
 		auto& shared = getMap()[shaderKey];
 		if (shared.use_count() <= 1){
