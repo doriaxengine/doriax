@@ -57,6 +57,9 @@ namespace Supernova{
         static void remove(ShaderType shaderType, uint32_t properties);
 
         static std::string getShaderStr(ShaderType shaderType, uint32_t properties);
+        static std::string getShaderTypeName(ShaderType shaderType, bool lowerCase = false);
+        static int getShaderPropertyCount(ShaderType shaderType);
+        static std::string getShaderPropertyName(ShaderType shaderType, int bit, bool shortName = true);
         static ShaderType getShaderTypeFromKey(ShaderKey key);
         static uint32_t getPropertiesFromKey(ShaderKey key);
 

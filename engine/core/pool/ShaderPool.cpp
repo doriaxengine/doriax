@@ -85,69 +85,95 @@ std::string ShaderPool::getShaderName(const std::string& shaderStr){
 	return name;
 }
 
+std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase){
+	switch (shaderType) {
+		case ShaderType::MESH:   return lowerCase ? "mesh"   : "Mesh";
+		case ShaderType::DEPTH:  return lowerCase ? "depth"  : "Depth";
+		case ShaderType::SKYBOX: return lowerCase ? "sky"    : "Skybox";
+		case ShaderType::UI:     return lowerCase ? "ui"     : "UI";
+		case ShaderType::POINTS: return lowerCase ? "points" : "Points";
+		case ShaderType::LINES:  return lowerCase ? "lines"  : "Lines";
+		default:                 return lowerCase ? "unknown": "Unknown";
+	}
+}
+
+int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
+	switch (shaderType) {
+		case ShaderType::MESH:   return 19;
+		case ShaderType::DEPTH:  return 7;
+		case ShaderType::UI:     return 4;
+		case ShaderType::POINTS: return 4;
+		case ShaderType::LINES:  return 2;
+		case ShaderType::SKYBOX: return 0;
+		default:                 return 0;
+	}
+}
+
+std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bool shortName){
+	if (shaderType == ShaderType::MESH) {
+		switch (bit) {
+			case 0:  return shortName ? "Ult" : "Unlit";
+			case 1:  return shortName ? "Uv1" : "UV1";
+			case 2:  return shortName ? "Uv2" : "UV2";
+			case 3:  return shortName ? "Puc" : "Punctual";
+			case 4:  return shortName ? "Shw" : "Shadow";
+			case 5:  return shortName ? "Pcf" : "PCF";
+			case 6:  return shortName ? "Nor" : "Normals";
+			case 7:  return shortName ? "Nmp" : "Normal Map";
+			case 8:  return shortName ? "Tan" : "Tangents";
+			case 9:  return shortName ? "Vc3" : "Vertex Color 3";
+			case 10: return shortName ? "Vc4" : "Vertex Color 4";
+			case 11: return shortName ? "Txr" : "Texture Rect";
+			case 12: return shortName ? "Fog" : "Fog";
+			case 13: return shortName ? "Ski" : "Skinning";
+			case 14: return shortName ? "Mta" : "Morph Target";
+			case 15: return shortName ? "Mnr" : "Morph Normal";
+			case 16: return shortName ? "Mtg" : "Morph Tangent";
+			case 17: return shortName ? "Ter" : "Terrain";
+			case 18: return shortName ? "Ist" : "Instancing";
+		}
+	} else if (shaderType == ShaderType::DEPTH) {
+		switch (bit) {
+			case 0: return shortName ? "Tex" : "Texture";
+			case 1: return shortName ? "Ski" : "Skinning";
+			case 2: return shortName ? "Mta" : "Morph Target";
+			case 3: return shortName ? "Mnr" : "Morph Normal";
+			case 4: return shortName ? "Mtg" : "Morph Tangent";
+			case 5: return shortName ? "Ter" : "Terrain";
+			case 6: return shortName ? "Ist" : "Instancing";
+		}
+	} else if (shaderType == ShaderType::UI) {
+		switch (bit) {
+			case 0: return shortName ? "Tex" : "Texture";
+			case 1: return shortName ? "Ftx" : "Font Texture";
+			case 2: return shortName ? "Vc3" : "Vertex Color 3";
+			case 3: return shortName ? "Vc4" : "Vertex Color 4";
+		}
+	} else if (shaderType == ShaderType::POINTS) {
+		switch (bit) {
+			case 0: return shortName ? "Tex" : "Texture";
+			case 1: return shortName ? "Vc3" : "Vertex Color 3";
+			case 2: return shortName ? "Vc4" : "Vertex Color 4";
+			case 3: return shortName ? "Txr" : "Texture Rect";
+		}
+	} else if (shaderType == ShaderType::LINES) {
+		switch (bit) {
+			case 0: return shortName ? "Vc3" : "Vertex Color 3";
+			case 1: return shortName ? "Vc4" : "Vertex Color 4";
+		}
+	}
+	return shortName ? "?" : "Unknown";
+}
+
 std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties){
 
-	std::string str;
+	std::string str = getShaderTypeName(shaderType, true);
 	std::string propOut;
 
-	if (shaderType == ShaderType::MESH){
-		str = "mesh";
-
-		if (properties & (1 << 0))  propOut += "Ult";
-		if (properties & (1 << 1))  propOut += "Uv1";
-		if (properties & (1 << 2))  propOut += "Uv2";
-		if (properties & (1 << 3))  propOut += "Puc";
-		if (properties & (1 << 4))  propOut += "Shw";
-		if (properties & (1 << 5))  propOut += "Pcf";
-		if (properties & (1 << 6))  propOut += "Nor";
-		if (properties & (1 << 7))  propOut += "Nmp";
-		if (properties & (1 << 8))  propOut += "Tan";
-		if (properties & (1 << 9))  propOut += "Vc3";
-		if (properties & (1 << 10)) propOut += "Vc4";
-		if (properties & (1 << 11)) propOut += "Txr";
-		if (properties & (1 << 12)) propOut += "Fog";
-		if (properties & (1 << 13)) propOut += "Ski";
-		if (properties & (1 << 14)) propOut += "Mta";
-		if (properties & (1 << 15)) propOut += "Mnr";
-		if (properties & (1 << 16)) propOut += "Mtg";
-		if (properties & (1 << 17)) propOut += "Ter";
-		if (properties & (1 << 18)) propOut += "Ist";
-
-	}else if (shaderType == ShaderType::DEPTH){
-		str = "depth";
-
-		if (properties & (1 << 0))  propOut += "Tex";
-		if (properties & (1 << 1))  propOut += "Ski";
-		if (properties & (1 << 2))  propOut += "Mta";
-		if (properties & (1 << 3))  propOut += "Mnr";
-		if (properties & (1 << 4))  propOut += "Mtg";
-		if (properties & (1 << 5))  propOut += "Ter";
-		if (properties & (1 << 6))  propOut += "Ist";
-
-	}else if (shaderType == ShaderType::SKYBOX){
-		str = "sky";
-
-	}else if (shaderType == ShaderType::UI){
-		str = "ui";
-
-		if (properties & (1 << 0))  propOut += "Tex";
-		if (properties & (1 << 1))  propOut += "Ftx";
-		if (properties & (1 << 2))  propOut += "Vc3";
-		if (properties & (1 << 3))  propOut += "Vc4";
-
-	}else if (shaderType == ShaderType::POINTS){
-		str = "points";
-
-		if (properties & (1 << 0))  propOut += "Tex";
-		if (properties & (1 << 1))  propOut += "Vc3";
-		if (properties & (1 << 2))  propOut += "Vc4";
-		if (properties & (1 << 3))  propOut += "Txr";
-
-	}else if (shaderType == ShaderType::LINES){
-		str = "lines";
-
-		if (properties & (1 << 0))  propOut += "Vc3";
-		if (properties & (1 << 1))  propOut += "Vc4";
+	int propCount = getShaderPropertyCount(shaderType);
+	for (int i = 0; i < propCount; i++) {
+		if (properties & (1 << i))
+			propOut += getShaderPropertyName(shaderType, i, true);
 	}
 
 	if (str.empty())
