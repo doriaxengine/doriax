@@ -1065,14 +1065,14 @@ bool RenderSystem::drawMesh(MeshComponent& mesh, Transform& transform, CameraCom
             }
 
             if (mesh.submeshes[i].hasSkinning){
-                render.applyUniformBlock(mesh.submeshes[i].slotVSSkinning, sizeof(float) * 16 * MAX_BONES + (sizeof(float) * 4), &mesh.bonesMatrix);
+                render.applyUniformBlock(mesh.submeshes[i].slotVSSkinning, sizeof(Matrix4) * mesh.bonesMatrix.size() + (sizeof(float) * 4), mesh.bonesMatrix.data());
             }
 
             if (mesh.submeshes[i].hasMorphTarget){
                 if (!mesh.submeshes[i].hasMorphNormal && !mesh.submeshes[i].hasMorphTangent){
-                    render.applyUniformBlock(mesh.submeshes[i].slotVSMorphTarget, sizeof(float) * MAX_MORPHTARGETS, &mesh.morphWeights);
+                    render.applyUniformBlock(mesh.submeshes[i].slotVSMorphTarget, sizeof(float) * mesh.morphWeights.size(), mesh.morphWeights.data());
                 }else{
-                    render.applyUniformBlock(mesh.submeshes[i].slotVSMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
+                    render.applyUniformBlock(mesh.submeshes[i].slotVSMorphTarget, sizeof(float) * mesh.morphWeights.size() / 2, mesh.morphWeights.data());
                 }
             }
 
@@ -1127,13 +1127,13 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, const float cameraFar, con
             depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthParams, sizeof(float) * 32, &vsDepthParams);
 
             if (mesh.submeshes[i].hasSkinning){
-                depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthSkinning, sizeof(float) * 16 * MAX_BONES + (sizeof(float) * 4), &mesh.bonesMatrix);
+                depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthSkinning, sizeof(Matrix4) * mesh.bonesMatrix.size() + (sizeof(float) * 4), mesh.bonesMatrix.data());
             }
             if (mesh.submeshes[i].hasMorphTarget){
                 if (!mesh.submeshes[i].hasMorphNormal && !mesh.submeshes[i].hasMorphTangent){
-                    depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthMorphTarget, sizeof(float) * MAX_MORPHTARGETS, &mesh.morphWeights);
+                    depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthMorphTarget, sizeof(float) * mesh.morphWeights.size(), mesh.morphWeights.data());
                 }else{
-                    depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
+                    depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthMorphTarget, sizeof(float) * mesh.morphWeights.size() / 2, mesh.morphWeights.data());
                 }
             }
 
@@ -3069,7 +3069,7 @@ void RenderSystem::update(double dt){
                     if (model && mesh) {
                         Matrix4 skinning = model->inverseDerivedTransform * transform.modelMatrix * bone.offsetMatrix;
 
-                        if (bone.index >= 0 && bone.index < MAX_BONES)
+                        if (mesh->bonesMatrix.validIndex(bone.index))
                             mesh->bonesMatrix[bone.index] = skinning;
                     }
                 }
