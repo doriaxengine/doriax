@@ -61,6 +61,7 @@ in vec3 a_position;
 #ifdef USE_SHADOWS
     uniform u_vs_shadows {
         mat4 lightVPMatrix[MAX_SHADOWSMAP];
+        vec4 shadowParams[MAX_SHADOWSMAP]; // normalBias in .x
     };
  
     out vec4 v_lightProjPos[MAX_SHADOWSMAP];
@@ -135,14 +136,14 @@ void main() {
     #endif
 
     #ifdef HAS_NORMALS
+        vec3 worldNormal = normalize(vec3(pbrParams.normalMatrix * vec4(getNormal(boneTransform, pos), 0.0)));
     #ifdef HAS_TANGENTS
         vec3 tangent = getTangent(boneTransform);
-        vec3 normalW = normalize(vec3(pbrParams.normalMatrix * vec4(getNormal(boneTransform, pos), 0.0)));
         vec3 tangentW = normalize(vec3(pbrParams.modelMatrix * vec4(tangent, 0.0)));
-        vec3 bitangentW = cross(normalW, tangentW) * a_tangent.w;
-        v_tbn = mat3(tangentW, bitangentW, normalW);
+        vec3 bitangentW = cross(worldNormal, tangentW) * a_tangent.w;
+        v_tbn = mat3(tangentW, bitangentW, worldNormal);
     #else // !HAS_TANGENTS
-        v_normal = normalize(vec3(pbrParams.normalMatrix * vec4(getNormal(boneTransform, pos), 0.0)));
+        v_normal = worldNormal;
     #endif
     #endif
 
@@ -191,7 +192,11 @@ void main() {
 
     #ifdef USE_SHADOWS
     for (int i = 0; i < MAX_SHADOWSMAP; ++i){
-        v_lightProjPos[i] = lightVPMatrix[i] * worldPos;
+        #ifdef HAS_NORMALS
+            v_lightProjPos[i] = lightVPMatrix[i] * (worldPos + vec4(worldNormal * shadowParams[i].x, 0.0));
+        #else
+            v_lightProjPos[i] = lightVPMatrix[i] * worldPos;
+        #endif
     }
     #endif
 

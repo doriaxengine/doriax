@@ -36,6 +36,7 @@ namespace Supernova{
 	    Vector4 position_type[MAX_LIGHTS];
 	    Vector4 inCon_ouCon_shadows_cascades[MAX_LIGHTS];
 		Vector4 eyePos;
+		Vector4 cameraDir;
 		Vector4 globalIllum; //global illumination
 	} fs_lighting_t;
 
@@ -46,6 +47,7 @@ namespace Supernova{
 
 	typedef struct vs_shadows_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOWSMAP];
+	    Vector4 shadowParams[MAX_SHADOWSMAP]; // normalBias in .x
 	} vs_shadows_t;
 
 	typedef struct fs_shadows_t {
@@ -109,7 +111,7 @@ namespace Supernova{
 		void createEmptyTextures();
 		int checkLightsAndShadow();
 		bool loadLights(int numLights);
-		void processLights(int numLights, Transform& cameraTransform);
+		void processLights(int numLights, CameraComponent& camera, Transform& cameraTransform);
 		bool loadAndProcessFog();
 		TextureShaderType getShadowMapByIndex(int index);
 		TextureShaderType getShadowMapCubeByIndex(int index);

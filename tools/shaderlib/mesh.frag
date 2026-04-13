@@ -63,6 +63,7 @@ uniform u_fs_pbrParams {
         vec4 position_type[MAX_LIGHTS]; //position.xyz and type.w
         vec4 inCone_ouCone_shadows_cascades[MAX_LIGHTS]; //innerConeCos.x, outerConeCos.y, shadowMapIndex.z (-1.0 if no shadow), numCascades.w
         vec4 eyePos; //eyePos.xyz
+        vec4 cameraDir; //camera backward axis.xyz
         vec4 globalIllum; //globalColor.xyz and globalIntensity.w
     } lighting;
 #endif
@@ -291,7 +292,8 @@ void main() {
                             if(light.type == LightType_Spot){ 
                                 shadow = 1.0 - shadowCalculationPCF(light.shadowMapIndex, NdotL);
                             }else if(light.type == LightType_Directional){
-                                shadow = 1.0 - shadowCascadedCalculationPCF(light.shadowMapIndex, light.numShadowCascades, length(toEye), NdotL);
+                                float viewDepth = dot(lighting.cameraDir.xyz, toEye);
+                                shadow = 1.0 - shadowCascadedCalculationPCF(light.shadowMapIndex, light.numShadowCascades, viewDepth, NdotL);
                             }else if(light.type == LightType_Point){
                                 shadow = 1.0 - shadowCubeCalculationPCF(light.shadowMapIndex, -pointToLight, NdotL);
                             }

@@ -221,7 +221,7 @@ bool RenderSystem::loadLights(int numLights){
                 if (!light.framebuffer[0].isCreated())
                     light.framebuffer[0].createFramebuffer(
                             TextureType::TEXTURE_CUBE, light.mapResolution, light.mapResolution, 
-                            TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
+                            TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
 
                 if ((freeShadowCubeMap - MAX_SHADOWSMAP) < MAX_SHADOWSCUBEMAP){
                     light.shadowMapIndex = freeShadowCubeMap++;
@@ -230,7 +230,7 @@ bool RenderSystem::loadLights(int numLights){
                 if (!light.framebuffer[0].isCreated())
                     light.framebuffer[0].createFramebuffer(
                             TextureType::TEXTURE_2D, light.mapResolution, light.mapResolution, 
-                            TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
+                            TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
 
                 if (freeShadowMap < MAX_SHADOWSMAP){
                     light.shadowMapIndex = freeShadowMap++;
@@ -240,7 +240,7 @@ bool RenderSystem::loadLights(int numLights){
                     if (!light.framebuffer[c].isCreated())
                         light.framebuffer[c].createFramebuffer(
                                 TextureType::TEXTURE_2D, light.mapResolution, light.mapResolution, 
-                                TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
+                                TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::CLAMP_TO_BORDER, TextureWrap::CLAMP_TO_BORDER, true);
                 }
 
                 if ((freeShadowMap + light.numShadowCascades - 1) < MAX_SHADOWSMAP){
@@ -256,7 +256,7 @@ bool RenderSystem::loadLights(int numLights){
     return true;
 }
 
-void RenderSystem::processLights(int numLights, Transform& cameraTransform){
+void RenderSystem::processLights(int numLights, CameraComponent& camera, Transform& cameraTransform){
     auto lights = scene->getComponentArray<LightComponent>();
 
     for (int i = 0; i < numLights; i++){
@@ -281,6 +281,12 @@ void RenderSystem::processLights(int numLights, Transform& cameraTransform){
                 for (int c = 0; c < numMaps; c++){
                     if (light.type != LightType::POINT){
                         vs_shadows.lightViewProjectionMatrix[light.shadowMapIndex+c] = light.cameras[c].lightViewProjectionMatrix;
+
+                        // Compute world-space normal bias: normalBias (in texels) * texelSize (world units)
+                        float projScale = std::max(std::abs(light.cameras[c].lightProjectionMatrix[0][0]),
+                                                   std::abs(light.cameras[c].lightProjectionMatrix[1][1]));
+                        float texelSizeWorld = (projScale > 0.0f) ? 2.0f / (projScale * light.mapResolution) : 0.0f;
+                        vs_shadows.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, 0.0, 0.0, 0.0);
                     }
                     fs_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(light.shadowBias, light.mapResolution, light.cameras[c].nearFar.x, light.cameras[c].nearFar.y);
                 }
@@ -297,6 +303,7 @@ void RenderSystem::processLights(int numLights, Transform& cameraTransform){
     }
 
     fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z, 0.0);
+    fs_lighting.cameraDir = Vector4(camera.worldDirection.x, camera.worldDirection.y, camera.worldDirection.z, 0.0);
     fs_lighting.globalIllum = Vector4(scene->getGlobalIlluminationColorLinear(), scene->getGlobalIlluminationIntensity());
 
     // Setting intensity of other lights to zero
@@ -955,7 +962,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint8_t pipeline
                 }
             }
 
-            CullingMode depthCullingMode = (mesh.cullingMode==CullingMode::BACK)? CullingMode::FRONT : CullingMode::BACK;
+            CullingMode depthCullingMode = mesh.cullingMode;
             bool depthFaceCulling = (mesh.submeshes[i].textureShadow)? false : mesh.submeshes[i].faceCulling;
 
             if (!depthRender.endLoad(PIP_DEPTH, depthFaceCulling, depthCullingMode, mesh.windingOrder)){
@@ -1053,9 +1060,9 @@ bool RenderSystem::drawMesh(MeshComponent& mesh, Transform& transform, CameraCom
             }
 
             if (hasLights && mesh.receiveLights){
-                render.applyUniformBlock(mesh.submeshes[i].slotFSLighting, sizeof(float) * (16 * MAX_LIGHTS + 8), &fs_lighting);
+                render.applyUniformBlock(mesh.submeshes[i].slotFSLighting, sizeof(float) * (16 * MAX_LIGHTS + 12), &fs_lighting);
                 if (hasShadows && mesh.receiveShadows){
-                    render.applyUniformBlock(mesh.submeshes[i].slotVSShadows, sizeof(float) * (16 * MAX_SHADOWSMAP), &vs_shadows);
+                    render.applyUniformBlock(mesh.submeshes[i].slotVSShadows, sizeof(float) * (20 * MAX_SHADOWSMAP), &vs_shadows);
                     render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, sizeof(float) * (4 * (MAX_SHADOWSMAP + MAX_SHADOWSCUBEMAP)), &fs_shadows);
                 }
             }
@@ -3088,7 +3095,7 @@ void RenderSystem::update(double dt){
         }
     }
 
-    processLights(numLights, mainCameraTransform);
+    processLights(numLights, mainCamera, mainCameraTransform);
 }
 
 void RenderSystem::draw(){
