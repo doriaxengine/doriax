@@ -1,0 +1,127 @@
+name: Doriax build tool
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    name: Build for ${{ matrix.config.name }} using ${{ matrix.config.backend_name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows",
+            backend_name: "DirectX",
+            os: windows-latest,
+            platform: "windows",
+            gfx_backend: "d3d11",
+            app_backend: "sokol"
+          }
+        - {
+            name: "Windows",
+            backend_name: "OpenGL",
+            os: windows-latest,
+            platform: "windows",
+            gfx_backend: "glcore",
+            app_backend: "sokol"
+          }
+        - {
+            name: "Ubuntu",
+            backend_name: "OpenGL",
+            os: ubuntu-latest,
+            platform: "linux",
+            gfx_backend: "glcore",
+            app_backend: "sokol"
+          }
+        - {
+            name: "Ubuntu (GLFW)",
+            backend_name: "OpenGL",
+            os: ubuntu-latest,
+            platform: "linux",
+            gfx_backend: "glcore",
+            app_backend: "glfw"
+          }
+        - {
+            name: "macOS",
+            backend_name: "Metal",
+            os: macos-latest,
+            platform: "macos",
+            gfx_backend: "metal",
+            app_backend: "sokol"
+          }
+        - {
+            name: "macOS",
+            backend_name: "OpenGL",
+            os: macos-latest,
+            platform: "macos",
+            gfx_backend: "glcore",
+            app_backend: "sokol"
+          }
+        - {
+            name: "macOS Xcode",
+            backend_name: "Metal",
+            os: macos-latest,
+            platform: "macos-xcode",
+            gfx_backend: "metal",
+            app_backend: "apple"
+          }
+        - {
+            name: "iOS Xcode",
+            backend_name: "Metal",
+            os: macos-latest,
+            platform: "ios-xcode",
+            gfx_backend: "metal",
+            app_backend: "apple"
+          }
+        - {
+            name: "Web (Emscripten)",
+            backend_name: "WebGL 2",
+            os: ubuntu-latest,
+            platform: "web",
+            gfx_backend: "gles3",
+            app_backend: "emscripten"
+          }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Emscripten
+        if: ${{ startsWith(matrix.config.platform, 'web') }}
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: latest
+        
+      - name: Export Emscripten environment variable
+        if: ${{ startsWith(matrix.config.platform, 'web') }}
+        run: |
+          echo "EMSCRIPTEN=$(dirname $(which emcc))" >> $GITHUB_ENV
+
+      - name: Install dependencies on Windows
+        if: ${{ startsWith(matrix.config.os, 'windows') }}
+        run: |
+          choco install ninja cmake
+          ninja --version
+          cmake --version
+
+      - name: Install dependencies on Ubuntu
+        if: ${{ startsWith(matrix.config.os, 'ubuntu') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install libglfw3-dev libxi-dev libxcursor-dev libgl1-mesa-dev ninja-build cmake
+          ninja --version
+          cmake --version
+
+      - name: Install dependencies on macOS
+        if: ${{ startsWith(matrix.config.os, 'macos') }}
+        run: |
+          # cmake is already installed
+          brew install ninja
+          pip3 install --upgrade --break-system-packages click
+          ninja --version
+          cmake --version
+
+      - name: Build
+        run: |
+          cd tools/
+          python3 doriax.py --build --platform ${{ matrix.config.platform }} --graphic-backend ${{ matrix.config.gfx_backend }} --app-backend ${{ matrix.config.app_backend }}

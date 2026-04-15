@@ -11,8 +11,8 @@
 
 namespace tinygltf {class Model;}
 
-namespace Supernova{
-    class SUPERNOVA_API Model: public Mesh{
+namespace doriax{
+    class DORIAX_API Model: public Mesh{
     public:
         Model(Scene* scene);
         Model(Scene* scene, Entity entity);

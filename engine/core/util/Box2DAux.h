@@ -9,7 +9,7 @@
 #include "box2d/box2d.h"
 #include "subsystem/PhysicsSystem.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct Box2DWorldRayCastOutput{
         b2BodyId bodyId;

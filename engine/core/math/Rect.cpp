@@ -4,7 +4,7 @@
 // (c) 2018 Eduardo Doria.
 //
 
-using namespace Supernova;
+using namespace doriax;
 
 Rect::Rect(){
     x = 0;

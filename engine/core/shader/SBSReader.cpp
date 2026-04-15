@@ -147,7 +147,7 @@ struct sbs_refl_storagebuffer {
 //----------End SBS format---------------
 
 
-using namespace Supernova;
+using namespace doriax;
 
 
 SBSReader::SBSReader(){

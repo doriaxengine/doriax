@@ -9,7 +9,7 @@
 
 #include "math/Rect.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class ContainerType{
         VERTICAL,
@@ -24,7 +24,7 @@ namespace Supernova{
         bool expand = true;
     };
 
-    struct SUPERNOVA_API UIContainerComponent{
+    struct DORIAX_API UIContainerComponent{
         ContainerType type = ContainerType::VERTICAL;
         bool useAllWrapSpace = false;
 

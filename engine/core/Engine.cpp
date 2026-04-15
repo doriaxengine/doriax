@@ -22,9 +22,9 @@
 
 thread_local static bool asyncThread = false;
 
-using namespace Supernova;
+using namespace doriax;
 
-//-----Supernova user config-----
+//-----Doriax user config-----
 std::vector<Scene*> Engine::scenes;
 std::unordered_set<Scene*> Engine::oneTimeScenes;
 
@@ -68,7 +68,7 @@ Semaphore Engine::drawSemaphore;
 
 Framebuffer* Engine::framebuffer = nullptr;
 
-//-----Supernova user events-----
+//-----Doriax user events-----
 FunctionSubscribe<void()> Engine::onViewLoaded;
 FunctionSubscribe<void()> Engine::onViewChanged;
 FunctionSubscribe<void()> Engine::onViewDestroyed;
@@ -428,7 +428,7 @@ GraphicBackend Engine::getGraphicBackend(){
     return GraphicBackend::METAL;
 #elif defined(SOKOL_WGPU)
     return GraphicBackend::WGPU;
-#elif defined(SUPERNOVA_APPLE) //Xcode template
+#elif defined(DORIAX_APPLE) //Xcode template
     return GraphicBackend::METAL;
 #endif
 }

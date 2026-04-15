@@ -1,0 +1,72 @@
+apply plugin: 'com.android.application'
+
+def projectSourceRoot = "../../../project"
+def doriaxRoot = "../../.."
+
+def projectSourceRootAbs = file(projectSourceRoot).toString()
+def doriaxRootAbs = file(doriaxRoot).toString()
+
+// def platformVersion = 24    //openGLES 3.2 min api level
+// def platformVersion = 18    //openGLES 3 min api level
+// def platformVersion = 12    //openGLES 2 min api level
+
+android {
+    compileSdk 33
+    defaultConfig {
+        applicationId "com.yourcompany.project"
+        minSdkVersion 21
+        targetSdkVersion 33
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true // avoid error 'Cannot fit requested classes in a single dex file'
+        externalNativeBuild {
+            cmake {
+                abiFilters "arm64-v8a"
+                abiFilters "x86"
+                abiFilters "armeabi-v7a"
+                abiFilters "x86_64"
+
+                arguments "-DANDROID_STL=c++_shared", "-DPROJECT_ROOT="+projectSourceRootAbs
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+        }
+        release {
+            debuggable false
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            //version '3.18.1'
+            path doriaxRootAbs+"/project/CMakeLists.txt"
+        }
+    }
+
+    buildFeatures {
+        prefab true
+        buildConfig true
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = [doriaxRootAbs+'/platform/android/java']
+            assets.srcDirs = [projectSourceRootAbs+'/assets',projectSourceRootAbs+'/lua']
+        }
+    }
+
+    namespace 'org.doriaxengine.doriax'
+}
+
+dependencies {
+    implementation "com.google.android.gms:play-services-ads:22.6.0"
+    implementation "androidx.appcompat:appcompat:1.6.1"
+    implementation "androidx.games:games-activity:2.0.2"
+    implementation "androidx.games:games-frame-pacing:2.0.0"
+}

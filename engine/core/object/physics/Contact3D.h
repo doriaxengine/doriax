@@ -11,9 +11,9 @@
 #include "Jolt/Physics/Body/Body.h"
 #include "Jolt/Physics/Collision/ContactListener.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Contact3D{
+    class DORIAX_API Contact3D{
     private:
         Scene* scene;
         const JPH::Body* body1;

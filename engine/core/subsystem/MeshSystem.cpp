@@ -16,7 +16,7 @@
 #include "tiny_obj_loader.h"
 #include "tiny_gltf.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 
 MeshSystem::MeshSystem(Scene* scene): SubSystem(scene){

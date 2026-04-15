@@ -4,7 +4,7 @@
 #include "Log.h"
 #include "OBB.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 const AABB AABB::ZERO(0, 0, 0, 0, 0, 0);
 

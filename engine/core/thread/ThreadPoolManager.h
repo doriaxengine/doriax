@@ -14,9 +14,9 @@
 #include <functional>
 #include <atomic>
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ThreadPoolManager {
+    class DORIAX_API ThreadPoolManager {
     private:
         static std::unique_ptr<ThreadPoolManager> instance;
         static std::mutex instanceMutex;

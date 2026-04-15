@@ -157,14 +157,14 @@
 #include <vector>
 #include "math/Vector2.h"
 
-namespace Supernova {
+namespace doriax {
 
     typedef struct Touch{
         int pointer;
         Vector2 position;
     } Touch;
     
-    class SUPERNOVA_API Input {
+    class DORIAX_API Input {
         
         friend class Engine;
         

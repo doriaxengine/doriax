@@ -7,7 +7,7 @@
 #include "component/TextComponent.h"
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Panel::Panel(Scene* scene): Image(scene){
     addComponent<PanelComponent>();

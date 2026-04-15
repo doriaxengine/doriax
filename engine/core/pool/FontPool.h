@@ -9,11 +9,11 @@
 #include <map>
 #include <memory>
 
-namespace Supernova{
+namespace doriax{
 
     typedef std::map< std::string, std::shared_ptr<STBText> > fonts_t;
 
-    class SUPERNOVA_API FontPool{
+    class DORIAX_API FontPool{
     private:
         static fonts_t& getMap();
 

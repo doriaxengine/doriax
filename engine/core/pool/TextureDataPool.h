@@ -18,7 +18,7 @@
 #include <unordered_map>
 #include <atomic>
 
-namespace Supernova{
+namespace doriax{
 
     typedef std::map< std::string, std::shared_ptr<std::array<TextureData,6>> > texturesdata_t;
 
@@ -35,7 +35,7 @@ namespace Supernova{
         }
     };
 
-    class SUPERNOVA_API TextureDataPool{
+    class DORIAX_API TextureDataPool{
     private:
         static texturesdata_t& getMap();
 

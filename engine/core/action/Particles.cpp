@@ -4,7 +4,7 @@
 
 #include "Particles.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Particles::Particles(Scene* scene): Action(scene){
     addComponent<ParticlesComponent>();

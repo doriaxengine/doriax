@@ -8,9 +8,9 @@
 #include "Scene.h"
 #include "box2d/box2d.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Manifold2D{
+    class DORIAX_API Manifold2D{
         private:
             Scene* scene;
             const b2Manifold* manifold;

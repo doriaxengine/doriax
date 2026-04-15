@@ -43,7 +43,7 @@
 #include "Contact3D.h"
 #include "CollideShapeResult3D.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 
 void LuaBinding::registerObjectClasses(lua_State *L){

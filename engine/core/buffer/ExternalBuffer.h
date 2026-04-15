@@ -8,9 +8,9 @@
 #include "buffer/Buffer.h"
 #include <string>
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ExternalBuffer : public Buffer {
+    class DORIAX_API ExternalBuffer : public Buffer {
 
     protected:
         std::string name;

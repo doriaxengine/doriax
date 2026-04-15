@@ -11,8 +11,8 @@
 
 #include "Mesh.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Sprite: public Mesh{
+namespace doriax{
+    class DORIAX_API Sprite: public Mesh{
 
     private:
         SpriteAnimation* animation;

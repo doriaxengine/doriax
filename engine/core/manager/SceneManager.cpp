@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-using namespace Supernova;
+using namespace doriax;
 
 std::vector<SceneManager::SceneEntry> SceneManager::entries;
 uint32_t SceneManager::currentId = 0;

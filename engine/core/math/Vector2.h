@@ -8,20 +8,20 @@
 #include <math.h>
 #include <string>
 
-namespace Supernova { class Vector2; }
-Supernova::Vector2 operator * ( const float fScalar, const Supernova::Vector2& rkVector );
-Supernova::Vector2 operator / ( const float fScalar, const Supernova::Vector2& rkVector );
-Supernova::Vector2 operator + (const Supernova::Vector2& lhs, const float rhs);
-Supernova::Vector2 operator + (const float lhs, const Supernova::Vector2& rhs);
-Supernova::Vector2 operator - (const Supernova::Vector2& lhs, const float rhs);
-Supernova::Vector2 operator - (const float lhs, const Supernova::Vector2& rhs);
+namespace doriax { class Vector2; }
+doriax::Vector2 operator * ( const float fScalar, const doriax::Vector2& rkVector );
+doriax::Vector2 operator / ( const float fScalar, const doriax::Vector2& rkVector );
+doriax::Vector2 operator + (const doriax::Vector2& lhs, const float rhs);
+doriax::Vector2 operator + (const float lhs, const doriax::Vector2& rhs);
+doriax::Vector2 operator - (const doriax::Vector2& lhs, const float rhs);
+doriax::Vector2 operator - (const float lhs, const doriax::Vector2& rhs);
 
-namespace Supernova {
+namespace doriax {
 
     class Vector3;
     class Vector4;
 
-    class SUPERNOVA_API Vector2
+    class DORIAX_API Vector2
     {
     public:
         float x, y;

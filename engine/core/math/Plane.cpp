@@ -3,7 +3,7 @@
 #include "Matrix3.h"
 #include "OBB.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Plane::Plane () {
     normal = Vector3::ZERO;

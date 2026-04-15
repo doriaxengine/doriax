@@ -8,9 +8,9 @@
 #include "Object.h"
 #include "buffer/ExternalBuffer.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Points: public Object{
+    class DORIAX_API Points: public Object{
     public:
         Points(Scene* scene);
         Points(Scene* scene, Entity entity);

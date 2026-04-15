@@ -12,7 +12,7 @@
 #include <iostream>
 #include <algorithm>
 
-using namespace Supernova;
+using namespace doriax;
 
 JPH::EMotionType getBodyTypeToJolt(BodyType type){
     if (type == BodyType::STATIC){

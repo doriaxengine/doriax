@@ -17,7 +17,7 @@
 #include "io/Data.h"
 #include "sokol_gfx.h"
 
-namespace Supernova {
+namespace doriax {
     class Engine;
 
     enum class AdMobRating{
@@ -40,7 +40,7 @@ namespace Supernova {
         NOT_ALLOWED
     };
 
-    class SUPERNOVA_API System {
+    class DORIAX_API System {
     private:
 
         friend class Engine;

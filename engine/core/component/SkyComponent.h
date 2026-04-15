@@ -8,9 +8,9 @@
 #include "buffer/Buffer.h"
 #include "texture/Texture.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API SkyComponent{
+    struct DORIAX_API SkyComponent{
         bool loaded = false;
         bool loadCalled = false;
 

@@ -34,7 +34,7 @@
 #include <vector>
 #include <memory>
 
-using namespace Supernova;
+using namespace doriax;
 
 
 
@@ -418,7 +418,7 @@ std::string LuaBinding::normalizePtrTypeName(std::string value) {
 }
 
 template <typename T>
-bool LuaBinding::pushEntityHandleTyped(lua_State* L, Supernova::Scene* scene, Supernova::Entity entity) {
+bool LuaBinding::pushEntityHandleTyped(lua_State* L, doriax::Scene* scene, doriax::Entity entity) {
     T* handle = new T(scene, entity);
     if (!luabridge::push<T*>(L, handle)) {
         delete handle;
@@ -428,9 +428,9 @@ bool LuaBinding::pushEntityHandleTyped(lua_State* L, Supernova::Scene* scene, Su
     return true;
 }
 
-bool LuaBinding::pushEntityHandleByType(lua_State* L, Supernova::Scene* scene, Supernova::Entity entity, const std::string& ptrTypeName) {
+bool LuaBinding::pushEntityHandleByType(lua_State* L, doriax::Scene* scene, doriax::Entity entity, const std::string& ptrTypeName) {
     const std::string key = normalizePtrTypeName(ptrTypeName);
-    using namespace Supernova;
+    using namespace doriax;
     if (key == "mesh")    return pushEntityHandleTyped<Mesh>(L, scene, entity);
     if (key == "object")  return pushEntityHandleTyped<Object>(L, scene, entity);
     if (key == "shape")   return pushEntityHandleTyped<Shape>(L, scene, entity);

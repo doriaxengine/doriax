@@ -20,7 +20,7 @@ public: /* @SPROPERTY_TYPE: Type */
 #define GET_SPROPERTY_MACRO(_1, _2, NAME, ...) NAME
 #define SPROPERTY(...) GET_SPROPERTY_MACRO(__VA_ARGS__, SPROPERTY_2, SPROPERTY_1)(__VA_ARGS__)
 
-namespace Supernova {
+namespace doriax {
 
     class Scene;
 
@@ -54,7 +54,7 @@ namespace Supernova {
         EntityReference
     >;
 
-    struct SUPERNOVA_API ScriptProperty {
+    struct DORIAX_API ScriptProperty {
         std::string name;
         std::string displayName;
         ScriptPropertyType type;

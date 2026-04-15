@@ -13,9 +13,9 @@ namespace SoLoud{
 	class Soloud;
 }
 
-namespace Supernova{
+namespace doriax{
 
-	class SUPERNOVA_API AudioSystem : public SubSystem {
+	class DORIAX_API AudioSystem : public SubSystem {
 
     private:
         static SoLoud::Soloud& getSoloud();

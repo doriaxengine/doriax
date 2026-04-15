@@ -7,8 +7,8 @@
 
 #include "action/Action.h"
 
-namespace Supernova{
-    class SUPERNOVA_API MorphTracks: public Action{
+namespace doriax{
+    class DORIAX_API MorphTracks: public Action{
 
     public:
         MorphTracks(Scene* scene);

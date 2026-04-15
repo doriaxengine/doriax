@@ -7,9 +7,9 @@
 
 #include "EntityHandle.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Joint3D: public EntityHandle{
+    class DORIAX_API Joint3D: public EntityHandle{
     public:
         Joint3D(Scene* scene);
         Joint3D(Scene* scene, Entity entity);

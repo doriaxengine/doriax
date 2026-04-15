@@ -8,9 +8,9 @@
 #include "buffer/Buffer.h"
 #include <vector>
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API IndexBuffer: public Buffer {
+    class DORIAX_API IndexBuffer: public Buffer {
 
     private:
         std::vector<unsigned char> vectorBuffer;

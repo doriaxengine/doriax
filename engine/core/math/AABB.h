@@ -5,12 +5,12 @@
 #include "Matrix4.h"
 #include "Sphere.h"
 
-namespace Supernova{
+namespace doriax{
 
     class Plane;
     class OBB;
     
-    class SUPERNOVA_API AABB{
+    class DORIAX_API AABB{
 
     public:
 

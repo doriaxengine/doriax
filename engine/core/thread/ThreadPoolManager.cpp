@@ -4,7 +4,7 @@
 
 #include "ThreadPoolManager.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 std::unique_ptr<ThreadPoolManager> ThreadPoolManager::instance = nullptr;
 std::mutex ThreadPoolManager::instanceMutex;

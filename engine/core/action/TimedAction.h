@@ -8,8 +8,8 @@
 #include "Action.h"
 #include "Ease.h"
 
-namespace Supernova{
-    class SUPERNOVA_API TimedAction: public Action{
+namespace doriax{
+    class DORIAX_API TimedAction: public Action{
 
     protected:
         void setAction(float duration, bool loop);

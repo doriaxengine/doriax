@@ -6,7 +6,7 @@
 
 #include "PhysicsSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Manifold2D::Manifold2D(Scene* scene, const b2Manifold* manifold){
     this->scene = scene;

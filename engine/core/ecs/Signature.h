@@ -7,7 +7,7 @@
 
 #include <bitset>
 
-namespace Supernova {
+namespace doriax {
 
     // 64 should be max number of components types
     using Signature = std::bitset<64>;

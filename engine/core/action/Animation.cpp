@@ -6,7 +6,7 @@
 
 #include "component/AnimationComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Animation::Animation(Scene* scene): Action(scene){
     addComponent<AnimationComponent>();

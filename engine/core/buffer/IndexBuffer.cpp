@@ -6,7 +6,7 @@
 #include "Log.h"
 #include "render/ObjectRender.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 IndexBuffer::IndexBuffer(): Buffer(){
     createIndexAttribute();

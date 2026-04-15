@@ -4,7 +4,7 @@
 
 #include "ScriptBase.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ScriptBase::ScriptBase(Scene* scene, Entity entity)
     : scene(scene), entity(entity) {

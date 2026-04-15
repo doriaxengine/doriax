@@ -15,9 +15,9 @@
 #include "stb_truetype.h"
 #include "texture/Texture.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API STBText {
+    class DORIAX_API STBText {
 
     private:
 

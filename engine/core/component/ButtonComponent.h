@@ -8,9 +8,9 @@
 #include "util/FunctionSubscribe.h"
 #include "texture/Texture.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ButtonComponent{
+    struct DORIAX_API ButtonComponent{
         Entity label = NULL_ENTITY;
 
         Texture textureNormal;

@@ -7,9 +7,9 @@
 
 #include "util/FunctionSubscribe.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API TextEditComponent{
+    struct DORIAX_API TextEditComponent{
         Entity text = NULL_ENTITY;
         Entity cursor = NULL_ENTITY;
 

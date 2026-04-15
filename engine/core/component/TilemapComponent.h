@@ -8,7 +8,7 @@
 #include "util/HybridArray.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct TileRectData{
         std::string name;
@@ -24,7 +24,7 @@ namespace Supernova{
         float height;
     };
 
-    struct SUPERNOVA_API TilemapComponent{
+    struct DORIAX_API TilemapComponent{
         unsigned int width = 0;
         unsigned int height = 0;
 

@@ -14,7 +14,7 @@
 #include "io/FileData.h"
 #include "io/UserSettings.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void LuaBinding::registerIOClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS

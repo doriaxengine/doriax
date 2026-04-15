@@ -4,7 +4,7 @@
 
 #include "TimedAction.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 TimedAction::TimedAction(Scene* scene): Action(scene){
     addComponent<TimedActionComponent>();

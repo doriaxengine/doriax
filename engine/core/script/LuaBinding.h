@@ -12,11 +12,11 @@
 typedef struct lua_State lua_State;
 typedef int (*lua_CFunction) (lua_State *L);
 
-namespace Supernova {
+namespace doriax {
 
     class Scene;
 
-    class SUPERNOVA_API LuaBinding {
+    class DORIAX_API LuaBinding {
         
         friend class Engine;
         

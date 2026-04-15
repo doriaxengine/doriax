@@ -7,7 +7,7 @@
 #include "AABB.h"
 #include "OBB.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 
 Sphere::Sphere() : center(Vector3(0, 0, 0)), radius(1.0f){ 

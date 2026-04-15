@@ -1,0 +1,121 @@
+name: CMake desktop
+
+on: push
+    
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Debug
+  TARGET: doriax-project
+
+jobs:
+  build:
+    name: Build for ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows MSVC",
+            os: windows-latest,
+            artifact: "windows_msvc",
+            cc: "cl",
+            cxx: "cl",
+            generators: "Visual Studio 17 2022"
+          }
+        - {
+            name: "Windows MinGW",
+            os: windows-latest,
+            artifact: "windows_mingw",
+            cc: "gcc",
+            cxx: "g++",
+            generators: "Ninja"
+          }
+        - {
+            name: "Ubuntu GCC",
+            os: ubuntu-latest,
+            artifact: "ubuntu_gcc",
+            cc: "gcc",
+            cxx: "g++",
+            generators: "Ninja"
+          }
+        - {
+            name: "macOS Clang",
+            os: macos-latest,
+            artifact: "macos_clang",
+            cc: "clang",
+            cxx: "clang++",
+            generators: "Ninja"
+          }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Print env
+        run: |
+          echo github.event.action: ${{ github.event.action }}
+          echo github.event_name: ${{ github.event_name }}
+
+      - name: Install dependencies on Windows
+        if: startsWith(matrix.config.os, 'windows')
+        run: |
+          choco install ninja cmake
+          ninja --version
+          cmake --version
+
+      - name: Install dependencies on Ubuntu
+        if: startsWith(matrix.config.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install libglfw3-dev libxi-dev libxcursor-dev libgl1-mesa-dev ninja-build cmake
+          ninja --version
+          cmake --version
+          gcc --version
+
+      - name: Install dependencies on macOS
+        if: startsWith(matrix.config.os, 'macos')
+        run: |
+          # cmake is already installed
+          brew install ninja
+          ninja --version
+          cmake --version
+          
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: |
+          mkdir build
+          mkdir instdir
+          cmake \
+            -S . \
+            -B build \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -G "${{ matrix.config.generators }}" \
+            -DCMAKE_INSTALL_PREFIX:PATH=instdir
+
+      - name: Build
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: cmake --build build --config ${{env.BUILD_TYPE}} --target ${{env.TARGET}}
+
+      - name: Install Strip
+        shell: bash
+        run: cmake --install build --config ${{env.BUILD_TYPE}} --strip
+        
+      - name: List directories
+        shell: bash
+        working-directory: instdir
+        run: ls -laR
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.config.artifact }}
+          path: ./instdir/bin/
+          if-no-files-found: error
+
+          

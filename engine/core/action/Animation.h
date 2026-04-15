@@ -7,8 +7,8 @@
 
 #include "Action.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Animation: public Action{
+namespace doriax{
+    class DORIAX_API Animation: public Action{
 
     public:
         Animation(Scene* scene);

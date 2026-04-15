@@ -25,7 +25,7 @@
 #include "action/keyframe/ScaleTracks.h"
 #include "action/keyframe/TranslateTracks.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void LuaBinding::registerActionClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS

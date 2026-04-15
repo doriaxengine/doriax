@@ -7,7 +7,7 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct ActionFrame{
         float startTime = 0;
@@ -16,7 +16,7 @@ namespace Supernova{
         uint32_t track = 0; // Used for editor timeline organization
     };
 
-    struct SUPERNOVA_API AnimationComponent{
+    struct DORIAX_API AnimationComponent{
         std::vector<ActionFrame> actions;
         bool ownedActions = false;
         bool loop = false;

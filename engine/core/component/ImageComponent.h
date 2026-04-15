@@ -5,9 +5,9 @@
 #ifndef IMAGE_COMPONENT_H
 #define IMAGE_COMPONENT_H
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ImageComponent{
+    struct DORIAX_API ImageComponent{
         //Nine patch rect
         unsigned int patchMarginLeft = 0;
         unsigned int patchMarginRight = 0;

@@ -11,7 +11,7 @@
 
 #include "sokol_gfx.h"
 
-namespace Supernova{
+namespace doriax{
     class SokolFramebuffer{
 
     private:

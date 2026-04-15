@@ -8,7 +8,7 @@
 #include "util/JoltPhysicsAux.h"
 #include <stdlib.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 
 const RayReturn Ray::NO_HIT( {false, -1, Vector3::ZERO, Vector3::ZERO, NULL_ENTITY, 0} );

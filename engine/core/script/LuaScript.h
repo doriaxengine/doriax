@@ -7,7 +7,7 @@
 
 #include "Object.h"
 
-namespace Supernova {
+namespace doriax {
     class LuaScript {
     public:
         static void setObject(const std::string& global, Object* object);

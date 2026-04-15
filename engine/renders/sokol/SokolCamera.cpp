@@ -10,7 +10,7 @@
 #include "sokol_gfx.h"
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 SokolCamera::SokolCamera(){
     pass = {0};

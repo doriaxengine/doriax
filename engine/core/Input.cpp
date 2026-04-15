@@ -5,7 +5,7 @@
 
 #include "Input.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 std::map<int,bool> Input::keyPressed;
 std::map<int,bool> Input::mousePressed;

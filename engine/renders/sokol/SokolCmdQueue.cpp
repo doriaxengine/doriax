@@ -10,7 +10,7 @@
 
 #include "SokolCmdQueue.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 // ----------------------------------------------------------------------------------------------------
 

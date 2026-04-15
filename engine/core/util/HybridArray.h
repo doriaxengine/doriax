@@ -1,17 +1,17 @@
-#ifndef SUPERNOVA_ARRAY_H
-#define SUPERNOVA_ARRAY_H
+#ifndef DORIAX_ARRAY_H
+#define DORIAX_ARRAY_H
 
 #include <cstddef>
 
-#ifdef SUPERNOVA_EDITOR
+#ifdef DORIAX_EDITOR
 #include <vector>
 #endif
 
-namespace Supernova {
+namespace doriax {
 
 template <typename T, std::size_t Size>
 struct HybridArray {
-#ifdef SUPERNOVA_EDITOR
+#ifdef DORIAX_EDITOR
     std::vector<T> values = std::vector<T>(Size);
 
     std::size_t size() const {

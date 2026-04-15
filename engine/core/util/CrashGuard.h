@@ -13,7 +13,7 @@
 #include <functional>
 
 // IMPORTANT: Include platform headers at global scope (not inside any namespace)
-// to avoid injecting standard names inside Supernova::std, which breaks builds.
+// to avoid injecting standard names inside doriax::std, which breaks builds.
 #if defined(_WIN32) && defined(_MSC_VER)
     #ifndef NOMINMAX
     #define NOMINMAX
@@ -27,7 +27,7 @@
     #include <setjmp.h>
 #endif
 
-namespace Supernova {
+namespace doriax {
 
     struct CrashInfo {
         int code;                // signal number or Windows exception code
@@ -220,4 +220,4 @@ namespace Supernova {
     }
 #endif
 
-} // namespace Supernova
+} // namespace doriax

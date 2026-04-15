@@ -8,7 +8,7 @@
 #include "Log.h"
 #include <stdlib.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 System* System::systemInstance = nullptr;
 

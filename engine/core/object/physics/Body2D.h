@@ -10,12 +10,12 @@
 #include "component/Body2DComponent.h"
 
 
-namespace Supernova{
+namespace doriax{
 
     class Contact2D;
     class Object;
 
-    class SUPERNOVA_API Body2D: public EntityHandle{
+    class DORIAX_API Body2D: public EntityHandle{
     protected:
         void checkBody(const Body2DComponent& body) const;
 

@@ -16,9 +16,9 @@
 #include "component/TerrainComponent.h"
 #include "component/TilemapComponent.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API MeshSystem : public SubSystem {
+    class DORIAX_API MeshSystem : public SubSystem {
 
     private:
         bool createSprite(SpriteComponent& sprite, MeshComponent& mesh, CameraComponent& camera);

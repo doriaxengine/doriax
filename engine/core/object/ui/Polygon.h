@@ -7,8 +7,8 @@
 
 #include "UILayout.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Polygon: public UILayout{
+namespace doriax{
+    class DORIAX_API Polygon: public UILayout{
 
     public:
         Polygon(Scene* scene);

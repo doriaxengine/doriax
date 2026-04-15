@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 Container::Container(Scene* scene): UILayout(scene){
     addComponent<UIContainerComponent>();

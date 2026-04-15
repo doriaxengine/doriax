@@ -1,6 +1,6 @@
 #include "EntityRegistry.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 EntityRegistry::EntityRegistry() {
     registerComponent<MeshComponent>();

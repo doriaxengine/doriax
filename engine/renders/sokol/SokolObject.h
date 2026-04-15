@@ -16,7 +16,7 @@
 #include <map>
 
 
-namespace Supernova{
+namespace doriax{
 
     struct UniformStageSlot{
         sg_shader_stage stage;

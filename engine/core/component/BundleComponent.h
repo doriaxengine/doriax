@@ -7,7 +7,7 @@
 
 #include <string>
 
-namespace Supernova{
+namespace doriax{
 
     struct BundleComponent {
         std::string name;

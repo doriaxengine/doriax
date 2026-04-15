@@ -11,9 +11,9 @@
 
 #include "box2d/box2d.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Contact2D{
+    class DORIAX_API Contact2D{
     private:
         Scene* scene;
         b2ContactData contact;

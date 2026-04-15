@@ -7,9 +7,9 @@
 
 #include "Mesh.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Shape: public Mesh{
+    class DORIAX_API Shape: public Mesh{
     public:
         Shape(Scene* scene);
         Shape(Scene* scene, Entity entity);

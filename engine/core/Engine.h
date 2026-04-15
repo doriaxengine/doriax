@@ -84,20 +84,20 @@
 #include <atomic>
 #include <unordered_set>
 
-#define SUPERNOVA_INIT \
+#define DORIAX_INIT \
     void init(); \
     namespace { \
         struct InitRegistrar { \
             InitRegistrar() { \
-                Supernova::Engine::getOnInit().add("user_init", &init); \
+                doriax::Engine::getOnInit().add("user_init", &init); \
             } \
         }; \
-        static InitRegistrar _supernova_init_registrar; \
+        static InitRegistrar _doriax_init_registrar; \
     }
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Scene;
+    class DORIAX_API Scene;
     //class Rect;
 
     enum class Scaling{
@@ -147,10 +147,10 @@ namespace Supernova {
         Failed
     };
 
-    class SUPERNOVA_API Engine {
+    class DORIAX_API Engine {
         
     private:
-        //-----Supernova config-----
+        //-----Doriax config-----
         static std::vector<Scene*> scenes;
         static std::unordered_set<Scene*> oneTimeScenes;
 
@@ -205,7 +205,7 @@ namespace Supernova {
         //Engine();
         //virtual ~Engine();
         
-        //-----Supernova config-----
+        //-----Doriax config-----
         static void setScene(Scene* scene);
         static Scene* getScene();
         static void addSceneLayer(Scene* scene);
@@ -288,7 +288,7 @@ namespace Supernova {
         static void clearAllSubscriptions(bool includeLifecycle);
         static void removeSubscriptionsByTag(const std::string& substring);
 
-        //-----Supernova API functions-----
+        //-----Doriax API functions-----
         static void systemInit(int argc, char* argv[], System* system);
         static void systemViewLoaded();
         static void systemViewChanged();
@@ -316,7 +316,7 @@ namespace Supernova {
 
         static void systemCharInput(wchar_t codepoint);
 
-        //-----Supernova user events-----
+        //-----Doriax user events-----
         // Safe accessor for the Init event
         static FunctionSubscribe<void()>& getOnInit();
 

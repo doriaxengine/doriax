@@ -7,7 +7,7 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class Joint2DType{
         DISTANCE,
@@ -21,7 +21,7 @@ namespace Supernova{
         MOTOR
     };
 
-    struct SUPERNOVA_API Joint2DComponent{
+    struct DORIAX_API Joint2DComponent{
         b2JointId joint = b2_nullJointId;
         Joint2DType type = Joint2DType::DISTANCE;
 

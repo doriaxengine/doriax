@@ -22,9 +22,9 @@
 #include <map>
 #include <memory>
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API Submesh{
+    struct DORIAX_API Submesh{
         Material material;
         std::map<AttributeType, Attribute> attributes;
 

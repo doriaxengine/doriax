@@ -3,9 +3,9 @@
 
 #include "math/Vector3.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Matrix3 {
+    class DORIAX_API Matrix3 {
 
     private:
 

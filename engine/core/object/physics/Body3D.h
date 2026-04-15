@@ -13,11 +13,11 @@
 #include "Jolt/Physics/Body/Body.h"
 #include "Jolt/Physics/Body/BodyInterface.h"
 
-namespace Supernova{
+namespace doriax{
 
     class Object;
 
-    class SUPERNOVA_API Body3D: public EntityHandle{
+    class DORIAX_API Body3D: public EntityHandle{
     protected:
         void checkBody(const Body3DComponent& body) const;
 

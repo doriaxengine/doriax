@@ -7,9 +7,9 @@
 
 #include "Export.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Log {
+    class DORIAX_API Log {
     public:
         static void print(const char* text, ...);
 

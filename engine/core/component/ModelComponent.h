@@ -12,9 +12,9 @@
 
 namespace tinygltf {class Model;}
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ModelComponent{
+    struct DORIAX_API ModelComponent{
         tinygltf::Model* gltfModel = NULL;
 
         Matrix4 inverseDerivedTransform;

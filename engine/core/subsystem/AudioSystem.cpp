@@ -11,7 +11,7 @@
 #include "soloud_thread.h"
 #include "soloud_wav.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 bool AudioSystem::inited = false;
 

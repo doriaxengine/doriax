@@ -10,9 +10,9 @@
 #include "math/Matrix4.h"
 #include "ecs/Entity.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API Transform{
+    struct DORIAX_API Transform{
         Vector3 position;
         Quaternion rotation;
         Vector3 scale = Vector3(1.0, 1.0, 1.0);

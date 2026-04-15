@@ -9,7 +9,7 @@
 #include "render/SystemRender.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 SokolTexture::SokolTexture(){
     image.id = SG_INVALID_ID;

@@ -23,13 +23,13 @@
 #include "Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h"
 #include "Jolt/Physics/Collision/ObjectLayerPairFilterMask.h"
 
-namespace Supernova{
+namespace doriax{
 
 	class JoltActivationListener;
 	class JoltContactListener;
 	
 
-	class SUPERNOVA_API PhysicsSystem : public SubSystem {
+	class DORIAX_API PhysicsSystem : public SubSystem {
 
 	private:
 		Vector3 gravity;

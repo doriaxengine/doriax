@@ -8,8 +8,8 @@
 #include "Export.h"
 #include <stdint.h>
 
-namespace Supernova{
-    class SUPERNOVA_API SystemRender{
+namespace doriax{
+    class DORIAX_API SystemRender{
     public:
         static void setup();
         static void commitQueue();

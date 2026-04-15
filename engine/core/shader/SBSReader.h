@@ -9,9 +9,9 @@
 #include "ShaderData.h"
 #include "io/FileData.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API SBSReader {
+    class DORIAX_API SBSReader {
     private:
         ShaderData shaderData;
 

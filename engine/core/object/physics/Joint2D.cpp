@@ -8,7 +8,7 @@
 #include "subsystem/PhysicsSystem.h"
 #include "component/Joint2DComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Joint2D::Joint2D(Scene* scene): EntityHandle(scene){
     addComponent<Joint2DComponent>();

@@ -8,7 +8,7 @@
 #include "Export.h"
 
 
-namespace Supernova{
+namespace doriax{
 
     enum class PrimitiveType{
         TRIANGLES,

@@ -7,7 +7,7 @@
 
 #include "math/Rect.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct InstanceData{
         Vector3 position = Vector3(0.0, 0.0, 0.0);
@@ -24,7 +24,7 @@ namespace Supernova{
         Rect textureRect;
     };
 
-    struct SUPERNOVA_API InstancedMeshComponent{
+    struct DORIAX_API InstancedMeshComponent{
         ExternalBuffer buffer;
 
         std::vector<InstanceData> instances;

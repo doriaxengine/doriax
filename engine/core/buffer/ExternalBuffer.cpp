@@ -4,7 +4,7 @@
 
 #include "ExternalBuffer.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ExternalBuffer::ExternalBuffer(): Buffer(){
     name = "";

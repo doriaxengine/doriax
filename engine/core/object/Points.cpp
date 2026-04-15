@@ -6,7 +6,7 @@
 #include "util/Angle.h"
 #include "subsystem/RenderSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Points::Points(Scene* scene): Object(scene){
     addComponent<PointsComponent>();

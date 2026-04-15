@@ -11,7 +11,7 @@ namespace SoLoud{
     class Wav;
 }
 
-namespace Supernova{
+namespace doriax{
 
     enum class AudioState{
         Playing,
@@ -26,7 +26,7 @@ namespace Supernova{
         EXPONENTIAL_DISTANCE
     };
 
-    struct SUPERNOVA_API AudioComponent{
+    struct DORIAX_API AudioComponent{
         SoLoud::Wav* sample = nullptr;
         unsigned int handle; //Soloud handle
 

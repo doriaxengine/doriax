@@ -6,13 +6,13 @@
 #include "math/Matrix3.h"
 #include "math/Vector4.h"
 
-namespace Supernova {
+namespace doriax {
 
     class Quaternion;
     class AABB;
     class OBB;
 
-    class SUPERNOVA_API Matrix4{
+    class DORIAX_API Matrix4{
 
     private:
 

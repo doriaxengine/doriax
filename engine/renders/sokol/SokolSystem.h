@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-namespace Supernova{
+namespace doriax{
     class SokolSystem{
 
     public:

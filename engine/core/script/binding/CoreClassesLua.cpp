@@ -31,7 +31,7 @@
 #include "subsystem/RenderSystem.h"
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void LuaBinding::registerCoreClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS

@@ -11,7 +11,7 @@
 #include "math/Matrix4.h"
 #include "math/Vector2.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class AnchorPreset{
         NONE,
@@ -33,7 +33,7 @@ namespace Supernova{
         FULL_LAYOUT
     };
 
-    struct SUPERNOVA_API UILayoutComponent{
+    struct DORIAX_API UILayoutComponent{
         // UI part
         unsigned int width = 0;
         unsigned int height = 0;

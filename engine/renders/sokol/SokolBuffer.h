@@ -8,7 +8,7 @@
 #include "render/Render.h"
 #include "sokol_gfx.h"
 
-namespace Supernova{
+namespace doriax{
     class SokolBuffer{
 
     private:

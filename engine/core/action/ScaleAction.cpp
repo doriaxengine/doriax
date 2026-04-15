@@ -4,7 +4,7 @@
 
 #include "ScaleAction.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ScaleAction::ScaleAction(Scene* scene): TimedAction(scene){
     addComponent<ScaleActionComponent>();

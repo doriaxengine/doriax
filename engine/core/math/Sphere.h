@@ -4,13 +4,13 @@
 #include <cmath>
 #include "Vector3.h"
 
-namespace Supernova{
+namespace doriax{
 
     class Plane;
     class AABB;
     class OBB;
 
-    class SUPERNOVA_API Sphere {
+    class DORIAX_API Sphere {
     public:
         Vector3 center;
         float radius;

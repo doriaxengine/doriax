@@ -4,7 +4,7 @@
 
 #include "PositionAction.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 PositionAction::PositionAction(Scene* scene): TimedAction(scene){
     addComponent<PositionActionComponent>();

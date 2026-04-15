@@ -7,7 +7,7 @@
 #include "sokol/SokolSystem.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void SystemRender::setup(){
     SokolSystem::setup();

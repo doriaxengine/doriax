@@ -7,7 +7,7 @@
 #include "component/TextComponent.h"
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 TextEdit::TextEdit(Scene* scene): Image(scene){
     addComponent<TextEditComponent>();
@@ -25,7 +25,7 @@ Text TextEdit::getTextObject() const{
     return Text(scene, tecomp.text);
 }
 
-Supernova::Polygon TextEdit::getCursorObject() const{
+doriax::Polygon TextEdit::getCursorObject() const{
     TextEditComponent& tecomp = getComponent<TextEditComponent>();
 
     return Polygon(scene, tecomp.cursor);

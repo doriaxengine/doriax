@@ -5,7 +5,7 @@
 
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 const Vector2 Vector2::ZERO( 0, 0);
 
@@ -130,7 +130,7 @@ Vector2 Vector2::operator - () const{
 
 
 Vector2 operator * ( const float fScalar, const Vector2& rkVector ){
-    return Supernova::Vector2(
+    return doriax::Vector2(
                    fScalar * rkVector.x,
                    fScalar * rkVector.y);
 }

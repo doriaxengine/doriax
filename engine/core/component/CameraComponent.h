@@ -16,7 +16,7 @@
 #define DEFAULT_PERSPECTIVE_NEAR    0.2
 #define DEFAULT_PERSPECTIVE_FAR     200
 
-namespace Supernova{
+namespace doriax{
 
     enum class CameraType{
         CAMERA_UI,
@@ -33,7 +33,7 @@ namespace Supernova{
         FRUSTUM_PLANE_BOTTOM = 5
     };
 
-    struct SUPERNOVA_API CameraComponent{
+    struct DORIAX_API CameraComponent{
 
         CameraType type = CameraType::CAMERA_UI;
         

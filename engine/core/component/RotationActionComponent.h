@@ -7,9 +7,9 @@
 
 #include "math/Quaternion.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API RotationActionComponent{
+    struct DORIAX_API RotationActionComponent{
         Quaternion endRotation;
         Quaternion startRotation;
 

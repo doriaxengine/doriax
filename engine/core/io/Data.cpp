@@ -12,7 +12,7 @@
 
 #include <string.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 Data::Data(): dataPtr(NULL), dataLength(0), offset(0), dataOwned(false) {
 

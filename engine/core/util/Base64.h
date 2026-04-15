@@ -11,8 +11,8 @@
 #include <vector>
 #include <string>
 
-namespace Supernova {
-    class SUPERNOVA_API Base64 {
+namespace doriax {
+    class DORIAX_API Base64 {
     private:
         static const std::string base64_chars;
         static bool is_base64(unsigned char c);

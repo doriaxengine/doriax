@@ -16,9 +16,9 @@
 #include "render/BufferRender.h"
 
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Buffer {
+    class DORIAX_API Buffer {
 
     protected:
         std::map<AttributeType, Attribute> attributes;

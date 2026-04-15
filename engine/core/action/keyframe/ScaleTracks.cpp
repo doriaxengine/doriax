@@ -7,7 +7,7 @@
 #include "component/KeyframeTracksComponent.h"
 #include "component/ScaleTracksComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ScaleTracks::ScaleTracks(Scene* scene): Action(scene){
     addComponent<KeyframeTracksComponent>();

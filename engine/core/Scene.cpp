@@ -17,7 +17,7 @@
 #include "subsystem/PhysicsSystem.h"
 #include "util/Color.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Scene::Scene() : EntityRegistry() {
     init();

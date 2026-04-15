@@ -7,7 +7,7 @@
 #include "SokolCmdQueue.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 SokolFramebuffer::SokolFramebuffer(){
     for (int i = 0; i < 6; i++){

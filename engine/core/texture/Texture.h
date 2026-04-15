@@ -13,9 +13,9 @@
 #include <string>
 #include <memory>
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Texture{
+    class DORIAX_API Texture{
         private:
             std::shared_ptr<TextureRender> render = NULL;
             Framebuffer* framebuffer;

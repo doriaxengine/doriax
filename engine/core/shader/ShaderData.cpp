@@ -8,7 +8,7 @@
 
 #include <cstring>
 
-using namespace Supernova;
+using namespace doriax;
 
 ShaderData::ShaderData(){
 

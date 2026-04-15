@@ -20,9 +20,9 @@
 #include "component/Transform.h"
 #include "component/CameraComponent.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API UISystem : public SubSystem {
+    class DORIAX_API UISystem : public SubSystem {
 
     private:
 

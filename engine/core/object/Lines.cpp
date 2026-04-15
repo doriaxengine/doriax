@@ -5,7 +5,7 @@
 #include "Lines.h"
 #include "subsystem/RenderSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Lines::Lines(Scene* scene): Object(scene){
     addComponent<LinesComponent>();

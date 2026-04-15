@@ -12,9 +12,9 @@
 #include "buffer/IndexBuffer.h"
 #include "math/AABB.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API UIComponent{
+    struct DORIAX_API UIComponent{
         // Render part
         bool loaded = false;
         bool loadCalled = false;

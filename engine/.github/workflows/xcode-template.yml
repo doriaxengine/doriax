@@ -1,0 +1,37 @@
+name: Xcode template
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    name: Build for ${{ matrix.config.name }}
+    runs-on: macOS-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "iOS",
+            scheme: "Doriax iOS",
+            sdk: iphonesimulator
+          }
+        - {
+            name: "MacOS",
+            scheme: "Doriax macOS",
+            sdk: macosx
+          }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: /usr/bin/xcodebuild -version
+             
+      - name: Create assets dir if not exist
+        run: mkdir -p project/assets
+             
+      - name: Build with Xcode
+        run: |
+          cd workspaces/xcode/
+          xcodebuild build -sdk ${{ matrix.config.sdk }} -project Doriax.xcodeproj -configuration Debug -scheme "${{ matrix.config.scheme }}"

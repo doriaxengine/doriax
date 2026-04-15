@@ -12,7 +12,7 @@
 #include <map>
 #include <cstdint>
 
-namespace Supernova {
+namespace doriax {
 
     class Scene;
 
@@ -30,7 +30,7 @@ namespace Supernova {
     //   SceneManager.loadScene("Level1")
     //   SceneManager.loadScene(0)
 
-    class SUPERNOVA_API SceneManager {
+    class DORIAX_API SceneManager {
     private:
         struct SceneEntry {
             uint32_t id;
@@ -88,6 +88,6 @@ namespace Supernova {
         static void removeScenePtr(uint32_t id);
     };
 
-} // namespace Supernova
+} // namespace doriax
 
 #endif // SCENEMANAGER_H

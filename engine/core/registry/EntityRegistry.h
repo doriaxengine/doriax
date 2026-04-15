@@ -54,11 +54,11 @@
 #include "component/InstancedMeshComponent.h"
 #include "component/BundleComponent.h"
 
-namespace Supernova {
+namespace doriax {
 
     enum class EntityPool { User, System };
 
-    class SUPERNOVA_API EntityRegistry {
+    class DORIAX_API EntityRegistry {
     private:
         EntityManager entityManager;
         ComponentManager componentManager;
@@ -182,6 +182,6 @@ namespace Supernova {
         }
     };
 
-} // namespace Supernova
+} // namespace doriax
 
 #endif // ENTITYREGISTRY_H

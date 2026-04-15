@@ -11,7 +11,7 @@
 #include "render/FramebufferRender.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class LightType{
         DIRECTIONAL,
@@ -29,7 +29,7 @@ namespace Supernova{
         Vector2 nearFar = Vector2(0.0, 0.0);
     };
 
-    struct SUPERNOVA_API LightComponent{
+    struct DORIAX_API LightComponent{
         LightType type = LightType::DIRECTIONAL;
 
         Vector3 direction;

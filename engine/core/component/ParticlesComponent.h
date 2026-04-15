@@ -11,7 +11,7 @@
 #include "Engine.h"
 #include "buffer/ExternalBuffer.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct ParticleLifeInitializer{
         float minLife = 10;
@@ -169,7 +169,7 @@ namespace Supernova{
         float time = 0;
     };
 
-    struct SUPERNOVA_API ParticlesComponent{
+    struct DORIAX_API ParticlesComponent{
         std::vector<ParticleData> particles;
 
         unsigned int maxParticles = 100;

@@ -9,7 +9,7 @@
 #include "sokol_gfx.h"
 #include <string>
 
-namespace Supernova{
+namespace doriax{
     class SokolTexture{
 
     private:

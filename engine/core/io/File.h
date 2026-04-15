@@ -13,9 +13,9 @@
 
 #include "FileData.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API File: public FileData {
+    class DORIAX_API File: public FileData {
     protected:
         FILE *fileHandle;
 

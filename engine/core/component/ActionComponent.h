@@ -7,7 +7,7 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class ActionState{
         Running,
@@ -15,7 +15,7 @@ namespace Supernova{
         Stopped
     };
 
-    struct SUPERNOVA_API ActionComponent{
+    struct DORIAX_API ActionComponent{
         ActionState state = ActionState::Stopped;
         float timecount = 0;
 

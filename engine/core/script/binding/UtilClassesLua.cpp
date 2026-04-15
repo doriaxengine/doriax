@@ -12,7 +12,7 @@
 #include "util/Base64.h"
 #include "util/Color.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void LuaBinding::registerUtilClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS

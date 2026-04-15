@@ -17,7 +17,7 @@
 #include <algorithm>
 
 #include "LuaFunction.h"
-#ifdef SUPERNOVA_CRASH_GUARD
+#ifdef DORIAX_CRASH_GUARD
 #include "util/CrashGuard.h"
 #endif
 
@@ -37,7 +37,7 @@
         std::string __tag = std::string(typeid(std::remove_pointer_t<decltype(this)>).name()) + \
                             "_" + std::to_string(reinterpret_cast<std::uintptr_t>(this)) + \
                             "_" #EVENT; \
-        ::Supernova::Engine::EVENT.add< \
+        ::doriax::Engine::EVENT.add< \
             std::remove_pointer_t<decltype(this)>, \
             &std::remove_pointer_t<decltype(this)>::EVENT \
         >(__tag, this); \
@@ -50,9 +50,9 @@ struct MyPlaceholder {};
 template<size_t N>
 struct std::is_placeholder<MyPlaceholder<N>> : public std::integral_constant<size_t, N> {};
 
-namespace Supernova {
+namespace doriax {
 
-    #ifdef SUPERNOVA_CRASH_GUARD
+    #ifdef DORIAX_CRASH_GUARD
     using CrashHandler = std::function<void(const std::string& tag, const std::string& errorInfo)>;
 
     class FunctionSubscribeGlobal {
@@ -222,7 +222,7 @@ namespace Supernova {
                 if constexpr (std::is_void<Ret>::value) {
                     for (size_t i = 0; i < functions.size(); ) {
                         auto& function = functions[i];
-                        #ifdef SUPERNOVA_CRASH_GUARD
+                        #ifdef DORIAX_CRASH_GUARD
                         // Use crash protection if handler is registered
                         auto& tag = tags[i];
                         auto& crashHandler = FunctionSubscribeGlobal::getCrashHandler();
@@ -264,7 +264,7 @@ namespace Supernova {
             }
             for (size_t i = 0; i < functions.size(); ) {
                 auto& function = functions[i];
-                #ifdef SUPERNOVA_CRASH_GUARD
+                #ifdef DORIAX_CRASH_GUARD
                 // Use crash protection if handler is registered
                 auto& tag = tags[i];
                 auto& crashHandler = FunctionSubscribeGlobal::getCrashHandler();

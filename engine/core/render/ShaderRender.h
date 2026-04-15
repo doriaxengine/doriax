@@ -8,8 +8,8 @@
 #include "Render.h"
 #include "sokol/SokolShader.h"
 
-namespace Supernova{
-    class SUPERNOVA_API ShaderRender{
+namespace doriax{
+    class DORIAX_API ShaderRender{
 
     private:
         // render callback clean function

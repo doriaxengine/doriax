@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <unordered_set>
 
-using namespace Supernova;
+using namespace doriax;
 
 std::vector<BundleManager::BundleEntry> BundleManager::entries;
 std::vector<BundleManager::BundleInstance> BundleManager::instances;

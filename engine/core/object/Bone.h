@@ -7,9 +7,9 @@
 
 #include "Object.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Bone: public Object{
+    class DORIAX_API Bone: public Object{
     public:
         Bone(Scene* scene, Entity entity);
         virtual ~Bone();

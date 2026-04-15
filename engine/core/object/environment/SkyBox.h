@@ -7,8 +7,8 @@
 
 #include "object/EntityHandle.h"
 
-namespace Supernova{
-    class SUPERNOVA_API SkyBox: public EntityHandle{
+namespace doriax{
+    class DORIAX_API SkyBox: public EntityHandle{
 
     public:
         SkyBox(Scene* scene);

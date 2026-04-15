@@ -11,7 +11,7 @@
 
 #include <filesystem>
 
-using namespace Supernova;
+using namespace doriax;
 
 bool TextureDataPool::asyncLoading = false;
 std::unordered_map<std::string, std::future<std::array<TextureData,6>>> TextureDataPool::pendingBuilds;

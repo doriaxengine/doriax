@@ -7,7 +7,7 @@
 #include "SystemRender.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ShaderRender::ShaderRender(){ }
 

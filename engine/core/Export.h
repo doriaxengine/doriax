@@ -1,18 +1,18 @@
-#ifndef SUPERNOVA_EXPORT_H
-#define SUPERNOVA_EXPORT_H
+#ifndef DORIAX_EXPORT_H
+#define DORIAX_EXPORT_H
 
 #if defined(_MSC_VER)
-    #ifdef SUPERNOVA_SHARED
-        #ifdef SUPERNOVA_EXPORTS
-            #define SUPERNOVA_API __declspec(dllexport)
+    #ifdef DORIAX_SHARED
+        #ifdef DORIAX_EXPORTS
+            #define DORIAX_API __declspec(dllexport)
         #else
-            #define SUPERNOVA_API __declspec(dllimport)
+            #define DORIAX_API __declspec(dllimport)
         #endif
     #else
-        #define SUPERNOVA_API
+        #define DORIAX_API
     #endif
 #else
-    #define SUPERNOVA_API
+    #define DORIAX_API
 #endif
 
-#endif // SUPERNOVA_EXPORT_H
+#endif // DORIAX_EXPORT_H

@@ -8,7 +8,7 @@
 #include "subsystem/RenderSystem.h"
 #include "subsystem/MeshSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Mesh::Mesh(Scene* scene): Object(scene){
     addComponent<MeshComponent>();

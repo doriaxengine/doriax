@@ -6,7 +6,7 @@
 #include "System.h"
 #include <stdarg.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 void Log::print(const char *fmt, ...) {
     va_list arg_ptr;

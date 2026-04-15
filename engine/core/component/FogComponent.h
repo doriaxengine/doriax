@@ -7,7 +7,7 @@
 
 #include "util/Color.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class FogType{
         LINEAR,
@@ -15,7 +15,7 @@ namespace Supernova{
 		EXPONENTIALSQUARED
     };
 
-    struct SUPERNOVA_API FogComponent{
+    struct DORIAX_API FogComponent{
         FogType type = FogType::LINEAR;
 		Vector3 color = Color::sRGBToLinear(Vector3(0.8f, 0.8f, 0.8f)); // linear color
 		float density = 0.01f; // for exponential fog

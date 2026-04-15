@@ -17,9 +17,9 @@
 #include "Entity.h"
 #include "Log.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ComponentArrayBase{
+    class DORIAX_API ComponentArrayBase{
     public:
         virtual ~ComponentArrayBase() = default;
         virtual void entityDestroyed(Entity entity) = 0;

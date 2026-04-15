@@ -9,8 +9,8 @@
 #include <string>
 #include "io/Data.h"
 
-namespace Supernova {
-    class SUPERNOVA_API UserSettings {
+namespace doriax {
+    class DORIAX_API UserSettings {
     public:
 
         static bool getBoolForKey(const char *key);

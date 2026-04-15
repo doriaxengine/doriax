@@ -7,8 +7,8 @@
 
 #include "TimedAction.h"
 
-namespace Supernova{
-    class SUPERNOVA_API PositionAction: public TimedAction{
+namespace doriax{
+    class DORIAX_API PositionAction: public TimedAction{
 
     public:
         PositionAction(Scene* scene);

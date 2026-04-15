@@ -8,7 +8,7 @@
 #include <cmath>
 #include <limits>
 
-using namespace Supernova;
+using namespace doriax;
 
 const OBB OBB::ZERO(OBB::BOXTYPE_FINITE);
 

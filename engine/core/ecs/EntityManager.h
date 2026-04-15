@@ -13,14 +13,14 @@
 #include "Signature.h"
 #include "Log.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct EntityMetadata{
         std::string name;
         Signature signature;
     };
 
-    class SUPERNOVA_API EntityManager {
+    class DORIAX_API EntityManager {
     private:
         static constexpr Entity FIRST_SYSTEM_ENTITY = 1;
         static constexpr Entity LAST_SYSTEM_ENTITY  = 100;

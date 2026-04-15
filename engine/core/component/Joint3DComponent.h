@@ -8,7 +8,7 @@
 #include "Engine.h"
 #include "Jolt/Physics/Constraints/TwoBodyConstraint.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class Joint3DType{
         FIXED,
@@ -25,7 +25,7 @@ namespace Supernova{
         PULLEY
     };
 
-    struct SUPERNOVA_API Joint3DComponent{
+    struct DORIAX_API Joint3DComponent{
         JPH::TwoBodyConstraint* joint = NULL;
         Joint3DType type = Joint3DType::FIXED;
 

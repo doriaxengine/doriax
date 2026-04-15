@@ -8,9 +8,9 @@
 #include "object/EntityHandle.h"
 #include "component/FogComponent.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Fog: public EntityHandle {
+    class DORIAX_API Fog: public EntityHandle {
 
     public:
         Fog(Scene* scene);

@@ -7,7 +7,7 @@
 #include "component/KeyframeTracksComponent.h"
 #include "component/RotateTracksComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 RotateTracks::RotateTracks(Scene* scene): Action(scene){
     addComponent<KeyframeTracksComponent>();

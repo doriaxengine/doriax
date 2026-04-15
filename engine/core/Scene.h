@@ -13,7 +13,7 @@
 #include <unordered_map>
 
 
-namespace Supernova{
+namespace doriax{
 
     class Camera;
 
@@ -29,7 +29,7 @@ namespace Supernova{
         DISABLED
     };
 
-    class SUPERNOVA_API Scene : public EntityRegistry {
+    class DORIAX_API Scene : public EntityRegistry {
     private:
 
         Entity camera;

@@ -7,9 +7,9 @@
 
 #include "render/FramebufferRender.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Framebuffer{
+    class DORIAX_API Framebuffer{
 
         private:
             FramebufferRender render;

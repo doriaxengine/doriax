@@ -5,7 +5,7 @@
 #include "UniqueToken.h"
 #include <cstdlib>
 
-using namespace Supernova;
+using namespace doriax;
 
 int UniqueToken::id;
 

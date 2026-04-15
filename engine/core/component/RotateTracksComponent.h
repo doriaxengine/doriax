@@ -7,9 +7,9 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API RotateTracksComponent{
+    struct DORIAX_API RotateTracksComponent{
         std::vector<Quaternion> values;
     };
 

@@ -5,9 +5,9 @@
 #ifndef ALPHAACTION_COMPONENT_H
 #define ALPHAACTION_COMPONENT_H
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API AlphaActionComponent{
+    struct DORIAX_API AlphaActionComponent{
         float endAlpha;
         float startAlpha;
     };

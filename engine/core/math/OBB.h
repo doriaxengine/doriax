@@ -6,13 +6,13 @@
 #include "AABB.h"
 #include "Quaternion.h"
 
-namespace Supernova {
+namespace doriax {
 
     class Plane;
     class Sphere;
     class Ray;
 
-    class SUPERNOVA_API OBB {
+    class DORIAX_API OBB {
     public:
         enum BoxType {
             BOXTYPE_NULL,

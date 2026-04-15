@@ -10,8 +10,8 @@
 #include <string>
 #include <vector>
 
-namespace Supernova{
-    class SUPERNOVA_API StringUtils{
+namespace doriax{
+    class DORIAX_API StringUtils{
     public:
         static std::string toUTF8(wchar_t codepoint);
 

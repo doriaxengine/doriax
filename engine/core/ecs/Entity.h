@@ -7,7 +7,7 @@
 
 #define NULL_ENTITY 0
 
-namespace Supernova{
+namespace doriax{
 
     using Entity = unsigned;
 

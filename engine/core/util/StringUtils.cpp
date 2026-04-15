@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <limits>
 
-using namespace Supernova;
+using namespace doriax;
 
 std::string StringUtils::toUTF8(wchar_t codepoint){
     uint32_t cp = static_cast<uint32_t>(codepoint);

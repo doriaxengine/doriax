@@ -9,7 +9,7 @@
 #include <cmath>
 #include <math.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 float Angle::radToDefault(float radians){
     if (Engine::isUseDegrees()){

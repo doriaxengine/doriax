@@ -9,7 +9,7 @@
 #include "subsystem/RenderSystem.h"
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Polygon::Polygon(Scene* scene): UILayout(scene){
     addComponent<UIComponent>();

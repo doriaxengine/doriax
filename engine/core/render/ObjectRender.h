@@ -10,9 +10,9 @@
 
 #include "sokol/SokolObject.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ObjectRender{
+    class DORIAX_API ObjectRender{
 
     public:
 

@@ -5,7 +5,7 @@
 #include "TextureRender.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 TextureRender::TextureRender(){
  }

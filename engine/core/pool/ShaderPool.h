@@ -11,7 +11,7 @@
 #include <memory>
 #include <functional>
 
-namespace Supernova{
+namespace doriax{
 
     typedef uint64_t ShaderKey;
 
@@ -39,7 +39,7 @@ namespace Supernova{
 
     using ShaderBuilderFn = std::function<ShaderBuildResult(ShaderKey)>;
 
-    class SUPERNOVA_API ShaderPool{
+    class DORIAX_API ShaderPool{
     private:
         static shaders_t& getMap();
 

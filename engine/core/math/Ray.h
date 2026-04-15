@@ -9,7 +9,7 @@
 #include "object/physics/Body2D.h"
 #include "object/physics/Body3D.h"
 
-namespace Supernova {
+namespace doriax {
 
     enum class RayFilter{
         BODY_2D,
@@ -29,7 +29,7 @@ namespace Supernova {
         }
     };
 
-    class SUPERNOVA_API Ray{
+    class DORIAX_API Ray{
 
     private:
 

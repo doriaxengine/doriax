@@ -4,11 +4,11 @@
 #include "Vector3.h"
 #include "AABB.h"
 
-namespace Supernova{
+namespace doriax{
 
     class OBB;
     
-    class SUPERNOVA_API Plane{
+    class DORIAX_API Plane{
 
     public:
 

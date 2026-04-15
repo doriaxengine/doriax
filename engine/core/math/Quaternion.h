@@ -4,10 +4,10 @@
 #include "Vector3.h"
 #include "Matrix4.h"
 
-namespace Supernova { class Quaternion; }
-Supernova::Quaternion operator * (float fScalar, const Supernova::Quaternion& rkQ);
+namespace doriax { class Quaternion; }
+doriax::Quaternion operator * (float fScalar, const doriax::Quaternion& rkQ);
 
-namespace Supernova {
+namespace doriax {
 
     enum class RotationOrder{
         XYZ,
@@ -18,7 +18,7 @@ namespace Supernova {
         ZYX
     };
 
-    class SUPERNOVA_API Quaternion {
+    class DORIAX_API Quaternion {
     public:
 
         float w, x, y, z;

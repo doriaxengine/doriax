@@ -7,7 +7,7 @@
 
 #include <math.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 float Color::GAMMA = 2.2;
 float Color::INV_GAMMA = 1.0 / GAMMA;

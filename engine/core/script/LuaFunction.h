@@ -12,7 +12,7 @@
 
 typedef struct lua_State lua_State;
 
-namespace Supernova{
+namespace doriax{
 
     // the function wrapper class
     template <typename Ret>

@@ -8,7 +8,7 @@
 #include "Log.h"
 #include "render/SystemRender.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Texture::Texture(){
     this->render = NULL;

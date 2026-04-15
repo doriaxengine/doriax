@@ -9,9 +9,9 @@
 #include "component/CameraComponent.h"
 #include "math/Ray.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Camera: public Object{
+    class DORIAX_API Camera: public Object{
 
     private:
         void applyOrthoDefaults(CameraComponent& cameraComponent);

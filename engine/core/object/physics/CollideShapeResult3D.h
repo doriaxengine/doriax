@@ -10,9 +10,9 @@
 
 #include "Jolt/Physics/Body/Body.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API CollideShapeResult3D{
+    class DORIAX_API CollideShapeResult3D{
     private:
         Scene* scene;
         const JPH::Body* body1;

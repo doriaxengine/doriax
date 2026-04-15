@@ -11,12 +11,12 @@
 #include "ComponentArray.h"
 #include "Log.h"
 
-namespace Supernova {
+namespace doriax {
 
 	using ComponentId = unsigned char;
 
 
-	class SUPERNOVA_API ComponentManager {
+	class DORIAX_API ComponentManager {
 	private:
 		std::unordered_map<std::string, ComponentId> componentTypeIds{};
 		std::unordered_map<std::string, std::shared_ptr<ComponentArrayBase>> componentArrays{};

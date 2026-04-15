@@ -7,8 +7,8 @@
 
 #include "action/Action.h"
 
-namespace Supernova{
-    class SUPERNOVA_API ScaleTracks: public Action{
+namespace doriax{
+    class DORIAX_API ScaleTracks: public Action{
 
     public:
         ScaleTracks(Scene* scene);

@@ -4,7 +4,7 @@
 
 #include "ObjectRender.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 ObjectRender::ObjectRender(){ }
 

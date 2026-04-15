@@ -8,9 +8,9 @@
 #include "math/Vector3.h"
 #include "texture/Texture.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API Material{
+    struct DORIAX_API Material{
         // --- start shader part
         Vector4 baseColorFactor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);  // linear color
         float metallicFactor = 1.0f;

@@ -7,8 +7,8 @@
 
 #include "Mesh.h"
 
-namespace Supernova{
-    class SUPERNOVA_API MeshPolygon: public Mesh{
+namespace doriax{
+    class DORIAX_API MeshPolygon: public Mesh{
 
     public:
         MeshPolygon(Scene* scene);

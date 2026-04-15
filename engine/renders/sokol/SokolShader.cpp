@@ -12,7 +12,7 @@
 #include "render/ShaderRender.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 SokolShader::SokolShader(){
     shader.id = SG_INVALID_ID;

@@ -17,7 +17,7 @@
 
 // ----------------------------------------------------------------------------------------------------
 
-namespace Supernova {
+namespace doriax {
 
 	class Semaphore {
 	public:

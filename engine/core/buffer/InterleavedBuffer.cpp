@@ -6,7 +6,7 @@
 #include "Log.h"
 #include <cstdlib>
 
-using namespace Supernova;
+using namespace doriax;
 
 InterleavedBuffer::InterleavedBuffer(): Buffer(){
     vectorBuffer.clear();

@@ -12,7 +12,7 @@
 
 #include "System.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 File::File(){
     fileHandle = NULL;

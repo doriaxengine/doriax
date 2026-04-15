@@ -3,7 +3,7 @@
 #include "lua.hpp"
 #include "LuaBridge.h"
 
-namespace Supernova {
+namespace doriax {
 
     void ScriptProperty::syncToMember() {
         if (memberPtr) {

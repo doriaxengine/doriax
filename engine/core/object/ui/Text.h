@@ -7,8 +7,8 @@
 
 #include "UILayout.h"
 
-namespace Supernova{
-    class SUPERNOVA_API STBText;
+namespace doriax{
+    class DORIAX_API STBText;
 
     class Text: public UILayout{
 

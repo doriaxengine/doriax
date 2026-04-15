@@ -18,7 +18,7 @@
 #include "Log.h"
 #include "Texture.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 TextureData::TextureData() {
     this->width = 0;
@@ -255,7 +255,7 @@ bool TextureData::loadCubeMapFromSingleFile(const char* filename, std::array<Tex
     };
 
     try {
-        // Using SUPERNOVA convention:
+        // Using DORIAX convention:
         // Right (+X)
         extractFace(0, right[0], right[1]);
         // Left (-X)

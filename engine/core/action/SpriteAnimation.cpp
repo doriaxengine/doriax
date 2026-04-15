@@ -4,7 +4,7 @@
 
 #include "SpriteAnimation.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 SpriteAnimation::SpriteAnimation(Scene* scene): Action(scene){
     addComponent<SpriteAnimationComponent>();

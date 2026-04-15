@@ -20,7 +20,7 @@
 #include <memory>
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 uint32_t RenderSystem::pixelsWhite[64];
 uint32_t RenderSystem::pixelsBlack[64];
@@ -3369,7 +3369,7 @@ void RenderSystem::draw(){
         Log::verbose(
             "\n"
             "-------------------\n"
-            "Supernova is missing some shaders, you need to use Supershader tool to create these shaders in project assets directory.\n"
+            "Doriax is missing some shaders, you need to use Supershader tool to create these shaders in project assets directory.\n"
             "Go to directory \"tools/\" and execute the command:\n"
             "\n"
             "> python3 supershader.py -s \"%s\" -l %s\n"

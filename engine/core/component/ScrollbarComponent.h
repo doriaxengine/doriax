@@ -7,14 +7,14 @@
 
 #include "util/FunctionSubscribe.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class ScrollbarType{
         VERTICAL,
         HORIZONTAL
     };
 
-    struct SUPERNOVA_API ScrollbarComponent{
+    struct DORIAX_API ScrollbarComponent{
         Entity bar = NULL_ENTITY;
         ScrollbarType type = ScrollbarType::VERTICAL;
 

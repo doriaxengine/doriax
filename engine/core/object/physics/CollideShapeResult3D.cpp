@@ -8,7 +8,7 @@
 #include "Jolt/Physics/Body/Body.h"
 #include "Jolt/Physics/Collision/CollideShape.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 CollideShapeResult3D::CollideShapeResult3D(Scene* scene, const JPH::Body* body1, const JPH::Body* body2, const JPH::CollideShapeResult* collideShapeResult){
     this->scene = scene;

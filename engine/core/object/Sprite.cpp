@@ -8,7 +8,7 @@
 #include "subsystem/MeshSystem.h"
 #include "subsystem/RenderSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Sprite::Sprite(Scene* scene): Mesh(scene){
     addComponent<SpriteComponent>();

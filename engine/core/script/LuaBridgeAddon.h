@@ -10,7 +10,7 @@
 #include "FileData.h"
 #include "thread/ResourceProgress.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 namespace luabridge
 {

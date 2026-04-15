@@ -8,9 +8,9 @@
 #include "Export.h"
 #include <string>
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API UniqueToken {
+    class DORIAX_API UniqueToken {
     private:
         static int id;
 

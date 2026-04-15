@@ -12,7 +12,7 @@
 #include <chrono>
 #include <vector>
 
-namespace Supernova {
+namespace doriax {
 
     enum class ResourceType {
         Shader,
@@ -39,7 +39,7 @@ namespace Supernova {
         bool hasActiveBuilds = false;
     };
 
-    class SUPERNOVA_API ResourceProgress {
+    class DORIAX_API ResourceProgress {
     private:
         static std::mutex progressMutex;
         static std::unordered_map<uint64_t, ResourceBuildInfo> activeBuilds;

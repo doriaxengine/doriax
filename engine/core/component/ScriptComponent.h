@@ -8,7 +8,7 @@
 #include "ScriptProperty.h"
 #include <vector>
 
-namespace Supernova{
+namespace doriax{
 
     enum class ScriptType {
         SUBCLASS,      // C++ subclass of Shape (or EntityHandle)
@@ -16,7 +16,7 @@ namespace Supernova{
         SCRIPT_LUA,    // Lua behavior script (Script table with properties + methods)
     };
 
-    struct SUPERNOVA_API ScriptEntry {
+    struct DORIAX_API ScriptEntry {
         ScriptType type;
         std::string path;        // .cpp or .lua (for Lua: script file path)
         std::string headerPath;  // for C++; empty for Lua
@@ -27,7 +27,7 @@ namespace Supernova{
         void* instance = nullptr; // C++ instance OR Lua handle
     };
 
-    struct SUPERNOVA_API ScriptComponent {
+    struct DORIAX_API ScriptComponent {
         std::vector<ScriptEntry> scripts;
     };
 

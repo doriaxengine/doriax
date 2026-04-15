@@ -8,9 +8,9 @@
 #include "Object.h"
 #include "component/AudioComponent.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Audio: public Object{
+    class DORIAX_API Audio: public Object{
     public:
         Audio(Scene* scene);
         Audio(Scene* scene, Entity entity);

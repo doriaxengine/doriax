@@ -12,7 +12,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace Supernova {
+namespace doriax {
 
     class Scene;
 
@@ -32,7 +32,7 @@ namespace Supernova {
     //   local root = BundleManager.createBundle("enemies/EnemyShip", scene)
     //   BundleManager.destroyBundle(scene, root)
 
-    class SUPERNOVA_API BundleManager {
+    class DORIAX_API BundleManager {
     private:
         struct BundleEntry {
             uint32_t id;
@@ -103,6 +103,6 @@ namespace Supernova {
         static void clearAll();
     };
 
-} // namespace Supernova
+} // namespace doriax
 
 #endif // BUNDLEMANAGER_H

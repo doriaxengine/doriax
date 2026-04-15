@@ -8,8 +8,8 @@
 #include "Render.h"
 #include "sokol/SokolBuffer.h"
 
-namespace Supernova{
-    class SUPERNOVA_API BufferRender{
+namespace doriax{
+    class DORIAX_API BufferRender{
 
     public:
         //***Backend***

@@ -7,9 +7,9 @@
 
 #include "Mesh.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Terrain: public Mesh{
+    class DORIAX_API Terrain: public Mesh{
 
     public:
         Terrain(Scene* scene);

@@ -7,7 +7,7 @@
 #include "Log.h"
 #include <string.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 Buffer::Buffer(){
     attributes.clear();

@@ -7,9 +7,9 @@
 
 #include "Mesh.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Tilemap: public Mesh{
+    class DORIAX_API Tilemap: public Mesh{
 
     public:
         Tilemap(Scene* scene);

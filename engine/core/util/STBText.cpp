@@ -10,7 +10,7 @@
 #include "DefaultFont.h"
 #include "StringUtils.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 STBText::STBText() {
     atlasWidth = 0;

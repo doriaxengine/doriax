@@ -9,7 +9,7 @@
 #include "System.h"
 #include <stack>
 
-using namespace Supernova;
+using namespace doriax;
 
 FileData::~FileData(){
 

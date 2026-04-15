@@ -9,9 +9,9 @@
 #include "buffer/InterleavedBuffer.h"
 #include "buffer/IndexBuffer.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Mesh: public Object{
+    class DORIAX_API Mesh: public Object{
     public:
         Mesh(Scene* scene);
         Mesh(Scene* scene, Entity entity);

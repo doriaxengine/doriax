@@ -7,7 +7,7 @@
 #include "Engine.h"
 #include "Log.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 fonts_t& FontPool::getMap(){
     //To prevent similar problem of static init fiasco but on deinitialization

@@ -8,9 +8,9 @@
 #include "Scene.h"
 #include "Entity.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ScriptBase {
+    class DORIAX_API ScriptBase {
     protected:
         Scene* scene;
         Entity entity;

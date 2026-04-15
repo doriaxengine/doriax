@@ -9,8 +9,8 @@
 #include "tinyxml2.h"
 #include <string>
 
-namespace Supernova {
-    class SUPERNOVA_API XMLUtils {
+namespace doriax {
+    class DORIAX_API XMLUtils {
     private:
         static tinyxml2::XMLElement* getNodeForKey(const char* XMLFilePath, const char* rootName, const char* key, tinyxml2::XMLElement** rootNode, tinyxml2::XMLDocument* doc);
 

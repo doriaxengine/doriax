@@ -11,11 +11,11 @@
 #include <memory>
 #include <array>
 
-namespace Supernova{
+namespace doriax{
 
     typedef std::map< std::string, std::shared_ptr<TextureRender> > textures_t;
 
-    class SUPERNOVA_API TexturePool{
+    class DORIAX_API TexturePool{
     private:
         static textures_t& getMap();
 

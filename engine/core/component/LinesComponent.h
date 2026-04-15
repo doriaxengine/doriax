@@ -8,7 +8,7 @@
 #include "buffer/Buffer.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct LineData{
         Vector3 pointA = Vector3(0,0,0);
@@ -29,7 +29,7 @@ namespace Supernova{
         }
     };
 
-    struct SUPERNOVA_API LinesComponent{
+    struct DORIAX_API LinesComponent{
         bool loaded = false;
         bool loadCalled = false;
 

@@ -8,21 +8,21 @@
 #include <assert.h>
 #include <math.h>
 
-namespace Supernova { class Vector4; }
-Supernova::Vector4 operator * ( const float fScalar, const Supernova::Vector4& rkVector );
-Supernova::Vector4 operator / ( const float fScalar, const Supernova::Vector4& rkVector );
-Supernova::Vector4 operator + (const Supernova::Vector4& lhs, const float rhs);
-Supernova::Vector4 operator + (const float lhs, const Supernova::Vector4& rhs);
-Supernova::Vector4 operator - (const Supernova::Vector4& lhs, float rhs);
-Supernova::Vector4 operator - (const float lhs, const Supernova::Vector4& rhs);
+namespace doriax { class Vector4; }
+doriax::Vector4 operator * ( const float fScalar, const doriax::Vector4& rkVector );
+doriax::Vector4 operator / ( const float fScalar, const doriax::Vector4& rkVector );
+doriax::Vector4 operator + (const doriax::Vector4& lhs, const float rhs);
+doriax::Vector4 operator + (const float lhs, const doriax::Vector4& rhs);
+doriax::Vector4 operator - (const doriax::Vector4& lhs, float rhs);
+doriax::Vector4 operator - (const float lhs, const doriax::Vector4& rhs);
 
 
-namespace Supernova {
+namespace doriax {
 
     class Vector2;
     class Vector3;
 
-    class SUPERNOVA_API Vector4
+    class DORIAX_API Vector4
     {
     public:
         float x, y, z, w;

@@ -14,9 +14,9 @@
 #include "math/Vector3.h"
 #include "math/Vector4.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API InterleavedBuffer: public Buffer{
+    class DORIAX_API InterleavedBuffer: public Buffer{
 
     private:
         std::vector<unsigned char> vectorBuffer;

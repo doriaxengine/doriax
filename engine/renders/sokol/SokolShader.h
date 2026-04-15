@@ -9,7 +9,7 @@
 #include "shader/ShaderData.h"
 #include "sokol_gfx.h"
 
-namespace Supernova{
+namespace doriax{
     class SokolShader{
 
     private:

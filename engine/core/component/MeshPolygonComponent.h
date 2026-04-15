@@ -9,9 +9,9 @@
 #include "math/Vector4.h"
 #include "component/PolygonComponent.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API MeshPolygonComponent{
+    struct DORIAX_API MeshPolygonComponent{
         unsigned int width = 0;
         unsigned int height = 0;
 

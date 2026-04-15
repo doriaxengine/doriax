@@ -12,7 +12,7 @@
 #include "Jolt/Jolt.h"
 #include "Jolt/Physics/Body/Body.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class Shape3DType{
         SPHERE,
@@ -33,7 +33,7 @@ namespace Supernova{
         ENTITY_HEIGHTFIELD
     };
 
-    struct SUPERNOVA_API Shape3D{
+    struct DORIAX_API Shape3D{
         JPH::ShapeRefC shape = NULL;
         Vector3 position = Vector3::ZERO;
         Quaternion rotation = Quaternion::IDENTITY;

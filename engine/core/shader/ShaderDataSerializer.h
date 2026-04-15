@@ -10,9 +10,9 @@
 
 #include "ShaderData.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API ShaderDataSerializer {
+    class DORIAX_API ShaderDataSerializer {
     public:
         // Simple on-disk cache format for ShaderData.
         // - Stores stage GLSL/HLSL/MSL source and reflection data.

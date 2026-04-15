@@ -7,7 +7,7 @@
 #include "Log.h"
 #include <algorithm>
 
-using namespace Supernova;
+using namespace doriax;
 
 std::mutex ResourceProgress::progressMutex;
 std::unordered_map<uint64_t, ResourceBuildInfo> ResourceProgress::activeBuilds;

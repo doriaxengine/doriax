@@ -7,9 +7,9 @@
 
 #include "math/Vector3.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API PositionActionComponent{
+    struct DORIAX_API PositionActionComponent{
         Vector3 endPosition;
         Vector3 startPosition;
     };

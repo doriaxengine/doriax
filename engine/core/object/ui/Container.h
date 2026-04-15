@@ -7,8 +7,8 @@
 
 #include "UILayout.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Container: public UILayout{
+namespace doriax{
+    class DORIAX_API Container: public UILayout{
 
     public:
         Container(Scene* scene);

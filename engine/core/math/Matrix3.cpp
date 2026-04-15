@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 Matrix3::Matrix3() {
     identity();

@@ -4,7 +4,7 @@
 
 #include "Attribute.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Attribute::Attribute(){
     setDataType(AttributeDataType::FLOAT);

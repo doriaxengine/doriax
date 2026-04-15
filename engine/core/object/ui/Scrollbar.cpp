@@ -6,7 +6,7 @@
 
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Scrollbar::Scrollbar(Scene* scene): Image(scene){
     addComponent<ScrollbarComponent>();

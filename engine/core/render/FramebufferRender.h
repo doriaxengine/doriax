@@ -8,8 +8,8 @@
 #include "Render.h"
 #include "sokol/SokolFramebuffer.h"
 
-namespace Supernova{
-    class SUPERNOVA_API FramebufferRender{
+namespace doriax{
+    class DORIAX_API FramebufferRender{
 
     public:
         //***Backend***

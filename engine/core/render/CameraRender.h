@@ -9,8 +9,8 @@
 #include "math/Rect.h"
 #include "sokol/SokolCamera.h"
 
-namespace Supernova{
-    class SUPERNOVA_API CameraRender{
+namespace doriax{
+    class DORIAX_API CameraRender{
     public:
         //***Backend***
         SokolCamera backend;

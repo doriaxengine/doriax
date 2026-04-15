@@ -10,7 +10,7 @@
 #include <cstdint>
 #include "render/Render.h"
 
-namespace Supernova {
+namespace doriax {
 
     struct ShaderAttr{
         std::string name;
@@ -95,7 +95,7 @@ namespace Supernova {
         std::vector<ShaderTextureSamplerPair> textureSamplerPairs;
     };
 
-    class SUPERNOVA_API ShaderData {
+    class DORIAX_API ShaderData {
     public:
         ShaderLang lang;
         unsigned int version;

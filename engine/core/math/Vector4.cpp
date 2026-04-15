@@ -5,7 +5,7 @@
 
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 const Vector4 Vector4::ZERO( 0, 0, 0, 0 );
 const Vector4 Vector4::UNIT_X( 1, 0, 0, 0 );

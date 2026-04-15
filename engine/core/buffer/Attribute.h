@@ -10,9 +10,9 @@
 #include "render/Render.h"
 #include "Export.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Attribute {
+    class DORIAX_API Attribute {
 
         friend class Buffer;
 

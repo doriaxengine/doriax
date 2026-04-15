@@ -9,8 +9,8 @@
 #include "Text.h"
 #include "Container.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Panel: public Image{
+namespace doriax{
+    class DORIAX_API Panel: public Image{
 
     public:
         Panel(Scene* scene);

@@ -7,7 +7,7 @@
 
 #include "Action.h"
 
-namespace Supernova{
+namespace doriax{
 
     class Particles: public Action{
     public:

@@ -7,8 +7,8 @@
 
 #include "action/Action.h"
 
-namespace Supernova{
-    class SUPERNOVA_API RotateTracks: public Action{
+namespace doriax{
+    class DORIAX_API RotateTracks: public Action{
 
     public:
         RotateTracks(Scene* scene);

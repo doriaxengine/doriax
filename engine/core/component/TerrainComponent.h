@@ -12,7 +12,7 @@
 #include "texture/Material.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct TerrainNode{
         //-----u_vs_terrainNodeParams
@@ -32,7 +32,7 @@ namespace Supernova{
         float visible = false;
     };
 
-    struct SUPERNOVA_API TerrainComponent{
+    struct DORIAX_API TerrainComponent{
         // 0 for fullRes and 1 for halfRes
         InterleavedBuffer nodesbuffer[2];
 

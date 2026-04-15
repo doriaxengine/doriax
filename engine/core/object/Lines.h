@@ -7,9 +7,9 @@
 
 #include "Object.h"
 
-namespace Supernova{
+namespace doriax{
 
-    class SUPERNOVA_API Lines: public Object{
+    class DORIAX_API Lines: public Object{
     public:
         Lines(Scene* scene);
         Lines(Scene* scene, Entity entity);

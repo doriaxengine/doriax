@@ -9,9 +9,9 @@
 #include "Vector3.h"
 #include "Vector4.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Color {
+    class DORIAX_API Color {
     private:
         static float GAMMA;
         static float INV_GAMMA;

@@ -7,9 +7,9 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API KeyframeTracksComponent{
+    struct DORIAX_API KeyframeTracksComponent{
         std::vector<float> times;
         int index = 0;
         float interpolation = 0;

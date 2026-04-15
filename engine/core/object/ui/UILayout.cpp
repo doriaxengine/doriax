@@ -6,7 +6,7 @@
 
 #include "util/Color.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 UILayout::UILayout(Scene* scene): Object(scene){
     addComponent<UILayoutComponent>();

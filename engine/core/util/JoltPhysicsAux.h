@@ -57,7 +57,7 @@
 #include "Jolt/Physics/Constraints/RackAndPinionConstraint.h"
 #include "Jolt/Physics/Constraints/PulleyConstraint.h"
 
-namespace Supernova{
+namespace doriax{
 
 	class OnlyStaticBodyFilter : public JPH::BodyFilter{
 	private:

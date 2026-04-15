@@ -1,32 +1,79 @@
-# Prerequisites
-*.d
 
+*~
+$RECYCLE.BIN/
+*.a
+.apdisk
+*.app
+.AppleDB
+.AppleDesktop
+.AppleDouble
+build
+*.cab
+.com.apple.timemachine.donotpresent
+# Compiled Dynamic libraries
 # Compiled Object files
-*.slo
+# Compiled Static libraries
+*.d
+[Dd]esktop.ini
+# Directories potentially created on remote AFP share
+.directory
+*.dll
+.DocumentRevisions-V100
+.DS_Store
+# Dump file
+*.dylib
+ehthumbs.db
+ehthumbs_vista.db
+*.exe
+# Executables
+# Files that might appear in the root of a volume
+# Folder config file
+# Fortran module files
+.fseventsd
+.fuse_hidden*
+*.gch
+# General
+Icon
+# Icon must end with two \r
+# KDE directory preferences
+*.la
+*.lai
+*.lib
+### Linux ###
+# Linux trash folder which might appear on any partition or disk
+*.lnk# Prerequisites
 *.lo
+.LSOverride
+*.mod
+*.msi
+*.msix
+*.msm
+*.msp
+Network Trash Folder
+.nfs*
+# .nfs files are created when an open file is removed but is still being accessed
 *.o
 *.obj
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
+### OSX ###
 *.out
-*.app
+*.pch
+# Precompiled Headers
+# Recycle Bin used on file shares
+*.slo
+*.smod
+*.so
+.Spotlight-V100
+*.stackdump
+# temporary files which can be created if a process still has a handle open of a deleted file
+.TemporaryItems
+# Thumbnails
+Thumbs.db
+Thumbs.db:encryptable
+.Trash-*
+.Trashes
+.VolumeIcon.icns
+.vscode
+### Windows ###
+# Windows Installer files
+# Windows shortcuts
+# Windows thumbnail cache files

@@ -9,8 +9,8 @@
 #include "Text.h"
 #include "Polygon.h"
 
-namespace Supernova{
-    class SUPERNOVA_API TextEdit: public Image{
+namespace doriax{
+    class DORIAX_API TextEdit: public Image{
 
     public:
         TextEdit(Scene* scene);

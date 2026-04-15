@@ -5,7 +5,7 @@
 #include "Tilemap.h"
 #include "subsystem/MeshSystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Tilemap::Tilemap(Scene* scene): Mesh(scene){
     addComponent<TilemapComponent>();

@@ -7,9 +7,9 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ScaleTracksComponent{
+    struct DORIAX_API ScaleTracksComponent{
         std::vector<Vector3> values;
     };
 

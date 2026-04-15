@@ -10,7 +10,7 @@
 #include <float.h>
 #include "Log.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 const Quaternion Quaternion::IDENTITY( 1, 0, 0, 0 );
 

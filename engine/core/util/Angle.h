@@ -7,9 +7,9 @@
 
 #include "Export.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Angle {
+    class DORIAX_API Angle {
     public:
         static float radToDefault(float radians);
         static float degToDefault(float degrees);

@@ -6,7 +6,7 @@
 
 #include "box2d/box2d.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Contact2D::Contact2D(Scene* scene, b2ContactData contact){
     this->scene = scene;

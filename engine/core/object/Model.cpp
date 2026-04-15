@@ -17,7 +17,7 @@
 #include <sstream>
 #include <cfloat>
 
-using namespace Supernova;
+using namespace doriax;
 
 Model::Model(Scene* scene): Mesh(scene){
     addComponent<ModelComponent>();

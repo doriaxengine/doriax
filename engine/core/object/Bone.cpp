@@ -5,7 +5,7 @@
 #include "Bone.h"
 
 
-using namespace Supernova;
+using namespace doriax;
 
 Bone::Bone(Scene* scene, Entity entity): Object(scene, entity){
 }

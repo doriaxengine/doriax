@@ -8,7 +8,7 @@
 #define _USE_MATH_DEFINES
 #include <math.h>
 
-namespace Supernova {
+namespace doriax {
 
     enum class EaseType{
         LINEAR,

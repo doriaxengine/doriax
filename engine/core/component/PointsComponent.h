@@ -9,7 +9,7 @@
 #include "util/HybridArray.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct PointData{
         Vector3 position = Vector3(0.0, 0.0, 0.0);
@@ -28,7 +28,7 @@ namespace Supernova{
         Rect textureRect;
     };
 
-    struct SUPERNOVA_API PointsComponent{
+    struct DORIAX_API PointsComponent{
         bool loaded = false;
         bool loadCalled = false;
 

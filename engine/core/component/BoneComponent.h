@@ -7,9 +7,9 @@
 
 #include <string>
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API BoneComponent{
+    struct DORIAX_API BoneComponent{
         Entity model = NULL_ENTITY;
 
         int index;

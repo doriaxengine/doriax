@@ -5,16 +5,16 @@
 #include <math.h>
 #include <string>
 
-namespace Supernova { class Vector3; }
-Supernova::Vector3 operator * ( float f, const Supernova::Vector3& v );
+namespace doriax { class Vector3; }
+doriax::Vector3 operator * ( float f, const doriax::Vector3& v );
 
 
-namespace Supernova {
+namespace doriax {
 
     class Vector2;
     class Vector4;
 
-    class SUPERNOVA_API Vector3
+    class DORIAX_API Vector3
     {
     public:
         float x, y, z;

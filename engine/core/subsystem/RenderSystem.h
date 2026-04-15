@@ -29,7 +29,7 @@
 #include <memory>
 #include <queue>
 
-namespace Supernova{
+namespace doriax{
 	typedef struct fs_lighting_t {
 	    Vector4 direction_range[MAX_LIGHTS];
 	    Vector4 color_intensity[MAX_LIGHTS];
@@ -64,7 +64,7 @@ namespace Supernova{
 		Entity entity;
 	} check_load_t;
 
-	class SUPERNOVA_API RenderSystem : public SubSystem {
+	class DORIAX_API RenderSystem : public SubSystem {
 	private:
 		struct TransparentMeshesData{
 			MeshComponent* mesh;

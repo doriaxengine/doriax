@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string>
 
-namespace Supernova {
+namespace doriax {
 
     enum FileErrors{
         FILEDATA_OK       = 0,
@@ -20,7 +20,7 @@ namespace Supernova {
         OUT_OF_MEMORY    = 3
     };
 
-    class SUPERNOVA_API FileData {
+    class DORIAX_API FileData {
 
     protected:
         static bool beginWith(const std::string& path, const std::string& prefix);

@@ -7,9 +7,9 @@
 
 #include "math/Vector3.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ScaleActionComponent{
+    struct DORIAX_API ScaleActionComponent{
         Vector3 endScale;
         Vector3 startScale;
     };

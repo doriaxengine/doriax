@@ -5,7 +5,7 @@
 #include "Fog.h"
 #include "util/Color.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Fog::Fog(Scene* scene): EntityHandle(scene){
     addComponent<FogComponent>();

@@ -7,7 +7,7 @@
 #include "component/KeyframeTracksComponent.h"
 #include "component/TranslateTracksComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 TranslateTracks::TranslateTracks(Scene* scene): Action(scene){
     addComponent<KeyframeTracksComponent>();

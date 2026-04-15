@@ -11,11 +11,11 @@
 #include "ComponentManager.h"
 #include <set>
 
-namespace Supernova{
+namespace doriax{
 
     class Scene;
 
-    class SUPERNOVA_API SubSystem {
+    class DORIAX_API SubSystem {
 
         protected:
         Signature signature;

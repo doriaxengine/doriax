@@ -17,7 +17,7 @@
 #include "LuaBridge.h"
 #include <stdexcept>
 
-using namespace Supernova;
+using namespace doriax;
 
 LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(vm) {
     // get the function
@@ -78,7 +78,7 @@ void LuaFunctionBase::call(int args, int results) {
         std::string error = lua_tostring(m_vm, -1);
         lua_pop(m_vm, 1);
 
-        #ifdef SUPERNOVA_CRASH_GUARD
+        #ifdef DORIAX_CRASH_GUARD
         auto& crashHandler = FunctionSubscribeGlobal::getCrashHandler();
         if (crashHandler) {
             std::string funcName = "Lua Script Error";

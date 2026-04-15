@@ -9,7 +9,7 @@
 #include "util/HybridArray.h"
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class PivotPreset{
         CENTER,
@@ -23,7 +23,7 @@ namespace Supernova{
         BOTTOM_RIGHT
     };
 
-    struct SUPERNOVA_API SpriteComponent{
+    struct DORIAX_API SpriteComponent{
         unsigned int width = 0;
         unsigned int height = 0;
 

@@ -7,9 +7,9 @@
 
 #include "Engine.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API MorphTracksComponent{
+    struct DORIAX_API MorphTracksComponent{
         std::vector<std::vector<float>> values;
     };
 

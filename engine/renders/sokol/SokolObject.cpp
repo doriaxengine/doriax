@@ -10,7 +10,7 @@
 #include "SokolCmdQueue.h"
 #include "Engine.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 
 SokolObject::SokolObject(){

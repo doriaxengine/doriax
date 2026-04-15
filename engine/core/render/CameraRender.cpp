@@ -6,7 +6,7 @@
 
 #include "sokol/SokolCamera.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 CameraRender::CameraRender(){ }
 

@@ -1,18 +1,18 @@
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
 
-option(SUPERNOVA_SHARED "Build supernova as a shared library" OFF)
+option(DORIAX_SHARED "Build doriax as a shared library" OFF)
 
-if(SUPERNOVA_SHARED)
+if(DORIAX_SHARED)
     set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-    set(SUPERNOVA_LIB_TYPE SHARED)
+    set(DORIAX_LIB_TYPE SHARED)
 else()
-    set(SUPERNOVA_LIB_TYPE STATIC)
+    set(DORIAX_LIB_TYPE STATIC)
 endif()
 
 if (WIN32)
     if (MSVC)
         add_compile_options(/bigobj)
-        if(SUPERNOVA_SHARED)
+        if(DORIAX_SHARED)
             set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
         else()
             set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -59,7 +59,7 @@ endif()
 
 #add_definitions("-DPROJECT_ROOT=\"${PROJECT_ROOT}\"")
 
-set(SUPERNOVA_SRCS
+set(DORIAX_SRCS
     core/Engine.cpp
     core/Input.cpp
     core/Log.cpp
@@ -196,23 +196,23 @@ set(RENDER_SOKOL_SRC
 )
 
 add_library(
-    supernova
+    doriax
 
-    ${SUPERNOVA_LIB_TYPE}
+    ${DORIAX_LIB_TYPE}
 
     ${RENDER_SOKOL_SRC}
-    ${SUPERNOVA_SRCS}
+    ${DORIAX_SRCS}
 )
 
 find_package(Threads REQUIRED)
-target_link_libraries(supernova PRIVATE Threads::Threads)
+target_link_libraries(doriax PRIVATE Threads::Threads)
 
 if(EMSCRIPTEN AND EMSCRIPTEN_THREAD_SUPPORT)
-	target_compile_options(supernova PRIVATE -pthread)
+	target_compile_options(doriax PRIVATE -pthread)
 endif()
 
 target_link_libraries(
-    supernova
+    doriax
 
     PUBLIC
 
@@ -220,7 +220,7 @@ target_link_libraries(
 )
 
 set_target_properties(
-    supernova
+    doriax
 
     PROPERTIES
 
@@ -231,11 +231,11 @@ set_target_properties(
     CXX_STANDARD_REQUIRED ON
 )
 
-if(SUPERNOVA_SHARED)
-    target_compile_definitions(supernova 
+if(DORIAX_SHARED)
+    target_compile_definitions(doriax 
         PRIVATE 
-        SUPERNOVA_EXPORTS
+        DORIAX_EXPORTS
         PUBLIC
-        SUPERNOVA_SHARED
+        DORIAX_SHARED
     )
 endif()

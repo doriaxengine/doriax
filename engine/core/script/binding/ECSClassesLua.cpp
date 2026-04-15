@@ -34,7 +34,7 @@
 #include "component/FogComponent.h"
 #include "component/TilemapComponent.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 void LuaBinding::registerECSClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS

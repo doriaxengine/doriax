@@ -8,8 +8,8 @@
 #include "Scene.h"
 #include "Entity.h"
 
-namespace Supernova{
-    class SUPERNOVA_API EntityHandle{
+namespace doriax{
+    class DORIAX_API EntityHandle{
 
     protected:
         Entity entity;

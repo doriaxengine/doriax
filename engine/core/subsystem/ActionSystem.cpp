@@ -12,7 +12,7 @@
 #include <functional>
 #include <unordered_set>
 
-using namespace Supernova;
+using namespace doriax;
 
 
 ActionSystem::ActionSystem(Scene* scene): SubSystem(scene){

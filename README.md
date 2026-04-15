@@ -1,95 +1,117 @@
-![Logo](http://www.supernovaengine.org/img/logo_blue.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/logo/doriax_logo_transparent.png" alt="Doriax Engine" width="420">
+</p>
 
-![](https://github.com/supernovaengine/supernova/actions/workflows/android.yml/badge.svg)
-![](https://github.com/supernovaengine/supernova/actions/workflows/build-tool.yml/badge.svg)
-![](https://github.com/supernovaengine/supernova/actions/workflows/cmake-desktop.yml/badge.svg)
+<p align="center">
+  A free, open-source 2D/3D game engine and integrated editor for building cross-platform games and interactive projects with Lua or C++.
+</p>
 
-[![Join our Discord](https://img.shields.io/discord/1356958061880934480?label=Discord&logo=discord&style=flat&color=5865F2)](https://discord.gg/yXXDyJf3gT)
+<p align="center">
+  <strong>Doriax Engine</strong> is the continuation of Supernova Engine under a new identity and a broader workflow focused on visual editing, shader generation, and project export.
+</p>
 
-**Entity component system (ECS)** and **data-oriented design** engine using object oriented for API.
+<p align="center">
+  <a href="https://doriaxengine.org">Website</a>
+  |
+  <a href="https://github.com/doriaxengine/doriax">GitHub</a>
+  |
+  <a href="https://discord.gg/yXXDyJf3gT">Discord</a>
+</p>
 
+<p align="center">
+  <img src="https://github.com/doriaxengine/doriax/actions/workflows/android.yml/badge.svg" alt="Android">
+  <img src="https://github.com/doriaxengine/doriax/actions/workflows/build-tool.yml/badge.svg" alt="Build Tool">
+  <img src="https://github.com/doriaxengine/doriax/actions/workflows/cmake-desktop.yml/badge.svg" alt="CMake Desktop">
+  <a href="https://discord.gg/yXXDyJf3gT"><img src="https://img.shields.io/discord/1356958061880934480?label=Discord&logo=discord&style=flat&color=5865F2" alt="Join our Discord"></a>
+</p>
 
-Supernova is a **free** and open-source, cross-platform game engine for creating 2D and 3D projects with Lua or C++. It is lightweight and promotes the simplest way to use the best performance of a data-oriented design.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor">
+</p>
 
-![Screenshot1](https://supernovaengine.org/img/gh_screen.png)
+## Overview
 
-Live samples: https://samples.supernovaengine.org/
+Doriax Engine combines a lightweight runtime with a modern desktop editor for creating 2D and 3D games. The project keeps its ECS and data-oriented foundation, but now extends far beyond a runtime API: author scenes visually, script in Lua or C++, generate shader data, export projects, and build for multiple platforms from a single environment.
 
+## Why Doriax
 
-## Supports
+- Integrated editor for 2D and 3D scene creation
+- Project generation, build orchestration, and export tooling
+- Shader compilation and cross-platform shader translation for exported projects
+- Lua for fast iteration and C++ for native performance
+- ECS-based, data-oriented runtime designed for efficiency
+- Cross-platform deployment with OpenGL, Metal, and DirectX backends
 
-  - Web (with Emscripten - OpenGL ES)
-  - Android (OpenGL ES)
-  - iOS (Metal, OpenGL ES)
-  - macOS (Metal, OpenGL)
-  - Linux (OpenGL)
-  - Windows (DirectX, OpenGL)
-  
-## Features
+## Editor Workflow
 
-* 2D and 3D scenes
-* GLTF and OBJ models load
-* Model skin and morph targets
-* PBR shaders
-* Lights
-* Dynamic shadows
-* Particle system
-* Animations
-* Sprites
-* Fog and sky
-* UI
-* Terrain LOD
-* Textures and shaders pool
-* 3D audio
-* Cross-platform persistence system
-* Multithreading support
-* 2D and 3D physics
-* Instancing
+- Scene hierarchy, inspector, and resource management
+- 2D tools for sprites, tilemaps, and sprite slicing
+- 3D scene editing with cameras, lighting, models, and play mode
+- Animation tools, timeline editing, and bone workflows
+- Integrated code editor and scripting workflow for Lua and C++
+- Shader-aware export pipeline that prepares scenes, assets, scripts, engine files, and compiled shaders
 
-## Upcoming features
+> **Note:** Terrain authoring, particle editing, audio tooling, and direct shader manipulation are not fully integrated into the editor yet — these features are available at the engine/runtime level.
 
- * More UI components
- * Water
- * Editor
- * Networking
+<p align="center">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-2d-tilemap.png" alt="Doriax Engine 2D tilemap editor" width="48%">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-animation.png" alt="Doriax Engine animation timeline" width="48%">
+</p>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-code.png" alt="Doriax Engine integrated code editor" width="48%">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-ui.png" alt="Doriax Engine UI tools" width="48%">
+</p>
 
-## Samples
+## Engine Features
 
-For all samples source code:
+- 2D and 3D scenes
+- GLTF and OBJ model loading
+- Skeletal animation and morph targets
+- PBR materials, dynamic shadows, fog, and sky
+- Particle systems, UI, terrain LOD, and instancing
+- 3D audio, scene serialization, texture and shader pools, and multithreading
+- Integrated 2D and 3D physics powered by Box2D and Jolt Physics
 
-https://github.com/supernovaengine/supernova-samples
+## Platforms
 
-## Documentation
+| Area | Support |
+| --- | --- |
+| Editor downloads | Windows, Linux, macOS |
+| Project targets | Windows, Linux, macOS, Android, iOS, HTML5 |
+| Graphics APIs | OpenGL, Metal, DirectX |
+| Scripting | Lua, C++ |
 
-**(in development)**
+## Getting Started
 
-For tutorials and all engine information:
+Download a prebuilt editor from [doriaxengine.org](https://doriaxengine.org/#download) or build from source:
 
-https://docs.supernovaengine.org/
+```bash
+git clone https://github.com/doriaxengine/doriax.git
+cd doriax
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
 
-### Building
+The root project builds `doriax-editor`. On single-config generators the executable is typically created under `build/`. On multi-config generators such as Visual Studio, look under the configuration subdirectory. Platform-specific setup is still being refreshed under the Doriax name; for now, the legacy documentation remains the best reference for toolchain prerequisites.
 
-  - Building for Windows: https://docs.supernovaengine.org/getting-started/building/building-for-windows
-  - Building for Linux: https://docs.supernovaengine.org/getting-started/building/building-for-linux
-  - Building for macOS: https://docs.supernovaengine.org/getting-started/building/building-for-macos
-  - Building for iOS: https://docs.supernovaengine.org/getting-started/building/building-for-ios
-  - Building for Android: https://docs.supernovaengine.org/getting-started/building/building-for-android
-  - Building for HTML5: https://docs.supernovaengine.org/getting-started/building/building-for-html5
+## Documentation and Community
 
-## Third party libraries
+- [Website](https://doriaxengine.org)
+- [Discord](https://discord.gg/yXXDyJf3gT)
+- [Source code](https://github.com/doriaxengine/doriax)
+- [Legacy documentation](https://docs.supernovaengine.org)
 
-* sokol - https://github.com/floooh/sokol - Zlib License
-* Lua - https://www.lua.org - MIT license
-* LuaBridge 3.0 - https://github.com/kunitoki/LuaBridge3 - MIT License
-* Soloud - https://github.com/jarikomppa/soloud - Zlib/LibPng license
-* stb - https://github.com/nothings/stb - MIT license
-* json - https://github.com/nlohmann/json - MIT license
-* tinygltf - https://github.com/syoyo/tinygltf - MIT license
-* tinyobjloader - https://github.com/tinyobjloader/tinyobjloader - MIT license
-* tinyxml2 - https://github.com/leethomason/tinyxml2 - Zlib License
-* Box2D - https://github.com/erincatto/box2d - MIT license
-* JoltPhysics - https://github.com/jrouwe/JoltPhysics - MIT license
+## Repository Layout
+
+- `editor/` - desktop editor, windows, tools, project generation, and export flow
+- `engine/` - runtime engine, platform layers, rendering, ECS, and project templates
+- `shadercompiler/` - shader compilation and translation tools
+- `libs/` - bundled third-party dependencies
+
+## Transition from Supernova
+
+Doriax Engine is the next phase of Supernova Engine. Version `0.5.5` was the last release of the legacy Supernova engine. Some internal folders, legacy documentation, and older external references may still mention the previous name while the rebranding and documentation refresh continue.
 
 ## License
 
-Licensed under MIT license, you can use freely for whatever you want, including commercial projects.
+Doriax Engine is released under the MIT License and is free for personal and commercial use. Third-party libraries included in the repository keep their own licenses.

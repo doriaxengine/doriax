@@ -8,9 +8,9 @@
 #include "Engine.h"
 #include "util/HybridArray.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API SpriteAnimationComponent{
+    struct DORIAX_API SpriteAnimationComponent{
         std::string name;
 
         bool loop = true;

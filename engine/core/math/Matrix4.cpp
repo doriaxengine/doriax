@@ -10,7 +10,7 @@
 #include "AABB.h"
 #include "OBB.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Matrix4::Matrix4(){
     identity();

@@ -14,7 +14,7 @@
 #include <algorithm>
 #include <cmath>
 
-using namespace Supernova;
+using namespace doriax;
 
 b2BodyType getBodyTypeToB2(BodyType type){
     if (type == BodyType::STATIC){

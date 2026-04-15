@@ -5,14 +5,14 @@
 #ifndef POLYGON_COMPONENT_H
 #define POLYGON_COMPONENT_H
 
-namespace Supernova{
+namespace doriax{
 
     struct PolygonPoint{
         Vector3 position;
         Vector4 color;
     };
 
-    struct SUPERNOVA_API PolygonComponent{
+    struct DORIAX_API PolygonComponent{
         std::vector<PolygonPoint> points;
 
         bool needUpdatePolygon = true;

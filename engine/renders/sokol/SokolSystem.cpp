@@ -22,7 +22,7 @@
 // commit_commands() when you're done for the frame
 // flush_commands() on termination, before exiting the thread
 
-using namespace Supernova;
+using namespace doriax;
 
 void sokol_log(const char* tag,                // e.g. 'sg'
                     uint32_t log_level,             // 0=panic, 1=error, 2=warn, 3=info

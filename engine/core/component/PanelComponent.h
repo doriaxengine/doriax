@@ -7,7 +7,7 @@
 
 #include "util/FunctionSubscribe.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class PanelEdge{
         NONE,
@@ -18,7 +18,7 @@ namespace Supernova{
         LEFT
     };
 
-    struct SUPERNOVA_API PanelComponent{
+    struct DORIAX_API PanelComponent{
         Entity headerimage = NULL_ENTITY;
         Entity headercontainer = NULL_ENTITY;
         Entity headertext = NULL_ENTITY;

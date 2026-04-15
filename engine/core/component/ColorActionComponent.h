@@ -7,9 +7,9 @@
 
 #include "math/Vector3.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API ColorActionComponent{
+    struct DORIAX_API ColorActionComponent{
         Vector3 endColor;
         Vector3 startColor;
 

@@ -9,8 +9,8 @@
 #include "Text.h"
 #include "Container.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Scrollbar: public Image{
+namespace doriax{
+    class DORIAX_API Scrollbar: public Image{
 
     public:
         Scrollbar(Scene* scene);

@@ -7,8 +7,8 @@
 
 #include "Object.h"
 
-namespace Supernova{
-    class SUPERNOVA_API UILayout: public Object{
+namespace doriax{
+    class DORIAX_API UILayout: public Object{
 
     public:
         UILayout(Scene* scene);

@@ -8,11 +8,11 @@
 #include "Engine.h"
 #include "math/Vector2.h"
 
-namespace Supernova{
+namespace doriax{
 
     class STBText;
 
-    struct SUPERNOVA_API TextComponent{
+    struct DORIAX_API TextComponent{
         bool loaded = false;
 
         std::string font = "";

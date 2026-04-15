@@ -10,7 +10,7 @@
 #include "util/HybridArray.h"
 #include "box2d/box2d.h"
 
-namespace Supernova{
+namespace doriax{
 
     enum class Shape2DType{
         POLYGON,
@@ -20,7 +20,7 @@ namespace Supernova{
         CHAIN // chain is a different type in Box2D 3.x
     };
 
-    struct SUPERNOVA_API Shape2D{
+    struct DORIAX_API Shape2D{
         b2ShapeId shape = b2_nullShapeId;
         b2ChainId chain = b2_nullChainId;
 

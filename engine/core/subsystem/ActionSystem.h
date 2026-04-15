@@ -30,9 +30,9 @@
 #include "component/ScaleTracksComponent.h"
 #include "component/MorphTracksComponent.h"
 
-namespace Supernova{
+namespace doriax{
 
-	class SUPERNOVA_API ActionSystem : public SubSystem {
+	class DORIAX_API ActionSystem : public SubSystem {
 
     private:
 

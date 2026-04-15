@@ -22,7 +22,7 @@
 #include "AABB.h"
 #include "OBB.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 namespace luabridge
 {

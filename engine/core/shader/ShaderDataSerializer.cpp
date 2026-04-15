@@ -33,7 +33,7 @@ static bool setErr(std::string* err, const std::string& msg) {
 }
 
 // Little-endian write helpers (portable across architectures)
-static void writeU32(Supernova::File& out, uint32_t v) {
+static void writeU32(doriax::File& out, uint32_t v) {
     uint8_t buf[4] = {
         static_cast<uint8_t>(v),
         static_cast<uint8_t>(v >> 8),
@@ -43,7 +43,7 @@ static void writeU32(Supernova::File& out, uint32_t v) {
     out.write(buf, 4);
 }
 
-static void writeU64(Supernova::File& out, uint64_t v) {
+static void writeU64(doriax::File& out, uint64_t v) {
     uint8_t buf[8] = {
         static_cast<uint8_t>(v),
         static_cast<uint8_t>(v >> 8),
@@ -57,20 +57,20 @@ static void writeU64(Supernova::File& out, uint64_t v) {
     out.write(buf, 8);
 }
 
-static void writeI32(Supernova::File& out, int32_t v) {
+static void writeI32(doriax::File& out, int32_t v) {
     writeU32(out, static_cast<uint32_t>(v));
 }
 
-static void writeU8(Supernova::File& out, uint8_t v) {
+static void writeU8(doriax::File& out, uint8_t v) {
     out.write(&v, sizeof(v));
 }
 
-static void writeBool(Supernova::File& out, bool v) {
+static void writeBool(doriax::File& out, bool v) {
     uint8_t b = v ? 1 : 0;
     writeU8(out, b);
 }
 
-static void writeString(Supernova::File& out, const std::string& s) {
+static void writeString(doriax::File& out, const std::string& s) {
     uint32_t len = static_cast<uint32_t>(s.size());
     writeU32(out, len);
     if (len > 0) {
@@ -79,7 +79,7 @@ static void writeString(Supernova::File& out, const std::string& s) {
 }
 
 // Little-endian read helpers (portable across architectures)
-static bool readU32(Supernova::File& in, uint32_t& v) {
+static bool readU32(doriax::File& in, uint32_t& v) {
     uint8_t buf[4];
     if (in.read(buf, 4) != 4) return false;
     v = static_cast<uint32_t>(buf[0])
@@ -89,7 +89,7 @@ static bool readU32(Supernova::File& in, uint32_t& v) {
     return true;
 }
 
-static bool readU64(Supernova::File& in, uint64_t& v) {
+static bool readU64(doriax::File& in, uint64_t& v) {
     uint8_t buf[8];
     if (in.read(buf, 8) != 8) return false;
     v = static_cast<uint64_t>(buf[0])
@@ -103,18 +103,18 @@ static bool readU64(Supernova::File& in, uint64_t& v) {
     return true;
 }
 
-static bool readI32(Supernova::File& in, int32_t& v) {
+static bool readI32(doriax::File& in, int32_t& v) {
     uint32_t u = 0;
     if (!readU32(in, u)) return false;
     v = static_cast<int32_t>(u);
     return true;
 }
 
-static bool readU8(Supernova::File& in, uint8_t& v) {
+static bool readU8(doriax::File& in, uint8_t& v) {
     return in.read(&v, sizeof(v)) == sizeof(v);
 }
 
-static bool readBool(Supernova::File& in, bool& v) {
+static bool readBool(doriax::File& in, bool& v) {
     uint8_t b = 0;
     if (!readU8(in, b)) {
         return false;
@@ -123,7 +123,7 @@ static bool readBool(Supernova::File& in, bool& v) {
     return true;
 }
 
-static bool readString(Supernova::File& in, std::string& s) {
+static bool readString(doriax::File& in, std::string& s) {
     uint32_t len = 0;
     if (!readU32(in, len)) {
         return false;
@@ -144,7 +144,7 @@ static bool readString(Supernova::File& in, std::string& s) {
 
 } // namespace
 
-namespace Supernova {
+namespace doriax {
 
 bool ShaderDataSerializer::writeToFile(const std::string& filepath, uint64_t shaderKey, const ShaderData& shaderData, std::string* err) {
     File out;
@@ -514,4 +514,4 @@ bool ShaderDataSerializer::readFromFile(const std::string& filepath, uint64_t ex
     return true;
 }
 
-} // namespace Supernova
+} // namespace doriax

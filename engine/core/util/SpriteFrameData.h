@@ -7,7 +7,7 @@
 
 #include "math/Rect.h"
 
-namespace Supernova{
+namespace doriax{
 
     struct SpriteFrameData{
         std::string name;

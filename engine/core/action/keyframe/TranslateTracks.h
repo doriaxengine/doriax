@@ -7,8 +7,8 @@
 
 #include "action/Action.h"
 
-namespace Supernova{
-    class SUPERNOVA_API TranslateTracks: public Action{
+namespace doriax{
+    class DORIAX_API TranslateTracks: public Action{
 
     public:
         TranslateTracks(Scene* scene);

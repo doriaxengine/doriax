@@ -14,7 +14,7 @@
 #include <map>
 
 
-using namespace Supernova;
+using namespace doriax;
 
 
 PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){

@@ -10,7 +10,7 @@
 
 typedef struct lua_State lua_State;
 
-namespace Supernova{
+namespace doriax{
 
     class Body2D;
     class Manifold2D;

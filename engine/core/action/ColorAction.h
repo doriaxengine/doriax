@@ -7,8 +7,8 @@
 
 #include "TimedAction.h"
 
-namespace Supernova{
-    class SUPERNOVA_API ColorAction: public TimedAction{
+namespace doriax{
+    class DORIAX_API ColorAction: public TimedAction{
 
     public:
         ColorAction(Scene* scene);

@@ -8,9 +8,9 @@
 #include "render/Render.h"
 #include "io/Data.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API TextureData {
+    class DORIAX_API TextureData {
     private:
 
         int width;

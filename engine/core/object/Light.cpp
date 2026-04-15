@@ -9,7 +9,7 @@
 #include "subsystem/RenderSystem.h"
 #include <math.h>
 
-using namespace Supernova;
+using namespace doriax;
 
 Light::Light(Scene* scene): Object(scene){
     addComponent<LightComponent>();

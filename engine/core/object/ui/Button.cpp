@@ -7,7 +7,7 @@
 #include "component/TextComponent.h"
 #include "subsystem/UISystem.h"
 
-using namespace Supernova;
+using namespace doriax;
 
 Button::Button(Scene* scene): Image(scene){
     addComponent<ButtonComponent>();

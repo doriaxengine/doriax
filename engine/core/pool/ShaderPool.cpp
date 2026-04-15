@@ -21,7 +21,7 @@
 #ifdef SOKOL_D3D11
 #include "hlsl5.h"
 #endif
-#if SOKOL_METAL || SUPERNOVA_APPLE
+#if SOKOL_METAL || DORIAX_APPLE
 #include <TargetConditionals.h>
 #if TARGET_OS_IPHONE
 #include "msl21ios.h"
@@ -30,7 +30,7 @@
 #endif
 #endif
 
-using namespace Supernova;
+using namespace doriax;
 
 ShaderBuilderFn ShaderPool::shaderBuilderFn = nullptr;
 

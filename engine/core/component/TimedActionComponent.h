@@ -7,9 +7,9 @@
 
 #include "action/Ease.h"
 
-namespace Supernova{
+namespace doriax{
 
-    struct SUPERNOVA_API TimedActionComponent{
+    struct DORIAX_API TimedActionComponent{
         float time = 0;
         float value = 0;
         

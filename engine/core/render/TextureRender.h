@@ -8,9 +8,9 @@
 #include "Render.h"
 #include "sokol/SokolTexture.h"
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API TextureRender{
+    class DORIAX_API TextureRender{
 
     public:
         //***Backend***

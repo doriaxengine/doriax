@@ -8,8 +8,8 @@
 #include "Image.h"
 #include "Text.h"
 
-namespace Supernova{
-    class SUPERNOVA_API Button: public Image{
+namespace doriax{
+    class DORIAX_API Button: public Image{
 
     public:
         Button(Scene* scene);

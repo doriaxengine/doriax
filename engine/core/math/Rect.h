@@ -10,9 +10,9 @@
 #include "Vector4.h"
 #include <string>
 
-namespace Supernova {
+namespace doriax {
 
-    class SUPERNOVA_API Rect{
+    class DORIAX_API Rect{
     private:
         
         float x, y, width, height;
