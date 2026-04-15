@@ -1,0 +1,42 @@
+name: Engine Emscripten
+
+on: push
+
+env:
+  BUILD_TYPE: Debug
+  TARGET: doriax-project
+
+jobs:
+  build:
+    name: Build for Emscripten
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build cmake
+          ninja --version
+          cmake --version
+
+      - name: Setup Emscripten
+        uses: emscripten-core/setup-emsdk@v16
+
+      - name: Verify Emscripten
+        run: emcc --version
+
+      - name: Configure
+        run: |
+          mkdir build
+          mkdir instdir
+          emcmake cmake \
+            -S engine/project \
+            -B build \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -G "Ninja" \
+            -DCMAKE_INSTALL_PREFIX:PATH=instdir
+
+      - name: Build
+        run: cmake --build build --config ${{env.BUILD_TYPE}} --target ${{env.TARGET}}

@@ -1,0 +1,22 @@
+name: Engine Android
+
+on: [push, pull_request]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build with Gradle
+        run: | 
+          cd engine/workspaces/androidstudio/
+          ./gradlew assembleDebug

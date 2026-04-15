@@ -1,4 +1,4 @@
-name: Xcode template
+name: Engine iOS/macOS
 
 on: [push, pull_request]
 
@@ -13,17 +13,17 @@ jobs:
         config: 
         - {
             name: "iOS",
-            scheme: "Supernova iOS",
+            scheme: "Doriax iOS",
             sdk: iphonesimulator
           }
         - {
             name: "MacOS",
-            scheme: "Supernova macOS",
+            scheme: "Doriax macOS",
             sdk: macosx
           }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Xcode version
         run: /usr/bin/xcodebuild -version
@@ -33,5 +33,5 @@ jobs:
              
       - name: Build with Xcode
         run: |
-          cd workspaces/xcode/
-          xcodebuild build -sdk ${{ matrix.config.sdk }} -project Supernova.xcodeproj -configuration Debug -scheme "${{ matrix.config.scheme }}"
+          cd engine/workspaces/xcode/
+          xcodebuild build -sdk ${{ matrix.config.sdk }} -project Doriax.xcodeproj -configuration Debug -scheme "${{ matrix.config.scheme }}"

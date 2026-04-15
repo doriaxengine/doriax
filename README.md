@@ -12,21 +12,19 @@
 
 <p align="center">
   <a href="https://doriaxengine.org">Website</a>
-  |
-  <a href="https://github.com/doriaxengine/doriax">GitHub</a>
-  |
-  <a href="https://discord.gg/yXXDyJf3gT">Discord</a>
 </p>
 
 <p align="center">
-  <img src="https://github.com/doriaxengine/doriax/actions/workflows/android.yml/badge.svg" alt="Android">
-  <img src="https://github.com/doriaxengine/doriax/actions/workflows/build-tool.yml/badge.svg" alt="Build Tool">
-  <img src="https://github.com/doriaxengine/doriax/actions/workflows/cmake-desktop.yml/badge.svg" alt="CMake Desktop">
+  <a href="https://github.com/supernovaengine/supernova/actions/workflows/cmake.yml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/cmake.yml/badge.svg?branch=main" alt="Editor Desktop"></a>
+  <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-cmake.yaml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-cmake.yaml/badge.svg?branch=main" alt="Engine Desktop"></a>
+  <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-android.yml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-android.yml/badge.svg?branch=main" alt="Engine Android"></a>
+  <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-emscripten.yaml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-emscripten.yaml/badge.svg?branch=main" alt="Engine Emscripten"></a>
+  <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-xcode.yaml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-xcode.yaml/badge.svg?branch=main" alt="Engine iOS/macOS"></a>
   <a href="https://discord.gg/yXXDyJf3gT"><img src="https://img.shields.io/discord/1356958061880934480?label=Discord&logo=discord&style=flat&color=5865F2" alt="Join our Discord"></a>
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor" width="84%">
 </p>
 
 ## Overview

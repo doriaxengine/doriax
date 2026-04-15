@@ -1,0 +1,189 @@
+name: Editor Desktop
+
+on:
+  push:
+    branches:
+      - '*'
+  release:
+    types: [published]
+    
+env:
+  BUILD_TYPE: Release
+  TARGET: doriax-editor
+  GLFW_VERSION: 3.4
+  SDL2_VERSION: 2.30.11
+
+jobs:
+  build:
+    name: Build for ${{ matrix.config.name }}
+    runs-on: ${{ matrix.config.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        config: 
+        - {
+            name: "Windows Latest MSVC",
+            os: windows-latest,
+            artifact: "windows_msvc",
+            cc: "cl",
+            cxx: "cl",
+            generators: "Visual Studio 17 2022"
+          }
+        - {
+            name: "Windows Latest MinGW",
+            os: windows-latest,
+            artifact: "windows_mingw",
+            cc: "gcc",
+            cxx: "g++",
+            generators: "Ninja"
+          }
+        - {
+            name: "Ubuntu Latest GCC",
+            os: ubuntu-latest,
+            artifact: "ubuntu_gcc",
+            cc: "gcc",
+            cxx: "g++",
+            generators: "Ninja"
+          }
+        - {
+            name: "macOS Latest Clang",
+            os: macos-latest,
+            artifact: "macos_clang",
+            cc: "clang",
+            cxx: "clang++",
+            generators: "Ninja"
+          }
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - name: Print env
+        run: |
+          echo github.event.action: ${{ github.event.action }}
+          echo github.event_name: ${{ github.event_name }}
+
+      - name: Install dependencies on Windows
+        if: startsWith(matrix.config.os, 'windows')
+        run: |
+          choco install ninja cmake
+          ninja --version
+          cmake --version
+
+      - name: Install dependencies on Ubuntu
+        if: startsWith(matrix.config.os, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install ninja-build cmake libxi-dev libxcursor-dev libwayland-dev libxkbcommon-dev libxrandr-dev libxinerama-dev libglw1-mesa-dev wayland-protocols extra-cmake-modules libgtk-3-dev libdbus-1-dev
+          ninja --version
+          cmake --version
+          gcc --version
+
+      - name: Install dependencies on macOS
+        if: startsWith(matrix.config.os, 'macos')
+        run: |
+          # cmake is already installed
+          brew install ninja
+          ninja --version
+          cmake --version
+
+      - name: Download and install GLFW
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: |
+          glfwFile=glfw-${{env.GLFW_VERSION}}
+          SUDO_CMD=$([ "$RUNNER_OS" != "Windows" ] && echo "sudo" || echo "")
+          curl -L https://github.com/glfw/glfw/releases/download/${{env.GLFW_VERSION}}/$glfwFile.zip -o $glfwFile.zip
+          unzip $glfwFile.zip
+          mv $glfwFile glfw
+          mkdir -p glfw/build
+          cmake \
+            -S glfw \
+            -B glfw/build \
+            -G "${{ matrix.config.generators }}" \
+            -DGLFW_BUILD_DOCS=OFF \
+            -DGLFW_BUILD_TESTS=OFF \
+            -DGLFW_BUILD_EXAMPLES=OFF \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded" \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            ${{ startsWith(matrix.config.artifact, 'windows_msvc') && '-A x64' || '' }}
+          cmake --build glfw/build --config ${{env.BUILD_TYPE}}
+          $SUDO_CMD cmake --install glfw/build --config ${{env.BUILD_TYPE}}
+
+      - name: Download and install SDL2
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: |
+          sdlFile=SDL2-${{env.SDL2_VERSION}}
+          SUDO_CMD=$([ "$RUNNER_OS" != "Windows" ] && echo "sudo" || echo "")
+          curl -L https://github.com/libsdl-org/SDL/releases/download/release-${{env.SDL2_VERSION}}/$sdlFile.tar.gz -o $sdlFile.tar.gz
+          tar xzf $sdlFile.tar.gz
+          mv $sdlFile sdl2
+          mkdir -p sdl2/build
+          cmake \
+            -S sdl2 \
+            -B sdl2/build \
+            -G "${{ matrix.config.generators }}" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -DCMAKE_MSVC_RUNTIME_LIBRARY="MultiThreaded" \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+            ${{ startsWith(matrix.config.artifact, 'windows_msvc') && '-A x64' || '' }}
+          cmake --build sdl2/build --config ${{env.BUILD_TYPE}}
+          $SUDO_CMD cmake --install sdl2/build --config ${{env.BUILD_TYPE}}
+
+      - name: Set version
+        shell: bash
+        run: |
+          VERSION=$(git rev-parse --short ${{ github.sha }})-${{ github.ref_name }}
+          if [[ $VERSION == refs/tags/* ]]; then
+            VERSION=${VERSION#refs/tags/}
+          fi
+          echo "DORIAX_VERSION=$VERSION" >> $GITHUB_ENV
+          
+      - name: Configure
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: |
+          mkdir build
+          mkdir instdir
+          cmake \
+            -S . \
+            -B build \
+            -DDORIAXEDITOR_VERSION:STRING="\"${{env.DORIAX_VERSION}}\"" \
+            -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
+            -G "${{ matrix.config.generators }}" \
+            -DCMAKE_INSTALL_PREFIX:PATH=instdir \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+
+      - name: Build
+        shell: bash
+        env:
+          CC: ${{ matrix.config.cc }}
+          CXX: ${{ matrix.config.cxx }}
+        run: cmake --build build --config ${{env.BUILD_TYPE}} --target ${{env.TARGET}}
+
+      - name: Install Strip
+        shell: bash
+        run: cmake --install build --config ${{env.BUILD_TYPE}} --strip
+        
+      - name: List directories
+        shell: bash
+        working-directory: instdir
+        run: ls -laR
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.config.artifact }}
+          path: ./instdir/bin/*
+          if-no-files-found: error

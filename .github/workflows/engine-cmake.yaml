@@ -1,11 +1,11 @@
-name: CMake desktop
+name: Engine Desktop
 
 on: push
     
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Debug
-  TARGET: supernova-project
+  TARGET: doriax-project
 
 jobs:
   build:
@@ -23,14 +23,14 @@ jobs:
             cxx: "cl",
             generators: "Visual Studio 17 2022"
           }
-        - {
-            name: "Windows MinGW",
-            os: windows-latest,
-            artifact: "windows_mingw",
-            cc: "gcc",
-            cxx: "g++",
-            generators: "Ninja"
-          }
+#        - {
+#            name: "Windows MinGW",
+#            os: windows-latest,
+#            artifact: "windows_mingw",
+#            cc: "gcc",
+#            cxx: "g++",
+#            generators: "Ninja"
+#          }
         - {
             name: "Ubuntu GCC",
             os: ubuntu-latest,
@@ -49,7 +49,7 @@ jobs:
           }
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Print env
         run: |
@@ -89,7 +89,7 @@ jobs:
           mkdir build
           mkdir instdir
           cmake \
-            -S . \
+            -S engine/project \
             -B build \
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
             -G "${{ matrix.config.generators }}" \
@@ -110,12 +110,5 @@ jobs:
         shell: bash
         working-directory: instdir
         run: ls -laR
-
-      - name: Upload
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.config.artifact }}
-          path: ./instdir/bin/
-          if-no-files-found: error
 
           
