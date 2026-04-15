@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor" width="84%">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor">
 </p>
 
 ## Overview
