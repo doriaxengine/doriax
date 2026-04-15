@@ -11,10 +11,6 @@
 </p>
 
 <p align="center">
-  <a href="https://doriaxengine.org">Website</a>
-</p>
-
-<p align="center">
   <a href="https://github.com/supernovaengine/supernova/actions/workflows/cmake.yml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/cmake.yml/badge.svg?branch=main" alt="Editor Desktop"></a>
   <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-cmake.yaml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-cmake.yaml/badge.svg?branch=main" alt="Engine Desktop"></a>
   <a href="https://github.com/supernovaengine/supernova/actions/workflows/engine-android.yml"><img src="https://github.com/supernovaengine/supernova/actions/workflows/engine-android.yml/badge.svg?branch=main" alt="Engine Android"></a>
@@ -24,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor" width="84%">
+  <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-3d-scene.png" alt="Doriax Engine Editor" width="60%">
 </p>
 
 ## Overview
@@ -90,14 +86,12 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release
 ```
 
-The root project builds `doriax-editor`. On single-config generators the executable is typically created under `build/`. On multi-config generators such as Visual Studio, look under the configuration subdirectory. Platform-specific setup is still being refreshed under the Doriax name; for now, the legacy documentation remains the best reference for toolchain prerequisites.
+The root project builds `doriax-editor`. On single-config generators the executable is typically created under `build/`. On multi-config generators such as Visual Studio, look under the configuration subdirectory. Platform-specific setup is still being refreshed under the Doriax name.
 
 ## Documentation and Community
 
 - [Website](https://doriaxengine.org)
 - [Discord](https://discord.gg/yXXDyJf3gT)
-- [Source code](https://github.com/doriaxengine/doriax)
-- [Legacy documentation](https://docs.supernovaengine.org)
 
 ## Repository Layout
 
@@ -108,7 +102,7 @@ The root project builds `doriax-editor`. On single-config generators the executa
 
 ## Transition from Supernova
 
-Doriax Engine is the next phase of Supernova Engine. Version `0.5.5` was the last release of the legacy Supernova engine. Some internal folders, legacy documentation, and older external references may still mention the previous name while the rebranding and documentation refresh continue.
+Doriax Engine is the next phase of Supernova Engine. Version `0.5.5` was the last release of the legacy Supernova engine. Some internal folders, and older external references may still mention the previous name while the rebranding and documentation refresh continue.
 
 ## License
 
