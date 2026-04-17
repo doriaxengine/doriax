@@ -1924,7 +1924,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
             ImGui::SameLine(); helpMarker(settings.help);
         }
 
-    }else if (type == RowPropertyType::Float || type == RowPropertyType::Float_0_1 || type == RowPropertyType::HalfCone){
+    }else if (type == RowPropertyType::Float || type == RowPropertyType::FloatPositive || type == RowPropertyType::Float_0_1 || type == RowPropertyType::HalfCone){
         float* value = nullptr;
         std::map<Entity, float> eValue;
         bool dif = false;
@@ -1967,6 +1967,9 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         if (type == RowPropertyType::Float_0_1){
             v_min = 0.0F;
             v_max = 1.0F;
+        }else if (type == RowPropertyType::FloatPositive){
+            v_min = 0.0F;
+            v_max = FLT_MAX;
         }
 
         std::string newFormat = settings.format;
@@ -7306,6 +7309,50 @@ void editor::Properties::drawActionComponent(ComponentType cpType, SceneProject*
     ImGui::EndDisabled();
 }
 
+void editor::Properties::drawTimedActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Duration"));
+    propertyRow(RowPropertyType::FloatPositive, cpType, "duration", "Duration", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "loop", "Loop", sceneProject, entities);
+    endTable();
+}
+
+void editor::Properties::drawPositionActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Start position"));
+    propertyRow(RowPropertyType::Vector3, cpType, "startPosition", "Start position", sceneProject, entities);
+    propertyRow(RowPropertyType::Vector3, cpType, "endPosition", "End position", sceneProject, entities);
+    endTable();
+}
+
+void editor::Properties::drawRotationActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Start rotation"));
+    propertyRow(RowPropertyType::Quat, cpType, "startRotation", "Start rotation", sceneProject, entities);
+    propertyRow(RowPropertyType::Quat, cpType, "endRotation", "End rotation", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "shortestPath", "Shortest path", sceneProject, entities);
+    endTable();
+}
+
+void editor::Properties::drawScaleActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Start scale"));
+    propertyRow(RowPropertyType::Vector3, cpType, "startScale", "Start scale", sceneProject, entities);
+    propertyRow(RowPropertyType::Vector3, cpType, "endScale", "End scale", sceneProject, entities);
+    endTable();
+}
+
+void editor::Properties::drawColorActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Start color"));
+    propertyRow(RowPropertyType::Color3L, cpType, "startColor", "Start color", sceneProject, entities);
+    propertyRow(RowPropertyType::Color3L, cpType, "endColor", "End color", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "useSRGB", "Use sRGB", sceneProject, entities);
+    endTable();
+}
+
+void editor::Properties::drawAlphaActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    beginTable(cpType, getLabelSize("Start alpha"));
+    propertyRow(RowPropertyType::Float, cpType, "startAlpha", "Start alpha", sceneProject, entities);
+    propertyRow(RowPropertyType::Float, cpType, "endAlpha", "End alpha", sceneProject, entities);
+    endTable();
+}
+
 void editor::Properties::drawSpriteAnimationComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     beginTable(cpType, getLabelSize("Sprite counter"));
     propertyRow(RowPropertyType::String, cpType, "name", "Name", sceneProject, entities);
@@ -8235,6 +8282,18 @@ void editor::Properties::show(){
                     drawJoint3DComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::ActionComponent){
                     drawActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::TimedActionComponent){
+                    drawTimedActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::PositionActionComponent){
+                    drawPositionActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::RotationActionComponent){
+                    drawRotationActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::ScaleActionComponent){
+                    drawScaleActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::ColorActionComponent){
+                    drawColorActionComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::AlphaActionComponent){
+                    drawAlphaActionComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::SpriteAnimationComponent){
                     drawSpriteAnimationComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::AnimationComponent){

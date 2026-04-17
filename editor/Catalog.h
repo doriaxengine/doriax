@@ -41,6 +41,7 @@ namespace doriax::editor{
         UIComponent,
         UILayoutComponent,
         ActionComponent,
+        TimedActionComponent,
         AlphaActionComponent,
         AnimationComponent,
         AudioComponent,
@@ -79,7 +80,6 @@ namespace doriax::editor{
         TextComponent,
         TextEditComponent,
         TilemapComponent,
-        TimedActionComponent,
         TranslateTracksComponent,
         UIContainerComponent
     };

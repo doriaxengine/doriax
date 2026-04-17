@@ -281,6 +281,36 @@ bool editor::CreateEntityCmd::execute(){
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<SpriteAnimationComponent>(entity, {});
 
+    }else if (type == EntityCreationType::POSITION_ACTION){
+
+        scene->addComponent<ActionComponent>(entity, {});
+        scene->addComponent<TimedActionComponent>(entity, {});
+        scene->addComponent<PositionActionComponent>(entity, {});
+
+    }else if (type == EntityCreationType::ROTATION_ACTION){
+
+        scene->addComponent<ActionComponent>(entity, {});
+        scene->addComponent<TimedActionComponent>(entity, {});
+        scene->addComponent<RotationActionComponent>(entity, {});
+
+    }else if (type == EntityCreationType::SCALE_ACTION){
+
+        scene->addComponent<ActionComponent>(entity, {});
+        scene->addComponent<TimedActionComponent>(entity, {});
+        scene->addComponent<ScaleActionComponent>(entity, {});
+
+    }else if (type == EntityCreationType::COLOR_ACTION){
+
+        scene->addComponent<ActionComponent>(entity, {});
+        scene->addComponent<TimedActionComponent>(entity, {});
+        scene->addComponent<ColorActionComponent>(entity, {});
+
+    }else if (type == EntityCreationType::ALPHA_ACTION){
+
+        scene->addComponent<ActionComponent>(entity, {});
+        scene->addComponent<TimedActionComponent>(entity, {});
+        scene->addComponent<AlphaActionComponent>(entity, {});
+
     }else if (type == EntityCreationType::CAMERA){
 
         scene->addComponent<Transform>(entity, {});

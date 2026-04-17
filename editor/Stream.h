@@ -233,6 +233,24 @@ namespace doriax::editor {
         static YAML::Node encodeActionComponent(const ActionComponent& action);
         static ActionComponent decodeActionComponent(const YAML::Node& node, const ActionComponent* oldAction = nullptr);
 
+        static YAML::Node encodeTimedActionComponent(const TimedActionComponent& timed);
+        static TimedActionComponent decodeTimedActionComponent(const YAML::Node& node, const TimedActionComponent* oldTimed = nullptr);
+
+        static YAML::Node encodePositionActionComponent(const PositionActionComponent& posAction);
+        static PositionActionComponent decodePositionActionComponent(const YAML::Node& node, const PositionActionComponent* oldPosAction = nullptr);
+
+        static YAML::Node encodeRotationActionComponent(const RotationActionComponent& rotAction);
+        static RotationActionComponent decodeRotationActionComponent(const YAML::Node& node, const RotationActionComponent* oldRotAction = nullptr);
+
+        static YAML::Node encodeScaleActionComponent(const ScaleActionComponent& scaleAction);
+        static ScaleActionComponent decodeScaleActionComponent(const YAML::Node& node, const ScaleActionComponent* oldScaleAction = nullptr);
+
+        static YAML::Node encodeColorActionComponent(const ColorActionComponent& colorAction);
+        static ColorActionComponent decodeColorActionComponent(const YAML::Node& node, const ColorActionComponent* oldColorAction = nullptr);
+
+        static YAML::Node encodeAlphaActionComponent(const AlphaActionComponent& alphaAction);
+        static AlphaActionComponent decodeAlphaActionComponent(const YAML::Node& node, const AlphaActionComponent* oldAlphaAction = nullptr);
+
         static YAML::Node encodeSpriteAnimationComponent(const SpriteAnimationComponent& spriteanim);
         static SpriteAnimationComponent decodeSpriteAnimationComponent(const YAML::Node& node, const SpriteAnimationComponent* oldSpriteanim = nullptr);
 

@@ -1264,6 +1264,80 @@ std::string editor::Factory::createActionComponent(int indentSpaces, EntityRegis
     return code.str();
 }
 
+std::string editor::Factory::createTimedActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<TimedActionComponent>(entity)) return "";
+    TimedActionComponent& timed = scene->getComponent<TimedActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "TimedActionComponent timedcomp;\n";
+    code << ind << "timedcomp.duration = " << formatFloat(timed.duration) << ";\n";
+    code << ind << "timedcomp.loop = " << formatBool(timed.loop) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "TimedActionComponent", "timedcomp", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createPositionActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<PositionActionComponent>(entity)) return "";
+    PositionActionComponent& posAction = scene->getComponent<PositionActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "PositionActionComponent poscomp;\n";
+    code << ind << "poscomp.endPosition = " << formatVector3(posAction.endPosition) << ";\n";
+    code << ind << "poscomp.startPosition = " << formatVector3(posAction.startPosition) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "PositionActionComponent", "poscomp", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createRotationActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<RotationActionComponent>(entity)) return "";
+    RotationActionComponent& rotAction = scene->getComponent<RotationActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "RotationActionComponent rotcomp;\n";
+    code << ind << "rotcomp.endRotation = " << formatQuaternion(rotAction.endRotation) << ";\n";
+    code << ind << "rotcomp.startRotation = " << formatQuaternion(rotAction.startRotation) << ";\n";
+    code << ind << "rotcomp.shortestPath = " << formatBool(rotAction.shortestPath) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "RotationActionComponent", "rotcomp", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createScaleActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<ScaleActionComponent>(entity)) return "";
+    ScaleActionComponent& scaleAction = scene->getComponent<ScaleActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "ScaleActionComponent scalecomp;\n";
+    code << ind << "scalecomp.endScale = " << formatVector3(scaleAction.endScale) << ";\n";
+    code << ind << "scalecomp.startScale = " << formatVector3(scaleAction.startScale) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "ScaleActionComponent", "scalecomp", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createColorActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<ColorActionComponent>(entity)) return "";
+    ColorActionComponent& colorAction = scene->getComponent<ColorActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "ColorActionComponent colorcomp;\n";
+    code << ind << "colorcomp.endColor = " << formatVector3(colorAction.endColor) << ";\n";
+    code << ind << "colorcomp.startColor = " << formatVector3(colorAction.startColor) << ";\n";
+    code << ind << "colorcomp.useSRGB = " << formatBool(colorAction.useSRGB) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "ColorActionComponent", "colorcomp", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createAlphaActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<AlphaActionComponent>(entity)) return "";
+    AlphaActionComponent& alphaAction = scene->getComponent<AlphaActionComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "AlphaActionComponent alphacomp;\n";
+    code << ind << "alphacomp.endAlpha = " << formatFloat(alphaAction.endAlpha) << ";\n";
+    code << ind << "alphacomp.startAlpha = " << formatFloat(alphaAction.startAlpha) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "AlphaActionComponent", "alphacomp", assignExisting);
+    return code.str();
+}
+
 std::string editor::Factory::createSpriteAnimationComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<SpriteAnimationComponent>(entity)) return "";
     SpriteAnimationComponent& spriteanim = scene->getComponent<SpriteAnimationComponent>(entity);
@@ -1475,6 +1549,12 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::Joint2DComponent: return createJoint2DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::Joint3DComponent: return createJoint3DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ActionComponent: return createActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::TimedActionComponent: return createTimedActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::PositionActionComponent: return createPositionActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::RotationActionComponent: return createRotationActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::ScaleActionComponent: return createScaleActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::ColorActionComponent: return createColorActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::AlphaActionComponent: return createAlphaActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::SpriteAnimationComponent: return createSpriteAnimationComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::AnimationComponent: return createAnimationComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ModelComponent: return createModelComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

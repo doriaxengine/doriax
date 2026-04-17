@@ -2018,6 +2018,36 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         compNode[Catalog::getComponentName(ComponentType::ActionComponent, true)] = encodeActionComponent(action);
     }
 
+    if (signature.test(registry->getComponentId<TimedActionComponent>())) {
+        TimedActionComponent timed = registry->getComponent<TimedActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::TimedActionComponent, true)] = encodeTimedActionComponent(timed);
+    }
+
+    if (signature.test(registry->getComponentId<PositionActionComponent>())) {
+        PositionActionComponent posAction = registry->getComponent<PositionActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::PositionActionComponent, true)] = encodePositionActionComponent(posAction);
+    }
+
+    if (signature.test(registry->getComponentId<RotationActionComponent>())) {
+        RotationActionComponent rotAction = registry->getComponent<RotationActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::RotationActionComponent, true)] = encodeRotationActionComponent(rotAction);
+    }
+
+    if (signature.test(registry->getComponentId<ScaleActionComponent>())) {
+        ScaleActionComponent scaleAction = registry->getComponent<ScaleActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::ScaleActionComponent, true)] = encodeScaleActionComponent(scaleAction);
+    }
+
+    if (signature.test(registry->getComponentId<ColorActionComponent>())) {
+        ColorActionComponent colorAction = registry->getComponent<ColorActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::ColorActionComponent, true)] = encodeColorActionComponent(colorAction);
+    }
+
+    if (signature.test(registry->getComponentId<AlphaActionComponent>())) {
+        AlphaActionComponent alphaAction = registry->getComponent<AlphaActionComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::AlphaActionComponent, true)] = encodeAlphaActionComponent(alphaAction);
+    }
+
     if (signature.test(registry->getComponentId<SpriteAnimationComponent>())) {
         SpriteAnimationComponent spriteanim = registry->getComponent<SpriteAnimationComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::SpriteAnimationComponent, true)] = encodeSpriteAnimationComponent(spriteanim);
@@ -2329,6 +2359,84 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         }else{
             int flags = Catalog::getChangedUpdateFlags(ComponentType::ActionComponent, existing, &action);
             registry->getComponent<ActionComponent>(entity) = action;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::TimedActionComponent, true);
+    if (compNode[compName]) {
+        TimedActionComponent* existing = registry->findComponent<TimedActionComponent>(entity);
+        TimedActionComponent timed = decodeTimedActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<TimedActionComponent>())){
+            registry->addComponent<TimedActionComponent>(entity, timed);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::TimedActionComponent, existing, &timed);
+            registry->getComponent<TimedActionComponent>(entity) = timed;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::PositionActionComponent, true);
+    if (compNode[compName]) {
+        PositionActionComponent* existing = registry->findComponent<PositionActionComponent>(entity);
+        PositionActionComponent posAction = decodePositionActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<PositionActionComponent>())){
+            registry->addComponent<PositionActionComponent>(entity, posAction);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::PositionActionComponent, existing, &posAction);
+            registry->getComponent<PositionActionComponent>(entity) = posAction;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::RotationActionComponent, true);
+    if (compNode[compName]) {
+        RotationActionComponent* existing = registry->findComponent<RotationActionComponent>(entity);
+        RotationActionComponent rotAction = decodeRotationActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<RotationActionComponent>())){
+            registry->addComponent<RotationActionComponent>(entity, rotAction);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::RotationActionComponent, existing, &rotAction);
+            registry->getComponent<RotationActionComponent>(entity) = rotAction;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::ScaleActionComponent, true);
+    if (compNode[compName]) {
+        ScaleActionComponent* existing = registry->findComponent<ScaleActionComponent>(entity);
+        ScaleActionComponent scaleAction = decodeScaleActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<ScaleActionComponent>())){
+            registry->addComponent<ScaleActionComponent>(entity, scaleAction);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::ScaleActionComponent, existing, &scaleAction);
+            registry->getComponent<ScaleActionComponent>(entity) = scaleAction;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::ColorActionComponent, true);
+    if (compNode[compName]) {
+        ColorActionComponent* existing = registry->findComponent<ColorActionComponent>(entity);
+        ColorActionComponent colorAction = decodeColorActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<ColorActionComponent>())){
+            registry->addComponent<ColorActionComponent>(entity, colorAction);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::ColorActionComponent, existing, &colorAction);
+            registry->getComponent<ColorActionComponent>(entity) = colorAction;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::AlphaActionComponent, true);
+    if (compNode[compName]) {
+        AlphaActionComponent* existing = registry->findComponent<AlphaActionComponent>(entity);
+        AlphaActionComponent alphaAction = decodeAlphaActionComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<AlphaActionComponent>())){
+            registry->addComponent<AlphaActionComponent>(entity, alphaAction);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::AlphaActionComponent, existing, &alphaAction);
+            registry->getComponent<AlphaActionComponent>(entity) = alphaAction;
             Catalog::updateEntity(registry, entity, flags);
         }
     }
@@ -3909,6 +4017,157 @@ ActionComponent editor::Stream::decodeActionComponent(const YAML::Node& node, co
     if (node["ownedTarget"]) action.ownedTarget = node["ownedTarget"].as<bool>();
 
     return action;
+}
+
+// ── TimedActionComponent ──
+
+YAML::Node editor::Stream::encodeTimedActionComponent(const TimedActionComponent& timed) {
+    YAML::Node node;
+
+    node["duration"] = timed.duration;
+    node["loop"] = timed.loop;
+
+    return node;
+}
+
+TimedActionComponent editor::Stream::decodeTimedActionComponent(const YAML::Node& node, const TimedActionComponent* oldTimed) {
+    TimedActionComponent timed;
+
+    if (oldTimed) {
+        timed = *oldTimed;
+    }
+
+    timed.time = 0;
+    timed.value = 0;
+
+    if (node["duration"]) timed.duration = node["duration"].as<float>();
+    if (node["loop"]) timed.loop = node["loop"].as<bool>();
+
+    return timed;
+}
+
+// ── PositionActionComponent ──
+
+YAML::Node editor::Stream::encodePositionActionComponent(const PositionActionComponent& posAction) {
+    YAML::Node node;
+
+    node["endPosition"] = encodeVector3(posAction.endPosition);
+    node["startPosition"] = encodeVector3(posAction.startPosition);
+
+    return node;
+}
+
+PositionActionComponent editor::Stream::decodePositionActionComponent(const YAML::Node& node, const PositionActionComponent* oldPosAction) {
+    PositionActionComponent posAction;
+
+    if (oldPosAction) {
+        posAction = *oldPosAction;
+    }
+
+    if (node["endPosition"]) posAction.endPosition = decodeVector3(node["endPosition"]);
+    if (node["startPosition"]) posAction.startPosition = decodeVector3(node["startPosition"]);
+
+    return posAction;
+}
+
+// ── RotationActionComponent ──
+
+YAML::Node editor::Stream::encodeRotationActionComponent(const RotationActionComponent& rotAction) {
+    YAML::Node node;
+
+    node["endRotation"] = encodeQuaternion(rotAction.endRotation);
+    node["startRotation"] = encodeQuaternion(rotAction.startRotation);
+    node["shortestPath"] = rotAction.shortestPath;
+
+    return node;
+}
+
+RotationActionComponent editor::Stream::decodeRotationActionComponent(const YAML::Node& node, const RotationActionComponent* oldRotAction) {
+    RotationActionComponent rotAction;
+
+    if (oldRotAction) {
+        rotAction = *oldRotAction;
+    }
+
+    if (node["endRotation"]) rotAction.endRotation = decodeQuaternion(node["endRotation"]);
+    if (node["startRotation"]) rotAction.startRotation = decodeQuaternion(node["startRotation"]);
+    if (node["shortestPath"]) rotAction.shortestPath = node["shortestPath"].as<bool>();
+
+    return rotAction;
+}
+
+// ── ScaleActionComponent ──
+
+YAML::Node editor::Stream::encodeScaleActionComponent(const ScaleActionComponent& scaleAction) {
+    YAML::Node node;
+
+    node["endScale"] = encodeVector3(scaleAction.endScale);
+    node["startScale"] = encodeVector3(scaleAction.startScale);
+
+    return node;
+}
+
+ScaleActionComponent editor::Stream::decodeScaleActionComponent(const YAML::Node& node, const ScaleActionComponent* oldScaleAction) {
+    ScaleActionComponent scaleAction;
+
+    if (oldScaleAction) {
+        scaleAction = *oldScaleAction;
+    }
+
+    if (node["endScale"]) scaleAction.endScale = decodeVector3(node["endScale"]);
+    if (node["startScale"]) scaleAction.startScale = decodeVector3(node["startScale"]);
+
+    return scaleAction;
+}
+
+// ── ColorActionComponent ──
+
+YAML::Node editor::Stream::encodeColorActionComponent(const ColorActionComponent& colorAction) {
+    YAML::Node node;
+
+    node["endColor"] = encodeVector3(colorAction.endColor);
+    node["startColor"] = encodeVector3(colorAction.startColor);
+    node["useSRGB"] = colorAction.useSRGB;
+
+    return node;
+}
+
+ColorActionComponent editor::Stream::decodeColorActionComponent(const YAML::Node& node, const ColorActionComponent* oldColorAction) {
+    ColorActionComponent colorAction;
+
+    if (oldColorAction) {
+        colorAction = *oldColorAction;
+    }
+
+    if (node["endColor"]) colorAction.endColor = decodeVector3(node["endColor"]);
+    if (node["startColor"]) colorAction.startColor = decodeVector3(node["startColor"]);
+    if (node["useSRGB"]) colorAction.useSRGB = node["useSRGB"].as<bool>();
+
+    return colorAction;
+}
+
+// ── AlphaActionComponent ──
+
+YAML::Node editor::Stream::encodeAlphaActionComponent(const AlphaActionComponent& alphaAction) {
+    YAML::Node node;
+
+    node["endAlpha"] = alphaAction.endAlpha;
+    node["startAlpha"] = alphaAction.startAlpha;
+
+    return node;
+}
+
+AlphaActionComponent editor::Stream::decodeAlphaActionComponent(const YAML::Node& node, const AlphaActionComponent* oldAlphaAction) {
+    AlphaActionComponent alphaAction;
+
+    if (oldAlphaAction) {
+        alphaAction = *oldAlphaAction;
+    }
+
+    if (node["endAlpha"]) alphaAction.endAlpha = node["endAlpha"].as<float>();
+    if (node["startAlpha"]) alphaAction.startAlpha = node["startAlpha"].as<float>();
+
+    return alphaAction;
 }
 
 // ── SpriteAnimationComponent ──

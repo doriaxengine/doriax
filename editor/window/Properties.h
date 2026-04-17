@@ -19,6 +19,7 @@ namespace doriax::editor{
         String,
         MultilineString,
         Float,
+        FloatPositive,
         Float_0_1,
         Vector2,
         Vector3,
@@ -181,6 +182,12 @@ namespace doriax::editor{
         void drawJoint2DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawJoint3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawTimedActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawPositionActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawRotationActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawScaleActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawColorActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawAlphaActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawSpriteAnimationComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawAnimationComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawBundleComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);

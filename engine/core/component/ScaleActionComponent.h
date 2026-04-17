@@ -10,8 +10,8 @@
 namespace doriax{
 
     struct DORIAX_API ScaleActionComponent{
-        Vector3 endScale;
-        Vector3 startScale;
+        Vector3 endScale = Vector3::UNIT_SCALE;
+        Vector3 startScale = Vector3::UNIT_SCALE;
     };
 
 }

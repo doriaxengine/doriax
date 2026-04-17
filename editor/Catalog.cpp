@@ -206,6 +206,38 @@ namespace {
         makeFastProperty<ActionComponent, bool, &ActionComponent::ownedTarget>("ownedTarget", PropertyType::Bool, UpdateFlags_None),
     };
 
+    static const FastPropertyDescriptor kTimedActionProperties[] = {
+        makeFastProperty<TimedActionComponent, float, &TimedActionComponent::duration>("duration", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<TimedActionComponent, bool, &TimedActionComponent::loop>("loop", PropertyType::Bool, UpdateFlags_None),
+    };
+
+    static const FastPropertyDescriptor kPositionActionProperties[] = {
+        makeFastPropertyNoDefault<PositionActionComponent, Vector3, &PositionActionComponent::endPosition>("endPosition", PropertyType::Vector3, UpdateFlags_None),
+        makeFastPropertyNoDefault<PositionActionComponent, Vector3, &PositionActionComponent::startPosition>("startPosition", PropertyType::Vector3, UpdateFlags_None),
+    };
+
+    static const FastPropertyDescriptor kRotationActionProperties[] = {
+        makeFastPropertyNoDefault<RotationActionComponent, Quaternion, &RotationActionComponent::endRotation>("endRotation", PropertyType::Quat, UpdateFlags_None),
+        makeFastPropertyNoDefault<RotationActionComponent, Quaternion, &RotationActionComponent::startRotation>("startRotation", PropertyType::Quat, UpdateFlags_None),
+        makeFastProperty<RotationActionComponent, bool, &RotationActionComponent::shortestPath>("shortestPath", PropertyType::Bool, UpdateFlags_None),
+    };
+
+    static const FastPropertyDescriptor kScaleActionProperties[] = {
+        makeFastPropertyNoDefault<ScaleActionComponent, Vector3, &ScaleActionComponent::endScale>("endScale", PropertyType::Vector3, UpdateFlags_None),
+        makeFastPropertyNoDefault<ScaleActionComponent, Vector3, &ScaleActionComponent::startScale>("startScale", PropertyType::Vector3, UpdateFlags_None),
+    };
+
+    static const FastPropertyDescriptor kColorActionProperties[] = {
+        makeFastPropertyNoDefault<ColorActionComponent, Vector3, &ColorActionComponent::endColor>("endColor", PropertyType::Vector3, UpdateFlags_None),
+        makeFastPropertyNoDefault<ColorActionComponent, Vector3, &ColorActionComponent::startColor>("startColor", PropertyType::Vector3, UpdateFlags_None),
+        makeFastProperty<ColorActionComponent, bool, &ColorActionComponent::useSRGB>("useSRGB", PropertyType::Bool, UpdateFlags_None),
+    };
+
+    static const FastPropertyDescriptor kAlphaActionProperties[] = {
+        makeFastPropertyNoDefault<AlphaActionComponent, float, &AlphaActionComponent::endAlpha>("endAlpha", PropertyType::Float, UpdateFlags_None),
+        makeFastPropertyNoDefault<AlphaActionComponent, float, &AlphaActionComponent::startAlpha>("startAlpha", PropertyType::Float, UpdateFlags_None),
+    };
+
     static const FastPropertyDescriptor kBundleProperties[] = {
         makeFastProperty<BundleComponent, std::string, &BundleComponent::name>("name", PropertyType::String, UpdateFlags_None),
         makeFastProperty<BundleComponent, std::string, &BundleComponent::path>("path", PropertyType::String, UpdateFlags_None),
@@ -1057,6 +1089,30 @@ namespace {
         return resolveDirectProperties(static_cast<ActionComponent*>(comp), propertyName, kActionProperties);
     }
 
+    PropertyData resolveTimedActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<TimedActionComponent*>(comp), propertyName, kTimedActionProperties);
+    }
+
+    PropertyData resolvePositionActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<PositionActionComponent*>(comp), propertyName, kPositionActionProperties);
+    }
+
+    PropertyData resolveRotationActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<RotationActionComponent*>(comp), propertyName, kRotationActionProperties);
+    }
+
+    PropertyData resolveScaleActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<ScaleActionComponent*>(comp), propertyName, kScaleActionProperties);
+    }
+
+    PropertyData resolveColorActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<ColorActionComponent*>(comp), propertyName, kColorActionProperties);
+    }
+
+    PropertyData resolveAlphaActionPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<AlphaActionComponent*>(comp), propertyName, kAlphaActionProperties);
+    }
+
     PropertyData resolveSpriteAnimationPropertyFast(void* compRef, const std::string& propertyName) {
         SpriteAnimationComponent* comp = static_cast<SpriteAnimationComponent*>(compRef);
         if (!comp) return PropertyData();
@@ -1318,6 +1374,30 @@ namespace {
 
     void enumerateActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kActionProperties);
+    }
+
+    void enumerateTimedActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kTimedActionProperties);
+    }
+
+    void enumeratePositionActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kPositionActionProperties);
+    }
+
+    void enumerateRotationActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kRotationActionProperties);
+    }
+
+    void enumerateScaleActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kScaleActionProperties);
+    }
+
+    void enumerateColorActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kColorActionProperties);
+    }
+
+    void enumerateAlphaActionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kAlphaActionProperties);
     }
 
     void enumerateModelProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
@@ -1771,6 +1851,12 @@ namespace {
         {ComponentType::Body2DComponent, &findComponentPtr<Body2DComponent>, &resolveBody2DPropertyFast, &enumerateBody2DProperties},
         {ComponentType::Body3DComponent, &findComponentPtr<Body3DComponent>, &resolveBody3DPropertyFast, &enumerateBody3DProperties},
         {ComponentType::ActionComponent, &findComponentPtr<ActionComponent>, &resolveActionPropertyFast, &enumerateActionProperties},
+        {ComponentType::TimedActionComponent, &findComponentPtr<TimedActionComponent>, &resolveTimedActionPropertyFast, &enumerateTimedActionProperties},
+        {ComponentType::PositionActionComponent, &findComponentPtr<PositionActionComponent>, &resolvePositionActionPropertyFast, &enumeratePositionActionProperties},
+        {ComponentType::RotationActionComponent, &findComponentPtr<RotationActionComponent>, &resolveRotationActionPropertyFast, &enumerateRotationActionProperties},
+        {ComponentType::ScaleActionComponent, &findComponentPtr<ScaleActionComponent>, &resolveScaleActionPropertyFast, &enumerateScaleActionProperties},
+        {ComponentType::ColorActionComponent, &findComponentPtr<ColorActionComponent>, &resolveColorActionPropertyFast, &enumerateColorActionProperties},
+        {ComponentType::AlphaActionComponent, &findComponentPtr<AlphaActionComponent>, &resolveAlphaActionPropertyFast, &enumerateAlphaActionProperties},
         {ComponentType::SpriteAnimationComponent, &findComponentPtr<SpriteAnimationComponent>, &resolveSpriteAnimationPropertyFast, &enumerateSpriteAnimationProperties},
         {ComponentType::AnimationComponent, &findComponentPtr<AnimationComponent>, &resolveAnimationPropertyFast, &enumerateAnimationProperties},
         {ComponentType::ModelComponent, &findComponentPtr<ModelComponent>, &resolveModelPropertyFast, &enumerateModelProperties},
@@ -2688,6 +2774,42 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
         case ComponentType::MorphTracksComponent: {
             YAML::Node encoded = Stream::encodeMorphTracksComponent(sourceRegistry->getComponent<MorphTracksComponent>(sourceEntity));
             targetRegistry->getComponent<MorphTracksComponent>(targetEntity) = Stream::decodeMorphTracksComponent(encoded);
+            break;
+        }
+
+        case ComponentType::TimedActionComponent: {
+            YAML::Node encoded = Stream::encodeTimedActionComponent(sourceRegistry->getComponent<TimedActionComponent>(sourceEntity));
+            targetRegistry->getComponent<TimedActionComponent>(targetEntity) = Stream::decodeTimedActionComponent(encoded);
+            break;
+        }
+
+        case ComponentType::PositionActionComponent: {
+            YAML::Node encoded = Stream::encodePositionActionComponent(sourceRegistry->getComponent<PositionActionComponent>(sourceEntity));
+            targetRegistry->getComponent<PositionActionComponent>(targetEntity) = Stream::decodePositionActionComponent(encoded);
+            break;
+        }
+
+        case ComponentType::RotationActionComponent: {
+            YAML::Node encoded = Stream::encodeRotationActionComponent(sourceRegistry->getComponent<RotationActionComponent>(sourceEntity));
+            targetRegistry->getComponent<RotationActionComponent>(targetEntity) = Stream::decodeRotationActionComponent(encoded);
+            break;
+        }
+
+        case ComponentType::ScaleActionComponent: {
+            YAML::Node encoded = Stream::encodeScaleActionComponent(sourceRegistry->getComponent<ScaleActionComponent>(sourceEntity));
+            targetRegistry->getComponent<ScaleActionComponent>(targetEntity) = Stream::decodeScaleActionComponent(encoded);
+            break;
+        }
+
+        case ComponentType::ColorActionComponent: {
+            YAML::Node encoded = Stream::encodeColorActionComponent(sourceRegistry->getComponent<ColorActionComponent>(sourceEntity));
+            targetRegistry->getComponent<ColorActionComponent>(targetEntity) = Stream::decodeColorActionComponent(encoded);
+            break;
+        }
+
+        case ComponentType::AlphaActionComponent: {
+            YAML::Node encoded = Stream::encodeAlphaActionComponent(sourceRegistry->getComponent<AlphaActionComponent>(sourceEntity));
+            targetRegistry->getComponent<AlphaActionComponent>(targetEntity) = Stream::decodeAlphaActionComponent(encoded);
             break;
         }
 

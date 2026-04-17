@@ -268,7 +268,7 @@ void ActionSystem::timedActionUpdate(double dt, Entity entity, ActionComponent& 
     } else {
         float duration = timedaction.duration / action.speed;
 
-        if (duration >= 0) {
+        if (duration > 0) {
 
             if (action.timecount >= duration){
                 if (!timedaction.loop){
@@ -279,6 +279,8 @@ void ActionSystem::timedActionUpdate(double dt, Entity entity, ActionComponent& 
             }
 
             timedaction.time = action.timecount / duration;
+        } else {
+            timedaction.time = 1;
         }
 
         timedaction.value = timedaction.function.call(timedaction.time);

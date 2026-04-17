@@ -36,6 +36,11 @@ namespace doriax::editor{
         CAMERA,
         ANIMATION,
         SPRITE_ANIMATION,
+        POSITION_ACTION,
+        ROTATION_ACTION,
+        SCALE_ACTION,
+        COLOR_ACTION,
+        ALPHA_ACTION,
         MODEL
     };
 

@@ -347,8 +347,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<AlphaActionComponent>(entity, {});
             }else{
-                registry->addComponent<AlphaActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<AlphaActionComponent>(entity, Stream::decodeAlphaActionComponent(componentNode));
             }
             break;
         case ComponentType::AnimationComponent:
@@ -413,8 +412,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<ColorActionComponent>(entity, {});
             }else{
-                registry->addComponent<ColorActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<ColorActionComponent>(entity, Stream::decodeColorActionComponent(componentNode));
             }
             break;
         case ComponentType::FogComponent:
@@ -534,8 +532,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<PositionActionComponent>(entity, {});
             }else{
-                registry->addComponent<PositionActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<PositionActionComponent>(entity, Stream::decodePositionActionComponent(componentNode));
             }
             break;
         case ComponentType::RotateTracksComponent:
@@ -549,16 +546,14 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<RotationActionComponent>(entity, {});
             }else{
-                registry->addComponent<RotationActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<RotationActionComponent>(entity, Stream::decodeRotationActionComponent(componentNode));
             }
             break;
         case ComponentType::ScaleActionComponent:
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<ScaleActionComponent>(entity, {});
             }else{
-                registry->addComponent<ScaleActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<ScaleActionComponent>(entity, Stream::decodeScaleActionComponent(componentNode));
             }
             break;
         case ComponentType::ScaleTracksComponent:
@@ -640,8 +635,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<TimedActionComponent>(entity, {});
             }else{
-                registry->addComponent<TimedActionComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<TimedActionComponent>(entity, Stream::decodeTimedActionComponent(componentNode));
             }
             break;
         case ComponentType::TranslateTracksComponent:

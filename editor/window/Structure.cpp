@@ -186,6 +186,26 @@ void editor::Structure::showNewEntityMenu(bool isScene, Entity parent, bool addT
             CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "SpriteAnimation", EntityCreationType::SPRITE_ANIMATION, parent, addToBundle));
             openParent = parent;
         }
+        if (ImGui::MenuItem(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT"  Position Action")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "PositionAction", EntityCreationType::POSITION_ACTION, parent, addToBundle));
+            openParent = parent;
+        }
+        if (ImGui::MenuItem(ICON_FA_ROTATE"  Rotation Action")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "RotationAction", EntityCreationType::ROTATION_ACTION, parent, addToBundle));
+            openParent = parent;
+        }
+        if (ImGui::MenuItem(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER"  Scale Action")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "ScaleAction", EntityCreationType::SCALE_ACTION, parent, addToBundle));
+            openParent = parent;
+        }
+        if (ImGui::MenuItem(ICON_FA_PALETTE"  Color Action")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "ColorAction", EntityCreationType::COLOR_ACTION, parent, addToBundle));
+            openParent = parent;
+        }
+        if (ImGui::MenuItem(ICON_FA_EYE"  Alpha Action")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "AlphaAction", EntityCreationType::ALPHA_ACTION, parent, addToBundle));
+            openParent = parent;
+        }
         ImGui::EndMenu();
     }
 
