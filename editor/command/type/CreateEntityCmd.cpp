@@ -275,41 +275,62 @@ bool editor::CreateEntityCmd::execute(){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<AnimationComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::SPRITE_ANIMATION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<SpriteAnimationComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::POSITION_ACTION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<TimedActionComponent>(entity, {});
         scene->addComponent<PositionActionComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::ROTATION_ACTION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<TimedActionComponent>(entity, {});
         scene->addComponent<RotationActionComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::SCALE_ACTION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<TimedActionComponent>(entity, {});
         scene->addComponent<ScaleActionComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::COLOR_ACTION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<TimedActionComponent>(entity, {});
         scene->addComponent<ColorActionComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::ALPHA_ACTION){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<TimedActionComponent>(entity, {});
         scene->addComponent<AlphaActionComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::CAMERA){
 
