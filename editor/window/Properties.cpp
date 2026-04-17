@@ -6293,9 +6293,20 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
                 shape.type = (Shape3DType)createShape3DType;
                 if (shape.type == Shape3DType::MESH){
                     shape.source = Shape3DSource::ENTITY_MESH;
+                    if (sceneProject->scene->findComponent<MeshComponent>(entity)){
+                        shape.sourceEntity = entity;
+                    }
+                }else if (shape.type == Shape3DType::CONVEX_HULL){
+                    shape.source = Shape3DSource::ENTITY_MESH;
+                    if (sceneProject->scene->findComponent<MeshComponent>(entity)){
+                        shape.sourceEntity = entity;
+                    }
                 }else if (shape.type == Shape3DType::HEIGHTFIELD){
                     shape.source = Shape3DSource::ENTITY_HEIGHTFIELD;
                     shape.samplesSize = 256;
+                    if (sceneProject->scene->findComponent<TerrainComponent>(entity)){
+                        shape.sourceEntity = entity;
+                    }
                 }
 
                 size_t shapeIdx = bodyComp->numShapes;
