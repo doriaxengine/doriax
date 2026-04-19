@@ -1297,19 +1297,47 @@ void editor::CodeEditor::show() {
 
         // If the window was closed, remove it from our editors map
         if (!instance.isOpen) {
-            if (lastFocused == &instance) {
-                lastFocused = nullptr;
-            }
-
             if (instance.isModified) {
-                // Window closed with unsaved changes.
-                // Re-read properties from disk to revert any in-memory only properties (like drag-and-drop entity updates)
-                updateScriptProperties(instance);
+                // Unsaved changes — show confirmation dialog instead of closing immediately
+                instance.isOpen = true; // Re-open to prevent ImGui from destroying the window
+                std::string closeKey = it->first;
+                std::string windowId = "###" + instance.filepath.string();
+                // Re-focus this window so it stays selected while dialog is shown
+                ImGui::SetWindowFocus(windowId.c_str());
+                Backend::getApp().registerThreeButtonAlert(
+                    "Unsaved Changes",
+                    "\"" + instance.filepath.filename().string() + "\" has unsaved changes. Do you want to save before closing?",
+                    [this, closeKey]() {
+                        // Yes: save then close
+                        if (auto fit = editors.find(closeKey); fit != editors.end()) {
+                            save(fit->second);
+                            if (lastFocused == &fit->second) lastFocused = nullptr;
+                            project->removeTab(TabType::CODE_EDITOR, fit->second.filepath.string());
+                            editors.erase(fit);
+                        }
+                    },
+                    [this, closeKey]() {
+                        // No: close without saving, revert properties
+                        if (auto fit = editors.find(closeKey); fit != editors.end()) {
+                            updateScriptProperties(fit->second);
+                            if (lastFocused == &fit->second) lastFocused = nullptr;
+                            project->removeTab(TabType::CODE_EDITOR, fit->second.filepath.string());
+                            editors.erase(fit);
+                        }
+                    },
+                    [this, closeKey, windowId]() {
+                        // Cancel: re-focus the window to restore selection
+                        ImGui::SetWindowFocus(windowId.c_str());
+                    }
+                );
+                ++it;
+            } else {
+                if (lastFocused == &instance) {
+                    lastFocused = nullptr;
+                }
+                project->removeTab(TabType::CODE_EDITOR, instance.filepath.string());
+                it = editors.erase(it);
             }
-
-            project->removeTab(TabType::CODE_EDITOR, instance.filepath.string());
-
-            it = editors.erase(it);
         } else {
             ++it;
         }

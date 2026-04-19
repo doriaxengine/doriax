@@ -926,7 +926,7 @@ void editor::Project::checkUnsavedAndExecute(uint32_t sceneId, std::function<voi
     SceneProject* sceneProject = getScene(sceneId);
 
     if (sceneProject && hasSceneUnsavedChanges(sceneId)) {
-        Backend::getApp().registerConfirmAlert(
+        Backend::getApp().registerThreeButtonAlert(
             "Unsaved Changes",
             "There are unsaved changes. Do you want to save first?",
             [this, sceneId, action]() {
@@ -944,7 +944,8 @@ void editor::Project::checkUnsavedAndExecute(uint32_t sceneId, std::function<voi
             [action]() {
                 // No callback - execute action without saving
                 if (action) action();
-            }
+            },
+            nullptr // Cancel: do nothing, keep scene open
         );
     } else {
         // No unsaved changes, execute action directly
