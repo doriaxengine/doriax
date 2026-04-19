@@ -175,6 +175,7 @@ namespace doriax::editor {
         void SetSearchText(const std::string& text);
         bool FindNext(bool caseSensitive = true, bool wholeWord = false);
         bool FindPrevious(bool caseSensitive = true, bool wholeWord = false);
+        bool ReplaceNext(bool caseSensitive = true, bool wholeWord = false);
         void OpenFind();
         void CloseFind();
         bool IsFindOpen() const { return showFindDialog; }
@@ -290,7 +291,9 @@ namespace doriax::editor {
         std::vector<TextPosition> searchResults;
         int currentSearchResult;
         bool showFindDialog;
+        bool showReplaceInput;
         char findInputBuffer[256];
+        char replaceInputBuffer[256];
         bool findCaseSensitive;
         bool findWholeWord;
         bool pendingScrollToCursor = false;

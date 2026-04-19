@@ -50,6 +50,7 @@ CustomTextEditor::CustomTextEditor()
     , showTooltipFlag(false)
     , currentSearchResult(-1)
     , showFindDialog(false)
+    , showReplaceInput(false)
     , findCaseSensitive(false)
     , findWholeWord(false)
     , charWidth(0)
@@ -63,6 +64,7 @@ CustomTextEditor::CustomTextEditor()
     lines.push_back("");
     cursors.push_back(Cursor());
     memset(findInputBuffer, 0, sizeof(findInputBuffer));
+    memset(replaceInputBuffer, 0, sizeof(replaceInputBuffer));
     initializePalette();
     initializeLanguage();
     initializeSuggestions();
@@ -1246,6 +1248,38 @@ void CustomTextEditor::updateSearchResults() {
             ++pos;
         }
     }
+}
+
+bool CustomTextEditor::ReplaceNext(bool caseSensitive, bool wholeWord) {
+    if (searchText.empty() || readOnly) return false;
+
+    TextPosition pMin = cursors[primaryCursor].selection.getMin();
+    TextPosition pMax = cursors[primaryCursor].selection.getMax();
+
+    bool match = false;
+    if (!cursors[primaryCursor].selection.isEmpty() && pMin.line == pMax.line && static_cast<size_t>(pMax.column - pMin.column) == searchText.size()) {
+        std::string selText = lines[pMin.line].substr(pMin.column, searchText.size());
+        std::string cmpText = searchText;
+        if (!caseSensitive) {
+            std::transform(selText.begin(), selText.end(), selText.begin(), ::tolower);
+            std::transform(cmpText.begin(), cmpText.end(), cmpText.begin(), ::tolower);
+        }
+        if (selText == cmpText) {
+            match = true;
+        }
+    }
+
+    if (match) {
+        if (cursors.size() > 1) {
+            Cursor pC = cursors[primaryCursor];
+            cursors.clear();
+            cursors.push_back(pC);
+            primaryCursor = 0;
+        }
+        InsertText(replaceInputBuffer, false);
+    }
+
+    return FindNext(caseSensitive, wholeWord);
 }
 
 bool CustomTextEditor::FindNext(bool caseSensitive, bool wholeWord) {
@@ -3633,8 +3667,29 @@ void CustomTextEditor::renderFindDialog(const ImVec2& editorPos, const ImVec2& e
 
         // Input field with search input utility - use a fixed width group
         const float inputWidth = 180.0f;
+        const float controlHeight = ImGui::GetFrameHeight();
 
         bool focusInput = ImGui::IsWindowAppearing();
+
+        // Toggle replace
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.2f, 0.2f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.3f, 0.3f, 0.3f, 0.5f));
+
+        // Align arrow vertically with the input box
+        float currentY = ImGui::GetCursorPosY();
+        ImGui::SetCursorPosY(currentY + (controlHeight - 16.0f) * 0.5f);
+
+        if (ImGui::Button(showReplaceInput ? ICON_FA_CHEVRON_DOWN "##ToggleReplace" : ICON_FA_CHEVRON_RIGHT "##ToggleReplace", ImVec2(16, 16))) {
+            showReplaceInput = !showReplaceInput;
+        }
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Toggle Replace");
+
+        ImGui::SetCursorPosY(currentY); // Restore Y position
+        ImGui::SameLine();
 
         // Track if we need to refocus after find
         if (findRefocusInput) {
@@ -3645,6 +3700,7 @@ void CustomTextEditor::renderFindDialog(const ImVec2& editorPos, const ImVec2& e
         }
 
         // Wrap in a group with fixed width for the search input
+        float findInputStartX = ImGui::GetCursorPosX();
         ImGui::BeginGroup();
 
         // Use UIUtils::searchInput for consistent look with Output window
@@ -3728,6 +3784,30 @@ void CustomTextEditor::renderFindDialog(const ImVec2& editorPos, const ImVec2& e
             CloseFind();
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Close (Escape)");
+
+        if (showReplaceInput) {
+            ImGui::SetCursorPosX(findInputStartX);
+
+            ImGui::SetNextItemWidth(inputWidth);
+            ImGui::InputTextWithHint("##ReplaceInput", "Replace", replaceInputBuffer, sizeof(replaceInputBuffer));
+
+            bool replaceEnter = ImGui::IsItemFocused() && ImGui::IsKeyPressed(ImGuiKey_Enter);
+            bool replaceShiftEnter = ImGui::IsItemFocused() && ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_Enter);
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("Replace") || (replaceEnter && !replaceShiftEnter)) {
+                ReplaceNext(findCaseSensitive, findWholeWord);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace Next (Enter)");
+
+            ImGui::SameLine();
+
+            if (ImGui::Button("All") || replaceShiftEnter) {
+                ReplaceAll(findInputBuffer, replaceInputBuffer, findCaseSensitive);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Replace All (Shift+Enter)");
+        }
     }
     ImGui::End();
 
