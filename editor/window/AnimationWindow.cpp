@@ -8,6 +8,7 @@
 #include "command/CommandHandle.h"
 #include "command/type/PropertyCmd.h"
 #include "command/type/MultiPropertyCmd.h"
+#include "command/type/CreateEntityCmd.h"
 
 #include "component/ActionComponent.h"
 #include "component/AnimationComponent.h"
@@ -20,6 +21,11 @@
 #include "component/TranslateTracksComponent.h"
 #include "component/SpriteAnimationComponent.h"
 #include "component/TimedActionComponent.h"
+#include "component/PositionActionComponent.h"
+#include "component/RotationActionComponent.h"
+#include "component/ScaleActionComponent.h"
+#include "component/ColorActionComponent.h"
+#include "component/AlphaActionComponent.h"
 #include "subsystem/ActionSystem.h"
 #include "subsystem/MeshSystem.h"
 
@@ -112,6 +118,16 @@ std::string editor::AnimationWindow::getActionLabel(Entity actionEntity, Scene* 
     }
 
     if (sig.test(scene->getComponentId<TimedActionComponent>())) {
+        if (sig.test(scene->getComponentId<PositionActionComponent>()))
+            return "PositionAction";
+        if (sig.test(scene->getComponentId<RotationActionComponent>()))
+            return "RotationAction";
+        if (sig.test(scene->getComponentId<ScaleActionComponent>()))
+            return "ScaleAction";
+        if (sig.test(scene->getComponentId<ColorActionComponent>()))
+            return "ColorAction";
+        if (sig.test(scene->getComponentId<AlphaActionComponent>()))
+            return "AlphaAction";
         return "TimedAction";
     }
 
@@ -379,36 +395,96 @@ void editor::AnimationWindow::drawToolbar(float width, AnimationComponent& anim,
     // Add Action
     ImGui::BeginDisabled(isPreviewing);
     if (ImGui::Button(ICON_FA_PLUS " Add Action")) {
-        // If a frame is selected, add to the same track, otherwise track 0
-        uint32_t targetTrack = 0;
-        if (selectedFrameIndex >= 0 && selectedFrameIndex < (int)anim.actions.size()) {
-            targetTrack = anim.actions[selectedFrameIndex].track;
+        ImGui::OpenPopup("##add_action_popup");
+    }
+    if (ImGui::BeginPopup("##add_action_popup")) {
+        EntityCreationType selectedType = EntityCreationType::EMPTY;
+        std::string entityName;
+        bool selected = false;
+
+        if (ImGui::MenuItem(ICON_FA_PLUS "  Empty Action")) {
+            selected = true;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem(ICON_FA_FILM "  Animation")) {
+            selectedType = EntityCreationType::ANIMATION;
+            entityName = "Animation";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_PLAY "  Sprite Animation")) {
+            selectedType = EntityCreationType::SPRITE_ANIMATION;
+            entityName = "SpriteAnimation";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT "  Position Action")) {
+            selectedType = EntityCreationType::POSITION_ACTION;
+            entityName = "PositionAction";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_ROTATE "  Rotation Action")) {
+            selectedType = EntityCreationType::ROTATION_ACTION;
+            entityName = "RotationAction";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_UP_RIGHT_AND_DOWN_LEFT_FROM_CENTER "  Scale Action")) {
+            selectedType = EntityCreationType::SCALE_ACTION;
+            entityName = "ScaleAction";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_PALETTE "  Color Action")) {
+            selectedType = EntityCreationType::COLOR_ACTION;
+            entityName = "ColorAction";
+            selected = true;
+        }
+        if (ImGui::MenuItem(ICON_FA_EYE "  Alpha Action")) {
+            selectedType = EntityCreationType::ALPHA_ACTION;
+            entityName = "AlphaAction";
+            selected = true;
         }
 
-        ActionFrame newFrame = {0.0f, 1.0f, NULL_ENTITY, targetTrack};
+        if (selected) {
+            // If a frame is selected, add to the same track, otherwise track 0
+            uint32_t targetTrack = 0;
+            if (selectedFrameIndex >= 0 && selectedFrameIndex < (int)anim.actions.size()) {
+                targetTrack = anim.actions[selectedFrameIndex].track;
+            }
 
-        // Find non-overlapping track
-        bool overlap;
-        do {
-            overlap = false;
-            for (const auto& a : anim.actions) {
-                if (a.track == newFrame.track) {
-                    float startA = a.startTime;
-                    float endA = a.startTime + a.duration;
-                    float startB = newFrame.startTime;
-                    float endB = newFrame.startTime + newFrame.duration;
-                    // Strict less-than for overlap means adjoining frames (e.g. 0-1 and 1-2) are OK
-                    if (std::max(startA, startB) < std::min(endA, endB)) {
-                        overlap = true;
-                        newFrame.track++;
-                        break;
+            Entity actionEntity = NULL_ENTITY;
+            if (selectedType != EntityCreationType::EMPTY) {
+                Entity target = scene->findComponent<ActionComponent>(selectedEntity)
+                    ? scene->getComponent<ActionComponent>(selectedEntity).target
+                    : NULL_ENTITY;
+                auto* cmd = new CreateEntityCmd(project, selectedSceneId, entityName, selectedType, target);
+                CommandHandle::get(selectedSceneId)->addCommandNoMerge(cmd);
+                actionEntity = cmd->getEntity();
+            }
+
+            ActionFrame newFrame = {0.0f, 1.0f, actionEntity, targetTrack};
+
+            // Find non-overlapping track
+            bool overlap;
+            do {
+                overlap = false;
+                for (const auto& a : anim.actions) {
+                    if (a.track == newFrame.track) {
+                        float startA = a.startTime;
+                        float endA = a.startTime + a.duration;
+                        float startB = newFrame.startTime;
+                        float endB = newFrame.startTime + newFrame.duration;
+                        if (std::max(startA, startB) < std::min(endA, endB)) {
+                            overlap = true;
+                            newFrame.track++;
+                            break;
+                        }
                     }
                 }
-            }
-        } while (overlap);
+            } while (overlap);
 
-        anim.actions.push_back(newFrame);
-        selectedFrameIndex = anim.actions.size() - 1;
+            anim.actions.push_back(newFrame);
+            selectedFrameIndex = anim.actions.size() - 1;
+        }
+
+        ImGui::EndPopup();
     }
     ImGui::EndDisabled();
     ImGui::SameLine();
@@ -602,8 +678,19 @@ bool editor::AnimationWindow::drawTracks(ImVec2 canvasPos, ImVec2 canvasSize, fl
             return IM_COL32(80, 190, 190, 200);  // Teal: MorphTracks
         if (sig.test(scene->getComponentId<KeyframeTracksComponent>()))
             return IM_COL32(70, 130, 180, 200);  // Steel blue: KeyframeTracks
-        if (sig.test(scene->getComponentId<TimedActionComponent>()))
-            return IM_COL32(180, 100, 70, 200);  // Warm red: TimedAction
+        if (sig.test(scene->getComponentId<TimedActionComponent>())) {
+            if (sig.test(scene->getComponentId<PositionActionComponent>()))
+                return IM_COL32(100, 180, 220, 200);  // Light blue: PositionAction
+            if (sig.test(scene->getComponentId<RotationActionComponent>()))
+                return IM_COL32(220, 160, 70, 200);   // Amber: RotationAction
+            if (sig.test(scene->getComponentId<ScaleActionComponent>()))
+                return IM_COL32(180, 100, 200, 200);  // Violet: ScaleAction
+            if (sig.test(scene->getComponentId<ColorActionComponent>()))
+                return IM_COL32(220, 120, 160, 200);  // Pink: ColorAction
+            if (sig.test(scene->getComponentId<AlphaActionComponent>()))
+                return IM_COL32(160, 200, 120, 200);  // Lime: AlphaAction
+            return IM_COL32(180, 100, 70, 200);       // Warm red: generic TimedAction
+        }
         if (sig.test(scene->getComponentId<AnimationComponent>()))
             return IM_COL32(180, 170, 70, 200);  // Gold: Animation
 
@@ -743,6 +830,12 @@ bool editor::AnimationWindow::drawTracks(ImVec2 canvasPos, ImVec2 canvasSize, fl
                         dragStartTime = frame.startTime;
                         dragStartTrack = frame.track;
                     }
+                }
+            }
+
+            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && hovered) {
+                if (frame.action != NULL_ENTITY && scene->isEntityCreated(frame.action)) {
+                    project->setSelectedEntity(selectedSceneId, frame.action);
                 }
             }
         }
