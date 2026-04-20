@@ -1191,6 +1191,26 @@ namespace {
         return getParticlesPropertyFast(static_cast<ParticlesComponent*>(comp), propertyName);
     }
 
+    PropertyData getInstancedMeshPropertyFast(InstancedMeshComponent* comp, const std::string& propertyName) {
+        InstancedMeshComponent& def = getDefaultComponent<InstancedMeshComponent>();
+        if (propertyName == "maxInstances") return {PropertyType::UInt, UpdateFlags_None, &def.maxInstances, &comp->maxInstances};
+        if (propertyName == "instancedBillboard") return {PropertyType::Bool, UpdateFlags_None, &def.instancedBillboard, &comp->instancedBillboard};
+        if (propertyName == "instancedCylindricalBillboard") return {PropertyType::Bool, UpdateFlags_None, &def.instancedCylindricalBillboard, &comp->instancedCylindricalBillboard};
+        return PropertyData();
+    }
+
+    PropertyData resolveInstancedMeshPropertyFast(void* comp, const std::string& propertyName) {
+        return getInstancedMeshPropertyFast(static_cast<InstancedMeshComponent*>(comp), propertyName);
+    }
+
+    void enumerateInstancedMeshProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
+        InstancedMeshComponent* comp = static_cast<InstancedMeshComponent*>(compRef);
+        InstancedMeshComponent& def = getDefaultComponent<InstancedMeshComponent>();
+        ps["maxInstances"] = {PropertyType::UInt, UpdateFlags_None, &def.maxInstances, comp ? &comp->maxInstances : nullptr};
+        ps["instancedBillboard"] = {PropertyType::Bool, UpdateFlags_None, &def.instancedBillboard, comp ? &comp->instancedBillboard : nullptr};
+        ps["instancedCylindricalBillboard"] = {PropertyType::Bool, UpdateFlags_None, &def.instancedCylindricalBillboard, comp ? &comp->instancedCylindricalBillboard : nullptr};
+    }
+
     PropertyData resolveActionPropertyFast(void* comp, const std::string& propertyName) {
         return resolveDirectProperties(static_cast<ActionComponent*>(comp), propertyName, kActionProperties);
     }
@@ -2030,6 +2050,7 @@ namespace {
         {ComponentType::Joint3DComponent, &findComponentPtr<Joint3DComponent>, &resolveJoint3DPropertyFast, &enumerateJoint3DProperties},
         {ComponentType::Body2DComponent, &findComponentPtr<Body2DComponent>, &resolveBody2DPropertyFast, &enumerateBody2DProperties},
         {ComponentType::Body3DComponent, &findComponentPtr<Body3DComponent>, &resolveBody3DPropertyFast, &enumerateBody3DProperties},
+        {ComponentType::InstancedMeshComponent, &findComponentPtr<InstancedMeshComponent>, &resolveInstancedMeshPropertyFast, &enumerateInstancedMeshProperties},
         {ComponentType::ParticlesComponent, &findComponentPtr<ParticlesComponent>, &resolveParticlesPropertyFast, &enumerateParticlesProperties},
         {ComponentType::ActionComponent, &findComponentPtr<ActionComponent>, &resolveActionPropertyFast, &enumerateActionProperties},
         {ComponentType::TimedActionComponent, &findComponentPtr<TimedActionComponent>, &resolveTimedActionPropertyFast, &enumerateTimedActionProperties},

@@ -1565,6 +1565,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::ScaleTracksComponent: return createScaleTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::MorphTracksComponent: return createMorphTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ParticlesComponent: return createParticlesComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::InstancedMeshComponent: return createInstancedMeshComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         default: return "";
     }
 }
@@ -2093,5 +2094,33 @@ std::string editor::Factory::createParticlesComponent(int indentSpaces, EntityRe
     code << ind << "particles.scaleModifier.toScale = " << formatVector3(p.scaleModifier.toScale) << ";\n";
 
     addComponentCode(code, ind, sceneName, entityName, entity, "ParticlesComponent", "particles", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createInstancedMeshComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<InstancedMeshComponent>(entity)) return "";
+    InstancedMeshComponent& p = scene->getComponent<InstancedMeshComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "InstancedMeshComponent instmesh;\n";
+    code << ind << "instmesh.maxInstances = " << formatUInt(p.maxInstances) << ";\n";
+    code << ind << "instmesh.instancedBillboard = " << formatBool(p.instancedBillboard) << ";\n";
+    code << ind << "instmesh.instancedCylindricalBillboard = " << formatBool(p.instancedCylindricalBillboard) << ";\n";
+
+    for (size_t i = 0; i < p.instances.size(); i++) {
+        const InstanceData& inst = p.instances[i];
+        code << ind << "{\n";
+        code << ind << "    InstanceData inst;\n";
+        code << ind << "    inst.position = " << formatVector3(inst.position) << ";\n";
+        code << ind << "    inst.rotation = " << formatQuaternion(inst.rotation) << ";\n";
+        code << ind << "    inst.scale = " << formatVector3(inst.scale) << ";\n";
+        code << ind << "    inst.color = " << formatVector4(inst.color) << ";\n";
+        code << ind << "    inst.textureRect = " << formatRect(inst.textureRect) << ";\n";
+        code << ind << "    inst.visible = " << formatBool(inst.visible) << ";\n";
+        code << ind << "    instmesh.instances.push_back(inst);\n";
+        code << ind << "}\n";
+    }
+
+    addComponentCode(code, ind, sceneName, entityName, entity, "InstancedMeshComponent", "instmesh", assignExisting);
     return code.str();
 }

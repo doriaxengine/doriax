@@ -458,8 +458,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<InstancedMeshComponent>(entity, {});
             }else{
-                registry->addComponent<InstancedMeshComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<InstancedMeshComponent>(entity, Stream::decodeInstancedMeshComponent(componentNode));
             }
             break;
         case ComponentType::Joint2DComponent:
@@ -847,7 +846,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::InstancedMeshComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeInstancedMeshComponent(registry->getComponent<InstancedMeshComponent>(entity));
             }
             registry->removeComponent<InstancedMeshComponent>(entity);
             break;

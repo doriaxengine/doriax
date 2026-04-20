@@ -5779,6 +5779,17 @@ void editor::Properties::drawSkyComponent(ComponentType cpType, SceneProject* sc
     endTable();
 }
 
+void editor::Properties::drawInstancedMeshComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    RowSettings settingsUInt;
+    settingsUInt.secondColSize = 6 * ImGui::GetFontSize();
+
+    beginTable(cpType, getLabelSize("Cylindrical Billboard"));
+    propertyRow(RowPropertyType::UInt, cpType, "maxInstances", "Max Instances", sceneProject, entities, settingsUInt);
+    propertyRow(RowPropertyType::Bool, cpType, "instancedBillboard", "Billboard", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "instancedCylindricalBillboard", "Cylindrical Billboard", sceneProject, entities);
+    endTable();
+}
+
 void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     RowSettings settingsFloat;
     settingsFloat.secondColSize = 6 * ImGui::GetFontSize();
@@ -8791,6 +8802,8 @@ void editor::Properties::show(){
                     drawMorphTracksComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::ParticlesComponent){
                     drawParticlesComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::InstancedMeshComponent){
+                    drawInstancedMeshComponent(cpType, sceneProject, entities);
                 }
 
                 if (compReadOnly) ImGui::EndDisabled();

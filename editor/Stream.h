@@ -277,5 +277,8 @@ namespace doriax::editor {
 
         static YAML::Node encodeParticlesComponent(const ParticlesComponent& particles);
         static ParticlesComponent decodeParticlesComponent(const YAML::Node& node, const ParticlesComponent* oldParticles = nullptr);
+
+        static YAML::Node encodeInstancedMeshComponent(const InstancedMeshComponent& instmesh);
+        static InstancedMeshComponent decodeInstancedMeshComponent(const YAML::Node& node, const InstancedMeshComponent* oldInstmesh = nullptr);
     };
 }

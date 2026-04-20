@@ -1007,6 +1007,12 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                     if (ImGui::MenuItem(ICON_FA_DUMBBELL "  Add Physics Body", nullptr, false, !node.isLocked && !hasBody)) {
                         CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new AddComponentCmd(project, project->getSelectedSceneId(), node.id, bodyType));
                     }
+
+                    bool hasMesh = signature.test(selectedScene->scene->getComponentId<MeshComponent>());
+                    bool hasInstanced = signature.test(selectedScene->scene->getComponentId<InstancedMeshComponent>());
+                    if (hasMesh && ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Add Instanced Mesh", nullptr, false, !node.isLocked && !hasInstanced)) {
+                        CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new AddComponentCmd(project, project->getSelectedSceneId(), node.id, ComponentType::InstancedMeshComponent));
+                    }
                 }
             }
             if (!entityDeleted && node.isParentBundle && !node.isBundleRoot){

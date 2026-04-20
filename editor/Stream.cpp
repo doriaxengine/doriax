@@ -2093,6 +2093,11 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         compNode[Catalog::getComponentName(ComponentType::ParticlesComponent, true)] = encodeParticlesComponent(particles);
     }
 
+    if (signature.test(registry->getComponentId<InstancedMeshComponent>())) {
+        InstancedMeshComponent instmesh = registry->getComponent<InstancedMeshComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::InstancedMeshComponent, true)] = encodeInstancedMeshComponent(instmesh);
+    }
+
     if (signature.test(registry->getComponentId<BundleComponent>())) {
         BundleComponent bundle = registry->getComponent<BundleComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::BundleComponent, true)] = encodeBundleComponent(bundle);
@@ -2546,6 +2551,17 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
             registry->addComponent<ParticlesComponent>(entity, particles);
         }else{
             registry->getComponent<ParticlesComponent>(entity) = particles;
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::InstancedMeshComponent, true);
+    if (compNode[compName]) {
+        InstancedMeshComponent* existing = registry->findComponent<InstancedMeshComponent>(entity);
+        InstancedMeshComponent instmesh = decodeInstancedMeshComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<InstancedMeshComponent>())){
+            registry->addComponent<InstancedMeshComponent>(entity, instmesh);
+        }else{
+            registry->getComponent<InstancedMeshComponent>(entity) = instmesh;
         }
     }
 
@@ -4753,4 +4769,57 @@ ParticlesComponent editor::Stream::decodeParticlesComponent(const YAML::Node& no
     particles.lastUsedParticle = 0;
 
     return particles;
+}
+
+YAML::Node editor::Stream::encodeInstancedMeshComponent(const InstancedMeshComponent& instmesh) {
+    YAML::Node node;
+
+    node["maxInstances"] = instmesh.maxInstances;
+    node["instancedBillboard"] = instmesh.instancedBillboard;
+    node["instancedCylindricalBillboard"] = instmesh.instancedCylindricalBillboard;
+
+    YAML::Node instancesNode;
+    for (const InstanceData& inst : instmesh.instances) {
+        YAML::Node instNode;
+        instNode["position"] = encodeVector3(inst.position);
+        instNode["rotation"] = encodeQuaternion(inst.rotation);
+        instNode["scale"] = encodeVector3(inst.scale);
+        instNode["color"] = encodeVector4(inst.color);
+        instNode["textureRect"] = encodeRect(inst.textureRect);
+        instNode["visible"] = inst.visible;
+        instancesNode.push_back(instNode);
+    }
+    node["instances"] = instancesNode;
+
+    return node;
+}
+
+InstancedMeshComponent editor::Stream::decodeInstancedMeshComponent(const YAML::Node& node, const InstancedMeshComponent* oldInstmesh) {
+    InstancedMeshComponent instmesh;
+    if (oldInstmesh) { instmesh = *oldInstmesh; }
+
+    if (node["maxInstances"]) instmesh.maxInstances = node["maxInstances"].as<unsigned int>();
+    if (node["instancedBillboard"]) instmesh.instancedBillboard = node["instancedBillboard"].as<bool>();
+    if (node["instancedCylindricalBillboard"]) instmesh.instancedCylindricalBillboard = node["instancedCylindricalBillboard"].as<bool>();
+
+    if (node["instances"]) {
+        instmesh.instances.clear();
+        for (const YAML::Node& instNode : node["instances"]) {
+            InstanceData inst;
+            if (instNode["position"]) inst.position = decodeVector3(instNode["position"]);
+            if (instNode["rotation"]) inst.rotation = decodeQuaternion(instNode["rotation"]);
+            if (instNode["scale"]) inst.scale = decodeVector3(instNode["scale"]);
+            if (instNode["color"]) inst.color = decodeVector4(instNode["color"]);
+            if (instNode["textureRect"]) inst.textureRect = decodeRect(instNode["textureRect"]);
+            if (instNode["visible"]) inst.visible = instNode["visible"].as<bool>();
+            instmesh.instances.push_back(inst);
+        }
+    }
+
+    // Reset runtime fields
+    instmesh.numVisible = 0;
+    instmesh.needUpdateBuffer = false;
+    instmesh.needUpdateInstances = true;
+
+    return instmesh;
 }
