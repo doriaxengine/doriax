@@ -97,6 +97,8 @@ namespace doriax::editor{
         std::map<std::string, bool> spriteAnimationFramesButtonGroups;
         bool spriteAnimationFramesExpanded = false;
         std::map<std::string, bool> trackValuesExpanded;
+        bool instancesExpanded = false;
+        std::map<std::string, bool> instancesButtonGroups;
 
         std::map<std::string, bool> textureCubeSingleMode;
 

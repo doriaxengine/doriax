@@ -1196,6 +1196,41 @@ namespace {
         if (propertyName == "maxInstances") return {PropertyType::UInt, UpdateFlags_Mesh_Reload, &def.maxInstances, &comp->maxInstances};
         if (propertyName == "instancedBillboard") return {PropertyType::Bool, UpdateFlags_Mesh_Reload, &def.instancedBillboard, &comp->instancedBillboard};
         if (propertyName == "instancedCylindricalBillboard") return {PropertyType::Bool, UpdateFlags_Mesh_Reload, &def.instancedCylindricalBillboard, &comp->instancedCylindricalBillboard};
+
+        if (propertyName == "instances") {
+            static std::vector<InstanceData> defInstances;
+            return {PropertyType::Custom, UpdateFlags_Instanced_Mesh, (void*)&defInstances, (void*)&comp->instances};
+        }
+
+        if (propertyName.compare(0, 10, "instances[") == 0) {
+            size_t pos = 10;
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+            std::string fieldName = propertyName.substr(pos + 1);
+            if (index >= comp->instances.size()) return PropertyData();
+            if (fieldName == ".position") {
+                static Vector3 defPos = Vector3(0.0f, 0.0f, 0.0f);
+                return {PropertyType::Vector3, UpdateFlags_Instanced_Mesh, (void*)&defPos, (void*)&comp->instances[index].position};
+            }
+            if (fieldName == ".rotation") {
+                static Quaternion defRot;
+                return {PropertyType::Quat, UpdateFlags_Instanced_Mesh, (void*)&defRot, (void*)&comp->instances[index].rotation};
+            }
+            if (fieldName == ".scale") {
+                static Vector3 defScale = Vector3(1.0f, 1.0f, 1.0f);
+                return {PropertyType::Vector3, UpdateFlags_Instanced_Mesh, (void*)&defScale, (void*)&comp->instances[index].scale};
+            }
+            if (fieldName == ".color") {
+                static Vector4 defColor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+                return {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defColor, (void*)&comp->instances[index].color};
+            }
+            if (fieldName == ".visible") {
+                static bool defVisible = true;
+                return {PropertyType::Bool, UpdateFlags_Instanced_Mesh, (void*)&defVisible, (void*)&comp->instances[index].visible};
+            }
+        }
+
         return PropertyData();
     }
 
@@ -1209,6 +1244,23 @@ namespace {
         ps["maxInstances"] = {PropertyType::UInt, UpdateFlags_Mesh_Reload, &def.maxInstances, comp ? &comp->maxInstances : nullptr};
         ps["instancedBillboard"] = {PropertyType::Bool, UpdateFlags_Mesh_Reload, &def.instancedBillboard, comp ? &comp->instancedBillboard : nullptr};
         ps["instancedCylindricalBillboard"] = {PropertyType::Bool, UpdateFlags_Mesh_Reload, &def.instancedCylindricalBillboard, comp ? &comp->instancedCylindricalBillboard : nullptr};
+        static std::vector<InstanceData> defInstances;
+        ps["instances"] = {PropertyType::Custom, UpdateFlags_Instanced_Mesh, (void*)&defInstances, comp ? (void*)&comp->instances : nullptr};
+        if (comp) {
+            static Vector3 defPos = Vector3(0.0f, 0.0f, 0.0f);
+            static Quaternion defRot;
+            static Vector3 defScale = Vector3(1.0f, 1.0f, 1.0f);
+            static Vector4 defColor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+            static bool defVisible = true;
+            for (size_t i = 0; i < comp->instances.size(); i++) {
+                std::string prefix = "instances[" + std::to_string(i) + "]";
+                ps[prefix + ".position"] = {PropertyType::Vector3, UpdateFlags_Instanced_Mesh, (void*)&defPos, (void*)&comp->instances[i].position};
+                ps[prefix + ".rotation"] = {PropertyType::Quat, UpdateFlags_Instanced_Mesh, (void*)&defRot, (void*)&comp->instances[i].rotation};
+                ps[prefix + ".scale"] = {PropertyType::Vector3, UpdateFlags_Instanced_Mesh, (void*)&defScale, (void*)&comp->instances[i].scale};
+                ps[prefix + ".color"] = {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defColor, (void*)&comp->instances[i].color};
+                ps[prefix + ".visible"] = {PropertyType::Bool, UpdateFlags_Instanced_Mesh, (void*)&defVisible, (void*)&comp->instances[i].visible};
+            }
+        }
     }
 
     PropertyData resolveActionPropertyFast(void* comp, const std::string& propertyName) {
@@ -2830,6 +2882,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, int 
     if (updateFlags & UpdateFlags_Tilemap){
         if (TilemapComponent* tilemap = registry->findComponent<TilemapComponent>(entity)){
             tilemap->needUpdateTilemap = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Instanced_Mesh){
+        if (InstancedMeshComponent* instmesh = registry->findComponent<InstancedMeshComponent>(entity)){
+            instmesh->needUpdateInstances = true;
         }
     }
 }

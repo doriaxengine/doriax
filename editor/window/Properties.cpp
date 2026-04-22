@@ -5925,6 +5925,116 @@ void editor::Properties::drawInstancedMeshComponent(ComponentType cpType, SceneP
     propertyRow(RowPropertyType::Bool, cpType, "instancedBillboard", "Billboard", sceneProject, entities);
     propertyRow(RowPropertyType::Bool, cpType, "instancedCylindricalBillboard", "Cylindrical Billboard", sceneProject, entities);
     endTable();
+
+    if (entities.size() != 1) {
+        ImGui::SeparatorText("Instances");
+        ImGui::TextDisabled("Select a single entity to edit instances");
+        return;
+    }
+
+    Entity entity = entities[0];
+    InstancedMeshComponent& instmesh = sceneProject->scene->getComponent<InstancedMeshComponent>(entity);
+
+    ImGui::SeparatorText("Instances");
+
+    if (ImGui::Button(ICON_FA_PLUS " Add Instance", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+        for (const Entity& selectedEntity : entities) {
+            if (InstancedMeshComponent* instComp = sceneProject->scene->findComponent<InstancedMeshComponent>(selectedEntity)) {
+                std::vector<InstanceData> newInstances = instComp->instances;
+                InstanceData newInst;
+                if (!newInstances.empty()) {
+                    newInst = newInstances.back();
+                }
+                newInstances.push_back(newInst);
+                multiCmd->addPropertyCmd<std::vector<InstanceData>>(project, sceneProject->id, selectedEntity, cpType, "instances", newInstances);
+            }
+        }
+        multiCmd->setNoMerge();
+        CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
+    }
+
+    beginTable(cpType, getLabelSize("Instances"), "instanced_mesh_instances_header");
+    propertyHeader("Instances", -1, false, false);
+    ImGui::Text("%zu", instmesh.instances.size());
+    ImGui::SameLine();
+    if (ImGui::ArrowButton("##toggle_instances", instancesExpanded ? ImGuiDir_Up : ImGuiDir_Down)) {
+        instancesExpanded = !instancesExpanded;
+    }
+    endTable();
+
+    if (!instancesExpanded || instmesh.instances.empty()) {
+        return;
+    }
+
+    bool removedInstance = false;
+
+    for (size_t i = 0; i < instmesh.instances.size(); i++) {
+        ImGui::PushID((int)i);
+
+        std::string instanceGroupStr = "instance_" + std::to_string(i);
+        std::string instanceLabel = "[" + std::to_string(i) + "] Instance " + std::to_string(i);
+
+        ImGui::SeparatorText(instanceLabel.c_str());
+
+        beginTable(cpType, getLabelSize("Position"), instanceGroupStr);
+        propertyHeader("Instance", -1, false, false);
+
+        float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
+        float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x;
+        ImVec2 deleteButtonSize = ImVec2(clearButtonWidth + clearButtonFramePadding * 2, 0);
+        float arrowButtonWidth = ImGui::GetFrameHeight();
+        float trailingWidth = deleteButtonSize.x + ImGui::GetStyle().ItemSpacing.x + arrowButtonWidth;
+        float targetX = ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - trailingWidth);
+        ImGui::SetCursorPosX(targetX);
+
+        if (ImGui::ArrowButton("##toggle_instance", instancesButtonGroups[instanceGroupStr] ? ImGuiDir_Up : ImGuiDir_Down)) {
+            instancesButtonGroups[instanceGroupStr] = !instancesButtonGroups[instanceGroupStr];
+        }
+        ImGui::SameLine();
+
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+        if (ImGui::Button(ICON_FA_TRASH_CAN "##delete_instance", deleteButtonSize)) {
+            MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+            for (const Entity& selectedEntity : entities) {
+                if (InstancedMeshComponent* instComp = sceneProject->scene->findComponent<InstancedMeshComponent>(selectedEntity)) {
+                    if (i < instComp->instances.size()) {
+                        std::vector<InstanceData> newInstances = instComp->instances;
+                        newInstances.erase(newInstances.begin() + (long int)i);
+                        multiCmd->addPropertyCmd<std::vector<InstanceData>>(project, sceneProject->id, selectedEntity, cpType, "instances", newInstances);
+                    }
+                }
+            }
+            multiCmd->setNoMerge();
+            CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
+            removedInstance = true;
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor(2);
+            endTable();
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+
+        if (instancesButtonGroups[instanceGroupStr]) {
+            std::string propPrefix = "instances[" + std::to_string(i) + "]";
+            propertyRow(RowPropertyType::Vector3, cpType, propPrefix + ".position", "Position", sceneProject, entities);
+            propertyRow(RowPropertyType::Quat, cpType, propPrefix + ".rotation", "Rotation", sceneProject, entities);
+            propertyRow(RowPropertyType::Vector3, cpType, propPrefix + ".scale", "Scale", sceneProject, entities);
+            propertyRow(RowPropertyType::Color4L, cpType, propPrefix + ".color", "Color", sceneProject, entities);
+            propertyRow(RowPropertyType::Bool, cpType, propPrefix + ".visible", "Visible", sceneProject, entities);
+        }
+
+        endTable();
+        ImGui::PopID();
+    }
+
+    if (removedInstance) {
+        return;
+    }
 }
 
 void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
