@@ -10,6 +10,7 @@
 #include "util/GraphicUtils.h"
 
 #include <cmath>
+#include <cfloat>
 
 using namespace doriax;
 
@@ -377,6 +378,24 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
             }
         }
 
+        // Override gizmo for selected instance within instanced mesh
+        if (selectedInstanceIndex >= 0 && selEntities.size() == 1 && selEntities[0] == selectedInstanceEntity){
+            InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(selectedInstanceEntity);
+            Transform* instTransform = scene->findComponent<Transform>(selectedInstanceEntity);
+            if (instmesh && instTransform && selectedInstanceIndex < (int)instmesh->instances.size()){
+                OBB instOBB = getInstanceOBB(selectedInstanceEntity, selectedInstanceIndex);
+                if (!instOBB.isNull()){
+                    const InstanceData& inst = instmesh->instances[selectedInstanceIndex];
+                    Quaternion instWorldRotation = getInstanceWorldRotation(*instTransform, *instmesh, inst);
+                    Vector3 instCenter = instOBB.getCenter();
+                    toolslayer.updateGizmo(camera, instCenter, instWorldRotation, scale, instOBB, mouseRay, mouseClicked, anchorData, anchorArea);
+                    // Replace selection outline with the instance OBB
+                    selBB.clear();
+                    selBB.push_back(instOBB);
+                }
+            }
+        }
+
         if (selBB.size() > 0) {
             updateSelLines(selBB);
         }
@@ -386,7 +405,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
     // Determine selLines visibility: hide for single entity with OBJECT2D gizmo or empty selBB
     bool showSelLines = selectionVisibility;
     if (!multipleEntitiesSelected && (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D || selBB.size() == 0)) {
-        if (selectedTileIndex < 0) {
+        if (selectedTileIndex < 0 && selectedInstanceIndex < 0) {
             showSelLines = false;
         }
     }
@@ -402,7 +421,8 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
     if (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D && selEntities.size() == 1){
         bool isTilemap = scene->getSignature(selEntities[0]).test(scene->getComponentId<TilemapComponent>());
         bool isCamera = scene->getSignature(selEntities[0]).test(scene->getComponentId<CameraComponent>());
-        toolslayer.setShowObject2DRects((!isTilemap || selectedTileIndex >= 0) && !isCamera);
+        bool isInstancedMesh = scene->getSignature(selEntities[0]).test(scene->getComponentId<InstancedMeshComponent>());
+        toolslayer.setShowObject2DRects((!isTilemap || selectedTileIndex >= 0) && !isCamera && !isInstancedMesh);
     }
 
     uilayer.setViewGizmoImageVisible(true);
@@ -506,6 +526,39 @@ void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> 
                 }
             }
         }
+
+        // Store instance start state for instance sub-selection drag
+        if (selectedInstanceIndex >= 0 && selEntities.size() == 1 && selEntities[0] == selectedInstanceEntity){
+            InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(selectedInstanceEntity);
+            Transform* instTransform = scene->findComponent<Transform>(selectedInstanceEntity);
+            if (instmesh && instTransform && selectedInstanceIndex < (int)instmesh->instances.size()){
+                const InstanceData& inst = instmesh->instances[selectedInstanceIndex];
+                instanceStartPosition = inst.position;
+                instanceStartRotation = inst.rotation;
+                instanceStartScale = inst.scale;
+
+                OBB instOBB = getInstanceOBB(selectedInstanceEntity, selectedInstanceIndex);
+                if (!instOBB.isNull()){
+                    // Gizmo is centered on the instance OBB center (world space); its
+                    // orientation must match getInstanceOBB (see getInstanceWorldRotation).
+                    gizmoStartPosition = instOBB.getCenter();
+                    cursorStartOffset = gizmoStartPosition - rretrun.point;
+                    rotationStartOffset = getInstanceWorldRotation(*instTransform, *instmesh, inst);
+
+                    // Build the actual instance world matrix (same formula the renderer uses
+                    // in non-billboard mode) so drag math operates on the instance directly.
+                    Matrix4 instanceLocalMatrix = Matrix4::translateMatrix(inst.position)
+                                                  * inst.rotation.getRotationMatrix()
+                                                  * Matrix4::scaleMatrix(inst.scale);
+                    Matrix4 instanceWorldMatrix = instTransform->modelMatrix * instanceLocalMatrix;
+
+                    Matrix4 gizmoM = Matrix4::translateMatrix(gizmoStartPosition)
+                                     * rotationStartOffset.getRotationMatrix()
+                                     * Matrix4::scaleMatrix(Vector3(1, 1, 1));
+                    objectMatrixOffset[selectedInstanceEntity] = gizmoM.inverse() * instanceWorldMatrix;
+                }
+            }
+        }
     }
 
 }
@@ -539,11 +592,49 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
 
             SceneProject* sceneProject = project->getScene(sceneId);
 
+            bool isInstanceDrag = selectedInstanceIndex >= 0 && selEntities.size() == 1
+                                  && entity == selectedInstanceEntity
+                                  && scene->findComponent<InstancedMeshComponent>(entity) != nullptr;
+
+            auto emitInstanceTransformCmd = [&](const Matrix4& worldMatrix){
+                Matrix4 instLocalMatrix = transform->modelMatrix.inverse() * worldMatrix;
+                Vector3 newPos, newScale;
+                Quaternion newRot;
+                instLocalMatrix.decomposeStandard(newPos, newScale, newRot);
+
+                std::string prefix = "instances[" + std::to_string(selectedInstanceIndex) + "]";
+                MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+                GizmoSelected gz = toolslayer.getGizmoSelected();
+                if (gz == GizmoSelected::TRANSLATE || gz == GizmoSelected::OBJECT2D){
+                    multiCmd->addPropertyCmd<Vector3>(project, sceneProject->id, entity, ComponentType::InstancedMeshComponent, prefix + ".position", newPos);
+                }else if (gz == GizmoSelected::ROTATE){
+                    multiCmd->addPropertyCmd<Quaternion>(project, sceneProject->id, entity, ComponentType::InstancedMeshComponent, prefix + ".rotation", newRot);
+                }else if (gz == GizmoSelected::SCALE){
+                    multiCmd->addPropertyCmd<Vector3>(project, sceneProject->id, entity, ComponentType::InstancedMeshComponent, prefix + ".scale", newScale);
+                }
+                lastCommand = multiCmd;
+            };
+
             if (rretrun){
 
                 toolslayer.mouseDrag(rretrun.point);
 
                 Transform* transformParent = scene->findComponent<Transform>(transform->parent);
+
+                // Emit a transform command for the active drag target (instance or entity).
+                // worldMatrix is the new object world matrix built by the current gizmo branch.
+                auto applyObjectTransform = [&](const Matrix4& worldMatrix){
+                    if (toolslayer.getGizmoSideSelected() == GizmoSideSelected::NONE) return;
+                    if (isInstanceDrag){
+                        emitInstanceTransformCmd(worldMatrix);
+                    }else{
+                        Matrix4 m = worldMatrix;
+                        if (transformParent){
+                            m = transformParent->modelMatrix.inverse() * m;
+                        }
+                        lastCommand = new ObjectTransformCmd(project, sceneProject->id, entity, m);
+                    }
+                };
 
                 if (toolslayer.getGizmoSelected() == GizmoSelected::TRANSLATE){
                     Vector3 deltaPos = gizmoRMatrix.inverse() * ((rretrun.point + cursorStartOffset) - gizmoStartPosition);
@@ -577,13 +668,7 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
                     Matrix4 gizmoMatrix = Matrix4::translateMatrix(newPos) * gizmoRMatrix * Matrix4::scaleMatrix(Vector3(1,1,1));
                     Matrix4 objMatrix = gizmoMatrix * objectMatrixOffset[entity];
 
-                    if (transformParent){
-                        objMatrix = transformParent->modelMatrix.inverse() * objMatrix;
-                    }
-
-                    if (toolslayer.getGizmoSideSelected() != GizmoSideSelected::NONE){
-                        lastCommand = new ObjectTransformCmd(project, sceneProject->id, entity, objMatrix);
-                    }
+                    applyObjectTransform(objMatrix);
                 }
 
                 if (toolslayer.getGizmoSelected() == GizmoSelected::ROTATE){
@@ -605,13 +690,7 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
                     Matrix4 gizmoMatrix = Matrix4::translateMatrix(gizmoPosition) * newRot.getRotationMatrix() * Matrix4::scaleMatrix(Vector3(1,1,1));
                     Matrix4 objMatrix = gizmoMatrix * objectMatrixOffset[entity];
 
-                    if (transformParent){
-                        objMatrix = transformParent->modelMatrix.inverse() * objMatrix;
-                    }
-
-                    if (toolslayer.getGizmoSideSelected() != GizmoSideSelected::NONE){
-                        lastCommand = new ObjectTransformCmd(project, sceneProject->id, entity, objMatrix);
-                    }
+                    applyObjectTransform(objMatrix);
                 }
 
                 if (toolslayer.getGizmoSelected() == GizmoSelected::SCALE){
@@ -647,13 +726,7 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
                     Matrix4 gizmoMatrix = Matrix4::translateMatrix(gizmoPosition) * gizmoRMatrix * Matrix4::scaleMatrix(newScale);
                     Matrix4 objMatrix = gizmoMatrix * objectMatrixOffset[entity];
 
-                    if (transformParent){
-                        objMatrix = transformParent->modelMatrix.inverse() * objMatrix;
-                    }
-
-                    if (toolslayer.getGizmoSideSelected() != GizmoSideSelected::NONE){
-                        lastCommand = new ObjectTransformCmd(project, sceneProject->id, entity, objMatrix);
-                    }
+                    applyObjectTransform(objMatrix);
                 }
 
                 if (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D){
@@ -779,6 +852,22 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
                                     prefix + ".height", newTileH);
                                 lastCommand = multiCmd;
                             }
+                        }
+                    }else if (isInstanceDrag){
+                        // Instance CENTER drag (position only) for OBJECT2D
+                        if (toolslayer.getGizmo2DSideSelected() == Gizmo2DSideSelected::CENTER){
+                            Vector3 newPos = gizmoRMatrix.inverse() * ((rretrun.point + cursorStartOffset) - gizmoStartPosition);
+                            newPos = gizmoStartPosition + (gizmoRMatrix * newPos);
+                            if (displaySettings.snapToGrid) {
+                                float spacing = displaySettings.gridSpacing2D;
+                                if (spacing > 0.0f) {
+                                    newPos.x = std::round(newPos.x / spacing) * spacing;
+                                    newPos.y = std::round(newPos.y / spacing) * spacing;
+                                }
+                            }
+                            Matrix4 gizmoMatrix = Matrix4::translateMatrix(newPos) * gizmoRMatrix * Matrix4::scaleMatrix(Vector3(1,1,1));
+                            Matrix4 objMatrix = gizmoMatrix * objectMatrixOffset[entity];
+                            emitInstanceTransformCmd(objMatrix);
                         }
                     }else{
                     // Original entity-level OBJECT2D handling
@@ -999,6 +1088,83 @@ OBB editor::SceneRender::getTileOBB(Entity entity, int tileIndex){
                   tile.position.x + tile.width, tile.position.y + tile.height, 0);
 
     return transform.modelMatrix * tileAABB.getOBB();
+}
+
+void editor::SceneRender::selectInstance(Entity entity, int instanceIndex){
+    selectedInstanceEntity = entity;
+    selectedInstanceIndex = instanceIndex;
+}
+
+void editor::SceneRender::clearInstanceSelection(){
+    selectedInstanceEntity = 0;
+    selectedInstanceIndex = -1;
+}
+
+Quaternion editor::SceneRender::getInstanceWorldRotation(const Transform& transform, const InstancedMeshComponent& instmesh, const InstanceData& inst) const{
+    // Billboard mode overrides per-instance rotation at render time, so mirror that
+    // here by not composing inst.rotation into the picking/gizmo orientation.
+    if (instmesh.instancedBillboard){
+        return transform.worldRotation;
+    }
+    return transform.worldRotation * inst.rotation;
+}
+
+OBB editor::SceneRender::getInstanceOBB(Entity entity, int instanceIndex){
+    if (!scene->getComponentArray<InstancedMeshComponent>()->hasEntity(entity)) return OBB();
+    if (!scene->getComponentArray<MeshComponent>()->hasEntity(entity)) return OBB();
+    if (!scene->getComponentArray<Transform>()->hasEntity(entity)) return OBB();
+
+    InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(entity);
+    MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
+    Transform& transform = scene->getComponent<Transform>(entity);
+
+    if (instanceIndex < 0 || instanceIndex >= (int)instmesh.instances.size()) return OBB();
+
+    const InstanceData& inst = instmesh.instances[instanceIndex];
+    // For billboard meshes the per-instance rotation is ignored at render time, so
+    // skip it here too to keep the OBB aligned with what is actually drawn.
+    Matrix4 rotMatrix = instmesh.instancedBillboard
+        ? Matrix4()
+        : inst.rotation.getRotationMatrix();
+    Matrix4 instanceMatrix = Matrix4::translateMatrix(inst.position)
+                             * rotMatrix
+                             * Matrix4::scaleMatrix(inst.scale);
+
+    AABB localAABB = mesh.verticesAABB;
+    if (localAABB.isNull() || (localAABB.getMinimum() == Vector3::ZERO && localAABB.getMaximum() == Vector3::ZERO)){
+        // Fallback to a small unit cube around origin so the instance is still selectable
+        localAABB = AABB(Vector3(-0.5f, -0.5f, -0.5f), Vector3(0.5f, 0.5f, 0.5f));
+    }
+
+    return (transform.modelMatrix * instanceMatrix) * localAABB.getOBB();
+}
+
+int editor::SceneRender::hitTestInstance(Entity entity, float x, float y){
+    if (!scene->getComponentArray<InstancedMeshComponent>()->hasEntity(entity)) return -1;
+    if (!scene->getComponentArray<MeshComponent>()->hasEntity(entity)) return -1;
+    if (!scene->getComponentArray<Transform>()->hasEntity(entity)) return -1;
+
+    InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(entity);
+
+    Ray ray = camera->screenToRay(x, y);
+
+    // Only instances within maxInstances are actually rendered, so restrict picking to them.
+    int renderedCount = (int)std::min<size_t>(instmesh.instances.size(), instmesh.maxInstances);
+
+    int bestIndex = -1;
+    float bestDistance = FLT_MAX;
+    for (int i = 0; i < renderedCount; i++){
+        if (!instmesh.instances[i].visible) continue;
+        OBB instOBB = getInstanceOBB(entity, i);
+        if (instOBB.isNull()) continue;
+        RayReturn rr = ray.intersects(instOBB);
+        if (rr && rr.distance < bestDistance){
+            bestDistance = rr.distance;
+            bestIndex = i;
+        }
+    }
+
+    return bestIndex;
 }
 
 void editor::SceneRender::setupCameraIcon(CameraObjects& co){

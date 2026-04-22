@@ -5975,6 +5975,19 @@ void editor::Properties::drawInstancedMeshComponent(ComponentType cpType, SceneP
         std::string instanceGroupStr = "instance_" + std::to_string(i);
         std::string instanceLabel = "[" + std::to_string(i) + "] Instance " + std::to_string(i);
 
+        bool isInstanceSelected = sceneProject->sceneRender &&
+            sceneProject->sceneRender->getSelectedInstanceIndex() == (int)i &&
+            sceneProject->sceneRender->getSelectedInstanceEntity() == entities[0];
+
+        if (isInstanceSelected) {
+            ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+            float width = ImGui::GetContentRegionAvail().x;
+            float height = ImGui::GetFrameHeight();
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            ImVec4 highlightColor = ImGui::GetStyle().Colors[ImGuiCol_HeaderActive];
+            highlightColor.w = 0.35f;
+            drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + width, cursorPos.y + height), ImGui::GetColorU32(highlightColor), 3.0f);
+        }
         ImGui::SeparatorText(instanceLabel.c_str());
 
         beginTable(cpType, getLabelSize("Position"), instanceGroupStr);

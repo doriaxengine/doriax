@@ -72,11 +72,17 @@ namespace doriax::editor{
         float tileStartWidth = 0;
         float tileStartHeight = 0;
 
+        // Instance sub-selection within an instanced mesh entity
+        Entity selectedInstanceEntity = 0;  // NULL_ENTITY
+        int selectedInstanceIndex = -1;
+        Vector3 instanceStartPosition;
+        Quaternion instanceStartRotation;
+        Vector3 instanceStartScale;
+
         AABB getAABB(Entity entity, bool local);
         AABB getFamilyAABB(Entity entity, float offset);
 
-        OBB getOBB(Entity entity, bool local);
-        OBB getFamilyOBB(Entity entity, float offset);
+        OBB getOBB(Entity entity, bool local);        OBB getFamilyOBB(Entity entity, float offset);
 
     protected:
         void updateCameraFrustum(CameraObjects& co, const CameraComponent& cameraComponent, bool isMainCamera, bool fixedSizeFrustum = true);
@@ -150,6 +156,15 @@ namespace doriax::editor{
         void clearTileSelection();
         int hitTestTile(Entity entity, float x, float y);
         OBB getTileOBB(Entity entity, int tileIndex);
+
+        // Instance sub-selection
+        int getSelectedInstanceIndex() const { return selectedInstanceIndex; }
+        Entity getSelectedInstanceEntity() const { return selectedInstanceEntity; }
+        void selectInstance(Entity entity, int instanceIndex);
+        void clearInstanceSelection();
+        int hitTestInstance(Entity entity, float x, float y);
+        OBB getInstanceOBB(Entity entity, int instanceIndex);
+        Quaternion getInstanceWorldRotation(const Transform& transform, const InstancedMeshComponent& instmesh, const InstanceData& inst) const;
     };
 
 }

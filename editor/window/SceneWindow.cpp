@@ -537,6 +537,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                     bool alreadySelected = project->isSelectedEntity(sceneId, hitEntity);
                     if (!alreadySelected || (io.KeyShift && !gizmoSideActive)) {
                         sceneProject->sceneRender->clearTileSelection();
+                        sceneProject->sceneRender->clearInstanceSelection();
                         bool changed = project->selectObjectByRay(sceneId, x, y, io.KeyShift);
                         if (changed) {
                             sceneProject->sceneRender->update(project->getSelectedEntities(sceneId), project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
@@ -562,6 +563,27 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                             sceneProject->sceneRender->mouseHoverEvent(x, y);
                         } else if (sceneProject->sceneRender->getSelectedTileIndex() >= 0 && gizmo2DSide == Gizmo2DSideSelected::NONE) {
                             sceneProject->sceneRender->clearTileSelection();
+                            sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                            sceneProject->sceneRender->mouseHoverEvent(x, y);
+                        }
+                    }
+                }
+            }
+
+            // Instance sub-selection within a selected InstancedMeshComponent entity
+            {
+                std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
+                if (selEntities.size() == 1 && !io.KeyShift) {
+                    Entity selEntity = selEntities[0];
+                    bool gizmoSideActiveLocal = sceneProject->sceneRender->isAnyGizmoSideSelected();
+                    if (!gizmoSideActiveLocal) {
+                        int instHit = sceneProject->sceneRender->hitTestInstance(selEntity, x, y);
+                        if (instHit >= 0) {
+                            sceneProject->sceneRender->selectInstance(selEntity, instHit);
+                            sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                            sceneProject->sceneRender->mouseHoverEvent(x, y);
+                        } else if (sceneProject->sceneRender->getSelectedInstanceIndex() >= 0) {
+                            sceneProject->sceneRender->clearInstanceSelection();
                             sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
                             sceneProject->sceneRender->mouseHoverEvent(x, y);
                         }
@@ -618,9 +640,25 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !altHeld && !suppressLeftMouse){
             if (!mouseLeftDraggedInside && mouseLeftDown && !disableSelection){
-                bool changed = project->selectObjectByRay(sceneId, x, y, io.KeyShift);
-                if (changed) {
+                // Remember sub-selection anchors BEFORE re-selecting, so we can tell
+                // whether the release click actually changed the host entity.
+                int prevTileIndex = sceneProject->sceneRender->getSelectedTileIndex();
+                Entity prevTileEntity = sceneProject->sceneRender->getSelectedTileEntity();
+                int prevInstanceIndex = sceneProject->sceneRender->getSelectedInstanceIndex();
+                Entity prevInstanceEntity = sceneProject->sceneRender->getSelectedInstanceEntity();
+
+                project->selectObjectByRay(sceneId, x, y, io.KeyShift);
+
+                // Sub-selection is only meaningful while its host entity is the sole
+                // selected entity. Clear it whenever that invariant no longer holds
+                // (different entity picked, nothing picked, or multi-select).
+                std::vector<Entity> selAfter = project->getSelectedEntities(sceneId);
+                bool soleHost = selAfter.size() == 1;
+                if (prevTileIndex >= 0 && !(soleHost && selAfter[0] == prevTileEntity)){
                     sceneProject->sceneRender->clearTileSelection();
+                }
+                if (prevInstanceIndex >= 0 && !(soleHost && selAfter[0] == prevInstanceEntity)){
+                    sceneProject->sceneRender->clearInstanceSelection();
                 }
             }
             mouseLeftDown = false;
@@ -641,6 +679,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 Vector2 clickStartPos = Vector2((2 * mouseLeftStartPos.x / width[sceneId]) - 1, -((2 * mouseLeftStartPos.y / height[sceneId]) - 1));
                 Vector2 clickEndPos = Vector2((2 * mouseLeftDragPos.x / width[sceneId]) - 1, -((2 * mouseLeftDragPos.y / height[sceneId]) - 1));
                 sceneProject->sceneRender->clearTileSelection();
+                sceneProject->sceneRender->clearInstanceSelection();
                 project->selectObjectsByRect(sceneId, clickStartPos, clickEndPos);
             }
 
