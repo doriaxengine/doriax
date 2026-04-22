@@ -61,7 +61,6 @@ namespace doriax::editor{
         void pushNodeImGuiId(const TreeNode& node);
         void popNodeImGuiId(const TreeNode& node);
         void drawInsertionMarker(const ImVec2& p1, const ImVec2& p2);
-        std::string getObjectIcon(Signature signature, Scene* scene);
         void handleEntityFilesDrop(const std::vector<std::string>& filePaths, Entity parent = NULL_ENTITY);
         void handleSceneFilesDropAsChildScenes(const std::vector<std::string>& filePaths, uint32_t ownerSceneId);
         void moveEntityToRootLevel(Entity sourceEntity, const std::unordered_set<Entity>& entitiesSet);
@@ -74,6 +73,8 @@ namespace doriax::editor{
 
     public:
         static constexpr const char* WINDOW_NAME = "Structure";
+
+        static std::string getObjectIcon(Signature signature, Scene* scene);
 
         Structure(Project* project, SceneWindow* sceneWindow);
 

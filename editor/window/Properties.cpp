@@ -21,6 +21,7 @@
 #include "command/type/ComponentToBundleLocalCmd.h"
 #include "command/type/ScenePropertyCmd.h"
 #include "render/SceneRender2D.h"
+#include "window/Structure.h"
 #include "App.h"
 #include "Backend.h"
 #include "component/ActionComponent.h"
@@ -51,6 +52,8 @@
 #include <type_traits>
 #include <cstring>
 #include <fstream>
+#include <cctype>
+#include <unordered_set>
 
 using namespace doriax;
 
@@ -1127,6 +1130,97 @@ void editor::Properties::beginTable(ComponentType cpType, float firstColSize, st
 
 void editor::Properties::endTable(){
     ImGui::EndTable();
+}
+
+editor::Properties::EntityPickerResult editor::Properties::drawEntityPickerPopup(
+        const std::string& popupId, const Signature& filter,
+        SceneProject* owningScene, bool includeChildScenes,
+        Entity currentValue, uint32_t currentValueSceneId) {
+
+    EntityPickerResult result;
+    if (!ImGui::BeginPopup(popupId.c_str())) return result;
+
+    ImGui::Text("Select Entity");
+    ImGui::Separator();
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##ep_search", entityPickerSearchBuffer, sizeof(entityPickerSearchBuffer));
+
+    if (ImGui::BeginChild("##ep_list", ImVec2(300.0f, 220.0f), true)) {
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().ItemSpacing.y);
+
+        std::string searchStr = entityPickerSearchBuffer;
+        for (char& c : searchStr) c = (char)tolower((unsigned char)c);
+
+        // Build list of (SceneProject*, storedSceneId) to display
+        // storedSceneId = 0 for owning scene entities, actual scene ID for child scene entities
+        std::vector<std::pair<SceneProject*, uint32_t>> scenesToShow;
+        scenesToShow.emplace_back(owningScene, (uint32_t)0);
+
+        if (includeChildScenes) {
+            std::unordered_set<uint32_t> visited;
+            visited.insert(owningScene->id);
+            std::vector<uint32_t> toVisit;
+            for (uint32_t childId : project->getChildScenes(owningScene->id))
+                toVisit.push_back(childId);
+            while (!toVisit.empty()) {
+                uint32_t sid = toVisit.back(); toVisit.pop_back();
+                if (visited.count(sid)) continue;
+                visited.insert(sid);
+                SceneProject* child = project->getScene(sid);
+                if (child && child->scene)
+                    scenesToShow.emplace_back(child, sid);
+                for (uint32_t childId : project->getChildScenes(sid))
+                    if (!visited.count(childId)) toVisit.push_back(childId);
+            }
+        }
+
+        bool anyVisible = false;
+        for (auto& [sp, storedSceneId] : scenesToShow) {
+            bool sceneMatches = false;
+            if (!searchStr.empty() && storedSceneId != 0) {
+                std::string slow = sp->name;
+                for (char& c : slow) c = (char)tolower((unsigned char)c);
+                sceneMatches = slow.find(searchStr) != std::string::npos;
+            }
+
+            for (Entity e : sp->entities) {
+                if (!sp->scene->isEntityCreated(e)) continue;
+                if (filter.any() && (sp->scene->getSignature(e) & filter) != filter) continue;
+
+                std::string ename = sp->scene->getEntityName(e);
+                if (ename.empty()) ename = "Entity " + std::to_string(e);
+
+                if (!searchStr.empty() && !sceneMatches) {
+                    std::string elow = ename;
+                    for (char& c : elow) c = (char)tolower((unsigned char)c);
+                    if (elow.find(searchStr) == std::string::npos) continue;
+                }
+
+                anyVisible = true;
+                bool isSelected = (e == currentValue && storedSceneId == currentValueSceneId);
+                std::string eicon = Structure::getObjectIcon(sp->scene->getSignature(e), sp->scene);
+                std::string selId = "##ep_ent_" + std::to_string(storedSceneId) + "_" + std::to_string(e);
+
+                if (ImGui::Selectable(selId.c_str(), isSelected)) {
+                    result.chosen = true;
+                    result.entity = e;
+                    result.sceneId = storedSceneId;
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (storedSceneId != 0)
+                    ImGui::Text("%s  %s  [%s]  (%u)", eicon.c_str(), ename.c_str(), sp->name.c_str(), static_cast<unsigned int>(e));
+                else
+                    ImGui::Text("%s  %s  (%u)", eicon.c_str(), ename.c_str(), static_cast<unsigned int>(e));
+            }
+        }
+
+        if (!anyVisible) ImGui::TextDisabled("No entities found");
+    }
+    ImGui::EndChild();
+    ImGui::EndPopup();
+
+    return result;
 }
 
 bool editor::Properties::propertyHeader(std::string label, float secondColSize, bool defChanged, bool child){
@@ -3254,15 +3348,34 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_XMARK).x;
         ImVec2 inputSize = ImVec2(ImGui::GetContentRegionAvail().x - clearButtonWidth - ImGui::GetStyle().ItemSpacing.x - clearButtonFramePadding * 2, 0);
 
+        std::string pickerPopupId = "##ep_" + id;
+
         if (ImGui::Button(buttonLabel.c_str(), inputSize)) {
             if (newValue != NULL_ENTITY && sceneProject->scene->isEntityCreated(newValue)) {
                 project->clearSelectedEntities(sceneProject->id);
                 project->addSelectedEntity(sceneProject->id, newValue);
+            } else if (!different) {
+                ImGui::OpenPopup(pickerPopupId.c_str());
+                memset(entityPickerSearchBuffer, 0, sizeof(entityPickerSearchBuffer));
             }
         }
 
-        if (ImGui::IsItemHovered() && !different && newValue != NULL_ENTITY) {
-            ImGui::SetTooltip("Entity: %s (ID: %u)", entityName.c_str(), static_cast<unsigned int>(newValue));
+        if (ImGui::IsItemHovered() && !different) {
+            if (newValue != NULL_ENTITY) {
+                ImGui::SetTooltip("Entity: %s (ID: %u)", entityName.c_str(), static_cast<unsigned int>(newValue));
+            } else {
+                ImGui::SetTooltip("Click to select entity");
+            }
+        }
+
+        // Entity picker popup
+        auto pickerResult = drawEntityPickerPopup(pickerPopupId, settings.entityFilter, sceneProject, false, newValue, 0);
+        if (pickerResult.chosen) {
+            for (Entity& entity : entities) {
+                cmd = new PropertyCmd<unsigned int>(project, sceneProject->id, entity, cpType, id, pickerResult.entity, settings.onValueChanged);
+                CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
+            }
+            finishProperty = true;
         }
 
         if (ImGui::BeginDragDropTarget()) {
@@ -3426,8 +3539,9 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                 entityName = "---";
                 sceneSuffix = "";
             } else if (invalidSelection) {
-                entityName = "Missing";
-                sceneSuffix = "";
+                entityName = "Entity " + std::to_string(newValue);
+                SceneProject* storedScene = (currentSceneId != 0) ? project->getScene(currentSceneId) : sceneProject;
+                sceneSuffix = storedScene ? " (" + storedScene->name + ")" : "";
             }
         }
 
@@ -3442,28 +3556,50 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, App::ThemeColors::ExtEntityButtonHovered);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, App::ThemeColors::ExtEntityButtonActive);
 
+        std::string extPickerPopupId = "##ep_ext_" + id;
+
         if (ImGui::Button(buttonLabel.c_str(), inputSize)) {
             if (resolvedScene && newValue != NULL_ENTITY) {
                 uint32_t selectSceneId = (currentSceneId != 0) ? currentSceneId : sceneProject->id;
                 project->clearSelectedEntities(selectSceneId);
                 project->addSelectedEntity(selectSceneId, newValue);
+            } else if (!different) {
+                ImGui::OpenPopup(extPickerPopupId.c_str());
+                memset(entityPickerSearchBuffer, 0, sizeof(entityPickerSearchBuffer));
             }
         }
         ImGui::PopStyleColor(3);
 
         if (ImGui::IsItemHovered() && !different) {
-            std::string tipSceneName = sceneProject->name;
-            uint32_t tipSceneId = sceneProject->id;
-            if (currentSceneId != 0) {
-                SceneProject* tipScene = project->getScene(currentSceneId);
-                if (tipScene) {
-                    tipSceneName = tipScene->name;
-                    tipSceneId = currentSceneId;
+            if (newValue != NULL_ENTITY) {
+                std::string tipSceneName = sceneProject->name;
+                uint32_t tipSceneId = sceneProject->id;
+                if (currentSceneId != 0) {
+                    SceneProject* tipScene = project->getScene(currentSceneId);
+                    if (tipScene) {
+                        tipSceneName = tipScene->name;
+                        tipSceneId = currentSceneId;
+                    }
                 }
+                ImGui::SetTooltip("Entity: %s (ID: %u)\nScene: %s (ID: %u)",
+                    entityName.c_str(), static_cast<unsigned int>(newValue),
+                    tipSceneName.c_str(), static_cast<unsigned int>(tipSceneId));
+            } else {
+                ImGui::SetTooltip("Click to select entity");
             }
-            ImGui::SetTooltip("Entity: %s (ID: %u)\nScene: %s (ID: %u)",
-                entityName.c_str(), static_cast<unsigned int>(newValue),
-                tipSceneName.c_str(), static_cast<unsigned int>(tipSceneId));
+        }
+
+        // Entity picker popup
+        auto extPickerResult = drawEntityPickerPopup(extPickerPopupId, settings.entityFilter, sceneProject, true, newValue, currentSceneId);
+        if (extPickerResult.chosen) {
+            for (Entity& entity : entities) {
+                auto multiCmd = new MultiPropertyCmd();
+                multiCmd->addPropertyCmd<unsigned int>(project, sceneProject->id, entity, cpType, id, extPickerResult.entity, settings.onValueChanged);
+                multiCmd->addPropertyCmd<uint32_t>(project, sceneProject->id, entity, cpType, id + ".sceneId", extPickerResult.sceneId, nullptr);
+                cmd = multiCmd;
+                CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
+            }
+            finishProperty = true;
         }
 
         if (ImGui::BeginDragDropTarget()) {
@@ -6901,6 +7037,7 @@ void editor::Properties::drawJoint2DComponent(ComponentType cpType, SceneProject
 
     RowSettings settingsJointValue;
     settingsJointValue.onValueChanged = markJoint2DDirty;
+    settingsJointValue.entityFilter.set(sceneProject->scene->getComponentId<Body2DComponent>());
 
     beginTable(cpType, getLabelSize("Joint Type"));
     propertyRow(RowPropertyType::Enum, cpType, "type", "Joint Type", sceneProject, entities, settingsJointType);
@@ -6961,6 +7098,7 @@ void editor::Properties::drawJoint3DComponent(ComponentType cpType, SceneProject
 
     RowSettings settingsJointValue;
     settingsJointValue.onValueChanged = markJoint3DDirty;
+    settingsJointValue.entityFilter.set(sceneProject->scene->getComponentId<Body3DComponent>());
 
     beginTable(cpType, getLabelSize("Joint Type"));
     propertyRow(RowPropertyType::Enum, cpType, "type", "Joint Type", sceneProject, entities, settingsJointType);
@@ -8192,7 +8330,9 @@ void editor::Properties::drawAnimationComponent(ComponentType cpType, SceneProje
             propertyRow(RowPropertyType::UInt, cpType, prefix + ".track", "Track", sceneProject, entities);
             propertyRow(RowPropertyType::Float, cpType, prefix + ".startTime", "Start Time", sceneProject, entities);
             propertyRow(RowPropertyType::Float, cpType, prefix + ".duration", "Duration", sceneProject, entities);
-            propertyRow(RowPropertyType::LocalEntity, cpType, prefix + ".action", "Action", sceneProject, entities);
+            RowSettings settingsAction;
+            settingsAction.entityFilter.set(sceneProject->scene->getComponentId<ActionComponent>());
+            propertyRow(RowPropertyType::LocalEntity, cpType, prefix + ".action", "Action", sceneProject, entities, settingsAction);
 
             if (i < anim.actions.size() - 1) {
                 ImGui::TableNextRow();
@@ -8215,8 +8355,10 @@ void editor::Properties::drawBundleComponent(ComponentType cpType, SceneProject*
 }
 
 void editor::Properties::drawBoneComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    RowSettings settingsModel;
+    settingsModel.entityFilter.set(sceneProject->scene->getComponentId<ModelComponent>());
     beginTable(cpType, getLabelSize("Bind Rotation"));
-    propertyRow(RowPropertyType::LocalEntity, cpType, "model", "Model", sceneProject, entities);
+    propertyRow(RowPropertyType::LocalEntity, cpType, "model", "Model", sceneProject, entities, settingsModel);
     propertyRow(RowPropertyType::Int, cpType, "index", "Index", sceneProject, entities);
     propertyRow(RowPropertyType::Vector3, cpType, "bindPosition", "Bind Position", sceneProject, entities);
     propertyRow(RowPropertyType::Quat, cpType, "bindRotation", "Bind Rotation", sceneProject, entities);

@@ -10,6 +10,7 @@
 
 #include "imgui.h"
 #include "yaml-cpp/yaml.h"
+#include "ecs/Signature.h"
 
 namespace doriax::editor{
 
@@ -58,6 +59,8 @@ namespace doriax::editor{
         std::vector<EnumEntry>* enumEntries = nullptr;
         std::vector<int>* sliderValues = nullptr;
         std::function<void()> onValueChanged = nullptr;
+        // Optional filter for LocalEntity picker: only show entities matching all bits
+        Signature entityFilter;
     };
 
     class Properties{
@@ -114,6 +117,9 @@ namespace doriax::editor{
         void startActionPreview(Entity entity, Scene* scene, SceneProject* sceneProject);
         void stopActionPreview(Scene* scene, SceneProject* sceneProject);
 
+        // For entity picker popup
+        char entityPickerSearchBuffer[128] = {};
+
         // For component menu
         char componentSearchBuffer[128] = "";
         int hoveredComponentIndex = -1;
@@ -156,6 +162,14 @@ namespace doriax::editor{
         void updateMeshShape(MeshComponent& meshComp, MeshSystem* meshSys, const ShapeParameters& shapeParams);
 
         void drawNinePatchesPreview(const ImageComponent& img, Texture* texture, Texture* thumbTexture, const ImVec2& size = ImVec2(0, 0));
+
+        struct EntityPickerResult {
+            bool chosen = false;
+            Entity entity = NULL_ENTITY;
+            uint32_t sceneId = 0;
+        };
+
+        EntityPickerResult drawEntityPickerPopup(const std::string& popupId, const Signature& filter, SceneProject* owningScene, bool includeChildScenes, Entity currentValue, uint32_t currentValueSceneId = 0);
 
         void beginTable(ComponentType cpType, float firstColSize, std::string nameAddon = "");
         void endTable();
