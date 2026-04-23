@@ -562,9 +562,15 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                             sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
                             sceneProject->sceneRender->mouseHoverEvent(x, y);
                         } else if (sceneProject->sceneRender->getSelectedTileIndex() >= 0 && gizmo2DSide == Gizmo2DSideSelected::NONE) {
-                            sceneProject->sceneRender->clearTileSelection();
-                            sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
-                            sceneProject->sceneRender->mouseHoverEvent(x, y);
+                            // Only clear eagerly when clicking the entity body itself. When
+                            // clicking empty space the click-up handler clears both the tile
+                            // and the entity together, avoiding a two-step gizmo jump.
+                            Entity bodyHit = project->findObjectByRay(sceneId, x, y);
+                            if (bodyHit == selEntity) {
+                                sceneProject->sceneRender->clearTileSelection();
+                                sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                                sceneProject->sceneRender->mouseHoverEvent(x, y);
+                            }
                         }
                     }
                 }
@@ -592,9 +598,17 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                             sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
                             sceneProject->sceneRender->mouseHoverEvent(x, y);
                         } else if (sceneProject->sceneRender->getSelectedInstanceIndex() >= 0) {
-                            sceneProject->sceneRender->clearInstanceSelection();
-                            sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
-                            sceneProject->sceneRender->mouseHoverEvent(x, y);
+                            // Only clear eagerly when clicking the entity body itself, so the
+                            // gizmo correctly snaps to the entity level. When clicking empty
+                            // space the click-up selectObjectByRay handler will clear both the
+                            // instance and the entity at once, avoiding a two-step visual where
+                            // the gizmo briefly jumps to entity position before disappearing.
+                            Entity bodyHit = project->findObjectByRay(sceneId, x, y);
+                            if (bodyHit == selEntity) {
+                                sceneProject->sceneRender->clearInstanceSelection();
+                                sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                                sceneProject->sceneRender->mouseHoverEvent(x, y);
+                            }
                         }
                     }
                 }
