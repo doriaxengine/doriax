@@ -387,6 +387,9 @@ bool editor::CreateEntityCmd::execute(){
 
         scene->addComponent<ActionComponent>(entity, {});
         scene->addComponent<ParticlesComponent>(entity, {});
+        if (parent != NULL_ENTITY){
+            scene->getComponent<ActionComponent>(entity).target = parent;
+        }
 
     }else if (type == EntityCreationType::POINTS){
 
