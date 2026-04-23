@@ -3020,7 +3020,9 @@ void RenderSystem::update(double dt){
                 }
             }
 
-            points.needUpdate = false;
+            if (points.loaded){
+                points.needUpdate = false;
+            }
         }else if (signature.test(scene->getComponentId<LinesComponent>())){
             LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
             if (lines.loaded && lines.needReload){
