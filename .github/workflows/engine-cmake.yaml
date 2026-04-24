@@ -89,7 +89,7 @@ jobs:
           mkdir build
           mkdir instdir
           cmake \
-            -S engine/project \
+            -S engine \
             -B build \
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
             -G "${{ matrix.config.generators }}" \

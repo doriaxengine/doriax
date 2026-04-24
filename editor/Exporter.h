@@ -64,7 +64,6 @@ namespace doriax::editor {
         bool copyCppScripts();
         bool copyEngine();
         bool buildAndSaveShaders();
-        bool generateCMakeLists();
 
     public:
         Exporter();

@@ -91,8 +91,6 @@ void editor::Exporter::runExport() {
     if (!copyEngine()) return;
     if (isCancelled()) { setError("Export cancelled"); return; }
     if (!buildAndSaveShaders()) return;
-    if (isCancelled()) { setError("Export cancelled"); return; }
-    if (!generateCMakeLists()) return;
 
     setProgress("Export complete", 1.0f);
     {
@@ -389,10 +387,47 @@ bool editor::Exporter::copyLua() {
     fs::path luaDst = getExportProjectRoot() / "lua";
     fs::create_directories(luaDst, ec);
 
-    fs::copy(luaSrc, luaDst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-    if (ec) {
-        setError("Failed to copy Lua directory: " + ec.message());
-        return false;
+    // Collect C++ script paths to exclude
+    std::set<fs::path> scriptPaths;
+    for (const auto& sceneProject : project->getScenes()) {
+        for (const auto& script : sceneProject.cppScripts) {
+            if (!script.path.empty()) {
+                fs::path p = script.path;
+                if (p.is_relative()) p = project->getProjectPath() / p;
+                scriptPaths.insert(fs::weakly_canonical(p, ec));
+            }
+            if (!script.headerPath.empty()) {
+                fs::path p = script.headerPath;
+                if (p.is_relative()) p = project->getProjectPath() / p;
+                scriptPaths.insert(fs::weakly_canonical(p, ec));
+            }
+        }
+    }
+
+    for (auto& entry : fs::recursive_directory_iterator(luaSrc, fs::directory_options::skip_permission_denied, ec)) {
+        fs::path relativePath = fs::relative(entry.path(), luaSrc, ec);
+
+        // Skip hidden directories (starting with '.')
+        std::string firstComponent = relativePath.begin()->string();
+        if (!firstComponent.empty() && firstComponent[0] == '.') {
+            continue;
+        }
+        // Skip CMakeLists.txt at root
+        if (relativePath == "CMakeLists.txt") {
+            continue;
+        }
+        // Skip C++ script files
+        if (entry.is_regular_file() && scriptPaths.count(fs::weakly_canonical(entry.path(), ec))) {
+            continue;
+        }
+
+        fs::path destPath = luaDst / relativePath;
+        if (entry.is_directory()) {
+            fs::create_directories(destPath, ec);
+        } else if (entry.is_regular_file()) {
+            fs::create_directories(destPath.parent_path(), ec);
+            fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing, ec);
+        }
     }
 
     return true;
@@ -467,14 +502,14 @@ bool editor::Exporter::copyEngine() {
 
     fs::path sdkRoot;
     const std::vector<fs::path> sdkCandidates = {
-        exeDir / "doriax",
-        exeDir.parent_path() / "doriax",
+        exeDir / "engine",
+        exeDir.parent_path() / "engine",
         exeDir
     };
 
     std::error_code ec;
     for (const auto& candidate : sdkCandidates) {
-        if (fs::exists(candidate / "engine" / "CMakeLists.txt", ec)) {
+        if (fs::exists(candidate / "CMakeLists.txt", ec)) {
             sdkRoot = candidate;
             break;
         }
@@ -485,41 +520,40 @@ bool editor::Exporter::copyEngine() {
         return false;
     }
 
-    fs::path engineSrc = sdkRoot / "engine";
-    fs::path platformSrc = sdkRoot / "platform";
-    fs::path workspacesSrc = sdkRoot / "workspaces";
+    auto copyDir = [&](const std::string& name) -> bool {
+        fs::path src = sdkRoot / name;
+        fs::path dst = config.targetDir / name;
 
-    fs::path engineDst = config.targetDir / "engine";
-    fs::path platformDst = config.targetDir / "platform";
-    fs::path workspacesDst = config.targetDir / "workspaces";
-
-    if (fs::exists(engineSrc, ec)) {
-        fs::copy(engineSrc, engineDst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            setError("Failed to copy engine directory: " + ec.message());
+        if (!fs::exists(src, ec)) {
+            setError(name + " directory not found at: " + src.string());
             return false;
         }
-    } else {
-        setError("Engine directory not found at: " + engineSrc.string());
+        fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        if (ec) {
+            setError("Failed to copy " + name + " directory: " + ec.message());
+            return false;
+        }
+        return true;
+    };
+
+    if (!copyDir("core")) return false;
+    if (!copyDir("libs")) return false;
+    if (!copyDir("platform")) return false;
+    if (!copyDir("renders")) return false;
+    if (!copyDir("shaders")) return false;
+    //if (!copyDir("tools")) return false;
+    if (!copyDir("workspaces")) return false;
+
+    fs::path cmakeSrc = sdkRoot / "CMakeLists.txt";
+    fs::path cmakeDst = config.targetDir / "CMakeLists.txt";
+    if (!fs::exists(cmakeSrc, ec)) {
+        setError("CMakeLists.txt not found at: " + cmakeSrc.string());
         return false;
     }
-
-    if (fs::exists(platformSrc, ec)) {
-        ec.clear();
-        fs::copy(platformSrc, platformDst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            setError("Failed to copy platform directory: " + ec.message());
-            return false;
-        }
-    }
-
-    if (fs::exists(workspacesSrc, ec)) {
-        ec.clear();
-        fs::copy(workspacesSrc, workspacesDst, fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            setError("Failed to copy workspaces directory: " + ec.message());
-            return false;
-        }
+    fs::copy_file(cmakeSrc, cmakeDst, fs::copy_options::overwrite_existing, ec);
+    if (ec) {
+        setError("Failed to copy CMakeLists.txt: " + ec.message());
+        return false;
     }
 
     return true;
@@ -596,509 +630,6 @@ bool editor::Exporter::buildAndSaveShaders() {
             current++;
         }
     }
-
-    return true;
-}
-
-bool editor::Exporter::generateCMakeLists() {
-    setProgress("Generating CMakeLists.txt...", 0.9f);
-
-    std::string cmakeContent = R"CMAKE(# This file is auto-generated by Doriax Editor Export. Do not edit manually.
-
-cmake_minimum_required(VERSION 3.15)
-
-if(NOT DEFINED APP_NAME)
-   set(APP_NAME doriax-project)
-endif()
-
-project(${APP_NAME})
-
-set(DORIAX_SHARED OFF)
-
-if(NOT DORIAX_ROOT)
-    set(DORIAX_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
-endif()
-if (NOT EXISTS "${DORIAX_ROOT}")
-    message(FATAL_ERROR "Can't find Doriax root directory: ${DORIAX_ROOT}")
-endif()
-file(TO_CMAKE_PATH ${DORIAX_ROOT} DORIAX_ROOT)
-
-if(NOT PROJECT_ROOT)
-    set(PROJECT_ROOT ${DORIAX_ROOT}/project)
-endif()
-if (NOT EXISTS "${PROJECT_ROOT}")
-    message(FATAL_ERROR "Can't find project root directory: ${PROJECT_ROOT}")
-endif()
-file(TO_CMAKE_PATH ${PROJECT_ROOT} PROJECT_ROOT)
-
-add_definitions("-DDEFAULT_WINDOW_WIDTH=960")
-add_definitions("-DDEFAULT_WINDOW_HEIGHT=540")
-
-if(NOT GRAPHIC_BACKEND)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        set(GRAPHIC_BACKEND "gles3")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-        set(GRAPHIC_BACKEND "gles3")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        set(GRAPHIC_BACKEND "d3d11")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        set(GRAPHIC_BACKEND "glcore")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-        set(GRAPHIC_BACKEND "glcore")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        set(GRAPHIC_BACKEND "metal")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        set(GRAPHIC_BACKEND "metal")
-    else()
-        message(FATAL_ERROR "GRAPHIC_BACKEND is not set")
-    endif()
-endif()
-message(STATUS "Graphic backend is set to ${GRAPHIC_BACKEND}")
-
-if(NOT APP_BACKEND)
-    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-        set(APP_BACKEND "emscripten")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
-        set(APP_BACKEND "android")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-        set(APP_BACKEND "sokol")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        set(APP_BACKEND "glfw")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
-        set(APP_BACKEND "glfw")
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-        if (CMAKE_GENERATOR STREQUAL "Xcode")
-            set(APP_BACKEND "apple")
-        else()
-            set(APP_BACKEND "sokol")
-        endif()
-    elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-        set(APP_BACKEND "apple")
-    else()
-        message(FATAL_ERROR "APP_BACKEND is not set")
-    endif()
-endif()
-message(STATUS "Application backend is set to ${APP_BACKEND}")
-
-set(COMPILE_ZLIB OFF)
-set(IS_ARM OFF)
-
-set(PLATFORM_EXEC_FLAGS)
-set(PLATFORM_ROOT)
-set(PLATFORM_SOURCE)
-set(PLATFORM_LIBS)
-set(PLATFORM_RESOURCES)
-set(PLATFORM_PROPERTIES)
-set(PLATFORM_OPTIONS)
-
-find_package(Threads REQUIRED)
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-    add_definitions("-DDORIAX_WEB")
-
-    if(GRAPHIC_BACKEND STREQUAL "gles3")
-        add_definitions("-DSOKOL_GLES3")
-        set(USE_WEBGL2 "-s USE_WEBGL2=1")
-    endif()
-
-    add_definitions("-DWITH_MINIAUDIO")
-
-    set(CMAKE_EXECUTABLE_SUFFIX ".html")
-    set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/emscripten)
-
-    set(EM_PRELOAD_FILES)
-    if (EXISTS "${PROJECT_ROOT}/assets")
-        set(EM_PRELOAD_FILES "${EM_PRELOAD_FILES} --preload-file ${PROJECT_ROOT}/assets@/")
-    endif()
-    if (EXISTS "${PROJECT_ROOT}/lua")
-        set(EM_PRELOAD_FILES "${EM_PRELOAD_FILES} --preload-file ${PROJECT_ROOT}/lua@/")
-    endif()
-
-    list(APPEND PLATFORM_SOURCE
-        ${PLATFORM_ROOT}/DoriaxWeb.cpp
-        ${PLATFORM_ROOT}/main.cpp
-    )
-
-    list(APPEND PLATFORM_LIBS
-        idbfs.js
-    )
-
-    option(EMSCRIPTEN_THREAD_SUPPORT "Enable pthreads for Emscripten builds" OFF)
-
-    if(EMSCRIPTEN_THREAD_SUPPORT)
-        set(USE_PTHREADS "-s USE_PTHREADS=1 -s PTHREAD_POOL_SIZE=4")
-        list(APPEND PLATFORM_OPTIONS -pthread)
-    endif()
-
-    set(ALLOW_MEMORY_GROWTH "-s ALLOW_MEMORY_GROWTH=1")
-
-    list(APPEND PLATFORM_PROPERTIES
-        LINK_FLAGS
-            "-g \
-            -s INITIAL_MEMORY=256MB \
-            -s STACK_SIZE=4MB \
-            -s EXPORTED_FUNCTIONS=\"['_getScreenWidth','_getScreenHeight','_changeCanvasSize','_main']\" \
-            -s EXPORTED_RUNTIME_METHODS=\"['ccall', 'cwrap']\" \
-            ${EM_PRELOAD_FILES} \
-            ${EM_ADDITIONAL_LINK_FLAGS} \
-            ${USE_PTHREADS} \
-            ${ALLOW_MEMORY_GROWTH} \
-            ${USE_WEBGL2}"
-    )
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    add_definitions("-DDORIAX_ANDROID")
-
-    if(GRAPHIC_BACKEND STREQUAL "gles3")
-        add_definitions("-DSOKOL_GLES3")
-        set(OPENGL_LIB GLESv3)
-    endif()
-
-    add_definitions("-D\"lua_getlocaledecpoint()='.'\"")
-    add_definitions("-DLUA_ANSI")
-    add_definitions("-DLUA_USE_C89")
-    add_definitions("-DWITH_MINIAUDIO")
-
-    set(APP_NAME doriax-android)
-
-    if(ANDROID_ABI MATCHES "^arm(eabi)?(-v7a)?(64-v8a)?$")
-        if(ANDROID_ABI MATCHES "^arm(eabi)?(-v7a)?$")
-            add_compile_options("-mfpu=fp-armv8")
-        endif()
-        set(IS_ARM ON)
-    endif()
-
-    set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/android)
-
-    list(APPEND PLATFORM_SOURCE
-        ${PLATFORM_ROOT}/DoriaxAndroid.cpp
-        ${PLATFORM_ROOT}/AndroidMain.cpp
-        ${PLATFORM_ROOT}/NativeEngine.cpp
-    )
-
-    set(CMAKE_SHARED_LINKER_FLAGS
-            "${CMAKE_SHARED_LINKER_FLAGS} -u Java_com_google_androidgamesdk_GameActivity_initializeNativeCode")
-
-    find_package(game-activity REQUIRED CONFIG)
-    find_package(games-frame-pacing REQUIRED CONFIG)
-
-    list(APPEND PLATFORM_LIBS
-        ${OPENGL_LIB}
-        log
-        android
-        EGL
-        OpenSLES
-        game-activity::game-activity_static
-        games-frame-pacing::swappy_static
-    )
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
-    add_definitions("-DDORIAX_SOKOL")
-
-    if(GRAPHIC_BACKEND STREQUAL "glcore")
-        add_definitions("-DSOKOL_GLCORE")
-    elseif(GRAPHIC_BACKEND STREQUAL "d3d11")
-        add_definitions("-DSOKOL_D3D11")
-    endif()
-
-    add_definitions("-DWITH_MINIAUDIO")
-
-    if (EXISTS "${PROJECT_ROOT}/assets")
-        set(ASSETS_DEST_DIR ${CMAKE_BINARY_DIR}/$<CONFIG>/assets)
-    endif()
-    if (EXISTS "${PROJECT_ROOT}/lua")
-        set(LUA_DEST_DIR ${CMAKE_BINARY_DIR}/$<CONFIG>/lua)
-    endif()
-
-    set(PLATFORM_EXEC_FLAGS WIN32)
-    set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/sokol)
-
-    list(APPEND PLATFORM_SOURCE
-        ${PLATFORM_ROOT}/DoriaxSokol.cpp
-        ${PLATFORM_ROOT}/main.cpp
-    )
-
-    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-        list(APPEND PLATFORM_LIBS
-            -static -static-libgcc -static-libstdc++
-        )
-    endif()
-    if(MSVC)
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
-    endif()
-endif()
-
-if((CMAKE_SYSTEM_NAME STREQUAL "Linux") OR (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"))
-    if(GRAPHIC_BACKEND STREQUAL "glcore")
-        add_definitions("-DSOKOL_GLCORE")
-    endif()
-
-    add_definitions("-DWITH_MINIAUDIO")
-
-    if (EXISTS "${PROJECT_ROOT}/assets")
-        set(ASSETS_DEST_DIR ${CMAKE_BINARY_DIR}/assets)
-    endif()
-    if (EXISTS "${PROJECT_ROOT}/lua")
-        set(LUA_DEST_DIR ${CMAKE_BINARY_DIR}/lua)
-    endif()
-
-    if (APP_BACKEND STREQUAL "glfw")
-        add_definitions("-DDORIAX_GLFW")
-
-        set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/glfw)
-
-        list(APPEND PLATFORM_SOURCE
-            ${PLATFORM_ROOT}/DoriaxGLFW.cpp
-            ${PLATFORM_ROOT}/main.cpp
-        )
-
-        list(APPEND PLATFORM_LIBS
-            GL dl m glfw
-        )
-    else()
-        add_definitions("-DDORIAX_SOKOL")
-
-        set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/sokol)
-
-        list(APPEND PLATFORM_SOURCE
-            ${PLATFORM_ROOT}/DoriaxSokol.cpp
-            ${PLATFORM_ROOT}/main.cpp
-        )
-    endif()
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    if(GRAPHIC_BACKEND STREQUAL "glcore")
-        add_definitions("-DSOKOL_GLCORE")
-    elseif(GRAPHIC_BACKEND STREQUAL "metal")
-        add_definitions("-DSOKOL_METAL")
-    endif()
-
-    add_definitions("-DWITH_MINIAUDIO")
-
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fobjc-arc")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
-
-    if (APP_BACKEND STREQUAL "apple")
-        add_definitions("-DDORIAX_APPLE")
-        set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/apple)
-        set(APP_BUNDLE_IDENTIFIER "org.doriaxengine.doriax")
-        set(PLATFORM_EXEC_FLAGS MACOSX_BUNDLE)
-
-        include_directories(/System/Library/Frameworks)
-
-        list(APPEND PLATFORM_SOURCE
-            ${PLATFORM_ROOT}/macos/main.m
-            ${PLATFORM_ROOT}/macos/AppDelegate.h
-            ${PLATFORM_ROOT}/macos/AppDelegate.m
-            ${PLATFORM_ROOT}/macos/EngineView.h
-            ${PLATFORM_ROOT}/macos/EngineView.mm
-            ${PLATFORM_ROOT}/macos/ViewController.h
-            ${PLATFORM_ROOT}/macos/ViewController.m
-            ${PLATFORM_ROOT}/Renderer.h
-            ${PLATFORM_ROOT}/Renderer.mm
-            ${PLATFORM_ROOT}/DoriaxApple.h
-            ${PLATFORM_ROOT}/DoriaxApple.mm
-        )
-
-        list(APPEND PLATFORM_RESOURCES
-            ${PLATFORM_ROOT}/macos/Main.storyboard
-        )
-
-        list(APPEND PLATFORM_PROPERTIES
-            MACOSX_BUNDLE_INFO_PLIST "${DORIAX_ROOT}/workspaces/xcode/macos/Info.plist"
-            XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
-        )
-    else()
-        if (EXISTS "${PROJECT_ROOT}/assets")
-            set(ASSETS_DEST_DIR ${CMAKE_BINARY_DIR}/assets)
-        endif()
-        if (EXISTS "${PROJECT_ROOT}/lua")
-            set(LUA_DEST_DIR ${CMAKE_BINARY_DIR}/lua)
-        endif()
-
-        if (APP_BACKEND STREQUAL "glfw")
-            add_definitions("-DDORIAX_GLFW")
-            set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/glfw)
-
-            list(APPEND PLATFORM_SOURCE
-                ${PLATFORM_ROOT}/DoriaxGLFW.cpp
-                ${PLATFORM_ROOT}/main.cpp
-            )
-
-            list(APPEND PLATFORM_LIBS
-                glfw
-            )
-        else()
-            add_definitions("-DDORIAX_SOKOL")
-            set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/sokol)
-
-            list(APPEND PLATFORM_SOURCE
-                ${PLATFORM_ROOT}/DoriaxSokol.cpp
-                ${PLATFORM_ROOT}/main.cpp
-            )
-        endif()
-    endif()
-endif()
-
-if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    add_definitions("-DDORIAX_APPLE")
-
-    if(GRAPHIC_BACKEND STREQUAL "metal")
-        add_definitions("-DSOKOL_METAL")
-    endif()
-
-    add_definitions("-DWITH_MINIAUDIO")
-
-    set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/apple)
-    set(APP_BUNDLE_IDENTIFIER "org.doriaxengine.doriax")
-
-    include_directories(/System/Library/Frameworks)
-
-    list(APPEND PLATFORM_SOURCE
-        ${PLATFORM_ROOT}/ios/main.m
-        ${PLATFORM_ROOT}/ios/AppDelegate.h
-        ${PLATFORM_ROOT}/ios/AppDelegate.m
-        ${PLATFORM_ROOT}/ios/EngineView.h
-        ${PLATFORM_ROOT}/ios/EngineView.mm
-        ${PLATFORM_ROOT}/ios/ViewController.h
-        ${PLATFORM_ROOT}/ios/ViewController.m
-        ${PLATFORM_ROOT}/ios/AdMobAdapter.h
-        ${PLATFORM_ROOT}/ios/AdMobAdapter.m
-        ${PLATFORM_ROOT}/Renderer.h
-        ${PLATFORM_ROOT}/Renderer.mm
-        ${PLATFORM_ROOT}/DoriaxApple.h
-        ${PLATFORM_ROOT}/DoriaxApple.mm
-    )
-
-    list(APPEND PLATFORM_RESOURCES
-        ${PLATFORM_ROOT}/ios/LaunchScreen.storyboard
-        ${PLATFORM_ROOT}/ios/Main.storyboard
-    )
-
-    list(APPEND PLATFORM_LIBS
-        -ObjC
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/FBLPromises.xcframework/ios-arm64_x86_64-simulator/FBLPromises.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/GoogleAppMeasurement.xcframework/ios-arm64_x86_64-simulator/GoogleAppMeasurement.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/GoogleAppMeasurementIdentitySupport.xcframework/ios-arm64_x86_64-simulator/GoogleAppMeasurementIdentitySupport.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/GoogleMobileAds.xcframework/ios-arm64_x86_64-simulator/GoogleMobileAds.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/GoogleUtilities.xcframework/ios-arm64_x86_64-simulator/GoogleUtilities.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/UserMessagingPlatform.xcframework/ios-arm64_x86_64-simulator/UserMessagingPlatform.framework
-        ${PLATFORM_ROOT}/GoogleMobileAdsSdkiOS-10.14.0/nanopb.xcframework/ios-arm64_x86_64-simulator/nanopb.framework
-    )
-
-    add_compile_options(-fmodules)
-
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fobjc-arc")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fobjc-arc")
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0")
-
-    list(APPEND PLATFORM_PROPERTIES
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER ${APP_BUNDLE_IDENTIFIER}
-        MACOSX_BUNDLE_INFO_PLIST "${DORIAX_ROOT}/workspaces/xcode/ios/Info.plist"
-        XCODE_ATTRIBUTE_CLANG_ENABLE_OBJC_ARC "YES"
-    )
-endif()
-
-include_directories(${PLATFORM_ROOT})
-
-include_directories(${DORIAX_ROOT}/engine/libs/sokol)
-include_directories(${DORIAX_ROOT}/engine/libs/lua)
-include_directories(${DORIAX_ROOT}/engine/libs/box2d/include)
-include_directories(${DORIAX_ROOT}/engine/libs/joltphysics)
-
-include_directories(${DORIAX_ROOT}/engine/core)
-include_directories(${DORIAX_ROOT}/engine/core/action)
-include_directories(${DORIAX_ROOT}/engine/core/buffer)
-include_directories(${DORIAX_ROOT}/engine/core/component)
-include_directories(${DORIAX_ROOT}/engine/core/ecs)
-include_directories(${DORIAX_ROOT}/engine/core/io)
-include_directories(${DORIAX_ROOT}/engine/core/manager)
-include_directories(${DORIAX_ROOT}/engine/core/math)
-include_directories(${DORIAX_ROOT}/engine/core/object)
-include_directories(${DORIAX_ROOT}/engine/core/object/audio)
-include_directories(${DORIAX_ROOT}/engine/core/object/ui)
-include_directories(${DORIAX_ROOT}/engine/core/object/environment)
-include_directories(${DORIAX_ROOT}/engine/core/object/physics)
-include_directories(${DORIAX_ROOT}/engine/core/pool)
-include_directories(${DORIAX_ROOT}/engine/core/registry)
-include_directories(${DORIAX_ROOT}/engine/core/render)
-include_directories(${DORIAX_ROOT}/engine/core/script)
-include_directories(${DORIAX_ROOT}/engine/core/shader)
-include_directories(${DORIAX_ROOT}/engine/core/subsystem)
-include_directories(${DORIAX_ROOT}/engine/core/texture)
-include_directories(${DORIAX_ROOT}/engine/core/util)
-include_directories(${DORIAX_ROOT}/engine/renders)
-
-add_subdirectory(${DORIAX_ROOT}/engine)
-
-include_directories(${PROJECT_ROOT})
-include_directories(${PROJECT_ROOT}/scripts)
-file(GLOB_RECURSE PROJECT_SOURCE ${PROJECT_ROOT}/*.cpp)
-
-set(all_code_files
-    ${PROJECT_SOURCE}
-    ${PLATFORM_SOURCE}
-    ${PLATFORM_RESOURCES}
-)
-
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
-    add_executable(
-        ${APP_NAME}
-        ${PLATFORM_EXEC_FLAGS}
-        ${all_code_files}
-    )
-else()
-    add_library(
-        ${APP_NAME}
-        SHARED
-        ${all_code_files}
-    )
-endif()
-
-if(DEFINED ASSETS_DEST_DIR)
-    add_custom_command(
-        TARGET ${APP_NAME} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E remove_directory ${ASSETS_DEST_DIR}
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory ${PROJECT_ROOT}/assets ${ASSETS_DEST_DIR}
-    )
-endif()
-
-if(DEFINED LUA_DEST_DIR)
-    add_custom_command(
-        TARGET ${APP_NAME} POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E remove_directory ${LUA_DEST_DIR}
-        COMMAND "${CMAKE_COMMAND}" -E copy_directory ${PROJECT_ROOT}/lua ${LUA_DEST_DIR}
-    )
-endif()
-
-set_target_properties(
-    ${APP_NAME}
-    PROPERTIES
-    ${PLATFORM_PROPERTIES}
-    RESOURCE "${PLATFORM_RESOURCES}"
-    CXX_STANDARD 17
-)
-
-target_compile_options(
-    ${APP_NAME}
-    PUBLIC
-    ${PLATFORM_OPTIONS}
-)
-
-target_link_libraries(
-    ${APP_NAME}
-    doriax
-    Threads::Threads
-    ${PLATFORM_LIBS}
-)
-)CMAKE";
-
-    fs::path cmakeFile = config.targetDir / "CMakeLists.txt";
-    FileUtils::writeIfChanged(cmakeFile, cmakeContent);
 
     return true;
 }

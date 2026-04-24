@@ -32,7 +32,7 @@ jobs:
           mkdir build
           mkdir instdir
           emcmake cmake \
-            -S engine/project \
+            -S engine \
             -B build \
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
             -G "Ninja" \
