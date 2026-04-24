@@ -1256,7 +1256,14 @@ std::string editor::Factory::createActionComponent(int indentSpaces, EntityRegis
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "ActionComponent actioncomp;\n";
-    code << ind << "actioncomp.state = " << formatActionState(action.state) << ";\n";
+    if (action.state == ActionState::Running) {
+        code << ind << "actioncomp.startTrigger = true;\n";
+    } else if (action.state == ActionState::Paused) {
+        code << ind << "actioncomp.startTrigger = true;\n";
+        code << ind << "actioncomp.pauseTrigger = true;\n";
+    } else {
+        code << ind << "actioncomp.state = " << formatActionState(action.state) << ";\n";
+    }
     code << ind << "actioncomp.speed = " << formatFloat(action.speed) << ";\n";
     code << ind << "actioncomp.target = " << formatEntity(action.target, entityVarNames) << ";\n";
     code << ind << "actioncomp.ownedTarget = " << formatBool(action.ownedTarget) << ";\n";
@@ -2089,6 +2096,7 @@ std::string editor::Factory::createParticlesComponent(int indentSpaces, EntityRe
 
     code << ind << "particles.scaleInitializer.minScale = " << formatVector3(p.scaleInitializer.minScale) << ";\n";
     code << ind << "particles.scaleInitializer.maxScale = " << formatVector3(p.scaleInitializer.maxScale) << ";\n";
+    code << ind << "particles.scaleInitializer.linearSort = " << formatBool(p.scaleInitializer.linearSort) << ";\n";
     code << ind << "particles.scaleModifier.fromTime = " << formatFloat(p.scaleModifier.fromTime) << ";\n";
     code << ind << "particles.scaleModifier.toTime = " << formatFloat(p.scaleModifier.toTime) << ";\n";
     code << ind << "particles.scaleModifier.fromScale = " << formatVector3(p.scaleModifier.fromScale) << ";\n";
@@ -2145,6 +2153,7 @@ std::string editor::Factory::createPointsComponent(int indentSpaces, EntityRegis
             code << ind << "pointscomp.framesRect[" << i << "].rect = " << formatRect(frame.rect) << ";\n";
         }
         code << ind << "pointscomp.numFramesRect = " << p.numFramesRect << ";\n";
+        code << ind << "pointscomp.hasTextureRect = true;\n";
     }
 
     for (size_t i = 0; i < p.points.size(); i++) {
@@ -2158,6 +2167,11 @@ std::string editor::Factory::createPointsComponent(int indentSpaces, EntityRegis
         code << ind << "    pt.textureRect = " << formatRect(pt.textureRect) << ";\n";
         code << ind << "    pt.visible = " << formatBool(pt.visible) << ";\n";
         code << ind << "    pointscomp.points.push_back(pt);\n";
+        Rect defaultRect(0, 0, 1, 1);
+        Rect ptRect = pt.textureRect;
+        if (ptRect != defaultRect) {
+            code << ind << "    pointscomp.hasTextureRect = true;\n";
+        }
         code << ind << "}\n";
     }
 

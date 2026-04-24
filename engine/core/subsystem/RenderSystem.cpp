@@ -2000,9 +2000,14 @@ void RenderSystem::updatePoints(PointsComponent& points, Transform& transform, C
     points.renderPoints.reserve(points.points.size());
 
     // point particle sizes are in pixels, need to convert it to canvas size
-    float sizeScaleW = System::instance().getScreenWidth() / (float)Engine::getCanvasWidth();
-    float sizeScaleH = System::instance().getScreenHeight() / (float)Engine::getCanvasHeight();
-    float sizeScale = std::max(sizeScaleW, sizeScaleH);
+    float sizeScale = 1.0f;
+    int canvasW = Engine::getCanvasWidth();
+    int canvasH = Engine::getCanvasHeight();
+    if (canvasW > 0 && canvasH > 0){
+        float sizeScaleW = System::instance().getScreenWidth() / (float)canvasW;
+        float sizeScaleH = System::instance().getScreenHeight() / (float)canvasH;
+        sizeScale = std::max(sizeScaleW, sizeScaleH);
+    }
 
     points.numVisible = 0;
     size_t pointsSize = (points.points.size() < points.maxPoints)? points.points.size() : points.maxPoints;
