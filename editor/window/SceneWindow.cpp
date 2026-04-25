@@ -519,6 +519,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
     bool disableSelection = 
         altHeld ||
         sceneProject->sceneRender->getCursorSelected() == CursorSelected::HAND || 
+        sceneProject->sceneRender->isTerrainEditing() ||
         sceneProject->sceneRender->isAnyGizmoSideSelected() ||
         sceneProject->sceneType != SceneType::SCENE_3D && ImGui::IsKeyDown(ImGuiKey_Space);
 

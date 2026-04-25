@@ -12,6 +12,7 @@
 #include "window/ResourcesWindow.h"
 #include "window/CodeEditor.h"
 #include "window/AnimationWindow.h"
+#include "window/TerrainEditWindow.h"
 
 #include "window/LoadingWindow.h"
 
@@ -71,6 +72,7 @@ namespace doriax::editor{
         CodeEditor* codeEditor;
         ResourcesWindow* resourcesWindow;
         AnimationWindow* animationWindow;
+        TerrainEditWindow* terrainEditWindow;
 
         LoadingWindow* loadingWindow;
 
@@ -171,6 +173,7 @@ namespace doriax::editor{
         CodeEditor* getCodeEditor() const;
         ResourcesWindow* getResourcesWindow() const;
         AnimationWindow* getAnimationWindow() const;
+        TerrainEditWindow* getTerrainEditWindow() const;
 
         // Window settings methods
         int getInitialWindowWidth() const;

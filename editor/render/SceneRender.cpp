@@ -2,12 +2,14 @@
 
 #include "resources/icons/camera-icon_png.h"
 
+#include "Backend.h"
 #include "Project.h"
 #include "command/CommandHandle.h"
 #include "command/type/ObjectTransformCmd.h"
 #include "command/type/PropertyCmd.h"
 #include "command/type/MultiPropertyCmd.h"
 #include "util/GraphicUtils.h"
+#include "window/TerrainEditWindow.h"
 
 #include <cmath>
 #include <cfloat>
@@ -37,6 +39,10 @@ editor::SceneRender::SceneRender(Scene* scene, bool use2DGizmos, bool enableView
     selLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
     selLines->setVisible(false);
 
+    terrainBrushLines = new Lines(scene);
+    terrainBrushLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
+    terrainBrushLines->setVisible(false);
+
     scene->setCamera(camera);
 
     cursorSelected = CursorSelected::POINTER;
@@ -45,6 +51,7 @@ editor::SceneRender::SceneRender(Scene* scene, bool use2DGizmos, bool enableView
 editor::SceneRender::~SceneRender(){
     framebuffer.destroy();
 
+    delete terrainBrushLines;
     delete camera;
 }
 
@@ -249,6 +256,7 @@ OBB editor::SceneRender::getFamilyOBB(Entity entity, float offset){
 
 void editor::SceneRender::hideAllGizmos(){
     selLines->setVisible(false);
+    terrainBrushLines->setVisible(false);
     toolslayer.setGizmoVisible(false);
     uilayer.setViewGizmoImageVisible(false);
     uilayer.setSelectionBoxVisible(false);
@@ -386,6 +394,8 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
 
     syncObject2DGizmoMode();
 
+    bool terrainEditing = isTerrainEditing();
+
     totalSelBB.setHalfExtents(totalSelBB.getHalfExtents() + Vector3(selectionOffset));
 
     bool selectionVisibility = false;
@@ -448,10 +458,16 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
     }
     selLines->setVisible(showSelLines && !displaySettings.hideSelectionOutline);
 
-    if (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D && !sameRotation){
+    if (terrainEditing){
+        toolslayer.setGizmoVisible(false);
+    }else if (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D && !sameRotation){
         toolslayer.setGizmoVisible(false);
     }else{
         toolslayer.setGizmoVisible(selectionVisibility);
+    }
+
+    if (!terrainEditing && terrainBrushLines){
+        terrainBrushLines->setVisible(false);
     }
 
     syncObject2DGizmoMode();
@@ -461,10 +477,19 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
 
 void editor::SceneRender::mouseHoverEvent(float x, float y){
     mouseRay = camera->screenToRay(x, y);
+    updateTerrainBrushCursor();
 }
 
 void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> selEntities){
     mouseClicked = true;
+
+    if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
+        if (terrainEditWindow->isEditingScene(scene)){
+            terrainEditWindow->beginStroke(scene, mouseRay);
+            updateTerrainBrushCursor();
+            return;
+        }
+    }
 
     Vector3 viewDir = camera->getWorldDirection();
 
@@ -597,6 +622,10 @@ void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> 
 void editor::SceneRender::mouseReleaseEvent(float x, float y){
     uilayer.setSelectionBoxVisible(false);
 
+    if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
+        terrainEditWindow->endStroke();
+    }
+
     mouseClicked = false;
 
     toolslayer.mouseRelease();
@@ -608,6 +637,16 @@ void editor::SceneRender::mouseReleaseEvent(float x, float y){
 }
 
 void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float origY, Project* project, size_t sceneId, std::vector<Entity> selEntities, bool disableSelection){
+    mouseRay = camera->screenToRay(x, y);
+
+    if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
+        if (terrainEditWindow->isEditingScene(scene)){
+            terrainEditWindow->paintStroke(scene, mouseRay);
+            updateTerrainBrushCursor();
+            return;
+        }
+    }
+
     if (!disableSelection && !isPlaying){
         uilayer.setSelectionBoxVisible(true);
         uilayer.updateRect(Vector2(origX, origY), Vector2(x, y) - Vector2(origX, origY));
@@ -1020,6 +1059,50 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
 
 bool editor::SceneRender::isAnyGizmoSideSelected() const{
     return (toolslayer.getGizmoSideSelected() != editor::GizmoSideSelected::NONE || toolslayer.getGizmo2DSideSelected() != Gizmo2DSideSelected::NONE);
+}
+
+bool editor::SceneRender::isTerrainEditing() const{
+    if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
+        return terrainEditWindow->isEditingScene(scene);
+    }
+    return false;
+}
+
+void editor::SceneRender::updateTerrainBrushCursor(){
+    if (!terrainBrushLines){
+        return;
+    }
+
+    TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow();
+    TerrainBrushCursor cursor;
+    if (!terrainEditWindow || !terrainEditWindow->updateCursor(scene, mouseRay, cursor) || !cursor.visible){
+        terrainBrushLines->setVisible(false);
+        return;
+    }
+
+    terrainBrushLines->clearLines();
+    const Vector4 color(1.0f, 0.78f, 0.22f, 1.0f);
+    if (cursor.shape == TerrainBrushShape::Circle){
+        const int segments = 48;
+        Vector3 previous = cursor.center + cursor.axisX;
+        for (int i = 1; i <= segments; i++){
+            float angle = (2.0f * static_cast<float>(M_PI) * static_cast<float>(i)) / static_cast<float>(segments);
+            Vector3 point = cursor.center + cursor.axisX * std::cos(angle) + cursor.axisZ * std::sin(angle);
+            terrainBrushLines->addLine(previous, point, color);
+            previous = point;
+        }
+    }else{
+        Vector3 p0 = cursor.center - cursor.axisX - cursor.axisZ;
+        Vector3 p1 = cursor.center + cursor.axisX - cursor.axisZ;
+        Vector3 p2 = cursor.center + cursor.axisX + cursor.axisZ;
+        Vector3 p3 = cursor.center - cursor.axisX + cursor.axisZ;
+        terrainBrushLines->addLine(p0, p1, color);
+        terrainBrushLines->addLine(p1, p2, color);
+        terrainBrushLines->addLine(p2, p3, color);
+        terrainBrushLines->addLine(p3, p0, color);
+    }
+
+    terrainBrushLines->setVisible(true);
 }
 
 TextureRender& editor::SceneRender::getTexture(){

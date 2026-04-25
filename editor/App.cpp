@@ -49,6 +49,7 @@ editor::App::App(){
     resourcesWindow = new ResourcesWindow(&project, codeEditor);
     loadingWindow = new LoadingWindow();
     animationWindow = new AnimationWindow(&project);
+    terrainEditWindow = new TerrainEditWindow(&project);
 
     isInitialized = false;
 
@@ -929,6 +930,7 @@ void editor::App::show(){
     resourcesWindow->show();
     outputWindow->show();
     animationWindow->show();
+    terrainEditWindow->show();
     propertiesWindow->show();
     codeEditor->show();
     sceneWindow->show();
@@ -1357,6 +1359,10 @@ editor::ResourcesWindow* editor::App::getResourcesWindow() const{
 
 editor::AnimationWindow* editor::App::getAnimationWindow() const{
     return animationWindow;
+}
+
+editor::TerrainEditWindow* editor::App::getTerrainEditWindow() const{
+    return terrainEditWindow;
 }
 
 void editor::App::processNextSaveDialog() {

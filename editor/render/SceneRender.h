@@ -84,6 +84,7 @@ namespace doriax::editor{
 
         OBB getOBB(Entity entity, bool local);
         OBB getFamilyOBB(Entity entity, float offset);
+        void updateTerrainBrushCursor();
 
     protected:
         void updateCameraFrustum(CameraObjects& co, const CameraComponent& cameraComponent, bool isMainCamera, bool fixedSizeFrustum = true);
@@ -95,6 +96,7 @@ namespace doriax::editor{
         Framebuffer framebuffer;
 
         Lines* selLines;
+        Lines* terrainBrushLines;
 
         ToolsLayer toolslayer;
         UILayer uilayer;
@@ -130,6 +132,7 @@ namespace doriax::editor{
         virtual void mouseDragEvent(float x, float y, float origX, float origY, Project* project, size_t sceneId, std::vector<Entity> selEntities, bool disableSelection);
 
         virtual bool isAnyGizmoSideSelected() const;
+        bool isTerrainEditing() const;
 
         void setChildSceneLayers(const std::vector<Scene*>& layers);
 

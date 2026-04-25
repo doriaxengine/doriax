@@ -68,6 +68,7 @@ namespace doriax{
 
             TextureLoadResult load();
             void destroy();
+            void invalidateRender();
 
             TextureRender* getRender(TextureRender* fallBackTexture = NULL);
             std::string getPath(size_t index = 0) const;

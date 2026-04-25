@@ -5381,6 +5381,14 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
 void editor::Properties::drawTerrainComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(entities[0]);
 
+    if (entities.size() == 1){
+        if (ImGui::Button(ICON_FA_MOUNTAIN " Open Terrain Editor")){
+            if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
+                terrainEditWindow->openForEntity(entities[0], sceneProject->id);
+            }
+        }
+    }
+
     RowSettings textureSettings;
     textureSettings.secondColSize = -1;
 

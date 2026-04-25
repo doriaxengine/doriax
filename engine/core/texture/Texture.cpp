@@ -397,6 +397,13 @@ void Texture::destroy(){
     }
 }
 
+void Texture::invalidateRender(){
+    if (!id.empty() && render) {
+        render.reset();
+        TexturePool::remove(id);
+    }
+}
+
 TextureRender* Texture::getRender(TextureRender* fallBackTexture){
     if (framebuffer){
         lastFramebufferVersion = framebuffer->getVersion();
