@@ -15,6 +15,7 @@
 #include "component/CameraComponent.h"
 #include "component/TerrainComponent.h"
 #include "component/TilemapComponent.h"
+#include "component/Transform.h"
 
 namespace doriax{
 
@@ -80,7 +81,7 @@ namespace doriax{
         void resetModelToBindPose(ModelComponent& model);
 
         bool createOrUpdateSprite(SpriteComponent& sprite, MeshComponent& mesh);
-        bool createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent& mesh);
+        bool createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent& mesh, Transform& transform);
         bool createOrUpdateMeshPolygon(MeshPolygonComponent& polygon, MeshComponent& mesh);
         bool createOrUpdateTilemap(TilemapComponent& tilemap, MeshComponent& mesh);
         bool createOrUpdateModel(Entity entity, ModelComponent& model, MeshComponent& mesh);

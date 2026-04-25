@@ -48,7 +48,6 @@
 #include "Model.h"
 #include "Points.h"
 #include "Sprite.h"
-#include "Terrain.h"
 #include "Light.h"
 #include "Camera.h"
 
@@ -627,8 +626,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<TerrainComponent>(entity, {});
             }else{
-                registry->addComponent<TerrainComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<TerrainComponent>(entity, Stream::decodeTerrainComponent(componentNode));
             }
             break;
         case ComponentType::TextComponent:
@@ -985,7 +983,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::TerrainComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeTerrainComponent(registry->getComponent<TerrainComponent>(entity));
             }
             registry->removeComponent<TerrainComponent>(entity);
             break;

@@ -5378,6 +5378,58 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
     }
 }
 
+void editor::Properties::drawTerrainComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(entities[0]);
+
+    RowSettings textureSettings;
+    textureSettings.secondColSize = -1;
+
+    ImGui::SeparatorText("Textures");
+    beginTable(cpType, getLabelSize("Detail Green"), "terrain_textures");
+    propertyRow(RowPropertyType::Texture, cpType, "heightMap", "Height Map", sceneProject, entities, textureSettings);
+    propertyRow(RowPropertyType::Texture, cpType, "blendMap", "Blend Map", sceneProject, entities, textureSettings);
+    propertyRow(RowPropertyType::Texture, cpType, "textureDetailRed", "Detail Red", sceneProject, entities, textureSettings);
+    propertyRow(RowPropertyType::Texture, cpType, "textureDetailGreen", "Detail Green", sceneProject, entities, textureSettings);
+    propertyRow(RowPropertyType::Texture, cpType, "textureDetailBlue", "Detail Blue", sceneProject, entities, textureSettings);
+    endTable();
+
+    RowSettings settingsFloat;
+    settingsFloat.secondColSize = 6 * ImGui::GetFontSize();
+
+    RowSettings settingsResolution = settingsFloat;
+    settingsResolution.stepSize = 1.0f;
+    settingsResolution.format = "%.0f";
+
+    RowSettings settingsInt;
+    settingsInt.stepSize = 1.0f;
+    settingsInt.secondColSize = 6 * ImGui::GetFontSize();
+
+    ImGui::SeparatorText("Shape");
+    beginTable(cpType, getLabelSize("Root Grid Size"), "terrain_shape");
+    propertyRow(RowPropertyType::FloatPositive, cpType, "terrainSize", "Size", sceneProject, entities, settingsFloat);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "maxHeight", "Max Height", sceneProject, entities, settingsFloat);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "resolution", "Resolution", sceneProject, entities, settingsResolution);
+    propertyRow(RowPropertyType::Int, cpType, "rootGridSize", "Root Grid Size", sceneProject, entities, settingsInt);
+    propertyRow(RowPropertyType::Int, cpType, "levels", "Levels", sceneProject, entities, settingsInt);
+    propertyRow(RowPropertyType::Vector2, cpType, "offset", "Offset", sceneProject, entities);
+    endTable();
+
+    ImGui::SeparatorText("Texturing");
+    beginTable(cpType, getLabelSize("Detail Tiles"), "terrain_tiling");
+    propertyRow(RowPropertyType::FloatPositive, cpType, "textureBaseTiles", "Base Tiles", sceneProject, entities, settingsResolution);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "textureDetailTiles", "Detail Tiles", sceneProject, entities, settingsResolution);
+    endTable();
+
+    ImGui::SeparatorText("Ranges");
+    beginTable(cpType, getLabelSize("Auto Ranges"), "terrain_ranges_auto");
+    propertyRow(RowPropertyType::Bool, cpType, "autoSetRanges", "Auto Ranges", sceneProject, entities);
+    endTable();
+
+    if (!terrain.autoSetRanges) {
+        drawTrackValues<TerrainComponent, float>(cpType, sceneProject, entities, RowPropertyType::FloatPositive, 0.0f, "terrain", &TerrainComponent::ranges, "ranges");
+    }
+}
+
 void editor::Properties::drawLightComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     LightComponent& light = sceneProject->scene->getComponent<LightComponent>(entities[0]);
 
@@ -9140,6 +9192,8 @@ void editor::Properties::show(){
                     drawSpriteComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::TilemapComponent){
                     drawTilemapComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::TerrainComponent){
+                    drawTerrainComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::LightComponent){
                     drawLightComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::CameraComponent){

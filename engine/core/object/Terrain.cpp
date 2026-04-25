@@ -23,8 +23,9 @@ Terrain::~Terrain(){
 bool Terrain::createTerrain(){
     TerrainComponent& terrain = getComponent<TerrainComponent>();
     MeshComponent& mesh = getComponent<MeshComponent>();
+    Transform& transform = getComponent<Transform>();
 
-    return scene->getSystem<MeshSystem>()->createOrUpdateTerrain(terrain, mesh);
+    return scene->getSystem<MeshSystem>()->createOrUpdateTerrain(terrain, mesh, transform);
 }
 
 void Terrain::setHeightMap(const std::string& path){

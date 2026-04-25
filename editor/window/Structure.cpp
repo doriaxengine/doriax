@@ -226,6 +226,11 @@ void editor::Structure::showNewEntityMenu(bool isScene, Entity parent, bool addT
         openParent = parent;
     }
 
+    if (ImGui::MenuItem(ICON_FA_MOUNTAIN"  Terrain")){
+        CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "Terrain", EntityCreationType::TERRAIN, parent, addToBundle));
+        openParent = parent;
+    }
+
     ImGui::EndMenu();
 }
 
@@ -282,6 +287,8 @@ std::string editor::Structure::getObjectIcon(Signature signature, Scene* scene){
         return ICON_FA_BONE;
     }else if (signature.test(scene->getComponentId<TilemapComponent>())){
         return ICON_FA_BORDER_ALL;
+    }else if (signature.test(scene->getComponentId<TerrainComponent>())){
+        return ICON_FA_MOUNTAIN;
     }else if (signature.test(scene->getComponentId<MeshComponent>())){
         return ICON_FA_DICE_D20;
     }else if (signature.test(scene->getComponentId<SkyComponent>())){

@@ -2730,7 +2730,7 @@ bool MeshSystem::createOrUpdateSprite(SpriteComponent& sprite, MeshComponent& me
     return true;
 }
 
-bool MeshSystem::createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent& mesh){
+bool MeshSystem::createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent& mesh, Transform& transform){
     if (terrain.needUpdateTerrain){
 
         if (scene->getCamera() == NULL_ENTITY){
@@ -2753,6 +2753,8 @@ bool MeshSystem::createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent&
 
         if (createTerrain(terrain, mesh)){
             terrain.needUpdateTerrain = false;
+
+            transform.needUpdate = true;
         }else{
             return false;
         }
@@ -2882,10 +2884,11 @@ void MeshSystem::update(double dt){
         Entity entity = terrains->getEntity(i);
         Signature signature = scene->getSignature(entity);
 
-        if (signature.test(scene->getComponentId<MeshComponent>())){
+        if (signature.test(scene->getComponentId<MeshComponent>()) && signature.test(scene->getComponentId<Transform>())){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
+            Transform& transform = scene->getComponent<Transform>(entity);
 
-            createOrUpdateTerrain(terrain, mesh);
+            createOrUpdateTerrain(terrain, mesh, transform);
         }
     }
 

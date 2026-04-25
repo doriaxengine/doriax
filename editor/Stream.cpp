@@ -1968,6 +1968,11 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         compNode[Catalog::getComponentName(ComponentType::TilemapComponent, true)] = encodeTilemapComponent(tilemap);
     }
 
+    if (signature.test(registry->getComponentId<TerrainComponent>())) {
+        TerrainComponent terrain = registry->getComponent<TerrainComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::TerrainComponent, true)] = encodeTerrainComponent(terrain);
+    }
+
     if (signature.test(registry->getComponentId<LightComponent>())) {
         LightComponent light = registry->getComponent<LightComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::LightComponent, true)] = encodeLightComponent(light);
@@ -2244,6 +2249,19 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         }else{
             int flags = Catalog::getChangedUpdateFlags(ComponentType::TilemapComponent, existing, &tilemap);
             registry->getComponent<TilemapComponent>(entity) = tilemap;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::TerrainComponent, true);
+    if (compNode[compName]) {
+        TerrainComponent* existing = registry->findComponent<TerrainComponent>(entity);
+        TerrainComponent terrain = decodeTerrainComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<TerrainComponent>())){
+            registry->addComponent<TerrainComponent>(entity, terrain);
+        }else{
+            int flags = Catalog::getChangedUpdateFlags(ComponentType::TerrainComponent, existing, &terrain);
+            registry->getComponent<TerrainComponent>(entity) = terrain;
             Catalog::updateEntity(registry, entity, flags);
         }
     }
@@ -3187,6 +3205,76 @@ TilemapComponent editor::Stream::decodeTilemapComponent(const YAML::Node& node, 
     }
 
     return tilemap;
+}
+
+YAML::Node editor::Stream::encodeTerrainComponent(const TerrainComponent& terrain) {
+    YAML::Node node;
+    node["heightMap"] = encodeTexture(terrain.heightMap);
+    node["blendMap"] = encodeTexture(terrain.blendMap);
+    node["textureDetailRed"] = encodeTexture(terrain.textureDetailRed);
+    node["textureDetailGreen"] = encodeTexture(terrain.textureDetailGreen);
+    node["textureDetailBlue"] = encodeTexture(terrain.textureDetailBlue);
+    node["autoSetRanges"] = terrain.autoSetRanges;
+    node["offset"] = encodeVector2(terrain.offset);
+    node["terrainSize"] = terrain.terrainSize;
+    node["maxHeight"] = terrain.maxHeight;
+    node["resolution"] = terrain.resolution;
+    node["textureBaseTiles"] = terrain.textureBaseTiles;
+    node["textureDetailTiles"] = terrain.textureDetailTiles;
+    node["rootGridSize"] = terrain.rootGridSize;
+    node["levels"] = terrain.levels;
+
+    if (!terrain.ranges.empty()) {
+        YAML::Node rangesNode;
+        for (float range : terrain.ranges) {
+            rangesNode.push_back(range);
+        }
+        node["ranges"] = rangesNode;
+    }
+
+    return node;
+}
+
+TerrainComponent editor::Stream::decodeTerrainComponent(const YAML::Node& node, const TerrainComponent* oldTerrain) {
+    TerrainComponent terrain;
+
+    if (oldTerrain) {
+        terrain = *oldTerrain;
+    }
+
+    if (node["heightMap"]) terrain.heightMap = decodeTexture(node["heightMap"]);
+    if (node["blendMap"]) terrain.blendMap = decodeTexture(node["blendMap"]);
+    if (node["textureDetailRed"]) terrain.textureDetailRed = decodeTexture(node["textureDetailRed"]);
+    if (node["textureDetailGreen"]) terrain.textureDetailGreen = decodeTexture(node["textureDetailGreen"]);
+    if (node["textureDetailBlue"]) terrain.textureDetailBlue = decodeTexture(node["textureDetailBlue"]);
+    if (node["autoSetRanges"]) terrain.autoSetRanges = node["autoSetRanges"].as<bool>();
+    if (node["offset"]) terrain.offset = decodeVector2(node["offset"]);
+    if (node["terrainSize"]) terrain.terrainSize = node["terrainSize"].as<float>();
+    if (node["maxHeight"]) terrain.maxHeight = node["maxHeight"].as<float>();
+    if (node["resolution"]) terrain.resolution = node["resolution"].as<float>();
+    if (node["textureBaseTiles"]) terrain.textureBaseTiles = node["textureBaseTiles"].as<float>();
+    if (node["textureDetailTiles"]) terrain.textureDetailTiles = node["textureDetailTiles"].as<float>();
+    if (node["rootGridSize"]) terrain.rootGridSize = node["rootGridSize"].as<int>();
+    if (node["levels"]) terrain.levels = node["levels"].as<int>();
+
+    if (node["ranges"] && node["ranges"].IsSequence()) {
+        terrain.ranges.clear();
+        for (std::size_t i = 0; i < node["ranges"].size(); i++) {
+            if (!node["ranges"][i] || node["ranges"][i].IsNull()) {
+                continue;
+            }
+            terrain.ranges.push_back(node["ranges"][i].as<float>());
+        }
+    }
+
+    terrain.needUpdateTerrain = true;
+    terrain.needUpdateTexture = true;
+    terrain.needUpdateNodesBuffer = false;
+    terrain.heightMapLoaded = false;
+    terrain.nodes.clear();
+    terrain.numNodes = 0;
+
+    return terrain;
 }
 
 YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model) {

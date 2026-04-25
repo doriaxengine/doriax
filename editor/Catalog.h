@@ -32,7 +32,9 @@ namespace doriax::editor{
         UpdateFlags_Model               = 1 << 21,
         UpdateFlags_Tilemap             = 1 << 22,
         UpdateFlags_Instanced_Mesh      = 1 << 23,
-        UpdateFlags_Points              = 1 << 24
+        UpdateFlags_Points              = 1 << 24,
+        UpdateFlags_Terrain             = 1 << 25,
+        UpdateFlags_Terrain_Texture     = 1 << 26
     };
 
     // the order of components here affects properties window

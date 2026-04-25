@@ -43,7 +43,8 @@ namespace doriax::editor{
         ALPHA_ACTION,
         MODEL,
         PARTICLES,
-        POINTS
+        POINTS,
+        TERRAIN
     };
 
     class CreateEntityCmd: public Command{

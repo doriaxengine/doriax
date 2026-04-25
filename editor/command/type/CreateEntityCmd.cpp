@@ -396,6 +396,12 @@ bool editor::CreateEntityCmd::execute(){
         scene->addComponent<Transform>(entity, {});
         scene->addComponent<PointsComponent>(entity, {});
 
+    }else if (type == EntityCreationType::TERRAIN){
+
+        scene->addComponent<Transform>(entity, {});
+        scene->addComponent<MeshComponent>(entity, {});
+        scene->addComponent<TerrainComponent>(entity, {});
+
     }
 
     scene->setEntityName(entity, entityName);

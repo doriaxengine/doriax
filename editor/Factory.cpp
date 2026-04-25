@@ -868,6 +868,41 @@ std::string editor::Factory::createTilemapComponent(int indentSpaces, EntityRegi
     return code.str();
 }
 
+std::string editor::Factory::createTerrainComponent(int indentSpaces, EntityRegistry* scene, Entity entity, const fs::path& projectPath, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<TerrainComponent>(entity)) return "";
+    TerrainComponent& terrain = scene->getComponent<TerrainComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "TerrainComponent terrain;\n";
+    code << formatTexture(indentSpaces, terrain.heightMap, "terrain.heightMap", projectPath);
+    code << formatTexture(indentSpaces, terrain.blendMap, "terrain.blendMap", projectPath);
+    code << formatTexture(indentSpaces, terrain.textureDetailRed, "terrain.textureDetailRed", projectPath);
+    code << formatTexture(indentSpaces, terrain.textureDetailGreen, "terrain.textureDetailGreen", projectPath);
+    code << formatTexture(indentSpaces, terrain.textureDetailBlue, "terrain.textureDetailBlue", projectPath);
+    code << ind << "terrain.autoSetRanges = " << formatBool(terrain.autoSetRanges) << ";\n";
+    code << ind << "terrain.offset = " << formatVector2(terrain.offset) << ";\n";
+    code << ind << "terrain.terrainSize = " << formatFloat(terrain.terrainSize) << ";\n";
+    code << ind << "terrain.maxHeight = " << formatFloat(terrain.maxHeight) << ";\n";
+    code << ind << "terrain.resolution = " << formatFloat(terrain.resolution) << ";\n";
+    code << ind << "terrain.textureBaseTiles = " << formatFloat(terrain.textureBaseTiles) << ";\n";
+    code << ind << "terrain.textureDetailTiles = " << formatFloat(terrain.textureDetailTiles) << ";\n";
+    code << ind << "terrain.rootGridSize = " << formatInt(terrain.rootGridSize) << ";\n";
+    code << ind << "terrain.levels = " << formatInt(terrain.levels) << ";\n";
+    if (!terrain.ranges.empty()) {
+        code << ind << "terrain.ranges = {";
+        for (size_t i = 0; i < terrain.ranges.size(); i++) {
+            if (i > 0) code << ", ";
+            code << formatFloat(terrain.ranges[i]);
+        }
+        code << "};\n";
+    }
+    code << ind << "terrain.needUpdateTerrain = true;\n";
+    code << ind << "terrain.needUpdateTexture = true;\n";
+    code << ind << "terrain.heightMapLoaded = false;\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "TerrainComponent", "terrain", assignExisting);
+    return code.str();
+}
+
 std::string editor::Factory::createLightComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<LightComponent>(entity)) return "";
     LightComponent& light = scene->getComponent<LightComponent>(entity);
@@ -1547,6 +1582,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::ImageComponent: return createImageComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::SpriteComponent: return createSpriteComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::TilemapComponent: return createTilemapComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::TerrainComponent: return createTerrainComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::LightComponent: return createLightComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::CameraComponent: return createCameraComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ScriptComponent: return createScriptComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

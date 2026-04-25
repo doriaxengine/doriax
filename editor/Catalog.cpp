@@ -199,6 +199,23 @@ namespace {
         makeFastProperty<TilemapComponent, unsigned int, &TilemapComponent::reserveTiles>("reserveTiles", PropertyType::UInt, UpdateFlags_Tilemap),
     };
 
+    static const FastPropertyDescriptor kTerrainProperties[] = {
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::heightMap>("heightMap", PropertyType::Texture, UpdateFlags_Terrain | UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::blendMap>("blendMap", PropertyType::Texture, UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailRed>("textureDetailRed", PropertyType::Texture, UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailGreen>("textureDetailGreen", PropertyType::Texture, UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailBlue>("textureDetailBlue", PropertyType::Texture, UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, bool, &TerrainComponent::autoSetRanges>("autoSetRanges", PropertyType::Bool, UpdateFlags_Terrain),
+        makeFastProperty<TerrainComponent, Vector2, &TerrainComponent::offset>("offset", PropertyType::Vector2, UpdateFlags_None),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::terrainSize>("terrainSize", PropertyType::Float, UpdateFlags_Terrain),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::maxHeight>("maxHeight", PropertyType::Float, UpdateFlags_Terrain),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::resolution>("resolution", PropertyType::Float, UpdateFlags_Terrain | UpdateFlags_Mesh_Reload),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::textureBaseTiles>("textureBaseTiles", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::textureDetailTiles>("textureDetailTiles", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<TerrainComponent, int, &TerrainComponent::rootGridSize>("rootGridSize", PropertyType::Int, UpdateFlags_Terrain | UpdateFlags_Mesh_Reload),
+        makeFastProperty<TerrainComponent, int, &TerrainComponent::levels>("levels", PropertyType::Int, UpdateFlags_Terrain | UpdateFlags_Mesh_Reload),
+    };
+
     static const FastPropertyDescriptor kActionProperties[] = {
         makeFastPropertyNoDefault<ActionComponent, ActionState, &ActionComponent::state>("state", PropertyType::Enum, UpdateFlags_None),
         makeFastProperty<ActionComponent, float, &ActionComponent::speed>("speed", PropertyType::Float, UpdateFlags_None),
@@ -1027,6 +1044,35 @@ namespace {
         return getTilemapPropertyFast(static_cast<TilemapComponent*>(comp), propertyName);
     }
 
+    PropertyData resolveTerrainPropertyFast(void* compRef, const std::string& propertyName) {
+        TerrainComponent* comp = static_cast<TerrainComponent*>(compRef);
+        if (!comp) return PropertyData();
+
+        PropertyData result = resolveDirectProperties(comp, propertyName, kTerrainProperties);
+        if (result.ref) return result;
+
+        TerrainComponent& def = getDefaultComponent<TerrainComponent>();
+
+        if (propertyName == "ranges") {
+            return {PropertyType::Custom, UpdateFlags_Terrain, (void*)&def.ranges, (void*)&comp->ranges};
+        }
+
+        if (propertyName.compare(0, 7, "ranges[") == 0) {
+            size_t pos = 7;
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']') {
+                return PropertyData();
+            }
+            if (pos + 1 != propertyName.size() || index >= comp->ranges.size()) {
+                return PropertyData();
+            }
+            static float defValue = 0.0f;
+            return {PropertyType::Float, UpdateFlags_Terrain, (void*)&defValue, (void*)&comp->ranges[index]};
+        }
+
+        return PropertyData();
+    }
+
     PropertyData resolveLightPropertyFast(void* comp, const std::string& propertyName) {
         return resolveDirectProperties(static_cast<LightComponent*>(comp), propertyName, kLightProperties);
     }
@@ -1772,6 +1818,21 @@ namespace {
         }
     }
 
+    void enumerateTerrainProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
+        TerrainComponent* comp = static_cast<TerrainComponent*>(compRef);
+        TerrainComponent& def = getDefaultComponent<TerrainComponent>();
+
+        enumerateFromDescriptors(compRef, ps, kTerrainProperties);
+
+        ps["ranges"] = {PropertyType::Custom, UpdateFlags_Terrain, (void*)&def.ranges, compRef ? (void*)&comp->ranges : nullptr};
+
+        static float defValue = 0.0f;
+        for (size_t i = 0; i < (compRef ? comp->ranges.size() : 1); i++) {
+            std::string idx = compRef ? std::to_string(i) : "";
+            ps["ranges[" + idx + "]"] = {PropertyType::Float, UpdateFlags_Terrain, (void*)&defValue, compRef ? (void*)&comp->ranges[i] : nullptr};
+        }
+    }
+
     void enumerateLightProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kLightProperties);
     }
@@ -2211,6 +2272,7 @@ namespace {
         {ComponentType::ButtonComponent, &findComponentPtr<ButtonComponent>, &resolveButtonPropertyFast, &enumerateButtonProperties},
         {ComponentType::SpriteComponent, &findComponentPtr<SpriteComponent>, &resolveSpritePropertyFast, &enumerateSpriteProperties},
         {ComponentType::TilemapComponent, &findComponentPtr<TilemapComponent>, &resolveTilemapPropertyFast, &enumerateTilemapProperties},
+        {ComponentType::TerrainComponent, &findComponentPtr<TerrainComponent>, &resolveTerrainPropertyFast, &enumerateTerrainProperties},
         {ComponentType::LightComponent, &findComponentPtr<LightComponent>, &resolveLightPropertyFast, &enumerateLightProperties},
         {ComponentType::CameraComponent, &findComponentPtr<CameraComponent>, &resolveCameraPropertyFast, &enumerateCameraProperties},
         {ComponentType::SkyComponent, &findComponentPtr<SkyComponent>, &resolveSkyPropertyFast, &enumerateSkyProperties},
@@ -3003,6 +3065,14 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, int 
             tilemap->needUpdateTilemap = true;
         }
     }
+    if (updateFlags & (UpdateFlags_Terrain | UpdateFlags_Terrain_Texture)){
+        if (TerrainComponent* terrain = registry->findComponent<TerrainComponent>(entity)){
+            if (updateFlags & UpdateFlags_Terrain)
+                terrain->needUpdateTerrain = true;
+            if (updateFlags & UpdateFlags_Terrain_Texture)
+                terrain->needUpdateTexture = true;
+        }
+    }
     if (updateFlags & UpdateFlags_Instanced_Mesh){
         if (InstancedMeshComponent* instmesh = registry->findComponent<InstancedMeshComponent>(entity)){
             instmesh->needUpdateInstances = true;
@@ -3085,6 +3155,12 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
         case ComponentType::TilemapComponent: {
             YAML::Node encoded = Stream::encodeTilemapComponent(sourceRegistry->getComponent<TilemapComponent>(sourceEntity));
             targetRegistry->getComponent<TilemapComponent>(targetEntity) = Stream::decodeTilemapComponent(encoded);
+            break;
+        }
+
+        case ComponentType::TerrainComponent: {
+            YAML::Node encoded = Stream::encodeTerrainComponent(sourceRegistry->getComponent<TerrainComponent>(sourceEntity));
+            targetRegistry->getComponent<TerrainComponent>(targetEntity) = Stream::decodeTerrainComponent(encoded);
             break;
         }
 
