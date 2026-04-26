@@ -110,7 +110,17 @@ namespace doriax::editor{
             Entity entity = NULL_ENTITY;
             TerrainMapTarget target = TerrainMapTarget::HeightMap;
             TerrainMapSnapshot beforeSnapshot;
+            bool heightReferenceValid = false;
+            float heightReferenceTerrainSize = 0.0f;
+            float heightReferenceMaxHeight = 0.0f;
+            int heightReferenceWidth = 0;
+            int heightReferenceHeight = 0;
+            int heightReferenceChannels = 0;
+            std::vector<unsigned char> heightReferencePixels;
         };
+
+        static bool sampleTerrainHeightPixels(const unsigned char* pixels, int width, int height, int channels, float terrainSize, float maxHeight, float localX, float localZ, float& localHeight);
+        static bool raycastTerrainSurface(const Ray& localRay, TerrainComponent& terrain, const ActiveStroke* activeStroke, Vector3& localPoint, float& localHeight);
 
         Project* project;
 
@@ -141,7 +151,8 @@ namespace doriax::editor{
         TerrainMapTarget getBrushTarget() const;
         bool isHeightBrush() const;
 
-        bool findTerrainHit(Scene* scene, const Ray& ray, Entity& entity, Vector3& localPoint, Vector3& worldPoint, float& localHeight) const;
+        void captureStrokeHeightReference(TerrainComponent& terrain);
+        bool findTerrainHit(Scene* scene, const Ray& ray, Entity& entity, Vector3& localPoint, Vector3& worldPoint, float& localHeight, const ActiveStroke* activeStroke = nullptr) const;
         bool applyBrush(SceneProject* sceneProject, Entity entity, const Vector3& localPoint);
         void refreshTerrain(SceneProject* sceneProject, Entity entity, TerrainMapTarget target);
         void clearStroke();
