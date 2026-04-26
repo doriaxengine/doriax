@@ -73,6 +73,8 @@ namespace doriax{
 
         bool needUpdateTexture = false;
         bool needUpdateDepthTexture = false;
+
+        bool generated = false;
     };
 
     struct MeshComponent{

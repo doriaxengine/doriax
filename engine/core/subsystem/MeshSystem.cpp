@@ -1030,8 +1030,9 @@ bool MeshSystem::createTerrain(TerrainComponent& terrain, MeshComponent& mesh){
     mesh.numSubmeshes = 2;
     // fullRes submesh
     createPlaneNodeSubmesh(0, terrain, mesh, 1, 1, terrain.resolution, terrain.resolution);
-    // halfRes submesh
+    // halfRes submesh (internal LOD)
     createPlaneNodeSubmesh(1, terrain, mesh, 1, 1, terrain.resolution/2, terrain.resolution/2);
+    mesh.submeshes[1].generated = true;
 
     float rootNodeSize = terrain.terrainSize / terrain.rootGridSize;
 

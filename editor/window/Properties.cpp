@@ -4035,7 +4035,18 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
     for (Entity& entity : entities){
         numSubmeshes = std::min(numSubmeshes, sceneProject->scene->getComponent<MeshComponent>(entity).numSubmeshes);
     }
-    if (ImGui::Button(ICON_FA_PLUS " Add Submesh", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+    bool hasGeneratedSubmeshes = false;
+    for (const Entity& entity : entities) {
+        const MeshComponent& checkMesh = sceneProject->scene->getComponent<MeshComponent>(entity);
+        for (unsigned int gs = 0; gs < checkMesh.numSubmeshes; gs++) {
+            if (checkMesh.submeshes[gs].generated) {
+                hasGeneratedSubmeshes = true;
+                break;
+            }
+        }
+        if (hasGeneratedSubmeshes) break;
+    }
+    if (!hasGeneratedSubmeshes && ImGui::Button(ICON_FA_PLUS " Add Submesh", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
         for (Entity& entity : entities) {
             MeshComponent meshComp = sceneProject->scene->getComponent<MeshComponent>(entity);
             const unsigned int newSubmeshIndex = meshComp.numSubmeshes;
@@ -4050,63 +4061,75 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
 
     for (int s = 0; s < numSubmeshes; s++){
         ImGui::PushID(s);
-        std::string submeshLabel = "Submesh " + std::to_string(s);
+        bool submeshGenerated = false;
+        for (const Entity& entity : entities) {
+            const MeshComponent& checkMesh = sceneProject->scene->getComponent<MeshComponent>(entity);
+            if ((unsigned int)s < checkMesh.numSubmeshes && checkMesh.submeshes[s].generated) {
+                submeshGenerated = true;
+                break;
+            }
+        }
+        std::string submeshLabel = submeshGenerated ? ("Submesh " + std::to_string(s) + " (Internal)") : ("Submesh " + std::to_string(s));
         ImGui::SeparatorText(submeshLabel.c_str());
-
-        float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
-        float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x;
-        ImVec2 deleteButtonSize = ImVec2(clearButtonWidth + clearButtonFramePadding * 2, 0);
 
         ImVec2 separatorMin = ImGui::GetItemRectMin();
         ImVec2 separatorMax = ImGui::GetItemRectMax();
         ImVec2 cursorAfterSeparator = ImGui::GetCursorPos();
-        float buttonX = separatorMax.x - deleteButtonSize.x;
-        float buttonY = separatorMin.y + (separatorMax.y - separatorMin.y - ImGui::GetFrameHeight()) * 0.5f;
 
-        ImDrawList* separatorDrawList = ImGui::GetWindowDrawList();
-        float separatorGap = ImGui::GetStyle().ItemSpacing.x;
-        separatorDrawList->AddRectFilled(
-            ImVec2(buttonX - separatorGap, separatorMin.y),
-            separatorMax,
-            ImGui::GetColorU32(ImGuiCol_WindowBg));
+        if (!submeshGenerated) {
+            float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
+            float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x;
+            ImVec2 deleteButtonSize = ImVec2(clearButtonWidth + clearButtonFramePadding * 2, 0);
 
-        ImGui::SetCursorScreenPos(ImVec2(buttonX, buttonY));
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
-        if (ImGui::Button((std::string(ICON_FA_TRASH_CAN) + "##delete_submesh_" + std::to_string(s)).c_str(), deleteButtonSize)) {
+            float buttonX = separatorMax.x - deleteButtonSize.x;
+            float buttonY = separatorMin.y + (separatorMax.y - separatorMin.y - ImGui::GetFrameHeight()) * 0.5f;
+
+            ImDrawList* separatorDrawList = ImGui::GetWindowDrawList();
+            float separatorGap = ImGui::GetStyle().ItemSpacing.x;
+            separatorDrawList->AddRectFilled(
+                ImVec2(buttonX - separatorGap, separatorMin.y),
+                separatorMax,
+                ImGui::GetColorU32(ImGuiCol_WindowBg));
+
+            ImGui::SetCursorScreenPos(ImVec2(buttonX, buttonY));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+            if (ImGui::Button((std::string(ICON_FA_TRASH_CAN) + "##delete_submesh_" + std::to_string(s)).c_str(), deleteButtonSize)) {
+                ImGui::PopStyleVar();
+                ImGui::PopStyleColor(2);
+                ImGui::SetCursorPos(cursorAfterSeparator);
+
+                for (Entity& entity : entities) {
+                    MeshComponent meshComp = sceneProject->scene->getComponent<MeshComponent>(entity);
+                    if ((unsigned int)s >= meshComp.numSubmeshes) {
+                        continue;
+                    }
+
+                    for (unsigned int j = (unsigned int)s; j + 1 < meshComp.numSubmeshes; j++) {
+                        meshComp.submeshes[j] = meshComp.submeshes[j + 1];
+                    }
+
+                    if (meshComp.numSubmeshes > 0) {
+                        meshComp.numSubmeshes--;
+                        meshComp.submeshes[meshComp.numSubmeshes] = Submesh();
+                    }
+
+                    CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(
+                        new MeshChangeCmd(project, sceneProject->id, entity, meshComp));
+                }
+
+                ImGui::PopID();
+                return;
+            }
             ImGui::PopStyleVar();
             ImGui::PopStyleColor(2);
-            ImGui::SetCursorPos(cursorAfterSeparator);
-
-            for (Entity& entity : entities) {
-                MeshComponent meshComp = sceneProject->scene->getComponent<MeshComponent>(entity);
-                if ((unsigned int)s >= meshComp.numSubmeshes) {
-                    continue;
-                }
-
-                for (unsigned int j = (unsigned int)s; j + 1 < meshComp.numSubmeshes; j++) {
-                    meshComp.submeshes[j] = meshComp.submeshes[j + 1];
-                }
-
-                if (meshComp.numSubmeshes > 0) {
-                    meshComp.numSubmeshes--;
-                    meshComp.submeshes[meshComp.numSubmeshes] = Submesh();
-                }
-
-                CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(
-                    new MeshChangeCmd(project, sceneProject->id, entity, meshComp));
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Remove submesh");
             }
-
-            ImGui::PopID();
-            return;
-        }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor(2);
-        if (ImGui::IsItemHovered()) {
-            ImGui::SetTooltip("Remove submesh");
         }
         ImGui::SetCursorPos(cursorAfterSeparator);
+        if (submeshGenerated) ImGui::BeginDisabled(true);
 
         beginTable(cpType, getLabelSize("Material"), "submeshes_material");
 
@@ -4169,6 +4192,7 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
 
         endTable();
 
+        if (submeshGenerated) ImGui::EndDisabled();
         ImGui::PopID();
     }
 }
