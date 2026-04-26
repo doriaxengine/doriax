@@ -7,9 +7,72 @@
 #include "util/ProjectUtils.h"
 #include "render/SceneRender2D.h"
 
+#include <cstdlib>
+#include <cstring>
 #include <set>
 
 using namespace doriax;
+
+std::string editor::Stream::makeEmbeddedTextureId(){
+    static uint64_t embeddedTextureCounter = 1;
+    return "__stream_embedded_texture_" + std::to_string(embeddedTextureCounter++);
+}
+
+const char* editor::Stream::colorFormatToString(ColorFormat format){
+    return format == ColorFormat::RED ? "red" : "rgba";
+}
+
+ColorFormat editor::Stream::stringToColorFormat(const std::string& value, int channels){
+    if (value == "red"){
+        return ColorFormat::RED;
+    }
+    if (value == "rgba"){
+        return ColorFormat::RGBA;
+    }
+    return channels == 1 ? ColorFormat::RED : ColorFormat::RGBA;
+}
+
+bool editor::Stream::getEmbeddedTextureData(const Texture& texture, TextureData*& data){
+    if (texture.empty() || texture.isFramebuffer()){
+        return false;
+    }
+
+    Texture& mutableTexture = const_cast<Texture&>(texture);
+    TextureLoadResult result = mutableTexture.load();
+    if (result.state != ResourceLoadState::Finished || !result.data){
+        return false;
+    }
+
+    TextureData& loadedData = mutableTexture.getData();
+    if (!loadedData.getData() || loadedData.getSize() == 0){
+        return false;
+    }
+
+    data = &loadedData;
+    return true;
+}
+
+bool editor::Stream::setEmbeddedTextureData(Texture& texture, const std::string& preferredId, int width, int height, ColorFormat format, int channels, const std::vector<unsigned char>& pixels){
+    const size_t size = static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(channels);
+    if (width <= 0 || height <= 0 || channels <= 0 || pixels.size() < size){
+        return false;
+    }
+
+    unsigned char* raw = static_cast<unsigned char*>(std::malloc(size));
+    if (!raw){
+        return false;
+    }
+
+    std::memcpy(raw, pixels.data(), size);
+
+    TextureData data(width, height, static_cast<unsigned int>(size), format, channels, raw);
+    data.setDataOwned(false);
+
+    std::string textureId = preferredId.empty() ? makeEmbeddedTextureId() : preferredId;
+    texture.setData(textureId, data);
+    texture.getData().setDataOwned(true);
+    return true;
+}
 
 std::string editor::Stream::sceneTypeToString(editor::SceneType type){
     switch (type) {
@@ -537,8 +600,20 @@ YAML::Node editor::Stream::encodeTexture(const Texture& texture) {
             node["source"] = "path";
             node["path"] = path;
         } else {
-            node["source"] = "id";
-            node["id"] = texture.getId();
+            TextureData* embeddedData = nullptr;
+            if (getEmbeddedTextureData(texture, embeddedData)) {
+                node["source"] = "data";
+                node["id"] = texture.getId();
+                node["width"] = embeddedData->getWidth();
+                node["height"] = embeddedData->getHeight();
+                node["channels"] = embeddedData->getChannels();
+                node["size"] = embeddedData->getSize();
+                node["colorFormat"] = colorFormatToString(embeddedData->getColorFormat());
+                node["data"] = Base64::encode(static_cast<const unsigned char*>(embeddedData->getData()), embeddedData->getSize());
+            } else {
+                node["source"] = "id";
+                node["id"] = texture.getId();
+            }
         }
     } else {
         bool hasAnyNonZeroFace = false;
@@ -603,6 +678,21 @@ Texture editor::Stream::decodeTexture(const YAML::Node& node) {
             if (source == "path") {
                 if (node["path"]) {
                     texture.setPath(node["path"].as<std::string>());
+                }
+            } else if (source == "data") {
+                if (node["data"] && node["width"] && node["height"] && node["channels"]) {
+                    std::vector<unsigned char> decodedData = Base64::decode(node["data"].as<std::string>());
+                    const int width = node["width"].as<int>();
+                    const int height = node["height"].as<int>();
+                    const int channels = node["channels"].as<int>();
+                    const size_t expectedSize = static_cast<size_t>(width) * static_cast<size_t>(height) * static_cast<size_t>(channels);
+                    const size_t dataSize = node["size"] ? node["size"].as<size_t>() : expectedSize;
+                    const std::string colorFormat = node["colorFormat"] ? node["colorFormat"].as<std::string>() : std::string();
+                    const std::string textureId = node["id"] ? node["id"].as<std::string>() : std::string();
+
+                    if (dataSize == expectedSize && decodedData.size() >= dataSize) {
+                        setEmbeddedTextureData(texture, textureId, width, height, stringToColorFormat(colorFormat, channels), channels, decodedData);
+                    }
                 }
             } else if (source == "id") {
                 if (node["id"]) {

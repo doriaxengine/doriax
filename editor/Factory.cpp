@@ -16,6 +16,7 @@
 #include <filesystem>
 
 #include "util/FileUtils.h"
+#include "stb_image_write.h"
 
 #include "resources/sky/Daylight_Box_Back_png.h"
 #include "resources/sky/Daylight_Box_Bottom_png.h"
@@ -475,9 +476,41 @@ std::string editor::Factory::formatTexture(int indentSpaces, const Texture& text
         const std::string p0 = texture.getPath(0);
         if (!p0.empty()) {
             code << ind << variableName << ".setPath(" << formatString(p0) << ");\n";
-        } else if (!texture.getId().empty()) {
-            // Path-less textures (e.g., runtime provided). Note: setId() alone does not force a file load.
-            code << ind << variableName << ".setId(" << formatString(texture.getId()) << ");\n";
+        } else {
+            // No file path: try to export in-memory pixel data as a PNG file.
+            Texture& mutableTex = const_cast<Texture&>(texture);
+            TextureLoadResult result = mutableTex.load();
+            bool savedAsPng = false;
+            if (result.state == ResourceLoadState::Finished && result.data) {
+                TextureData& texData = mutableTex.getData();
+                if (texData.getData() && texData.getWidth() > 0 && texData.getHeight() > 0 && texData.getChannels() > 0) {
+                    std::string safeName = texture.getId();
+                    for (char& c : safeName) {
+                        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') c = '_';
+                    }
+                    if (safeName.empty()) safeName = "embedded_texture";
+                    safeName += ".png";
+
+                    const fs::path outDir = projectPath / "embedded_textures";
+                    std::error_code fsec;
+                    fs::create_directories(outDir, fsec);
+                    const fs::path outPath = outDir / safeName;
+
+                    const int written = stbi_write_png(
+                        outPath.string().c_str(),
+                        texData.getWidth(), texData.getHeight(), texData.getChannels(),
+                        texData.getData(), texData.getWidth() * texData.getChannels()
+                    );
+                    if (written) {
+                        code << ind << variableName << ".setPath(" << formatString("embedded_textures/" + safeName) << ");\n";
+                        savedAsPng = true;
+                    }
+                }
+            }
+            if (!savedAsPng && !texture.getId().empty()) {
+                // Fallback: set id only (no file load will occur at runtime).
+                code << ind << variableName << ".setId(" << formatString(texture.getId()) << ");\n";
+            }
         }
     }
 

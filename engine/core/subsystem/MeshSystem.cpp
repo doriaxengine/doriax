@@ -2746,8 +2746,21 @@ bool MeshSystem::createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent&
         }
 
         if (terrain.heightMap.empty()){
-            Log::error("Terrain must have a heightmap");
+            terrain.heightMapLoaded = false;
+            terrain.numNodes = 0;
+            terrain.nodes.clear();
+            for (int s = 0; s < 2; s++){
+                terrain.nodesbuffer[s].clear();
+            }
+            mesh.verticesAABB = AABB::ZERO;
+            mesh.aabb = AABB::ZERO;
+            mesh.worldAABB = AABB::ZERO;
+            mesh.needUpdateAABB = false;
+            if (mesh.loaded || mesh.loadCalled){
+                mesh.needReload = true;
+            }
             terrain.needUpdateTerrain = false;
+            terrain.needUpdateNodesBuffer = false;
             return false;
         }
 

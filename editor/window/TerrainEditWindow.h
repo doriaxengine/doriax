@@ -4,6 +4,8 @@
 #include "Project.h"
 #include "math/Ray.h"
 
+#include "imgui.h"
+
 #include <string>
 #include <vector>
 
@@ -60,6 +62,46 @@ namespace doriax::editor{
 
     class TerrainEditWindow{
     private:
+        struct TerrainMapInfo{
+            bool present = false;
+            bool sizeKnown = false;
+            bool framebuffer = false;
+            int width = 0;
+            int height = 0;
+            int channels = 0;
+        };
+
+        class TerrainTextureEditCmd;
+
+        static uint64_t s_editTextureCounter;
+
+        static void showTooltip(const char* text, ImGuiHoveredFlags flags = 0);
+        static bool iconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec2& size);
+        static bool colorIconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec4& color, const ImVec2& size);
+        static std::string makeEditableTextureId(uint32_t sceneId, Entity entity, TerrainMapTarget target);
+        static std::string makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target);
+        static bool isEditableTexturePath(const std::string& path);
+        static Texture& getTerrainTexture(TerrainComponent& terrain, TerrainMapTarget target);
+        static const char* getTerrainPropertyName(TerrainMapTarget target);
+        static int expectedChannels(TerrainMapTarget target);
+        static ColorFormat expectedFormat(TerrainMapTarget target);
+        static unsigned char clampByte(float value);
+        static bool writeTextureFile(Project* project, const std::string& relativePath, int width, int height, int channels, const std::vector<unsigned char>& pixels);
+        static bool setFileBackedTextureData(Project* project, Texture& texture, const std::string& relativePath, int width, int height, ColorFormat format, int channels, const std::vector<unsigned char>& pixels);
+        static bool hasLoadedData(Texture& texture);
+        static TerrainMapInfo getTerrainMapInfo(Texture& texture);
+        static std::string getTerrainMapStatusText(const TerrainMapInfo& info);
+        static void showTerrainMapStatus(const TerrainMapInfo& info);
+        static std::vector<unsigned char> copyTexturePixels(TextureData& data);
+        static std::vector<unsigned char> convertTexturePixels(TextureData& data, TerrainMapTarget target);
+        static void setOwnedTextureData(Texture& texture, const std::string& id, int width, int height, ColorFormat format, int channels, const std::vector<unsigned char>& pixels);
+        static TerrainMapSnapshot captureSnapshot(Texture& texture, bool forcePixels);
+        static bool snapshotsEqual(const TerrainMapSnapshot& a, const TerrainMapSnapshot& b);
+        static void applySnapshotToTexture(Project* project, Texture& texture, const TerrainMapSnapshot& snapshot);
+        static bool ensureEditableMap(Project* project, SceneProject* sceneProject, Entity entity, TerrainMapTarget target, int resolution);
+        static float readHeight(TextureData& data, int x, int y);
+        static void writeHeight(TextureData& data, int x, int y, float value);
+
         struct ActiveStroke{
             bool active = false;
             uint32_t sceneId = NULL_PROJECT_SCENE;
@@ -102,7 +144,8 @@ namespace doriax::editor{
         void refreshTerrain(SceneProject* sceneProject, Entity entity, TerrainMapTarget target);
         void clearStroke();
 
-        bool createMapForTarget(TerrainMapTarget target, int resolution);
+        bool createMapForTarget(TerrainMapTarget target, int width, int height);
+        bool deleteMapForTarget(TerrainMapTarget target);
 
     public:
         static constexpr const char* WINDOW_NAME = "Terrain Editor";

@@ -92,6 +92,12 @@ namespace doriax::editor {
         static YAML::Node encodeMatrix4(const Matrix4& mat);
         static Matrix4 decodeMatrix4(const YAML::Node& node);
 
+        static std::string makeEmbeddedTextureId();
+        static const char* colorFormatToString(ColorFormat format);
+        static ColorFormat stringToColorFormat(const std::string& value, int channels);
+        static bool getEmbeddedTextureData(const Texture& texture, TextureData*& data);
+        static bool setEmbeddedTextureData(Texture& texture, const std::string& preferredId, int width, int height, ColorFormat format, int channels, const std::vector<unsigned char>& pixels);
+
         static YAML::Node encodeTexture(const Texture& texture);
         static Texture decodeTexture(const YAML::Node& node);
 
