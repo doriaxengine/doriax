@@ -5420,19 +5420,19 @@ void editor::Properties::drawTerrainComponent(ComponentType cpType, SceneProject
     RowSettings textureSettings;
     textureSettings.secondColSize = -1;
 
-    ImGui::SeparatorText("Maps");
-    beginTable(cpType, getLabelSize("Blend Map"), "terrain_maps");
-    propertyRow(RowPropertyType::Texture, cpType, "heightMap", "Height Map", sceneProject, entities, textureSettings);
-    propertyRow(RowPropertyType::Texture, cpType, "blendMap", "Blend Map", sceneProject, entities, textureSettings);
-    endTable();
-
     if (entities.size() == 1){
-        if (ImGui::Button(ICON_FA_MOUNTAIN " Open Terrain Editor")){
+        if (ImGui::Button(ICON_FA_MOUNTAIN " Open Terrain Editor", ImVec2(-1, 0))){
             if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
                 terrainEditWindow->openForEntity(entities[0], sceneProject->id);
             }
         }
     }
+
+    ImGui::SeparatorText("Maps");
+    beginTable(cpType, getLabelSize("Height Map"), "terrain_maps");
+    propertyRow(RowPropertyType::Texture, cpType, "heightMap", "Height Map", sceneProject, entities, textureSettings);
+    propertyRow(RowPropertyType::Texture, cpType, "blendMap", "Blend Map", sceneProject, entities, textureSettings);
+    endTable();
 
     ImGui::SeparatorText("Details");
     beginTable(cpType, getLabelSize("Detail Green"), "terrain_details");
