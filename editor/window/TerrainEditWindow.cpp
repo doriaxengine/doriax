@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <limits>
 #include <system_error>
+#include <unordered_set>
 
 using namespace doriax;
 using namespace doriax::editor;
@@ -84,21 +85,28 @@ std::string editor::TerrainEditWindow::makeEditableTextureId(uint32_t sceneId, E
     return "__terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(s_editTextureCounter++);
 }
 
-std::string editor::TerrainEditWindow::makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target){
+fs::path editor::TerrainEditWindow::getTerrainMapsRelativeBaseDir(Project* project){
     fs::path baseDir = "terrain_maps";
-    if (project){
-        fs::path assetsDir = project->getAssetsDir();
-        if (assetsDir.is_absolute() && !project->getProjectPath().empty()){
-            std::error_code ec;
-            fs::path relativeAssets = fs::relative(assetsDir, project->getProjectPath(), ec);
-            if (!ec && !relativeAssets.empty()){
-                assetsDir = relativeAssets;
-            }
-        }
-        if (!assetsDir.empty() && assetsDir != "."){
-            baseDir = assetsDir / baseDir;
+    if (!project){
+        return baseDir;
+    }
+
+    fs::path assetsDir = project->getAssetsDir();
+    if (assetsDir.is_absolute() && !project->getProjectPath().empty()){
+        std::error_code ec;
+        fs::path relativeAssets = fs::relative(assetsDir, project->getProjectPath(), ec);
+        if (!ec && !relativeAssets.empty()){
+            assetsDir = relativeAssets;
         }
     }
+    if (!assetsDir.empty() && assetsDir != "."){
+        baseDir = assetsDir / baseDir;
+    }
+    return baseDir;
+}
+
+std::string editor::TerrainEditWindow::makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target){
+    fs::path baseDir = getTerrainMapsRelativeBaseDir(project);
 
     const char* suffix = target == TerrainMapTarget::HeightMap ? "height" : "blend";
     for (int attempt = 0; attempt < 10000; attempt++){
@@ -477,19 +485,7 @@ void editor::TerrainEditWindow::cleanUnusedTerrainMaps(Project* project){
         }
     }
 
-    fs::path baseDir = "terrain_maps";
-    fs::path assetsDir = project->getAssetsDir();
-    if (assetsDir.is_absolute() && !project->getProjectPath().empty()){
-        std::error_code ec;
-        fs::path relativeAssets = fs::relative(assetsDir, project->getProjectPath(), ec);
-        if (!ec && !relativeAssets.empty()){
-            assetsDir = relativeAssets;
-        }
-    }
-    if (!assetsDir.empty() && assetsDir != "."){
-        baseDir = assetsDir / baseDir;
-    }
-    fs::path absoluteBaseDir = project->getProjectPath() / baseDir;
+    fs::path absoluteBaseDir = project->getProjectPath() / getTerrainMapsRelativeBaseDir(project);
 
     std::error_code ec;
     if (!fs::exists(absoluteBaseDir, ec) || !fs::is_directory(absoluteBaseDir, ec)){

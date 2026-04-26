@@ -80,6 +80,7 @@ namespace doriax::editor{
         static bool colorIconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec4& color, const ImVec2& size);
         static std::string makeEditableTextureId(uint32_t sceneId, Entity entity, TerrainMapTarget target);
         static std::string makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target);
+        static std::filesystem::path getTerrainMapsRelativeBaseDir(Project* project);
         static bool isEditableTexturePath(const std::string& path);
         static Texture& getTerrainTexture(TerrainComponent& terrain, TerrainMapTarget target);
         static const char* getTerrainPropertyName(TerrainMapTarget target);
