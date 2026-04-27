@@ -85,44 +85,31 @@ std::string editor::TerrainEditWindow::makeEditableTextureId(uint32_t sceneId, E
     return "__terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(s_editTextureCounter++);
 }
 
-fs::path editor::TerrainEditWindow::getTerrainMapsRelativeBaseDir(Project* project){
-    fs::path baseDir = "terrain_maps";
-    if (!project){
-        return baseDir;
-    }
-
-    fs::path assetsDir = project->getAssetsDir();
-    if (assetsDir.is_absolute() && !project->getProjectPath().empty()){
-        std::error_code ec;
-        fs::path relativeAssets = fs::relative(assetsDir, project->getProjectPath(), ec);
-        if (!ec && !relativeAssets.empty()){
-            assetsDir = relativeAssets;
-        }
-    }
-    if (!assetsDir.empty() && assetsDir != "."){
-        baseDir = assetsDir / baseDir;
-    }
-    return baseDir;
-}
-
 std::string editor::TerrainEditWindow::makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target){
-    fs::path baseDir = getTerrainMapsRelativeBaseDir(project);
+    fs::path baseDir = project ? project->getTerrainMapsDir() : fs::path("terrain_maps");
 
     const char* suffix = target == TerrainMapTarget::HeightMap ? "height" : "blend";
     for (int attempt = 0; attempt < 10000; attempt++){
         const uint64_t serial = s_editTextureCounter++;
-        fs::path relativePath = baseDir / ("terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(serial) + ".png");
+        fs::path candidatePath = baseDir / ("terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(serial) + ".png");
         if (!project || project->getProjectPath().empty()){
-            return relativePath.generic_string();
+            return candidatePath.generic_string();
         }
 
         std::error_code ec;
-        if (!fs::exists(project->getProjectPath() / relativePath, ec)){
-            return relativePath.generic_string();
+        if (!fs::exists(candidatePath, ec)){
+            std::error_code ec2;
+            fs::path relPath = fs::relative(candidatePath, project->getProjectPath(), ec2);
+            return (!ec2 && !relPath.empty()) ? relPath.generic_string() : candidatePath.generic_string();
         }
     }
 
     fs::path fallbackPath = baseDir / ("terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + ".png");
+    if (project && !project->getProjectPath().empty()){
+        std::error_code ec;
+        fs::path relPath = fs::relative(fallbackPath, project->getProjectPath(), ec);
+        if (!ec && !relPath.empty()) return relPath.generic_string();
+    }
     return fallbackPath.generic_string();
 }
 
@@ -485,7 +472,7 @@ void editor::TerrainEditWindow::cleanUnusedTerrainMaps(Project* project){
         }
     }
 
-    fs::path absoluteBaseDir = project->getProjectPath() / getTerrainMapsRelativeBaseDir(project);
+    fs::path absoluteBaseDir = project->getTerrainMapsDir();
 
     std::error_code ec;
     if (!fs::exists(absoluteBaseDir, ec) || !fs::is_directory(absoluteBaseDir, ec)){

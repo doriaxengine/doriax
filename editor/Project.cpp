@@ -5,6 +5,7 @@
 #include "window/TerrainEditWindow.h"
 
 #include <fstream>
+#include <system_error>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -2851,6 +2852,10 @@ std::filesystem::path editor::Project::getProjectPath() const{
 
 std::filesystem::path editor::Project::getProjectInternalPath() const{
     return projectPath / ".doriax";
+}
+
+fs::path editor::Project::getTerrainMapsDir() const{
+    return projectPath / "terrain_maps";
 }
 
 fs::path editor::Project::getThumbsDir() const{

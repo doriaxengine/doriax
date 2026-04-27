@@ -346,6 +346,7 @@ namespace doriax::editor{
         std::filesystem::path getProjectPath() const;
         std::filesystem::path getProjectInternalPath() const;
 
+        fs::path getTerrainMapsDir() const;
         fs::path getThumbsDir() const;
         fs::path getThumbnailPath(const fs::path& originalPath) const;
 

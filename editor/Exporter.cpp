@@ -310,18 +310,22 @@ bool editor::Exporter::copyAssets() {
     setProgress("Copying assets...", 0.3f);
 
     fs::path assetsSrc = config.assetsDir;
-    fs::path assetsDst = getExportProjectRoot() / "assets";
-
     if (assetsSrc.empty()) {
         assetsSrc = project->getProjectPath();
     }
+    if (assetsSrc.is_relative()) {
+        assetsSrc = project->getProjectPath() / assetsSrc;
+    }
 
     std::error_code ec;
+    assetsSrc = fs::weakly_canonical(assetsSrc, ec);
+
     if (!fs::exists(assetsSrc, ec)) {
         setError("Assets directory does not exist: " + assetsSrc.string());
         return false;
     }
 
+    fs::path assetsDst = getExportProjectRoot() / "assets";
     fs::create_directories(assetsDst, ec);
 
     // Collect C++ script paths to exclude from asset copy
@@ -341,30 +345,55 @@ bool editor::Exporter::copyAssets() {
         }
     }
 
-    // Copy assets, excluding .doriax directory and C++ scripts
-    for (auto& entry : fs::recursive_directory_iterator(assetsSrc, fs::directory_options::skip_permission_denied, ec)) {
-        fs::path relativePath = fs::relative(entry.path(), assetsSrc, ec);
+    // Copies srcDir into assetsDst preserving hierarchy relative to srcDir.
+    auto copyDirMaintainingHierarchy = [&](const fs::path& srcDir) {
+        for (auto& entry : fs::recursive_directory_iterator(srcDir, fs::directory_options::skip_permission_denied, ec)) {
+            fs::path relPath = fs::relative(entry.path(), srcDir, ec);
+            if (ec || relPath.empty()) continue;
 
-        // Skip hidden directories (starting with '.')
-        std::string firstComponent = relativePath.begin()->string();
-        if (!firstComponent.empty() && firstComponent[0] == '.') {
-            continue;
-        }
-        // Skip CMakeLists.txt at root
-        if (relativePath == "CMakeLists.txt") {
-            continue;
-        }
-        // Skip C++ script files (already handled by copyCppScripts)
-        if (entry.is_regular_file() && scriptPaths.count(fs::weakly_canonical(entry.path(), ec))) {
-            continue;
-        }
+            // Skip hidden directories (starting with '.')
+            std::string firstComponent = relPath.begin()->string();
+            if (!firstComponent.empty() && firstComponent[0] == '.') continue;
 
-        fs::path destPath = assetsDst / relativePath;
-        if (entry.is_directory()) {
-            fs::create_directories(destPath, ec);
-        } else if (entry.is_regular_file()) {
-            fs::create_directories(destPath.parent_path(), ec);
-            fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing, ec);
+            // Skip CMakeLists.txt at root level
+            if (relPath == "CMakeLists.txt") continue;
+
+            // Skip C++ script files (handled by copyCppScripts)
+            if (entry.is_regular_file() && scriptPaths.count(fs::weakly_canonical(entry.path(), ec))) continue;
+
+            fs::path destPath = assetsDst / relPath;
+            if (entry.is_directory()) {
+                fs::create_directories(destPath, ec);
+            } else if (entry.is_regular_file()) {
+                fs::create_directories(destPath.parent_path(), ec);
+                fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing, ec);
+            }
+        }
+    };
+
+    copyDirMaintainingHierarchy(assetsSrc);
+
+    // If terrain_maps is not inside the assets source directory, copy it separately into assetsDst/terrain_maps
+    fs::path terrainMapsDir = project->getTerrainMapsDir();
+    if (fs::exists(terrainMapsDir, ec)) {
+        terrainMapsDir = fs::weakly_canonical(terrainMapsDir, ec);
+        std::error_code relEc;
+        fs::path relToAssets = fs::relative(terrainMapsDir, assetsSrc, relEc);
+        bool insideAssets = !relEc && relToAssets.string().find("..") == std::string::npos;
+        if (!insideAssets) {
+            fs::path terrainDst = assetsDst / terrainMapsDir.filename();
+            fs::create_directories(terrainDst, ec);
+            for (auto& entry : fs::recursive_directory_iterator(terrainMapsDir, fs::directory_options::skip_permission_denied, ec)) {
+                fs::path relPath = fs::relative(entry.path(), terrainMapsDir, ec);
+                if (ec || relPath.empty()) continue;
+                fs::path destPath = terrainDst / relPath;
+                if (entry.is_directory()) {
+                    fs::create_directories(destPath, ec);
+                } else if (entry.is_regular_file()) {
+                    fs::create_directories(destPath.parent_path(), ec);
+                    fs::copy_file(entry.path(), destPath, fs::copy_options::overwrite_existing, ec);
+                }
+            }
         }
     }
 
@@ -378,8 +407,13 @@ bool editor::Exporter::copyLua() {
     if (luaSrc.empty()) {
         return true; // No Lua directory configured, skip
     }
+    if (luaSrc.is_relative()) {
+        luaSrc = project->getProjectPath() / luaSrc;
+    }
 
     std::error_code ec;
+    luaSrc = fs::weakly_canonical(luaSrc, ec);
+
     if (!fs::exists(luaSrc, ec)) {
         return true; // Lua directory doesn't exist, not an error
     }
@@ -404,24 +438,31 @@ bool editor::Exporter::copyLua() {
         }
     }
 
-    for (auto& entry : fs::recursive_directory_iterator(luaSrc, fs::directory_options::skip_permission_denied, ec)) {
-        fs::path relativePath = fs::relative(entry.path(), luaSrc, ec);
+    fs::path terrainMapsSrc = fs::weakly_canonical(project->getTerrainMapsDir(), ec);
+
+    for (auto it = fs::recursive_directory_iterator(luaSrc, fs::directory_options::skip_permission_denied, ec);
+         it != fs::recursive_directory_iterator(); ++it) {
+        auto& entry = *it;
+        fs::path relPath = fs::relative(entry.path(), luaSrc, ec);
+        if (ec || relPath.empty()) continue;
 
         // Skip hidden directories (starting with '.')
-        std::string firstComponent = relativePath.begin()->string();
-        if (!firstComponent.empty() && firstComponent[0] == '.') {
-            continue;
-        }
-        // Skip CMakeLists.txt at root
-        if (relativePath == "CMakeLists.txt") {
-            continue;
-        }
-        // Skip C++ script files
-        if (entry.is_regular_file() && scriptPaths.count(fs::weakly_canonical(entry.path(), ec))) {
-            continue;
+        std::string firstComponent = relPath.begin()->string();
+        if (!firstComponent.empty() && firstComponent[0] == '.') { it.disable_recursion_pending(); continue; }
+
+        // Skip CMakeLists.txt at root level
+        if (relPath == "CMakeLists.txt") continue;
+
+        // Skip terrain_maps directory (handled by copyAssets)
+        if (entry.is_directory()) {
+            fs::path entryCanonical = fs::weakly_canonical(entry.path(), ec);
+            if (!ec && entryCanonical == terrainMapsSrc) { it.disable_recursion_pending(); continue; }
         }
 
-        fs::path destPath = luaDst / relativePath;
+        // Skip C++ script files (handled by copyCppScripts)
+        if (entry.is_regular_file() && scriptPaths.count(fs::weakly_canonical(entry.path(), ec))) continue;
+
+        fs::path destPath = luaDst / relPath;
         if (entry.is_directory()) {
             fs::create_directories(destPath, ec);
         } else if (entry.is_regular_file()) {
