@@ -70,6 +70,11 @@ editor::SceneRender2D::~SceneRender2D(){
     }
     cameraObjects.clear();
 
+    for (auto& pair : soundObjects) {
+        delete pair.second.icon;
+    }
+    soundObjects.clear();
+
     delete gridLines;
     delete tileLines;
 }
@@ -484,6 +489,9 @@ void editor::SceneRender2D::hideAllGizmos(){
         pair.second.icon->setVisible(false);
         pair.second.lines->setVisible(false);
     }
+    for (auto& pair : soundObjects) {
+        pair.second.icon->setVisible(false);
+    }
 }
 
 void editor::SceneRender2D::activate(){
@@ -570,6 +578,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
     std::set<Entity> currentBodies;
     std::set<Entity> currentJoints;
     std::set<Entity> currentCameras;
+    std::set<Entity> currentSounds;
     for (Entity& entity: entities){
         Signature signature = scene->getSignature(entity);
         if (signature.test(scene->getComponentId<UIContainerComponent>()) && 
@@ -705,6 +714,28 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
                 }
             }
         }
+
+        if (signature.test(scene->getComponentId<AudioComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            Transform& transform = scene->getComponent<Transform>(entity);
+
+            currentSounds.insert(entity);
+
+            bool newSound = false;
+            if (soundObjects.find(entity) == soundObjects.end()){
+                ScopedDefaultEntityPool sys(*toolslayer.getScene(), EntityPool::System);
+                soundObjects[entity].icon = new Sprite(toolslayer.getScene());
+                newSound = true;
+            }
+
+            SoundObjects& so = soundObjects[entity];
+            if (newSound){
+                setupSoundIcon(so);
+            }
+
+            so.icon->setPosition(transform.worldPosition);
+            so.icon->setScale(0.25f * zoom);
+            so.icon->setVisible(transform.visible);
+        }
     }
 
     // --- Tile outlines for selected tilemap ---
@@ -781,6 +812,16 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
             itCam = cameraObjects.erase(itCam);
         } else {
             ++itCam;
+        }
+    }
+
+    auto itSound = soundObjects.begin();
+    while (itSound != soundObjects.end()) {
+        if (currentSounds.find(itSound->first) == currentSounds.end()) {
+            delete itSound->second.icon;
+            itSound = soundObjects.erase(itSound);
+        } else {
+            ++itSound;
         }
     }
 }

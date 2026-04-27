@@ -51,6 +51,12 @@ namespace doriax::editor {
         static std::string lightStateToString(LightState state);
         static LightState stringToLightState(const std::string& str);
 
+        static std::string audioStateToString(AudioState state);
+        static AudioState stringToAudioState(const std::string& str);
+
+        static std::string audioAttenuationToString(AudioAttenuation attenuation);
+        static AudioAttenuation stringToAudioAttenuation(const std::string& str);
+
         static std::string uiEventStateToString(UIEventState state);
         static UIEventState stringToUIEventState(const std::string& str);
 
@@ -196,6 +202,9 @@ namespace doriax::editor {
 
         static YAML::Node encodeCameraComponent(const CameraComponent& camera);
         static CameraComponent decodeCameraComponent(const YAML::Node& node, const CameraComponent* oldCamera = nullptr);
+
+        static YAML::Node encodeAudioComponent(const AudioComponent& audio);
+        static AudioComponent decodeAudioComponent(const YAML::Node& node, const AudioComponent* oldAudio = nullptr);
 
         static YAML::Node encodeScriptComponent(const ScriptComponent& script);
         static ScriptComponent decodeScriptComponent(const YAML::Node& node, const ScriptComponent* oldScript = nullptr);

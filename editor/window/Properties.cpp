@@ -48,12 +48,16 @@
 #include "subsystem/PhysicsSystem.h"
 #include "pool/TexturePool.h"
 #include "yaml-cpp/yaml.h"
+#include "soloud.h"
+#include "soloud_wav.h"
 
 #include <map>
 #include <type_traits>
 #include <cstring>
 #include <fstream>
 #include <cctype>
+#include <cfloat>
+#include <algorithm>
 #include <unordered_set>
 
 using namespace doriax;
@@ -106,6 +110,13 @@ static std::vector<editor::EnumEntry> entriesLightType = {
 static std::vector<editor::EnumEntry> entriesCameraType = {
     { (int)CameraType::CAMERA_ORTHO, "Orthographic" },
     { (int)CameraType::CAMERA_PERSPECTIVE, "Perspective" }
+};
+
+static std::vector<editor::EnumEntry> entriesAudioAttenuation = {
+    { (int)AudioAttenuation::NO_ATTENUATION, "No Attenuation" },
+    { (int)AudioAttenuation::INVERSE_DISTANCE, "Inverse Distance" },
+    { (int)AudioAttenuation::LINEAR_DISTANCE, "Linear Distance" },
+    { (int)AudioAttenuation::EXPONENTIAL_DISTANCE, "Exponential Distance" }
 };
 
 static std::vector<editor::EnumEntry> entriesBodyType = {
@@ -334,6 +345,196 @@ namespace {
         }
     }
 
+    struct AudioPreviewRuntime {
+        SoLoud::Soloud soloud;
+        SoLoud::Wav sample;
+        bool initialized = false;
+        bool loaded = false;
+        bool active = false;
+        bool playing = false;
+        Entity entity = NULL_ENTITY;
+        uint32_t sceneId = 0;
+        unsigned int handle = 0;
+        std::string filename;
+        std::string error;
+        double length = 0.0;
+        double time = 0.0;
+    };
+
+    AudioPreviewRuntime audioPreview;
+
+    bool ensureAudioPreviewInitialized() {
+        if (audioPreview.initialized) {
+            return true;
+        }
+
+        SoLoud::result result = audioPreview.soloud.init();
+        if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
+            audioPreview.error = "Failed to initialize audio preview output.";
+            return false;
+        }
+
+        audioPreview.initialized = true;
+        return true;
+    }
+
+    void stopAudioPreview(bool unload = false) {
+        if (audioPreview.initialized && audioPreview.handle != 0) {
+            audioPreview.soloud.stop(audioPreview.handle);
+        }
+
+        audioPreview.active = false;
+        audioPreview.playing = false;
+        audioPreview.handle = 0;
+        audioPreview.time = 0.0;
+
+        if (unload) {
+            audioPreview.loaded = false;
+            audioPreview.filename.clear();
+            audioPreview.length = 0.0;
+            audioPreview.entity = NULL_ENTITY;
+            audioPreview.sceneId = 0;
+        }
+    }
+
+    std::filesystem::path resolveAudioPreviewPath(editor::Project* project, const std::string& filename) {
+        std::filesystem::path audioPath(filename);
+        if (audioPath.is_relative()) {
+            audioPath = project->getProjectPath() / audioPath;
+        }
+        return audioPath.lexically_normal();
+    }
+
+    void applyAudioPreviewSettings(const AudioComponent& audio) {
+        if (!audioPreview.initialized || !audioPreview.active || audioPreview.handle == 0) {
+            return;
+        }
+
+        audioPreview.soloud.setVolume(audioPreview.handle, static_cast<float>(audio.volume));
+        audioPreview.soloud.setRelativePlaySpeed(audioPreview.handle, audio.speed);
+        audioPreview.soloud.setPan(audioPreview.handle, audio.pan);
+        // Preview should always terminate even if the runtime sound is configured to loop.
+        audioPreview.soloud.setLooping(audioPreview.handle, false);
+        audioPreview.soloud.setLoopPoint(audioPreview.handle, audio.loopingPoint);
+        audioPreview.soloud.setProtectVoice(audioPreview.handle, audio.protectVoice);
+        audioPreview.soloud.setInaudibleBehavior(audioPreview.handle, audio.inaudibleBehaviorMustTick, audio.inaudibleBehaviorKill);
+    }
+
+    bool loadAudioPreview(editor::Project* project, editor::SceneProject* sceneProject, Entity entity, const AudioComponent& audio) {
+        if (audio.filename.empty()) {
+            audioPreview.error = "Select a sound file before previewing.";
+            return false;
+        }
+
+        if (!ensureAudioPreviewInitialized()) {
+            return false;
+        }
+
+        if (audioPreview.loaded && audioPreview.sceneId == sceneProject->id && audioPreview.entity == entity && audioPreview.filename == audio.filename) {
+            return true;
+        }
+
+        stopAudioPreview(true);
+
+        std::filesystem::path audioPath = resolveAudioPreviewPath(project, audio.filename);
+        SoLoud::result result = audioPreview.sample.load(audioPath.string().c_str());
+        if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
+            audioPreview.error = "Failed to load audio preview file:\n" + audioPath.string();
+            return false;
+        }
+
+        audioPreview.sample.setSingleInstance(true);
+        audioPreview.sample.setVolume(1.0f);
+        audioPreview.loaded = true;
+        audioPreview.sceneId = sceneProject->id;
+        audioPreview.entity = entity;
+        audioPreview.filename = audio.filename;
+        audioPreview.length = audioPreview.sample.getLength();
+        audioPreview.error.clear();
+
+        return true;
+    }
+
+    bool startAudioPreview(editor::Project* project, editor::SceneProject* sceneProject, Entity entity, const AudioComponent& audio) {
+        if (!loadAudioPreview(project, sceneProject, entity, audio)) {
+            return false;
+        }
+
+        if (audioPreview.active && audioPreview.handle != 0) {
+            audioPreview.soloud.setPause(audioPreview.handle, false);
+            audioPreview.playing = true;
+            applyAudioPreviewSettings(audio);
+            return true;
+        }
+
+        audioPreview.handle = audioPreview.soloud.play(audioPreview.sample);
+        if (audioPreview.handle == 0) {
+            audioPreview.error = "Failed to start audio preview.";
+            return false;
+        }
+
+        audioPreview.active = true;
+        audioPreview.playing = true;
+        audioPreview.time = 0.0;
+        applyAudioPreviewSettings(audio);
+
+        return true;
+    }
+
+    void pauseAudioPreview() {
+        if (!audioPreview.initialized || !audioPreview.active || audioPreview.handle == 0) {
+            return;
+        }
+
+        audioPreview.soloud.setPause(audioPreview.handle, true);
+        audioPreview.playing = false;
+    }
+
+    bool seekAudioPreview(editor::Project* project, editor::SceneProject* sceneProject, Entity entity, const AudioComponent& audio, double time) {
+        if (!loadAudioPreview(project, sceneProject, entity, audio)) {
+            return false;
+        }
+
+        bool shouldKeepPlaying = audioPreview.active && audioPreview.playing;
+        if (!audioPreview.active || audioPreview.handle == 0) {
+            audioPreview.handle = audioPreview.soloud.play(audioPreview.sample);
+            if (audioPreview.handle == 0) {
+                audioPreview.error = "Failed to start audio preview.";
+                return false;
+            }
+            audioPreview.active = true;
+            audioPreview.playing = false;
+            shouldKeepPlaying = false;
+        }
+
+        SoLoud::result result = audioPreview.soloud.seek(audioPreview.handle, time);
+        if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
+            audioPreview.error = "Failed to seek audio preview.";
+            return false;
+        }
+
+        audioPreview.time = time;
+        audioPreview.playing = shouldKeepPlaying;
+        audioPreview.soloud.setPause(audioPreview.handle, !shouldKeepPlaying);
+        applyAudioPreviewSettings(audio);
+
+        return true;
+    }
+
+    void updateAudioPreview(const AudioComponent& audio) {
+        if (!audioPreview.initialized || !audioPreview.active || audioPreview.handle == 0) {
+            return;
+        }
+
+        if (!audioPreview.soloud.isValidVoiceHandle(audioPreview.handle)) {
+            stopAudioPreview();
+            return;
+        }
+
+        applyAudioPreviewSettings(audio);
+        audioPreview.time = audioPreview.soloud.getStreamTime(audioPreview.handle);
+    }
+
     std::string formatPropertyLabelValue(const editor::PropertyData& prop) {
         if (!prop.ref) {
             return "-";
@@ -345,6 +546,9 @@ namespace {
                 return (*static_cast<bool*>(prop.ref)) ? "true" : "false";
             case editor::PropertyType::Float:
                 snprintf(buffer, sizeof(buffer), "%.3f", *static_cast<float*>(prop.ref));
+                return buffer;
+            case editor::PropertyType::Double:
+                snprintf(buffer, sizeof(buffer), "%.3f", *static_cast<double*>(prop.ref));
                 return buffer;
             case editor::PropertyType::Int:
                 return std::to_string(*static_cast<int*>(prop.ref));
@@ -381,6 +585,7 @@ void editor::Properties::setOpen(bool open){
 
     windowOpen = false;
     focusRequested = false;
+    stopAudioPreview();
 }
 
 bool editor::Properties::isOpen() const{
@@ -2121,6 +2326,60 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         if (dif)
             ImGui::PopStyleColor();
         //ImGui::SetItemTooltip("%s", prop.label.c_str());
+
+        if (!settings.help.empty()){
+            ImGui::SameLine(); helpMarker(settings.help);
+        }
+
+    }else if (type == RowPropertyType::Double || type == RowPropertyType::DoublePositive){
+        double* value = nullptr;
+        std::map<Entity, double> eValue;
+        bool dif = false;
+        double* defArr = nullptr;
+        for (Entity& entity : entities){
+            PropertyData prop = Catalog::getProperty(sceneProject->scene, entity, cpType, id);
+            defArr = static_cast<double*>(prop.def);
+            eValue[entity] = *static_cast<double*>(prop.ref);
+            if (value){
+                if (*value != eValue[entity])
+                    dif = true;
+            }
+            value = &eValue[entity];
+        }
+
+        double newValue = *value;
+
+        bool defChanged = false;
+        if (defArr){
+            defChanged = (newValue != *defArr);
+        }
+        if (propertyHeader(label, settings.secondColSize, defChanged, settings.child)){
+            for (Entity& entity : entities){
+                cmd = new PropertyCmd<double>(project, sceneProject->id, entity, cpType, id, *defArr, settings.onValueChanged);
+                CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
+                finishProperty = true;
+            }
+        }
+
+        double v_min = 0.0;
+        double v_max = DBL_MAX;
+        const void* minPtr = nullptr;
+        const void* maxPtr = nullptr;
+        if (type == RowPropertyType::DoublePositive){
+            minPtr = &v_min;
+            maxPtr = &v_max;
+        }
+
+        if (dif)
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        if (ImGui::DragScalar(("##input_double_"+id).c_str(), ImGuiDataType_Double, &newValue, settings.stepSize, minPtr, maxPtr, settings.format)){
+            for (Entity& entity : entities){
+                cmd = new PropertyCmd<double>(project, sceneProject->id, entity, cpType, id, newValue, settings.onValueChanged);
+                CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
+            }
+        }
+        if (dif)
+            ImGui::PopStyleColor();
 
         if (!settings.help.empty()){
             ImGui::SameLine(); helpMarker(settings.help);
@@ -4934,6 +5193,260 @@ void editor::Properties::drawCameraComponent(ComponentType cpType, SceneProject*
     propertyRow(RowPropertyType::Bool, cpType, "autoResize", "Auto Resize", sceneProject, entities, defaultSettings);
 
     endTable();
+}
+
+void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    RowSettings compactSettings;
+    compactSettings.secondColSize = 7 * ImGui::GetFontSize();
+
+    RowSettings floatSettings = compactSettings;
+    floatSettings.format = "%.3f";
+    floatSettings.stepSize = 0.01f;
+
+    RowSettings doubleSettings = floatSettings;
+
+    beginTable(cpType, getLabelSize("Inaudible Must Tick"));
+
+    if (entities.size() == 1) {
+        Entity entity = entities[0];
+        AudioComponent& audio = sceneProject->scene->getComponent<AudioComponent>(entity);
+
+        auto setAudioFilename = [&](const std::filesystem::path& selectedPath) -> bool {
+            std::filesystem::path projectPath = std::filesystem::absolute(project->getProjectPath()).lexically_normal();
+            std::filesystem::path filePath = selectedPath;
+            if (filePath.is_relative()) {
+                filePath = projectPath / filePath;
+            }
+            filePath = std::filesystem::absolute(filePath).lexically_normal();
+
+            std::error_code errorCode;
+            std::filesystem::path relative = std::filesystem::relative(filePath, projectPath, errorCode);
+            std::string relativePath = relative.generic_string();
+            if (errorCode || relativePath == ".." || relativePath.rfind("../", 0) == 0) {
+                ImGui::OpenPopup("Audio Import Error");
+                return false;
+            }
+
+            if (!Util::isAudioFile(relativePath)) {
+                return false;
+            }
+
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(
+                new PropertyCmd<std::string>(project, sceneProject->id, entity, cpType, "filename", relativePath)
+            );
+            return true;
+        };
+
+        propertyHeader("Sound File");
+
+        std::string currentPath = audio.filename;
+        std::string displayName = currentPath.empty() ? "< Not set >" : std::filesystem::path(currentPath).filename().string();
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        float buttonWidth = ImGui::CalcTextSize(ICON_FA_FOLDER_OPEN).x + ImGui::GetStyle().FramePadding.x * 2;
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, App::ThemeColors::filenameLabel);
+        ImGui::BeginChild("audiofilename", ImVec2(availWidth - buttonWidth - ImGui::GetStyle().ItemSpacing.x, ImGui::GetFrameHeight()),
+            false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        float textWidth = ImGui::CalcTextSize(displayName.c_str()).x;
+        float childAvail = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(std::max(0.0f, childAvail - textWidth - 2));
+        ImGui::SetCursorPosY(ImGui::GetStyle().FramePadding.y);
+        if (currentPath.empty())
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::Text("%s", displayName.c_str());
+        if (currentPath.empty())
+            ImGui::PopStyleColor();
+        ImGui::EndChild();
+        if (!currentPath.empty()){
+            ImGui::SetItemTooltip("%s", currentPath.c_str());
+        }
+        if (sceneProject && sceneProject->playState == ScenePlayState::STOPPED) {
+            if (ImGui::BeginDragDropTarget()) {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files", ImGuiDragDropFlags_AcceptBeforeDelivery)) {
+                    std::vector<std::string> receivedStrings = editor::Util::getStringsFromPayload(payload);
+                    if (!receivedStrings.empty()) {
+                        std::filesystem::path droppedPath(receivedStrings[0]);
+                        std::filesystem::path filePath = droppedPath.is_relative() ? project->getProjectPath() / droppedPath : droppedPath;
+                        std::error_code errorCode;
+                        std::filesystem::path relative = std::filesystem::relative(std::filesystem::absolute(filePath), std::filesystem::absolute(project->getProjectPath()), errorCode);
+                        if (!errorCode && Util::isAudioFile(relative.generic_string()) && payload->IsDelivery()) {
+                            if (setAudioFilename(droppedPath)) {
+                                ImGui::SetWindowFocus(Properties::WINDOW_NAME);
+                            }
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+        }
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN "##audio_load")) {
+            std::string path = editor::FileDialogs::openFileDialog(project->getProjectPath().string(), FILE_DIALOG_AUDIO);
+            if (!path.empty()) {
+                setAudioFilename(path);
+            }
+        }
+
+        if (ImGui::BeginPopupModal("Audio Import Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Selected file must be an audio file within the project directory.");
+            ImGui::Separator();
+            float buttonModalWidth = 120;
+            float windowWidth = ImGui::GetWindowSize().x;
+            ImGui::SetCursorPosX((windowWidth - buttonModalWidth) * 0.5f);
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }else{
+        propertyRow(RowPropertyType::String, cpType, "filename", "Sound File", sceneProject, entities);
+    }
+
+    propertyRow(RowPropertyType::DoublePositive, cpType, "volume", "Volume", sceneProject, entities, doubleSettings);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "speed", "Speed", sceneProject, entities, floatSettings);
+
+    RowSettings panSettings = floatSettings;
+    panSettings.help = "-1 left, 0 center, 1 right";
+    propertyRow(RowPropertyType::Float, cpType, "pan", "Pan", sceneProject, entities, panSettings);
+
+    propertyRow(RowPropertyType::Bool, cpType, "looping", "Looping", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::DoublePositive, cpType, "loopingPoint", "Loop Point", sceneProject, entities, doubleSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "protectVoice", "Protect Voice", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "enableClocked", "Clocked", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "enable3D", "3D", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "inaudibleBehaviorMustTick", "Inaudible Must Tick", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "inaudibleBehaviorKill", "Inaudible Kill", sceneProject, entities, compactSettings);
+
+    bool show3DSettings = false;
+    for (Entity entity : entities){
+        if (AudioComponent* audio = sceneProject->scene->findComponent<AudioComponent>(entity)){
+            show3DSettings = show3DSettings || audio->enable3D;
+        }
+    }
+
+    if (show3DSettings){
+        RowSettings attenuationSettings = compactSettings;
+        attenuationSettings.enumEntries = &entriesAudioAttenuation;
+        propertyRow(RowPropertyType::FloatPositive, cpType, "minDistance", "Min Distance", sceneProject, entities, floatSettings);
+        propertyRow(RowPropertyType::FloatPositive, cpType, "maxDistance", "Max Distance", sceneProject, entities, floatSettings);
+        propertyRow(RowPropertyType::Enum, cpType, "attenuationModel", "Attenuation", sceneProject, entities, attenuationSettings);
+        propertyRow(RowPropertyType::FloatPositive, cpType, "attenuationRolloffFactor", "Rolloff", sceneProject, entities, floatSettings);
+        propertyRow(RowPropertyType::FloatPositive, cpType, "dopplerFactor", "Doppler", sceneProject, entities, floatSettings);
+    }
+
+    propertyRow(RowPropertyType::Label, cpType, "length", "Length", sceneProject, entities, compactSettings);
+    propertyRow(RowPropertyType::Label, cpType, "playingTime", "Playing Time", sceneProject, entities, compactSettings);
+
+    endTable();
+
+    if (entities.size() != 1) {
+        return;
+    }
+
+    Entity entity = entities[0];
+    AudioComponent& audio = sceneProject->scene->getComponent<AudioComponent>(entity);
+    bool sceneIsStopped = sceneProject->playState == ScenePlayState::STOPPED;
+    bool isThisPreview = audioPreview.active && audioPreview.sceneId == sceneProject->id && audioPreview.entity == entity;
+
+    if (audioPreview.active && (!isThisPreview || !sceneIsStopped || audioPreview.filename != audio.filename)) {
+        stopAudioPreview(!isThisPreview || audioPreview.filename != audio.filename);
+        isThisPreview = false;
+    }
+
+    if (isThisPreview) {
+        updateAudioPreview(audio);
+        isThisPreview = audioPreview.active && audioPreview.sceneId == sceneProject->id && audioPreview.entity == entity;
+    }
+
+    ImGui::Separator();
+    ImGui::BeginDisabled(!sceneIsStopped || audio.filename.empty());
+
+    if (isThisPreview && audioPreview.playing) {
+        if (ImGui::Button(ICON_FA_PAUSE "##audio_pause")) {
+            pauseAudioPreview();
+        }
+    } else {
+        if (ImGui::Button(ICON_FA_PLAY "##audio_play")) {
+            if (!startAudioPreview(project, sceneProject, entity, audio)) {
+                ImGui::OpenPopup("Audio Preview Error");
+            } else {
+                isThisPreview = true;
+            }
+        }
+    }
+    ImGui::SameLine();
+
+    ImGui::BeginDisabled(!isThisPreview);
+    if (ImGui::Button(ICON_FA_STOP "##audio_stop")) {
+        stopAudioPreview();
+        isThisPreview = false;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+
+    double previewTime = isThisPreview ? audioPreview.time : 0.0;
+    double previewLength = (audioPreview.loaded && audioPreview.sceneId == sceneProject->id && audioPreview.entity == entity && audioPreview.filename == audio.filename) ? audioPreview.length : audio.length;
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%.2fs", previewTime);
+    ImGui::SameLine();
+
+    float timelineWidth = std::max(ImGui::GetContentRegionAvail().x, 1.0f);
+    float frameHeight = ImGui::GetFrameHeight();
+    float timelineHeight = 6.0f;
+    float rounding = timelineHeight * 0.5f;
+    ImVec2 timelinePos = ImGui::GetCursorScreenPos();
+
+    ImGui::InvisibleButton("##audio_timeline_strip", ImVec2(timelineWidth, frameHeight));
+    bool timelineHovered = ImGui::IsItemHovered();
+    bool timelineClicked = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+
+    if (sceneIsStopped && previewLength > 0.0 && timelineClicked) {
+        float mouseX = ImGui::GetIO().MousePos.x;
+        float clickFraction = std::clamp((mouseX - timelinePos.x) / timelineWidth, 0.0f, 1.0f);
+        double seekTime = clickFraction * previewLength;
+        if (!seekAudioPreview(project, sceneProject, entity, audio, seekTime)) {
+            ImGui::OpenPopup("Audio Preview Error");
+        } else {
+            isThisPreview = true;
+        }
+    }
+
+    if (timelineHovered && previewLength > 0.0) {
+        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    }
+
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec4 trackColor = style.Colors[ImGuiCol_TextDisabled];
+    trackColor.w = 0.22f;
+    ImVec4 fillColor = style.Colors[ImGuiCol_PlotHistogram];
+    float fraction = (previewLength > 0.0) ? std::clamp(static_cast<float>(previewTime / previewLength), 0.0f, 1.0f) : 0.0f;
+
+    ImVec2 barMin(timelinePos.x, timelinePos.y + (frameHeight - timelineHeight) * 0.5f);
+    ImVec2 barMax(timelinePos.x + timelineWidth, barMin.y + timelineHeight);
+    drawList->AddRectFilled(barMin, barMax, ImGui::GetColorU32(trackColor), rounding);
+
+    if (fraction > 0.0f) {
+        ImVec2 fillMax(barMin.x + timelineWidth * fraction, barMax.y);
+        drawList->AddRectFilled(barMin, fillMax, ImGui::GetColorU32(fillColor), rounding);
+    }
+
+    ImGui::EndDisabled();
+
+    if (ImGui::BeginPopupModal("Audio Preview Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s", audioPreview.error.c_str());
+        ImGui::Separator();
+        float buttonModalWidth = 120;
+        float windowWidth = ImGui::GetWindowSize().x;
+        ImGui::SetCursorPosX((windowWidth - buttonModalWidth) * 0.5f);
+        if (ImGui::Button("OK", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
@@ -9282,6 +9795,8 @@ void editor::Properties::show(){
                     drawLightComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::CameraComponent){
                     drawCameraComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::AudioComponent){
+                    drawAudioComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::SkyComponent){
                     drawSkyComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::ScriptComponent){

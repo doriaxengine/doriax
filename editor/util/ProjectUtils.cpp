@@ -386,8 +386,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<AudioComponent>(entity, {});
             }else{
-                registry->addComponent<AudioComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<AudioComponent>(entity, Stream::decodeAudioComponent(componentNode));
             }
             break;
         case ComponentType::Body2DComponent:
@@ -785,7 +784,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::AudioComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeAudioComponent(registry->getComponent<AudioComponent>(entity));
             }
             registry->removeComponent<AudioComponent>(entity);
             break;

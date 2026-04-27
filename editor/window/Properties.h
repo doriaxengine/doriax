@@ -20,7 +20,9 @@ namespace doriax::editor{
         String,
         MultilineString,
         Float,
+        Double,
         FloatPositive,
+        DoublePositive,
         Float_0_1,
         Vector2,
         Vector3,
@@ -196,6 +198,7 @@ namespace doriax::editor{
         void drawTerrainComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawLightComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawCameraComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawAudioComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawSkyComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawParticlesComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawPointsComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);

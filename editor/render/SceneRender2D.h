@@ -16,6 +16,7 @@ namespace doriax::editor{
         std::map<Entity, Lines*> bodyLines;
         std::map<Entity, Lines*> jointLines;
         std::map<Entity, CameraObjects> cameraObjects;
+        std::map<Entity, SoundObjects> soundObjects;
         Lines* tileLines = nullptr;
         bool isUI;
         int viewportWidth;

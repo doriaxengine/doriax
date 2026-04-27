@@ -133,6 +133,7 @@ include_directories (${DORIAX_ROOT}/libs/luabridge3)
 include_directories (${DORIAX_ROOT}/libs/box2d/include)
 include_directories (${DORIAX_ROOT}/libs/joltphysics)
 include_directories (${DORIAX_ROOT}/libs/stb)
+include_directories (${DORIAX_ROOT}/libs/soloud/include)
 
 include_directories (${DORIAX_ROOT}/core)
 include_directories (${DORIAX_ROOT}/core/action)

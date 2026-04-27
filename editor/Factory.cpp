@@ -259,6 +259,25 @@ std::string editor::Factory::formatLightState(LightState state) {
     }
 }
 
+std::string editor::Factory::formatAudioState(AudioState state) {
+    switch (state) {
+        case AudioState::Playing: return "AudioState::Playing";
+        case AudioState::Paused: return "AudioState::Paused";
+        case AudioState::Stopped: return "AudioState::Stopped";
+        default: return "AudioState::Stopped";
+    }
+}
+
+std::string editor::Factory::formatAudioAttenuation(AudioAttenuation attenuation) {
+    switch (attenuation) {
+        case AudioAttenuation::NO_ATTENUATION: return "AudioAttenuation::NO_ATTENUATION";
+        case AudioAttenuation::INVERSE_DISTANCE: return "AudioAttenuation::INVERSE_DISTANCE";
+        case AudioAttenuation::LINEAR_DISTANCE: return "AudioAttenuation::LINEAR_DISTANCE";
+        case AudioAttenuation::EXPONENTIAL_DISTANCE: return "AudioAttenuation::EXPONENTIAL_DISTANCE";
+        default: return "AudioAttenuation::NO_ATTENUATION";
+    }
+}
+
 std::string editor::Factory::formatUIEventState(UIEventState state) {
     switch (state) {
         case UIEventState::NOT_SET: return "UIEventState::NOT_SET";
@@ -301,6 +320,13 @@ std::string editor::Factory::formatFloat(float value) {
     std::ostringstream oss;
     oss << std::fixed << std::setprecision(6);
     oss << value << "f";
+    return oss.str();
+}
+
+std::string editor::Factory::formatDouble(double value) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(6);
+    oss << value;
     return oss.str();
 }
 
@@ -531,6 +557,10 @@ std::string editor::Factory::formatPropertyValue(const PropertyData& property, c
         case PropertyType::Float: {
             float* value = static_cast<float*>(property.ref);
             return formatFloat(*value);
+        }
+        case PropertyType::Double: {
+            double* value = static_cast<double*>(property.ref);
+            return formatDouble(*value);
         }
         case PropertyType::Int: {
             int* value = static_cast<int*>(property.ref);
@@ -982,6 +1012,37 @@ std::string editor::Factory::createCameraComponent(int indentSpaces, EntityRegis
     code << ind << "camera.useTarget = " << formatBool(camera.useTarget) << ";\n";
     code << ind << "camera.autoResize = " << formatBool(camera.autoResize) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "CameraComponent", "camera", assignExisting);
+    return code.str();
+}
+
+std::string editor::Factory::createAudioComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<AudioComponent>(entity)) return "";
+    AudioComponent& audio = scene->getComponent<AudioComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "AudioComponent audio;\n";
+    code << ind << "audio.state = " << formatAudioState(AudioState::Stopped) << ";\n";
+    code << ind << "audio.filename = " << formatString(audio.filename) << ";\n";
+    code << ind << "audio.enableClocked = " << formatBool(audio.enableClocked) << ";\n";
+    code << ind << "audio.enable3D = " << formatBool(audio.enable3D) << ";\n";
+    code << ind << "audio.volume = " << formatDouble(audio.volume) << ";\n";
+    code << ind << "audio.speed = " << formatFloat(audio.speed) << ";\n";
+    code << ind << "audio.pan = " << formatFloat(audio.pan) << ";\n";
+    code << ind << "audio.looping = " << formatBool(audio.looping) << ";\n";
+    code << ind << "audio.loopingPoint = " << formatDouble(audio.loopingPoint) << ";\n";
+    code << ind << "audio.protectVoice = " << formatBool(audio.protectVoice) << ";\n";
+    code << ind << "audio.inaudibleBehaviorMustTick = " << formatBool(audio.inaudibleBehaviorMustTick) << ";\n";
+    code << ind << "audio.inaudibleBehaviorKill = " << formatBool(audio.inaudibleBehaviorKill) << ";\n";
+    code << ind << "audio.minDistance = " << formatFloat(audio.minDistance) << ";\n";
+    code << ind << "audio.maxDistance = " << formatFloat(audio.maxDistance) << ";\n";
+    code << ind << "audio.attenuationModel = " << formatAudioAttenuation(audio.attenuationModel) << ";\n";
+    code << ind << "audio.attenuationRolloffFactor = " << formatFloat(audio.attenuationRolloffFactor) << ";\n";
+    code << ind << "audio.dopplerFactor = " << formatFloat(audio.dopplerFactor) << ";\n";
+    code << ind << "audio.needUpdate = true;\n";
+    if (audio.state == AudioState::Playing) {
+        code << ind << "audio.startTrigger = true;\n";
+    }
+    addComponentCode(code, ind, sceneName, entityName, entity, "AudioComponent", "audio", assignExisting);
     return code.str();
 }
 
@@ -1618,6 +1679,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::TerrainComponent: return createTerrainComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::LightComponent: return createLightComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::CameraComponent: return createCameraComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::AudioComponent: return createAudioComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ScriptComponent: return createScriptComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::SkyComponent: return createSkyComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::Body2DComponent: return createBody2DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

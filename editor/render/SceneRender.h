@@ -41,6 +41,10 @@ namespace doriax::editor{
         float topClip = 0;
     };
 
+    struct SoundObjects{
+        Sprite* icon = nullptr;
+    };
+
     class Project;
 
     class SceneRender{
@@ -90,6 +94,7 @@ namespace doriax::editor{
         void updateCameraFrustum(CameraObjects& co, const CameraComponent& cameraComponent, bool isMainCamera, bool fixedSizeFrustum = true);
         void drawCameraFrustumLines(Lines* lines, const CameraComponent& cameraComponent, bool isMainCamera, bool fixedSizeFrustum = true);
         void setupCameraIcon(CameraObjects& co);
+        void setupSoundIcon(SoundObjects& so);
 
         Scene* scene;
         Camera* camera;

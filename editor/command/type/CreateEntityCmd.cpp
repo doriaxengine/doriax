@@ -377,6 +377,16 @@ bool editor::CreateEntityCmd::execute(){
             wasMainCamera = true;
         }
 
+    }else if (type == EntityCreationType::SOUND){
+
+        scene->addComponent<AudioComponent>(entity, {});
+
+    }else if (type == EntityCreationType::SOUND_3D){
+
+        scene->addComponent<Transform>(entity, {});
+        scene->addComponent<AudioComponent>(entity, {});
+        scene->getComponent<AudioComponent>(entity).enable3D = true;
+
     }else if (type == EntityCreationType::MODEL){
 
         scene->addComponent<Transform>(entity, {});

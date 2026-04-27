@@ -53,12 +53,15 @@ namespace doriax::editor{
         static std::string formatJoint3DType(Joint3DType type);
         static std::string formatActionState(ActionState state);
         static std::string formatLightState(LightState state);
+        static std::string formatAudioState(AudioState state);
+        static std::string formatAudioAttenuation(AudioAttenuation attenuation);
         static std::string formatUIEventState(UIEventState state);
         static std::string formatCameraType(CameraType type);
         static std::string formatScriptType(ScriptType type);
         static std::string formatQuaternion(const Quaternion& q);
         static std::string formatBool(bool value);
         static std::string formatFloat(float value);
+        static std::string formatDouble(double value);
         static std::string formatInt(int value);
         static std::string formatUInt(unsigned int value);
         static std::string formatEntity(Entity entity, const std::unordered_map<Entity, std::string>* entityVarNames);
@@ -109,6 +112,7 @@ namespace doriax::editor{
         static std::string createTerrainComponent(int indentSpaces, EntityRegistry* scene, Entity entity, const fs::path& projectPath, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
         static std::string createLightComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
         static std::string createCameraComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
+        static std::string createAudioComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
         static std::string createScriptComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
         static std::string createSkyComponent(int indentSpaces, EntityRegistry* scene, Entity entity, const fs::path& projectPath, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);
         static std::string createBody2DComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName = "", std::string entityName = "", bool assignExisting = false, const std::unordered_map<Entity, std::string>* entityVarNames = nullptr);

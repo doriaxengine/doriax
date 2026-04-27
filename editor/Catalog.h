@@ -34,7 +34,8 @@ namespace doriax::editor{
         UpdateFlags_Instanced_Mesh      = 1 << 23,
         UpdateFlags_Points              = 1 << 24,
         UpdateFlags_Terrain             = 1 << 25,
-        UpdateFlags_Terrain_Texture     = 1 << 26
+        UpdateFlags_Terrain_Texture     = 1 << 26,
+        UpdateFlags_Audio               = 1 << 27
     };
 
     // the order of components here affects properties window
@@ -92,6 +93,7 @@ namespace doriax::editor{
         Bool,
         String,
         Float,
+        Double,
         Vector2,
         Vector3,
         Vector4,

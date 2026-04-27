@@ -34,6 +34,8 @@ namespace doriax::editor{
         BODY3D,
         SKY,
         CAMERA,
+        SOUND,
+        SOUND_3D,
         ANIMATION,
         SPRITE_ANIMATION,
         POSITION_ACTION,

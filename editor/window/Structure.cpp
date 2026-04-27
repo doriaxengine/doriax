@@ -102,6 +102,18 @@ void editor::Structure::showNewEntityMenu(bool isScene, Entity parent, bool addT
         openParent = parent;
     }
 
+    if (ImGui::BeginMenu(ICON_FA_VOLUME_HIGH"  Sound")){
+        if (ImGui::MenuItem(ICON_FA_FILE_AUDIO"  Sound Source")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "Sound Source", EntityCreationType::SOUND, parent, addToBundle));
+            openParent = parent;
+        }
+        if (ImGui::MenuItem(ICON_FA_VOLUME_HIGH"  3D Sound")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "3D Sound", EntityCreationType::SOUND_3D, parent, addToBundle));
+            openParent = parent;
+        }
+        ImGui::EndMenu();
+    }
+
     if (ImGui::BeginMenu(ICON_FA_DICE_D20"  Basic shape")){
         if (ImGui::MenuItem(ICON_FA_DICE_D20"  Box")){
             CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "Box", EntityCreationType::BOX, parent, addToBundle));
@@ -340,6 +352,11 @@ std::string editor::Structure::getObjectIcon(Signature signature, Scene* scene){
         return ICON_FA_CIRCLE_DOT;
     }else if (signature.test(scene->getComponentId<ActionComponent>())){
         return ICON_FA_PLAY;
+    }else if (signature.test(scene->getComponentId<AudioComponent>())){
+        if (signature.test(scene->getComponentId<Transform>())) {
+            return ICON_FA_VOLUME_HIGH;
+        }
+        return ICON_FA_FILE_AUDIO;
     }else if (signature.test(scene->getComponentId<Transform>())){
         return ICON_FA_SITEMAP;
     }

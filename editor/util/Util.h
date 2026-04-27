@@ -38,6 +38,10 @@ namespace doriax::editor{
              return "gltf,glb,obj";
         }
 
+        inline static std::string getAudioExtensions() {
+             return "wav,ogg,mp3,flac";
+        }
+
         inline static bool isImageFile(const std::string& path) {
             static const std::unordered_set<std::string> imageExtensions = {
                 ".png", ".jpg", ".jpeg", ".bmp", ".tga", ".gif", ".hdr", ".psd", ".pic", ".pnm"
@@ -114,6 +118,19 @@ namespace doriax::editor{
             }
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
             return modelExtensions.find(ext) != modelExtensions.end();
+        }
+
+        inline static bool isAudioFile(const std::string& path) {
+             static const std::unordered_set<std::string> audioExtensions = {
+                ".wav", ".ogg", ".mp3", ".flac"
+            };
+
+            std::string ext = std::filesystem::path(path).extension().string();
+            if (ext.empty() && !path.empty() && path[0] == '.') {
+                ext = path;
+            }
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            return audioExtensions.find(ext) != audioExtensions.end();
         }
 
         inline static bool isScriptFile(const std::string& path) {

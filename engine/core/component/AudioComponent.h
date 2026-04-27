@@ -28,7 +28,7 @@ namespace doriax{
 
     struct DORIAX_API AudioComponent{
         SoLoud::Wav* sample = nullptr;
-        unsigned int handle; //Soloud handle
+        unsigned int handle = 0; //Soloud handle
 
         AudioState state = AudioState::Stopped;
 
@@ -64,8 +64,8 @@ namespace doriax{
         float dopplerFactor = 1.0;
 
         // setted by system
-        double length;
-        double playingTime;
+        double length = 0;
+        double playingTime = 0;
 
         bool needUpdate = true;
     };

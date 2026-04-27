@@ -325,6 +325,28 @@ namespace {
         makeFastProperty<CameraComponent, bool, &CameraComponent::autoResize>("autoResize", PropertyType::Bool, UpdateFlags_Camera),
     };
 
+    static const FastPropertyDescriptor kAudioProperties[] = {
+        makeFastProperty<AudioComponent, AudioState, &AudioComponent::state>("state", PropertyType::Enum, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, std::string, &AudioComponent::filename>("filename", PropertyType::String, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::enableClocked>("enableClocked", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::enable3D>("enable3D", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, double, &AudioComponent::volume>("volume", PropertyType::Double, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::speed>("speed", PropertyType::Float, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::pan>("pan", PropertyType::Float, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::looping>("looping", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, double, &AudioComponent::loopingPoint>("loopingPoint", PropertyType::Double, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::protectVoice>("protectVoice", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::inaudibleBehaviorMustTick>("inaudibleBehaviorMustTick", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, bool, &AudioComponent::inaudibleBehaviorKill>("inaudibleBehaviorKill", PropertyType::Bool, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::minDistance>("minDistance", PropertyType::Float, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::maxDistance>("maxDistance", PropertyType::Float, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, AudioAttenuation, &AudioComponent::attenuationModel>("attenuationModel", PropertyType::Enum, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::attenuationRolloffFactor>("attenuationRolloffFactor", PropertyType::Float, UpdateFlags_Audio),
+        makeFastProperty<AudioComponent, float, &AudioComponent::dopplerFactor>("dopplerFactor", PropertyType::Float, UpdateFlags_Audio),
+        makeFastPropertyNoDefault<AudioComponent, double, &AudioComponent::length>("length", PropertyType::Double, UpdateFlags_None),
+        makeFastPropertyNoDefault<AudioComponent, double, &AudioComponent::playingTime>("playingTime", PropertyType::Double, UpdateFlags_None),
+    };
+
     static const FastPropertyDescriptor kSkyProperties[] = {
         makeFastProperty<SkyComponent, Texture, &SkyComponent::texture>("texture", PropertyType::Texture, UpdateFlags_Sky_Texture),
         makeFastProperty<SkyComponent, Vector4, &SkyComponent::color>("color", PropertyType::Vector4, UpdateFlags_None),
@@ -1079,6 +1101,10 @@ namespace {
 
     PropertyData resolveCameraPropertyFast(void* comp, const std::string& propertyName) {
         return resolveDirectProperties(static_cast<CameraComponent*>(comp), propertyName, kCameraProperties);
+    }
+
+    PropertyData resolveAudioPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<AudioComponent*>(comp), propertyName, kAudioProperties);
     }
 
     PropertyData resolveSkyPropertyFast(void* comp, const std::string& propertyName) {
@@ -1841,6 +1867,10 @@ namespace {
         enumerateFromDescriptors(comp, ps, kCameraProperties);
     }
 
+    void enumerateAudioProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kAudioProperties);
+    }
+
     void enumerateSkyProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kSkyProperties);
     }
@@ -2275,6 +2305,7 @@ namespace {
         {ComponentType::TerrainComponent, &findComponentPtr<TerrainComponent>, &resolveTerrainPropertyFast, &enumerateTerrainProperties},
         {ComponentType::LightComponent, &findComponentPtr<LightComponent>, &resolveLightPropertyFast, &enumerateLightProperties},
         {ComponentType::CameraComponent, &findComponentPtr<CameraComponent>, &resolveCameraPropertyFast, &enumerateCameraProperties},
+        {ComponentType::AudioComponent, &findComponentPtr<AudioComponent>, &resolveAudioPropertyFast, &enumerateAudioProperties},
         {ComponentType::SkyComponent, &findComponentPtr<SkyComponent>, &resolveSkyPropertyFast, &enumerateSkyProperties},
         {ComponentType::TextComponent, &findComponentPtr<TextComponent>, &resolveTextPropertyFast, &enumerateTextProperties},
         {ComponentType::ScriptComponent, &findComponentPtr<ScriptComponent>, &resolveScriptPropertyFast, &enumerateScriptProperties},
@@ -2896,6 +2927,9 @@ int editor::Catalog::getChangedUpdateFlags(ComponentType compType, void* oldComp
             case PropertyType::Float:
                 changed = *static_cast<float*>(oldProp.ref) != *static_cast<float*>(newProp.ref);
                 break;
+            case PropertyType::Double:
+                changed = *static_cast<double*>(oldProp.ref) != *static_cast<double*>(newProp.ref);
+                break;
             case PropertyType::Int:
                 changed = *static_cast<int*>(oldProp.ref) != *static_cast<int*>(newProp.ref);
                 break;
@@ -3083,6 +3117,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, int 
             pts->needUpdate = true;
         }
     }
+    if (updateFlags & UpdateFlags_Audio){
+        if (AudioComponent* audio = registry->findComponent<AudioComponent>(entity)){
+            audio->needUpdate = true;
+        }
+    }
 }
 
 void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourceEntity,
@@ -3173,6 +3212,12 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
         case ComponentType::CameraComponent: {
             YAML::Node encoded = Stream::encodeCameraComponent(sourceRegistry->getComponent<CameraComponent>(sourceEntity));
             targetRegistry->getComponent<CameraComponent>(targetEntity) = Stream::decodeCameraComponent(encoded);
+            break;
+        }
+
+        case ComponentType::AudioComponent: {
+            YAML::Node encoded = Stream::encodeAudioComponent(sourceRegistry->getComponent<AudioComponent>(sourceEntity));
+            targetRegistry->getComponent<AudioComponent>(targetEntity) = Stream::decodeAudioComponent(encoded);
             break;
         }
 
@@ -3308,6 +3353,12 @@ void editor::Catalog::copyPropertyValue(EntityRegistry* sourceRegistry, Entity s
         case PropertyType::Float: {
             float* source = Catalog::getPropertyRef<float>(sourceRegistry, sourceEntity, compType, property);
             float* target = Catalog::getPropertyRef<float>(targetRegistry, targetEntity, compType, property);
+            if (source && target) *target = *source;
+            break;
+        }
+        case PropertyType::Double: {
+            double* source = Catalog::getPropertyRef<double>(sourceRegistry, sourceEntity, compType, property);
+            double* target = Catalog::getPropertyRef<double>(targetRegistry, targetEntity, compType, property);
             if (source && target) *target = *source;
             break;
         }

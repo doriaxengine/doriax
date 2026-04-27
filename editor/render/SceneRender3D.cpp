@@ -21,6 +21,7 @@ editor::SceneRender3D::SceneRender3D(Scene* scene): SceneRender(scene, false, tr
 
     lightObjects.clear();
     cameraObjects.clear();
+    soundObjects.clear();
     bodyObjects.clear();
     jointLines.clear();
 
@@ -56,6 +57,11 @@ editor::SceneRender3D::~SceneRender3D(){
         delete pair.second.lines;
     }
     cameraObjects.clear();
+
+    for (auto& pair : soundObjects) {
+        delete pair.second.icon;
+    }
+    soundObjects.clear();
 
     for (auto& pair : bodyObjects) {
         delete pair.second.lines;
@@ -137,6 +143,17 @@ bool editor::SceneRender3D::instanciateCameraObject(Entity entity){
         ScopedDefaultEntityPool sys(*scene, EntityPool::System);
         cameraObjects[entity].icon = new Sprite(scene);
         cameraObjects[entity].lines = new Lines(scene);
+
+        return true;
+    }
+
+    return false;
+}
+
+bool editor::SceneRender3D::instanciateSoundObject(Entity entity){
+    if (soundObjects.find(entity) == soundObjects.end()) {
+        ScopedDefaultEntityPool sys(*scene, EntityPool::System);
+        soundObjects[entity].icon = new Sprite(scene);
 
         return true;
     }
@@ -772,6 +789,32 @@ void editor::SceneRender3D::createOrUpdateCameraIcon(Entity entity, const Transf
     co.icon->setScale(scale);
 }
 
+void editor::SceneRender3D::createOrUpdateSoundIcon(Entity entity, const Transform& transform, bool newSound) {
+    SoundObjects& so = soundObjects[entity];
+
+    if (newSound) {
+        setupSoundIcon(so);
+        so.icon->setBillboard(true);
+    }
+
+    so.icon->setPosition(transform.worldPosition);
+    so.icon->setVisible(transform.visible);
+
+    CameraComponent& cameracomp = scene->getComponent<CameraComponent>(camera->getEntity());
+    float iconScale = 0.25f;
+    float scale = iconScale * zoom;
+
+    if (cameracomp.type == CameraType::CAMERA_PERSPECTIVE){
+        float dist = (so.icon->getPosition() - camera->getWorldPosition()).length();
+        scale = std::tan(cameracomp.yfov) * dist * (iconScale / (float)framebuffer.getHeight());
+        if (!std::isfinite(scale) || scale <= 0.0f) {
+            scale = 1.0f;
+        }
+    }
+
+    so.icon->setScale(scale);
+}
+
 void editor::SceneRender3D::createCameraFrustum(Entity entity, const Transform& transform, const CameraComponent& cameraComponent, bool fixedSizeFrustum, bool isMainCamera) {
     CameraObjects& co = cameraObjects[entity];
 
@@ -1015,6 +1058,9 @@ void editor::SceneRender3D::hideAllGizmos(){
         pair.second.icon->setVisible(false);
         pair.second.lines->setVisible(false);
     }
+    for (auto& pair : soundObjects) {
+        pair.second.icon->setVisible(false);
+    }
     for (auto& pair : bodyObjects) {
         pair.second.lines->setVisible(false);
     }
@@ -1111,6 +1157,7 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
 
     std::set<Entity> currentIconLights;
     std::set<Entity> currentIconCameras;
+    std::set<Entity> currentIconSounds;
     std::set<Entity> currentBodyObjects;
     std::set<Entity> currentJointObjects;
     std::set<Entity> currentBoneModels;
@@ -1157,6 +1204,14 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
                     cameraObjects[entity].lines->setVisible(false);
                 }
             }
+        }
+
+        if (signature.test(scene->getComponentId<AudioComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            Transform& transform = scene->getComponent<Transform>(entity);
+
+            currentIconSounds.insert(entity);
+            bool newSound = instanciateSoundObject(entity);
+            createOrUpdateSoundIcon(entity, transform, newSound);
         }
 
         if (signature.test(scene->getComponentId<Body3DComponent>()) && signature.test(scene->getComponentId<Transform>())) {
@@ -1222,6 +1277,16 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
             itCam = cameraObjects.erase(itCam);
         } else {
             ++itCam;
+        }
+    }
+
+    auto itSound = soundObjects.begin();
+    while (itSound != soundObjects.end()) {
+        if (currentIconSounds.find(itSound->first) == currentIconSounds.end()) {
+            delete itSound->second.icon;
+            itSound = soundObjects.erase(itSound);
+        } else {
+            ++itSound;
         }
     }
 
