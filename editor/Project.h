@@ -99,6 +99,18 @@ namespace doriax::editor{
         size_t hasTransform;
     };
 
+    struct TerrainEditorSettings {
+        int brushMode = 0;           // TerrainBrushMode::Raise
+        int brushShape = 0;          // TerrainBrushShape::Circle
+        int brushFalloff = 0;        // TerrainBrushFalloff::Smooth
+        float brushSize = 4.0f;
+        float brushStrength = 0.04f;
+        float flattenHeight = 0.5f;
+        int heightMapResolution = 512;
+        int blendMapResolution = 512;
+        bool normalizeBlendPaint = true;
+    };
+
     using SharedMoveRecovery = std::map<std::string, SharedMoveRecoveryEntry>;
 
     struct ComponentRecoveryEntry {
@@ -126,6 +138,9 @@ namespace doriax::editor{
         std::string cmakeCxxCompiler;
         std::string cmakeGenerator;
         CommandHistory projectHistory;
+
+        uint32_t startSceneId;
+        TerrainEditorSettings terrainEditorSettings;
 
         uint32_t nextSceneId;
 
@@ -254,6 +269,12 @@ namespace doriax::editor{
         std::string getCMakeCCompiler() const;
         std::string getCMakeCxxCompiler() const;
         std::string getCMakeGenerator() const;
+
+        uint32_t getStartSceneId() const;
+        void setStartSceneId(uint32_t sceneId);
+
+        TerrainEditorSettings& getTerrainEditorSettings();
+        const TerrainEditorSettings& getTerrainEditorSettings() const;
 
         CommandHistory* getProjectCommandHistory();
 

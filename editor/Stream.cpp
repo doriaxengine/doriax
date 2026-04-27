@@ -973,6 +973,25 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         root["cmakeGenerator"] = project->getCMakeGenerator();
     }
 
+    if (project->getStartSceneId() != NULL_PROJECT_SCENE) {
+        root["startSceneId"] = project->getStartSceneId();
+    }
+
+    {
+        const TerrainEditorSettings& ts = project->getTerrainEditorSettings();
+        YAML::Node terrainNode;
+        terrainNode["brushMode"] = ts.brushMode;
+        terrainNode["brushShape"] = ts.brushShape;
+        terrainNode["brushFalloff"] = ts.brushFalloff;
+        terrainNode["brushSize"] = ts.brushSize;
+        terrainNode["brushStrength"] = ts.brushStrength;
+        terrainNode["flattenHeight"] = ts.flattenHeight;
+        terrainNode["heightMapResolution"] = ts.heightMapResolution;
+        terrainNode["blendMapResolution"] = ts.blendMapResolution;
+        terrainNode["normalizeBlendPaint"] = ts.normalizeBlendPaint;
+        root["terrainEditor"] = terrainNode;
+    }
+
     // Add tabs array
     YAML::Node tabsNode;
     for (const auto& tab : project->getTabs()) {
@@ -1074,6 +1093,25 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node) {
         std::string cxx = node["cmakeCxxCompiler"] ? node["cmakeCxxCompiler"].as<std::string>() : "";
         std::string gen = node["cmakeGenerator"] ? node["cmakeGenerator"].as<std::string>() : "";
         project->setCMakeKit(cc, cxx, gen);
+    }
+
+    if (node["startSceneId"]) {
+        project->setStartSceneId(node["startSceneId"].as<uint32_t>());
+    }
+
+    if (node["terrainEditor"] && node["terrainEditor"].IsMap()) {
+        const auto& tn = node["terrainEditor"];
+        TerrainEditorSettings ts;
+        if (tn["brushMode"].IsDefined())          ts.brushMode          = tn["brushMode"].as<int>();
+        if (tn["brushShape"].IsDefined())         ts.brushShape         = tn["brushShape"].as<int>();
+        if (tn["brushFalloff"].IsDefined())       ts.brushFalloff       = tn["brushFalloff"].as<int>();
+        if (tn["brushSize"].IsDefined())          ts.brushSize          = tn["brushSize"].as<float>();
+        if (tn["brushStrength"].IsDefined())      ts.brushStrength      = tn["brushStrength"].as<float>();
+        if (tn["flattenHeight"].IsDefined())      ts.flattenHeight      = tn["flattenHeight"].as<float>();
+        if (tn["heightMapResolution"].IsDefined()) ts.heightMapResolution = tn["heightMapResolution"].as<int>();
+        if (tn["blendMapResolution"].IsDefined()) ts.blendMapResolution = tn["blendMapResolution"].as<int>();
+        if (tn["normalizeBlendPaint"].IsDefined()) ts.normalizeBlendPaint = tn["normalizeBlendPaint"].as<bool>();
+        project->getTerrainEditorSettings() = ts;
     }
 
     // Build set of scene filepaths that should be opened from tabs

@@ -166,6 +166,16 @@ void ProjectSettingsWindow::open(Project* project) {
     m_assetsDir = project->getAssetsDir();
     m_luaDir = project->getLuaDir();
 
+    m_startSceneIndex = 0;
+    uint32_t savedStartSceneId = project->getStartSceneId();
+    const auto& scenes = project->getScenes();
+    for (int i = 0; i < (int)scenes.size(); i++) {
+        if (scenes[i].id == savedStartSceneId) {
+            m_startSceneIndex = i;
+            break;
+        }
+    }
+
     m_availableKits = Generator::detectAvailableKits();
     m_cmakeKitIndex = 0; // 0 = "Default"
     std::string currentCxx = project->getCMakeCxxCompiler();
@@ -280,6 +290,33 @@ void ProjectSettingsWindow::drawSettings() {
         }
     }
 
+    // Start scene row
+    ImGui::TableNextRow();
+    ImGui::TableNextColumn();
+    ImGui::Text("Start Scene");
+    ImGui::TableNextColumn();
+    {
+        const auto& scenes = m_project->getScenes();
+        if (!scenes.empty()) {
+            if (m_startSceneIndex < 0 || m_startSceneIndex >= (int)scenes.size()) {
+                m_startSceneIndex = 0;
+            }
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::BeginCombo("##StartScene", scenes[m_startSceneIndex].name.c_str())) {
+                for (int i = 0; i < (int)scenes.size(); i++) {
+                    bool isSelected = (m_startSceneIndex == i);
+                    if (ImGui::Selectable(scenes[i].name.c_str(), isSelected)) {
+                        m_startSceneIndex = i;
+                    }
+                    if (isSelected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        }
+    }
+
     // Assets directory row
     ImGui::TableNextRow();
     ImGui::TableNextColumn();
@@ -381,6 +418,10 @@ void ProjectSettingsWindow::drawSettings() {
         m_project->setTextureStrategy(textureStrategyValues[m_textureStrategyIndex]);
         m_project->setAssetsDir(m_assetsDir);
         m_project->setLuaDir(m_luaDir);
+        const auto& scenes = m_project->getScenes();
+        if (m_startSceneIndex >= 0 && m_startSceneIndex < (int)scenes.size()) {
+            m_project->setStartSceneId(scenes[m_startSceneIndex].id);
+        }
         if (m_cmakeKitIndex > 0) {
             const auto& kit = m_availableKits[m_cmakeKitIndex - 1];
             m_project->setCMakeKit(kit.cCompiler, kit.cxxCompiler, kit.generator);

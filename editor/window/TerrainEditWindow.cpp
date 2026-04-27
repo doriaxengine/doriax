@@ -862,17 +862,17 @@ editor::TerrainEditWindow::TerrainEditWindow(Project* project){
     this->project = project;
     windowOpen = false;
     brushActive = false;
-    normalizeBlendPaint = true;
     selectedSceneId = NULL_PROJECT_SCENE;
     selectedEntity = NULL_ENTITY;
-    brushMode = TerrainBrushMode::Raise;
-    brushShape = TerrainBrushShape::Circle;
-    brushFalloff = TerrainBrushFalloff::Smooth;
-    brushSize = 4.0f;
+    brushMode     = TerrainBrushMode::Raise;
+    brushShape    = TerrainBrushShape::Circle;
+    brushFalloff  = TerrainBrushFalloff::Smooth;
+    brushSize     = 4.0f;
     brushStrength = 0.04f;
     flattenHeight = 0.5f;
     heightMapResolution = 512;
-    blendMapResolution = 512;
+    blendMapResolution  = 512;
+    normalizeBlendPaint = true;
 }
 
 editor::TerrainEditWindow::~TerrainEditWindow(){
@@ -1175,7 +1175,7 @@ void editor::TerrainEditWindow::show(){
 
     updateTargetFromSelection();
 
-    ImGui::SetNextWindowSize(ImVec2(320.0f, 440.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(340.0f, 480.0f), ImGuiCond_FirstUseEver);
 
     bool wasOpen = windowOpen;
     if (!ImGui::Begin(WINDOW_NAME, &windowOpen)){
@@ -1390,6 +1390,20 @@ void editor::TerrainEditWindow::show(){
 
     ImGui::End();
 
+    // Persist brush settings back to project so they survive across sessions
+    {
+        TerrainEditorSettings& ts = project->getTerrainEditorSettings();
+        ts.brushMode           = static_cast<int>(brushMode);
+        ts.brushShape          = static_cast<int>(brushShape);
+        ts.brushFalloff        = static_cast<int>(brushFalloff);
+        ts.brushSize           = brushSize;
+        ts.brushStrength       = brushStrength;
+        ts.flattenHeight       = flattenHeight;
+        ts.heightMapResolution = heightMapResolution;
+        ts.blendMapResolution  = blendMapResolution;
+        ts.normalizeBlendPaint = normalizeBlendPaint;
+    }
+
     if (wasOpen && !windowOpen){
         brushActive = false;
         clearStroke();
@@ -1400,6 +1414,17 @@ void editor::TerrainEditWindow::openForEntity(Entity entity, uint32_t sceneId){
     windowOpen = true;
     selectedSceneId = sceneId;
     selectedEntity = entity;
+
+    const TerrainEditorSettings& ts = project->getTerrainEditorSettings();
+    brushMode     = static_cast<TerrainBrushMode>(ts.brushMode);
+    brushShape    = static_cast<TerrainBrushShape>(ts.brushShape);
+    brushFalloff  = static_cast<TerrainBrushFalloff>(ts.brushFalloff);
+    brushSize     = ts.brushSize;
+    brushStrength = ts.brushStrength;
+    flattenHeight = ts.flattenHeight;
+    heightMapResolution = ts.heightMapResolution;
+    blendMapResolution  = ts.blendMapResolution;
+    normalizeBlendPaint = ts.normalizeBlendPaint;
 }
 
 bool editor::TerrainEditWindow::isEditingScene(Scene* scene) const{

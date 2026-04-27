@@ -20,6 +20,7 @@ namespace doriax::editor {
         int m_canvasHeight = 0;
         int m_scalingModeIndex = 0;
         int m_textureStrategyIndex = 0;
+        int m_startSceneIndex = 0;
         fs::path m_assetsDir;
         fs::path m_luaDir;
         std::vector<CMakeKit> m_availableKits;

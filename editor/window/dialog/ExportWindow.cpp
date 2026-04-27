@@ -20,6 +20,14 @@ void ExportWindow::open(Project* project) {
     strncpy(m_luaDirBuffer, m_luaDir.string().c_str(), sizeof(m_luaDirBuffer) - 1);
     m_luaDirBuffer[sizeof(m_luaDirBuffer) - 1] = '\0';
     m_startSceneIndex = 0;
+    uint32_t savedStartSceneId = project->getStartSceneId();
+    const auto& startScenes = project->getScenes();
+    for (int i = 0; i < (int)startScenes.size(); i++) {
+        if (startScenes[i].id == savedStartSceneId) {
+            m_startSceneIndex = i;
+            break;
+        }
+    }
     m_selectedShaderIndex = -1;
     m_addShaderOpen = false;
 
@@ -344,6 +352,7 @@ void ExportWindow::drawSettings() {
         const auto& scenes = m_project->getScenes();
         if (m_startSceneIndex >= 0 && m_startSceneIndex < (int)scenes.size()) {
             exportConfig.startSceneId = scenes[m_startSceneIndex].id;
+            m_project->setStartSceneId(exportConfig.startSceneId);
         }
 
         for (const auto& entry : m_shaderEntries) {

@@ -1041,6 +1041,22 @@ std::string editor::Project::getCMakeGenerator() const{
     return cmakeGenerator;
 }
 
+uint32_t editor::Project::getStartSceneId() const{
+    return startSceneId;
+}
+
+void editor::Project::setStartSceneId(uint32_t sceneId){
+    startSceneId = sceneId;
+}
+
+editor::TerrainEditorSettings& editor::Project::getTerrainEditorSettings(){
+    return terrainEditorSettings;
+}
+
+const editor::TerrainEditorSettings& editor::Project::getTerrainEditorSettings() const{
+    return terrainEditorSettings;
+}
+
 editor::CommandHistory* editor::Project::getProjectCommandHistory(){
     return &projectHistory;
 }
@@ -1901,6 +1917,8 @@ void editor::Project::resetConfigs() {
     selectedScene = NULL_PROJECT_SCENE;
     selectedSceneForProperties = NULL_PROJECT_SCENE;
     nextSceneId = 0;
+    startSceneId = NULL_PROJECT_SCENE;
+    terrainEditorSettings = {};
     projectPath.clear();
     materialFileLinks.clear();
     tabs.clear();
