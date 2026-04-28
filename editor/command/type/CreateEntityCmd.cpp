@@ -222,6 +222,7 @@ bool editor::CreateEntityCmd::execute(){
 
         scene->addComponent<Transform>(entity, {});
         scene->addComponent<LightComponent>(entity, {});
+        updateFlags |= Catalog::getComponentStructuralUpdateFlags(ComponentType::LightComponent);
 
         LightComponent& light = scene->getComponent<LightComponent>(entity);
         light.type = LightType::DIRECTIONAL;
@@ -232,6 +233,7 @@ bool editor::CreateEntityCmd::execute(){
 
         scene->addComponent<Transform>(entity, {});
         scene->addComponent<LightComponent>(entity, {});
+        updateFlags |= Catalog::getComponentStructuralUpdateFlags(ComponentType::LightComponent);
 
         LightComponent& light = scene->getComponent<LightComponent>(entity);
         light.type = LightType::POINT;
@@ -242,6 +244,7 @@ bool editor::CreateEntityCmd::execute(){
 
         scene->addComponent<Transform>(entity, {});
         scene->addComponent<LightComponent>(entity, {});
+        updateFlags |= Catalog::getComponentStructuralUpdateFlags(ComponentType::LightComponent);
 
         LightComponent& light = scene->getComponent<LightComponent>(entity);
         light.type = LightType::SPOT;

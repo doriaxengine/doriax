@@ -2999,6 +2999,7 @@ int editor::Catalog::getChangedUpdateFlags(ComponentType compType, void* oldComp
 
 int editor::Catalog::getComponentStructuralUpdateFlags(ComponentType compType) {
     switch (compType) {
+        case ComponentType::LightComponent:
         case ComponentType::FogComponent:
             return UpdateFlags_Scene_Mesh_Reload;
         default:

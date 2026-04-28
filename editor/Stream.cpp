@@ -2460,6 +2460,7 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         LightComponent light = decodeLightComponent(compNode[compName], existing);
         if (!signature.test(registry->getComponentId<LightComponent>())){
             registry->addComponent<LightComponent>(entity, light);
+            Catalog::updateEntity(registry, entity, Catalog::getComponentStructuralUpdateFlags(ComponentType::LightComponent));
         }else{
             int flags = Catalog::getChangedUpdateFlags(ComponentType::LightComponent, existing, &light);
             registry->getComponent<LightComponent>(entity) = light;
