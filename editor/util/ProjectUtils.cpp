@@ -428,8 +428,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<CameraComponent>(entity, {});
             }else{
-                registry->addComponent<CameraComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<CameraComponent>(entity, Stream::decodeCameraComponent(componentNode));
             }
             break;
         case ComponentType::ColorActionComponent:
@@ -603,8 +602,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<SkyComponent>(entity, {});
             }else{
-                registry->addComponent<SkyComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<SkyComponent>(entity, Stream::decodeSkyComponent(componentNode));
             }
             break;
         case ComponentType::SpriteAnimationComponent:
@@ -632,8 +630,7 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<TextComponent>(entity, {});
             }else{
-                registry->addComponent<TextComponent>(entity, {});
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                registry->addComponent<TextComponent>(entity, Stream::decodeTextComponent(componentNode));
             }
             break;
         case ComponentType::TextEditComponent:
@@ -772,7 +769,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::AlphaActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeAlphaActionComponent(registry->getComponent<AlphaActionComponent>(entity));
             }
             registry->removeComponent<AlphaActionComponent>(entity);
             break;
@@ -826,7 +823,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::ColorActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeColorActionComponent(registry->getComponent<ColorActionComponent>(entity));
             }
             registry->removeComponent<ColorActionComponent>(entity);
             break;
@@ -922,7 +919,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::PositionActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodePositionActionComponent(registry->getComponent<PositionActionComponent>(entity));
             }
             registry->removeComponent<PositionActionComponent>(entity);
             break;
@@ -934,13 +931,13 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::RotationActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeRotationActionComponent(registry->getComponent<RotationActionComponent>(entity));
             }
             registry->removeComponent<RotationActionComponent>(entity);
             break;
         case ComponentType::ScaleActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeScaleActionComponent(registry->getComponent<ScaleActionComponent>(entity));
             }
             registry->removeComponent<ScaleActionComponent>(entity);
             break;
@@ -964,7 +961,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::SkyComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeSkyComponent(registry->getComponent<SkyComponent>(entity));
             }
             registry->removeComponent<SkyComponent>(entity);
             break;
@@ -988,7 +985,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::TextComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeTextComponent(registry->getComponent<TextComponent>(entity));
             }
             registry->removeComponent<TextComponent>(entity);
             break;
@@ -1006,7 +1003,7 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
             break;
         case ComponentType::TimedActionComponent:
             if (encodeComponent){
-                Out::error("Missing component serialization of %s", Catalog::getComponentName(componentType).c_str());
+                oldComponent = Stream::encodeTimedActionComponent(registry->getComponent<TimedActionComponent>(entity));
             }
             registry->removeComponent<TimedActionComponent>(entity);
             break;
