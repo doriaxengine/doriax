@@ -18,10 +18,8 @@ namespace doriax{
 	class DORIAX_API AudioSystem : public SubSystem {
 
     private:
-        static SoLoud::Soloud& getSoloud();
 		static bool inited;
 
-		static void init();
 		static void deInit();
 
 		static float globalVolume;
@@ -30,6 +28,9 @@ namespace doriax{
 
 	public:
 		AudioSystem(Scene* scene);
+
+		static SoLoud::Soloud& getSoloud();
+		static bool init();
 
 		static void stopAll();
 		static void pauseAll();

@@ -784,8 +784,6 @@ void Engine::systemDraw(){
     }
 
     drawSemaphore.release();
-
-    AudioSystem::checkActive();
 }
 
 void Engine::systemViewDestroyed(){

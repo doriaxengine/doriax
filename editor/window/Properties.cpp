@@ -46,6 +46,7 @@
 #include "Out.h"
 #include "subsystem/ActionSystem.h"
 #include "subsystem/PhysicsSystem.h"
+#include "subsystem/AudioSystem.h"
 #include "pool/TexturePool.h"
 #include "yaml-cpp/yaml.h"
 #include "soloud.h"
@@ -352,9 +353,7 @@ namespace {
     }
 
     struct SoundPreviewRuntime {
-        SoLoud::Soloud soloud;
         SoLoud::Wav sample;
-        bool initialized = false;
         bool loaded = false;
         bool active = false;
         bool playing = false;
@@ -367,8 +366,8 @@ namespace {
         double time = 0.0;
     };
 
-    // Heap-allocated to avoid the static deinit-order fiasco with SoLoud's audio
-    // thread, mirroring AudioSystem::getSoloud(). Intentionally never deleted.
+    // Heap-allocated so the preview sample outlives audio callbacks while sharing
+    // AudioSystem's Soloud singleton instead of creating a second audio backend.
     SoundPreviewRuntime& soundPreview() {
         static SoundPreviewRuntime* instance = new SoundPreviewRuntime();
         return *instance;
@@ -376,24 +375,18 @@ namespace {
 
     bool ensureSoundPreviewInitialized() {
         SoundPreviewRuntime& ap = soundPreview();
-        if (ap.initialized) {
-            return true;
-        }
-
-        SoLoud::result result = ap.soloud.init();
-        if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
+        if (!AudioSystem::init()) {
             ap.error = "Failed to initialize audio preview output.";
             return false;
         }
 
-        ap.initialized = true;
         return true;
     }
 
     void stopSoundPreview(bool unload = false) {
         SoundPreviewRuntime& ap = soundPreview();
-        if (ap.initialized && ap.handle != 0) {
-            ap.soloud.stop(ap.handle);
+        if (ap.handle != 0) {
+            AudioSystem::getSoloud().stop(ap.handle);
         }
 
         ap.active = false;
@@ -420,18 +413,19 @@ namespace {
 
     void applySoundPreviewSettings(const SoundComponent& audio) {
         SoundPreviewRuntime& ap = soundPreview();
-        if (!ap.initialized || !ap.active || ap.handle == 0) {
+        if (!ap.active || ap.handle == 0) {
             return;
         }
 
-        ap.soloud.setVolume(ap.handle, static_cast<float>(audio.volume));
-        ap.soloud.setRelativePlaySpeed(ap.handle, audio.speed);
-        ap.soloud.setPan(ap.handle, audio.pan);
+        SoLoud::Soloud& soloud = AudioSystem::getSoloud();
+        soloud.setVolume(ap.handle, static_cast<float>(audio.volume));
+        soloud.setRelativePlaySpeed(ap.handle, audio.speed);
+        soloud.setPan(ap.handle, audio.pan);
         // Preview should always terminate even if the runtime sound is configured to loop.
-        ap.soloud.setLooping(ap.handle, false);
-        ap.soloud.setLoopPoint(ap.handle, audio.loopingPoint);
-        ap.soloud.setProtectVoice(ap.handle, audio.protectVoice);
-        ap.soloud.setInaudibleBehavior(ap.handle, audio.inaudibleBehaviorMustTick, audio.inaudibleBehaviorKill);
+        soloud.setLooping(ap.handle, false);
+        soloud.setLoopPoint(ap.handle, audio.loopingPoint);
+        soloud.setProtectVoice(ap.handle, audio.protectVoice);
+        soloud.setInaudibleBehavior(ap.handle, audio.inaudibleBehaviorMustTick, audio.inaudibleBehaviorKill);
     }
 
     bool loadSoundPreview(editor::Project* project, editor::SceneProject* sceneProject, Entity entity, const SoundComponent& audio) {
@@ -477,13 +471,13 @@ namespace {
 
         SoundPreviewRuntime& ap = soundPreview();
         if (ap.active && ap.handle != 0) {
-            ap.soloud.setPause(ap.handle, false);
+            AudioSystem::getSoloud().setPause(ap.handle, false);
             ap.playing = true;
             applySoundPreviewSettings(audio);
             return true;
         }
 
-        ap.handle = ap.soloud.play(ap.sample);
+        ap.handle = AudioSystem::getSoloud().play(ap.sample);
         if (ap.handle == 0) {
             ap.error = "Failed to start audio preview.";
             return false;
@@ -499,11 +493,11 @@ namespace {
 
     void pauseSoundPreview() {
         SoundPreviewRuntime& ap = soundPreview();
-        if (!ap.initialized || !ap.active || ap.handle == 0) {
+        if (!ap.active || ap.handle == 0) {
             return;
         }
 
-        ap.soloud.setPause(ap.handle, true);
+        AudioSystem::getSoloud().setPause(ap.handle, true);
         ap.playing = false;
     }
 
@@ -515,7 +509,7 @@ namespace {
         SoundPreviewRuntime& ap = soundPreview();
         bool shouldKeepPlaying = ap.active && ap.playing;
         if (!ap.active || ap.handle == 0) {
-            ap.handle = ap.soloud.play(ap.sample);
+            ap.handle = AudioSystem::getSoloud().play(ap.sample);
             if (ap.handle == 0) {
                 ap.error = "Failed to start audio preview.";
                 return false;
@@ -525,7 +519,8 @@ namespace {
             shouldKeepPlaying = false;
         }
 
-        SoLoud::result result = ap.soloud.seek(ap.handle, time);
+        SoLoud::Soloud& soloud = AudioSystem::getSoloud();
+        SoLoud::result result = soloud.seek(ap.handle, time);
         if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
             ap.error = "Failed to seek audio preview.";
             return false;
@@ -533,7 +528,7 @@ namespace {
 
         ap.time = time;
         ap.playing = shouldKeepPlaying;
-        ap.soloud.setPause(ap.handle, !shouldKeepPlaying);
+        soloud.setPause(ap.handle, !shouldKeepPlaying);
         applySoundPreviewSettings(audio);
 
         return true;
@@ -541,17 +536,18 @@ namespace {
 
     void updateSoundPreview(const SoundComponent& audio) {
         SoundPreviewRuntime& ap = soundPreview();
-        if (!ap.initialized || !ap.active || ap.handle == 0) {
+        if (!ap.active || ap.handle == 0) {
             return;
         }
 
-        if (!ap.soloud.isValidVoiceHandle(ap.handle)) {
+        SoLoud::Soloud& soloud = AudioSystem::getSoloud();
+        if (!soloud.isValidVoiceHandle(ap.handle)) {
             stopSoundPreview();
             return;
         }
 
         applySoundPreviewSettings(audio);
-        ap.time = ap.soloud.getStreamTime(ap.handle);
+        ap.time = soloud.getStreamTime(ap.handle);
     }
 
     std::string formatPropertyLabelValue(const editor::PropertyData& prop) {
@@ -5227,7 +5223,7 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
 
     RowSettings doubleSettings = floatSettings;
 
-    beginTable(cpType, getLabelSize("Inaudible Must Tick"));
+    beginTable(cpType, getLabelSize("Sound File"));
 
     if (entities.size() == 1) {
         Entity entity = entities[0];
@@ -5259,12 +5255,20 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
             return true;
         };
 
-        propertyHeader("Sound File");
-
         std::string currentPath = audio.filename;
+
+        if (propertyHeader("Sound File", -1, !currentPath.empty())) {
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(
+                new PropertyCmd<std::string>(project, sceneProject->id, entity, cpType, "filename", "")
+            );
+            currentPath = "";
+        }
+
         std::string displayName = currentPath.empty() ? "< Not set >" : std::filesystem::path(currentPath).filename().string();
         float availWidth = ImGui::GetContentRegionAvail().x;
         float buttonWidth = ImGui::CalcTextSize(ICON_FA_FOLDER_OPEN).x + ImGui::GetStyle().FramePadding.x * 2;
+
+        ImGui::BeginGroup();
 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, App::ThemeColors::filenameLabel);
         ImGui::BeginChild("audiofilename", ImVec2(availWidth - buttonWidth - ImGui::GetStyle().ItemSpacing.x, ImGui::GetFrameHeight()),
@@ -5282,6 +5286,19 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
         if (!currentPath.empty()){
             ImGui::SetItemTooltip("%s", currentPath.c_str());
         }
+        ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN "##audio_load")) {
+            std::string path = editor::FileDialogs::openFileDialog(project->getProjectPath().string(), FILE_DIALOG_AUDIO);
+            if (!path.empty()) {
+                setAudioFilename(path);
+            }
+        }
+
+        ImGui::EndGroup();
+
         if (sceneProject && sceneProject->playState == ScenePlayState::STOPPED) {
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files", ImGuiDragDropFlags_AcceptBeforeDelivery)) {
@@ -5299,16 +5316,6 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
                     }
                 }
                 ImGui::EndDragDropTarget();
-            }
-        }
-        ImGui::PopStyleColor();
-
-        ImGui::SameLine();
-
-        if (ImGui::Button(ICON_FA_FOLDER_OPEN "##audio_load")) {
-            std::string path = editor::FileDialogs::openFileDialog(project->getProjectPath().string(), FILE_DIALOG_AUDIO);
-            if (!path.empty()) {
-                setAudioFilename(path);
             }
         }
 
@@ -5330,6 +5337,117 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
     RowSettings stateSettings = compactSettings;
     stateSettings.enumEntries = &entriesAudioState;
     propertyRow(RowPropertyType::Enum, cpType, "state", "State", sceneProject, entities, stateSettings);
+
+    endTable();
+
+    if (entities.size() == 1) {
+        Entity entity = entities[0];
+        SoundComponent& audio = sceneProject->scene->getComponent<SoundComponent>(entity);
+        bool sceneIsStopped = sceneProject->playState == ScenePlayState::STOPPED;
+        SoundPreviewRuntime& ap = soundPreview();
+        bool isThisPreview = ap.active && ap.sceneId == sceneProject->id && ap.entity == entity;
+
+        if (ap.active && (!isThisPreview || !sceneIsStopped || ap.filename != audio.filename)) {
+            stopSoundPreview(!isThisPreview || ap.filename != audio.filename);
+            isThisPreview = false;
+        }
+
+        if (isThisPreview) {
+            updateSoundPreview(audio);
+            isThisPreview = ap.active && ap.sceneId == sceneProject->id && ap.entity == entity;
+        }
+
+        ImGui::Separator();
+        ImGui::BeginDisabled(!sceneIsStopped || audio.filename.empty());
+
+        if (isThisPreview && ap.playing) {
+            if (ImGui::Button(ICON_FA_PAUSE "##audio_pause")) {
+                pauseSoundPreview();
+            }
+        } else {
+            if (ImGui::Button(ICON_FA_PLAY "##audio_play")) {
+                if (!startSoundPreview(project, sceneProject, entity, audio)) {
+                    ImGui::OpenPopup("Sound Preview Error");
+                } else {
+                    isThisPreview = true;
+                }
+            }
+        }
+        ImGui::SameLine();
+
+        ImGui::BeginDisabled(!isThisPreview);
+        if (ImGui::Button(ICON_FA_STOP "##audio_stop")) {
+            stopSoundPreview();
+            isThisPreview = false;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+
+        double previewTime = isThisPreview ? ap.time : 0.0;
+        double previewLength = (ap.loaded && ap.sceneId == sceneProject->id && ap.entity == entity && ap.filename == audio.filename) ? ap.length : audio.length;
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%.2fs", previewTime);
+        ImGui::SameLine();
+
+        float timelineWidth = std::max(ImGui::GetContentRegionAvail().x, 1.0f);
+        float frameHeight = ImGui::GetFrameHeight();
+        float timelineHeight = 6.0f;
+        float rounding = timelineHeight * 0.5f;
+        ImVec2 timelinePos = ImGui::GetCursorScreenPos();
+
+        ImGui::InvisibleButton("##audio_timeline_strip", ImVec2(timelineWidth, frameHeight));
+        bool timelineHovered = ImGui::IsItemHovered();
+        bool timelineClicked = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
+
+        if (sceneIsStopped && previewLength > 0.0 && timelineClicked) {
+            float mouseX = ImGui::GetIO().MousePos.x;
+            float clickFraction = std::clamp((mouseX - timelinePos.x) / timelineWidth, 0.0f, 1.0f);
+            double seekTime = clickFraction * previewLength;
+            if (!seekSoundPreview(project, sceneProject, entity, audio, seekTime)) {
+                ImGui::OpenPopup("Sound Preview Error");
+            } else {
+                isThisPreview = true;
+            }
+        }
+
+        if (timelineHovered && previewLength > 0.0) {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        }
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImGuiStyle& style = ImGui::GetStyle();
+        ImVec4 trackColor = style.Colors[ImGuiCol_TextDisabled];
+        trackColor.w = 0.22f;
+        ImVec4 fillColor = style.Colors[ImGuiCol_PlotHistogram];
+        float fraction = (previewLength > 0.0) ? std::clamp(static_cast<float>(previewTime / previewLength), 0.0f, 1.0f) : 0.0f;
+
+        ImVec2 barMin(timelinePos.x, timelinePos.y + (frameHeight - timelineHeight) * 0.5f);
+        ImVec2 barMax(timelinePos.x + timelineWidth, barMin.y + timelineHeight);
+        drawList->AddRectFilled(barMin, barMax, ImGui::GetColorU32(trackColor), rounding);
+
+        if (fraction > 0.0f) {
+            ImVec2 fillMax(barMin.x + timelineWidth * fraction, barMax.y);
+            drawList->AddRectFilled(barMin, fillMax, ImGui::GetColorU32(fillColor), rounding);
+        }
+
+        ImGui::EndDisabled();
+
+        if (ImGui::BeginPopupModal("Sound Preview Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::TextWrapped("%s", ap.error.c_str());
+            ImGui::Separator();
+            float buttonModalWidth = 120;
+            float windowWidth = ImGui::GetWindowSize().x;
+            ImGui::SetCursorPosX((windowWidth - buttonModalWidth) * 0.5f);
+            if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    ImGui::SeparatorText("Playback");
+
+    beginTable(cpType, getLabelSize("Inaudible Must Tick"), "audio_playback_settings");
 
     propertyRow(RowPropertyType::DoublePositive, cpType, "volume", "Volume", sceneProject, entities, doubleSettings);
     propertyRow(RowPropertyType::FloatPositive, cpType, "speed", "Speed", sceneProject, entities, floatSettings);
@@ -5356,9 +5474,9 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
     if (show3DSettings){
         ImGui::SeparatorText("3D Sound");
 
-        beginTable(cpType, getLabelSize("Attenuation Rolloff"), "audio_3d_settings");
+        beginTable(cpType, getLabelSize("Max Distance"), "audio_3d_settings");
 
-        RowSettings attenuationSettings = compactSettings;
+        RowSettings attenuationSettings;
         attenuationSettings.enumEntries = &entriesAudioAttenuation;
         propertyRow(RowPropertyType::FloatPositive, cpType, "minDistance", "Min Distance", sceneProject, entities, floatSettings);
         propertyRow(RowPropertyType::FloatPositive, cpType, "maxDistance", "Max Distance", sceneProject, entities, floatSettings);
@@ -5369,112 +5487,6 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
         endTable();
     }
 
-    if (entities.size() != 1) {
-        return;
-    }
-
-    Entity entity = entities[0];
-    SoundComponent& audio = sceneProject->scene->getComponent<SoundComponent>(entity);
-    bool sceneIsStopped = sceneProject->playState == ScenePlayState::STOPPED;
-    SoundPreviewRuntime& ap = soundPreview();
-    bool isThisPreview = ap.active && ap.sceneId == sceneProject->id && ap.entity == entity;
-
-    if (ap.active && (!isThisPreview || !sceneIsStopped || ap.filename != audio.filename)) {
-        stopSoundPreview(!isThisPreview || ap.filename != audio.filename);
-        isThisPreview = false;
-    }
-
-    if (isThisPreview) {
-        updateSoundPreview(audio);
-        isThisPreview = ap.active && ap.sceneId == sceneProject->id && ap.entity == entity;
-    }
-
-    ImGui::Separator();
-    ImGui::BeginDisabled(!sceneIsStopped || audio.filename.empty());
-
-    if (isThisPreview && ap.playing) {
-        if (ImGui::Button(ICON_FA_PAUSE "##audio_pause")) {
-            pauseSoundPreview();
-        }
-    } else {
-        if (ImGui::Button(ICON_FA_PLAY "##audio_play")) {
-            if (!startSoundPreview(project, sceneProject, entity, audio)) {
-                ImGui::OpenPopup("Sound Preview Error");
-            } else {
-                isThisPreview = true;
-            }
-        }
-    }
-    ImGui::SameLine();
-
-    ImGui::BeginDisabled(!isThisPreview);
-    if (ImGui::Button(ICON_FA_STOP "##audio_stop")) {
-        stopSoundPreview();
-        isThisPreview = false;
-    }
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-
-    double previewTime = isThisPreview ? ap.time : 0.0;
-    double previewLength = (ap.loaded && ap.sceneId == sceneProject->id && ap.entity == entity && ap.filename == audio.filename) ? ap.length : audio.length;
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%.2fs", previewTime);
-    ImGui::SameLine();
-
-    float timelineWidth = std::max(ImGui::GetContentRegionAvail().x, 1.0f);
-    float frameHeight = ImGui::GetFrameHeight();
-    float timelineHeight = 6.0f;
-    float rounding = timelineHeight * 0.5f;
-    ImVec2 timelinePos = ImGui::GetCursorScreenPos();
-
-    ImGui::InvisibleButton("##audio_timeline_strip", ImVec2(timelineWidth, frameHeight));
-    bool timelineHovered = ImGui::IsItemHovered();
-    bool timelineClicked = ImGui::IsItemActive() && ImGui::IsMouseDown(ImGuiMouseButton_Left);
-
-    if (sceneIsStopped && previewLength > 0.0 && timelineClicked) {
-        float mouseX = ImGui::GetIO().MousePos.x;
-        float clickFraction = std::clamp((mouseX - timelinePos.x) / timelineWidth, 0.0f, 1.0f);
-        double seekTime = clickFraction * previewLength;
-        if (!seekSoundPreview(project, sceneProject, entity, audio, seekTime)) {
-            ImGui::OpenPopup("Sound Preview Error");
-        } else {
-            isThisPreview = true;
-        }
-    }
-
-    if (timelineHovered && previewLength > 0.0) {
-        ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-    }
-
-    ImDrawList* drawList = ImGui::GetWindowDrawList();
-    ImGuiStyle& style = ImGui::GetStyle();
-    ImVec4 trackColor = style.Colors[ImGuiCol_TextDisabled];
-    trackColor.w = 0.22f;
-    ImVec4 fillColor = style.Colors[ImGuiCol_PlotHistogram];
-    float fraction = (previewLength > 0.0) ? std::clamp(static_cast<float>(previewTime / previewLength), 0.0f, 1.0f) : 0.0f;
-
-    ImVec2 barMin(timelinePos.x, timelinePos.y + (frameHeight - timelineHeight) * 0.5f);
-    ImVec2 barMax(timelinePos.x + timelineWidth, barMin.y + timelineHeight);
-    drawList->AddRectFilled(barMin, barMax, ImGui::GetColorU32(trackColor), rounding);
-
-    if (fraction > 0.0f) {
-        ImVec2 fillMax(barMin.x + timelineWidth * fraction, barMax.y);
-        drawList->AddRectFilled(barMin, fillMax, ImGui::GetColorU32(fillColor), rounding);
-    }
-
-    ImGui::EndDisabled();
-
-    if (ImGui::BeginPopupModal("Sound Preview Error", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::TextWrapped("%s", ap.error.c_str());
-        ImGui::Separator();
-        float buttonModalWidth = 120;
-        float windowWidth = ImGui::GetWindowSize().x;
-        ImGui::SetCursorPosX((windowWidth - buttonModalWidth) * 0.5f);
-        if (ImGui::Button("OK", ImVec2(120, 0))) {
-            ImGui::CloseCurrentPopup();
-        }
-        ImGui::EndPopup();
-    }
 }
 
 void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){

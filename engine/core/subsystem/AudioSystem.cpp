@@ -30,9 +30,14 @@ SoLoud::Soloud& AudioSystem::getSoloud(){
     return *soloud;
 };
 
-void AudioSystem::init(){
+bool AudioSystem::init(){
     if (!inited) {
-        getSoloud().init();
+        SoLoud::result result = getSoloud().init();
+        if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {
+            Log::error("Failed to initialize audio output");
+            return false;
+        }
+
         getSoloud().setGlobalVolume(globalVolume);
 
         //Wait for mixing thread
@@ -40,6 +45,8 @@ void AudioSystem::init(){
 
         inited = true;
     }
+
+    return true;
 }
 
 void AudioSystem::deInit(){
@@ -51,6 +58,10 @@ void AudioSystem::deInit(){
 }
 
 bool AudioSystem::loadSound(SoundComponent& audio, Entity entity){
+    if (audio.filename.empty()) {
+        return false;
+    }
+
     Data filedata;
 
     if (filedata.open(audio.filename.c_str()) != FileErrors::FILEDATA_OK){
@@ -80,7 +91,9 @@ bool AudioSystem::loadSound(SoundComponent& audio, Entity entity){
 
     audio.length = audio.sample->getLength();
 
-    init();
+    if (!init()) {
+        return false;
+    }
 
     audio.loaded = true;
 
@@ -98,6 +111,7 @@ void AudioSystem::destroySound(SoundComponent& audio){
     audio.pauseTrigger = false;
     audio.stopTrigger = false;
     audio.loaded = false;
+    audio.length = 0;
     if (audio.sample){
         delete audio.sample;
         audio.sample = NULL;
@@ -206,6 +220,13 @@ void AudioSystem::update(double dt){
             worldPosition = transform.worldPosition;
         }
 
+        if (audio.filename.empty()) {
+            if (audio.loaded || audio.handle != 0 || audio.sample) {
+                destroySound(audio);
+            }
+            continue;
+        }
+
         bool pendingStart = audio.startTrigger || (audio.state == SoundState::Playing && audio.handle == 0);
 
         if (audio.state == SoundState::Playing || pendingStart){
@@ -233,7 +254,10 @@ void AudioSystem::update(double dt){
                 audio.startTrigger = false;
 
                 if (audio.state != SoundState::Paused || audio.handle == 0) {
-                    init();
+                    if (!init()) {
+                        continue;
+                    }
+
                     if (use3DAudio){
                         if (audio.enableClocked){
                             audio.handle = getSoloud().play3dClocked(Engine::getDeltatime(), *audio.sample, worldPosition.x, worldPosition.y, worldPosition.z);

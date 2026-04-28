@@ -2528,7 +2528,8 @@ AABB editor::Project::getEntityWorldAABB(Scene* scene, Entity entity, Scene* mai
             }
         }
     }else if (signature.test(scene->getComponentId<LightComponent>()) || 
-              signature.test(scene->getComponentId<CameraComponent>())){
+              signature.test(scene->getComponentId<CameraComponent>()) ||
+              signature.test(scene->getComponentId<SoundComponent>())){
         Transform& transform = scene->getComponent<Transform>(entity);
         Transform& camtransform = mainScene->getComponent<Transform>(mainScene->getCamera());
         CameraComponent& camera = mainScene->getComponent<CameraComponent>(mainScene->getCamera());
@@ -2584,7 +2585,8 @@ AABB editor::Project::getEntityLocalAABB(Scene* scene, Entity entity) const{
             }
         }
     }else if (signature.test(scene->getComponentId<LightComponent>()) || 
-              signature.test(scene->getComponentId<CameraComponent>())){
+              signature.test(scene->getComponentId<CameraComponent>()) ||
+              signature.test(scene->getComponentId<SoundComponent>())){
         aabb = AABB::ZERO;
     }else if (signature.test(scene->getComponentId<PointsComponent>())){
         aabb.setNull();
