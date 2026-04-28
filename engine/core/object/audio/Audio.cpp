@@ -16,6 +16,13 @@ Audio::Audio(Scene* scene): EntityHandle(scene){
     addComponent<AudioComponent>();
 }
 
+Audio::Audio(Scene* scene, bool is3D): EntityHandle(scene){
+    addComponent<AudioComponent>();
+    if (is3D){
+        addComponent<Transform>();
+    }
+}
+
 Audio::Audio(Scene* scene, Entity entity): EntityHandle(scene, entity){
 }
 

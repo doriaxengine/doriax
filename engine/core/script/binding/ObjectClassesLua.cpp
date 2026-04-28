@@ -819,6 +819,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
     luabridge::getGlobalNamespace(L)
         .deriveClass<Audio, EntityHandle>("Audio")
         .addConstructor <void (*) (Scene*)> ()
+        .addConstructor <void (*) (Scene*, bool)> ()
         .addFunction("loadAudio", &Audio::loadAudio)
         .addFunction("destroyAudio", &Audio::destroyAudio)
         .addFunction("getObject", &Audio::getObject)

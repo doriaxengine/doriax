@@ -14,6 +14,7 @@ namespace doriax {
     class DORIAX_API Audio: public EntityHandle{
     public:
         Audio(Scene* scene);
+        Audio(Scene* scene, bool is3D);
         Audio(Scene* scene, Entity entity);
         virtual ~Audio();
 
