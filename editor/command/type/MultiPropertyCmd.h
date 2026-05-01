@@ -4,7 +4,7 @@
 #include "PropertyCmd.h"
 #include <vector>
 #include <memory>
-#include <functional>
+#include <utility>
 
 namespace doriax::editor {
 
@@ -28,10 +28,15 @@ namespace doriax::editor {
         }
 
         bool execute() override {
+            std::vector<Command*> executedCommands;
             for (auto& cmd : commands) {
                 if (!cmd->execute()){
+                    for (auto it = executedCommands.rbegin(); it != executedCommands.rend(); ++it) {
+                        (*it)->undo();
+                    }
                     return false;
                 }
+                executedCommands.push_back(cmd.get());
             }
             return true;
         }

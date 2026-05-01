@@ -16,10 +16,26 @@ editor::ModelLoadCmd::ModelLoadCmd(Project* project, uint32_t sceneId, Entity en
     this->wasModified = project->getScene(sceneId)->isModified;
 }
 
+editor::ModelLoadCmd::ModelLoadCmd(Project* project, uint32_t sceneId, const std::string& entityName, const Vector3& position, const std::string& modelPath){
+    this->project = project;
+    this->sceneId = sceneId;
+    this->entity = NULL_ENTITY;
+    this->modelPath = modelPath;
+
+    this->wasModified = project->getScene(sceneId)->isModified;
+
+    createEntityCmd = new CreateEntityCmd(project, sceneId, entityName, EntityCreationType::MODEL);
+    createEntityCmd->addProperty<Vector3>(ComponentType::Transform, "position", position);
+}
+
 editor::ModelLoadCmd::~ModelLoadCmd(){
     if (oldSubEntitiesDeleteCmd) {
         delete oldSubEntitiesDeleteCmd;
         oldSubEntitiesDeleteCmd = nullptr;
+    }
+    if (createEntityCmd) {
+        delete createEntityCmd;
+        createEntityCmd = nullptr;
     }
 }
 
@@ -34,6 +50,13 @@ std::vector<Entity> editor::ModelLoadCmd::collectModelDeleteRoots(const ModelCom
 }
 
 bool editor::ModelLoadCmd::execute(){
+    if (createEntityCmd) {
+        if (!createEntityCmd->execute()) {
+            return false;
+        }
+        entity = createEntityCmd->getEntity();
+    }
+
     SceneProject* sceneProject = project->getScene(sceneId);
     Scene* scene = sceneProject->scene;
 
@@ -98,6 +121,9 @@ bool editor::ModelLoadCmd::execute(){
             delete oldSubEntitiesDeleteCmd;
             oldSubEntitiesDeleteCmd = nullptr;
         }
+        if (createEntityCmd) {
+            createEntityCmd->undo();
+        }
         return false;
     }
 
@@ -148,6 +174,11 @@ void editor::ModelLoadCmd::undo(){
 
     if (project->isEntityInBundle(sceneId, entity)){
         project->bundlePropertyChanged(sceneId, entity, ComponentType::ModelComponent, {"filename"});
+    }
+
+    if (createEntityCmd) {
+        createEntityCmd->undo();
+        entity = NULL_ENTITY;
     }
 }
 

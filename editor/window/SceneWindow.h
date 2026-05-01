@@ -47,6 +47,7 @@ namespace doriax::editor {
         void closeSceneInternal(uint32_t sceneId);
         void sceneEventHandler(SceneProject* sceneProject);
         void handleResourceFileDragDrop(SceneProject* sceneProject);
+        Vector3 getModelDropPosition(SceneProject* sceneProject, float x, float y);
         void handleTileRectDragDrop(SceneProject* sceneProject);
         bool handleViewportGizmoClick(SceneProject* sceneProject, float canvasX, float canvasY, int canvasWidth, int canvasHeight);
         void snapCameraToDirection(Camera* camera, const Vector3& direction);

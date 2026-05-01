@@ -9,6 +9,7 @@
 #include "command/type/MultiPropertyCmd.h"
 #include "command/type/LinkMaterialCmd.h"
 #include "command/type/CreateEntityCmd.h"
+#include "command/type/ModelLoadCmd.h"
 #include "command/type/DuplicateEntityCmd.h"
 #include "util/ProjectUtils.h"
 #include "render/SceneRender2D.h"
@@ -99,6 +100,17 @@ std::string editor::SceneWindow::getWindowTitle(const SceneProject& sceneProject
     return icon + sceneProject.name + ((project->hasSceneUnsavedChanges(sceneProject.id)) ? " *" : "") + "###Scene" + std::to_string(sceneProject.id);
 }
 
+Vector3 editor::SceneWindow::getModelDropPosition(SceneProject* sceneProject, float x, float y) {
+    Camera* camera = sceneProject->sceneRender->getCamera();
+    Ray ray = camera->screenToRay(x, y);
+    RayReturn hit = ray.intersects(Plane(Vector3(0, 1, 0), Vector3(0, 0, 0)));
+    if (hit) {
+        return hit.point;
+    }
+
+    return camera->getTarget();
+}
+
 void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject) {
     static bool draggingResourceFile = false;
     static Image* tempImage = nullptr;
@@ -122,6 +134,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                 bool isFont = Util::isFontFile(droppedRelativePath);
                 bool isImage = Util::isImageFile(droppedRelativePath);
                 bool isMaterial = Util::isMaterialFile(droppedRelativePath);
+                bool isModel = Util::isModelFile(droppedRelativePath);
 
                 draggingResourceFile = true;
                 ImVec2 windowPos = ImGui::GetWindowPos();
@@ -160,7 +173,22 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                     cachedDragPath.clear();
                 }
 
-                if (selEntity != NULL_ENTITY) {
+                if (isModel && sceneProject->sceneType == SceneType::SCENE_3D) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files", ImGuiDragDropFlags_AcceptBeforeDelivery)) {
+                        if (payload->IsDelivery()) {
+                            std::string modelEntityName = std::filesystem::path(droppedRelativePath).stem().string();
+                            if (modelEntityName.empty()) {
+                                modelEntityName = "Model";
+                            }
+
+                            Vector3 dropPosition = getModelDropPosition(sceneProject, x, y);
+                            CommandHandle::get(sceneProject->id)->addCommandNoMerge(
+                                new ModelLoadCmd(project, sceneProject->id, modelEntityName, dropPosition, droppedRelativePath));
+
+                            focusSceneWindow(*sceneProject);
+                        }
+                    }
+                } else if (selEntity != NULL_ENTITY) {
                     bool accept = false;
                     if (isFont && sceneProject->scene->findComponent<TextComponent>(selEntity)) {
                         accept = true;
