@@ -16,7 +16,6 @@
 #include <filesystem>
 
 #include "util/FileUtils.h"
-#include "stb_image_write.h"
 
 #include "resources/sky/Daylight_Box_Back_png.h"
 #include "resources/sky/Daylight_Box_Bottom_png.h"
@@ -512,39 +511,12 @@ std::string editor::Factory::formatTexture(int indentSpaces, const Texture& text
         if (!p0.empty()) {
             code << ind << variableName << ".setPath(" << formatString(p0) << ");\n";
         } else {
-            // No file path: try to export in-memory pixel data as a PNG file.
-            Texture& mutableTex = const_cast<Texture&>(texture);
-            TextureLoadResult result = mutableTex.load();
-            bool savedAsPng = false;
-            if (result.state == ResourceLoadState::Finished && result.data) {
-                TextureData& texData = mutableTex.getData();
-                if (texData.getData() && texData.getWidth() > 0 && texData.getHeight() > 0 && texData.getChannels() > 0) {
-                    std::string safeName = texture.getId();
-                    for (char& c : safeName) {
-                        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_' && c != '-') c = '_';
-                    }
-                    if (safeName.empty()) safeName = "embedded_texture";
-                    safeName += ".png";
-
-                    const fs::path outDir = projectPath / "embedded_textures";
-                    std::error_code fsec;
-                    fs::create_directories(outDir, fsec);
-                    const fs::path outPath = outDir / safeName;
-
-                    const int written = stbi_write_png(
-                        outPath.string().c_str(),
-                        texData.getWidth(), texData.getHeight(), texData.getChannels(),
-                        texData.getData(), texData.getWidth() * texData.getChannels()
-                    );
-                    if (written) {
-                        code << ind << variableName << ".setPath(" << formatString("embedded_textures/" + safeName) << ");\n";
-                        savedAsPng = true;
-                    }
-                }
-            }
-            if (!savedAsPng && !texture.getId().empty()) {
-                // Fallback: set id only (no file load will occur at runtime).
-                code << ind << variableName << ".setId(" << formatString(texture.getId()) << ");\n";
+            const std::string textureId = texture.getId();
+            if (!textureId.empty()) {
+                // Keep only the texture id reference. Model-backed GLTF textures
+                // are rebuilt from the source model at runtime, and other
+                // in-memory textures are no longer exported to disk.
+                code << ind << variableName << ".setId(" << formatString(textureId) << ");\n";
             }
         }
     }
@@ -702,7 +674,11 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         }
     }
 
-    if (mesh.buffer.getSize() > 0){
+    // Skip inlining raw buffer/index data for model-backed meshes; the model
+    // loader will repopulate the buffers at runtime from the source file.
+    const bool hasModel = scene->findComponent<ModelComponent>(entity);
+
+    if (!hasModel && mesh.buffer.getSize() > 0){
         code << ind << "mesh.buffer.clearAll();\n";
         std::map<AttributeType, Attribute> attributes = mesh.buffer.getAttributes();
 
@@ -737,7 +713,7 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << ind << "mesh.buffer.setCount(" << formatUInt(mesh.buffer.getCount()) << ");\n";
     }
 
-    if (mesh.indices.getSize() > 0){
+    if (!hasModel && mesh.indices.getSize() > 0){
         code << ind << "mesh.indices.clearAll();\n";
         code << ind << "{\n";
         code << ind << "    unsigned char data[] = {";

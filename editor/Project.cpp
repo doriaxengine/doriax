@@ -6,6 +6,7 @@
 
 #include <fstream>
 #include <system_error>
+#include <chrono>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
