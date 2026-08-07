@@ -146,15 +146,15 @@ if(API_BACKEND STREQUAL "glfw")
 endif()
 
 if(API_BACKEND STREQUAL "sdl")
-    find_package(SDL2 REQUIRED)
+    find_package(SDL3 REQUIRED)
 
     list(APPEND BACKEND_SOURCES
-        ${IMGUI_DIR}/backends/imgui_impl_sdl2.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_sdl3.cpp
         ${EDITOR_DIR}/backend/BackendSDL.cpp
     )
 
     list(APPEND BACKEND_LIBS
-        ${SDL2_LIBRARIES}
+        ${SDL3_LIBRARIES}
     )
 endif()
 
