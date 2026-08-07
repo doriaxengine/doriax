@@ -1,8 +1,9 @@
 .vscode
 build
 build-rel
+build-release
 settings.yaml
-editor_layout.ini
+./editor_layout.ini
 
 ### Linux ###
 *~
