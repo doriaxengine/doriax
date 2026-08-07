@@ -119,12 +119,12 @@ int editor::Backend::init(int argc, char* argv[]) {
 
     // Initialize SDL
     if (!SDL_Init(SDL_INIT_VIDEO)) {
-        printf("Error: SDL_Init failed: %s\n", SDL_GetError());
+        fprintf(stderr, "Error: SDL_Init failed: %s\n", SDL_GetError());
         return -1;
     }
 
     if (NFD_Init() != NFD_OKAY) {
-        printf("Error: NFD_Init failed: %s\n", NFD_GetError());
+        fprintf(stderr, "Error: NFD_Init failed: %s\n", NFD_GetError());
         return -1;
     }
 
@@ -156,7 +156,7 @@ int editor::Backend::init(int argc, char* argv[]) {
         "Doriax Engine", windowWidth, windowHeight, initWindowFlags
     );
     if (!window) {
-        printf("Error: SDL_CreateWindow failed: %s\n", SDL_GetError());
+        fprintf(stderr, "Error: SDL_CreateWindow failed: %s\n", SDL_GetError());
         NFD_Quit();
         SDL_Quit();
         return -1;
@@ -192,7 +192,7 @@ int editor::Backend::init(int argc, char* argv[]) {
 
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     if (!glContext) {
-        printf("Error: SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+        fprintf(stderr, "Error: SDL_GL_CreateContext failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
         NFD_Quit();
         SDL_Quit();
