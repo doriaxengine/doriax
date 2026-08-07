@@ -108,8 +108,8 @@ enum {
     // Wayland: handle is wl_surface*
     NFD_WINDOW_HANDLE_TYPE_WAYLAND = 4,
 };
-// The native window handle.  If using a platform abstraction framework (e.g. SDL2), this should be
-// obtained using the corresponding NFD glue header (e.g. nfd_sdl2.h).
+// The native window handle.  If using a platform abstraction framework (e.g. SDL3), this should be
+// obtained using the corresponding NFD glue header (e.g. nfd_sdl3.h).
 typedef struct {
     size_t type;  // this is one of the values of the enum above
     void* handle;
