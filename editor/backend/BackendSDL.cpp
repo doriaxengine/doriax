@@ -155,18 +155,21 @@ int editor::Backend::init(int argc, char* argv[]) {
     window = SDL_CreateWindow(
         "Doriax Engine", windowWidth, windowHeight, initWindowFlags
     );
+    if (!window) {
+        printf("Error: SDL_CreateWindow failed: %s\n", SDL_GetError());
+        NFD_Quit();
+        SDL_Quit();
+        return -1;
+    }
+
+    // Tell NFD to set the Wayland display (does nothing in other platforms)
+    NFD_SetDisplayPropertiesFromSDLWindow(window);
 
     // Get the scale of the window and not the display
     float window_scale = SDL_GetWindowDisplayScale(window);
 
     if (window_scale == 0.0f) {
         window_scale = 1.0f;
-    }
-
-    if (!window) {
-        NFD_Quit();
-        SDL_Quit();
-        return -1;
     }
 
     // Apply saved window state
@@ -181,7 +184,11 @@ int editor::Backend::init(int argc, char* argv[]) {
         SDL_DestroySurface(cursorSurface);
     }
 
-    NFD_GetNativeWindowFromSDLWindow(window, &nativeWindow);
+    // We log information (not error) in case this fails
+    if (NFD_GetNativeWindowFromSDLWindow(window, &nativeWindow) != NFD_OKAY) {
+        printf("Warning: Could not get native window handle for file dialogs.\n");
+        nativeWindow.type = NFD_WINDOW_HANDLE_TYPE_UNSET;
+    }
 
     SDL_GLContext glContext = SDL_GL_CreateContext(window);
     if (!glContext) {
@@ -202,6 +209,11 @@ int editor::Backend::init(int argc, char* argv[]) {
     // Setup Dear ImGui context - MUST BE DONE BEFORE app.setup()
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+
+    // Setup scaling
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.ScaleAllSizes(window_scale); // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
+    style.FontScaleDpi = window_scale; // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
 
     // Setup Platform/Renderer bindings - MUST BE DONE AFTER ImGui::CreateContext()
     ImGui_ImplSDL3_InitForOpenGL(window, glContext);
@@ -228,7 +240,8 @@ int editor::Backend::init(int argc, char* argv[]) {
         SDL_GL_SetSwapInterval(0);
     }
     double framePeriod = 1.0 / 60.0;
-    SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(0);
+    SDL_DisplayID displayID = SDL_GetDisplayForWindow(window);
+    SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(displayID);
     if (displayMode && displayMode->refresh_rate > 0) {
         framePeriod = 1.0 / displayMode->refresh_rate;
     }
@@ -255,8 +268,7 @@ int editor::Backend::init(int argc, char* argv[]) {
                 // Handle quit event, but don't close immediately
                 app.exit();
             }
-            if (event.type == SDL_WINDOWEVENT &&
-                event.window.event == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+            if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
                 event.window.windowID == SDL_GetWindowID(window))
             {
                 // Handle window close event, but don't close immediately
@@ -266,8 +278,8 @@ int editor::Backend::init(int argc, char* argv[]) {
                 droppedPaths.clear();
             }
             if (event.type == SDL_EVENT_DROP_FILE) {
-                droppedPaths.push_back(event.drop.file);
-                SDL_free(event.drop.file);
+                droppedPaths.push_back(event.drop.data);
+                SDL_free((void*)event.drop.data);
             }
             if (event.type == SDL_EVENT_DROP_COMPLETE) {
                 app.handleExternalDrop(droppedPaths);
