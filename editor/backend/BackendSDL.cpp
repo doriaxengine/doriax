@@ -3,9 +3,6 @@
 #include "AppSettings.h"
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_mouse.h>
-#include <SDL3/SDL_video.h>
-#include <SDL3/SDL_opengl.h>
 
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_opengl3.h"
@@ -260,10 +257,8 @@ int editor::Backend::init(int argc, char* argv[]) {
         const Uint64 frameStart = SDL_GetPerformanceCounter();
 
         SDL_Event event;
-
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
-
             if (event.type == SDL_EVENT_QUIT) {
                 // Handle quit event, but don't close immediately
                 app.exit();
@@ -296,7 +291,7 @@ int editor::Backend::init(int argc, char* argv[]) {
         // block and stall clipboard + AI. Keep polling/updating so both keep
         // working.
         // On Wayland, "SDL_WINDOW_MINIMIZED" is not sent, when windows
-        // are minimmized, unless we call "SDL_MinimizeWindow()" manually.
+        // are minimized, unless we call "SDL_MinimizeWindow()" manually.
         const Uint32 windowFlags = SDL_GetWindowFlags(window);
         const bool minimized = (windowFlags & SDL_WINDOW_MINIMIZED) != 0;
 

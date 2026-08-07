@@ -2,6 +2,7 @@
 build
 build-rel
 settings.yaml
+editor_layout.ini
 
 ### Linux ###
 *~
