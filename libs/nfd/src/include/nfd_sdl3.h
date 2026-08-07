@@ -27,21 +27,24 @@ extern "C" {
  * Sets the wayland display if the process is running under Wayland, otherwise does nothing.
  * @param sdlWindow The SDL window handle.
  */
-NFD_INLINE bool NFD_SetDisplayPropertiesFromSDLWindow(SDL_Window* sdlWindow) {
-    if (!window) return;
+NFD_INLINE bool NFD_SetDisplayPropertiesFromSDLWindow(SDL_Window* window) {
+    if (!window) return false;
 
     SDL_PropertiesID props = SDL_GetWindowProperties(window);
-    if (!props) return;
+    if (!props) return false;
 
     const char* driver = SDL_GetCurrentVideoDriver();
     if (driver && SDL_strcmp(driver, "wayland") == 0) {
-        void* display = SDL_GetPointerProperty(
+        wl_display* display = (wl_display*)SDL_GetPointerProperty(
             props, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL
         );
         if (display) {
             NFD_SetWaylandDisplay(display);
+            return true;
         }
     }
+
+    return false;
 }
 
 /**

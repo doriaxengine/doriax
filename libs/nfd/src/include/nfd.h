@@ -105,7 +105,8 @@ enum {
     NFD_WINDOW_HANDLE_TYPE_COCOA = 2,
     // X11: handle is Window
     NFD_WINDOW_HANDLE_TYPE_X11 = 3,
-    // Wayland support will be implemented separately in the future
+    // Wayland: handle is wl_surface*
+    NFD_WINDOW_HANDLE_TYPE_WAYLAND = 4,
 };
 // The native window handle.  If using a platform abstraction framework (e.g. SDL2), this should be
 // obtained using the corresponding NFD glue header (e.g. nfd_sdl2.h).
@@ -121,6 +122,9 @@ typedef struct {
     nfdfiltersize_t filterCount;
     const nfdu8char_t* defaultPath;
     nfdwindowhandle_t parentWindow;
+    const nfdu8char_t* title;
+    const nfdu8char_t* acceptLabel;
+    const nfdu8char_t* cancelLabel;
 } nfdopendialogu8args_t;
 
 #ifdef _WIN32
@@ -129,6 +133,9 @@ typedef struct {
     nfdfiltersize_t filterCount;
     const nfdnchar_t* defaultPath;
     nfdwindowhandle_t parentWindow;
+    const nfdnchar_t* title;
+    const nfdnchar_t* acceptLabel;
+    const nfdnchar_t* cancelLabel;
 } nfdopendialognargs_t;
 #else
 typedef nfdopendialogu8args_t nfdopendialognargs_t;
@@ -140,6 +147,9 @@ typedef struct {
     const nfdu8char_t* defaultPath;
     const nfdu8char_t* defaultName;
     nfdwindowhandle_t parentWindow;
+    const nfdu8char_t* title;
+    const nfdu8char_t* acceptLabel;
+    const nfdu8char_t* cancelLabel;
 } nfdsavedialogu8args_t;
 
 #ifdef _WIN32
@@ -149,6 +159,9 @@ typedef struct {
     const nfdnchar_t* defaultPath;
     const nfdnchar_t* defaultName;
     nfdwindowhandle_t parentWindow;
+    const nfdnchar_t* title;
+    const nfdnchar_t* acceptLabel;
+    const nfdnchar_t* cancelLabel;
 } nfdsavedialognargs_t;
 #else
 typedef nfdsavedialogu8args_t nfdsavedialognargs_t;
@@ -157,12 +170,18 @@ typedef nfdsavedialogu8args_t nfdsavedialognargs_t;
 typedef struct {
     const nfdu8char_t* defaultPath;
     nfdwindowhandle_t parentWindow;
+    const nfdu8char_t* title;
+    const nfdu8char_t* acceptLabel;
+    const nfdu8char_t* cancelLabel;
 } nfdpickfolderu8args_t;
 
 #ifdef _WIN32
 typedef struct {
     const nfdnchar_t* defaultPath;
     nfdwindowhandle_t parentWindow;
+    const nfdnchar_t* title;
+    const nfdnchar_t* acceptLabel;
+    const nfdnchar_t* cancelLabel;
 } nfdpickfoldernargs_t;
 #else
 typedef nfdpickfolderu8args_t nfdpickfoldernargs_t;
@@ -171,7 +190,7 @@ typedef nfdpickfolderu8args_t nfdpickfoldernargs_t;
 // This is a unique identifier tagged to all the NFD_*With() function calls, for backward
 // compatibility purposes.  There is usually no need to use this directly, unless you want to use
 // NFD differently depending on the version you're building with.
-#define NFD_INTERFACE_VERSION 1
+#define NFD_INTERFACE_VERSION 2
 
 /** Free a file path that was returned by the dialogs.
  *
@@ -189,6 +208,11 @@ NFD_API nfdresult_t NFD_Init(void);
 
 /** Call this to de-initialize NFD, if NFD_Init returned NFD_OKAY. */
 NFD_API void NFD_Quit(void);
+
+struct wl_display;
+/** Sets or updates the Wayland display used by your application. Use NULL to remove an existing
+ * display. Only defined on Linux. */
+NFD_API nfdresult_t NFD_SetWaylandDisplay(struct wl_display*);
 
 /** Single file open dialog
  *

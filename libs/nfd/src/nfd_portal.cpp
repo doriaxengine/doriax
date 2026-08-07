@@ -28,6 +28,8 @@
 
 #include "nfd.h"
 
+#include "nfd_linux_shared.hpp"
+
 /*
 Define NFD_APPEND_EXTENSION if you want the file extension to be appended when missing. Linux
 programs usually don't append the file extension, but for consistency with other OSes you might want
@@ -36,37 +38,14 @@ know that we appended an extension, so they will not check or whitelist the corr
 NFD_APPEND_EXTENSION is not recommended for portals.
 */
 
+/*
+Define NFD_CASE_SENSITIVE_FILTER if you want file filters to be case-sensitive.  The default
+is case-insensitive.  While Linux uses a case-sensitive filesystem and is designed for
+case-sensitive file extensions, perhaps in the vast majority of cases users actually expect the file
+filters to be case-insensitive.
+*/
+
 namespace {
-
-template <typename T = void>
-T* NFDi_Malloc(size_t bytes) {
-    void* ptr = malloc(bytes);
-    assert(ptr);  // Linux malloc never fails
-
-    return static_cast<T*>(ptr);
-}
-
-template <typename T>
-void NFDi_Free(T* ptr) {
-    assert(ptr);
-    free(static_cast<void*>(ptr));
-}
-
-template <typename T>
-struct Free_Guard {
-    T* data;
-    Free_Guard(T* freeable) noexcept : data(freeable) {}
-    ~Free_Guard() { NFDi_Free(data); }
-};
-
-template <typename T>
-struct FreeCheck_Guard {
-    T* data;
-    FreeCheck_Guard(T* freeable = nullptr) noexcept : data(freeable) {}
-    ~FreeCheck_Guard() {
-        if (data) NFDi_Free(data);
-    }
-};
 
 struct DBusMessage_Guard {
     DBusMessage* data;
@@ -98,14 +77,6 @@ void NFDi_SetFormattedError(const char* format, ...) {
     vsnprintf(owned_err, OWNED_ERR_LEN, format, args);
     va_end(args);
     err_ptr = owned_err;
-}
-
-template <typename T>
-T* copy(const T* begin, const T* end, T* out) {
-    for (; begin != end; ++begin) {
-        *out++ = *begin;
-    }
-    return out;
 }
 
 template <typename T, typename Callback>
@@ -158,6 +129,7 @@ constexpr const char* STR_SAVE_FILE = "Save File";
 constexpr const char* STR_SELECT_FOLDER = "Select Folder";
 constexpr const char* STR_SELECT_FOLDERS = "Select Folders";
 constexpr const char* STR_HANDLE_TOKEN = "handle_token";
+constexpr const char* STR_ACCEPT_LABEL = "accept_label";
 constexpr const char* STR_MULTIPLE = "multiple";
 constexpr const char* STR_DIRECTORY = "directory";
 constexpr const char* STR_FILTERS = "filters";
@@ -172,8 +144,37 @@ constexpr const char* DBUS_PATH = "/org/freedesktop/portal/desktop";
 constexpr const char* DBUS_FILECHOOSER_IFACE = "org.freedesktop.portal.FileChooser";
 constexpr const char* DBUS_REQUEST_IFACE = "org.freedesktop.portal.Request";
 
-void AppendOpenFileQueryParentWindow(DBusMessageIter& iter, const nfdwindowhandle_t& parentWindow) {
+#ifdef NFD_WAYLAND
+constexpr const char* WAYLAND_PREFIX = "wayland:";
+
+void DestroyXdgExported(void* context) {
+    zxdg_exported_v1_destroy(static_cast<struct zxdg_exported_v1*>(context));
+}
+
+void zxdg_exported_v1_handle(void* context, struct zxdg_exported_v1*, const char* handle) {
+    DBusMessageIter& iter = *static_cast<DBusMessageIter*>(context);
+    const size_t handle_len = strlen(handle);
+    const size_t prefix_len = strlen(WAYLAND_PREFIX);
+    char* const buf = NFDi_Malloc<char>(prefix_len + handle_len + 1);
+    char* buf_end = copy(WAYLAND_PREFIX, WAYLAND_PREFIX + prefix_len, buf);
+    buf_end = copy(handle, handle + handle_len, buf_end);
+    *buf_end = '\0';
+    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &buf);
+    NFDi_Free(buf);
+}
+
+constexpr struct zxdg_exported_v1_listener wayland_xdg_exported_v1_listener{
+    &zxdg_exported_v1_handle};
+#endif
+
+void AppendOpenFileQueryParentWindow(DBusMessageIter& iter,
+                                     const nfdwindowhandle_t& parentWindow,
+                                     DestroyFunc& destroy) {
+    (void)iter;
+    (void)parentWindow;
+    (void)destroy;
     switch (parentWindow.type) {
+#ifdef NFD_X11
         case NFD_WINDOW_HANDLE_TYPE_X11: {
             constexpr size_t maxX11WindowStrLen =
                 4 + sizeof(uintptr_t) * 2 + 1;  // "x11:" + "<hex>" + "\0"
@@ -190,6 +191,30 @@ void AppendOpenFileQueryParentWindow(DBusMessageIter& iter, const nfdwindowhandl
             dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &serializedWindow);
             return;
         }
+#endif
+#ifdef NFD_WAYLAND
+        case NFD_WINDOW_HANDLE_TYPE_WAYLAND: {
+            if (wayland_display && wayland_xdg_exporter_v1) {
+                struct zxdg_exported_v1* exported = zxdg_exporter_v1_export(
+                    wayland_xdg_exporter_v1, static_cast<struct wl_surface*>(parentWindow.handle));
+                if (!exported) {
+                    // if we fail to export the wl_surface, act as if the window has no parent
+                    dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
+                    return;
+                }
+                zxdg_exported_v1_add_listener(
+                    exported, &wayland_xdg_exported_v1_listener, static_cast<void*>(&iter));
+                wl_display_roundtrip(wayland_display);
+                zxdg_exported_v1_set_user_data(exported, nullptr);
+                destroy.fn = &DestroyXdgExported;
+                destroy.context = static_cast<void*>(exported);
+                return;
+            } else {
+                dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
+                return;
+            }
+        }
+#endif
         default: {
             dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &STR_EMPTY);
             return;
@@ -278,7 +303,7 @@ void AppendSingleFilter(DBusMessageIter& base_iter, const nfdnfilteritem_t& filt
     // count number of file extensions
     size_t sep = 1;
     for (const char* p = filter.spec; *p; ++p) {
-        if (*p == L',') {
+        if (*p == ',') {
             ++sep;
         }
     }
@@ -316,13 +341,25 @@ void AppendSingleFilter(DBusMessageIter& base_iter, const nfdnfilteritem_t& filt
             do {
                 ++extn_end;
             } while (*extn_end != ',' && *extn_end != '\0');
-            char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
-            char* buf_end = buf;
-            *buf_end++ = '*';
-            *buf_end++ = '.';
-            buf_end = copy(extn_begin, extn_end, buf_end);
-            *buf_end = '\0';
-            dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+            {
+#ifdef NFD_CASE_SENSITIVE_FILTER
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = copy(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#else
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) * 4 + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = emit_case_insensitive_glob(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#endif
+            }
             dbus_message_iter_close_container(&filter_sublist_iter, &filter_sublist_struct_iter);
             if (*extn_end == '\0') {
                 break;
@@ -346,7 +383,7 @@ bool AppendSingleFilterCheckExtn(DBusMessageIter& base_iter,
     // count number of file extensions
     size_t sep = 1;
     for (const char* p = filter.spec; *p; ++p) {
-        if (*p == L',') {
+        if (*p == ',') {
             ++sep;
         }
     }
@@ -385,13 +422,25 @@ bool AppendSingleFilterCheckExtn(DBusMessageIter& base_iter,
             do {
                 ++extn_end;
             } while (*extn_end != ',' && *extn_end != '\0');
-            char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
-            char* buf_end = buf;
-            *buf_end++ = '*';
-            *buf_end++ = '.';
-            buf_end = copy(extn_begin, extn_end, buf_end);
-            *buf_end = '\0';
-            dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+            {
+#ifdef NFD_CASE_SENSITIVE_FILTER
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = copy(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#else
+                char* buf = static_cast<char*>(alloca(2 + (extn_end - extn_begin) * 4 + 1));
+                char* buf_end = buf;
+                *buf_end++ = '*';
+                *buf_end++ = '.';
+                buf_end = emit_case_insensitive_glob(extn_begin, extn_end, buf_end);
+                *buf_end = '\0';
+                dbus_message_iter_append_basic(&filter_sublist_struct_iter, DBUS_TYPE_STRING, &buf);
+#endif
+            }
             dbus_message_iter_close_container(&filter_sublist_iter, &filter_sublist_struct_iter);
             if (!extn_matched) {
                 const char* match_extn_p;
@@ -495,8 +544,7 @@ void AppendSaveFileQueryDictEntryFilters(DBusMessageIter& sub_iter,
         if (defaultName) {
             const nfdnchar_t* p = defaultName;
             while (*p) ++p;
-            while (*--p != '.')
-                ;
+            while (*--p != '.');
             ++p;
             if (*p) extn = p;
         }
@@ -536,6 +584,18 @@ void AppendSaveFileQueryDictEntryFilters(DBusMessageIter& sub_iter,
         dbus_message_iter_close_container(&sub_sub_iter, &variant_iter);
         dbus_message_iter_close_container(&sub_iter, &sub_sub_iter);
     }
+}
+
+void AppendOpenFileQueryDictEntryAcceptLabel(DBusMessageIter& sub_iter, const char* acceptLabel) {
+    if (!acceptLabel) return;
+    DBusMessageIter sub_sub_iter;
+    DBusMessageIter variant_iter;
+    dbus_message_iter_open_container(&sub_iter, DBUS_TYPE_DICT_ENTRY, nullptr, &sub_sub_iter);
+    dbus_message_iter_append_basic(&sub_sub_iter, DBUS_TYPE_STRING, &STR_ACCEPT_LABEL);
+    dbus_message_iter_open_container(&sub_sub_iter, DBUS_TYPE_VARIANT, "s", &variant_iter);
+    dbus_message_iter_append_basic(&variant_iter, DBUS_TYPE_STRING, &acceptLabel);
+    dbus_message_iter_close_container(&sub_sub_iter, &variant_iter);
+    dbus_message_iter_close_container(&sub_iter, &sub_sub_iter);
 }
 
 void AppendSaveFileQueryDictEntryCurrentName(DBusMessageIter& sub_iter, const char* name) {
@@ -619,16 +679,24 @@ void AppendOpenFileQueryParams(DBusMessage* query,
                                const nfdnfilteritem_t* filterList,
                                nfdfiltersize_t filterCount,
                                const nfdnchar_t* defaultPath,
-                               const nfdwindowhandle_t& parentWindow) {
+                               const nfdwindowhandle_t& parentWindow,
+                               const nfdnchar_t* title,
+                               const nfdnchar_t* acceptLabel,
+                               DestroyFunc& destroy) {
     DBusMessageIter iter;
     dbus_message_iter_init_append(query, &iter);
 
-    AppendOpenFileQueryParentWindow(iter, parentWindow);
-    AppendOpenFileQueryTitle<Multiple, Directory>(iter);
+    AppendOpenFileQueryParentWindow(iter, parentWindow, destroy);
+    if (title) {
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &title);
+    } else {
+        AppendOpenFileQueryTitle<Multiple, Directory>(iter);
+    }
 
     DBusMessageIter sub_iter;
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &sub_iter);
     AppendOpenFileQueryDictEntryHandleToken(sub_iter, handle_token);
+    AppendOpenFileQueryDictEntryAcceptLabel(sub_iter, acceptLabel);
     AppendOpenFileQueryDictEntryMultiple<Multiple>(sub_iter);
     AppendOpenFileQueryDictEntryDirectory<Directory>(sub_iter);
     AppendOpenFileQueryDictEntryFilters<!Directory>(sub_iter, filterList, filterCount);
@@ -643,16 +711,24 @@ void AppendSaveFileQueryParams(DBusMessage* query,
                                nfdfiltersize_t filterCount,
                                const nfdnchar_t* defaultPath,
                                const nfdnchar_t* defaultName,
-                               const nfdwindowhandle_t& parentWindow) {
+                               const nfdwindowhandle_t& parentWindow,
+                               const nfdnchar_t* title,
+                               const nfdnchar_t* acceptLabel,
+                               DestroyFunc& destroy) {
     DBusMessageIter iter;
     dbus_message_iter_init_append(query, &iter);
 
-    AppendOpenFileQueryParentWindow(iter, parentWindow);
-    AppendSaveFileQueryTitle(iter);
+    AppendOpenFileQueryParentWindow(iter, parentWindow, destroy);
+    if (title) {
+        dbus_message_iter_append_basic(&iter, DBUS_TYPE_STRING, &title);
+    } else {
+        AppendSaveFileQueryTitle(iter);
+    }
 
     DBusMessageIter sub_iter;
     dbus_message_iter_open_container(&iter, DBUS_TYPE_ARRAY, "{sv}", &sub_iter);
     AppendOpenFileQueryDictEntryHandleToken(sub_iter, handle_token);
+    AppendOpenFileQueryDictEntryAcceptLabel(sub_iter, acceptLabel);
     AppendSaveFileQueryDictEntryFilters(sub_iter, filterList, filterCount, defaultName);
     AppendSaveFileQueryDictEntryCurrentName(sub_iter, defaultName);
     AppendOpenFileQueryDictEntryCurrentFolder(sub_iter, defaultPath);
@@ -1106,8 +1182,7 @@ bool TryGetValidExtension(const char* extn,
     ++extn;
     if (*extn != '.') return false;
     trimmed_extn = extn;
-    for (++extn; *extn != '\0'; ++extn)
-        ;
+    for (++extn; *extn != '\0'; ++extn);
     ++extn;
     trimmed_extn_end = extn;
     return true;
@@ -1175,7 +1250,9 @@ nfdresult_t NFD_DBus_OpenFile(DBusMessage*& outMsg,
                               const nfdnfilteritem_t* filterList,
                               nfdfiltersize_t filterCount,
                               const nfdnchar_t* defaultPath,
-                              const nfdwindowhandle_t& parentWindow) {
+                              const nfdwindowhandle_t& parentWindow,
+                              const nfdnchar_t* title,
+                              const nfdnchar_t* acceptLabel) {
     const char* handle_token_ptr;
     char* handle_obj_path = MakeUniqueObjectPath(&handle_token_ptr);
     Free_Guard<char> handle_obj_path_guard(handle_obj_path);
@@ -1195,8 +1272,17 @@ nfdresult_t NFD_DBus_OpenFile(DBusMessage*& outMsg,
     DBusMessage* query = dbus_message_new_method_call(
         DBUS_DESTINATION, DBUS_PATH, DBUS_FILECHOOSER_IFACE, "OpenFile");
     DBusMessage_Guard query_guard(query);
-    AppendOpenFileQueryParams<Multiple, Directory>(
-        query, handle_token_ptr, filterList, filterCount, defaultPath, parentWindow);
+
+    DestroyFunc destroy;
+    AppendOpenFileQueryParams<Multiple, Directory>(query,
+                                                   handle_token_ptr,
+                                                   filterList,
+                                                   filterCount,
+                                                   defaultPath,
+                                                   parentWindow,
+                                                   title,
+                                                   acceptLabel,
+                                                   destroy);
 
     DBusMessage* reply =
         dbus_connection_send_with_reply_and_block(dbus_conn, query, DBUS_TIMEOUT_INFINITE, &err);
@@ -1258,7 +1344,9 @@ nfdresult_t NFD_DBus_SaveFile(DBusMessage*& outMsg,
                               nfdfiltersize_t filterCount,
                               const nfdnchar_t* defaultPath,
                               const nfdnchar_t* defaultName,
-                              const nfdwindowhandle_t& parentWindow) {
+                              const nfdwindowhandle_t& parentWindow,
+                              const nfdnchar_t* title,
+                              const nfdnchar_t* acceptLabel) {
     const char* handle_token_ptr;
     char* handle_obj_path = MakeUniqueObjectPath(&handle_token_ptr);
     Free_Guard<char> handle_obj_path_guard(handle_obj_path);
@@ -1278,8 +1366,18 @@ nfdresult_t NFD_DBus_SaveFile(DBusMessage*& outMsg,
     DBusMessage* query = dbus_message_new_method_call(
         DBUS_DESTINATION, DBUS_PATH, DBUS_FILECHOOSER_IFACE, "SaveFile");
     DBusMessage_Guard query_guard(query);
-    AppendSaveFileQueryParams(
-        query, handle_token_ptr, filterList, filterCount, defaultPath, defaultName, parentWindow);
+
+    DestroyFunc destroy;
+    AppendSaveFileQueryParams(query,
+                              handle_token_ptr,
+                              filterList,
+                              filterCount,
+                              defaultPath,
+                              defaultName,
+                              parentWindow,
+                              title,
+                              acceptLabel,
+                              destroy);
 
     DBusMessage* reply =
         dbus_connection_send_with_reply_and_block(dbus_conn, query, DBUS_TIMEOUT_INFINITE, &err);
@@ -1408,11 +1506,19 @@ nfdresult_t NFD_Init(void) {
     dbus_unique_name = dbus_bus_get_unique_name(dbus_conn);
     if (!dbus_unique_name) {
         NFDi_SetError("Unable to get the unique name of our D-Bus connection.");
+        dbus_connection_unref(dbus_conn);
         return NFD_ERROR;
     }
+#ifdef NFD_WAYLAND
+    NFD_Wayland_Init();
+#endif
     return NFD_OKAY;
 }
+
 void NFD_Quit(void) {
+#ifdef NFD_WAYLAND
+    NFD_Wayland_Quit();
+#endif
     dbus_connection_unref(dbus_conn);
     // Note: We do not free dbus_error since NFD_Init might set it.
     // To avoid leaking memory, the caller should explicitly call NFD_ClearError after reading the
@@ -1440,13 +1546,21 @@ nfdresult_t NFD_OpenDialogN(nfdnchar_t** outPath,
 nfdresult_t NFD_OpenDialogN_With_Impl(nfdversion_t version,
                                       nfdnchar_t** outPath,
                                       const nfdopendialognargs_t* args) {
-    // We haven't needed to bump the interface version yet.
-    (void)version;
+    // The title and acceptLabel fields were added in interface version 2; only read them if the
+    // caller's interface version is new enough.  (xdg-desktop-portal's file chooser does not
+    // support a cancel button label.)
+    const nfdnchar_t* title = version >= 2 ? args->title : nullptr;
+    const nfdnchar_t* acceptLabel = version >= 2 ? args->acceptLabel : nullptr;
 
     DBusMessage* msg;
     {
-        const nfdresult_t res = NFD_DBus_OpenFile<false, false>(
-            msg, args->filterList, args->filterCount, args->defaultPath, args->parentWindow);
+        const nfdresult_t res = NFD_DBus_OpenFile<false, false>(msg,
+                                                                args->filterList,
+                                                                args->filterCount,
+                                                                args->defaultPath,
+                                                                args->parentWindow,
+                                                                title,
+                                                                acceptLabel);
         if (res != NFD_OKAY) {
             return res;
         }
@@ -1489,13 +1603,21 @@ nfdresult_t NFD_OpenDialogMultipleN(const nfdpathset_t** outPaths,
 nfdresult_t NFD_OpenDialogMultipleN_With_Impl(nfdversion_t version,
                                               const nfdpathset_t** outPaths,
                                               const nfdopendialognargs_t* args) {
-    // We haven't needed to bump the interface version yet.
-    (void)version;
+    // The title and acceptLabel fields were added in interface version 2; only read them if the
+    // caller's interface version is new enough.  (xdg-desktop-portal's file chooser does not
+    // support a cancel button label.)
+    const nfdnchar_t* title = version >= 2 ? args->title : nullptr;
+    const nfdnchar_t* acceptLabel = version >= 2 ? args->acceptLabel : nullptr;
 
     DBusMessage* msg;
     {
-        const nfdresult_t res = NFD_DBus_OpenFile<true, false>(
-            msg, args->filterList, args->filterCount, args->defaultPath, args->parentWindow);
+        const nfdresult_t res = NFD_DBus_OpenFile<true, false>(msg,
+                                                               args->filterList,
+                                                               args->filterCount,
+                                                               args->defaultPath,
+                                                               args->parentWindow,
+                                                               title,
+                                                               acceptLabel);
         if (res != NFD_OKAY) {
             return res;
         }
@@ -1539,8 +1661,11 @@ nfdresult_t NFD_SaveDialogN(nfdnchar_t** outPath,
 nfdresult_t NFD_SaveDialogN_With_Impl(nfdversion_t version,
                                       nfdnchar_t** outPath,
                                       const nfdsavedialognargs_t* args) {
-    // We haven't needed to bump the interface version yet.
-    (void)version;
+    // The title and acceptLabel fields were added in interface version 2; only read them if the
+    // caller's interface version is new enough.  (xdg-desktop-portal's file chooser does not
+    // support a cancel button label.)
+    const nfdnchar_t* title = version >= 2 ? args->title : nullptr;
+    const nfdnchar_t* acceptLabel = version >= 2 ? args->acceptLabel : nullptr;
 
     DBusMessage* msg;
     {
@@ -1549,7 +1674,9 @@ nfdresult_t NFD_SaveDialogN_With_Impl(nfdversion_t version,
                                                   args->filterCount,
                                                   args->defaultPath,
                                                   args->defaultName,
-                                                  args->parentWindow);
+                                                  args->parentWindow,
+                                                  title,
+                                                  acceptLabel);
         if (res != NFD_OKAY) {
             return res;
         }
@@ -1601,8 +1728,11 @@ nfdresult_t NFD_PickFolderN(nfdnchar_t** outPath, const nfdnchar_t* defaultPath)
 nfdresult_t NFD_PickFolderN_With_Impl(nfdversion_t version,
                                       nfdnchar_t** outPath,
                                       const nfdpickfoldernargs_t* args) {
-    // We haven't needed to bump the interface version yet.
-    (void)version;
+    // The title and acceptLabel fields were added in interface version 2; only read them if the
+    // caller's interface version is new enough.  (xdg-desktop-portal's file chooser does not
+    // support a cancel button label.)
+    const nfdnchar_t* title = version >= 2 ? args->title : nullptr;
+    const nfdnchar_t* acceptLabel = version >= 2 ? args->acceptLabel : nullptr;
 
     {
         dbus_uint32_t portal_version;
@@ -1622,8 +1752,8 @@ nfdresult_t NFD_PickFolderN_With_Impl(nfdversion_t version,
 
     DBusMessage* msg;
     {
-        const nfdresult_t res =
-            NFD_DBus_OpenFile<false, true>(msg, nullptr, 0, args->defaultPath, args->parentWindow);
+        const nfdresult_t res = NFD_DBus_OpenFile<false, true>(
+            msg, nullptr, 0, args->defaultPath, args->parentWindow, title, acceptLabel);
         if (res != NFD_OKAY) {
             return res;
         }
@@ -1658,8 +1788,11 @@ nfdresult_t NFD_PickFolderMultipleN(const nfdpathset_t** outPaths, const nfdncha
 nfdresult_t NFD_PickFolderMultipleN_With_Impl(nfdversion_t version,
                                               const nfdpathset_t** outPaths,
                                               const nfdpickfoldernargs_t* args) {
-    // We haven't needed to bump the interface version yet.
-    (void)version;
+    // The title and acceptLabel fields were added in interface version 2; only read them if the
+    // caller's interface version is new enough.  (xdg-desktop-portal's file chooser does not
+    // support a cancel button label.)
+    const nfdnchar_t* title = version >= 2 ? args->title : nullptr;
+    const nfdnchar_t* acceptLabel = version >= 2 ? args->acceptLabel : nullptr;
 
     {
         dbus_uint32_t portal_version;
@@ -1679,8 +1812,8 @@ nfdresult_t NFD_PickFolderMultipleN_With_Impl(nfdversion_t version,
 
     DBusMessage* msg;
     {
-        const nfdresult_t res =
-            NFD_DBus_OpenFile<true, true>(msg, nullptr, 0, args->defaultPath, args->parentWindow);
+        const nfdresult_t res = NFD_DBus_OpenFile<true, true>(
+            msg, nullptr, 0, args->defaultPath, args->parentWindow, title, acceptLabel);
         if (res != NFD_OKAY) {
             return res;
         }

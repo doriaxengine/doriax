@@ -241,7 +241,7 @@ int editor::Backend::init(int argc, char* argv[]) {
     }
     double framePeriod = 1.0 / 60.0;
     SDL_DisplayID displayID = SDL_GetDisplayForWindow(window);
-    SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(displayID);
+    const SDL_DisplayMode* displayMode = SDL_GetCurrentDisplayMode(displayID);
     if (displayMode && displayMode->refresh_rate > 0) {
         framePeriod = 1.0 / displayMode->refresh_rate;
     }
@@ -264,7 +264,7 @@ int editor::Backend::init(int argc, char* argv[]) {
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
 
-            if (event.type == SDL_QUIT) {
+            if (event.type == SDL_EVENT_QUIT) {
                 // Handle quit event, but don't close immediately
                 app.exit();
             }
