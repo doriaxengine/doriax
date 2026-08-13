@@ -114,7 +114,7 @@ namespace doriax {
 
     bool SceneIntegration::loadSceneAdditive(const std::string& sceneName) {
         // Additive loading requires an active scene context.
-        Scene* activeScene = Engine::scene();
+        Scene* activeScene = Engine::getScene();
         if (!activeScene) {
             Log::error("SceneIntegration::loadSceneAdditive: no active scene");
             return false;
