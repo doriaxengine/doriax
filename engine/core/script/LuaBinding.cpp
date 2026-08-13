@@ -442,6 +442,9 @@ void LuaBinding::registerClasses(lua_State *L){
     registerMathClasses(L); 
     registerUtilClasses(L);
     registerThreadClasses(L);
+    registerSceneIntegrationClasses(L);
+    registerInputClasses(L);
+    registerUIClasses(L);
 
 #endif //DISABLE_LUA_BINDINGS
 }

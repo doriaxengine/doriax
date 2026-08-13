@@ -722,6 +722,7 @@ endif()
 
 set(DORIAX_SRCS
     core/Engine.cpp
+    core/EngineCore.cpp
     core/Input.cpp
     core/Log.cpp
     core/Scene.cpp
@@ -737,6 +738,11 @@ set(DORIAX_SRCS
     core/action/SpriteAnimation.cpp
     core/action/TimedAction.cpp
     core/action/keyframe/MorphTracks.cpp
+    core/asset/AssetManager.cpp
+    core/asset/AssetRegistry.cpp
+    core/scene/Prefab.cpp
+    core/scene/SceneStream.cpp
+    core/scene/SceneIntegration.cpp
     core/action/keyframe/RotateTracks.cpp
     core/action/keyframe/ScaleTracks.cpp
     core/action/keyframe/TranslateTracks.cpp
@@ -746,12 +752,19 @@ set(DORIAX_SRCS
     core/buffer/IndexBuffer.cpp
     core/buffer/InterleavedBuffer.cpp
     core/ecs/ComponentManager.cpp
+    core/ecs/World.cpp
     core/io/Data.cpp
     core/io/File.cpp
     core/io/FileData.cpp
     core/manager/BundleManager.cpp
     core/manager/SceneManager.cpp
     core/io/UserSettings.cpp
+    core/input/InputAction.cpp
+    core/input/InputActionMap.cpp
+    core/input/InputBinder.cpp
+    core/ui/UIElement.cpp
+    core/ui/UIWidgets.cpp
+    core/ui/UICanvas.cpp
     core/math/AABB.cpp
     core/math/Matrix3.cpp
     core/math/Matrix4.cpp
@@ -830,6 +843,9 @@ set(DORIAX_SRCS
     core/script/binding/ObjectClassesLua.cpp
     core/script/binding/ThreadClassesLua.cpp
     core/script/binding/UtilClassesLua.cpp
+    core/script/binding/SceneIntegrationLua.cpp
+    core/script/binding/InputClassesLua.cpp
+    core/script/binding/UIClassesLua.cpp
     core/shader/ShaderData.cpp
     core/shader/ShaderDataSerializer.cpp
     core/subsystem/ActionSystem.cpp
@@ -842,6 +858,7 @@ set(DORIAX_SRCS
     core/texture/IBLEnvironment.cpp
     core/texture/Texture.cpp
     core/texture/TextureData.cpp
+    core/thread/JobSystem.cpp
     core/thread/ResourceProgress.cpp
     core/thread/ThreadPoolManager.cpp
     core/util/Angle.cpp

@@ -12,6 +12,7 @@ namespace doriax {
     class DORIAX_API Log {
     public:
         static void print(const char* text, ...);
+        static void info(const char* text, ...);
 
         static void verbose(const char* text, ...);
         static void debug(const char* text, ...);

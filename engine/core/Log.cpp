@@ -15,6 +15,13 @@ void Log::print(const char *fmt, ...) {
     va_end(arg_ptr);
 }
 
+void Log::info(const char *fmt, ...) {
+    va_list arg_ptr;
+    va_start(arg_ptr, fmt);
+    System::instance().platformLog(D_LOG_DEBUG, fmt, arg_ptr);
+    va_end(arg_ptr);
+}
+
 void Log::verbose(const char *fmt, ...) {
 	va_list arg_ptr;
 	va_start(arg_ptr, fmt);

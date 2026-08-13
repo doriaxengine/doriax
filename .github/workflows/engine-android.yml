@@ -1,22 +1,54 @@
-name: Engine Android
+name: Engine Android Debug APK
 
 on: [push, pull_request]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout code
+        uses: actions/checkout@v6
 
-      - name: Setup JDK
+      - name: Setup JDK 21
         uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Build with Gradle
-        run: | 
-          cd engine/workspaces/androidstudio/
-          ./gradlew assembleDebug
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          ndk-version: '26.1.10909125'
+
+      - name: Setup Gradle cache
+        uses: gradle/gradle-build-action@v3
+        with:
+          cache-read-only: false
+
+      - name: Make Gradle wrapper executable
+        working-directory: engine/workspaces/androidstudio/
+        run: chmod +x ./gradlew
+
+      - name: Build Debug APK
+        working-directory: engine/workspaces/androidstudio/
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: List generated APKs
+        working-directory: engine/workspaces/androidstudio/
+        run: find . -name "*.apk" -type f
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: engine/workspaces/androidstudio/**/build/outputs/apk/debug/*.apk
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Build Info
+        if: success()
+        run: |
+          echo "✓ Debug APK build successful!"
+          echo "Generated APK artifacts available for download"

@@ -46,6 +46,9 @@ namespace doriax {
         static void registerObjectClasses(lua_State *L);
         static void registerUtilClasses(lua_State *L);
         static void registerThreadClasses(lua_State *L);
+        static void registerSceneIntegrationClasses(lua_State *L);
+        static void registerInputClasses(lua_State *L);
+        static void registerUIClasses(lua_State *L);
 
         static void init();
 

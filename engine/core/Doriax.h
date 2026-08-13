@@ -6,6 +6,7 @@
 #define doriax_h
 
 #include "Engine.h"
+#include "EngineCore.h"
 //#include "Export.h"
 #include "Input.h"
 #include "Log.h"
@@ -29,6 +30,10 @@
 #include "action/ScaleAction.h"
 #include "action/SpriteAnimation.h"
 #include "action/TimedAction.h"
+
+#include "asset/AssetManager.h"
+#include "asset/AssetRegistry.h"
+#include "asset/AssetTypes.h"
 
 #include "buffer/Attribute.h"
 #include "buffer/Buffer.h"
@@ -94,6 +99,7 @@
 #include "ecs/EntityManager.h"
 #include "ecs/Signature.h"
 #include "ecs/SubSystem.h"
+#include "ecs/World.h"
 
 #include "io/Data.h"
 #include "io/FileData.h"
@@ -102,6 +108,11 @@
 
 #include "math/AABB.h"
 #include "math/Matrix3.h"
+
+#include "scene/Prefab.h"
+#include "scene/SceneConfig.h"
+#include "scene/SceneIntegration.h"
+#include "scene/SceneStream.h"
 #include "math/Matrix4.h"
 #include "math/OBB.h"
 #include "math/Plane.h"
@@ -209,7 +220,16 @@
 #include "util/UniqueToken.h"
 //#include "util/XMLUtils.h"
 
+#include "thread/JobSystem.h"
 #include "thread/ResourceProgress.h"
 #include "thread/ThreadPoolManager.h"
+
+#include "input/InputAction.h"
+#include "input/InputActionMap.h"
+#include "input/InputBinder.h"
+
+#include "ui/UIElement.h"
+#include "ui/UIWidgets.h"
+#include "ui/UICanvas.h"
 
 #endif /* doriax_h */
