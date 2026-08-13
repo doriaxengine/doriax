@@ -48,15 +48,15 @@ void LuaBinding::registerSceneIntegrationClasses(lua_State *L) {
 
             .beginClass<SceneConfig>("SceneConfig")
                 .addConstructor<void()>()
-                .addData("name", &SceneConfig::name)
-                .addData("path", &SceneConfig::path)
-                .addData("active", &SceneConfig::active)
-                .addData("persistent", &SceneConfig::persistent)
-                .addData("additive", &SceneConfig::additive)
-                .addData("autoLoad", &SceneConfig::autoLoad)
-                .addData("streamingMode", &SceneConfig::streamingMode)
-                .addData("dependencies", &SceneConfig::dependencies)
-                .addData("metadata", &SceneConfig::metadata)
+                .addProperty("name", &SceneConfig::name)
+                .addProperty("path", &SceneConfig::path)
+                .addProperty("active", &SceneConfig::active)
+                .addProperty("persistent", &SceneConfig::persistent)
+                .addProperty("additive", &SceneConfig::additive)
+                .addProperty("autoLoad", &SceneConfig::autoLoad)
+                .addProperty("streamingMode", &SceneConfig::streamingMode)
+                .addProperty("dependencies", &SceneConfig::dependencies)
+                .addProperty("metadata", &SceneConfig::metadata)
             .endClass()
 
             .beginClass<Prefab>("Prefab")
@@ -86,4 +86,3 @@ void LuaBinding::registerSceneIntegrationClasses(lua_State *L) {
 
 #endif // DISABLE_LUA_BINDINGS
 }
-
