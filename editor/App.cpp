@@ -1305,8 +1305,15 @@ void editor::App::setup() {
 
     // Fonts follow each viewport's monitor DPI. Style paddings are global, so
     // App::show() re-scales them from the main viewport when that DPI changes.
-    io.ConfigDpiScaleFonts = true;
-    io.ConfigDpiScaleViewports = true;
+    //
+    // MacOS/Apple Silicon: disable Dear ImGui's automatic DPI scaling to fix Retina scaling issues.
+    #ifdef __APPLE__
+        io.ConfigDpiScaleFonts = false;
+        io.ConfigDpiScaleViewports = false;
+    #else
+        io.ConfigDpiScaleFonts = true;
+        io.ConfigDpiScaleViewports = true;
+    #endif
 
     float dpiScale = 1.0f;
     if (ImGui::GetPlatformIO().Monitors.Size > 0) {
@@ -2415,7 +2422,7 @@ void editor::App::closeWindow(){
 
     // Stop all playing scenes before shutdown to properly cleanup script instances
     for (auto& sceneProject : project.getScenes()) {
-        if (sceneProject.playState == ScenePlayState::PLAYING || 
+        if (sceneProject.playState == ScenePlayState::PLAYING ||
             sceneProject.playState == ScenePlayState::PAUSED ||
             sceneProject.playState == ScenePlayState::LOADING) {
             project.stop(sceneProject.id);
