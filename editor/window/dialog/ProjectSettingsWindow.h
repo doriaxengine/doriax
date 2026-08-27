@@ -51,6 +51,7 @@ namespace doriax::editor {
         std::string m_cmakePickError;   // why the last pick was rejected
         int m_cmakeBuildJobs = 0;
         std::string m_cmakeBuildJobsTooltip;
+        bool m_packNativeResources = false;
 
         void drawSettings();
         void drawGeneralSettings();

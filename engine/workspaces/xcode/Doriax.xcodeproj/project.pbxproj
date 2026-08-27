@@ -413,6 +413,7 @@
 		713D8292259D307E00567F9F /* Log.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC2C25962A0E0075B97D /* Log.cpp */; };
 		713D8293259D307F00567F9F /* Scene.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC2D25962A0E0075B97D /* Scene.cpp */; };
 		713D8294259D307F00567F9F /* Data.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3225962A0E0075B97D /* Data.cpp */; };
+		713D829A2E76C00100567F9F /* ResourcePack.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3A2E76C0010075B97D /* ResourcePack.cpp */; };
 		713D8295259D307F00567F9F /* UserSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3325962A0E0075B97D /* UserSettings.cpp */; };
 		713D8296259D307F00567F9F /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3525962A0E0075B97D /* File.cpp */; };
 		713D8297259D307F00567F9F /* FileData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3625962A0E0075B97D /* FileData.cpp */; };
@@ -518,6 +519,7 @@
 		7162FD1225963AE00075B97D /* Log.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC2C25962A0E0075B97D /* Log.cpp */; };
 		7162FD1325963AE00075B97D /* Scene.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC2D25962A0E0075B97D /* Scene.cpp */; };
 		7162FD1625963AE00075B97D /* Data.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3225962A0E0075B97D /* Data.cpp */; };
+		7162FD172E76C0010075B97D /* ResourcePack.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3A2E76C0010075B97D /* ResourcePack.cpp */; };
 		7162FD1725963AE00075B97D /* UserSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3325962A0E0075B97D /* UserSettings.cpp */; };
 		7162FD1925963AE00075B97D /* File.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3525962A0E0075B97D /* File.cpp */; };
 		7162FD1A25963AE00075B97D /* FileData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7162FC3625962A0E0075B97D /* FileData.cpp */; };
@@ -1969,6 +1971,8 @@
 		7162FC3025962A0E0075B97D /* Data.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Data.h; sourceTree = "<group>"; };
 		7162FC3125962A0E0075B97D /* File.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = File.h; sourceTree = "<group>"; };
 		7162FC3225962A0E0075B97D /* Data.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Data.cpp; sourceTree = "<group>"; };
+		7162FC392E76C0010075B97D /* ResourcePack.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ResourcePack.h; sourceTree = "<group>"; };
+		7162FC3A2E76C0010075B97D /* ResourcePack.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ResourcePack.cpp; sourceTree = "<group>"; };
 		7162FC3325962A0E0075B97D /* UserSettings.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = UserSettings.cpp; sourceTree = "<group>"; };
 		7162FC3425962A0E0075B97D /* UserSettings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = UserSettings.h; sourceTree = "<group>"; };
 		7162FC3525962A0E0075B97D /* File.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = File.cpp; sourceTree = "<group>"; };
@@ -3952,6 +3956,8 @@
 				7162FC3125962A0E0075B97D /* File.h */,
 				7162FC3625962A0E0075B97D /* FileData.cpp */,
 				7162FC3725962A0E0075B97D /* FileData.h */,
+				7162FC3A2E76C0010075B97D /* ResourcePack.cpp */,
+				7162FC392E76C0010075B97D /* ResourcePack.h */,
 				7162FC3325962A0E0075B97D /* UserSettings.cpp */,
 				7162FC3425962A0E0075B97D /* UserSettings.h */,
 			);
@@ -6899,6 +6905,7 @@
 				7105A56D28B305B20092EA05 /* IOClassesLua.cpp in Sources */,
 				71651FF72AA804B4008D9BF5 /* Manifold2D.cpp in Sources */,
 				713D8294259D307F00567F9F /* Data.cpp in Sources */,
+				713D829A2E76C00100567F9F /* ResourcePack.cpp in Sources */,
 				71E8248D2A9C23A600C8E6F2 /* Joint2D.cpp in Sources */,
 				71451BBF270CA16200712643 /* ActionSystem.cpp in Sources */,
 				71BE623D25B1DB9E006D6E02 /* LuaScript.cpp in Sources */,
@@ -7107,6 +7114,7 @@
 				71451BEB270CA2C900712643 /* Sprite.cpp in Sources */,
 				717AD98E29211976007D7DB5 /* Container.cpp in Sources */,
 				7162FD1625963AE00075B97D /* Data.cpp in Sources */,
+				7162FD172E76C0010075B97D /* ResourcePack.cpp in Sources */,
 				7162FD1725963AE00075B97D /* UserSettings.cpp in Sources */,
 				71C33FB72A315878007A5822 /* Mesh.cpp in Sources */,
 				71CC839B26B8C4FD00EEBB93 /* FramebufferRender.cpp in Sources */,

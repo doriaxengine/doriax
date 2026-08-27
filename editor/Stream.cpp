@@ -1565,6 +1565,9 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
     if (project->getCMakeBuildJobs() != 0) {
         root["cmakeBuildJobs"] = project->getCMakeBuildJobs();
     }
+    if (project->shouldPackNativeResources() != Project::defaultPackNativeResources) {
+        root["packNativeResources"] = project->shouldPackNativeResources();
+    }
 
     if (project->getStartSceneId() != NULL_PROJECT_SCENE) {
         root["startSceneId"] = project->getStartSceneId();
@@ -1751,6 +1754,9 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node) {
         const long long jobs = node["cmakeBuildJobs"].as<long long>();
         const long long maxJobs = static_cast<long long>(Generator::MAX_SUPPORTED_PARALLEL_BUILD_JOBS);
         project->setCMakeBuildJobs(static_cast<unsigned int>(std::clamp(jobs, 0LL, maxJobs)));
+    }
+    if (node["packNativeResources"].IsDefined()) {
+        project->setPackNativeResources(node["packNativeResources"].as<bool>());
     }
 
     if (node["startSceneId"]) {

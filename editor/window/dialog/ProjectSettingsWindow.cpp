@@ -463,6 +463,7 @@ void ProjectSettingsWindow::open(Project* project) {
     m_cmakePickError.clear();
     refreshCMakeStatus();
     m_cmakeBuildJobs = static_cast<int>(project->getCMakeBuildJobs());
+    m_packNativeResources = project->shouldPackNativeResources();
     m_cmakeBuildJobsTooltip =
         "Maximum number of concurrent build jobs used for C++ scripts. Set to 0 to automatically use " +
         std::to_string(Generator::getAutomaticParallelBuildJobs()) + " detected logical CPU threads. " +
@@ -868,6 +869,12 @@ void ProjectSettingsWindow::drawBuildSettings() {
         }
 
         drawIntSetting("Parallel Jobs", "##CMakeBuildJobs", m_cmakeBuildJobs, (int)Project::defaultCMakeBuildJobs, 0, m_cmakeBuildJobsTooltip.c_str());
+
+        if (beginSettingsRow("Native Resource Pack", "Experimental. Packs exported assets and Lua files into game.pak for native targets. Applies to Desktop export and Android source export. Web uses its own Emscripten resource bundle.",
+                m_packNativeResources != Project::defaultPackNativeResources)) {
+            m_packNativeResources = Project::defaultPackNativeResources;
+        }
+        ImGui::Checkbox("Pack native resources (experimental)", &m_packNativeResources);
     });
 }
 
@@ -914,6 +921,7 @@ void ProjectSettingsWindow::applySettings() {
         AppSettings::setLastCMakeKit("", "", "");
     }
     m_project->setCMakeBuildJobs(static_cast<unsigned int>(m_cmakeBuildJobs));
+    m_project->setPackNativeResources(m_packNativeResources);
 
     m_project->saveProjectFile();
 }

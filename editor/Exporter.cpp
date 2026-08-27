@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -32,6 +33,15 @@ namespace {
     constexpr float BUILD_PROGRESS_START = 0.6f;
     constexpr float BUILD_PROGRESS_END = 0.95f;
     constexpr float MSBUILD_COMPILE_END = 0.9f;
+    constexpr char RESOURCE_PACK_MAGIC[] = {'D', 'X', 'P', 'K', '1'};
+
+    struct ResourcePackBuildEntry {
+        std::string path;
+        std::vector<unsigned char> data;
+        uint64_t offset = 0;
+        uint8_t key = 0;
+        uint32_t shift = 0;
+    };
 
     // Parses make-style "[ 47%]" and ninja-style "[123/456]" build-line prefixes
     // into a 0..1 fraction so the compile step can drive the progress bar.
@@ -58,6 +68,51 @@ namespace {
         } catch (...) {
             return false;
         }
+    }
+
+    void writeU8(std::ofstream& out, uint8_t value) {
+        out.put(static_cast<char>(value));
+    }
+
+    void writeU16(std::ofstream& out, uint16_t value) {
+        out.put(static_cast<char>(value & 0xff));
+        out.put(static_cast<char>((value >> 8) & 0xff));
+    }
+
+    void writeU32(std::ofstream& out, uint32_t value) {
+        for (int i = 0; i < 4; i++) {
+            out.put(static_cast<char>((value >> (i * 8)) & 0xff));
+        }
+    }
+
+    void writeU64(std::ofstream& out, uint64_t value) {
+        for (int i = 0; i < 8; i++) {
+            out.put(static_cast<char>((value >> (i * 8)) & 0xff));
+        }
+    }
+
+    void shiftRight(std::vector<unsigned char>& data, uint32_t shift) {
+        if (data.empty()) return;
+        shift %= static_cast<uint32_t>(data.size());
+        if (shift == 0) return;
+        std::rotate(data.begin(), data.end() - shift, data.end());
+    }
+
+    void applyXor(std::vector<unsigned char>& data, uint8_t key) {
+        for (unsigned char& byte : data) {
+            byte ^= key;
+        }
+    }
+
+    bool readWholeFile(const fs::path& path, std::vector<unsigned char>& data) {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return false;
+        in.seekg(0, std::ios::end);
+        std::streamoff size = in.tellg();
+        if (size < 0) return false;
+        in.seekg(0, std::ios::beg);
+        data.resize(static_cast<size_t>(size));
+        return data.empty() || static_cast<bool>(in.read(reinterpret_cast<char*>(data.data()), size));
     }
 }
 
@@ -224,6 +279,10 @@ void editor::Exporter::runExport() {
     if (!copyEngine()) return;
     if (isCancelled()) { setError("Export cancelled"); return; }
     if (!buildAndSaveShaders()) return;
+    if (config.mode == ExportMode::SourceCode && config.packNativeResources) {
+        if (isCancelled()) { setError("Export cancelled"); return; }
+        if (!collectSourceResourcePack()) return;
+    }
 
     if (buildMode) {
         if (isCancelled()) { setError("Export cancelled"); return; }
@@ -583,6 +642,7 @@ bool editor::Exporter::collectDesktopArtifacts() {
 #endif
 
     std::error_code ec;
+    const fs::path projectRoot = getExportProjectRoot();
     fs::path exePath = buildDir / exeName;
     if (!fs::exists(exePath, ec)) {
         // Multi-config generators (Visual Studio) place binaries in a per-config subdir.
@@ -612,16 +672,38 @@ bool editor::Exporter::collectDesktopArtifacts() {
         return false;
     }
 
-    // The desktop runtime resolves "assets" and "lua" relative to the working
-    // directory, so ship them next to the executable.
-    const fs::path projectRoot = getExportProjectRoot();
-    for (const char* dir : {"assets", "lua"}) {
-        fs::path src = projectRoot / dir;
-        if (!fs::exists(src, ec)) continue;
-        copyTree(src, config.destinationDir / dir, ec);
+    bool packCreated = false;
+    if (config.packNativeResources && !writeNativeResourcePack(config.destinationDir / "game.pak", packCreated)) {
+        return false;
+    }
+    if (!config.packNativeResources) {
+        ec.clear();
+        fs::remove(config.destinationDir / "game.pak", ec);
         if (ec) {
-            setError(std::string("Failed to copy ") + dir + ": " + ec.message());
+            setError("Failed to remove stale resource pack: " + ec.message());
             return false;
+        }
+    }
+
+    if (config.packNativeResources && packCreated) {
+        for (const char* dir : {"assets", "lua"}) {
+            ec.clear();
+            fs::remove_all(config.destinationDir / dir, ec);
+            if (ec) {
+                setError(std::string("Failed to remove unpacked ") + dir + ": " + ec.message());
+                return false;
+            }
+        }
+    } else {
+        // Default and fallback behavior: ship resource folders next to the executable.
+        for (const char* dir : {"assets", "lua"}) {
+            fs::path src = projectRoot / dir;
+            if (!fs::exists(src, ec)) continue;
+            copyTree(src, config.destinationDir / dir, ec);
+            if (ec) {
+                setError(std::string("Failed to copy ") + dir + ": " + ec.message());
+                return false;
+            }
         }
     }
 
@@ -685,6 +767,146 @@ bool editor::Exporter::collectDesktopArtifacts() {
         f << entry;
     }
 #endif
+
+    return true;
+}
+
+bool editor::Exporter::writeNativeResourcePack(const fs::path& outputPath, bool& created) {
+    setProgressRaw("Packing resources...", 0.95f);
+
+    created = false;
+    std::vector<ResourcePackBuildEntry> entries;
+    const fs::path projectRoot = getExportProjectRoot();
+
+    std::error_code ec;
+    for (const char* rootName : {"assets", "lua"}) {
+        const fs::path root = projectRoot / rootName;
+        if (!fs::exists(root, ec)) continue;
+
+        for (const auto& file : fs::recursive_directory_iterator(root, fs::directory_options::skip_permission_denied, ec)) {
+            if (!file.is_regular_file()) continue;
+
+            fs::path relPath = fs::relative(file.path(), projectRoot, ec);
+            if (ec || relPath.empty()) continue;
+
+            ResourcePackBuildEntry entry;
+            entry.path = relPath.generic_string();
+            if (entry.path == "assets/game.pak") continue;
+
+            if (!readWholeFile(file.path(), entry.data)) {
+                setError("Failed to read resource for pack: " + file.path().string());
+                return false;
+            }
+
+            size_t hash = std::hash<std::string>{}(entry.path) ^ (entry.data.size() << 1);
+            entry.key = static_cast<uint8_t>((hash % 255) + 1);
+            entry.shift = entry.data.empty() ? 0 : static_cast<uint32_t>(hash % entry.data.size());
+
+            shiftRight(entry.data, entry.shift);
+            applyXor(entry.data, entry.key);
+
+            entries.push_back(std::move(entry));
+        }
+    }
+
+    if (entries.empty()) {
+        fs::remove(outputPath, ec);
+        return true;
+    }
+
+    std::sort(entries.begin(), entries.end(), [](const auto& a, const auto& b) {
+        return a.path < b.path;
+    });
+
+    uint64_t offset = sizeof(RESOURCE_PACK_MAGIC) + 4;
+    for (const auto& entry : entries) {
+        if (entry.path.size() > UINT16_MAX) {
+            setError("Resource path is too long for pack: " + entry.path);
+            return false;
+        }
+        offset += 2 + entry.path.size() + 8 + 8 + 1 + 4;
+    }
+    for (auto& entry : entries) {
+        entry.offset = offset;
+        offset += entry.data.size();
+    }
+
+    fs::create_directories(outputPath.parent_path(), ec);
+    if (ec) {
+        setError("Failed to create resource pack directory: " + ec.message());
+        return false;
+    }
+
+    std::ofstream out(outputPath, std::ios::binary);
+    if (!out) {
+        setError("Failed to create resource pack: " + outputPath.string());
+        return false;
+    }
+
+    out.write(RESOURCE_PACK_MAGIC, sizeof(RESOURCE_PACK_MAGIC));
+    writeU32(out, static_cast<uint32_t>(entries.size()));
+
+    for (const auto& entry : entries) {
+        writeU16(out, static_cast<uint16_t>(entry.path.size()));
+        out.write(entry.path.data(), static_cast<std::streamsize>(entry.path.size()));
+        writeU64(out, entry.offset);
+        writeU64(out, static_cast<uint64_t>(entry.data.size()));
+        writeU8(out, entry.key);
+        writeU32(out, entry.shift);
+    }
+
+    for (const auto& entry : entries) {
+        if (!entry.data.empty()) {
+            out.write(reinterpret_cast<const char*>(entry.data.data()), static_cast<std::streamsize>(entry.data.size()));
+        }
+    }
+
+    if (!out) {
+        setError("Failed to write resource pack: " + outputPath.string());
+        return false;
+    }
+
+    created = true;
+    return true;
+}
+
+bool editor::Exporter::collectSourceResourcePack() {
+    const fs::path projectRoot = getExportProjectRoot();
+    const fs::path assetsDir = projectRoot / "assets";
+    const fs::path luaDir = projectRoot / "lua";
+    const fs::path packPath = assetsDir / "game.pak";
+
+    bool packCreated = false;
+    if (!writeNativeResourcePack(packPath, packCreated)) {
+        return false;
+    }
+
+    std::error_code ec;
+    if (!packCreated) {
+        return true;
+    }
+
+    for (const auto& entry : fs::directory_iterator(assetsDir, ec)) {
+        if (ec) {
+            setError("Failed to read exported assets directory: " + ec.message());
+            return false;
+        }
+        if (entry.path().filename() == "game.pak") {
+            continue;
+        }
+
+        fs::remove_all(entry.path(), ec);
+        if (ec) {
+            setError("Failed to remove unpacked asset after packing: " + ec.message());
+            return false;
+        }
+    }
+
+    fs::remove_all(luaDir, ec);
+    if (ec) {
+        setError("Failed to remove unpacked Lua directory after packing: " + ec.message());
+        return false;
+    }
 
     return true;
 }

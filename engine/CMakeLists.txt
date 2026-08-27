@@ -762,6 +762,7 @@ set(DORIAX_SRCS
     core/io/Data.cpp
     core/io/File.cpp
     core/io/FileData.cpp
+    core/io/ResourcePack.cpp
     core/manager/BundleManager.cpp
     core/manager/SceneManager.cpp
     core/io/UserSettings.cpp

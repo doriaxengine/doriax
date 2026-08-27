@@ -8,8 +8,10 @@
 // SPDX-License-Identifier: MIT
 
 #include "Data.h"
+#include "ResourcePack.h"
 
 #include <string.h>
+#include <vector>
 
 using namespace doriax;
 
@@ -124,6 +126,18 @@ unsigned int Data::open(const char *aFilename) {
         return FileErrors::INVALID_PARAMETER;
     dataPtr = 0;
     offset = 0;
+
+    std::vector<unsigned char> packedData;
+    if (ResourcePack::read(aFilename, packedData)) {
+        dataLength = static_cast<unsigned int>(packedData.size());
+        dataPtr = dataLength > 0 ? new unsigned char[dataLength] : nullptr;
+        if (dataLength > 0 && dataPtr == NULL)
+            return FileErrors::OUT_OF_MEMORY;
+        if (dataLength > 0)
+            memcpy(dataPtr, packedData.data(), dataLength);
+        dataOwned = true;
+        return FileErrors::FILEDATA_OK;
+    }
 
     File df;
     int res = df.open(aFilename);

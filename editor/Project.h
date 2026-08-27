@@ -179,6 +179,7 @@ namespace doriax::editor{
         // Atomic: read by the play-startup thread while the settings dialog can
         // write it from the UI thread.
         std::atomic<unsigned int> cmakeBuildJobs{0};
+        bool packNativeResources;
         CommandHistory projectHistory;
 
         uint32_t startSceneId;
@@ -335,6 +336,7 @@ namespace doriax::editor{
         static constexpr const char* defaultAssetsDir = ".";
         static constexpr const char* defaultLuaDir = ".";
         static constexpr unsigned int defaultCMakeBuildJobs = 0;
+        static constexpr bool defaultPackNativeResources = false;
 
         Project();
 
@@ -413,6 +415,8 @@ namespace doriax::editor{
         std::string getCMakeGenerator() const;
         void setCMakeBuildJobs(unsigned int jobs);
         unsigned int getCMakeBuildJobs() const;
+        void setPackNativeResources(bool enabled);
+        bool shouldPackNativeResources() const;
 
         uint32_t getStartSceneId() const;
         void setStartSceneId(uint32_t sceneId);

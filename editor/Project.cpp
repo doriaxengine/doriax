@@ -2287,6 +2287,14 @@ unsigned int editor::Project::getCMakeBuildJobs() const{
     return cmakeBuildJobs;
 }
 
+void editor::Project::setPackNativeResources(bool enabled){
+    packNativeResources = enabled;
+}
+
+bool editor::Project::shouldPackNativeResources() const{
+    return packNativeResources;
+}
+
 uint32_t editor::Project::getStartSceneId() const{
     return startSceneId;
 }
@@ -3448,6 +3456,7 @@ void editor::Project::resetConfigs() {
     cmakeCxxCompiler = "";
     cmakeGenerator = "";
     cmakeBuildJobs = defaultCMakeBuildJobs;
+    packNativeResources = defaultPackNativeResources;
     selectedScene = NULL_PROJECT_SCENE;
     selectedSceneForProperties = NULL_PROJECT_SCENE;
     nextSceneId = 0;

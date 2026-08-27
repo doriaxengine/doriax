@@ -707,6 +707,7 @@ void ExportWindow::startConfiguredExport(bool overwriteTarget) {
 
     if (m_mode == ExportMode::SourceCode) {
         exportConfig.targetDir = m_targetDir;
+        exportConfig.packNativeResources = m_project->shouldPackNativeResources();
         for (const auto& entry : m_backendEntries) {
             if (entry.selected) {
                 exportConfig.selectedBackends.insert(entry.backend);
@@ -732,6 +733,7 @@ void ExportWindow::startConfiguredExport(bool overwriteTarget) {
             exportConfig.cmakeCxxCompiler = m_project->getCMakeCxxCompiler();
             exportConfig.cmakeGenerator = m_project->getCMakeGenerator();
             exportConfig.buildJobs = m_project->getCMakeBuildJobs();
+            exportConfig.packNativeResources = m_project->shouldPackNativeResources();
         } else {
             exportConfig.emsdkPath = m_emsdkOverride;
         }

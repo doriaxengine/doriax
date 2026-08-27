@@ -54,6 +54,9 @@ namespace doriax::editor {
         // Desktop/Web: value passed to the exported CMake GRAPHIC_BACKEND
         // setting (glcore, gles3, d3d11, metal, or vulkan).
         std::string graphicBackend;
+        // Native builds: pack assets/lua into game.pak instead of copying folders.
+        // Experimental and disabled by default.
+        bool packNativeResources = false;
         // Web: emsdk root override ("" = auto-detect via EMSDK env / PATH)
         std::string emsdkPath;
     };
@@ -124,6 +127,8 @@ namespace doriax::editor {
         bool runBuild();
         bool collectDesktopArtifacts();
         bool collectWebArtifacts();
+        bool collectSourceResourcePack();
+        bool writeNativeResourcePack(const fs::path& outputPath, bool& created);
         bool clearGenerated();
         bool loadAndSaveAllScenes();
         bool copyGenerated();
