@@ -5,6 +5,7 @@ WORKDIR /opt/workdir
 # Disable weak dependencies to reduce image size.
 RUN echo "install_weak_deps=False" >> /etc/dnf/dnf.conf 
 RUN dnf install -y \
+    python3 \
     clang \
     cmake \
     wayland-devel \
@@ -23,8 +24,8 @@ RUN dnf install -y \
 
 # Build and install into a directory with CMake.
 CMD cmake \
-    -B build \
+    -B build/containers/fedora \
     -D CMAKE_BUILD_TYPE=Release \
     -G 'Ninja' && \
-    cmake --build build --config Release -j$(nproc) && \
-    DESTDIR="/opt/installdir" cmake --build build --target=install
+    cmake --build build/containers/fedora --config Release -j$(nproc) && \
+    DESTDIR="/opt/installdir" cmake --build build/containers/fedora --target=install

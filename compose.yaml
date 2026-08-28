@@ -20,3 +20,15 @@ services:
       - "./generate_shaders.cmake:/opt/workdir/generate_shaders.cmake:U,ro,z"
     tty: true
     command: /bin/sh -c "nix build . --no-write-lock-file"
+  fedora:
+    image: doriaxengine/doriax:fedora
+    build:
+      dockerfile: ./misc/containers/fedora/fedora-release/Dockerfile
+    volumes:
+      - type: bind
+        source: ./
+        target: /opt/workdir
+      - type: bind
+        source: ./
+        target: /opt/installdir/containers/fedora
+    tty: true
