@@ -1,26 +1,24 @@
-FROM fedora:latest
+FROM ubuntu:latest
 
 WORKDIR /opt/workdir
 
-# Disable weak dependencies to reduce image size.
-RUN echo "install_weak_deps=False" >> /etc/dnf/dnf.conf 
-RUN dnf install -y \
+RUN apt-get update -y
+RUN apt-get install -y \
     python3 \
     clang \
     cmake \
-    wayland-devel \
-    curl-devel \
-    dbus-devel \
+    libwayland-dev \
+    libcurl4-openssl-dev \
+    libdbus-1-dev \
     doxygen \
-    libX11-devel \
-    libXcursor-devel \
-    libXi-devel \
-    libXinerama-devel \
-    libXrandr-devel \
-    mesa-libGL-devel \
+    libx11-dev \
+    libxcursor-dev \
+    libxi-dev \
+    libxinerama-dev \
+    libxrandr-dev \
+    libgl-dev \
     ninja-build \
-    vulkan-devel \
-    vulkan-headers
+    libvulkan-dev
 
 # Build and install into a directory with CMake.
 CMD cmake \

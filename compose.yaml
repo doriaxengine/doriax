@@ -28,7 +28,17 @@ services:
       - type: bind
         source: ./
         target: /opt/workdir
+      - "./installdir/containers/fedora:/opt/installdir"
+      - "./build/containers/fedora:/opt/builddir"
+    tty: true
+  ubuntu:
+    image: doriaxengine/doriax:ubuntu
+    build:
+      dockerfile: ./misc/containers/ubuntu/ubuntu-release/Dockerfile
+    volumes:
       - type: bind
         source: ./
-        target: /opt/installdir/containers/fedora
+        target: /opt/workdir
+      - "./installdir/containers/ubuntu:/opt/installdir"
+      - "./build/containers/ubuntu:/opt/builddir"
     tty: true
