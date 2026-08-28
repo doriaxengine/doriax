@@ -19,6 +19,8 @@
   libxrandr,
   wayland,
   wayland-scanner,
+  libffi,
+  systemdLibs,
 }:
 
 llvmPackages.stdenv.mkDerivation (finalAttrs: {
@@ -51,5 +53,7 @@ llvmPackages.stdenv.mkDerivation (finalAttrs: {
     libxrandr
     wayland
     wayland-scanner
+    libffi
+    systemdLibs
   ];
 })

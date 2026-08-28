@@ -12,6 +12,9 @@ COPY ./CMakeLists.txt /program-cache-warmup/
 
 WORKDIR /program-cache-warmup/
 
+# Add /opt/workdir as a safe directory in case the entire repository is mounted.
+# See the `compose.yaml` file for more information.
+RUN git config --global --add safe.directory /opt/workdir
 RUN nix develop && exit
 
 WORKDIR /opt/workdir

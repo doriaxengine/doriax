@@ -1,21 +1,22 @@
+# Docker build tests, ensuring the project builds across different systems.
 services:
   nix:
     image: program/nix:latest
     build:
       dockerfile: ./Dockerfile
     volumes:
-      - type: bind
-        source: ./
-        target: /opt/workdir
+      # Explicit list of paths because Nix outputs a broken symlink to `/opt/workdir/result`.
+      # This isn't necessary for systems that use CMake without abstraction.
+      - "./flake.nix:/opt/workdir/flake.nix:U,ro,z"
+      - "./flake.lock:/opt/workdir/flake.lock:U,ro,z"
+      - "./misc/nix:/opt/workdir/misc/nix:U,ro,z"
+      - "./editor:/opt/workdir/editor:U,ro,z"
+      - "./engine:/opt/workdir/engine:U,ro,z"
+      - "./libs:/opt/workdir/libs:U,ro,z"
+      - "./shadercompiler:/opt/workdir/shadercompiler:U,ro,z"
+      - "./CMakeLists.txt:/opt/workdir/CMakeLists.txt:U,ro,z"
+      - "./generate_api_suggestions.py:/opt/workdir/generate_api_suggestions.py:U,ro,z"
+      - "./generate_gamepad_mappings.py:/opt/workdir/generate_gamepad_mappings.py:U,ro,z"
+      - "./generate_shaders.cmake:/opt/workdir/generate_shaders.cmake:U,ro,z"
     tty: true
-    command: /bin/sh -c "nix build ."
-  # Uncomment for Fedora build.
-  # fedora:
-  #   image: doriaxengine/doriax:fedora
-  #   build:
-  #     dockerfile: ./misc/containers/fedora/fedora-release/Dockerfile
-  #   volumes:
-  #     - type: bind
-  #       source: ./
-  #       target: /opt/workdir
-  #   tty: true
+    command: /bin/sh -c "nix build . --no-write-lock-file"

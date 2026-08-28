@@ -77,3 +77,6 @@ $RECYCLE.BIN/
 
 # Nix builds
 result
+
+# Installation directory for container build artefacts
+installdir
