@@ -1,0 +1,21 @@
+services:
+  nix:
+    image: program/nix:latest
+    build:
+      dockerfile: ./Dockerfile
+    volumes:
+      - type: bind
+        source: ./
+        target: /opt/workdir
+    tty: true
+    command: /bin/sh -c "nix build ."
+  # Uncomment for Fedora build.
+  # fedora:
+  #   image: doriaxengine/doriax:fedora
+  #   build:
+  #     dockerfile: ./misc/containers/fedora/fedora-release/Dockerfile
+  #   volumes:
+  #     - type: bind
+  #       source: ./
+  #       target: /opt/workdir
+  #   tty: true

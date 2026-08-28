@@ -74,3 +74,6 @@ $RECYCLE.BIN/
 
 # Windows shortcuts
 *.lnk
+
+# Nix builds
+result
