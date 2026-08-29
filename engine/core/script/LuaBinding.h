@@ -25,6 +25,7 @@ namespace doriax {
         static void createLuaState();
         static int setLuaPath(const char* path);
         static int setLuaSearcher(lua_CFunction f, bool cleanSearchers = false);
+        static void configureProjectLuaLoader();
 
         static int luaRegisterEvent(lua_State* L);
         static int luaRegisterEngineEvent(lua_State* L);
@@ -76,6 +77,7 @@ namespace doriax {
         // For editor scripts use
         static void initializeLuaScripts(Scene* scene);
         static void cleanupLuaScripts(Scene* scene);
+        static void clearLoadedProjectModules();
 
         static std::string getLuaStackErrorString(lua_State* L, int index = -1);
         

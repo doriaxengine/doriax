@@ -92,6 +92,7 @@ void LuaBinding::createLuaState(){
     LuaBinding::luastate = luaL_newstate();
 
     registerClasses(luastate);
+    configureProjectLuaLoader();
     registerHelpersFunctions(luastate);
 }
 
@@ -350,7 +351,7 @@ int LuaBinding::moduleLoader(lua_State *L) {
     std::string filepath;
     Data filedata;
     
-    filepath = "lua://" + std::string("lua") + System::instance().getDirSeparator() + filename + ".lua";
+    filepath = "lua://" + std::string("") + filename + ".lua";
     filedata.open(filepath.c_str());
     if (filedata.getMemPtr() != NULL) {
         
@@ -359,8 +360,8 @@ int LuaBinding::moduleLoader(lua_State *L) {
         
         return 1;
     }
-    
-    filepath = "lua://" + std::string("") + filename + ".lua";
+
+    filepath = "lua://" + std::string("lua") + System::instance().getDirSeparator() + filename + ".lua";
     filedata.open(filepath.c_str());
     if (filedata.getMemPtr() != NULL) {
         
@@ -373,6 +374,14 @@ int LuaBinding::moduleLoader(lua_State *L) {
     lua_pushstring(L, "\n\tno file in assets directory");
     
     return 1;
+}
+
+void LuaBinding::configureProjectLuaLoader(){
+    std::string luadir = std::string("lua") + System::instance().getDirSeparator();
+
+    setLuaPath("lua://?.lua");
+    setLuaPath(std::string("lua://" + luadir + "?.lua").c_str());
+    setLuaSearcher(moduleLoader, true);
 }
 
 //The same msghandler of lua.c
@@ -399,8 +408,7 @@ void LuaBinding::init(){
 
     std::string luadir = std::string("lua") + System::instance().getDirSeparator();
 
-    setLuaPath(std::string("lua://" + luadir + "?.lua").c_str());
-    setLuaSearcher(moduleLoader, true);
+    configureProjectLuaLoader();
 
     std::string luafile = std::string("lua://") + "main.lua";
     std::string luafile_subdir = std::string("lua://") + luadir + "main.lua";
@@ -575,6 +583,54 @@ bool LuaBinding::pushEntityHandleByType(lua_State* L, doriax::Scene* scene, dori
         Log::warn("pushEntityHandleByType: unknown type '%s', falling back to EntityHandle", ptrTypeName.c_str());
     }
     return pushEntityHandleTyped<EntityHandle>(L, scene, entity);
+}
+
+void LuaBinding::clearLoadedProjectModules() {
+    lua_State* L = luastate;
+    if (!L) return;
+
+    lua_getglobal(L, "package");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+
+    lua_getfield(L, -1, "loaded");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 2);
+        return;
+    }
+
+    std::vector<std::string> modulesToClear;
+
+    lua_pushnil(L);
+    while (lua_next(L, -2) != 0) {
+        if (lua_isstring(L, -2)) {
+            std::string moduleName = lua_tostring(L, -2);
+            std::string filename = moduleName;
+            std::replace(filename.begin(), filename.end(), '.', System::instance().getDirSeparator());
+
+            Data filedata;
+            std::string filepath = "lua://" + filename + ".lua";
+            if (filedata.open(filepath.c_str()) == FileErrors::FILEDATA_OK) {
+                modulesToClear.push_back(moduleName);
+            } else {
+                filepath = "lua://" + std::string("lua") + System::instance().getDirSeparator() + filename + ".lua";
+                if (filedata.open(filepath.c_str()) == FileErrors::FILEDATA_OK) {
+                    modulesToClear.push_back(moduleName);
+                }
+            }
+        }
+        lua_pop(L, 1);
+    }
+
+    for (const std::string& moduleName : modulesToClear) {
+        lua_pushnil(L);
+        lua_setfield(L, -2, moduleName.c_str());
+        Log::debug("Cleared Lua project module cache: %s", moduleName.c_str());
+    }
+
+    lua_pop(L, 2);
 }
 
 void LuaBinding::initializeLuaScripts(Scene* scene) {

@@ -7554,6 +7554,10 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                         SceneManager::setScenePtr(entry.sourceSceneId, entry.runtime->scene);
                     }
                 }
+                if (!hasCppScripts) {
+                    LuaBinding::clearLoadedProjectModules();
+                }
+
                 for (const auto& entry : runtimeScenesToInitialize) {
                     if (!entry.runtime) continue;
                     if (hasCppScripts) {
