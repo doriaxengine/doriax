@@ -431,11 +431,38 @@ bool editor::Exporter::configureBuild() {
         kitId = "desktop\n" + effectiveGenerator + "\n" + config.cmakeCCompiler + "\n" + config.cmakeCxxCompiler + "\n" + config.buildType + "\n" + config.graphicBackend;
     }
 
-    // CMake cannot switch generators or toolchains in place: wipe the build
-    // tree whenever the kit differs from the one that configured it.
+    // CMake cannot safely reuse a build tree if the generator/toolchain changed
+    // or if CMakeCache.txt belongs to a different source/build directory.
     std::error_code ec;
     const fs::path kitMarker = buildDir / ".doriax_export_kit";
+    const fs::path cmakeCache = buildDir / "CMakeCache.txt";
+
+    auto readCMakeCacheValue = [](const fs::path& cachePath, const std::string& key, std::error_code& readEc) {
+        readEc.clear();
+        std::ifstream cache(cachePath);
+        if (!cache.is_open()) {
+            readEc = std::make_error_code(std::errc::no_such_file_or_directory);
+            return std::string();
+        }
+
+        const std::string prefix = key + ":INTERNAL=";
+        std::string line;
+        while (std::getline(cache, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            if (line.rfind(prefix, 0) == 0) {
+                return line.substr(prefix.size());
+            }
+        }
+
+        return std::string();
+    };
+
     if (fs::exists(buildDir, ec)) {
+        bool cleanBuild = false;
+        std::string cleanReason;
+
         std::string prevKit;
         {
             std::ifstream f(kitMarker);
@@ -444,7 +471,73 @@ bool editor::Exporter::configureBuild() {
             }
         }
         if (prevKit != kitId) {
-            Out::warning("Build settings changed. Cleaning export build directory...");
+            cleanBuild = true;
+            cleanReason = "build settings changed";
+        }
+
+        if (!cleanBuild && fs::exists(cmakeCache, ec)) {
+            std::error_code pathEc;
+            fs::path currentSource = fs::absolute(config.targetDir, pathEc);
+            if (pathEc) {
+                setError("Failed to resolve export source directory: " + pathEc.message());
+                return false;
+            }
+            currentSource = currentSource.lexically_normal();
+
+            fs::path currentBuild = fs::absolute(buildDir, pathEc);
+            if (pathEc) {
+                setError("Failed to resolve export build directory: " + pathEc.message());
+                return false;
+            }
+            currentBuild = currentBuild.lexically_normal();
+
+            std::error_code readEc;
+            std::string cachedHome = readCMakeCacheValue(cmakeCache, "CMAKE_HOME_DIRECTORY", readEc);
+            if (readEc) {
+                cleanBuild = true;
+                cleanReason = "CMake cache could not be read";
+            } else if (cachedHome.empty()) {
+                cleanBuild = true;
+                cleanReason = "CMake cache does not contain CMAKE_HOME_DIRECTORY";
+            } else {
+                fs::path cachedSource = fs::path(cachedHome).lexically_normal();
+                if (!cachedSource.is_absolute()) {
+                    cleanBuild = true;
+                    cleanReason = "CMake cache contains an invalid source directory";
+                } else if (cachedSource.generic_string() != currentSource.generic_string()) {
+                    cleanBuild = true;
+                    cleanReason = "CMake cache belongs to a different source directory";
+                    Out::warning("Stale CMake cache detected: cached source is '%s', current source is '%s'",
+                        cachedSource.string().c_str(), currentSource.string().c_str());
+                }
+            }
+
+            if (!cleanBuild) {
+                std::string cachedBuildDir = readCMakeCacheValue(cmakeCache, "CMAKE_CACHEFILE_DIR", readEc);
+                if (readEc) {
+                    cleanBuild = true;
+                    cleanReason = "CMake cache could not be read";
+                } else if (cachedBuildDir.empty()) {
+                    cleanBuild = true;
+                    cleanReason = "CMake cache does not contain CMAKE_CACHEFILE_DIR";
+                } else {
+                    fs::path cachedBuild = fs::path(cachedBuildDir).lexically_normal();
+                    if (!cachedBuild.is_absolute()) {
+                        cleanBuild = true;
+                        cleanReason = "CMake cache contains an invalid build directory";
+                    } else if (cachedBuild.generic_string() != currentBuild.generic_string()) {
+                        cleanBuild = true;
+                        cleanReason = "CMake cache belongs to a different build directory";
+                        Out::warning("Stale CMake cache detected: cached build is '%s', current build is '%s'",
+                            cachedBuild.string().c_str(), currentBuild.string().c_str());
+                    }
+                }
+            }
+        }
+
+        if (cleanBuild) {
+            Out::warning("Cleaning export build directory: %s", cleanReason.c_str());
+            ec.clear();
             fs::remove_all(buildDir, ec);
             if (ec) {
                 setError("Failed to clean export build directory: " + ec.message());
