@@ -56,6 +56,10 @@ bool isEngineApiConstructorSymbol(const EngineAPISymbol& sym) {
            detail.rfind(name + "(", 0) == 0;
 }
 
+bool isUtf8Continuation(unsigned char c) {
+    return (c & 0xC0) == 0x80;
+}
+
 } // namespace
 
 CustomTextEditor::CustomTextEditor()
@@ -829,7 +833,8 @@ void CustomTextEditor::insertTextAtCursor(Cursor& cursor, const std::string& tex
                 col = static_cast<int>(indentStr.size());
             }
         } else if (c == '\t') {
-            int spacesToInsert = tabSize - (col % tabSize);
+            int visualCol = byteOffsetToVisualColumn(line, col);
+            int spacesToInsert = tabSize - (visualCol % tabSize);
             std::string spaces(spacesToInsert, ' ');
             lines[line].insert(col, spaces);
             col += spacesToInsert;
@@ -843,7 +848,7 @@ void CustomTextEditor::insertTextAtCursor(Cursor& cursor, const std::string& tex
     cursor.position.column = col;
     cursor.selection.start = cursor.position;
     cursor.selection.end = cursor.position;
-    cursor.preferredColumn = col;
+    cursor.preferredColumn = byteOffsetToVisualColumn(line, col);
 }
 
 void CustomTextEditor::DeleteSelection() {
@@ -894,9 +899,9 @@ void CustomTextEditor::Backspace() {
             cursor.position = delStart;
         } else if (cursor.position.column > 0) {
             delEnd = cursor.position;
-            cursor.position.column--;
+            cursor.position.column = prevUtf8Column(cursor.position.line, cursor.position.column);
             delStart = cursor.position;
-            lines[cursor.position.line].erase(cursor.position.column, 1);
+            lines[cursor.position.line].erase(delStart.column, delEnd.column - delStart.column);
         } else if (cursor.position.line > 0) {
             delEnd = cursor.position;
             int prevLineLen = static_cast<int>(lines[cursor.position.line - 1].size());
@@ -949,8 +954,8 @@ void CustomTextEditor::Delete() {
             int lineLen = static_cast<int>(lines[cursor.position.line].size());
             if (cursor.position.column < lineLen) {
                 delStart = cursor.position;
-                delEnd = TextPosition(cursor.position.line, cursor.position.column + 1);
-                lines[cursor.position.line].erase(cursor.position.column, 1);
+                delEnd = TextPosition(cursor.position.line, nextUtf8Column(cursor.position.line, cursor.position.column));
+                lines[cursor.position.line].erase(delStart.column, delEnd.column - delStart.column);
             } else if (cursor.position.line < static_cast<int>(lines.size()) - 1) {
                 delStart = cursor.position;
                 delEnd = TextPosition(cursor.position.line + 1, 0);
@@ -1469,7 +1474,7 @@ void CustomTextEditor::scrollToCursor() {
 
     TextPosition cursorPos = cursors[primaryCursor].position;
     float cursorY = cursorPos.line * lineHeight;
-    float cursorX = textStartX + cursorPos.column * charWidth;
+    float cursorX = textStartX + byteOffsetToPixelX(cursorPos.line, cursorPos.column);
 
     float viewHeight = ImGui::GetWindowHeight();
     if (viewHeight <= 0) viewHeight = 400; // Default fallback
@@ -1623,6 +1628,10 @@ TextPosition CustomTextEditor::clampPosition(const TextPosition& pos) const {
     TextPosition result = pos;
     result.line = std::clamp(result.line, 0, static_cast<int>(lines.size()) - 1);
     result.column = std::clamp(result.column, 0, static_cast<int>(lines[result.line].size()));
+    while (result.column > 0 && result.column < static_cast<int>(lines[result.line].size()) &&
+           isUtf8Continuation(static_cast<unsigned char>(lines[result.line][result.column]))) {
+        --result.column;
+    }
     return result;
 }
 
@@ -1630,32 +1639,41 @@ void CustomTextEditor::moveCursor(Cursor& cursor, int deltaLine, int deltaCol, b
     TextPosition newPos = cursor.position;
 
     if (deltaLine != 0) {
+        int preferredVisualColumn = cursor.preferredColumn;
+        if (preferredVisualColumn < 0) {
+            preferredVisualColumn = byteOffsetToVisualColumn(newPos.line, newPos.column);
+        }
+
         newPos.line = std::clamp(newPos.line + deltaLine, 0, static_cast<int>(lines.size()) - 1);
 
-        if (cursor.preferredColumn >= 0) {
-            newPos.column = std::min(cursor.preferredColumn, static_cast<int>(lines[newPos.line].size()));
-        } else {
-            cursor.preferredColumn = newPos.column;
-            newPos.column = std::min(newPos.column, static_cast<int>(lines[newPos.line].size()));
-        }
+        cursor.preferredColumn = preferredVisualColumn;
+        newPos.column = visualColumnToByteOffset(newPos.line, preferredVisualColumn);
     }
 
     if (deltaCol != 0) {
-        newPos.column += deltaCol;
         cursor.preferredColumn = -1;
 
-        // Handle line wrapping
-        while (newPos.column < 0 && newPos.line > 0) {
-            --newPos.line;
-            newPos.column = static_cast<int>(lines[newPos.line].size()) + newPos.column + 1;
-        }
-        while (newPos.column > static_cast<int>(lines[newPos.line].size()) && 
-               newPos.line < static_cast<int>(lines.size()) - 1) {
-            newPos.column -= static_cast<int>(lines[newPos.line].size()) + 1;
-            ++newPos.line;
+        if (deltaCol < 0) {
+            for (int i = 0; i < -deltaCol; ++i) {
+                if (newPos.column > 0) {
+                    newPos.column = prevUtf8Column(newPos.line, newPos.column);
+                } else if (newPos.line > 0) {
+                    --newPos.line;
+                    newPos.column = static_cast<int>(lines[newPos.line].size());
+                }
+            }
+        } else {
+            for (int i = 0; i < deltaCol; ++i) {
+                if (newPos.column < static_cast<int>(lines[newPos.line].size())) {
+                    newPos.column = nextUtf8Column(newPos.line, newPos.column);
+                } else if (newPos.line < static_cast<int>(lines.size()) - 1) {
+                    ++newPos.line;
+                    newPos.column = 0;
+                }
+            }
         }
 
-        newPos.column = std::clamp(newPos.column, 0, static_cast<int>(lines[newPos.line].size()));
+        newPos = clampPosition(newPos);
     }
 
     cursor.position = newPos;
@@ -1741,7 +1759,100 @@ void CustomTextEditor::moveCursorToLineEnd(Cursor& cursor, bool shift) {
 }
 
 bool CustomTextEditor::isWordChar(char c) const {
-    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+    unsigned char value = static_cast<unsigned char>(c);
+    return std::isalnum(value) || c == '_' || value >= 0x80;
+}
+
+int CustomTextEditor::prevUtf8Column(int lineIndex, int column) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0;
+    const std::string& line = lines[lineIndex];
+    int result = std::clamp(column, 0, static_cast<int>(line.size()));
+    if (result <= 0) return 0;
+    --result;
+    while (result > 0 && isUtf8Continuation(static_cast<unsigned char>(line[result]))) {
+        --result;
+    }
+    return result;
+}
+
+int CustomTextEditor::nextUtf8Column(int lineIndex, int column) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0;
+    const std::string& line = lines[lineIndex];
+    int result = std::clamp(column, 0, static_cast<int>(line.size()));
+    if (result >= static_cast<int>(line.size())) return static_cast<int>(line.size());
+    ++result;
+    while (result < static_cast<int>(line.size()) &&
+           isUtf8Continuation(static_cast<unsigned char>(line[result]))) {
+        ++result;
+    }
+    return result;
+}
+
+int CustomTextEditor::byteOffsetToVisualColumn(int lineIndex, int byteOffset) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0;
+    const std::string& line = lines[lineIndex];
+    int clampedOffset = std::clamp(byteOffset, 0, static_cast<int>(line.size()));
+    int visualColumn = 0;
+    for (int i = 0; i < clampedOffset; ++i) {
+        if (!isUtf8Continuation(static_cast<unsigned char>(line[i]))) {
+            ++visualColumn;
+        }
+    }
+    return visualColumn;
+}
+
+int CustomTextEditor::visualColumnToByteOffset(int lineIndex, int visualColumn) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0;
+    const std::string& line = lines[lineIndex];
+    int targetColumn = std::max(0, visualColumn);
+    int currentColumn = 0;
+    for (int i = 0; i < static_cast<int>(line.size()); i = nextUtf8Column(lineIndex, i)) {
+        if (currentColumn >= targetColumn) return i;
+        ++currentColumn;
+    }
+    return static_cast<int>(line.size());
+}
+
+float CustomTextEditor::byteOffsetToPixelX(int lineIndex, int byteOffset) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0.0f;
+    const std::string& line = lines[lineIndex];
+    int clampedOffset = std::clamp(byteOffset, 0, static_cast<int>(line.size()));
+    while (clampedOffset > 0 &&
+           clampedOffset < static_cast<int>(line.size()) &&
+           isUtf8Continuation(static_cast<unsigned char>(line[clampedOffset]))) {
+        --clampedOffset;
+    }
+    ImFont* font = ImGui::GetFont();
+    float fontSize = ImGui::GetFontSize();
+    return font->CalcTextSizeA(fontSize, FLT_MAX, -1.0f, line.c_str(), line.c_str() + clampedOffset).x;
+}
+
+int CustomTextEditor::pixelXToByteOffset(int lineIndex, float pixelX) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0;
+    const std::string& line = lines[lineIndex];
+    if (pixelX <= 0.0f || line.empty()) return 0;
+
+    int previous = 0;
+    for (int current = nextUtf8Column(lineIndex, 0);
+         current <= static_cast<int>(line.size());
+         current = nextUtf8Column(lineIndex, current)) {
+        float previousX = byteOffsetToPixelX(lineIndex, previous);
+        float currentX = byteOffsetToPixelX(lineIndex, current);
+        if (pixelX < (previousX + currentX) * 0.5f) {
+            return previous;
+        }
+        if (current == static_cast<int>(line.size())) {
+            return current;
+        }
+        previous = current;
+    }
+
+    return static_cast<int>(line.size());
+}
+
+float CustomTextEditor::lineWidthPixels(int lineIndex) const {
+    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0.0f;
+    return byteOffsetToPixelX(lineIndex, static_cast<int>(lines[lineIndex].size()));
 }
 
 TextPosition CustomTextEditor::findWordStart(const TextPosition& pos) const {
@@ -2466,14 +2577,13 @@ TextPosition CustomTextEditor::screenToText(const ImVec2& screenPos, const ImVec
     float x = screenPos.x - origin.x - textStartX;
 
     int line = std::clamp(static_cast<int>(y / lineHeight), 0, static_cast<int>(lines.size()) - 1);
-    int column = std::clamp(static_cast<int>((x + charWidth * 0.5f) / charWidth), 0, 
-                            static_cast<int>(lines[line].size()));
+    int column = pixelXToByteOffset(line, x);
 
     return TextPosition(line, column);
 }
 
 ImVec2 CustomTextEditor::textToScreen(const TextPosition& pos, const ImVec2& origin) const {
-    float x = origin.x + textStartX + pos.column * charWidth;
+    float x = origin.x + textStartX + byteOffsetToPixelX(pos.line, pos.column);
     float y = origin.y + pos.line * lineHeight;
     return ImVec2(x, y);
 }
@@ -3223,8 +3333,8 @@ void CustomTextEditor::renderSelections(ImDrawList* drawList, const ImVec2& orig
             int startCol = (line == selStart.line) ? selStart.column : 0;
             int endCol = (line == selEnd.line) ? selEnd.column : static_cast<int>(lines[line].size());
 
-            float x1 = origin.x + textStartX + startCol * charWidth;
-            float x2 = origin.x + textStartX + endCol * charWidth;
+            float x1 = origin.x + textStartX + byteOffsetToPixelX(line, startCol);
+            float x2 = origin.x + textStartX + byteOffsetToPixelX(line, endCol);
 
             // If the selection extends past this line, highlight the newline character
             if (line < selEnd.line) {
@@ -3248,9 +3358,11 @@ void CustomTextEditor::renderSearchHighlights(ImDrawList* drawList, const ImVec2
     for (const auto& result : searchResults) {
         if (result.line < startLine || result.line > endLine) continue;
 
-        float x = origin.x + textStartX + result.column * charWidth;
+        int endColumn = result.column + static_cast<int>(searchText.size());
+        float x = origin.x + textStartX + byteOffsetToPixelX(result.line, result.column);
         float y = origin.y + result.line * lineHeight;
-        float width = searchText.size() * charWidth;
+        float width = byteOffsetToPixelX(result.line, endColumn) -
+                      byteOffsetToPixelX(result.line, result.column);
 
         drawList->AddRectFilled(ImVec2(x, y), ImVec2(x + width, y + lineHeight), highlightColor);
     }
@@ -3275,12 +3387,12 @@ void CustomTextEditor::renderText(ImDrawList* drawList, const ImVec2& origin, in
                 if (token.start > lastEnd) {
                     std::string gap = line.substr(lastEnd, token.start - lastEnd);
                     ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(TokenType::Default)]);
-                    drawList->AddText(ImVec2(x + lastEnd * charWidth, y), color, gap.c_str());
+                    drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, lastEnd), y), color, gap.c_str());
                 }
 
                 std::string tokenText = line.substr(token.start, token.length);
                 ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(token.type)]);
-                drawList->AddText(ImVec2(x + token.start * charWidth, y), color, tokenText.c_str());
+                drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, token.start), y), color, tokenText.c_str());
 
                 lastEnd = token.start + token.length;
             }
@@ -3288,7 +3400,7 @@ void CustomTextEditor::renderText(ImDrawList* drawList, const ImVec2& origin, in
             if (lastEnd < static_cast<int>(line.size())) {
                 std::string remaining = line.substr(lastEnd);
                 ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(TokenType::Default)]);
-                drawList->AddText(ImVec2(x + lastEnd * charWidth, y), color, remaining.c_str());
+                drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, lastEnd), y), color, remaining.c_str());
             }
         }
     }
@@ -3761,8 +3873,8 @@ void CustomTextEditor::Render(const char* title, const ImVec2& size, bool border
         textStartX = lineNumberWidth + leftMargin;
 
         float maxLineWidth = 0.0f;
-        for (const auto& line : lines) {
-            float lineWidth = line.size() * charWidth;
+        for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
+            float lineWidth = lineWidthPixels(i);
             if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
         }
         float totalWidth = textStartX + maxLineWidth + 50.0f;

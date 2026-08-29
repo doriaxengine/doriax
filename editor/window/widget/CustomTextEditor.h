@@ -377,6 +377,13 @@ namespace doriax::editor {
         char getMatchingBracket(char c) const;
 
         bool isWordChar(char c) const;
+        int prevUtf8Column(int lineIndex, int column) const;
+        int nextUtf8Column(int lineIndex, int column) const;
+        int byteOffsetToVisualColumn(int lineIndex, int byteOffset) const;
+        int visualColumnToByteOffset(int lineIndex, int visualColumn) const;
+        float byteOffsetToPixelX(int lineIndex, int byteOffset) const;
+        int pixelXToByteOffset(int lineIndex, float pixelX) const;
+        float lineWidthPixels(int lineIndex) const;
         TextPosition findWordStart(const TextPosition& pos) const;
         TextPosition findWordEnd(const TextPosition& pos) const;
         TextPosition findDeleteWordStart(const TextPosition& pos) const;
