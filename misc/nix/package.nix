@@ -22,7 +22,7 @@
 
 llvmPackages.stdenv.mkDerivation (finalAttrs: {
   pname = "doriax";
-  version = "v0.7.0";
+  version = "v0.7.1";
 
   src = ../../.;
 
@@ -49,5 +49,9 @@ llvmPackages.stdenv.mkDerivation (finalAttrs: {
     wayland-scanner
     libffi
     systemdLibs
+  ];
+
+  cmakeFlags = [
+    "-D DORIAXEDITOR_VERSION=v0.7.1"
   ];
 })
