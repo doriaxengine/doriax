@@ -4981,92 +4981,70 @@ void RenderSystem::destroyCamera(CameraComponent& camera, bool entityDestroyed){
 }
 
 Rect RenderSystem::getScissorRect(UILayoutComponent& layout, ImageComponent& img, Transform& transform, CameraComponent& camera){
-    float objScreenPosX = 0;
-    float objScreenPosY = 0;
-    float objScreenWidth = 0;
-    float objScreenHeight = 0;
+    float viewX = 0;
+    float viewY = 0;
+    float viewWidth = 0;
+    float viewHeight = 0;
 
     if (!camera.renderToTexture) {
-
-        float viewWidth = Engine::getViewRect().getWidth();
-        float viewHeight = Engine::getViewRect().getHeight();
-        float targetWidth = (float) System::instance().getScreenWidth();
-        float targetHeight = (float) System::instance().getScreenHeight();
+        viewX = Engine::getViewRect().getX();
+        viewY = Engine::getViewRect().getY();
+        viewWidth = Engine::getViewRect().getWidth();
+        viewHeight = Engine::getViewRect().getHeight();
         if (isFixedResolutionActive()){
             // the main color pass renders into the fixed-resolution target, whose
             // viewport fills the whole target (no letterbox offset at this stage)
+            viewX = 0;
+            viewY = 0;
             viewWidth = (float)scene->getFixedResolutionWidth();
             viewHeight = (float)scene->getFixedResolutionHeight();
-            targetWidth = viewWidth;
-            targetHeight = viewHeight;
         }else if (swapchainRedirect){
             // same for the redirected scene color buffer, which is the size of the view rect
-            targetWidth = viewWidth;
-            targetHeight = viewHeight;
+            viewX = 0;
+            viewY = 0;
         }
-
-        float scaleX = transform.worldScale.x;
-        float scaleY = transform.worldScale.y;
-
-        float tempX = (2 * transform.worldPosition.x / (float) Engine::getCanvasWidth()) - 1;
-        float tempY = (2 * transform.worldPosition.y / (float) Engine::getCanvasHeight()) - 1;
-
-        float camScaleX = Engine::getCanvasWidth() / (camera.rightClip - camera.leftClip);
-        float camScaleY = Engine::getCanvasHeight() / (camera.topClip - camera.bottomClip);
-
-        float camOffsetX = -(camera.worldTarget.x + camera.leftClip);
-        float camOffsetY = -(camera.worldTarget.y + camera.bottomClip);
-
-        float widthRatio = scaleX * (viewWidth / (float) Engine::getCanvasWidth());
-        float heightRatio = scaleY * (viewHeight / (float) Engine::getCanvasHeight());
-
-        objScreenPosX = (camOffsetX + (tempX * viewWidth + targetWidth) / 2)  * camScaleX;
-        objScreenPosY = (camOffsetY + (tempY * viewHeight + targetHeight) / 2) * camScaleY;
-        objScreenWidth = layout.width * widthRatio * camScaleX;
-        objScreenHeight = layout.height * heightRatio * camScaleY;
-
-        // flipped rendering puts UI y=0 at scissor row 0, so no bottom-left conversion
-        if (camera.type == CameraType::CAMERA_UI && !isRenderingFlipped(camera))
-            objScreenPosY = targetHeight - objScreenHeight - objScreenPosY;
-
-        if (!(img.patchMarginLeft == 0 && img.patchMarginTop == 0 && img.patchMarginRight == 0 && img.patchMarginBottom == 0)) {
-            float borderScreenLeft = img.patchMarginLeft * widthRatio;
-            float borderScreenTop = img.patchMarginTop * heightRatio;
-            float borderScreenRight = img.patchMarginRight * widthRatio;
-            float borderScreenBottom = img.patchMarginBottom * heightRatio;
-
-            objScreenPosX += borderScreenLeft;
-            objScreenPosY += borderScreenBottom; // scissor is bottom-left
-            objScreenWidth -= (borderScreenLeft + borderScreenRight);
-            objScreenHeight -= (borderScreenTop + borderScreenBottom);
-        }
-
     }else {
-
-        objScreenPosX = transform.worldPosition.x;
-        objScreenPosY = transform.worldPosition.y;
-        objScreenWidth = layout.width;
-        objScreenHeight = layout.height;
-
-        // flipped rendering puts UI y=0 at scissor row 0, so no bottom-left conversion
-        if (camera.type == CameraType::CAMERA_UI && !isRenderingFlipped(camera))
-            objScreenPosY = (float) camera.framebuffer->getHeight() - objScreenHeight - objScreenPosY;
-
-        if (!(img.patchMarginLeft == 0 && img.patchMarginTop == 0 && img.patchMarginRight == 0 && img.patchMarginBottom == 0)) {
-            float borderScreenLeft = img.patchMarginLeft;
-            float borderScreenTop = img.patchMarginTop;
-            float borderScreenRight = img.patchMarginRight;
-            float borderScreenBottom = img.patchMarginBottom;
-
-            objScreenPosX += borderScreenLeft;
-            objScreenPosY += borderScreenBottom; // scissor is bottom-left
-            objScreenWidth -= (borderScreenLeft + borderScreenRight);
-            objScreenHeight -= (borderScreenTop + borderScreenBottom);
-        }
-
+        viewWidth = (float) camera.framebuffer->getWidth();
+        viewHeight = (float) camera.framebuffer->getHeight();
     }
 
-    return Rect(objScreenPosX, objScreenPosY, objScreenWidth, objScreenHeight);
+    if (viewWidth <= 0.0f || viewHeight <= 0.0f)
+        return Rect(0, 0, 0, 0);
+
+    float localLeft = (float) img.patchMarginLeft;
+    float localTop = (float) img.patchMarginTop;
+    float localRight = (float) layout.width - (float) img.patchMarginRight;
+    float localBottom = (float) layout.height - (float) img.patchMarginBottom;
+
+    if (localRight < localLeft)
+        localRight = localLeft;
+    if (localBottom < localTop)
+        localBottom = localTop;
+
+    auto projectToScissor = [&](float x, float y) -> Vector2 {
+        Vector4 clip = transform.modelViewProjectionMatrix * Vector4(x, y, 0.0f, 1.0f);
+        if (clip.w != 0.0f){
+            clip.x /= clip.w;
+            clip.y /= clip.w;
+        }
+
+        return Vector2(
+            viewX + ((clip.x + 1.0f) * 0.5f * viewWidth),
+            viewY + ((clip.y + 1.0f) * 0.5f * viewHeight)
+        );
+    };
+
+    Vector2 p0 = projectToScissor(localLeft, localTop);
+    Vector2 p1 = projectToScissor(localRight, localTop);
+    Vector2 p2 = projectToScissor(localRight, localBottom);
+    Vector2 p3 = projectToScissor(localLeft, localBottom);
+
+    float minX = std::min(std::min(p0.x, p1.x), std::min(p2.x, p3.x));
+    float minY = std::min(std::min(p0.y, p1.y), std::min(p2.y, p3.y));
+    float maxX = std::max(std::max(p0.x, p1.x), std::max(p2.x, p3.x));
+    float maxY = std::max(std::max(p0.y, p1.y), std::max(p2.y, p3.y));
+
+    return Rect(minX, minY, maxX - minX, maxY - minY);
 }
 
 void RenderSystem::updateTransform(Transform& transform){
