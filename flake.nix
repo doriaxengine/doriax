@@ -25,7 +25,29 @@
         {
           inherit doriax;
           default = doriax;
-          devShell = pkgs.mkShell { inputsFrom = [ doriax ]; };
+          devShell = pkgs.mkShell {
+            packages = with pkgs; [
+              cmake
+              curl
+              dbus
+              libGL
+              libffi
+              libx11
+              libxcursor
+              libxi
+              libxinerama
+              libxrandr
+              llvmPackages.clang
+              ninja
+              pkg-config
+              python3
+              systemdLibs
+              vulkan-headers
+              vulkan-loader
+              wayland
+              wayland-scanner
+            ];
+          };
         }
       );
     };
