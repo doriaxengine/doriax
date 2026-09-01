@@ -20,6 +20,88 @@ using namespace doriax;
 static constexpr float UI_DRAG_START_DISTANCE = 4.0f;
 static constexpr double UI_DOUBLE_CLICK_TIME = 0.3;
 
+static void degenerateTextQuad(Buffer& buffer, Attribute* atrVertice, int firstVertex){
+    for (int i = 0; i < 4; i++){
+        buffer.setVector3(firstVertex + i, atrVertice, Vector3(0, 0, 0));
+    }
+}
+
+static void clipTextQuadToLayout(Buffer& buffer, Attribute* atrVertice, Attribute* atrTexcoord, int firstVertex, unsigned int width, unsigned int height, bool clipWidth, bool clipHeight){
+    Vector3 p0 = buffer.getVector3(atrVertice, firstVertex);
+    Vector3 p1 = buffer.getVector3(atrVertice, firstVertex + 1);
+    Vector3 p2 = buffer.getVector3(atrVertice, firstVertex + 2);
+    Vector3 p3 = buffer.getVector3(atrVertice, firstVertex + 3);
+
+    Vector2 uv0 = buffer.getVector2(atrTexcoord, firstVertex);
+    Vector2 uv1 = buffer.getVector2(atrTexcoord, firstVertex + 1);
+    Vector2 uv2 = buffer.getVector2(atrTexcoord, firstVertex + 2);
+    Vector2 uv3 = buffer.getVector2(atrTexcoord, firstVertex + 3);
+
+    float x0 = p0.x;
+    float x1 = p1.x;
+    float y0 = p0.y;
+    float y1 = p2.y;
+
+    if ((clipWidth && (x1 <= 0.0f || x0 >= (float)width)) ||
+        (clipHeight && (y1 <= 0.0f || y0 >= (float)height))){
+        degenerateTextQuad(buffer, atrVertice, firstVertex);
+        return;
+    }
+
+    if (clipWidth && x0 < 0.0f){
+        float ratio = (0.0f - x0) / (x1 - x0);
+        float uLeftBottom = uv0.x + (uv1.x - uv0.x) * ratio;
+        float uLeftTop = uv3.x + (uv2.x - uv3.x) * ratio;
+        p0.x = 0.0f;
+        p3.x = 0.0f;
+        uv0.x = uLeftBottom;
+        uv3.x = uLeftTop;
+        x0 = 0.0f;
+    }
+
+    if (clipWidth && x1 > (float)width){
+        float ratio = ((float)width - x0) / (x1 - x0);
+        float uRightBottom = uv0.x + (uv1.x - uv0.x) * ratio;
+        float uRightTop = uv3.x + (uv2.x - uv3.x) * ratio;
+        p1.x = (float)width;
+        p2.x = (float)width;
+        uv1.x = uRightBottom;
+        uv2.x = uRightTop;
+        x1 = (float)width;
+    }
+
+    if (clipHeight && y0 < 0.0f){
+        float ratio = (0.0f - y0) / (y1 - y0);
+        float vBottomLeft = uv0.y + (uv3.y - uv0.y) * ratio;
+        float vBottomRight = uv1.y + (uv2.y - uv1.y) * ratio;
+        p0.y = 0.0f;
+        p1.y = 0.0f;
+        uv0.y = vBottomLeft;
+        uv1.y = vBottomRight;
+        y0 = 0.0f;
+    }
+
+    if (clipHeight && y1 > (float)height){
+        float ratio = ((float)height - y0) / (y1 - y0);
+        float vTopLeft = uv0.y + (uv3.y - uv0.y) * ratio;
+        float vTopRight = uv1.y + (uv2.y - uv1.y) * ratio;
+        p2.y = (float)height;
+        p3.y = (float)height;
+        uv2.y = vTopRight;
+        uv3.y = vTopLeft;
+    }
+
+    buffer.setVector3(firstVertex, atrVertice, p0);
+    buffer.setVector3(firstVertex + 1, atrVertice, p1);
+    buffer.setVector3(firstVertex + 2, atrVertice, p2);
+    buffer.setVector3(firstVertex + 3, atrVertice, p3);
+
+    buffer.setVector2(firstVertex, atrTexcoord, uv0);
+    buffer.setVector2(firstVertex + 1, atrTexcoord, uv1);
+    buffer.setVector2(firstVertex + 2, atrTexcoord, uv2);
+    buffer.setVector2(firstVertex + 3, atrTexcoord, uv3);
+}
+
 UISystem::UISystem(Scene* scene): SubSystem(scene){
     signature.set(scene->getComponentId<UILayoutComponent>());
 
@@ -314,6 +396,14 @@ void UISystem::createText(TextComponent& text, UIComponent& ui, UILayoutComponen
             }
 
             ui.buffer.setVector3(i, atrVertice, vertice);
+        }
+    }
+
+    if ((text.fixedWidth || text.fixedHeight) && ui.buffer.getCount() >= 4){
+        Attribute* atrVertice = ui.buffer.getAttribute(AttributeType::POSITION);
+        Attribute* atrTexcoord = ui.buffer.getAttribute(AttributeType::TEXCOORD1);
+        for (int i = 0; i + 3 < ui.buffer.getCount(); i += 4){
+            clipTextQuadToLayout(ui.buffer, atrVertice, atrTexcoord, i, layout.width, layout.height, text.fixedWidth, text.fixedHeight);
         }
     }
 

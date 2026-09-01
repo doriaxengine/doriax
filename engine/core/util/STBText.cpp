@@ -718,7 +718,7 @@ void STBText::createText(const std::string& text, Buffer* buffer, std::vector<ui
         if (offsetX > maxX1)
             maxX1 = offsetX;
             
-        if ((!fixedWidth || offsetX <= width) && (!fixedHeight || offsetY <= height)){
+        {
             buffer->addVector3(atrVertice, Vector3(quad.x0, quad.y0, 0));
             buffer->addVector3(atrVertice, Vector3(quad.x1, quad.y0, 0));
             buffer->addVector3(atrVertice, Vector3(quad.x1, quad.y1, 0));
