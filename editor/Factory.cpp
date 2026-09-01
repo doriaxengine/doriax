@@ -428,7 +428,54 @@ std::string editor::Factory::formatUInt(unsigned int value) {
 }
 
 std::string editor::Factory::formatString(const std::string& value) {
-    return "\"" + value + "\"";
+    std::string result;
+    result.reserve(value.size() + 2);
+    result.push_back('"');
+
+    for (unsigned char c : value) {
+        switch (c) {
+            case '\\':
+                result += "\\\\";
+                break;
+            case '"':
+                result += "\\\"";
+                break;
+            case '\n':
+                result += "\\n";
+                break;
+            case '\r':
+                result += "\\r";
+                break;
+            case '\t':
+                result += "\\t";
+                break;
+            case '\b':
+                result += "\\b";
+                break;
+            case '\f':
+                result += "\\f";
+                break;
+            case '\v':
+                result += "\\v";
+                break;
+            case '\a':
+                result += "\\a";
+                break;
+            default:
+                if (c < 0x20 || c == 0x7F) {
+                    result.push_back('\\');
+                    result.push_back(static_cast<char>('0' + ((c >> 6) & 0x07)));
+                    result.push_back(static_cast<char>('0' + ((c >> 3) & 0x07)));
+                    result.push_back(static_cast<char>('0' + (c & 0x07)));
+                } else {
+                    result.push_back(static_cast<char>(c));
+                }
+                break;
+        }
+    }
+
+    result.push_back('"');
+    return result;
 }
 
 std::string editor::Factory::formatAttributeType(AttributeType type) {
