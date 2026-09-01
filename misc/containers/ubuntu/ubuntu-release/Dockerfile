@@ -10,7 +10,6 @@ RUN apt-get install -y \
     libwayland-dev \
     libcurl4-openssl-dev \
     libdbus-1-dev \
-    doxygen \
     libx11-dev \
     libxcursor-dev \
     libxi-dev \

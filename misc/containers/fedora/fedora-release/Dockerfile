@@ -11,7 +11,6 @@ RUN dnf install -y \
     wayland-devel \
     curl-devel \
     dbus-devel \
-    doxygen \
     libX11-devel \
     libXcursor-devel \
     libXi-devel \
@@ -19,8 +18,7 @@ RUN dnf install -y \
     libXrandr-devel \
     mesa-libGL-devel \
     ninja-build \
-    vulkan-devel \
-    vulkan-headers
+    vulkan-devel
 
 # Build and install into a directory with CMake.
 CMD cmake \

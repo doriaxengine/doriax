@@ -5,7 +5,6 @@
   pkg-config,
   curl,
   dbus,
-  doxygen,
   libGL,
   libx11,
   libxcursor,
@@ -13,8 +12,6 @@
   libxinerama,
   vulkan-headers,
   vulkan-loader,
-  vulkan-tools,
-  vulkan-utility-libraries,
   python3,
   libxrandr,
   wayland,
@@ -39,7 +36,6 @@ llvmPackages.stdenv.mkDerivation (finalAttrs: {
   buildInputs = [
     curl
     dbus
-    doxygen
     libGL
     libx11
     libxcursor
@@ -47,8 +43,6 @@ llvmPackages.stdenv.mkDerivation (finalAttrs: {
     libxinerama
     vulkan-headers
     vulkan-loader
-    vulkan-tools
-    vulkan-utility-libraries
     python3
     libxrandr
     wayland
