@@ -410,7 +410,10 @@ void LuaBinding::init(){
     //First try open on root assets dir
     if (filedata.open(luafile.c_str()) != FileErrors::FILEDATA_OK){
         //Second try to open on lua dir
-        filedata.open(luafile_subdir.c_str());
+        if (filedata.open(luafile_subdir.c_str()) != FileErrors::FILEDATA_OK){
+            Log::warn("Lua entrypoint not found: %s or %s", luafile.c_str(), luafile_subdir.c_str());
+            return;
+        }
     }
 
     //int luaL_dofile (lua_State *L, const char *filename);
