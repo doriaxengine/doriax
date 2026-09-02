@@ -134,6 +134,8 @@ namespace doriax::editor {
         // Cursor and selection
         void SetCursorPosition(int line, int column);
         void GetCursorPosition(int& line, int& column) const;
+        // Column counted in characters instead of bytes, for display
+        void GetCursorDisplayPosition(int& line, int& column) const;
         bool HasSelection() const;
         std::string GetSelectedText() const;
         void SelectAll();
@@ -296,6 +298,14 @@ namespace doriax::editor {
         float leftMargin;
         float textStartX;
 
+        // Code font captured in Render, so text measures the same outside it
+        ImFont* measureFont;
+        float measureFontSize;
+
+        // Widest line in pixels, rebuilt only when the text or the font changes
+        float maxLineWidth;
+        bool maxLineWidthDirty;
+
         FontZoomCallback onFontZoom;
 
         // Semantic suggestions engine
@@ -381,9 +391,10 @@ namespace doriax::editor {
         int nextUtf8Column(int lineIndex, int column) const;
         int byteOffsetToVisualColumn(int lineIndex, int byteOffset) const;
         int visualColumnToByteOffset(int lineIndex, int visualColumn) const;
+        float measureText(const char* begin, const char* end) const;
         float byteOffsetToPixelX(int lineIndex, int byteOffset) const;
         int pixelXToByteOffset(int lineIndex, float pixelX) const;
-        float lineWidthPixels(int lineIndex) const;
+        float computeMaxLineWidth() const;
         TextPosition findWordStart(const TextPosition& pos) const;
         TextPosition findWordEnd(const TextPosition& pos) const;
         TextPosition findDeleteWordStart(const TextPosition& pos) const;
