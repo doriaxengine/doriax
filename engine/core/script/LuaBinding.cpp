@@ -418,12 +418,12 @@ void LuaBinding::init(){
         if(pcallWithTraceback(L, 0, LUA_MULTRET) != 0){
             Log::error("Lua Error: %s", getLuaStackErrorString(L, -1).c_str());
             lua_pop(L, 1);
-            lua_close(L);
+            cleanup();
         }
     }else{
         Log::error("Lua Error: %s", getLuaStackErrorString(L, -1).c_str());
         lua_pop(L, 1);
-        lua_close(L);
+        cleanup();
     }
 
 }
