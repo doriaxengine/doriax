@@ -331,10 +331,18 @@ int LuaBinding::setLuaPath(const char* path) {
     if(lua_isnil(L, -1))
         return luaL_error(L, "package.path table does not exist.");
 
-    std::string cur_path = lua_tostring( L, -1 );
-    cur_path.append( ";" );
-    cur_path.append( path );
-    lua_pop( L, 1 );
+    std::string cur_path = lua_tostring(L, -1);
+    const std::string pathEntry = path;
+    const bool alreadyPresent =
+        cur_path == pathEntry
+        || cur_path.starts_with(pathEntry + ";")
+        || cur_path.ends_with(";" + pathEntry)
+        || cur_path.find(";" + pathEntry + ";") != std::string::npos;
+    if (!alreadyPresent) {
+        if (!cur_path.empty()) cur_path.append(";");
+        cur_path.append(pathEntry);
+    }
+    lua_pop(L, 1);
     lua_pushstring( L, cur_path.c_str() );
     lua_setfield( L, -2, "path" );
     lua_pop( L, 1 );
