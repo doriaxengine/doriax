@@ -1317,7 +1317,7 @@ void editor::CodeEditor::show() {
             }
 
             int line, column;
-            instance.editor->GetCursorPosition(line, column);
+            instance.editor->GetCursorDisplayPosition(line, column);
 
             float statusRowY = ImGui::GetCursorPosY();
 
