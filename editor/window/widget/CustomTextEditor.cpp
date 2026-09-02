@@ -97,6 +97,10 @@ CustomTextEditor::CustomTextEditor()
     , lineNumberWidth(0)
     , leftMargin(10)
     , textStartX(0)
+    , measureFont(nullptr)
+    , measureFontSize(0)
+    , maxLineWidth(0)
+    , maxLineWidthDirty(true)
     , suggestions(std::make_unique<SemanticSuggestions>())
     , scrollToSuggestion(false)
 {
@@ -441,8 +445,7 @@ std::string CustomTextEditor::GetText() const {
 void CustomTextEditor::SetCursorPosition(int line, int column) {
     cursors.clear();
     Cursor cursor;
-    cursor.position.line = std::clamp(line, 0, static_cast<int>(lines.size()) - 1);
-    cursor.position.column = std::clamp(column, 0, static_cast<int>(lines[cursor.position.line].size()));
+    cursor.position = clampPosition(TextPosition(line, column));
     cursor.selection.start = cursor.position;
     cursor.selection.end = cursor.position;
     cursors.push_back(cursor);
@@ -457,6 +460,11 @@ void CustomTextEditor::GetCursorPosition(int& line, int& column) const {
         line = 0;
         column = 0;
     }
+}
+
+void CustomTextEditor::GetCursorDisplayPosition(int& line, int& column) const {
+    GetCursorPosition(line, column);
+    column = byteOffsetToVisualColumn(line, column);
 }
 
 bool CustomTextEditor::HasSelection() const {
@@ -501,8 +509,7 @@ void CustomTextEditor::ClearSelection() {
 
 void CustomTextEditor::AddCursor(int line, int column) {
     Cursor cursor;
-    cursor.position.line = std::clamp(line, 0, static_cast<int>(lines.size()) - 1);
-    cursor.position.column = std::clamp(column, 0, static_cast<int>(lines[cursor.position.line].size()));
+    cursor.position = clampPosition(TextPosition(line, column));
     cursor.selection.start = cursor.position;
     cursor.selection.end = cursor.position;
     cursors.push_back(cursor);
@@ -706,12 +713,22 @@ void CustomTextEditor::tokenizeLine(int lineIndex) {
             continue;
         }
 
+        // Non-ASCII runs stay whole so every token is valid UTF-8
+        if (static_cast<unsigned char>(line[i]) >= 0x80) {
+            int start = i;
+            while (i < len && static_cast<unsigned char>(line[i]) >= 0x80) ++i;
+            lineTokens[lineIndex].push_back({start, i - start, TokenType::Default});
+            continue;
+        }
+
         lineTokens[lineIndex].push_back({i, 1, TokenType::Default});
         ++i;
     }
 }
 
 void CustomTextEditor::tokenizeAll() {
+    // Every edit retokenizes, so this is also where cached widths expire
+    maxLineWidthDirty = true;
     lineTokens.clear();
     lineTokens.resize(lines.size());
     for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
@@ -1339,7 +1356,6 @@ bool CustomTextEditor::FindNext() {
                 searchResults[i].column + static_cast<int>(searchText.size())
             );
             cursors[primaryCursor].position = cursors[primaryCursor].selection.end;
-            scrollToCursor();
 
             return true;
         }
@@ -1813,6 +1829,12 @@ int CustomTextEditor::visualColumnToByteOffset(int lineIndex, int visualColumn) 
     return static_cast<int>(line.size());
 }
 
+float CustomTextEditor::measureText(const char* begin, const char* end) const {
+    ImFont* font = measureFont ? measureFont : ImGui::GetFont();
+    float fontSize = measureFont ? measureFontSize : ImGui::GetFontSize();
+    return font->CalcTextSizeA(fontSize, FLT_MAX, -1.0f, begin, end).x;
+}
+
 float CustomTextEditor::byteOffsetToPixelX(int lineIndex, int byteOffset) const {
     if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0.0f;
     const std::string& line = lines[lineIndex];
@@ -1822,9 +1844,7 @@ float CustomTextEditor::byteOffsetToPixelX(int lineIndex, int byteOffset) const 
            isUtf8Continuation(static_cast<unsigned char>(line[clampedOffset]))) {
         --clampedOffset;
     }
-    ImFont* font = ImGui::GetFont();
-    float fontSize = ImGui::GetFontSize();
-    return font->CalcTextSizeA(fontSize, FLT_MAX, -1.0f, line.c_str(), line.c_str() + clampedOffset).x;
+    return measureText(line.c_str(), line.c_str() + clampedOffset);
 }
 
 int CustomTextEditor::pixelXToByteOffset(int lineIndex, float pixelX) const {
@@ -1833,11 +1853,11 @@ int CustomTextEditor::pixelXToByteOffset(int lineIndex, float pixelX) const {
     if (pixelX <= 0.0f || line.empty()) return 0;
 
     int previous = 0;
+    float previousX = 0.0f;
     for (int current = nextUtf8Column(lineIndex, 0);
          current <= static_cast<int>(line.size());
          current = nextUtf8Column(lineIndex, current)) {
-        float previousX = byteOffsetToPixelX(lineIndex, previous);
-        float currentX = byteOffsetToPixelX(lineIndex, current);
+        float currentX = previousX + measureText(line.c_str() + previous, line.c_str() + current);
         if (pixelX < (previousX + currentX) * 0.5f) {
             return previous;
         }
@@ -1845,14 +1865,19 @@ int CustomTextEditor::pixelXToByteOffset(int lineIndex, float pixelX) const {
             return current;
         }
         previous = current;
+        previousX = currentX;
     }
 
     return static_cast<int>(line.size());
 }
 
-float CustomTextEditor::lineWidthPixels(int lineIndex) const {
-    if (lineIndex < 0 || lineIndex >= static_cast<int>(lines.size())) return 0.0f;
-    return byteOffsetToPixelX(lineIndex, static_cast<int>(lines[lineIndex].size()));
+float CustomTextEditor::computeMaxLineWidth() const {
+    float widest = 0.0f;
+    for (const auto& line : lines) {
+        float lineWidth = measureText(line.c_str(), line.c_str() + line.size());
+        if (lineWidth > widest) widest = lineWidth;
+    }
+    return widest;
 }
 
 TextPosition CustomTextEditor::findWordStart(const TextPosition& pos) const {
@@ -2794,7 +2819,8 @@ void CustomTextEditor::handleKeyboardInput() {
             if (!cursors.empty()) {
                 TextPosition pos = cursors[0].position;
                 if (pos.line > 0) {
-                    AddCursor(pos.line - 1, std::min(pos.column, static_cast<int>(lines[pos.line - 1].size())));
+                    int visualCol = byteOffsetToVisualColumn(pos.line, pos.column);
+                    AddCursor(pos.line - 1, visualColumnToByteOffset(pos.line - 1, visualCol));
                     sortCursors();
                 }
             }
@@ -2813,7 +2839,8 @@ void CustomTextEditor::handleKeyboardInput() {
             if (!cursors.empty()) {
                 TextPosition pos = cursors.back().position;
                 if (pos.line < static_cast<int>(lines.size()) - 1) {
-                    AddCursor(pos.line + 1, std::min(pos.column, static_cast<int>(lines[pos.line + 1].size())));
+                    int visualCol = byteOffsetToVisualColumn(pos.line, pos.column);
+                    AddCursor(pos.line + 1, visualColumnToByteOffset(pos.line + 1, visualCol));
                 }
             }
         } else {
@@ -3112,10 +3139,13 @@ void CustomTextEditor::handleMouseInput() {
                     cursors.clear();
                     primaryCursor = 0;
 
+                    int anchorVisual = byteOffsetToVisualColumn(anchor.line, anchor.column);
+                    int clickVisual = byteOffsetToVisualColumn(clickPos.line, clickPos.column);
+
                     for (int l = minLine; l <= maxLine; ++l) {
                         Cursor cursor;
-                        cursor.position = TextPosition(l, std::min(clickPos.column, static_cast<int>(lines[l].size())));
-                        cursor.selection.start = TextPosition(l, std::min(anchor.column, static_cast<int>(lines[l].size())));
+                        cursor.position = TextPosition(l, visualColumnToByteOffset(l, clickVisual));
+                        cursor.selection.start = TextPosition(l, visualColumnToByteOffset(l, anchorVisual));
                         cursor.selection.end = cursor.position;
 
                         cursors.push_back(cursor);
@@ -3216,7 +3246,7 @@ void CustomTextEditor::handleTextInput() {
             ImWchar c = io.InputQueueCharacters[i];
 
             if (c < 32 && c != '\t' && c != '\n') continue;
-            if (c >= 127 && c < 256) continue;
+            if (c == 127 || (c >= 0x80 && c <= 0x9F)) continue; // DEL and C1 controls
 
             bool handled = false;
 
@@ -3387,20 +3417,22 @@ void CustomTextEditor::renderText(ImDrawList* drawList, const ImVec2& origin, in
                 if (token.start > lastEnd) {
                     std::string gap = line.substr(lastEnd, token.start - lastEnd);
                     ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(TokenType::Default)]);
-                    drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, lastEnd), y), color, gap.c_str());
+                    drawList->AddText(ImVec2(x, y), color, gap.c_str());
+                    x += measureText(line.c_str() + lastEnd, line.c_str() + token.start);
                 }
 
                 std::string tokenText = line.substr(token.start, token.length);
                 ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(token.type)]);
-                drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, token.start), y), color, tokenText.c_str());
+                drawList->AddText(ImVec2(x, y), color, tokenText.c_str());
 
                 lastEnd = token.start + token.length;
+                x += measureText(line.c_str() + token.start, line.c_str() + lastEnd);
             }
 
             if (lastEnd < static_cast<int>(line.size())) {
                 std::string remaining = line.substr(lastEnd);
                 ImU32 color = ImGui::ColorConvertFloat4ToU32(palette[static_cast<int>(TokenType::Default)]);
-                drawList->AddText(ImVec2(x + byteOffsetToPixelX(i, lastEnd), y), color, remaining.c_str());
+                drawList->AddText(ImVec2(x, y), color, remaining.c_str());
             }
         }
     }
@@ -3855,6 +3887,12 @@ void CustomTextEditor::Render(const char* title, const ImVec2& size, bool border
         }
         ImFont* font = ImGui::GetFont();
         float fontSize = ImGui::GetFontSize();
+        // Cached widths are in pixels, so a font change expires them
+        if (font != measureFont || fontSize != measureFontSize) {
+            measureFont = font;
+            measureFontSize = fontSize;
+            maxLineWidthDirty = true;
+        }
         charWidth = font->CalcTextSizeA(fontSize, FLT_MAX, -1.0f, "X").x;
         lineHeight = std::round(fontSize * lineHeightFactor);
         // Center the font's real line box (ascent-descent), which can differ from fontSize
@@ -3872,10 +3910,9 @@ void CustomTextEditor::Render(const char* title, const ImVec2& size, bool border
 
         textStartX = lineNumberWidth + leftMargin;
 
-        float maxLineWidth = 0.0f;
-        for (int i = 0; i < static_cast<int>(lines.size()); ++i) {
-            float lineWidth = lineWidthPixels(i);
-            if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
+        if (maxLineWidthDirty) {
+            maxLineWidth = computeMaxLineWidth();
+            maxLineWidthDirty = false;
         }
         float totalWidth = textStartX + maxLineWidth + 50.0f;
         float totalHeight = lines.size() * lineHeight + lineHeight;
