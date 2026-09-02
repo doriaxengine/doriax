@@ -373,12 +373,14 @@ int LuaBinding::moduleLoader(lua_State *L) {
     
     const char *filename = lua_tostring(L, 1);
     std::string separator(1, System::instance().getDirSeparator());
-    filename = luaL_gsub(L, filename, ".", separator.c_str());
+    const char *substituted = luaL_gsub(L, filename, ".", separator.c_str());
+    const std::string moduleName = substituted ? substituted : "";
+    lua_pop(L, 1);   // luaL_gsub pushes the substituted name, balance the stack per require
     
     std::string filepath;
     Data filedata;
     
-    filepath = "lua://" + std::string("") + filename + ".lua";
+    filepath = "lua://" + std::string("") + moduleName + ".lua";
     filedata.open(filepath.c_str());
     if (filedata.getMemPtr() != NULL) {
         
@@ -388,7 +390,7 @@ int LuaBinding::moduleLoader(lua_State *L) {
         return 1;
     }
 
-    filepath = "lua://" + std::string("lua") + System::instance().getDirSeparator() + filename + ".lua";
+    filepath = "lua://" + std::string("lua") + System::instance().getDirSeparator() + moduleName + ".lua";
     filedata.open(filepath.c_str());
     if (filedata.getMemPtr() != NULL) {
         
