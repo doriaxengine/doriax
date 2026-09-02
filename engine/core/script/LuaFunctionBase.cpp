@@ -37,16 +37,17 @@ LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other): m_vm(other.m_vm)
 }
 
 LuaFunctionBase::~LuaFunctionBase(){
-    // delete the reference from registry
-    if (LuaBinding::getLuaState()){ //check if state is not closed
-        if (lua_isfunction(m_vm, -1)) {
-            luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
-        }
+    // Delete the reference from the registry while its owning state is alive.
+    if (LuaBinding::getLuaState() == m_vm) {
+        luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
     }
 }
 
 LuaFunctionBase& LuaFunctionBase::operator=(const LuaFunctionBase &other){
     if (this != &other) {
+        if (LuaBinding::getLuaState() == m_vm) {
+            luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
+        }
         m_vm = other.m_vm;
         lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_func);
         m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
