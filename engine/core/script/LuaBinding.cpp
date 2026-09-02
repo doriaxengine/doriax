@@ -264,7 +264,9 @@ int LuaBinding::luaRegisterEventImpl(lua_State* L, int eventIndex, int selfIndex
     lua_pushstring(L, tag);
     lua_pushvalue(L, closureIndex);
 
-    lua_call(L, 3, 0);
+    if (pcallWithTraceback(L, 3, 0) != LUA_OK) {
+        return lua_error(L);
+    }
 
     return 0;
 }
