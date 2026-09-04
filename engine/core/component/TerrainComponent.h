@@ -21,7 +21,10 @@
 #include "buffer/InterleavedBuffer.h"
 #include "buffer/IndexBuffer.h"
 #include "texture/Material.h"
+#include "ecs/Entity.h"
 #include "Engine.h"
+
+#include <string>
 
 namespace doriax{
 
@@ -56,6 +59,37 @@ namespace doriax{
         bool needUpdateNodesBuffer = false;
     };
 
+    // A scattered mesh layer painted over the terrain. The editor authors its density map;
+    // instances are resolved from that map instead of being stored.
+    struct TerrainFoliageLayer{
+        std::string meshPath;
+        Texture densityMap;
+
+        float density = 1; //instances per square world unit where the map is fully painted
+        float minScale = 0.8f;
+        float maxScale = 1.2f;
+        float rotationJitter = 1; //share of a full turn of random yaw
+        float alignToNormal = 0; //0 stands instances upright, 1 lays them along the surface
+        float minSlope = 0; //degrees
+        float maxSlope = 35;
+        float drawDistance = 50;
+        unsigned int seed = 0;
+    };
+
+    // Derived state for one layer, rebuilt from the layer rather than serialized.
+    struct TerrainFoliageInstances{
+        Entity entity = NULL_ENTITY;
+        std::string loadedMeshPath;
+        bool loadFailed = false;
+        // The instance buffer is sized from maxInstances when the mesh loads, so what was asked
+        // for and what the GPU holds differ until the reload lands. Fills use the loaded one.
+        unsigned int capacity = 0;
+        unsigned int loadedCapacity = 0;
+        int chunkX = 0;
+        int chunkZ = 0;
+        bool needUpdate = true;
+    };
+
     struct DORIAX_API TerrainComponent{
         // per-view CDLOD node selection (see TerrainView). Extra RTT cameras beyond
         // MAX_TERRAIN_VIEWS fall back to the main camera's selection (view 0).
@@ -66,6 +100,9 @@ namespace doriax{
         Texture textureDetailRed;
         Texture textureDetailGreen;
         Texture textureDetailBlue;
+
+        std::vector<TerrainFoliageLayer> foliageLayers;
+        std::vector<TerrainFoliageInstances> foliageInstances;
 
         bool autoSetRanges = true;
         bool heightMapLoaded = false;
@@ -96,6 +133,7 @@ namespace doriax{
 
         bool needUpdateTerrain = true;
         bool needUpdateTexture = false;
+        bool needUpdateFoliage = true;
     };
     
 }

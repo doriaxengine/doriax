@@ -13,7 +13,21 @@ namespace doriax::editor{
 
     enum class TerrainMapTarget{
         HeightMap,
-        BlendMap
+        BlendMap,
+        DensityMap
+    };
+
+    // Names one editable map. Only DensityMap uses "layer", to pick the foliage layer.
+    struct TerrainMapRef{
+        TerrainMapTarget target = TerrainMapTarget::HeightMap;
+        int layer = 0;
+
+        TerrainMapRef() = default;
+        TerrainMapRef(TerrainMapTarget target, int layer = 0): target(target), layer(layer){}
+
+        bool operator==(const TerrainMapRef& other) const{
+            return target == other.target && layer == other.layer;
+        }
     };
 
     // Inclusive texel bounds of what a stroke wrote.
@@ -68,15 +82,16 @@ namespace doriax::editor{
     };
 
     // Terrain map storage shared by the terrain editor and its undo commands: both bind, read,
-    // persist and refresh the same height and blend maps.
+    // persist and refresh the same height, blend and foliage density maps.
     class TerrainMapUtils{
 
     public:
-        static Texture& getTexture(TerrainComponent& terrain, TerrainMapTarget target);
-        static const char* getPropertyName(TerrainMapTarget target);
+        // Null when a density map is asked for a foliage layer the terrain no longer has.
+        static Texture* findTexture(TerrainComponent& terrain, const TerrainMapRef& ref);
+        static std::string getPropertyName(const TerrainMapRef& ref);
         static bool hasLoadedData(Texture& texture);
         static bool writeFile(Project* project, const std::string& relativePath, int width, int height, int channels, int bytesPerChannel, const std::vector<unsigned char>& pixels);
-        static void refresh(SceneProject* sceneProject, Entity entity, TerrainMapTarget target);
+        static void refresh(SceneProject* sceneProject, Entity entity, const TerrainMapRef& ref);
 
         // Copies an inclusive texel rect out of a full map buffer.
         static std::vector<unsigned char> copyRegion(const unsigned char* pixels, int mapWidth, int bytesPerTexel, const TerrainMapRegion& region);

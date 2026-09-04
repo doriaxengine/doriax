@@ -7,11 +7,11 @@
 
 using namespace doriax;
 
-editor::TerrainMapPatchCmd::TerrainMapPatchCmd(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target, TerrainMapPatch patch){
+editor::TerrainMapPatchCmd::TerrainMapPatchCmd(Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref, TerrainMapPatch patch){
     this->project = project;
     this->sceneId = sceneId;
     this->entity = entity;
-    this->target = target;
+    this->ref = ref;
     this->patch = std::move(patch);
 }
 
@@ -27,12 +27,12 @@ void editor::TerrainMapPatchCmd::apply(const std::vector<unsigned char>& regionP
 
     // A recreate or delete swaps the map for a new file and carries its own snapshot command,
     // so the patch applies only while the map it was cut from is still bound.
-    Texture& texture = TerrainMapUtils::getTexture(*terrain, target);
-    if (texture.getPath(0) != patch.path || !TerrainMapUtils::hasLoadedData(texture)){
+    Texture* texture = TerrainMapUtils::findTexture(*terrain, ref);
+    if (!texture || texture->getPath(0) != patch.path || !TerrainMapUtils::hasLoadedData(*texture)){
         return;
     }
 
-    TextureData& data = texture.getData();
+    TextureData& data = texture->getData();
     if (data.getWidth() != patch.mapWidth || data.getHeight() != patch.mapHeight ||
         data.getChannels() != patch.channels || data.getColorFormat() != patch.colorFormat ||
         !patch.region.fitsIn(patch.mapWidth, patch.mapHeight)){
@@ -53,10 +53,10 @@ void editor::TerrainMapPatchCmd::apply(const std::vector<unsigned char>& regionP
 
     TerrainMapUtils::writeFile(project, patch.path, patch.mapWidth, patch.mapHeight, patch.channels, bytesPerChannel,
                                std::vector<unsigned char>(pixels, pixels + mapBytes));
-    TerrainMapUtils::refresh(sceneProject, entity, target);
+    TerrainMapUtils::refresh(sceneProject, entity, ref);
 
     if (project->isEntityInBundle(sceneId, entity)){
-        project->bundlePropertyChanged(sceneId, entity, ComponentType::TerrainComponent, {TerrainMapUtils::getPropertyName(target)});
+        project->bundlePropertyChanged(sceneId, entity, ComponentType::TerrainComponent, {TerrainMapUtils::getPropertyName(ref)});
     }
 
     if (restoreModifiedState){

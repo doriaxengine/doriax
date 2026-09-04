@@ -22,7 +22,9 @@ namespace doriax::editor{
         Flatten,
         PaintRed,
         PaintGreen,
-        PaintBlue
+        PaintBlue,
+        PaintDensity,
+        EraseDensity
     };
 
     enum class TerrainBrushShape{
@@ -72,7 +74,7 @@ namespace doriax::editor{
         bool active = false;
         uint32_t sceneId = NULL_PROJECT_SCENE;
         Entity entity = NULL_ENTITY;
-        TerrainMapTarget target = TerrainMapTarget::HeightMap;
+        TerrainMapRef ref;
         TerrainMapSnapshot beforeSnapshot;
         // Brush mode for this stroke (modifiers can override the selected mode)
         TerrainBrushMode effectiveMode = TerrainBrushMode::Raise;
@@ -127,6 +129,8 @@ namespace doriax::editor{
 
         int heightMapResolution;
         int blendMapResolution;
+        int densityMapResolution;
+        int selectedFoliageLayer;
 
         uint64_t editTextureCounter = 1;
 
@@ -135,8 +139,8 @@ namespace doriax::editor{
         void showTooltip(const char* text, ImGuiHoveredFlags flags = 0);
         bool iconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec2& size);
         bool colorIconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec4& color, const ImVec2& size);
-        std::string makeEditableTextureId(uint32_t sceneId, Entity entity, TerrainMapTarget target);
-        std::string makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target);
+        std::string makeEditableTextureId(uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
+        std::string makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
         int expectedChannels(TerrainMapTarget target);
         ColorFormat expectedFormat(TerrainMapTarget target);
         int expectedBytesPerTexel(TerrainMapTarget target);
@@ -144,7 +148,7 @@ namespace doriax::editor{
         static void encodeHeightTexel(unsigned char* pixels, size_t texelIndex, int bytesPerChannel, float value);
         unsigned char clampByte(float value);
         bool setFileBackedTextureData(Project* project, Texture& texture, const std::string& relativePath, int width, int height, ColorFormat format, int channels, const std::vector<unsigned char>& pixels);
-        bool isOwnedEditableTexturePath(const std::string& path, uint32_t sceneId, Entity entity, TerrainMapTarget target);
+        bool isOwnedEditableTexturePath(const std::string& path, uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
         bool loadTerrainTextureDataFromPath(Project* project, const std::string& path, TextureData& data);
         TerrainMapInfo getTerrainMapInfo(Texture& texture);
         std::string getTerrainMapStatusText(const TerrainMapInfo& info);
@@ -156,7 +160,7 @@ namespace doriax::editor{
         TerrainMapSnapshot captureSnapshot(Project* project, Texture& texture, bool forcePixels);
         bool snapshotsEqual(const TerrainMapSnapshot& a, const TerrainMapSnapshot& b);
         void applySnapshotToTexture(Project* project, Texture& texture, const TerrainMapSnapshot& snapshot);
-        bool ensureEditableMap(Project* project, SceneProject* sceneProject, Entity entity, TerrainMapTarget target, int resolution);
+        bool ensureEditableMap(Project* project, SceneProject* sceneProject, Entity entity, const TerrainMapRef& ref, int resolution);
         void writeHeight(TextureData& data, int x, int y, float value);
         static float bilinearHeightSample(const unsigned char* pixels, int width, int height, int channels, int bytesPerChannel, float texelX, float texelY);
         bool raycastTerrainStrokeSurface(const Ray& localRay, TerrainComponent& terrain, const ActiveStroke* activeStroke, Vector3& localPoint, float& localHeight) const;
@@ -165,8 +169,12 @@ namespace doriax::editor{
         SceneProject* getTargetSceneProject() const;
         bool updateTargetFromSelection();
         bool hasValidTarget(SceneProject* sceneProject = nullptr) const;
+        int mapResolutionFor(TerrainMapTarget target) const;
+        TerrainMapRef getBrushMapRef() const;
         TerrainMapTarget getBrushTarget() const;
         bool isHeightBrush() const;
+        bool isDensityBrush() const;
+        static bool isScalarTarget(TerrainMapTarget target);
 
         void captureStrokeHeightReference(TerrainComponent& terrain);
         bool findTerrainHit(Scene* scene, const Ray& ray, Entity& entity, Vector3& localPoint, Vector3& worldPoint, float& localHeight, const ActiveStroke* activeStroke = nullptr) const;
@@ -175,8 +183,10 @@ namespace doriax::editor{
         bool addStrokePatchCommand(SceneProject* sceneProject, Texture& texture);
         void clearStroke();
 
-        bool createMapForTarget(TerrainMapTarget target, int width, int height);
-        bool deleteMapForTarget(TerrainMapTarget target);
+        bool createMapForTarget(const TerrainMapRef& ref, int width, int height);
+        bool deleteMapForTarget(const TerrainMapRef& ref);
+        bool setFoliageLayers(const std::vector<TerrainFoliageLayer>& layers);
+        template<typename T> bool setFoliageLayerProperty(const char* field, const T& value);
 
     public:
         static constexpr const char* WINDOW_NAME = "Terrain Editor";

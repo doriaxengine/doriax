@@ -652,6 +652,14 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
         terrainChanged |= visitTexturePaths(terrain.textureDetailGreen, transform);
         terrainChanged |= visitTexturePaths(terrain.textureDetailBlue, transform);
 
+        for (TerrainFoliageLayer& layer : terrain.foliageLayers) {
+            if (visitTexturePaths(layer.densityMap, transform) ||
+                (!layer.meshPath.empty() && transform(layer.meshPath))) {
+                terrain.needUpdateFoliage = true;
+                changed = true;
+            }
+        }
+
         // The node tree and the physics heightfield are built from the map, so they follow it
         if (heightMapChanged) {
             terrain.heightMapLoaded = false;

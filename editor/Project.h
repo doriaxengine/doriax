@@ -137,6 +137,7 @@ namespace doriax::editor{
         float flattenHeight = 0.5f;
         int heightMapResolution = 512;
         int blendMapResolution = 512;
+        int densityMapResolution = 512;
         bool normalizeBlendPaint = true;
         bool heightMapStartAtMiddle = true;
         bool flattenPickOnStroke = true;

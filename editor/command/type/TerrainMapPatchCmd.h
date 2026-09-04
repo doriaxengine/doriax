@@ -21,7 +21,7 @@ namespace doriax::editor{
         Project* project;
         uint32_t sceneId;
         Entity entity;
-        TerrainMapTarget target;
+        TerrainMapRef ref;
         TerrainMapPatch patch;
 
         bool wasModified = false;
@@ -29,7 +29,7 @@ namespace doriax::editor{
         void apply(const std::vector<unsigned char>& regionPixels, bool restoreModifiedState);
 
     public:
-        TerrainMapPatchCmd(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target, TerrainMapPatch patch);
+        TerrainMapPatchCmd(Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref, TerrainMapPatch patch);
 
         bool execute() override;
         void undo() override;

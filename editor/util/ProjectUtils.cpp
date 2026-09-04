@@ -409,6 +409,18 @@ Entity editor::ProjectUtils::getLockedEntityParent(Scene* scene, Entity entity){
 
     Signature signature = scene->getSignature(entity);
 
+    // Foliage instances are resolved, not authored: they belong to their terrain the same way
+    // model nodes belong to their model.
+    auto terrains = scene->getComponentArray<TerrainComponent>();
+    for (size_t i = 0; i < terrains->size(); ++i) {
+        TerrainComponent& terrain = terrains->getComponentFromIndex(i);
+        for (const TerrainFoliageInstances& instances : terrain.foliageInstances) {
+            if (instances.entity == entity) {
+                return terrains->getEntity(i);
+            }
+        }
+    }
+
     auto models = scene->getComponentArray<ModelComponent>();
     for (size_t i = 0; i < models->size(); ++i) {
         Entity modelEntity = models->getEntity(i);

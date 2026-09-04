@@ -7,6 +7,7 @@
 #include "Catalog.h"
 #include "Out.h"
 #include "command/CommandHandle.h"
+#include "command/type/PropertyCmd.h"
 #include "command/type/TerrainMapPatchCmd.h"
 #include "external/IconsFontAwesome6.h"
 #include "subsystem/MeshSystem.h"
@@ -94,15 +95,23 @@ bool editor::TerrainEditWindow::colorIconButton(const char* icon, const char* id
     return clicked;
 }
 
-std::string editor::TerrainEditWindow::makeEditableTextureId(uint32_t sceneId, Entity entity, TerrainMapTarget target){
-    const char* suffix = target == TerrainMapTarget::HeightMap ? "height" : "blend";
-    return "__terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(editTextureCounter++);
+// Map file stem. The layer index is left out on purpose: removing a layer shifts the ones above
+// it, and a stem keyed on the index would un-own their files.
+static std::string makeMapSuffix(const TerrainMapRef& ref){
+    if (ref.target == TerrainMapTarget::HeightMap){
+        return "height";
+    }
+    return ref.target == TerrainMapTarget::BlendMap ? "blend" : "density";
 }
 
-std::string editor::TerrainEditWindow::makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target){
+std::string editor::TerrainEditWindow::makeEditableTextureId(uint32_t sceneId, Entity entity, const TerrainMapRef& ref){
+    return "__terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + makeMapSuffix(ref) + "_" + std::to_string(editTextureCounter++);
+}
+
+std::string editor::TerrainEditWindow::makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref){
     fs::path baseDir = project ? project->getTerrainMapsDir() : fs::path("terrain_maps");
 
-    const char* suffix = target == TerrainMapTarget::HeightMap ? "height" : "blend";
+    const std::string suffix = makeMapSuffix(ref);
     for (int attempt = 0; attempt < 10000; attempt++){
         const uint64_t serial = editTextureCounter++;
         fs::path candidatePath = baseDir / ("terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix + "_" + std::to_string(serial) + ".png");
@@ -138,29 +147,32 @@ static bool isEditableTexturePath(const std::string& path){
     return parentName == "terrain_maps" && filename.rfind("terrain_edit_", 0) == 0;
 }
 
-bool editor::TerrainEditWindow::isOwnedEditableTexturePath(const std::string& path, uint32_t sceneId, Entity entity, TerrainMapTarget target){
+bool editor::TerrainEditWindow::isOwnedEditableTexturePath(const std::string& path, uint32_t sceneId, Entity entity, const TerrainMapRef& ref){
     if (!isEditableTexturePath(path)){
         return false;
     }
 
     fs::path texturePath(path);
-    const char* suffix = target == TerrainMapTarget::HeightMap ? "height" : "blend";
+    const std::string suffix = makeMapSuffix(ref);
     const std::string expectedStem = "terrain_edit_" + std::to_string(sceneId) + "_" + std::to_string(entity) + "_" + suffix;
     const std::string stem = texturePath.stem().string();
     return stem == expectedStem || stem.rfind(expectedStem + "_", 0) == 0;
 }
 
 int editor::TerrainEditWindow::expectedChannels(TerrainMapTarget target){
-    return target == TerrainMapTarget::HeightMap ? 1 : 4;
+    return isScalarTarget(target) ? 1 : 4;
 }
 
 ColorFormat editor::TerrainEditWindow::expectedFormat(TerrainMapTarget target){
-    // Heightmaps use 16-bit single channel (RED16) so large maxHeight values don't
-    // quantize into visible terraces; blend maps stay 8-bit RGBA.
-    return target == TerrainMapTarget::HeightMap ? ColorFormat::RED16 : ColorFormat::RGBA;
+    // Heightmaps use 16-bit single channel (RED16) so large maxHeight values don't quantize into
+    // visible terraces; blend maps stay 8-bit RGBA and density maps 8-bit single channel.
+    if (target == TerrainMapTarget::HeightMap){
+        return ColorFormat::RED16;
+    }
+    return target == TerrainMapTarget::DensityMap ? ColorFormat::RED : ColorFormat::RGBA;
 }
 
-// bytes occupied by one texel for a terrain map target (heightmap is 16-bit, blend is 8-bit)
+// bytes occupied by one texel for a terrain map target
 int editor::TerrainEditWindow::expectedBytesPerTexel(TerrainMapTarget target){
     return expectedChannels(target) * TextureData::getBytesPerChannel(expectedFormat(target));
 }
@@ -328,8 +340,8 @@ std::vector<unsigned char> editor::TerrainEditWindow::convertTexturePixels(Textu
     for (int y = 0; y < height; y++){
         for (int x = 0; x < width; x++){
             const size_t texelIndex = static_cast<size_t>(y) * width + x;
-            if (target == TerrainMapTarget::HeightMap){
-                // Decode the source height (8- or 16-bit, R channel) and re-encode at the
+            if (isScalarTarget(target)){
+                // Decode the source value (8- or 16-bit, R channel) and re-encode at the
                 // destination precision. This upcasts legacy 8-bit heightmaps to 16-bit.
                 const float normalized = decodeHeightTexel(src, texelIndex, srcChannels, srcBytesPerChannel);
                 encodeHeightTexel(pixels.data(), texelIndex, dstBytesPerChannel, normalized);
@@ -556,6 +568,12 @@ bool editor::TerrainEditWindow::cleanUnusedTerrainMaps(Project* project){
                 if (!terrain->blendMap.getPath(0).empty() && isEditableTexturePath(terrain->blendMap.getPath(0))){
                     activeFiles.insert(fs::path(terrain->blendMap.getPath(0)).filename().string());
                 }
+                for (const TerrainFoliageLayer& layer : terrain->foliageLayers){
+                    const std::string& densityPath = layer.densityMap.getPath(0);
+                    if (!densityPath.empty() && isEditableTexturePath(densityPath)){
+                        activeFiles.insert(fs::path(densityPath).filename().string());
+                    }
+                }
             }
         }
     }
@@ -607,15 +625,13 @@ std::vector<unsigned char> editor::TerrainEditWindow::makeInitialMapPixels(Terra
     const size_t texelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
     std::vector<unsigned char> pixels(texelCount * static_cast<size_t>(bytesPerTexel), 0);
 
-    if (target == TerrainMapTarget::HeightMap){
-        if (heightMapStartAtMiddle){
-            const int bytesPerChannel = bytesPerTexel / channels;
-            for (size_t i = 0; i < texelCount; i++){
-                encodeHeightTexel(pixels.data(), i, bytesPerChannel, 0.5f);
-            }
+    if (target == TerrainMapTarget::HeightMap && heightMapStartAtMiddle){
+        const int bytesPerChannel = bytesPerTexel / channels;
+        for (size_t i = 0; i < texelCount; i++){
+            encodeHeightTexel(pixels.data(), i, bytesPerChannel, 0.5f);
         }
-    }else{
-        // Blend map: opaque alpha, no painted channels yet.
+    }else if (target == TerrainMapTarget::BlendMap){
+        // Opaque alpha, no painted channels yet. A density map starts empty and keeps the zeros.
         for (size_t i = 3; i < pixels.size(); i += 4){
             pixels[i] = 255;
         }
@@ -623,18 +639,24 @@ std::vector<unsigned char> editor::TerrainEditWindow::makeInitialMapPixels(Terra
     return pixels;
 }
 
-bool editor::TerrainEditWindow::ensureEditableMap(Project* project, SceneProject* sceneProject, Entity entity, TerrainMapTarget target, int resolution){
+bool editor::TerrainEditWindow::ensureEditableMap(Project* project, SceneProject* sceneProject, Entity entity, const TerrainMapRef& ref, int resolution){
     TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(entity);
-    Texture& texture = TerrainMapUtils::getTexture(terrain, target);
+    Texture* texturePtr = TerrainMapUtils::findTexture(terrain, ref);
+    if (!texturePtr){
+        return false;
+    }
+
+    Texture& texture = *texturePtr;
+    const TerrainMapTarget target = ref.target;
     const int channels = expectedChannels(target);
     const ColorFormat format = expectedFormat(target);
 
     if (texture.empty()){
         const int safeResolution = std::max(2, resolution);
         std::vector<unsigned char> pixels = makeInitialMapPixels(target, safeResolution, safeResolution);
-        const std::string path = makeEditableTexturePath(project, sceneProject->id, entity, target);
+        const std::string path = makeEditableTexturePath(project, sceneProject->id, entity, ref);
         if (!setFileBackedTextureData(project, texture, path, safeResolution, safeResolution, format, channels, pixels)){
-            setOwnedTextureData(texture, makeEditableTextureId(sceneProject->id, entity, target), safeResolution, safeResolution, format, channels, pixels);
+            setOwnedTextureData(texture, makeEditableTextureId(sceneProject->id, entity, ref), safeResolution, safeResolution, format, channels, pixels);
         }
         return true;
     }
@@ -653,13 +675,13 @@ bool editor::TerrainEditWindow::ensureEditableMap(Project* project, SceneProject
         return false;
     }
 
-    const bool needsEditableFile = path.empty() || !isOwnedEditableTexturePath(path, sceneProject->id, entity, target);
+    const bool needsEditableFile = path.empty() || !isOwnedEditableTexturePath(path, sceneProject->id, entity, ref);
     const bool shouldConvert = loadedFromFile || needsEditableFile || data->getChannels() != channels || data->getColorFormat() != format;
     if (shouldConvert){
         std::vector<unsigned char> pixels = convertTexturePixels(*data, target);
-        const std::string editablePath = needsEditableFile ? makeEditableTexturePath(project, sceneProject->id, entity, target) : path;
+        const std::string editablePath = needsEditableFile ? makeEditableTexturePath(project, sceneProject->id, entity, ref) : path;
         if (!setFileBackedTextureData(project, texture, editablePath, data->getWidth(), data->getHeight(), format, channels, pixels)){
-            setOwnedTextureData(texture, makeEditableTextureId(sceneProject->id, entity, target), data->getWidth(), data->getHeight(), format, channels, pixels);
+            setOwnedTextureData(texture, makeEditableTextureId(sceneProject->id, entity, ref), data->getWidth(), data->getHeight(), format, channels, pixels);
         }
     }else{
         texture.getData().setDataOwned(true);
@@ -724,7 +746,7 @@ void editor::TerrainEditWindow::writeHeight(TextureData& data, int x, int y, flo
 bool editor::TerrainEditWindow::raycastTerrainStrokeSurface(const Ray& localRay, TerrainComponent& terrain, const ActiveStroke* activeStroke, Vector3& localPoint, float& localHeight) const{
     const bool useHeightReference = activeStroke &&
                                     activeStroke->active &&
-                                    activeStroke->target == TerrainMapTarget::HeightMap &&
+                                    activeStroke->ref.target == TerrainMapTarget::HeightMap &&
                                     activeStroke->heightReferenceValid &&
                                     !activeStroke->heightReferencePixels.empty();
     if (!useHeightReference){
@@ -951,7 +973,7 @@ private:
     Project* project;
     uint32_t sceneId;
     Entity entity;
-    TerrainMapTarget target;
+    TerrainMapRef ref;
     TerrainMapSnapshot beforeSnapshot;
     TerrainMapSnapshot afterSnapshot;
     bool wasModified = false;
@@ -966,19 +988,15 @@ private:
             return;
         }
 
-        Texture& texture = TerrainMapUtils::getTexture(*terrain, target);
-        window->applySnapshotToTexture(project, texture, snapshot);
-
-        if (target == TerrainMapTarget::HeightMap){
-            terrain->heightMapLoaded = false;
-            terrain->needUpdateTerrain = true;
-            terrain->needUpdateTexture = true;
-        }else{
-            terrain->needUpdateTexture = true;
+        Texture* texture = TerrainMapUtils::findTexture(*terrain, ref);
+        if (!texture){
+            return;
         }
+        window->applySnapshotToTexture(project, *texture, snapshot);
+        TerrainMapUtils::refresh(sceneProject, entity, ref);
 
         if (project->isEntityInBundle(sceneId, entity)){
-            project->bundlePropertyChanged(sceneId, entity, ComponentType::TerrainComponent, {TerrainMapUtils::getPropertyName(target)});
+            project->bundlePropertyChanged(sceneId, entity, ComponentType::TerrainComponent, {TerrainMapUtils::getPropertyName(ref)});
         }
 
         if (restoreModifiedState){
@@ -989,9 +1007,9 @@ private:
     }
 
 public:
-    TerrainTextureEditCmd(TerrainEditWindow* window, Project* project, uint32_t sceneId, Entity entity, TerrainMapTarget target,
+    TerrainTextureEditCmd(TerrainEditWindow* window, Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref,
                           const TerrainMapSnapshot& beforeSnapshot, const TerrainMapSnapshot& afterSnapshot):
-        window(window), project(project), sceneId(sceneId), entity(entity), target(target), beforeSnapshot(beforeSnapshot), afterSnapshot(afterSnapshot){}
+        window(window), project(project), sceneId(sceneId), entity(entity), ref(ref), beforeSnapshot(beforeSnapshot), afterSnapshot(afterSnapshot){}
 
     bool execute() override{
         SceneProject* sceneProject = project->getScene(sceneId);
@@ -1027,6 +1045,8 @@ editor::TerrainEditWindow::TerrainEditWindow(Project* project){
     flattenHeight = 0.5f;
     heightMapResolution = 512;
     blendMapResolution  = 512;
+    densityMapResolution = 512;
+    selectedFoliageLayer = 0;
     normalizeBlendPaint = true;
     heightMapStartAtMiddle = true;
     flattenPickOnStroke = true;
@@ -1101,8 +1121,22 @@ bool editor::TerrainEditWindow::hasValidTarget(SceneProject* sceneProject) const
            targetScene->scene->findComponent<Transform>(selectedEntity);
 }
 
+int editor::TerrainEditWindow::mapResolutionFor(TerrainMapTarget target) const{
+    if (target == TerrainMapTarget::HeightMap){
+        return heightMapResolution;
+    }
+    return target == TerrainMapTarget::DensityMap ? densityMapResolution : blendMapResolution;
+}
+
+editor::TerrainMapRef editor::TerrainEditWindow::getBrushMapRef() const{
+    return TerrainMapRef(getBrushTarget(), selectedFoliageLayer);
+}
+
 editor::TerrainMapTarget editor::TerrainEditWindow::getBrushTarget() const{
-    return isHeightBrush() ? TerrainMapTarget::HeightMap : TerrainMapTarget::BlendMap;
+    if (isHeightBrush()){
+        return TerrainMapTarget::HeightMap;
+    }
+    return isDensityBrush() ? TerrainMapTarget::DensityMap : TerrainMapTarget::BlendMap;
 }
 
 bool editor::TerrainEditWindow::isHeightBrush() const{
@@ -1110,6 +1144,15 @@ bool editor::TerrainEditWindow::isHeightBrush() const{
            brushMode == TerrainBrushMode::Lower ||
            brushMode == TerrainBrushMode::Smooth ||
            brushMode == TerrainBrushMode::Flatten;
+}
+
+bool editor::TerrainEditWindow::isDensityBrush() const{
+    return brushMode == TerrainBrushMode::PaintDensity || brushMode == TerrainBrushMode::EraseDensity;
+}
+
+// Height and density share the single-channel storage and stamping path.
+bool editor::TerrainEditWindow::isScalarTarget(TerrainMapTarget target){
+    return target != TerrainMapTarget::BlendMap;
 }
 
 bool editor::TerrainEditWindow::findTerrainHit(Scene* scene, const Ray& ray, Entity& entity, Vector3& localPoint, Vector3& worldPoint, float& localHeight, const ActiveStroke* activeStroke) const{
@@ -1123,7 +1166,7 @@ bool editor::TerrainEditWindow::findTerrainHit(Scene* scene, const Ray& ray, Ent
     TerrainComponent& terrain = scene->getComponent<TerrainComponent>(entity);
     const bool useHeightReference = activeStroke &&
                                     activeStroke->active &&
-                                    activeStroke->target == TerrainMapTarget::HeightMap &&
+                                    activeStroke->ref.target == TerrainMapTarget::HeightMap &&
                                     activeStroke->heightReferenceValid &&
                                     !activeStroke->heightReferencePixels.empty();
 
@@ -1173,14 +1216,18 @@ bool editor::TerrainEditWindow::applyBrush(SceneProject* sceneProject, Entity en
     if (terrain.terrainSize <= std::numeric_limits<float>::epsilon()){
         return false;
     }
-    TerrainMapTarget target = getBrushTarget();
-    int resolution = target == TerrainMapTarget::HeightMap ? heightMapResolution : blendMapResolution;
-    if (!ensureEditableMap(project, sceneProject, entity, target, resolution)){
+    const TerrainMapRef ref = stroke.ref;
+    const TerrainMapTarget target = ref.target;
+    if (!ensureEditableMap(project, sceneProject, entity, ref, mapResolutionFor(target))){
         return false;
     }
 
-    Texture& texture = TerrainMapUtils::getTexture(terrain, target);
-    TextureData& data = texture.getData();
+    Texture* texture = TerrainMapUtils::findTexture(terrain, ref);
+    if (!texture){
+        return false;
+    }
+
+    TextureData& data = texture->getData();
     if (!data.getData() || data.getWidth() <= 0 || data.getHeight() <= 0){
         return false;
     }
@@ -1224,7 +1271,7 @@ bool editor::TerrainEditWindow::applyBrush(SceneProject* sceneProject, Entity en
     stroke.lastStampTime = now;
 
     if (applied){
-        TerrainMapUtils::refresh(sceneProject, entity, target);
+        TerrainMapUtils::refresh(sceneProject, entity, ref);
     }
     return applied;
 }
@@ -1236,7 +1283,7 @@ bool editor::TerrainEditWindow::stampBrush(TerrainComponent& terrain, TextureDat
     const int channels = data.getChannels();
     const int bytesPerChannel = TextureData::getBytesPerChannel(data.getColorFormat());
     const size_t texelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
-    const int workingChannels = target == TerrainMapTarget::HeightMap ? 1 : 4;
+    const int workingChannels = isScalarTarget(target) ? 1 : 4;
 
     if (!pixels || (target == TerrainMapTarget::BlendMap && channels < 3)){
         return false;
@@ -1246,7 +1293,7 @@ bool editor::TerrainEditWindow::stampBrush(TerrainComponent& terrain, TextureDat
     if (stroke.workingWidth != width || stroke.workingHeight != height ||
         stroke.workingPixels.size() != texelCount * static_cast<size_t>(workingChannels)){
         stroke.workingPixels.resize(texelCount * static_cast<size_t>(workingChannels));
-        if (target == TerrainMapTarget::HeightMap){
+        if (isScalarTarget(target)){
             for (size_t i = 0; i < texelCount; i++){
                 stroke.workingPixels[i] = decodeHeightTexel(pixels, i, channels, bytesPerChannel);
             }
@@ -1280,7 +1327,7 @@ bool editor::TerrainEditWindow::stampBrush(TerrainComponent& terrain, TextureDat
 
     const TerrainBrushMode mode = stroke.effectiveMode;
     const float flattenTargetValue = std::clamp(flattenPickOnStroke ? stroke.flattenTarget : flattenHeight, 0.0f, 1.0f);
-    const float flowRate = target == TerrainMapTarget::BlendMap ? BRUSH_BLEND_FLOW_PER_SECOND : BRUSH_FLOW_PER_SECOND;
+    const float flowRate = target == TerrainMapTarget::HeightMap ? BRUSH_FLOW_PER_SECOND : BRUSH_BLEND_FLOW_PER_SECOND;
 
     // Smooth samples a radius-scaled kernel from a snapshot of the stamp region, so
     // results don't depend on texel visit order.
@@ -1317,7 +1364,11 @@ bool editor::TerrainEditWindow::stampBrush(TerrainComponent& terrain, TextureDat
 
     auto applyTexel = [&](int x, int y, float weight){
         const size_t texelIndex = static_cast<size_t>(y) * width + x;
-        if (target == TerrainMapTarget::HeightMap){
+        if (target == TerrainMapTarget::DensityMap){
+            const float current = stroke.workingPixels[texelIndex];
+            const float targetValue = mode == TerrainBrushMode::EraseDensity ? 0.0f : 1.0f;
+            stroke.workingPixels[texelIndex] = current + (targetValue - current) * weight;
+        }else if (target == TerrainMapTarget::HeightMap){
             const float current = stroke.workingPixels[texelIndex];
             float next = current;
             if (mode == TerrainBrushMode::Raise){
@@ -1386,7 +1437,7 @@ bool editor::TerrainEditWindow::stampBrush(TerrainComponent& terrain, TextureDat
     for (int y = minY; y <= maxY; y++){
         for (int x = minX; x <= maxX; x++){
             const size_t texelIndex = static_cast<size_t>(y) * width + x;
-            if (target == TerrainMapTarget::HeightMap){
+            if (isScalarTarget(target)){
                 writeHeight(data, x, y, stroke.workingPixels[texelIndex]);
             }else{
                 const size_t index = texelIndex * static_cast<size_t>(channels);
@@ -1436,7 +1487,7 @@ bool editor::TerrainEditWindow::addStrokePatchCommand(SceneProject* sceneProject
     patch.afterPixels = TerrainMapUtils::copyRegion(static_cast<const unsigned char*>(data.getData()), patch.mapWidth, bytesPerTexel, patch.region);
 
     if (patch.beforePixels != patch.afterPixels){
-        CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainMapPatchCmd(project, sceneProject->id, stroke.entity, stroke.target, std::move(patch)));
+        CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainMapPatchCmd(project, sceneProject->id, stroke.entity, stroke.ref, std::move(patch)));
     }
 
     return true;
@@ -1446,60 +1497,90 @@ void editor::TerrainEditWindow::clearStroke(){
     stroke = ActiveStroke();
 }
 
-bool editor::TerrainEditWindow::createMapForTarget(TerrainMapTarget target, int width, int height){
+bool editor::TerrainEditWindow::createMapForTarget(const TerrainMapRef& ref, int width, int height){
     SceneProject* sceneProject = getTargetSceneProject();
     if (!hasValidTarget(sceneProject)){
         return false;
     }
 
     TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(selectedEntity);
-    Texture& texture = TerrainMapUtils::getTexture(terrain, target);
+    Texture* texture = TerrainMapUtils::findTexture(terrain, ref);
+    if (!texture){
+        return false;
+    }
 
-    const bool forceBeforePixels = texture.getPath(0).empty() || isOwnedEditableTexturePath(texture.getPath(0), sceneProject->id, selectedEntity, target);
-    TerrainMapSnapshot before = captureSnapshot(project, texture, forceBeforePixels);
+    const bool forceBeforePixels = texture->getPath(0).empty() || isOwnedEditableTexturePath(texture->getPath(0), sceneProject->id, selectedEntity, ref);
+    TerrainMapSnapshot before = captureSnapshot(project, *texture, forceBeforePixels);
     TerrainMapSnapshot after;
     after.empty = false;
-    after.path = makeEditableTexturePath(project, sceneProject->id, selectedEntity, target);
+    after.path = makeEditableTexturePath(project, sceneProject->id, selectedEntity, ref);
     after.id = after.path;
-    after.minFilter = texture.getMinFilter();
-    after.magFilter = texture.getMagFilter();
-    after.wrapU = texture.getWrapU();
-    after.wrapV = texture.getWrapV();
-    after.colorFormat = expectedFormat(target);
-    after.channels = expectedChannels(target);
+    after.minFilter = texture->getMinFilter();
+    after.magFilter = texture->getMagFilter();
+    after.wrapU = texture->getWrapU();
+    after.wrapV = texture->getWrapV();
+    after.colorFormat = expectedFormat(ref.target);
+    after.channels = expectedChannels(ref.target);
     after.width = std::max(2, width);
     after.height = std::max(2, height);
-    after.pixels = makeInitialMapPixels(target, after.width, after.height);
+    after.pixels = makeInitialMapPixels(ref.target, after.width, after.height);
 
     if (snapshotsEqual(before, after)){
         return false;
     }
 
-    CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, sceneProject->id, selectedEntity, target, before, after));
+    CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, sceneProject->id, selectedEntity, ref, before, after));
     return true;
 }
 
-bool editor::TerrainEditWindow::deleteMapForTarget(TerrainMapTarget target){
+bool editor::TerrainEditWindow::deleteMapForTarget(const TerrainMapRef& ref){
     SceneProject* sceneProject = getTargetSceneProject();
     if (!hasValidTarget(sceneProject)){
         return false;
     }
 
     TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(selectedEntity);
-    Texture& texture = TerrainMapUtils::getTexture(terrain, target);
-    if (texture.empty()){
+    Texture* texture = TerrainMapUtils::findTexture(terrain, ref);
+    if (!texture || texture->empty()){
         return false;
     }
 
-    const bool forceBeforePixels = texture.getPath(0).empty() || isOwnedEditableTexturePath(texture.getPath(0), sceneProject->id, selectedEntity, target);
-    TerrainMapSnapshot before = captureSnapshot(project, texture, forceBeforePixels);
+    const bool forceBeforePixels = texture->getPath(0).empty() || isOwnedEditableTexturePath(texture->getPath(0), sceneProject->id, selectedEntity, ref);
+    TerrainMapSnapshot before = captureSnapshot(project, *texture, forceBeforePixels);
     TerrainMapSnapshot after;
 
     if (snapshotsEqual(before, after)){
         return false;
     }
 
-    CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, sceneProject->id, selectedEntity, target, before, after));
+    CommandHandle::get(sceneProject->id)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, sceneProject->id, selectedEntity, ref, before, after));
+    return true;
+}
+
+// Layer add and remove rewrite the whole vector through the property system, so undo, bundle
+// propagation and scene-modified tracking all come from PropertyCmd.
+bool editor::TerrainEditWindow::setFoliageLayers(const std::vector<TerrainFoliageLayer>& layers){
+    SceneProject* sceneProject = getTargetSceneProject();
+    if (!hasValidTarget(sceneProject)){
+        return false;
+    }
+
+    CommandHandle::get(sceneProject->id)->addCommandNoMerge(new PropertyCmd<std::vector<TerrainFoliageLayer>>(
+        project, sceneProject->id, selectedEntity, ComponentType::TerrainComponent, "foliageLayers", layers));
+    return true;
+}
+
+// Merged, so dragging a slider collapses into one undo entry.
+template<typename T>
+bool editor::TerrainEditWindow::setFoliageLayerProperty(const char* field, const T& value){
+    SceneProject* sceneProject = getTargetSceneProject();
+    if (!hasValidTarget(sceneProject)){
+        return false;
+    }
+
+    const std::string property = "foliageLayers[" + std::to_string(selectedFoliageLayer) + "]." + field;
+    CommandHandle::get(sceneProject->id)->addCommand(new PropertyCmd<T>(
+        project, sceneProject->id, selectedEntity, ComponentType::TerrainComponent, property, value));
     return true;
 }
 
@@ -1521,7 +1602,7 @@ void editor::TerrainEditWindow::show(){
         ImGui::End();
         if (wasOpen && !windowOpen){
             brushActive = false;
-            clearStroke();
+            endStroke();
         }
         return;
     }
@@ -1531,6 +1612,7 @@ void editor::TerrainEditWindow::show(){
 
     if (!validTarget){
         brushActive = false;
+        endStroke();
         ImGui::Spacing();
         ImGui::TextDisabled("No terrain is selected");
         ImGui::End();
@@ -1541,22 +1623,32 @@ void editor::TerrainEditWindow::show(){
 
     std::string selectedTerrainLabel = "Selected terrain: " + sceneProject->scene->getEntityName(selectedEntity);
     ImGui::TextUnformatted(selectedTerrainLabel.c_str());
+    const int foliageLayerCount = static_cast<int>(terrain.foliageLayers.size());
+    selectedFoliageLayer = std::clamp(selectedFoliageLayer, 0, std::max(0, foliageLayerCount - 1));
+
     TerrainMapInfo heightInfo = getTerrainMapInfo(terrain.heightMap);
     TerrainMapInfo blendInfo = getTerrainMapInfo(terrain.blendMap);
+    TerrainMapInfo densityInfo;
+    if (foliageLayerCount > 0){
+        densityInfo = getTerrainMapInfo(terrain.foliageLayers[selectedFoliageLayer].densityMap);
+    }
     const bool hasHeightMap = heightInfo.present;
     const bool hasBlendMap = blendInfo.present;
+    const bool hasDensityMap = densityInfo.present;
 
-    if (brushActive && ((isHeightBrush() && !hasHeightMap) || (!isHeightBrush() && !hasBlendMap))){
+    const bool brushTargetAvailable = isHeightBrush() ? hasHeightMap : (isDensityBrush() ? hasDensityMap : hasBlendMap);
+    if (brushActive && !brushTargetAvailable){
         brushActive = false;
-        clearStroke();
+        endStroke();
     }
 
     ImGui::SeparatorText("Maps");
 
     heightMapResolution = std::max(2, heightMapResolution);
     blendMapResolution = std::max(2, blendMapResolution);
+    densityMapResolution = std::max(2, densityMapResolution);
 
-    auto mapSection = [&](TerrainMapTarget target, const char* icon, const char* label, const TerrainMapInfo& info, int& resolution, const char* id){
+    auto mapSection = [&](const TerrainMapRef& ref, const char* icon, const char* label, const TerrainMapInfo& info, int& resolution, const char* id){
         ImGui::PushID(id);
 
         const float resolutionInputWidth = 80.0f;
@@ -1571,7 +1663,7 @@ void editor::TerrainEditWindow::show(){
         const char* createText = ICON_FA_PLUS "  Create";
 
         auto heightMiddleButton = [&](){
-            if (target != TerrainMapTarget::HeightMap){
+            if (ref.target != TerrainMapTarget::HeightMap){
                 return;
             }
 
@@ -1604,7 +1696,7 @@ void editor::TerrainEditWindow::show(){
 
             ImGui::SameLine();
             if (ImGui::Button((std::string(createText) + "##create_map_action").c_str())){
-                createMapForTarget(target, resolution, resolution);
+                createMapForTarget(ref, resolution, resolution);
             }
             showTooltip("Create an editable map with the chosen resolution");
         }else{
@@ -1619,13 +1711,13 @@ void editor::TerrainEditWindow::show(){
             ImGui::SameLine();
             ImGui::BeginDisabled(!canRecreate);
             if (iconButton(ICON_FA_ARROWS_ROTATE, "recreate_map_action", canRecreate ? "Recreate this map using its current resolution" : "Current map size is not available yet", false, iconButtonSize)){
-                createMapForTarget(target, info.width, info.height);
+                createMapForTarget(ref, info.width, info.height);
             }
             ImGui::EndDisabled();
 
             ImGui::SameLine();
             if (iconButton(ICON_FA_TRASH_CAN, "delete_map_action", "Delete this map", false, iconButtonSize)){
-                deleteMapForTarget(target);
+                deleteMapForTarget(ref);
             }
         }
 
@@ -1643,9 +1735,9 @@ void editor::TerrainEditWindow::show(){
     auto brushButton = [&](TerrainBrushMode mode, const char* icon, const char* id, const char* tooltip){
         bool selected = brushActive && brushMode == mode;
         if (iconButton(icon, id, tooltip, selected, toolButtonSize)){
+            endStroke();
             if (selected){
                 brushActive = false;
-                clearStroke();
             }else{
                 brushMode = mode;
                 brushActive = true;
@@ -1671,9 +1763,9 @@ void editor::TerrainEditWindow::show(){
     auto paintButton = [&](TerrainBrushMode mode, const char* id, const char* tooltip, const ImVec4& color){
         bool selected = brushActive && brushMode == mode;
         if (colorIconButton(ICON_FA_BRUSH, id, tooltip, selected, color, toolButtonSize)){
+            endStroke();
             if (selected){
                 brushActive = false;
-                clearStroke();
             }else{
                 brushMode = mode;
                 brushActive = true;
@@ -1698,9 +1790,151 @@ void editor::TerrainEditWindow::show(){
         ImGui::TextDisabled("Blendmap missing");
     }
 
+    ImGui::SeparatorText("Foliage");
+
+    // Adding or removing a layer resizes the vector the rows below read, so the section stops
+    // for the frame and picks the new set up on the next one.
+    bool foliageLayersChanged = false;
+    const ImVec2 layerButtonSize(ImGui::GetFrameHeight(), 0.0f);
+
+    auto addFoliageLayer = [&](){
+        endStroke();
+
+        std::vector<TerrainFoliageLayer> layers = terrain.foliageLayers;
+        layers.push_back(TerrainFoliageLayer());
+        if (setFoliageLayers(layers)){
+            selectedFoliageLayer = static_cast<int>(layers.size()) - 1;
+            foliageLayersChanged = true;
+        }
+    };
+
+    if (foliageLayerCount == 0){
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("No foliage layers");
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_PLUS, "add_foliage_layer", "Add a foliage layer", false, layerButtonSize)){
+            addFoliageLayer();
+        }
+    }else{
+        std::string layerPreview = "Layer " + std::to_string(selectedFoliageLayer + 1) + " of " + std::to_string(foliageLayerCount);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x) * 2.0f);
+        if (ImGui::BeginCombo("##foliage_layer", layerPreview.c_str())){
+            for (int i = 0; i < foliageLayerCount; i++){
+                std::string label = "Layer " + std::to_string(i + 1);
+                if (ImGui::Selectable(label.c_str(), i == selectedFoliageLayer)){
+                    endStroke();
+                    selectedFoliageLayer = i;
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_PLUS, "add_foliage_layer", "Add a foliage layer", false, layerButtonSize)){
+            addFoliageLayer();
+        }
+
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_TRASH_CAN, "remove_foliage_layer", "Remove this foliage layer", false, layerButtonSize)){
+            // Removing shifts every layer above this one, so the stroke has to be recorded while
+            // stroke.ref still names the map it painted.
+            endStroke();
+
+            std::vector<TerrainFoliageLayer> layers = terrain.foliageLayers;
+            layers.erase(layers.begin() + selectedFoliageLayer);
+            if (setFoliageLayers(layers)){
+                brushActive = false;
+                foliageLayersChanged = true;
+            }
+        }
+    }
+
+    if (foliageLayerCount > 0 && !foliageLayersChanged){
+        mapSection(TerrainMapRef(TerrainMapTarget::DensityMap, selectedFoliageLayer), ICON_FA_SEEDLING, "Density", densityInfo, densityMapResolution, "density");
+
+        TerrainFoliageLayer& layer = terrain.foliageLayers[selectedFoliageLayer];
+
+        const std::string meshName = layer.meshPath.empty() ? "Drop a model here" : fs::path(layer.meshPath).filename().string();
+        ImGui::Button((std::string(ICON_FA_CUBE) + "  " + meshName + "##foliage_mesh").c_str(), ImVec2(-1.0f, 0.0f));
+        if (ImGui::BeginDragDropTarget()){
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")){
+                std::vector<std::string> dropped = Util::getStringsFromPayload(payload);
+                if (!dropped.empty() && Util::isModelFile(dropped[0])){
+                    const bool insideAssets = project->isInsideAssetsPath(dropped[0]);
+                    const std::string meshPath = insideAssets ? project->normalizeToAssetsRelative(dropped[0]).generic_string()
+                                                              : fs::path(dropped[0]).generic_string();
+                    setFoliageLayerProperty<std::string>("meshPath", meshPath);
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        showTooltip(layer.meshPath.empty() ? "Drag a model from Resources to scatter it over the painted area" : layer.meshPath.c_str());
+
+        float density = layer.density;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::DragFloat("##foliage_density", &density, 0.05f, 0.0f, 20.0f, "Density  %.2f")){
+            setFoliageLayerProperty<float>("density", std::max(0.0f, density));
+        }
+        showTooltip("Instances per square world unit where the density map is fully painted");
+
+        float minScale = layer.minScale;
+        float maxScale = layer.maxScale;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::DragFloatRange2("##foliage_scale", &minScale, &maxScale, 0.01f, 0.01f, 20.0f, "Scale  %.2f", "to %.2f")){
+            setFoliageLayerProperty<float>("minScale", std::max(0.01f, minScale));
+            setFoliageLayerProperty<float>("maxScale", std::max(minScale, maxScale));
+        }
+        showTooltip("Random scale range applied per instance");
+
+        float minSlope = layer.minSlope;
+        float maxSlope = layer.maxSlope;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::DragFloatRange2("##foliage_slope", &minSlope, &maxSlope, 0.5f, 0.0f, 90.0f, "Slope  %.0f" ICON_FA_ANGLE_UP, "to %.0f" ICON_FA_ANGLE_UP)){
+            setFoliageLayerProperty<float>("minSlope", std::clamp(minSlope, 0.0f, 90.0f));
+            setFoliageLayerProperty<float>("maxSlope", std::clamp(maxSlope, minSlope, 90.0f));
+        }
+        showTooltip("Instances only land on ground within this slope range, in degrees");
+
+        float rotationJitter = layer.rotationJitter;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::SliderFloat("##foliage_rotation", &rotationJitter, 0.0f, 1.0f, "Rotation  %.2f")){
+            setFoliageLayerProperty<float>("rotationJitter", rotationJitter);
+        }
+        showTooltip("Share of a full turn of random yaw per instance");
+
+        float alignToNormal = layer.alignToNormal;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::SliderFloat("##foliage_align", &alignToNormal, 0.0f, 1.0f, "Align  %.2f")){
+            setFoliageLayerProperty<float>("alignToNormal", alignToNormal);
+        }
+        showTooltip("0 stands instances upright, 1 lays them along the surface");
+
+        float drawDistance = layer.drawDistance;
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::DragFloat("##foliage_distance", &drawDistance, 1.0f, 1.0f, 500.0f, "Distance  %.0f")){
+            setFoliageLayerProperty<float>("drawDistance", std::max(1.0f, drawDistance));
+        }
+        showTooltip("Instances beyond this distance from the camera are not resolved");
+
+        int seed = static_cast<int>(layer.seed);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::DragInt("##foliage_seed", &seed, 1.0f, 0, 100000, "Seed  %d")){
+            setFoliageLayerProperty<unsigned int>("seed", static_cast<unsigned int>(std::max(0, seed)));
+        }
+        showTooltip("Changing the seed reshuffles where instances land");
+
+        ImGui::BeginDisabled(!hasDensityMap);
+        paintButton(TerrainBrushMode::PaintDensity, "terrain_paint_density", "Paint foliage density (Ctrl-drag erases)", ImVec4(0.45f, 0.75f, 0.35f, 1.0f));
+        ImGui::SameLine();
+        paintButton(TerrainBrushMode::EraseDensity, "terrain_erase_density", "Erase foliage density (Ctrl-drag paints)", ImVec4(0.72f, 0.72f, 0.72f, 1.0f));
+        ImGui::EndDisabled();
+        if (!hasDensityMap){
+            ImGui::TextDisabled("Density map missing");
+        }
+    }
+
     ImGui::SeparatorText("Brush");
 
-    const bool brushTargetAvailable = isHeightBrush() ? hasHeightMap : hasBlendMap;
     ImGui::BeginDisabled(!brushTargetAvailable);
 
     if (iconButton(ICON_FA_CIRCLE, "shape_circle", "Circle shape", brushShape == TerrainBrushShape::Circle, toolButtonSize)){
@@ -1762,6 +1996,7 @@ void editor::TerrainEditWindow::show(){
         ts.flattenHeight       = flattenHeight;
         ts.heightMapResolution = heightMapResolution;
         ts.blendMapResolution  = blendMapResolution;
+        ts.densityMapResolution = densityMapResolution;
         ts.normalizeBlendPaint = normalizeBlendPaint;
         ts.heightMapStartAtMiddle = heightMapStartAtMiddle;
         ts.flattenPickOnStroke = flattenPickOnStroke;
@@ -1789,7 +2024,7 @@ void editor::TerrainEditWindow::setOpen(bool open){
     windowOpen = false;
     focusRequested = false;
     brushActive = false;
-    clearStroke();
+    endStroke();
 }
 
 void editor::TerrainEditWindow::openForEntity(Entity entity, uint32_t sceneId){
@@ -1806,6 +2041,7 @@ void editor::TerrainEditWindow::openForEntity(Entity entity, uint32_t sceneId){
     flattenHeight = ts.flattenHeight;
     heightMapResolution = ts.heightMapResolution;
     blendMapResolution  = ts.blendMapResolution;
+    densityMapResolution = ts.densityMapResolution;
     normalizeBlendPaint = ts.normalizeBlendPaint;
     heightMapStartAtMiddle = ts.heightMapStartAtMiddle;
     flattenPickOnStroke = ts.flattenPickOnStroke;
@@ -1829,7 +2065,8 @@ bool editor::TerrainEditWindow::isEditingScene(Scene* scene) const{
         return false;
     }
 
-    return !TerrainMapUtils::getTexture(*terrain, getBrushTarget()).empty();
+    Texture* texture = TerrainMapUtils::findTexture(*terrain, getBrushMapRef());
+    return texture && !texture->empty();
 }
 
 bool editor::TerrainEditWindow::beginStroke(Scene* scene, const Ray& ray){
@@ -1846,20 +2083,23 @@ bool editor::TerrainEditWindow::beginStroke(Scene* scene, const Ray& ray){
         return false;
     }
 
-    TerrainMapTarget target = getBrushTarget();
-    Texture& texture = TerrainMapUtils::getTexture(scene->getComponent<TerrainComponent>(entity), target);
+    const TerrainMapRef ref = getBrushMapRef();
+    Texture* texture = TerrainMapUtils::findTexture(scene->getComponent<TerrainComponent>(entity), ref);
+    if (!texture){
+        return false;
+    }
 
     clearStroke();
     stroke.active = true;
     stroke.sceneId = sceneProject->id;
     stroke.entity = entity;
-    stroke.target = target;
+    stroke.ref = ref;
 
     // Modifiers picked up at stroke start and held for the whole stroke:
-    // Shift turns any sculpt brush into Smooth, Ctrl inverts Raise/Lower.
+    // Shift turns any sculpt brush into Smooth, Ctrl inverts Raise/Lower and paint/erase.
+    const ImGuiIO& io = ImGui::GetIO();
     stroke.effectiveMode = brushMode;
     if (isHeightBrush()){
-        const ImGuiIO& io = ImGui::GetIO();
         if (io.KeyShift){
             stroke.effectiveMode = TerrainBrushMode::Smooth;
         }else if (io.KeyCtrl){
@@ -1869,11 +2109,13 @@ bool editor::TerrainEditWindow::beginStroke(Scene* scene, const Ray& ray){
                 stroke.effectiveMode = TerrainBrushMode::Raise;
             }
         }
+    }else if (isDensityBrush() && io.KeyCtrl){
+        stroke.effectiveMode = brushMode == TerrainBrushMode::PaintDensity ? TerrainBrushMode::EraseDensity : TerrainBrushMode::PaintDensity;
     }
 
-    const bool forceBeforePixels = texture.getPath(0).empty() || isOwnedEditableTexturePath(texture.getPath(0), sceneProject->id, entity, target);
-    stroke.beforeSnapshot = captureSnapshot(project, texture, forceBeforePixels);
-    if (target == TerrainMapTarget::HeightMap){
+    const bool forceBeforePixels = texture->getPath(0).empty() || isOwnedEditableTexturePath(texture->getPath(0), sceneProject->id, entity, ref);
+    stroke.beforeSnapshot = captureSnapshot(project, *texture, forceBeforePixels);
+    if (ref.target == TerrainMapTarget::HeightMap){
         TerrainComponent& terrain = scene->getComponent<TerrainComponent>(entity);
         captureStrokeHeightReference(terrain);
 
@@ -1920,11 +2162,11 @@ void editor::TerrainEditWindow::endStroke(){
     if (sceneProject && sceneProject->scene->isEntityCreated(stroke.entity)){
         TerrainComponent* terrain = sceneProject->scene->findComponent<TerrainComponent>(stroke.entity);
         if (terrain){
-            Texture& texture = TerrainMapUtils::getTexture(*terrain, stroke.target);
-            if (!addStrokePatchCommand(sceneProject, texture)){
-                TerrainMapSnapshot after = captureSnapshot(project, texture, true);
+            Texture* texture = TerrainMapUtils::findTexture(*terrain, stroke.ref);
+            if (texture && !addStrokePatchCommand(sceneProject, *texture)){
+                TerrainMapSnapshot after = captureSnapshot(project, *texture, true);
                 if (!snapshotsEqual(stroke.beforeSnapshot, after)){
-                    CommandHandle::get(stroke.sceneId)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, stroke.sceneId, stroke.entity, stroke.target, stroke.beforeSnapshot, after));
+                    CommandHandle::get(stroke.sceneId)->addCommandNoMerge(new TerrainTextureEditCmd(this, project, stroke.sceneId, stroke.entity, stroke.ref, stroke.beforeSnapshot, after));
                 }
             }
         }

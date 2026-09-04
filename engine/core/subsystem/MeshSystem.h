@@ -12,6 +12,7 @@
 #include "component/SpriteComponent.h"
 #include "component/MeshPolygonComponent.h"
 #include "component/CameraComponent.h"
+#include "component/InstancedMeshComponent.h"
 #include "component/TerrainComponent.h"
 #include "component/TilemapComponent.h"
 #include "component/Transform.h"
@@ -106,6 +107,14 @@ namespace doriax{
         bool createTerrain(TerrainComponent& terrain, MeshComponent& mesh);
         void createTerrainNode(TerrainComponent& terrain, float x, float y, float size, int lodDepth);
         void updateTerrainAutoRanges(TerrainComponent& terrain);
+
+        Entity createFoliageEntity(unsigned int capacity);
+        void destroyFoliageEntity(TerrainFoliageInstances& instances);
+        bool loadFoliageMesh(Entity entity, const std::string& path);
+        void sampleTerrainSurface(TerrainComponent& terrain, float localX, float localZ, float& height, Vector3& normal);
+        float sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliageLayer& layer, float localX, float localZ);
+        void fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, int chunkX, int chunkZ, const Vector3& viewLocal, std::vector<InstanceData>& instances, unsigned int& attemptBudget);
+        void updateTerrainFoliage(TerrainComponent& terrain, Transform& transform);
 
     public:
         MeshSystem(Scene* scene);

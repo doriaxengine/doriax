@@ -313,15 +313,15 @@ namespace {
     };
 
     static const FastPropertyDescriptor kTerrainProperties[] = {
-        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::heightMap>("heightMap", PropertyType::Texture, UpdateFlags_Terrain | UpdateFlags_Terrain_Texture),
+        makeFastProperty<TerrainComponent, Texture, &TerrainComponent::heightMap>("heightMap", PropertyType::Texture, UpdateFlags_Terrain | UpdateFlags_Terrain_Texture | UpdateFlags_Terrain_Foliage),
         makeFastProperty<TerrainComponent, Texture, &TerrainComponent::blendMap>("blendMap", PropertyType::Texture, UpdateFlags_Terrain_Texture),
         makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailRed>("textureDetailRed", PropertyType::Texture, UpdateFlags_Terrain_Texture),
         makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailGreen>("textureDetailGreen", PropertyType::Texture, UpdateFlags_Terrain_Texture),
         makeFastProperty<TerrainComponent, Texture, &TerrainComponent::textureDetailBlue>("textureDetailBlue", PropertyType::Texture, UpdateFlags_Terrain_Texture),
         makeFastProperty<TerrainComponent, bool, &TerrainComponent::autoSetRanges>("autoSetRanges", PropertyType::Bool, UpdateFlags_Terrain),
         makeFastProperty<TerrainComponent, Vector2, &TerrainComponent::offset>("offset", PropertyType::Vector2, UpdateFlags_None),
-        makeFastProperty<TerrainComponent, float, &TerrainComponent::terrainSize>("terrainSize", PropertyType::Float, UpdateFlags_Terrain),
-        makeFastProperty<TerrainComponent, float, &TerrainComponent::maxHeight>("maxHeight", PropertyType::Float, UpdateFlags_Terrain),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::terrainSize>("terrainSize", PropertyType::Float, UpdateFlags_Terrain | UpdateFlags_Terrain_Foliage),
+        makeFastProperty<TerrainComponent, float, &TerrainComponent::maxHeight>("maxHeight", PropertyType::Float, UpdateFlags_Terrain | UpdateFlags_Terrain_Foliage),
         makeFastProperty<TerrainComponent, float, &TerrainComponent::resolution>("resolution", PropertyType::Float, UpdateFlags_Terrain | UpdateFlags_Mesh_Reload),
         makeFastProperty<TerrainComponent, float, &TerrainComponent::textureBaseTiles>("textureBaseTiles", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<TerrainComponent, float, &TerrainComponent::textureDetailTiles>("textureDetailTiles", PropertyType::Float, UpdateFlags_None),
@@ -1266,6 +1266,23 @@ namespace {
         return getTilemapPropertyFast(static_cast<TilemapComponent*>(comp), propertyName);
     }
 
+    PropertyData getTerrainFoliageLayerPropertyFast(TerrainFoliageLayer& layer, const std::string& fieldName) {
+        static TerrainFoliageLayer def;
+        if (fieldName == ".meshPath") return {PropertyType::String, UpdateFlags_Terrain_Foliage, &def.meshPath, &layer.meshPath};
+        if (fieldName == ".densityMap") return {PropertyType::Texture, UpdateFlags_Terrain_Foliage, &def.densityMap, &layer.densityMap};
+        if (fieldName == ".density") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.density, &layer.density};
+        if (fieldName == ".minScale") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.minScale, &layer.minScale};
+        if (fieldName == ".maxScale") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.maxScale, &layer.maxScale};
+        if (fieldName == ".rotationJitter") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.rotationJitter, &layer.rotationJitter};
+        if (fieldName == ".alignToNormal") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.alignToNormal, &layer.alignToNormal};
+        if (fieldName == ".minSlope") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.minSlope, &layer.minSlope};
+        if (fieldName == ".maxSlope") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.maxSlope, &layer.maxSlope};
+        if (fieldName == ".drawDistance") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.drawDistance, &layer.drawDistance};
+        if (fieldName == ".seed") return {PropertyType::UInt, UpdateFlags_Terrain_Foliage, &def.seed, &layer.seed};
+
+        return PropertyData();
+    }
+
     PropertyData resolveTerrainPropertyFast(void* compRef, const std::string& propertyName) {
         TerrainComponent* comp = static_cast<TerrainComponent*>(compRef);
         if (!comp) return PropertyData();
@@ -1290,6 +1307,22 @@ namespace {
             }
             static float defValue = 0.0f;
             return {PropertyType::Float, UpdateFlags_Terrain, (void*)&defValue, (void*)&comp->ranges[index]};
+        }
+
+        if (propertyName == "foliageLayers") {
+            return {PropertyType::Custom, UpdateFlags_Terrain_Foliage, (void*)&def.foliageLayers, (void*)&comp->foliageLayers};
+        }
+
+        if (propertyName.compare(0, 14, "foliageLayers[") == 0) {
+            size_t pos = 14;
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']') {
+                return PropertyData();
+            }
+            if (index >= comp->foliageLayers.size()) {
+                return PropertyData();
+            }
+            return getTerrainFoliageLayerPropertyFast(comp->foliageLayers[index], propertyName.substr(pos + 1));
         }
 
         return PropertyData();
@@ -2199,6 +2232,28 @@ namespace {
         for (size_t i = 0; i < (compRef ? comp->ranges.size() : 1); i++) {
             std::string idx = compRef ? std::to_string(i) : "";
             ps["ranges[" + idx + "]"] = {PropertyType::Float, UpdateFlags_Terrain, (void*)&defValue, compRef ? (void*)&comp->ranges[i] : nullptr};
+        }
+
+        ps["foliageLayers"] = {PropertyType::Custom, UpdateFlags_Terrain_Foliage, (void*)&def.foliageLayers, compRef ? (void*)&comp->foliageLayers : nullptr};
+
+        static TerrainFoliageLayer defLayer;
+        for (size_t i = 0; i < (compRef ? comp->foliageLayers.size() : 1); i++) {
+            std::string prefix = "foliageLayers[" + (compRef ? std::to_string(i) : "") + "]";
+            TerrainFoliageLayer* layer = compRef ? &comp->foliageLayers[i] : nullptr;
+            auto field = [&](const char* name, PropertyType type, void* defRef, void* ref) {
+                ps[prefix + name] = {type, UpdateFlags_Terrain_Foliage, defRef, layer ? ref : nullptr};
+            };
+            field(".meshPath", PropertyType::String, (void*)&defLayer.meshPath, layer ? (void*)&layer->meshPath : nullptr);
+            field(".densityMap", PropertyType::Texture, (void*)&defLayer.densityMap, layer ? (void*)&layer->densityMap : nullptr);
+            field(".density", PropertyType::Float, (void*)&defLayer.density, layer ? (void*)&layer->density : nullptr);
+            field(".minScale", PropertyType::Float, (void*)&defLayer.minScale, layer ? (void*)&layer->minScale : nullptr);
+            field(".maxScale", PropertyType::Float, (void*)&defLayer.maxScale, layer ? (void*)&layer->maxScale : nullptr);
+            field(".rotationJitter", PropertyType::Float, (void*)&defLayer.rotationJitter, layer ? (void*)&layer->rotationJitter : nullptr);
+            field(".alignToNormal", PropertyType::Float, (void*)&defLayer.alignToNormal, layer ? (void*)&layer->alignToNormal : nullptr);
+            field(".minSlope", PropertyType::Float, (void*)&defLayer.minSlope, layer ? (void*)&layer->minSlope : nullptr);
+            field(".maxSlope", PropertyType::Float, (void*)&defLayer.maxSlope, layer ? (void*)&layer->maxSlope : nullptr);
+            field(".drawDistance", PropertyType::Float, (void*)&defLayer.drawDistance, layer ? (void*)&layer->drawDistance : nullptr);
+            field(".seed", PropertyType::UInt, (void*)&defLayer.seed, layer ? (void*)&layer->seed : nullptr);
         }
     }
 
@@ -3803,12 +3858,14 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
             tilemap->needUpdateTilemap = true;
         }
     }
-    if (updateFlags & (UpdateFlags_Terrain | UpdateFlags_Terrain_Texture)){
+    if (updateFlags & (UpdateFlags_Terrain | UpdateFlags_Terrain_Texture | UpdateFlags_Terrain_Foliage)){
         if (TerrainComponent* terrain = registry->findComponent<TerrainComponent>(entity)){
             if (updateFlags & UpdateFlags_Terrain)
                 terrain->needUpdateTerrain = true;
             if (updateFlags & UpdateFlags_Terrain_Texture)
                 terrain->needUpdateTexture = true;
+            if (updateFlags & UpdateFlags_Terrain_Foliage)
+                terrain->needUpdateFoliage = true;
         }
     }
     if (updateFlags & UpdateFlags_Instanced_Mesh){
@@ -4242,6 +4299,10 @@ void editor::Catalog::copyPropertyValue(EntityRegistry* sourceRegistry, Entity s
         case PropertyType::Custom:
             if (compType == ComponentType::ScriptComponent) {
                 copyComponent(sourceRegistry, sourceEntity, targetRegistry, targetEntity, compType);
+            } else if (compType == ComponentType::TerrainComponent && property == "foliageLayers") {
+                auto* source = Catalog::getPropertyRef<std::vector<TerrainFoliageLayer>>(sourceRegistry, sourceEntity, compType, property);
+                auto* target = Catalog::getPropertyRef<std::vector<TerrainFoliageLayer>>(targetRegistry, targetEntity, compType, property);
+                if (source && target) *target = *source;
             }
             break;
         default:

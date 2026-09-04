@@ -53,6 +53,7 @@ namespace doriax::editor{
         UpdateFlags_Reflection_Probe_Sampling = (uint64_t)1 << 33,
         // for changes outside the probe itself, like a mesh leaving the capture pass
         UpdateFlags_Reflection_Probe_Recapture_All = (uint64_t)1 << 34,
+        UpdateFlags_Terrain_Foliage     = (uint64_t)1 << 35,
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };

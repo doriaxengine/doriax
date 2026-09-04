@@ -1592,6 +1592,7 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         encodeFinite(terrainNode, "flattenHeight", ts.flattenHeight);
         terrainNode["heightMapResolution"] = ts.heightMapResolution;
         terrainNode["blendMapResolution"] = ts.blendMapResolution;
+        terrainNode["densityMapResolution"] = ts.densityMapResolution;
         terrainNode["normalizeBlendPaint"] = ts.normalizeBlendPaint;
         terrainNode["heightMapStartAtMiddle"] = ts.heightMapStartAtMiddle;
         terrainNode["flattenPickOnStroke"] = ts.flattenPickOnStroke;
@@ -1782,6 +1783,7 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node) {
         if (tn["flattenHeight"].IsDefined())      ts.flattenHeight      = decodeFinite(tn["flattenHeight"], ts.flattenHeight);
         if (tn["heightMapResolution"].IsDefined()) ts.heightMapResolution = tn["heightMapResolution"].as<int>();
         if (tn["blendMapResolution"].IsDefined()) ts.blendMapResolution = tn["blendMapResolution"].as<int>();
+        if (tn["densityMapResolution"].IsDefined()) ts.densityMapResolution = tn["densityMapResolution"].as<int>();
         if (tn["normalizeBlendPaint"].IsDefined()) ts.normalizeBlendPaint = tn["normalizeBlendPaint"].as<bool>();
         if (tn["heightMapStartAtMiddle"].IsDefined()) ts.heightMapStartAtMiddle = tn["heightMapStartAtMiddle"].as<bool>();
         if (tn["flattenPickOnStroke"].IsDefined()) ts.flattenPickOnStroke = tn["flattenPickOnStroke"].as<bool>();
@@ -4747,6 +4749,38 @@ TilemapComponent editor::Stream::decodeTilemapComponent(const YAML::Node& node, 
     return tilemap;
 }
 
+YAML::Node editor::Stream::encodeTerrainFoliageLayer(const TerrainFoliageLayer& layer) {
+    YAML::Node node;
+    node["meshPath"] = layer.meshPath;
+    node["densityMap"] = encodeTexture(layer.densityMap);
+    node["density"] = layer.density;
+    node["minScale"] = layer.minScale;
+    node["maxScale"] = layer.maxScale;
+    node["rotationJitter"] = layer.rotationJitter;
+    node["alignToNormal"] = layer.alignToNormal;
+    node["minSlope"] = layer.minSlope;
+    node["maxSlope"] = layer.maxSlope;
+    node["drawDistance"] = layer.drawDistance;
+    node["seed"] = layer.seed;
+    return node;
+}
+
+TerrainFoliageLayer editor::Stream::decodeTerrainFoliageLayer(const YAML::Node& node) {
+    TerrainFoliageLayer layer;
+    if (node["meshPath"]) layer.meshPath = node["meshPath"].as<std::string>();
+    if (node["densityMap"]) layer.densityMap = decodeTexture(node["densityMap"]);
+    if (node["seed"]) layer.seed = node["seed"].as<unsigned int>();
+    layer.density = decodeFinite(node["density"], layer.density);
+    layer.minScale = decodeFinite(node["minScale"], layer.minScale);
+    layer.maxScale = decodeFinite(node["maxScale"], layer.maxScale);
+    layer.rotationJitter = decodeFinite(node["rotationJitter"], layer.rotationJitter);
+    layer.alignToNormal = decodeFinite(node["alignToNormal"], layer.alignToNormal);
+    layer.minSlope = decodeFinite(node["minSlope"], layer.minSlope);
+    layer.maxSlope = decodeFinite(node["maxSlope"], layer.maxSlope);
+    layer.drawDistance = decodeFinite(node["drawDistance"], layer.drawDistance);
+    return layer;
+}
+
 YAML::Node editor::Stream::encodeTerrainComponent(const TerrainComponent& terrain) {
     YAML::Node node;
     node["heightMap"] = encodeTexture(terrain.heightMap);
@@ -4770,6 +4804,14 @@ YAML::Node editor::Stream::encodeTerrainComponent(const TerrainComponent& terrai
             rangesNode.push_back(range);
         }
         node["ranges"] = rangesNode;
+    }
+
+    if (!terrain.foliageLayers.empty()) {
+        YAML::Node layersNode;
+        for (const TerrainFoliageLayer& layer : terrain.foliageLayers) {
+            layersNode.push_back(encodeTerrainFoliageLayer(layer));
+        }
+        node["foliageLayers"] = layersNode;
     }
 
     return node;
@@ -4807,7 +4849,20 @@ TerrainComponent editor::Stream::decodeTerrainComponent(const YAML::Node& node, 
         }
     }
 
+    // Cleared unconditionally: an absent key means the terrain has no layers, and reloading a
+    // scene over a loaded terrain must not resurrect layers that were removed.
+    terrain.foliageLayers.clear();
+    if (node["foliageLayers"] && node["foliageLayers"].IsSequence()) {
+        for (std::size_t i = 0; i < node["foliageLayers"].size(); i++) {
+            if (!node["foliageLayers"][i] || node["foliageLayers"][i].IsNull()) {
+                continue;
+            }
+            terrain.foliageLayers.push_back(decodeTerrainFoliageLayer(node["foliageLayers"][i]));
+        }
+    }
+
     terrain.needUpdateTerrain = true;
+    terrain.needUpdateFoliage = true;
     terrain.needUpdateTexture = true;
     for (int v = 0; v < MAX_TERRAIN_VIEWS; v++){
         terrain.views[v].needUpdateNodesBuffer = false;

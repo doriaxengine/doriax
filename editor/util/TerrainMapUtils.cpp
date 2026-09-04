@@ -12,12 +12,27 @@
 using namespace doriax;
 using namespace doriax::editor;
 
-Texture& editor::TerrainMapUtils::getTexture(TerrainComponent& terrain, TerrainMapTarget target){
-    return target == TerrainMapTarget::HeightMap ? terrain.heightMap : terrain.blendMap;
+Texture* editor::TerrainMapUtils::findTexture(TerrainComponent& terrain, const TerrainMapRef& ref){
+    if (ref.target == TerrainMapTarget::HeightMap){
+        return &terrain.heightMap;
+    }
+    if (ref.target == TerrainMapTarget::BlendMap){
+        return &terrain.blendMap;
+    }
+    if (ref.layer < 0 || ref.layer >= static_cast<int>(terrain.foliageLayers.size())){
+        return nullptr;
+    }
+    return &terrain.foliageLayers[ref.layer].densityMap;
 }
 
-const char* editor::TerrainMapUtils::getPropertyName(TerrainMapTarget target){
-    return target == TerrainMapTarget::HeightMap ? "heightMap" : "blendMap";
+std::string editor::TerrainMapUtils::getPropertyName(const TerrainMapRef& ref){
+    if (ref.target == TerrainMapTarget::HeightMap){
+        return "heightMap";
+    }
+    if (ref.target == TerrainMapTarget::BlendMap){
+        return "blendMap";
+    }
+    return "foliageLayers[" + std::to_string(ref.layer) + "].densityMap";
 }
 
 bool editor::TerrainMapUtils::hasLoadedData(Texture& texture){
@@ -52,7 +67,7 @@ bool editor::TerrainMapUtils::writeFile(Project* project, const std::string& rel
     return true;
 }
 
-void editor::TerrainMapUtils::refresh(SceneProject* sceneProject, Entity entity, TerrainMapTarget target){
+void editor::TerrainMapUtils::refresh(SceneProject* sceneProject, Entity entity, const TerrainMapRef& ref){
     if (!sceneProject){
         return;
     }
@@ -61,16 +76,21 @@ void editor::TerrainMapUtils::refresh(SceneProject* sceneProject, Entity entity,
         return;
     }
 
-    if (target == TerrainMapTarget::HeightMap){
+    if (ref.target == TerrainMapTarget::HeightMap){
         terrain->heightMapLoaded = false;
         terrain->needUpdateTerrain = true;
         terrain->needUpdateTexture = true;
-    }else{
+        // Instances sit on the surface, so a sculpt moves them.
+        terrain->needUpdateFoliage = true;
+    }else if (ref.target == TerrainMapTarget::BlendMap){
         terrain->needUpdateTexture = true;
+    }else{
+        terrain->needUpdateFoliage = true;
     }
 
-    Texture& texture = getTexture(*terrain, target);
-    texture.invalidateRender();
+    if (Texture* texture = findTexture(*terrain, ref)){
+        texture->invalidateRender();
+    }
 }
 
 std::vector<unsigned char> editor::TerrainMapUtils::copyRegion(const unsigned char* pixels, int mapWidth, int bytesPerTexel, const TerrainMapRegion& region){
