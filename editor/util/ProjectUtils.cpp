@@ -415,8 +415,10 @@ Entity editor::ProjectUtils::getLockedEntityParent(Scene* scene, Entity entity){
     for (size_t i = 0; i < terrains->size(); ++i) {
         TerrainComponent& terrain = terrains->getComponentFromIndex(i);
         for (const TerrainFoliageInstances& instances : terrain.foliageInstances) {
-            if (instances.entity == entity) {
-                return terrains->getEntity(i);
+            for (const TerrainFoliageChunk& chunk : instances.chunks) {
+                if (chunk.entity == entity) {
+                    return terrains->getEntity(i);
+                }
             }
         }
     }

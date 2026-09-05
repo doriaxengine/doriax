@@ -109,11 +109,12 @@ namespace doriax{
         void updateTerrainAutoRanges(TerrainComponent& terrain);
 
         Entity createFoliageEntity(unsigned int capacity);
-        void destroyFoliageEntity(TerrainFoliageInstances& instances);
+        void destroyFoliageEntity(TerrainFoliageChunk& chunk);
         bool loadFoliageMesh(Entity entity, const std::string& path);
         void sampleTerrainSurface(TerrainComponent& terrain, float localX, float localZ, float& height, Vector3& normal);
         float sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliageLayer& layer, float localX, float localZ);
-        void fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, int chunkX, int chunkZ, const Vector3& viewLocal, std::vector<InstanceData>& instances, unsigned int& attemptBudget);
+        void fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, float chunkSize, int chunkX, int chunkZ, std::vector<InstanceData>& instances);
+        void updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& terrainPosition, const Quaternion& terrainRotation, const Vector3& terrainScale, const Vector3& viewLocal);
         void updateTerrainFoliage(TerrainComponent& terrain, Transform& transform);
 
     public:

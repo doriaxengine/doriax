@@ -2723,19 +2723,33 @@ bool MeshSystem::createTerrain(TerrainComponent& terrain, MeshComponent& mesh){
     return true;
 }
 
-// A camera move only rebuilds a layer when it crosses a chunk.
-static const float TERRAIN_FOLIAGE_CHUNK_SIZE = 32.0f;
+// A fixed (2*radius+1)^2 grid of chunk entities, so draw distance grows the chunks and not
+// their count: each entity carries its own copy of the layer mesh.
+static const int TERRAIN_FOLIAGE_CHUNK_RADIUS = 2;
+static const float TERRAIN_FOLIAGE_MIN_CHUNK_SIZE = 8.0f;
+static const unsigned int TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES = 8192;
 
-// An unpainted map accepts nothing, so it is the attempt budget, not the instance cap, that
-// bounds a resolve.
-static const unsigned int TERRAIN_FOLIAGE_MAX_INSTANCES = 200000;
-static const unsigned int TERRAIN_FOLIAGE_MAX_ATTEMPTS = 2000000;
-static const int TERRAIN_FOLIAGE_MAX_CHUNK_RADIUS = 16;
+// radius*chunkSize is what the ring covers in every direction, wherever in the middle chunk the camera is.
+static float foliageChunkSize(const TerrainFoliageLayer& layer){
+    return std::max(TERRAIN_FOLIAGE_MIN_CHUNK_SIZE, layer.drawDistance / TERRAIN_FOLIAGE_CHUNK_RADIUS);
+}
 
-// Sized for a fully painted layer, so a first look does not have to grow the buffer.
-static unsigned int estimateFoliageCapacity(const TerrainFoliageLayer& layer){
-    const float estimate = layer.density * 3.14159265f * layer.drawDistance * layer.drawDistance;
-    return static_cast<unsigned int>(std::clamp(estimate, 1024.0f, static_cast<float>(TERRAIN_FOLIAGE_MAX_INSTANCES)));
+// Placements tried in a fully painted chunk. Density 0 must attempt nothing, so no minimum here.
+static unsigned int foliageChunkAttempts(const TerrainFoliageLayer& layer, float chunkSize){
+    const float estimate = layer.density * chunkSize * chunkSize;
+    return static_cast<unsigned int>(std::clamp(estimate, 0.0f, static_cast<float>(TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES)));
+}
+
+// Holds a whole chunk of attempts, so a fill never overruns the buffer nor has to grow it.
+static unsigned int foliageChunkCapacity(const TerrainFoliageLayer& layer, float chunkSize){
+    return std::max(1u, foliageChunkAttempts(layer, chunkSize));
+}
+
+// Wraps coordinates onto the grid: a ring sliding by one column reassigns only the column that left it.
+static size_t foliageSlotIndex(int chunkX, int chunkZ, int side){
+    const int slotX = ((chunkX % side) + side) % side;
+    const int slotZ = ((chunkZ % side) + side) % side;
+    return static_cast<size_t>(slotZ) * side + slotX;
 }
 
 static unsigned int hashFoliage(unsigned int seed, unsigned int chunkX, unsigned int chunkZ, unsigned int index){
@@ -2776,11 +2790,11 @@ Entity MeshSystem::createFoliageEntity(unsigned int capacity){
     return entity;
 }
 
-void MeshSystem::destroyFoliageEntity(TerrainFoliageInstances& instances){
-    if (instances.entity != NULL_ENTITY && scene->isEntityCreated(instances.entity)){
-        scene->destroyEntity(instances.entity);
+void MeshSystem::destroyFoliageEntity(TerrainFoliageChunk& chunk){
+    if (chunk.entity != NULL_ENTITY && scene->isEntityCreated(chunk.entity)){
+        scene->destroyEntity(chunk.entity);
     }
-    instances = TerrainFoliageInstances();
+    chunk = TerrainFoliageChunk();
 }
 
 bool MeshSystem::loadFoliageMesh(Entity entity, const std::string& path){
@@ -2869,41 +2883,33 @@ float MeshSystem::sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliage
     return pixels[(static_cast<size_t>(texelZ) * width + texelX) * channels] / 255.0f;
 }
 
-void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, int chunkX, int chunkZ, const Vector3& viewLocal, std::vector<InstanceData>& instances, unsigned int& attemptBudget){
-    const float originX = chunkX * TERRAIN_FOLIAGE_CHUNK_SIZE;
-    const float originZ = chunkZ * TERRAIN_FOLIAGE_CHUNK_SIZE;
+// Resolved from the chunk coordinate alone, with no camera term, so a slot that stays in the
+// ring is never refilled.
+void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, float chunkSize, int chunkX, int chunkZ, std::vector<InstanceData>& instances){
+    instances.clear();
+
+    const float originX = chunkX * chunkSize;
+    const float originZ = chunkZ * chunkSize;
     const float halfSize = terrain.terrainSize * 0.5f;
 
     if (originX > halfSize || originZ > halfSize ||
-        (originX + TERRAIN_FOLIAGE_CHUNK_SIZE) < -halfSize || (originZ + TERRAIN_FOLIAGE_CHUNK_SIZE) < -halfSize){
+        (originX + chunkSize) < -halfSize || (originZ + chunkSize) < -halfSize){
         return;
     }
 
-    const int attempts = static_cast<int>(layer.density * TERRAIN_FOLIAGE_CHUNK_SIZE * TERRAIN_FOLIAGE_CHUNK_SIZE);
-    const float drawDistanceSq = layer.drawDistance * layer.drawDistance;
+    const unsigned int attempts = foliageChunkAttempts(layer, chunkSize);
     const float scaleRange = layer.maxScale - layer.minScale;
 
-    for (int i = 0; i < attempts; i++){
-        if (attemptBudget == 0 || instances.size() >= TERRAIN_FOLIAGE_MAX_INSTANCES){
-            return;
-        }
-        attemptBudget--;
-
-        const unsigned int hashX = hashFoliage(layer.seed, static_cast<unsigned int>(chunkX), static_cast<unsigned int>(chunkZ), static_cast<unsigned int>(i));
+    for (unsigned int i = 0; i < attempts; i++){
+        const unsigned int hashX = hashFoliage(layer.seed, static_cast<unsigned int>(chunkX), static_cast<unsigned int>(chunkZ), i);
         const unsigned int hashZ = mixFoliage(hashX);
         const unsigned int hashAccept = mixFoliage(hashZ);
         const unsigned int hashScale = mixFoliage(hashAccept);
         const unsigned int hashYaw = mixFoliage(hashScale);
 
-        const float localX = originX + randomFoliage(hashX) * TERRAIN_FOLIAGE_CHUNK_SIZE;
-        const float localZ = originZ + randomFoliage(hashZ) * TERRAIN_FOLIAGE_CHUNK_SIZE;
+        const float localX = originX + randomFoliage(hashX) * chunkSize;
+        const float localZ = originZ + randomFoliage(hashZ) * chunkSize;
         if (localX < -halfSize || localX > halfSize || localZ < -halfSize || localZ > halfSize){
-            continue;
-        }
-
-        const float distanceX = localX - viewLocal.x;
-        const float distanceZ = localZ - viewLocal.z;
-        if ((distanceX * distanceX + distanceZ * distanceZ) > drawDistanceSq){
             continue;
         }
 
@@ -2937,10 +2943,152 @@ void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer
     }
 }
 
+void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& terrainPosition, const Quaternion& terrainRotation, const Vector3& terrainScale, const Vector3& viewLocal){
+    const int side = TERRAIN_FOLIAGE_CHUNK_RADIUS * 2 + 1;
+    const float chunkSize = foliageChunkSize(layer);
+    const unsigned int capacity = foliageChunkCapacity(layer, chunkSize);
+
+    instances.chunks.resize(static_cast<size_t>(side) * side);
+
+    // Slot coordinates are in units of the old chunk size. The entities stay: dropping them
+    // would reload every mesh on each frame of a draw distance drag.
+    if (instances.chunkSize != chunkSize){
+        instances.chunkSize = chunkSize;
+        for (TerrainFoliageChunk& chunk : instances.chunks){
+            chunk.assigned = false;
+        }
+    }
+
+    // A failed load is not retried every frame, but a terrain change is a chance at a fixed path.
+    const bool retryMesh = instances.loadFailed && terrain.needUpdateFoliage;
+    if (instances.loadedMeshPath != layer.meshPath || retryMesh){
+        instances.loadedMeshPath = layer.meshPath;
+        instances.loadFailed = false;
+        for (TerrainFoliageChunk& chunk : instances.chunks){
+            chunk.meshLoaded = false;
+            chunk.assigned = false;
+        }
+    }
+
+    // A density map restored from a scene holds only a path, and the resolve reads it on the CPU.
+    layer.densityMap.setReleaseDataAfterLoad(false);
+    if (layer.densityMap.load().state == ResourceLoadState::Loading){
+        instances.needUpdate = true;
+        return;
+    }
+
+    const int centerX = static_cast<int>(std::floor(viewLocal.x / chunkSize));
+    const int centerZ = static_cast<int>(std::floor(viewLocal.z / chunkSize));
+
+    // Layer-wide invalidation only: a single slot going stale clears its own assigned flag.
+    const bool refillAll = instances.needUpdate || terrain.needUpdateFoliage;
+    instances.needUpdate = false;
+
+    // Each chunk entity parses the mesh for itself, so a new grid spreads its loads over frames.
+    int meshLoadBudget = 2;
+
+    for (int offsetZ = -TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetZ <= TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetZ++){
+        for (int offsetX = -TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetX <= TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetX++){
+            const int chunkX = centerX + offsetX;
+            const int chunkZ = centerZ + offsetZ;
+
+            TerrainFoliageChunk& chunk = instances.chunks[foliageSlotIndex(chunkX, chunkZ, side)];
+
+            if (chunk.entity == NULL_ENTITY){
+                chunk.entity = createFoliageEntity(capacity);
+            }
+
+            bool justLoaded = false;
+            if (!chunk.meshLoaded && !instances.loadFailed && meshLoadBudget > 0){
+                meshLoadBudget--;
+                instances.loadFailed = !loadFoliageMesh(chunk.entity, layer.meshPath);
+                chunk.meshLoaded = !instances.loadFailed;
+                chunk.assigned = false;
+                justLoaded = true;
+            }
+
+            // Taken after the calls above: creating an entity or loading a multi-node mesh adds
+            // components, which moves the arrays these reference.
+            Transform& foliageTransform = scene->getComponent<Transform>(chunk.entity);
+            MeshComponent& mesh = scene->getComponent<MeshComponent>(chunk.entity);
+            InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(chunk.entity);
+
+            if (foliageTransform.position != terrainPosition ||
+                foliageTransform.rotation != terrainRotation ||
+                foliageTransform.scale != terrainScale){
+                foliageTransform.position = terrainPosition;
+                foliageTransform.rotation = terrainRotation;
+                foliageTransform.scale = terrainScale;
+                foliageTransform.needUpdate = true;
+            }
+
+            if (justLoaded){
+                mesh.needReload = true;
+
+                // Animated and skinned models keep geometry on child entities, leaving the root empty.
+                if (chunk.meshLoaded && mesh.numSubmeshes == 0){
+                    Log::error("Foliage mesh has no geometry on its root and cannot be instanced: %s", layer.meshPath.c_str());
+                    instances.loadFailed = true;
+                    chunk.meshLoaded = false;
+                }
+            }
+
+            // The entity still holds the mesh it had before the path changed, so a slot without
+            // the current one is emptied rather than left drawing the old field.
+            if (!chunk.meshLoaded){
+                if (!instmesh.instances.empty()){
+                    instmesh.instances.clear();
+                    instmesh.needUpdateInstances = true;
+                }
+                chunk.assigned = false;
+                continue;
+            }
+
+            // Grows with headroom and never shrinks, so a draw distance drag rebuilds little.
+            if (instmesh.maxInstances < capacity){
+                instmesh.maxInstances = std::min(capacity + capacity / 4, TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES);
+                chunk.assigned = false;
+                mesh.needReload = true;
+            }
+
+            // Tracked apart from the requested capacity, so a fill never assumes the reload has run.
+            if (mesh.loaded && !mesh.needReload){
+                chunk.loadedCapacity = instmesh.maxInstances;
+            }
+
+            // A grow the reload has not caught up with: only a rebuilt buffer holds the attempts.
+            if (mesh.needReload || chunk.loadedCapacity < capacity){
+                chunk.assigned = false;
+                continue;
+            }
+
+            if (chunk.assigned && !refillAll && chunk.chunkX == chunkX && chunk.chunkZ == chunkZ){
+                continue;
+            }
+
+            chunk.chunkX = chunkX;
+            chunk.chunkZ = chunkZ;
+            chunk.assigned = true;
+
+            fillFoliageChunk(terrain, layer, chunkSize, chunkX, chunkZ, instmesh.instances);
+            instmesh.needUpdateInstances = true;
+        }
+    }
+}
+
 void MeshSystem::updateTerrainFoliage(TerrainComponent& terrain, Transform& transform){
-    // A removed layer takes its instanced entity with it.
+    // Copied before a chunk entity can be created or destroyed: both move the Transform array,
+    // which would leave this terrain's own component reference behind.
+    const Matrix4 terrainModelMatrix = transform.modelMatrix;
+    const Vector3 terrainPosition = transform.worldPosition;
+    const Quaternion terrainRotation = transform.worldRotation;
+    const Vector3 terrainScale = transform.worldScale;
+
+    // A removed layer takes its chunk entities with it.
     while (terrain.foliageInstances.size() > terrain.foliageLayers.size()){
-        destroyFoliageEntity(terrain.foliageInstances.back());
+        for (TerrainFoliageChunk& chunk : terrain.foliageInstances.back().chunks){
+            destroyFoliageEntity(chunk);
+        }
         terrain.foliageInstances.pop_back();
     }
     terrain.foliageInstances.resize(terrain.foliageLayers.size());
@@ -2955,115 +3103,26 @@ void MeshSystem::updateTerrainFoliage(TerrainComponent& terrain, Transform& tran
         return;
     }
 
-    const Matrix4 inverseModel = transform.modelMatrix.inverse();
+    const Matrix4 inverseModel = terrainModelMatrix.inverse();
     if (!inverseModel.isValid()){
         return;
     }
 
     const Vector3 viewLocal = inverseModel * cameraTransform->worldPosition;
-    const int chunkX = static_cast<int>(std::floor(viewLocal.x / TERRAIN_FOLIAGE_CHUNK_SIZE));
-    const int chunkZ = static_cast<int>(std::floor(viewLocal.z / TERRAIN_FOLIAGE_CHUNK_SIZE));
 
     for (size_t i = 0; i < terrain.foliageLayers.size(); i++){
         TerrainFoliageLayer& layer = terrain.foliageLayers[i];
         TerrainFoliageInstances& instances = terrain.foliageInstances[i];
 
         if (layer.meshPath.empty() || layer.densityMap.empty()){
-            destroyFoliageEntity(instances);
-            continue;
-        }
-
-        if (instances.entity == NULL_ENTITY){
-            instances.capacity = estimateFoliageCapacity(layer);
-            instances.entity = createFoliageEntity(instances.capacity);
-        }
-
-        Transform& foliageTransform = scene->getComponent<Transform>(instances.entity);
-        if (foliageTransform.position != transform.worldPosition ||
-            foliageTransform.rotation != transform.worldRotation ||
-            foliageTransform.scale != transform.worldScale){
-            foliageTransform.position = transform.worldPosition;
-            foliageTransform.rotation = transform.worldRotation;
-            foliageTransform.scale = transform.worldScale;
-            foliageTransform.needUpdate = true;
-        }
-
-        // A density map restored from a scene holds only a path, and the resolve reads it on the CPU.
-        layer.densityMap.setReleaseDataAfterLoad(false);
-        if (layer.densityMap.load().state == ResourceLoadState::Loading){
-            instances.needUpdate = true;
-            continue;
-        }
-
-        MeshComponent& mesh = scene->getComponent<MeshComponent>(instances.entity);
-        InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(instances.entity);
-
-        // Not retried every frame, but a deliberate terrain change is a chance at a fixed path.
-        const bool retryMesh = instances.loadFailed && terrain.needUpdateFoliage;
-        if (instances.loadedMeshPath != layer.meshPath || retryMesh){
-            instances.loadFailed = !loadFoliageMesh(instances.entity, layer.meshPath);
-            mesh.needReload = true;
-            instances.loadedMeshPath = layer.meshPath;
-            instances.needUpdate = true;
-
-            // Animated and skinned models keep geometry on child entities, leaving the root empty.
-            if (!instances.loadFailed && mesh.numSubmeshes == 0){
-                Log::error("Foliage mesh has no geometry on its root and cannot be instanced: %s", layer.meshPath.c_str());
+            for (TerrainFoliageChunk& chunk : instances.chunks){
+                destroyFoliageEntity(chunk);
             }
-        }
-
-        // Tracked apart from the requested capacity, so a fill never assumes the reload has run.
-        if (mesh.loaded && !mesh.needReload){
-            instances.loadedCapacity = instmesh.maxInstances;
-        }
-
-        // Nothing to fill into yet. A failed load idles here instead of rescanning every frame.
-        if (instances.loadedCapacity == 0){
-            instances.needUpdate = true;
+            instances = TerrainFoliageInstances();
             continue;
         }
 
-        if (!instances.needUpdate && !terrain.needUpdateFoliage && chunkX == instances.chunkX && chunkZ == instances.chunkZ){
-            continue;
-        }
-
-        instances.chunkX = chunkX;
-        instances.chunkZ = chunkZ;
-        instances.needUpdate = false;
-        instmesh.instances.clear();
-
-        // Cut to what the budget covers, so an expensive layer loses distance evenly instead of
-        // running out partway through the walk.
-        const int wantedRadius = std::clamp(static_cast<int>(std::ceil(layer.drawDistance / TERRAIN_FOLIAGE_CHUNK_SIZE)), 1, TERRAIN_FOLIAGE_MAX_CHUNK_RADIUS);
-        const unsigned int chunkAttempts = static_cast<unsigned int>(std::max(1.0f, layer.density * TERRAIN_FOLIAGE_CHUNK_SIZE * TERRAIN_FOLIAGE_CHUNK_SIZE));
-        const int budgetSide = static_cast<int>(std::sqrt(static_cast<double>(std::max(1u, TERRAIN_FOLIAGE_MAX_ATTEMPTS / chunkAttempts))));
-        const int radius = std::min(wantedRadius, std::max(0, (budgetSide - 1) / 2));
-
-        // Outwards from the camera, so the instance cap trims the far ring and not one side.
-        unsigned int attemptBudget = TERRAIN_FOLIAGE_MAX_ATTEMPTS;
-        for (int ring = 0; ring <= radius; ring++){
-            for (int z = chunkZ - ring; z <= chunkZ + ring; z++){
-                for (int x = chunkX - ring; x <= chunkX + ring; x++){
-                    if (ring > 0 && std::abs(x - chunkX) != ring && std::abs(z - chunkZ) != ring){
-                        continue;
-                    }
-                    fillFoliageChunk(terrain, layer, x, z, viewLocal, instmesh.instances, attemptBudget);
-                }
-            }
-        }
-
-        // Held back to what the buffer holds, and refilled once the reload has grown it.
-        if (instmesh.instances.size() > instances.loadedCapacity){
-            if (instmesh.instances.size() > instances.capacity){
-                instances.capacity = static_cast<unsigned int>(instmesh.instances.size() + instmesh.instances.size() / 4);
-                instmesh.maxInstances = instances.capacity;
-                mesh.needReload = true;
-            }
-            instmesh.instances.resize(instances.loadedCapacity);
-            instances.needUpdate = true;
-        }
-
-        instmesh.needUpdateInstances = true;
+        updateFoliageLayer(terrain, layer, instances, terrainPosition, terrainRotation, terrainScale, viewLocal);
     }
 
     terrain.needUpdateFoliage = false;
@@ -5737,7 +5796,9 @@ void MeshSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
     if (componentId == scene->getComponentId<TerrainComponent>()) {
         TerrainComponent& terrain = scene->getComponent<TerrainComponent>(entity);
         for (TerrainFoliageInstances& instances : terrain.foliageInstances) {
-            destroyFoliageEntity(instances);
+            for (TerrainFoliageChunk& chunk : instances.chunks) {
+                destroyFoliageEntity(chunk);
+            }
         }
         terrain.foliageInstances.clear();
     }

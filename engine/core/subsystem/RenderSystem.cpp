@@ -2941,6 +2941,11 @@ bool RenderSystem::drawMesh(MeshComponent& mesh, Transform& transform, CameraCom
             return false;
         }
 
+        // unpainted foliage chunks make this common
+        if (instmesh && instmesh->numVisible == 0){
+            return false;
+        }
+
         updateMeshBuffers(mesh);
 
         // Buffer already uploaded this frame by updateInstanceBuffers().
@@ -3113,6 +3118,11 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, const float cameraFar, con
         }
 
         if (mesh.worldAABB != AABB::ZERO && !isInsideCamera(cameraFar, frustumPlanes, mesh.worldAABB)) {
+            return false;
+        }
+
+        // unpainted foliage chunks make this common
+        if (instmesh && instmesh->numVisible == 0){
             return false;
         }
 
@@ -3459,6 +3469,11 @@ bool RenderSystem::drawMeshGBuffer(MeshComponent& mesh, const float cameraFar, c
     }
 
     if (mesh.worldAABB != AABB::ZERO && !isInsideCamera(cameraFar, frustumPlanes, mesh.worldAABB)) {
+        return false;
+    }
+
+    // unpainted foliage chunks make this common
+    if (instmesh && instmesh->numVisible == 0){
         return false;
     }
 
@@ -5705,7 +5720,9 @@ void RenderSystem::updateInstancedMesh(InstancedMeshComponent& instmesh, MeshCom
         bRotation = transform.worldRotation.inverse() * bRotation;
     }
 
-    mesh.aabb = AABB::ZERO;
+    // Not AABB::ZERO: that is a finite box at the origin, so merging into it stretches every
+    // instanced mesh back to its own origin and defeats culling.
+    mesh.aabb.setNull();
     instmesh.numVisible = 0;
     size_t instancesSize = (instmesh.instances.size() < instmesh.maxInstances)? instmesh.instances.size() : instmesh.maxInstances;
     for (int i = 0; i < instancesSize; i++){
