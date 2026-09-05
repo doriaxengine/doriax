@@ -1380,7 +1380,6 @@ std::string editor::Factory::createMirrorComponent(int indentSpaces, EntityRegis
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "MirrorComponent mirror;\n";
-    // reflectionCamera is created automatically at runtime by RenderSystem
     code << ind << "mirror.normal = " << formatVector3(mirror.normal) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "MirrorComponent", "mirror", assignExisting);
     return code.str();

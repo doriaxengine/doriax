@@ -231,6 +231,11 @@ void RenderSystem::load(){
 }
 
 void RenderSystem::destroy(){
+    // Before the transform traversal below, which the camera entities are part of.
+    while (!mirrorCameras.empty()){
+        destroyMirrorCamera(mirrorCameras.begin()->first);
+    }
+
     // cannot destroy static textures because it affects other scenes
     //emptyWhite.destroyTexture();
     //emptyBlack.destroyTexture();
@@ -5169,6 +5174,13 @@ void RenderSystem::updateCamera(CameraComponent& camera, Transform& transform){
 // entity (not serialized, not shown in the editor) whose framebuffer feeds the
 // mirror mesh base texture. Returns the camera entity.
 Entity RenderSystem::createMirrorCamera(Entity mirrorEntity){
+    if (!scene->findComponent<MirrorComponent>(mirrorEntity))
+        return NULL_ENTITY;
+
+    const Entity existing = getMirrorCamera(mirrorEntity);
+    if (existing != NULL_ENTITY && scene->isEntityCreated(existing))
+        return existing;
+
     Entity camEntity = scene->createSystemEntity();
     scene->addComponent<Transform>(camEntity, {});
     scene->addComponent<CameraComponent>(camEntity, {});
@@ -5185,7 +5197,37 @@ Entity RenderSystem::createMirrorCamera(Entity mirrorEntity){
     cam.framebufferWidth = w;
     cam.framebufferHeight = h;
 
+    mirrorCameras[mirrorEntity] = camEntity;
     return camEntity;
+}
+
+Entity RenderSystem::getMirrorCamera(Entity mirrorEntity) const{
+    auto it = mirrorCameras.find(mirrorEntity);
+    return it != mirrorCameras.end() ? it->second : NULL_ENTITY;
+}
+
+void RenderSystem::destroyMirrorCamera(Entity entity){
+    // Ownership leaves the map before entity destruction dispatches removal callbacks.
+    auto camera = mirrorCameras.extract(entity);
+    if (camera.empty())
+        return;
+
+    const Entity cameraEntity = camera.mapped();
+    if (cameraEntity == NULL_ENTITY || !scene->isEntityCreated(cameraEntity))
+        return;
+
+    // Detach the borrowed framebuffer before destroying the camera that owns it.
+    if (CameraComponent* cameraComponent = scene->findComponent<CameraComponent>(cameraEntity)){
+        if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)){
+            if (mesh->numSubmeshes > 0){
+                Texture& baseTexture = mesh->submeshes[0].material.baseColorTexture;
+                if (baseTexture.getFramebuffer() == cameraComponent->framebuffer){
+                    baseTexture = Texture();
+                }
+            }
+        }
+    }
+    scene->destroyEntity(cameraEntity);
 }
 
 // Drives each mirror's reflection camera: its view = mainView * reflect(plane),
@@ -5220,10 +5262,9 @@ void RenderSystem::updateMirrors(Entity mainCameraEntity){
     for (size_t i = 0; i < mirrors->size(); i++){
         Entity entity = mirrors->getEntity(i);
 
-        Entity camEntity = mirrors->getComponentFromIndex(i).reflectionCamera;
+        Entity camEntity = getMirrorCamera(entity);
         if (camEntity == NULL_ENTITY || !scene->isEntityCreated(camEntity)){
             camEntity = createMirrorCamera(entity);
-            mirrors->getComponentFromIndex(i).reflectionCamera = camEntity;
             // the loop counting render-to-texture cameras has run, but draw() still
             // renders this one in the same frame
             hasMultipleCameras = true;
@@ -7489,32 +7530,7 @@ void RenderSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         CameraComponent& camera = scene->getComponent<CameraComponent>(entity);
         destroyCamera(camera, true);
     } else if (componentId == scene->getComponentId<MirrorComponent>()) {
-        MirrorComponent& mirror = scene->getComponent<MirrorComponent>(entity);
-
-        Framebuffer* reflectionFb = nullptr;
-        if (mirror.reflectionCamera != NULL_ENTITY && scene->isEntityCreated(mirror.reflectionCamera)){
-            if (CameraComponent* refCam = scene->findComponent<CameraComponent>(mirror.reflectionCamera)){
-                reflectionFb = refCam->framebuffer;
-            }
-        }
-
-        // The mirror bound the reflection camera's framebuffer as the mesh base texture.
-        // Clear that binding before destroying the camera, otherwise the mesh would keep
-        // a dangling pointer to the deleted framebuffer and dereference it on reload.
-        if (reflectionFb){
-            MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
-            if (mesh && mesh->numSubmeshes > 0){
-                Texture& baseTex = mesh->submeshes[0].material.baseColorTexture;
-                if (baseTex.getFramebuffer() == reflectionFb){
-                    baseTex = Texture();
-                }
-            }
-        }
-
-        // destroy the internal reflection camera owned by this mirror
-        if (mirror.reflectionCamera != NULL_ENTITY && scene->isEntityCreated(mirror.reflectionCamera)){
-            scene->destroyEntity(mirror.reflectionCamera);
-        }
+        destroyMirrorCamera(entity);
 
         // reload meshes so the surface drops the projective-mirror shader variant and
         // other meshes drop the now-unused inverted-culling pipeline

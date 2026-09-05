@@ -171,7 +171,6 @@ namespace doriax::editor{
         bool hasValidTarget(SceneProject* sceneProject = nullptr) const;
         int mapResolutionFor(TerrainMapTarget target) const;
         TerrainMapRef getBrushMapRef() const;
-        TerrainMapTarget getBrushTarget() const;
         bool isHeightBrush() const;
         bool isDensityBrush() const;
         static bool isScalarTarget(TerrainMapTarget target);

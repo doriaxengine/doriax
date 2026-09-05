@@ -4839,8 +4839,9 @@ TerrainComponent editor::Stream::decodeTerrainComponent(const YAML::Node& node, 
     if (node["rootGridSize"]) terrain.rootGridSize = node["rootGridSize"].as<int>();
     if (node["levels"]) terrain.levels = node["levels"].as<int>();
 
+    // The encoder omits empty ranges, so applying a full component must clear old values.
+    terrain.ranges.clear();
     if (node["ranges"] && node["ranges"].IsSequence()) {
-        terrain.ranges.clear();
         for (std::size_t i = 0; i < node["ranges"].size(); i++) {
             if (!node["ranges"][i] || node["ranges"][i].IsNull()) {
                 continue;
@@ -5175,7 +5176,6 @@ FogComponent editor::Stream::decodeFogComponent(const YAML::Node& node, const Fo
 YAML::Node editor::Stream::encodeMirrorComponent(const MirrorComponent& mirror) {
     YAML::Node node;
 
-    // reflectionCamera is an engine-created runtime entity; not serialized
     node["normal"] = encodeVector3(mirror.normal);
 
     return node;

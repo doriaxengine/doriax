@@ -1129,14 +1129,11 @@ int editor::TerrainEditWindow::mapResolutionFor(TerrainMapTarget target) const{
 }
 
 editor::TerrainMapRef editor::TerrainEditWindow::getBrushMapRef() const{
-    return TerrainMapRef(getBrushTarget(), selectedFoliageLayer);
-}
-
-editor::TerrainMapTarget editor::TerrainEditWindow::getBrushTarget() const{
     if (isHeightBrush()){
-        return TerrainMapTarget::HeightMap;
+        return TerrainMapRef(TerrainMapTarget::HeightMap);
     }
-    return isDensityBrush() ? TerrainMapTarget::DensityMap : TerrainMapTarget::BlendMap;
+    // only a density brush reads the layer
+    return TerrainMapRef(isDensityBrush() ? TerrainMapTarget::DensityMap : TerrainMapTarget::BlendMap, selectedFoliageLayer);
 }
 
 bool editor::TerrainEditWindow::isHeightBrush() const{

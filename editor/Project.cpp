@@ -2573,15 +2573,11 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     // Foliage entities are created at runtime and kept out of sceneProject->entities, so the
     // authored list alone would export the field without its instanced variant.
     std::vector<Entity> shaderEntities = sceneProject->entities;
-    auto foliageTerrains = scene->getComponentArray<TerrainComponent>();
-    for (size_t i = 0; i < foliageTerrains->size(); ++i) {
-        for (const TerrainFoliageInstances& instances : foliageTerrains->getComponentFromIndex(i).foliageInstances) {
-            for (const TerrainFoliageChunk& chunk : instances.chunks) {
-                if (chunk.entity != NULL_ENTITY && scene->isEntityCreated(chunk.entity)) {
-                    shaderEntities.push_back(chunk.entity);
-                }
-            }
-        }
+    auto meshSystem = scene->getSystem<MeshSystem>();
+    auto terrains = scene->getComponentArray<TerrainComponent>();
+    for (size_t i = 0; i < terrains->size(); ++i) {
+        const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
+        shaderEntities.insert(shaderEntities.end(), foliage.begin(), foliage.end());
     }
 
     for (Entity entity : shaderEntities) {

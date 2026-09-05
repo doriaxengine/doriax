@@ -269,6 +269,8 @@ namespace doriax{
 		};
 
 		std::unordered_map<Entity, std::unique_ptr<ReflectionProbeRuntime>> reflectionProbeRuntimes;
+		// Each mirror's reflection camera. Kept here so the authored component stays copiable.
+		std::unordered_map<Entity, Entity> mirrorCameras;
 		Entity activeReflectionProbe = NULL_ENTITY;
 		fs_reflection_probe_t fs_reflection_probe;
 
@@ -580,6 +582,8 @@ namespace doriax{
 		void updateCamera(CameraComponent& camera, Transform& transform);
 		void updateMirrors(Entity mainCameraEntity);
 		Entity createMirrorCamera(Entity mirrorEntity);
+		Entity getMirrorCamera(Entity mirrorEntity) const;
+		void destroyMirrorCamera(Entity entity);
 
 		// camera
 		void updateCameraSize(Entity entity);

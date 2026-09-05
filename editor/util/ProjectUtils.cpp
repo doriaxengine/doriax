@@ -46,6 +46,7 @@
 #include "component/MeshPolygonComponent.h"
 #include "component/Body2DComponent.h"
 #include "subsystem/UISystem.h"
+#include "subsystem/MeshSystem.h"
 #include "component/Body3DComponent.h"
 #include "component/Joint2DComponent.h"
 #include "component/Joint3DComponent.h"
@@ -411,16 +412,9 @@ Entity editor::ProjectUtils::getLockedEntityParent(Scene* scene, Entity entity){
 
     // Foliage instances are resolved, not authored: they belong to their terrain the same way
     // model nodes belong to their model.
-    auto terrains = scene->getComponentArray<TerrainComponent>();
-    for (size_t i = 0; i < terrains->size(); ++i) {
-        TerrainComponent& terrain = terrains->getComponentFromIndex(i);
-        for (const TerrainFoliageInstances& instances : terrain.foliageInstances) {
-            for (const TerrainFoliageChunk& chunk : instances.chunks) {
-                if (chunk.entity == entity) {
-                    return terrains->getEntity(i);
-                }
-            }
-        }
+    Entity foliageOwner = scene->getSystem<MeshSystem>()->getFoliageOwner(entity);
+    if (foliageOwner != NULL_ENTITY) {
+        return foliageOwner;
     }
 
     auto models = scene->getComponentArray<ModelComponent>();

@@ -76,26 +76,6 @@ namespace doriax{
         unsigned int seed = 0;
     };
 
-    // One instanced entity per chunk, so each is culled on its own AABB. Slots are recycled as
-    // the ring follows the camera: a chunk that stays in it keeps its mesh and its instances.
-    struct TerrainFoliageChunk{
-        Entity entity = NULL_ENTITY;
-        int chunkX = 0;
-        int chunkZ = 0;
-        bool assigned = false; //false until the slot holds the resolve of the coordinate above
-        bool meshLoaded = false;
-        unsigned int loadedCapacity = 0; //what the buffer holds, lagging maxInstances until the reload
-    };
-
-    // Derived state for one layer, rebuilt from the layer rather than serialized.
-    struct TerrainFoliageInstances{
-        std::vector<TerrainFoliageChunk> chunks; //(2*radius+1)^2 grid, indexed by coordinate modulo its side
-        std::string loadedMeshPath;
-        bool loadFailed = false;
-        float chunkSize = 0; //the size the slot coordinates are in
-        bool needUpdate = true;
-    };
-
     struct DORIAX_API TerrainComponent{
         // per-view CDLOD node selection (see TerrainView). Extra RTT cameras beyond
         // MAX_TERRAIN_VIEWS fall back to the main camera's selection (view 0).
@@ -108,7 +88,6 @@ namespace doriax{
         Texture textureDetailBlue;
 
         std::vector<TerrainFoliageLayer> foliageLayers;
-        std::vector<TerrainFoliageInstances> foliageInstances;
 
         bool autoSetRanges = true;
         bool heightMapLoaded = false;

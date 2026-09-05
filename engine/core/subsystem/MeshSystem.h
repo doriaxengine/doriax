@@ -45,6 +45,28 @@ namespace doriax{
         // Files that already failed to load, so createOrUpdateModel stops retrying them.
         std::set<std::string> failedModelLoads;
 
+        // One instanced entity per chunk, so each is culled on its own AABB. Slots are recycled as
+        // the ring follows the camera: a chunk that stays in it keeps its mesh and its instances.
+        struct TerrainFoliageChunk{
+            Entity entity = NULL_ENTITY;
+            int chunkX = 0;
+            int chunkZ = 0;
+            bool assigned = false; //false until the slot holds the resolve of the coordinate above
+            bool meshLoaded = false;
+            unsigned int loadedCapacity = 0; //what the buffer holds, lagging maxInstances until the reload
+        };
+
+        struct TerrainFoliageInstances{
+            std::vector<TerrainFoliageChunk> chunks; //(2*radius+1)^2 grid, indexed by coordinate modulo its side
+            std::string loadedMeshPath;
+            bool loadFailed = false;
+            float chunkSize = 0; //the size the slot coordinates are in
+            bool needUpdate = true;
+        };
+
+        // Resolve of each terrain's foliageLayers. Kept here so the authored component stays copiable.
+        std::unordered_map<Entity, std::vector<TerrainFoliageInstances>> terrainFoliage;
+
         static void decodeGLTFImage(tinygltf::Image& image, size_t index, int maxDimension);
         template<typename Fn>
         static void parallelForIndexed(size_t count, Fn&& fn);
@@ -110,16 +132,22 @@ namespace doriax{
 
         Entity createFoliageEntity(unsigned int capacity);
         void destroyFoliageEntity(TerrainFoliageChunk& chunk);
+        void destroyFoliageInstances(TerrainFoliageInstances& instances);
+        void destroyTerrainFoliage(Entity entity);
         bool loadFoliageMesh(Entity entity, const std::string& path);
         void sampleTerrainSurface(TerrainComponent& terrain, float localX, float localZ, float& height, Vector3& normal);
         float sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliageLayer& layer, float localX, float localZ);
         void fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, float chunkSize, int chunkX, int chunkZ, std::vector<InstanceData>& instances);
-        void updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& terrainPosition, const Quaternion& terrainRotation, const Vector3& terrainScale, const Vector3& viewLocal);
-        void updateTerrainFoliage(TerrainComponent& terrain, Transform& transform);
+        void updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal);
+        void updateTerrainFoliage(Entity entity, TerrainComponent& terrain, Transform& transform);
 
     public:
         MeshSystem(Scene* scene);
         virtual ~MeshSystem();
+
+        // Foliage ownership, for editor shader collection and selection.
+        std::vector<Entity> getFoliageEntities(Entity terrainEntity) const;
+        Entity getFoliageOwner(Entity foliageEntity) const;
 
         void createPlane(MeshComponent& mesh, float width=1, float depth=1, unsigned int tiles=1);
         void createWall(MeshComponent& mesh, float width=1, float height=1, unsigned int tiles=1);

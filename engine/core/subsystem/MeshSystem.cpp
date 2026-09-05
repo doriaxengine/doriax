@@ -2797,6 +2797,60 @@ void MeshSystem::destroyFoliageEntity(TerrainFoliageChunk& chunk){
     chunk = TerrainFoliageChunk();
 }
 
+void MeshSystem::destroyFoliageInstances(TerrainFoliageInstances& instances){
+    for (TerrainFoliageChunk& chunk : instances.chunks){
+        destroyFoliageEntity(chunk);
+    }
+    instances = TerrainFoliageInstances();
+}
+
+void MeshSystem::destroyTerrainFoliage(Entity entity){
+    // Ownership leaves the map before entity destruction dispatches removal callbacks.
+    auto layers = terrainFoliage.extract(entity);
+    if (layers.empty()){
+        return;
+    }
+
+    for (TerrainFoliageInstances& instances : layers.mapped()){
+        destroyFoliageInstances(instances);
+    }
+}
+
+std::vector<Entity> MeshSystem::getFoliageEntities(Entity terrainEntity) const{
+    std::vector<Entity> entities;
+
+    auto it = terrainFoliage.find(terrainEntity);
+    if (it != terrainFoliage.end()){
+        for (const TerrainFoliageInstances& instances : it->second){
+            for (const TerrainFoliageChunk& chunk : instances.chunks){
+                if (chunk.entity != NULL_ENTITY && scene->isEntityCreated(chunk.entity)){
+                    entities.push_back(chunk.entity);
+                }
+            }
+        }
+    }
+
+    return entities;
+}
+
+Entity MeshSystem::getFoliageOwner(Entity foliageEntity) const{
+    if (foliageEntity == NULL_ENTITY){
+        return NULL_ENTITY;
+    }
+
+    for (const auto& entry : terrainFoliage){
+        for (const TerrainFoliageInstances& instances : entry.second){
+            for (const TerrainFoliageChunk& chunk : instances.chunks){
+                if (chunk.entity == foliageEntity){
+                    return entry.first;
+                }
+            }
+        }
+    }
+
+    return NULL_ENTITY;
+}
+
 bool MeshSystem::loadFoliageMesh(Entity entity, const std::string& path){
     // changeRootTransform is off: the terrain places the field, not the file's root transform.
     if (FileData::getFilePathExtension(path).compare("obj") == 0){
@@ -2943,7 +2997,7 @@ void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer
     }
 }
 
-void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& terrainPosition, const Quaternion& terrainRotation, const Vector3& terrainScale, const Vector3& viewLocal){
+void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal){
     const int side = TERRAIN_FOLIAGE_CHUNK_RADIUS * 2 + 1;
     const float chunkSize = foliageChunkSize(layer);
     const unsigned int capacity = foliageChunkCapacity(layer, chunkSize);
@@ -3009,18 +3063,8 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
 
             // Taken after the calls above: creating an entity or loading a multi-node mesh adds
             // components, which moves the arrays these reference.
-            Transform& foliageTransform = scene->getComponent<Transform>(chunk.entity);
             MeshComponent& mesh = scene->getComponent<MeshComponent>(chunk.entity);
             InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(chunk.entity);
-
-            if (foliageTransform.position != terrainPosition ||
-                foliageTransform.rotation != terrainRotation ||
-                foliageTransform.scale != terrainScale){
-                foliageTransform.position = terrainPosition;
-                foliageTransform.rotation = terrainRotation;
-                foliageTransform.scale = terrainScale;
-                foliageTransform.needUpdate = true;
-            }
 
             if (justLoaded){
                 mesh.needReload = true;
@@ -3076,7 +3120,7 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
     }
 }
 
-void MeshSystem::updateTerrainFoliage(TerrainComponent& terrain, Transform& transform){
+void MeshSystem::updateTerrainFoliage(Entity entity, TerrainComponent& terrain, Transform& transform){
     // Copied before a chunk entity can be created or destroyed: both move the Transform array,
     // which would leave this terrain's own component reference behind.
     const Matrix4 terrainModelMatrix = transform.modelMatrix;
@@ -3084,19 +3128,22 @@ void MeshSystem::updateTerrainFoliage(TerrainComponent& terrain, Transform& tran
     const Quaternion terrainRotation = transform.worldRotation;
     const Vector3 terrainScale = transform.worldScale;
 
-    // A removed layer takes its chunk entities with it.
-    while (terrain.foliageInstances.size() > terrain.foliageLayers.size()){
-        for (TerrainFoliageChunk& chunk : terrain.foliageInstances.back().chunks){
-            destroyFoliageEntity(chunk);
-        }
-        terrain.foliageInstances.pop_back();
-    }
-    terrain.foliageInstances.resize(terrain.foliageLayers.size());
-
     if (terrain.foliageLayers.empty()){
+        destroyTerrainFoliage(entity);
         terrain.needUpdateFoliage = false;
         return;
     }
+
+    // Safe to hold across the entity creation below: no chunk carries a TerrainComponent, so
+    // nothing re-enters destroyTerrainFoliage and erases this entry.
+    std::vector<TerrainFoliageInstances>& layers = terrainFoliage[entity];
+
+    // A removed layer takes its chunk entities with it.
+    while (layers.size() > terrain.foliageLayers.size()){
+        destroyFoliageInstances(layers.back());
+        layers.pop_back();
+    }
+    layers.resize(terrain.foliageLayers.size());
 
     Transform* cameraTransform = scene->findComponent<Transform>(scene->getCamera());
     if (!cameraTransform){
@@ -3112,17 +3159,33 @@ void MeshSystem::updateTerrainFoliage(TerrainComponent& terrain, Transform& tran
 
     for (size_t i = 0; i < terrain.foliageLayers.size(); i++){
         TerrainFoliageLayer& layer = terrain.foliageLayers[i];
-        TerrainFoliageInstances& instances = terrain.foliageInstances[i];
+        TerrainFoliageInstances& instances = layers[i];
 
         if (layer.meshPath.empty() || layer.densityMap.empty()){
-            for (TerrainFoliageChunk& chunk : instances.chunks){
-                destroyFoliageEntity(chunk);
-            }
-            instances = TerrainFoliageInstances();
+            destroyFoliageInstances(instances);
             continue;
         }
 
-        updateFoliageLayer(terrain, layer, instances, terrainPosition, terrainRotation, terrainScale, viewLocal);
+        updateFoliageLayer(terrain, layer, instances, viewLocal);
+    }
+
+    // Chunks are not parented to the terrain, so they carry a copy of its world transform.
+    // Done after the layers, so a slot created this frame is placed in the same frame.
+    for (TerrainFoliageInstances& instances : layers){
+        for (TerrainFoliageChunk& chunk : instances.chunks){
+            if (chunk.entity == NULL_ENTITY){
+                continue;
+            }
+            Transform& chunkTransform = scene->getComponent<Transform>(chunk.entity);
+            if (chunkTransform.position != terrainPosition ||
+                chunkTransform.rotation != terrainRotation ||
+                chunkTransform.scale != terrainScale){
+                chunkTransform.position = terrainPosition;
+                chunkTransform.rotation = terrainRotation;
+                chunkTransform.scale = terrainScale;
+                chunkTransform.needUpdate = true;
+            }
+        }
     }
 
     terrain.needUpdateFoliage = false;
@@ -5648,7 +5711,9 @@ void MeshSystem::load(){
 }
 
 void MeshSystem::destroy(){
-
+    while (!terrainFoliage.empty()){
+        destroyTerrainFoliage(terrainFoliage.begin()->first);
+    }
 }
 
 void MeshSystem::update(double dt){
@@ -5681,7 +5746,7 @@ void MeshSystem::update(double dt){
         TerrainComponent* terrain = scene->findComponent<TerrainComponent>(terrainEntity);
         Transform* transform = scene->findComponent<Transform>(terrainEntity);
         if (terrain && transform){
-            updateTerrainFoliage(*terrain, *transform);
+            updateTerrainFoliage(terrainEntity, *terrain, *transform);
         }
     }
 
@@ -5794,13 +5859,7 @@ void MeshSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         destroyModel(model);
     }
     if (componentId == scene->getComponentId<TerrainComponent>()) {
-        TerrainComponent& terrain = scene->getComponent<TerrainComponent>(entity);
-        for (TerrainFoliageInstances& instances : terrain.foliageInstances) {
-            for (TerrainFoliageChunk& chunk : instances.chunks) {
-                destroyFoliageEntity(chunk);
-            }
-        }
-        terrain.foliageInstances.clear();
+        destroyTerrainFoliage(entity);
     }
     if (componentId == scene->getComponentId<InstancedMeshComponent>()) {
         if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {

@@ -360,7 +360,10 @@ EntityPool EntityRegistry::getDefaultEntityPool() const {
 void EntityRegistry::clear() {
     std::vector<Entity> entities = getEntityList();
     for (Entity entity : entities) {
-        destroyEntity(entity);
+        // An owner's removal callbacks can destroy other entities in this snapshot.
+        if (isEntityCreated(entity)) {
+            destroyEntity(entity);
+        }
     }
     // Reset user counter to just before the user range
     entityManager.setLastUserEntity(EntityManager::lastSystemEntity());
