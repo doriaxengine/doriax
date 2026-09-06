@@ -2768,6 +2768,8 @@ Entity editor::Project::getSceneCamera(const SceneProject* sceneProject) const {
 void editor::Project::prepareRuntimeScene(PlayRuntimeScene& entry) {
     if (!entry.runtime || !entry.runtime->scene) return;
 
+    entry.runtime->scene->getSystem<MeshSystem>()->setFoliagePreviewEntity(NULL_ENTITY);
+
     Entity camera = getSceneCamera(entry.runtime);
     entry.runtime->scene->setCamera(camera);
 

@@ -1635,7 +1635,7 @@ void editor::App::engineRender(){
         if (isSelected && sp.scene && sp.sceneRender) {
             // Still loading a model, previewing a camera, or capturing a thumbnail.
             auto ms = sp.scene->getSystem<MeshSystem>();
-            if (ms && ms->hasPendingAsyncModelLoads()) active = true;
+            if (ms && (ms->hasPendingAsyncModelLoads() || ms->hasPendingFoliageUpdates())) active = true;
             // A parsed model still has per-mesh work that only runs while drawing.
             auto rs = sp.scene->getSystem<RenderSystem>();
             if (rs && !rs->isAllLoaded()) active = true;
@@ -1949,6 +1949,10 @@ void editor::App::updateWindowTitle(const std::string& projectName) {
 }
 
 void editor::App::stopTransientPreviews() {
+    if (terrainEditWindow) {
+        terrainEditWindow->endStroke();
+        terrainEditWindow->updateFoliagePreview();
+    }
     if (propertiesWindow) {
         propertiesWindow->stopTransientPreviews();
     }

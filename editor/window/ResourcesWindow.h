@@ -219,7 +219,7 @@ namespace doriax::editor {
 
         void queueThumbnailGeneration(const fs::path& filePath, FileType type, bool forceRegenerate = false);
         void thumbnailWorker();
-        ImTextureID getThumbnailTexture(const FileEntry& entry, int& outWidth, int& outHeight);
+        ImTextureID getThumbnailTexture(const std::string& thumbnailPath, int& outWidth, int& outHeight);
         void evictThumbnailTexture(const std::string& thumbnailKey);
         void enforceThumbnailCacheLimit();
         void clearThumbnailTextures();
@@ -253,6 +253,7 @@ namespace doriax::editor {
 
         void notifyResourceFileChanged(const fs::path& filePath);
         void requestThumbnailGeneration(const fs::path& filePath, bool forceRegenerate = false);
+        ImTextureID getAssetThumbnail(const fs::path& filePath, int& outWidth, int& outHeight);
 
         void cleanupThumbnails();
 

@@ -994,7 +994,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
             if (file.hasThumbnail && ImGui::IsItemVisible()){
                 int tw = 0;
                 int th = 0;
-                if (ImTextureID thumbTex = getThumbnailTexture(file, tw, th)){
+                if (ImTextureID thumbTex = getThumbnailTexture(file.thumbnailPath, tw, th)){
                     if (tw > 0 && th > 0){
                         float scale = std::min(uiIconSize / static_cast<float>(tw),
                                                uiIconSize / static_cast<float>(th));
@@ -2261,16 +2261,13 @@ void editor::ResourcesWindow::thumbnailWorker() {
     }
 }
 
-// Get (or lazily create) the GPU texture for a file entry's thumbnail.
-// Returns 0 if the thumbnail is not usable; the caller falls back to the
-// default file icon.
-ImTextureID editor::ResourcesWindow::getThumbnailTexture(const FileEntry& entry, int& outWidth, int& outHeight) {
-    auto it = thumbnailTextures.find(entry.thumbnailPath);
+ImTextureID editor::ResourcesWindow::getThumbnailTexture(const std::string& thumbnailPath, int& outWidth, int& outHeight) {
+    auto it = thumbnailTextures.find(thumbnailPath);
     if (it == thumbnailTextures.end()) {
         ThumbnailTexture cached;
-        cached.texture = Texture(entry.thumbnailPath, TextureData(entry.thumbnailPath.c_str()));
+        cached.texture = Texture(thumbnailPath, TextureData(thumbnailPath.c_str()));
         cached.failed = !cached.texture.load();
-        it = thumbnailTextures.emplace(entry.thumbnailPath, std::move(cached)).first;
+        it = thumbnailTextures.emplace(thumbnailPath, std::move(cached)).first;
     }
 
     ThumbnailTexture& cached = it->second;
@@ -2293,6 +2290,29 @@ ImTextureID editor::ResourcesWindow::getThumbnailTexture(const FileEntry& entry,
     outHeight = static_cast<int>(cached.texture.getHeight());
 
     return Backend::getImGuiTexture(render);
+}
+
+ImTextureID editor::ResourcesWindow::getAssetThumbnail(const fs::path& filePath, int& outWidth, int& outHeight) {
+    outWidth = outHeight = 0;
+    if (filePath.empty() || !Engine::isViewLoaded()) {
+        return ImTextureID{};
+    }
+
+    const fs::path assetPath = project->resolveAssetPath(filePath);
+    std::error_code ec;
+    if (!fs::is_regular_file(assetPath, ec)) {
+        return ImTextureID{};
+    }
+
+    const fs::path thumbnailPath = project->getThumbnailPath(assetPath);
+    if (!fs::is_regular_file(thumbnailPath, ec)) {
+        requestThumbnailGeneration(assetPath);
+        return ImTextureID{};
+    }
+
+    ImTextureID texture = getThumbnailTexture(thumbnailPath.string(), outWidth, outHeight);
+    enforceThumbnailCacheLimit();
+    return texture;
 }
 
 void editor::ResourcesWindow::evictThumbnailTexture(const std::string& thumbnailKey) {

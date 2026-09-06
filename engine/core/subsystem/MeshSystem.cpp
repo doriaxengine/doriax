@@ -2723,45 +2723,53 @@ bool MeshSystem::createTerrain(TerrainComponent& terrain, MeshComponent& mesh){
     return true;
 }
 
-// A fixed (2*radius+1)^2 grid of chunk entities, so draw distance grows the chunks and not
-// their count: each entity carries its own copy of the layer mesh.
-static const int TERRAIN_FOLIAGE_CHUNK_RADIUS = 2;
-static const float TERRAIN_FOLIAGE_MIN_CHUNK_SIZE = 8.0f;
+// Placement cells stay fixed; render batches only group their instances.
+static const int TERRAIN_FOLIAGE_TARGET_BATCH_RADIUS = 2;
+static const float TERRAIN_FOLIAGE_CELL_SIZE = 8.0f;
 static const unsigned int TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES = 8192;
 
-// radius*chunkSize is what the ring covers in every direction, wherever in the middle chunk the camera is.
-static float foliageChunkSize(const TerrainFoliageLayer& layer){
-    return std::max(TERRAIN_FOLIAGE_MIN_CHUNK_SIZE, layer.drawDistance / TERRAIN_FOLIAGE_CHUNK_RADIUS);
+bool MeshSystem::setFoliagePreviewEntity(Entity entity){
+    if (foliagePreviewEntity == entity){
+        return false;
+    }
+
+    foliagePreviewEntity = entity;
+    return true;
 }
 
-// Placements tried in a fully painted chunk. Density 0 must attempt nothing, so no minimum here.
-static unsigned int foliageChunkAttempts(const TerrainFoliageLayer& layer, float chunkSize){
-    const float estimate = layer.density * chunkSize * chunkSize;
-    return static_cast<unsigned int>(std::clamp(estimate, 0.0f, static_cast<float>(TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES)));
+bool MeshSystem::hasPendingFoliageUpdates() const{
+    for (const auto& entry : terrainFoliage){
+        for (const TerrainFoliageInstances& instances : entry.second){
+            if (instances.pending){
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
-// Holds a whole chunk of attempts, so a fill never overruns the buffer nor has to grow it.
-static unsigned int foliageChunkCapacity(const TerrainFoliageLayer& layer, float chunkSize){
-    return std::max(1u, foliageChunkAttempts(layer, chunkSize));
+// A zero-density cell must attempt no placements.
+static unsigned int foliageCellAttempts(const TerrainFoliageLayer& layer){
+    const float estimate = layer.density * TERRAIN_FOLIAGE_CELL_SIZE * TERRAIN_FOLIAGE_CELL_SIZE;
+    return static_cast<unsigned int>(std::ceil(std::clamp(estimate, 0.0f, static_cast<float>(TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES))));
 }
 
 // Wraps coordinates onto the grid: a ring sliding by one column reassigns only the column that left it.
-static size_t foliageSlotIndex(int chunkX, int chunkZ, int side){
-    const int slotX = ((chunkX % side) + side) % side;
-    const int slotZ = ((chunkZ % side) + side) % side;
-    return static_cast<size_t>(slotZ) * side + slotX;
+static size_t foliageSlotIndex(int chunkX, int chunkZ, int columns, int rows){
+    const int slotX = ((chunkX % columns) + columns) % columns;
+    const int slotZ = ((chunkZ % rows) + rows) % rows;
+    return static_cast<size_t>(slotZ) * columns + slotX;
 }
 
 static unsigned int hashFoliage(unsigned int seed, unsigned int chunkX, unsigned int chunkZ, unsigned int index){
-    unsigned int hash = seed * 0x9E3779B1u;
+    unsigned int hash = (seed + 0x9E3779B9u) * 0x9E3779B1u;
     hash = (hash ^ chunkX) * 0x85EBCA6Bu;
     hash = (hash ^ chunkZ) * 0xC2B2AE35u;
     hash = (hash ^ index) * 0x27D4EB2Fu;
     return hash ^ (hash >> 15);
 }
 
-// randomFoliage reads the low 24 bits, so every draw needs its own mixed hash: shifting one
-// value along leaves the later draws with almost no range.
+// Mix each draw independently before selecting its low 24 bits.
 static unsigned int mixFoliage(unsigned int hash){
     hash = (hash ^ (hash >> 16)) * 0x7FEB352Du;
     hash = (hash ^ (hash >> 15)) * 0x846CA68Bu;
@@ -2769,12 +2777,10 @@ static unsigned int mixFoliage(unsigned int hash){
 }
 
 static float randomFoliage(unsigned int hash){
-    return static_cast<float>(hash & 0xFFFFFFu) / 16777215.0f;
+    return static_cast<float>(hash & 0xFFFFFFu) / 16777216.0f;
 }
 
-// Not parented to the terrain: DeleteEntityCmd walks transform children, and a terrain delete
-// would then capture these and restore them as authored entities. The world transform is copied
-// onto them instead.
+// Keep generated chunks outside the authored hierarchy used by undo.
 Entity MeshSystem::createFoliageEntity(unsigned int capacity){
     Entity entity = scene->createEntity();
 
@@ -2856,11 +2862,11 @@ bool MeshSystem::loadFoliageMesh(Entity entity, const std::string& path){
     if (FileData::getFilePathExtension(path).compare("obj") == 0){
         return loadOBJ(entity, path);
     }
-    return loadGLTF(entity, path, false, false, false);
+    // Keep all geometry on the instanced root.
+    return loadGLTF(entity, path, false, true, false);
 }
 
-// Height and surface normal at a terrain-local position. A terrain with no usable heightmap
-// samples flat rather than dropping its foliage.
+// Sample height and normal in terrain-local space.
 void MeshSystem::sampleTerrainSurface(TerrainComponent& terrain, float localX, float localZ, float& height, Vector3& normal){
     height = 0.0f;
     normal = Vector3(0.0f, 1.0f, 0.0f);
@@ -2937,37 +2943,40 @@ float MeshSystem::sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliage
     return pixels[(static_cast<size_t>(texelZ) * width + texelX) * channels] / 255.0f;
 }
 
-// Resolved from the chunk coordinate alone, with no camera term, so a slot that stays in the
-// ring is never refilled.
-void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, float chunkSize, int chunkX, int chunkZ, std::vector<InstanceData>& instances){
-    instances.clear();
-
-    const float originX = chunkX * chunkSize;
-    const float originZ = chunkZ * chunkSize;
+// Placement depends on the cell and seed, independent of the camera.
+void MeshSystem::appendFoliageCell(TerrainComponent& terrain, TerrainFoliageLayer& layer, int cellX, int cellZ, std::vector<InstanceData>& instances){
+    const float originX = cellX * TERRAIN_FOLIAGE_CELL_SIZE;
+    const float originZ = cellZ * TERRAIN_FOLIAGE_CELL_SIZE;
     const float halfSize = terrain.terrainSize * 0.5f;
 
     if (originX > halfSize || originZ > halfSize ||
-        (originX + chunkSize) < -halfSize || (originZ + chunkSize) < -halfSize){
+        (originX + TERRAIN_FOLIAGE_CELL_SIZE) < -halfSize || (originZ + TERRAIN_FOLIAGE_CELL_SIZE) < -halfSize){
         return;
     }
 
-    const unsigned int attempts = foliageChunkAttempts(layer, chunkSize);
+    const unsigned int attempts = foliageCellAttempts(layer);
+    const float expectedInstances = layer.density * TERRAIN_FOLIAGE_CELL_SIZE * TERRAIN_FOLIAGE_CELL_SIZE;
     const float scaleRange = layer.maxScale - layer.minScale;
 
     for (unsigned int i = 0; i < attempts; i++){
-        const unsigned int hashX = hashFoliage(layer.seed, static_cast<unsigned int>(chunkX), static_cast<unsigned int>(chunkZ), i);
+        const unsigned int hashX = hashFoliage(layer.seed, static_cast<unsigned int>(cellX), static_cast<unsigned int>(cellZ), i);
         const unsigned int hashZ = mixFoliage(hashX);
         const unsigned int hashAccept = mixFoliage(hashZ);
         const unsigned int hashScale = mixFoliage(hashAccept);
         const unsigned int hashYaw = mixFoliage(hashScale);
 
-        const float localX = originX + randomFoliage(hashX) * chunkSize;
-        const float localZ = originZ + randomFoliage(hashZ) * chunkSize;
+        const float localX = originX + randomFoliage(hashX) * TERRAIN_FOLIAGE_CELL_SIZE;
+        const float localZ = originZ + randomFoliage(hashZ) * TERRAIN_FOLIAGE_CELL_SIZE;
         if (localX < -halfSize || localX > halfSize || localZ < -halfSize || localZ > halfSize){
             continue;
         }
 
-        if (randomFoliage(hashAccept) > sampleFoliageDensity(terrain, layer, localX, localZ)){
+        float density = sampleFoliageDensity(terrain, layer, localX, localZ);
+        // Keep the fractional attempt so sparse layers do not round down to zero.
+        if (i + 1 == attempts){
+            density *= std::min(1.0f, expectedInstances - i);
+        }
+        if (randomFoliage(hashAccept) >= density){
             continue;
         }
 
@@ -2997,15 +3006,44 @@ void MeshSystem::fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer
     }
 }
 
-void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal){
-    const int side = TERRAIN_FOLIAGE_CHUNK_RADIUS * 2 + 1;
-    const float chunkSize = foliageChunkSize(layer);
-    const unsigned int capacity = foliageChunkCapacity(layer, chunkSize);
+void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal, bool preview){
+    const unsigned int attempts = std::max(1u, foliageCellAttempts(layer));
+    const int placementRadius = std::max(1, static_cast<int>(std::ceil(terrain.terrainSize * 0.5f / TERRAIN_FOLIAGE_CELL_SIZE)));
+    const int maxBatchSide = static_cast<int>(std::sqrt(TERRAIN_FOLIAGE_MAX_CHUNK_INSTANCES / attempts));
+    const int previewRadius = (placementRadius + maxBatchSide - 1) / maxBatchSide;
+    const float drawDistance = std::max(0.0f, layer.drawDistance);
+    const int batchSide = preview ? (placementRadius + previewRadius - 1) / previewRadius :
+        static_cast<int>(std::clamp(std::ceil(drawDistance / (TERRAIN_FOLIAGE_CELL_SIZE * TERRAIN_FOLIAGE_TARGET_BATCH_RADIUS)), 1.0f, static_cast<float>(maxBatchSide)));
+    const float chunkSize = TERRAIN_FOLIAGE_CELL_SIZE * batchSide;
+    const int terrainRadius = (placementRadius + batchSide - 1) / batchSide;
+    auto firstChunk = [&](float position){
+        return preview ? -terrainRadius : static_cast<int>(std::floor(std::clamp(
+            (position - drawDistance) / chunkSize,
+            -static_cast<float>(terrainRadius), static_cast<float>(terrainRadius))));
+    };
+    auto lastChunk = [&](float position){
+        return preview ? terrainRadius - 1 : static_cast<int>(std::floor(std::clamp(
+            (position + drawDistance) / chunkSize,
+            -static_cast<float>(terrainRadius) - 1, static_cast<float>(terrainRadius) - 1)));
+    };
+    const int startX = firstChunk(viewLocal.x);
+    const int startZ = firstChunk(viewLocal.z);
+    const int columns = std::max(0, lastChunk(viewLocal.x) - startX + 1);
+    const int rows = std::max(0, lastChunk(viewLocal.z) - startZ + 1);
+    const unsigned int capacity = attempts * batchSide * batchSide;
+    instances.pending = false;
 
-    instances.chunks.resize(static_cast<size_t>(side) * side);
+    const size_t chunkCount = static_cast<size_t>(columns) * rows;
+    if (instances.chunks.size() != chunkCount){
+        while (instances.chunks.size() > chunkCount){
+            destroyFoliageEntity(instances.chunks.back());
+            instances.chunks.pop_back();
+        }
+        instances.chunks.resize(chunkCount);
+        instances.needUpdate = true;
+    }
 
-    // Slot coordinates are in units of the old chunk size. The entities stay: dropping them
-    // would reload every mesh on each frame of a draw distance drag.
+    // Reuse meshes when resizing render batches.
     if (instances.chunkSize != chunkSize){
         instances.chunkSize = chunkSize;
         for (TerrainFoliageChunk& chunk : instances.chunks){
@@ -3028,11 +3066,9 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
     layer.densityMap.setReleaseDataAfterLoad(false);
     if (layer.densityMap.load().state == ResourceLoadState::Loading){
         instances.needUpdate = true;
+        instances.pending = true;
         return;
     }
-
-    const int centerX = static_cast<int>(std::floor(viewLocal.x / chunkSize));
-    const int centerZ = static_cast<int>(std::floor(viewLocal.z / chunkSize));
 
     // Layer-wide invalidation only: a single slot going stale clears its own assigned flag.
     const bool refillAll = instances.needUpdate || terrain.needUpdateFoliage;
@@ -3041,14 +3077,18 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
     // Each chunk entity parses the mesh for itself, so a new grid spreads its loads over frames.
     int meshLoadBudget = 2;
 
-    for (int offsetZ = -TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetZ <= TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetZ++){
-        for (int offsetX = -TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetX <= TERRAIN_FOLIAGE_CHUNK_RADIUS; offsetX++){
-            const int chunkX = centerX + offsetX;
-            const int chunkZ = centerZ + offsetZ;
+    for (int offsetZ = 0; offsetZ < rows; offsetZ++){
+        for (int offsetX = 0; offsetX < columns; offsetX++){
+            const int chunkX = startX + offsetX;
+            const int chunkZ = startZ + offsetZ;
 
-            TerrainFoliageChunk& chunk = instances.chunks[foliageSlotIndex(chunkX, chunkZ, side)];
+            TerrainFoliageChunk& chunk = instances.chunks[foliageSlotIndex(chunkX, chunkZ, columns, rows)];
 
             if (chunk.entity == NULL_ENTITY){
+                if (instances.loadFailed || meshLoadBudget == 0){
+                    instances.pending = instances.pending || !instances.loadFailed;
+                    continue;
+                }
                 chunk.entity = createFoliageEntity(capacity);
             }
 
@@ -3061,15 +3101,13 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 justLoaded = true;
             }
 
-            // Taken after the calls above: creating an entity or loading a multi-node mesh adds
-            // components, which moves the arrays these reference.
+            // Entity creation and model loading can invalidate component references.
             MeshComponent& mesh = scene->getComponent<MeshComponent>(chunk.entity);
             InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(chunk.entity);
 
             if (justLoaded){
                 mesh.needReload = true;
 
-                // Animated and skinned models keep geometry on child entities, leaving the root empty.
                 if (chunk.meshLoaded && mesh.numSubmeshes == 0){
                     Log::error("Foliage mesh has no geometry on its root and cannot be instanced: %s", layer.meshPath.c_str());
                     instances.loadFailed = true;
@@ -3077,9 +3115,9 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 }
             }
 
-            // The entity still holds the mesh it had before the path changed, so a slot without
-            // the current one is emptied rather than left drawing the old field.
+            // Hide stale geometry while the replacement mesh loads.
             if (!chunk.meshLoaded){
+                instances.pending = instances.pending || !instances.loadFailed;
                 if (!instmesh.instances.empty()){
                     instmesh.instances.clear();
                     instmesh.needUpdateInstances = true;
@@ -3095,13 +3133,8 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 mesh.needReload = true;
             }
 
-            // Tracked apart from the requested capacity, so a fill never assumes the reload has run.
-            if (mesh.loaded && !mesh.needReload){
-                chunk.loadedCapacity = instmesh.maxInstances;
-            }
-
-            // A grow the reload has not caught up with: only a rebuilt buffer holds the attempts.
-            if (mesh.needReload || chunk.loadedCapacity < capacity){
+            if (!mesh.loaded || mesh.needReload){
+                instances.pending = true;
                 chunk.assigned = false;
                 continue;
             }
@@ -3114,15 +3147,19 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             chunk.chunkZ = chunkZ;
             chunk.assigned = true;
 
-            fillFoliageChunk(terrain, layer, chunkSize, chunkX, chunkZ, instmesh.instances);
+            instmesh.instances.clear();
+            for (int z = 0; z < batchSide; z++){
+                for (int x = 0; x < batchSide; x++){
+                    appendFoliageCell(terrain, layer, chunkX * batchSide + x, chunkZ * batchSide + z, instmesh.instances);
+                }
+            }
             instmesh.needUpdateInstances = true;
         }
     }
 }
 
 void MeshSystem::updateTerrainFoliage(Entity entity, TerrainComponent& terrain, Transform& transform){
-    // Copied before a chunk entity can be created or destroyed: both move the Transform array,
-    // which would leave this terrain's own component reference behind.
+    // Chunk creation and destruction can invalidate the terrain transform reference.
     const Matrix4 terrainModelMatrix = transform.modelMatrix;
     const Vector3 terrainPosition = transform.worldPosition;
     const Quaternion terrainRotation = transform.worldRotation;
@@ -3134,11 +3171,17 @@ void MeshSystem::updateTerrainFoliage(Entity entity, TerrainComponent& terrain, 
         return;
     }
 
-    // Safe to hold across the entity creation below: no chunk carries a TerrainComponent, so
-    // nothing re-enters destroyTerrainFoliage and erases this entry.
+    // Wait for the heightmap and terrain rebuild before placing instances.
+    if (!terrain.heightMapLoaded || terrain.needUpdateTerrain){
+        if (!terrain.heightMapLoaded){
+            destroyTerrainFoliage(entity);
+        }
+        terrain.needUpdateFoliage = true;
+        return;
+    }
+
     std::vector<TerrainFoliageInstances>& layers = terrainFoliage[entity];
 
-    // A removed layer takes its chunk entities with it.
     while (layers.size() > terrain.foliageLayers.size()){
         destroyFoliageInstances(layers.back());
         layers.pop_back();
@@ -3166,11 +3209,10 @@ void MeshSystem::updateTerrainFoliage(Entity entity, TerrainComponent& terrain, 
             continue;
         }
 
-        updateFoliageLayer(terrain, layer, instances, viewLocal);
+        updateFoliageLayer(terrain, layer, instances, viewLocal, entity == foliagePreviewEntity);
     }
 
-    // Chunks are not parented to the terrain, so they carry a copy of its world transform.
-    // Done after the layers, so a slot created this frame is placed in the same frame.
+    // Apply the terrain transform to every chunk, including newly created ones.
     for (TerrainFoliageInstances& instances : layers){
         for (TerrainFoliageChunk& chunk : instances.chunks){
             if (chunk.entity == NULL_ENTITY){
@@ -5711,6 +5753,7 @@ void MeshSystem::load(){
 }
 
 void MeshSystem::destroy(){
+    foliagePreviewEntity = NULL_ENTITY;
     while (!terrainFoliage.empty()){
         destroyTerrainFoliage(terrainFoliage.begin()->first);
     }
@@ -5859,6 +5902,9 @@ void MeshSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         destroyModel(model);
     }
     if (componentId == scene->getComponentId<TerrainComponent>()) {
+        if (foliagePreviewEntity == entity){
+            foliagePreviewEntity = NULL_ENTITY;
+        }
         destroyTerrainFoliage(entity);
     }
     if (componentId == scene->getComponentId<InstancedMeshComponent>()) {

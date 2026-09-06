@@ -64,10 +64,8 @@ namespace doriax::editor{
     struct TerrainMapInfo{
         bool present = false;
         bool sizeKnown = false;
-        bool framebuffer = false;
         int width = 0;
         int height = 0;
-        int channels = 0;
     };
 
     struct ActiveStroke{
@@ -138,7 +136,8 @@ namespace doriax::editor{
 
         void showTooltip(const char* text, ImGuiHoveredFlags flags = 0);
         bool iconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec2& size);
-        bool colorIconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec4& color, const ImVec2& size);
+        void drawMapSettings(const TerrainMapRef& ref, const char* label, int& resolution);
+        void drawFoliageMesh(const TerrainFoliageLayer& layer);
         std::string makeEditableTextureId(uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
         std::string makeEditableTexturePath(Project* project, uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
         int expectedChannels(TerrainMapTarget target);
@@ -151,8 +150,6 @@ namespace doriax::editor{
         bool isOwnedEditableTexturePath(const std::string& path, uint32_t sceneId, Entity entity, const TerrainMapRef& ref);
         bool loadTerrainTextureDataFromPath(Project* project, const std::string& path, TextureData& data);
         TerrainMapInfo getTerrainMapInfo(Texture& texture);
-        std::string getTerrainMapStatusText(const TerrainMapInfo& info);
-        void showTerrainMapStatus(const TerrainMapInfo& info);
         std::vector<unsigned char> copyTexturePixels(TextureData& data);
         std::vector<unsigned char> convertTexturePixels(TextureData& data, TerrainMapTarget target);
         std::vector<unsigned char> makeInitialMapPixels(TerrainMapTarget target, int width, int height);
@@ -213,6 +210,7 @@ namespace doriax::editor{
         bool beginStroke(Scene* scene, const Ray& ray);
         bool paintStroke(Scene* scene, const Ray& ray);
         void endStroke();
+        void updateFoliagePreview();
         bool updateCursor(Scene* scene, const Ray& ray, TerrainBrushCursor& cursor) const;
 
         void adjustBrushSize(float factor);
@@ -220,4 +218,3 @@ namespace doriax::editor{
     };
 
 }
-

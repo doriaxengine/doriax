@@ -11,10 +11,13 @@
 #include "command/type/TerrainMapPatchCmd.h"
 #include "external/IconsFontAwesome6.h"
 #include "subsystem/MeshSystem.h"
+#include "util/FileDialogs.h"
 #include "util/TerrainMapFileWriter.h"
 #include "util/TerrainMapUtils.h"
 #include "util/UIUtils.h"
 #include "util/Util.h"
+#include "window/ResourcesWindow.h"
+#include "window/Widgets.h"
 
 #include <algorithm>
 #include <cctype>
@@ -70,28 +73,13 @@ bool editor::TerrainEditWindow::iconButton(const char* icon, const char* id, con
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
     }
 
-    bool clicked = ImGui::Button(label.c_str(), size);
-
-    ImVec2 buttonMin = ImGui::GetItemRectMin();
-    ImVec2 buttonMax = ImGui::GetItemRectMax();
-    ImVec2 textSize = ImGui::CalcTextSize(icon);
-    ImVec2 textPos(
-        buttonMin.x + (buttonMax.x - buttonMin.x - textSize.x) * 0.5f,
-        buttonMin.y + (buttonMax.y - buttonMin.y - textSize.y) * 0.5f);
-    ImGui::GetWindowDrawList()->AddText(textPos, ImGui::GetColorU32(ImGuiCol_Text), icon);
+    bool clicked = Widgets::iconButton(label.c_str(), icon, size);
 
     if (selected){
         ImGui::PopStyleColor(3);
     }
 
     showTooltip(tooltip, ImGuiHoveredFlags_AllowWhenDisabled);
-    return clicked;
-}
-
-bool editor::TerrainEditWindow::colorIconButton(const char* icon, const char* id, const char* tooltip, bool selected, const ImVec4& color, const ImVec2& size){
-    ImGui::PushStyleColor(ImGuiCol_Text, color);
-    bool clicked = iconButton(icon, id, tooltip, selected, size);
-    ImGui::PopStyleColor();
     return clicked;
 }
 
@@ -268,48 +256,17 @@ editor::TerrainMapInfo editor::TerrainEditWindow::getTerrainMapInfo(Texture& tex
         return info;
     }
 
-    if (texture.isFramebuffer()){
-        info.framebuffer = true;
-        info.width = static_cast<int>(texture.getWidth());
-        info.height = static_cast<int>(texture.getHeight());
-        info.sizeKnown = info.width > 0 && info.height > 0;
-        return info;
-    }
-
     if (TerrainMapUtils::hasLoadedData(texture)){
         TextureData& data = texture.getData();
         info.width = data.getWidth();
         info.height = data.getHeight();
-        info.channels = data.getChannels();
-        info.sizeKnown = info.width > 0 && info.height > 0;
     }else{
         info.width = static_cast<int>(texture.getWidth());
         info.height = static_cast<int>(texture.getHeight());
-        info.sizeKnown = info.width > 0 && info.height > 0;
     }
+    info.sizeKnown = info.width > 0 && info.height > 0;
 
     return info;
-}
-
-std::string editor::TerrainEditWindow::getTerrainMapStatusText(const TerrainMapInfo& info){
-    if (!info.present){
-        return std::string(ICON_FA_TRIANGLE_EXCLAMATION) + "  Missing";
-    }
-    if (info.sizeKnown){
-        return std::string(ICON_FA_CIRCLE_CHECK) + "  " + std::to_string(info.width) + " x " + std::to_string(info.height);
-    }
-    return std::string(ICON_FA_TRIANGLE_EXCLAMATION) + "  Size unavailable";
-}
-
-void editor::TerrainEditWindow::showTerrainMapStatus(const TerrainMapInfo& info){
-    std::string status = getTerrainMapStatusText(info);
-    if (!info.present){
-        ImGui::TextDisabled("%s", status.c_str());
-    }else if (!info.sizeKnown){
-        ImGui::TextColored(ImVec4(0.95f, 0.67f, 0.24f, 1.0f), "%s", status.c_str());
-    }else{
-        ImGui::TextUnformatted(status.c_str());
-    }
 }
 
 std::vector<unsigned char> editor::TerrainEditWindow::copyTexturePixels(TextureData& data){
@@ -1053,6 +1010,7 @@ editor::TerrainEditWindow::TerrainEditWindow(Project* project){
 }
 
 editor::TerrainEditWindow::~TerrainEditWindow(){
+    setOpen(false);
     // Drain pending map writes while the app is still fully alive (the writer's
     // own static destructor runs during late shutdown, where it makes one final
     // synchronous attempt at anything still failing).
@@ -1093,7 +1051,7 @@ bool editor::TerrainEditWindow::updateTargetFromSelection(){
     if (!sceneProject){
         sceneProject = project->getSelectedScene();
     }
-    if (!sceneProject){
+    if (!sceneProject || !sceneProject->scene){
         selectedSceneId = NULL_PROJECT_SCENE;
         selectedEntity = NULL_ENTITY;
         return false;
@@ -1115,6 +1073,8 @@ bool editor::TerrainEditWindow::updateTargetFromSelection(){
 bool editor::TerrainEditWindow::hasValidTarget(SceneProject* sceneProject) const{
     SceneProject* targetScene = sceneProject ? sceneProject : getTargetSceneProject();
     return targetScene &&
+           targetScene->scene &&
+           targetScene->playState == ScenePlayState::STOPPED &&
            selectedEntity != NULL_ENTITY &&
            targetScene->scene->isEntityCreated(selectedEntity) &&
            targetScene->scene->findComponent<TerrainComponent>(selectedEntity) &&
@@ -1554,8 +1514,6 @@ bool editor::TerrainEditWindow::deleteMapForTarget(const TerrainMapRef& ref){
     return true;
 }
 
-// Layer add and remove rewrite the whole vector through the property system, so undo, bundle
-// propagation and scene-modified tracking all come from PropertyCmd.
 bool editor::TerrainEditWindow::setFoliageLayers(const std::vector<TerrainFoliageLayer>& layers){
     SceneProject* sceneProject = getTargetSceneProject();
     if (!hasValidTarget(sceneProject)){
@@ -1567,7 +1525,6 @@ bool editor::TerrainEditWindow::setFoliageLayers(const std::vector<TerrainFoliag
     return true;
 }
 
-// Merged, so dragging a slider collapses into one undo entry.
 template<typename T>
 bool editor::TerrainEditWindow::setFoliageLayerProperty(const char* field, const T& value){
     SceneProject* sceneProject = getTargetSceneProject();
@@ -1581,432 +1538,430 @@ bool editor::TerrainEditWindow::setFoliageLayerProperty(const char* field, const
     return true;
 }
 
+void editor::TerrainEditWindow::updateFoliagePreview(){
+    if (!project){
+        return;
+    }
+
+    const bool editing = windowOpen && !project->isAnyScenePlaying() && hasValidTarget();
+    for (SceneProject& sceneProject : project->getScenes()){
+        if (!sceneProject.scene){
+            continue;
+        }
+        const Entity preview = editing && sceneProject.id == selectedSceneId ? selectedEntity : NULL_ENTITY;
+        if (sceneProject.scene->getSystem<MeshSystem>()->setFoliagePreviewEntity(preview)){
+            sceneProject.needUpdateRender = true;
+        }
+    }
+}
+
+static bool beginTerrainProperties(const char* id){
+    if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV)){
+        return false;
+    }
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, std::min(ImGui::GetFontSize() * 8.0f, ImGui::GetContentRegionAvail().x * 0.4f));
+    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+    return true;
+}
+
+static void terrainPropertyRow(const char* label, const char* tooltip = nullptr){
+    ImGui::TableNextRow();
+    ImGui::TableSetColumnIndex(0);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label);
+    if (tooltip){
+        ImGui::SetItemTooltip("%s", tooltip);
+    }
+    ImGui::TableSetColumnIndex(1);
+    ImGui::SetNextItemWidth(-1.0f);
+}
+
+void editor::TerrainEditWindow::drawMapSettings(const TerrainMapRef& ref, const char* label, int& resolution){
+    TerrainComponent& terrain = getTargetSceneProject()->scene->getComponent<TerrainComponent>(selectedEntity);
+    Texture* texture = TerrainMapUtils::findTexture(terrain, ref);
+    const TerrainMapInfo info = texture ? getTerrainMapInfo(*texture) : TerrainMapInfo{};
+    const bool heightMap = ref.target == TerrainMapTarget::HeightMap;
+    const ImVec2 buttonSize(ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    const int actionCount = (info.present ? 2 : 1) + (heightMap ? 1 : 0);
+
+    ImGui::PushID(label);
+    terrainPropertyRow(label, info.present ? "Recreate or remove this map. Map changes can be undone." : "Choose a resolution, then create a map to enable painting.");
+    const float valueWidth = std::max(1.0f, ImGui::GetContentRegionAvail().x - (buttonSize.x + spacing) * actionCount);
+    if (info.present){
+        ImGui::BeginChild("size", ImVec2(valueWidth, buttonSize.y), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::AlignTextToFramePadding();
+        if (info.sizeKnown){
+            ImGui::Text("%d x %d", info.width, info.height);
+        }else{
+            ImGui::TextDisabled("Unknown size");
+        }
+        ImGui::EndChild();
+        showTooltip(texture->getPath(0).empty() ? "Editable map" : texture->getPath(0).c_str());
+    }else{
+        resolution = std::clamp(resolution, 2, 8192);
+        ImGui::SetNextItemWidth(valueWidth);
+        ImGui::DragInt("##resolution", &resolution, 1.0f, 2, 8192, "%d px", ImGuiSliderFlags_AlwaysClamp);
+        showTooltip("New map resolution (width and height)");
+    }
+    if (heightMap){
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_CIRCLE_HALF_STROKE, "middle", "Start new heightmaps at middle height", heightMapStartAtMiddle, buttonSize)){
+            heightMapStartAtMiddle = !heightMapStartAtMiddle;
+        }
+    }
+    ImGui::SameLine();
+    if (info.present){
+        ImGui::BeginDisabled(!info.sizeKnown);
+        if (iconButton(ICON_FA_ARROWS_ROTATE, "recreate", "Recreate map at its current resolution", false, buttonSize)){
+            endStroke();
+            createMapForTarget(ref, info.width, info.height);
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_TRASH_CAN, "remove", "Remove map", false, buttonSize)){
+            endStroke();
+            deleteMapForTarget(ref);
+        }
+    }else if (iconButton(ICON_FA_PLUS, "create", "Create map", false, buttonSize)){
+        endStroke();
+        createMapForTarget(ref, resolution, resolution);
+    }
+    ImGui::PopID();
+}
+
+void editor::TerrainEditWindow::drawFoliageMesh(const TerrainFoliageLayer& layer){
+    terrainPropertyRow("Mesh", "Choose a model or drag one from Resources.");
+    ImGui::BeginGroup();
+    const float available = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+    const float thumbSize = std::min(ImGui::GetFrameHeight() * 3.0f, available);
+    int width = 0;
+    int height = 0;
+    ImTextureID thumbnail = Backend::getApp().getResourcesWindow()->getAssetThumbnail(layer.meshPath, width, height);
+    const ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    const float rounding = ImGui::GetStyle().FrameRounding;
+    drawList->AddRectFilled(p, ImVec2(p.x + thumbSize, p.y + thumbSize), ImGui::GetColorU32(ImGuiCol_FrameBg), rounding);
+    if (thumbnail && width > 0 && height > 0){
+        const float scale = thumbSize / std::max(width, height);
+        const ImVec2 min(p.x + (thumbSize - width * scale) * 0.5f, p.y + (thumbSize - height * scale) * 0.5f);
+        Widgets::addImageRounded(drawList, thumbnail, min, ImVec2(min.x + width * scale, min.y + height * scale), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, rounding, ImDrawFlags_RoundCornersAll);
+    }else{
+        const ImVec2 size = ImGui::CalcTextSize(ICON_FA_CUBE);
+        drawList->AddText(ImVec2(p.x + (thumbSize - size.x) * 0.5f, p.y + (thumbSize - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), ICON_FA_CUBE);
+    }
+    ImGui::InvisibleButton("##foliage_preview", ImVec2(thumbSize, thumbSize));
+    if (ImGui::IsItemHovered() && thumbnail){
+        ImGui::BeginTooltip();
+        const float scale = std::min(1.0f, ImGui::GetFontSize() * 18.0f / std::max(width, height));
+        Widgets::image(thumbnail, ImVec2(width * scale, height * scale));
+        ImGui::TextUnformatted(layer.meshPath.c_str());
+        ImGui::EndTooltip();
+    }
+    if (available > thumbSize + ImGui::GetFrameHeight() * 4.0f){
+        ImGui::SameLine();
+    }
+    ImGui::BeginGroup();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+    if (layer.meshPath.empty()){
+        ImGui::TextDisabled("No mesh selected");
+    }else{
+        ImGui::TextUnformatted(fs::path(layer.meshPath).filename().string().c_str());
+        showTooltip(layer.meshPath.c_str());
+    }
+    ImGui::PopTextWrapPos();
+
+    auto assignMesh = [&](const fs::path& path){
+        if (!path.empty() && !project->isInsideAssetsPath(path)){
+            Backend::getApp().registerOutsideAssetsAlert(path.string());
+            return;
+        }
+
+        endStroke();
+        SceneProject* sceneProject = getTargetSceneProject();
+        const std::string property = "foliageLayers[" + std::to_string(selectedFoliageLayer) + "].meshPath";
+        const std::string meshPath = path.empty() ? std::string() : project->normalizeToAssetsRelative(path).generic_string();
+        CommandHandle::get(sceneProject->id)->addCommandNoMerge(new PropertyCmd<std::string>(
+            project, sceneProject->id, selectedEntity, ComponentType::TerrainComponent, property, meshPath));
+    };
+    const ImVec2 buttonSize(ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+    if (iconButton(ICON_FA_FOLDER_OPEN, "browse_foliage_mesh", "Choose foliage mesh", false, buttonSize)){
+        const std::string path = FileDialogs::openFileDialog(project->getAssetsPath().string(), FILE_DIALOG_MODEL);
+        if (!path.empty()){
+            assignMesh(path);
+        }
+    }
+    ImGui::SameLine();
+    ImGui::BeginDisabled(layer.meshPath.empty());
+    if (iconButton(ICON_FA_XMARK, "clear_foliage_mesh", "Clear foliage mesh", false, buttonSize)){
+        assignMesh({});
+    }
+    ImGui::EndDisabled();
+    ImGui::EndGroup();
+    ImGui::EndGroup();
+    if (ImGui::BeginDragDropTarget()){
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")){
+            const std::vector<std::string> dropped = Util::getStringsFromPayload(payload);
+            if (!dropped.empty() && Util::isModelFile(dropped[0])){
+                assignMesh(dropped[0]);
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+}
+
 void editor::TerrainEditWindow::show(){
+    if (windowOpen){
+        updateTargetFromSelection();
+    }
+    updateFoliagePreview();
     if (!windowOpen){
         return;
     }
 
-    updateTargetFromSelection();
-
-    ImGui::SetNextWindowSize(ImVec2(360.0f, 480.0f), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 27.0f, ImGui::GetFontSize() * 44.0f), ImGuiCond_FirstUseEver);
     if (focusRequested){
         ImGui::SetNextWindowFocus();
         focusRequested = false;
     }
-
-    bool wasOpen = windowOpen;
     if (!ImGui::Begin(WINDOW_NAME, &windowOpen)){
         ImGui::End();
-        if (wasOpen && !windowOpen){
-            brushActive = false;
-            endStroke();
+        if (!windowOpen){
+            setOpen(false);
         }
         return;
     }
 
     SceneProject* sceneProject = getTargetSceneProject();
-    bool validTarget = hasValidTarget(sceneProject);
-
-    if (!validTarget){
+    if (!hasValidTarget(sceneProject)){
         brushActive = false;
         endStroke();
-        ImGui::Spacing();
-        ImGui::TextDisabled("No terrain is selected");
+        ImGui::TextWrapped("%s", project->isAnyScenePlaying() ? "Stop the scene to edit terrain." : "Select a terrain in the scene to sculpt, paint, or edit foliage.");
         ImGui::End();
+        if (!windowOpen){
+            setOpen(false);
+        }
         return;
     }
 
     TerrainComponent& terrain = sceneProject->scene->getComponent<TerrainComponent>(selectedEntity);
-
-    std::string selectedTerrainLabel = "Selected terrain: " + sceneProject->scene->getEntityName(selectedEntity);
-    ImGui::TextUnformatted(selectedTerrainLabel.c_str());
-    const int foliageLayerCount = static_cast<int>(terrain.foliageLayers.size());
-    selectedFoliageLayer = std::clamp(selectedFoliageLayer, 0, std::max(0, foliageLayerCount - 1));
-
-    TerrainMapInfo heightInfo = getTerrainMapInfo(terrain.heightMap);
-    TerrainMapInfo blendInfo = getTerrainMapInfo(terrain.blendMap);
-    TerrainMapInfo densityInfo;
-    if (foliageLayerCount > 0){
-        densityInfo = getTerrainMapInfo(terrain.foliageLayers[selectedFoliageLayer].densityMap);
-    }
-    const bool hasHeightMap = heightInfo.present;
-    const bool hasBlendMap = blendInfo.present;
-    const bool hasDensityMap = densityInfo.present;
-
-    const bool brushTargetAvailable = isHeightBrush() ? hasHeightMap : (isDensityBrush() ? hasDensityMap : hasBlendMap);
-    if (brushActive && !brushTargetAvailable){
-        brushActive = false;
-        endStroke();
-    }
-
-    ImGui::SeparatorText("Maps");
-
-    heightMapResolution = std::max(2, heightMapResolution);
-    blendMapResolution = std::max(2, blendMapResolution);
-    densityMapResolution = std::max(2, densityMapResolution);
-
-    auto mapSection = [&](const TerrainMapRef& ref, const char* icon, const char* label, const TerrainMapInfo& info, int& resolution, const char* id){
-        ImGui::PushID(id);
-
-        const float resolutionInputWidth = 80.0f;
-        const ImGuiStyle& style = ImGui::GetStyle();
-        const float mapActionIconWidth = std::max(std::max(ImGui::CalcTextSize(ICON_FA_ARROWS_ROTATE).x,
-                                                           ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x),
-                                                  ImGui::CalcTextSize(ICON_FA_CIRCLE_HALF_STROKE).x) + style.FramePadding.x * 2.0f;
-        const ImVec2 iconButtonSize(mapActionIconWidth, 0.0f);
-        const bool canRecreate = info.present && info.sizeKnown && info.width > 0 && info.height > 0;
-        const char* statusIcon = (!info.present || !info.sizeKnown) ? ICON_FA_TRIANGLE_EXCLAMATION : ICON_FA_CIRCLE_CHECK;
-        const char* statusTooltip = !info.present ? "Map is not assigned" : (info.sizeKnown ? "Map is assigned" : "Map is assigned, but its texture data is not available yet.");
-        const char* createText = ICON_FA_PLUS "  Create";
-
-        auto heightMiddleButton = [&](){
-            if (ref.target != TerrainMapTarget::HeightMap){
-                return;
-            }
-
-            ImGui::SameLine();
-            if (iconButton(ICON_FA_CIRCLE_HALF_STROKE, "height_middle_start", "Generate heightmaps at middle height", heightMapStartAtMiddle, iconButtonSize)){
-                heightMapStartAtMiddle = !heightMapStartAtMiddle;
-            }
-        };
-
-        std::string resolutionText = "Unknown";
-        if (info.sizeKnown){
-            resolutionText = info.width == info.height ? std::to_string(info.width) : std::to_string(info.width) + "x" + std::to_string(info.height);
-        }
-
-        std::string title = std::string(icon) + "  " + label;
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted(title.c_str());
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", statusIcon);
-        showTooltip(statusTooltip);
-
-        ImGui::SameLine();
-        if (!info.present){
-            ImGui::SetNextItemWidth(resolutionInputWidth);
-            ImGui::DragInt("##resolution", &resolution, 1.0f, 2, 8192);
-            showTooltip("Resolution used when creating this map");
-            resolution = std::max(2, resolution);
-
-            heightMiddleButton();
-
-            ImGui::SameLine();
-            if (ImGui::Button((std::string(createText) + "##create_map_action").c_str())){
-                createMapForTarget(ref, resolution, resolution);
-            }
-            showTooltip("Create an editable map with the chosen resolution");
-        }else{
-            if (info.sizeKnown){
-                ImGui::TextUnformatted(resolutionText.c_str());
-            }else{
-                ImGui::TextDisabled("%s", resolutionText.c_str());
-            }
-
-            heightMiddleButton();
-
-            ImGui::SameLine();
-            ImGui::BeginDisabled(!canRecreate);
-            if (iconButton(ICON_FA_ARROWS_ROTATE, "recreate_map_action", canRecreate ? "Recreate this map using its current resolution" : "Current map size is not available yet", false, iconButtonSize)){
-                createMapForTarget(ref, info.width, info.height);
-            }
-            ImGui::EndDisabled();
-
-            ImGui::SameLine();
-            if (iconButton(ICON_FA_TRASH_CAN, "delete_map_action", "Delete this map", false, iconButtonSize)){
-                deleteMapForTarget(ref);
-            }
-        }
-
-        ImGui::PopID();
-    };
-
-    mapSection(TerrainMapTarget::HeightMap, ICON_FA_MOUNTAIN, "Heightmap", heightInfo, heightMapResolution, "height");
-    ImGui::Separator();
-    mapSection(TerrainMapTarget::BlendMap, ICON_FA_PALETTE, "Blendmap", blendInfo, blendMapResolution, "blend");
-
-    ImGui::SeparatorText("Sculpt");
-
-    const ImVec2 toolButtonSize(ImGui::GetFrameHeight() * 1.35f, ImGui::GetFrameHeight() * 1.35f);
+    ImGui::TextWrapped(ICON_FA_MOUNTAIN "  %s", sceneProject->scene->getEntityName(selectedEntity).c_str());
+    ImGui::Spacing();
+    const int layerCount = static_cast<int>(terrain.foliageLayers.size());
+    selectedFoliageLayer = std::clamp(selectedFoliageLayer, 0, std::max(0, layerCount - 1));
+    const ImVec2 buttonSize(ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
 
     auto brushButton = [&](TerrainBrushMode mode, const char* icon, const char* id, const char* tooltip){
-        bool selected = brushActive && brushMode == mode;
-        if (iconButton(icon, id, tooltip, selected, toolButtonSize)){
+        const bool selected = brushActive && brushMode == mode;
+        if (iconButton(icon, id, tooltip, selected, buttonSize)){
             endStroke();
-            if (selected){
-                brushActive = false;
-            }else{
-                brushMode = mode;
-                brushActive = true;
-            }
+            brushMode = mode;
+            brushActive = !selected;
         }
     };
-
-    ImGui::BeginDisabled(!hasHeightMap);
-    brushButton(TerrainBrushMode::Raise, ICON_FA_ARROW_UP, "terrain_raise", "Raise terrain (Ctrl-drag lowers, Shift-drag smooths)");
-    ImGui::SameLine();
-    brushButton(TerrainBrushMode::Lower, ICON_FA_ARROW_DOWN, "terrain_lower", "Lower terrain (Ctrl-drag raises, Shift-drag smooths)");
-    ImGui::SameLine();
-    brushButton(TerrainBrushMode::Smooth, ICON_FA_WATER, "terrain_smooth", "Smooth terrain");
-    ImGui::SameLine();
-    brushButton(TerrainBrushMode::Flatten, ICON_FA_GRIP_LINES, "terrain_flatten", "Flatten terrain (Shift-drag smooths)");
-    ImGui::EndDisabled();
-    if (!hasHeightMap){
-        ImGui::TextDisabled("Heightmap missing");
-    }
-
-    ImGui::SeparatorText("Paint");
-
     auto paintButton = [&](TerrainBrushMode mode, const char* id, const char* tooltip, const ImVec4& color){
-        bool selected = brushActive && brushMode == mode;
-        if (colorIconButton(ICON_FA_BRUSH, id, tooltip, selected, color, toolButtonSize)){
-            endStroke();
-            if (selected){
-                brushActive = false;
-            }else{
-                brushMode = mode;
-                brushActive = true;
-            }
-        }
+        ImGui::PushStyleColor(ImGuiCol_Text, color);
+        brushButton(mode, ICON_FA_BRUSH, id, tooltip);
+        ImGui::PopStyleColor();
     };
 
-    ImGui::BeginDisabled(!hasBlendMap);
-    paintButton(TerrainBrushMode::PaintRed, "terrain_paint_red", "Paint red blend channel", ImVec4(0.95f, 0.28f, 0.20f, 1.0f));
-    ImGui::SameLine();
-    paintButton(TerrainBrushMode::PaintGreen, "terrain_paint_green", "Paint green blend channel", ImVec4(0.28f, 0.78f, 0.28f, 1.0f));
-    ImGui::SameLine();
-    paintButton(TerrainBrushMode::PaintBlue, "terrain_paint_blue", "Paint blue blend channel", ImVec4(0.25f, 0.48f, 0.95f, 1.0f));
-    ImGui::SameLine();
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-    ImGui::SameLine();
-    if (iconButton(ICON_FA_SCALE_BALANCED, "normalize_blend", "Normalize blend paint: paint one channel while fading the others out", normalizeBlendPaint, toolButtonSize)){
-        normalizeBlendPaint = !normalizeBlendPaint;
-    }
-    ImGui::EndDisabled();
-    if (!hasBlendMap){
-        ImGui::TextDisabled("Blendmap missing");
-    }
-
-    ImGui::SeparatorText("Foliage");
-
-    // Adding or removing a layer resizes the vector the rows below read, so the section stops
-    // for the frame and picks the new set up on the next one.
-    bool foliageLayersChanged = false;
-    const ImVec2 layerButtonSize(ImGui::GetFrameHeight(), 0.0f);
-
-    auto addFoliageLayer = [&](){
-        endStroke();
-
-        std::vector<TerrainFoliageLayer> layers = terrain.foliageLayers;
-        layers.push_back(TerrainFoliageLayer());
-        if (setFoliageLayers(layers)){
-            selectedFoliageLayer = static_cast<int>(layers.size()) - 1;
-            foliageLayersChanged = true;
-        }
-    };
-
-    if (foliageLayerCount == 0){
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextDisabled("No foliage layers");
+    if (ImGui::CollapsingHeader("Terrain", ImGuiTreeNodeFlags_DefaultOpen) && beginTerrainProperties("terrain_properties")){
+        drawMapSettings(TerrainMapTarget::HeightMap, "Heightmap", heightMapResolution);
+        terrainPropertyRow("Sculpt");
+        ImGui::BeginDisabled(terrain.heightMap.empty());
+        brushButton(TerrainBrushMode::Raise, ICON_FA_ARROW_UP, "terrain_raise", "Raise terrain (Ctrl lowers, Shift smooths)");
         ImGui::SameLine();
-        if (iconButton(ICON_FA_PLUS, "add_foliage_layer", "Add a foliage layer", false, layerButtonSize)){
-            addFoliageLayer();
+        brushButton(TerrainBrushMode::Lower, ICON_FA_ARROW_DOWN, "terrain_lower", "Lower terrain (Ctrl raises, Shift smooths)");
+        ImGui::SameLine();
+        brushButton(TerrainBrushMode::Smooth, ICON_FA_WATER, "terrain_smooth", "Smooth terrain");
+        ImGui::SameLine();
+        brushButton(TerrainBrushMode::Flatten, ICON_FA_GRIP_LINES, "terrain_flatten", "Flatten terrain (Shift smooths)");
+        ImGui::EndDisabled();
+
+        drawMapSettings(TerrainMapTarget::BlendMap, "Blendmap", blendMapResolution);
+        terrainPropertyRow("Paint");
+        ImGui::BeginDisabled(terrain.blendMap.empty());
+        paintButton(TerrainBrushMode::PaintRed, "terrain_paint_red", "Paint red blend channel", ImVec4(0.95f, 0.28f, 0.20f, 1.0f));
+        ImGui::SameLine();
+        paintButton(TerrainBrushMode::PaintGreen, "terrain_paint_green", "Paint green blend channel", ImVec4(0.28f, 0.78f, 0.28f, 1.0f));
+        ImGui::SameLine();
+        paintButton(TerrainBrushMode::PaintBlue, "terrain_paint_blue", "Paint blue blend channel", ImVec4(0.25f, 0.48f, 0.95f, 1.0f));
+        ImGui::SameLine();
+        if (iconButton(ICON_FA_SCALE_BALANCED, "normalize_blend", "Normalize paint: fade other channels while painting", normalizeBlendPaint, buttonSize)){
+            normalizeBlendPaint = !normalizeBlendPaint;
         }
-    }else{
-        std::string layerPreview = "Layer " + std::to_string(selectedFoliageLayer + 1) + " of " + std::to_string(foliageLayerCount);
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x) * 2.0f);
-        if (ImGui::BeginCombo("##foliage_layer", layerPreview.c_str())){
-            for (int i = 0; i < foliageLayerCount; i++){
-                std::string label = "Layer " + std::to_string(i + 1);
-                if (ImGui::Selectable(label.c_str(), i == selectedFoliageLayer)){
+        ImGui::EndDisabled();
+        ImGui::EndTable();
+    }
+
+    if (ImGui::CollapsingHeader("Foliage", ImGuiTreeNodeFlags_DefaultOpen) && beginTerrainProperties("foliage_properties")){
+        terrainPropertyRow("Layer");
+        auto layerLabel = [&](int index){
+            const std::string& path = terrain.foliageLayers[index].meshPath;
+            return std::to_string(index + 1) + "  " + (path.empty() ? "Empty layer" : fs::path(path).stem().string());
+        };
+        const std::string preview = layerCount ? layerLabel(selectedFoliageLayer) : "No layers";
+        ImGui::SetNextItemWidth(std::max(1.0f, ImGui::GetContentRegionAvail().x - (buttonSize.x + spacing) * 2.0f));
+        ImGui::BeginDisabled(layerCount == 0);
+        if (ImGui::BeginCombo("##foliage_layer", preview.c_str())){
+            for (int i = 0; i < layerCount; ++i){
+                const bool selected = i == selectedFoliageLayer;
+                if (ImGui::Selectable(layerLabel(i).c_str(), selected)){
                     endStroke();
                     selectedFoliageLayer = i;
+                }
+                if (selected){
+                    ImGui::SetItemDefaultFocus();
                 }
             }
             ImGui::EndCombo();
         }
-
+        ImGui::EndDisabled();
+        bool layersChanged = false;
         ImGui::SameLine();
-        if (iconButton(ICON_FA_PLUS, "add_foliage_layer", "Add a foliage layer", false, layerButtonSize)){
-            addFoliageLayer();
-        }
-
-        ImGui::SameLine();
-        if (iconButton(ICON_FA_TRASH_CAN, "remove_foliage_layer", "Remove this foliage layer", false, layerButtonSize)){
-            // Removing shifts every layer above this one, so the stroke has to be recorded while
-            // stroke.ref still names the map it painted.
+        if (iconButton(ICON_FA_PLUS, "add_foliage_layer", "Add foliage layer", false, buttonSize)){
             endStroke();
-
+            std::vector<TerrainFoliageLayer> layers = terrain.foliageLayers;
+            layers.emplace_back();
+            if (setFoliageLayers(layers)){
+                selectedFoliageLayer = static_cast<int>(layers.size()) - 1;
+                layersChanged = true;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::BeginDisabled(layerCount == 0 || layersChanged);
+        if (iconButton(ICON_FA_TRASH_CAN, "remove_foliage_layer", "Remove foliage layer", false, buttonSize)){
+            endStroke();
             std::vector<TerrainFoliageLayer> layers = terrain.foliageLayers;
             layers.erase(layers.begin() + selectedFoliageLayer);
-            if (setFoliageLayers(layers)){
+            layersChanged = setFoliageLayers(layers);
+            if (layersChanged){
                 brushActive = false;
-                foliageLayersChanged = true;
             }
         }
-    }
+        ImGui::EndDisabled();
 
-    if (foliageLayerCount > 0 && !foliageLayersChanged){
-        mapSection(TerrainMapRef(TerrainMapTarget::DensityMap, selectedFoliageLayer), ICON_FA_SEEDLING, "Density", densityInfo, densityMapResolution, "density");
+        if (layerCount > 0 && !layersChanged){
+            TerrainFoliageLayer layer = terrain.foliageLayers[selectedFoliageLayer];
+            drawFoliageMesh(layer);
+            drawMapSettings(TerrainMapRef(TerrainMapTarget::DensityMap, selectedFoliageLayer), "Density map", densityMapResolution);
+            terrainPropertyRow("Paint");
+            ImGui::BeginDisabled(terrain.foliageLayers[selectedFoliageLayer].densityMap.empty());
+            brushButton(TerrainBrushMode::PaintDensity, ICON_FA_BRUSH, "terrain_paint_density", "Paint foliage density (Ctrl erases)");
+            ImGui::SameLine();
+            brushButton(TerrainBrushMode::EraseDensity, ICON_FA_ERASER, "terrain_erase_density", "Erase foliage density (Ctrl paints)");
+            ImGui::EndDisabled();
 
-        TerrainFoliageLayer& layer = terrain.foliageLayers[selectedFoliageLayer];
-
-        const std::string meshName = layer.meshPath.empty() ? "Drop a model here" : fs::path(layer.meshPath).filename().string();
-        ImGui::Button((std::string(ICON_FA_CUBE) + "  " + meshName + "##foliage_mesh").c_str(), ImVec2(-1.0f, 0.0f));
-        if (ImGui::BeginDragDropTarget()){
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")){
-                std::vector<std::string> dropped = Util::getStringsFromPayload(payload);
-                if (!dropped.empty() && Util::isModelFile(dropped[0])){
-                    const bool insideAssets = project->isInsideAssetsPath(dropped[0]);
-                    const std::string meshPath = insideAssets ? project->normalizeToAssetsRelative(dropped[0]).generic_string()
-                                                              : fs::path(dropped[0]).generic_string();
-                    setFoliageLayerProperty<std::string>("meshPath", meshPath);
+            terrainPropertyRow("Density", "Instances per square world unit at full painted density.");
+            if (ImGui::DragFloat("##foliage_density", &layer.density, 0.05f, 0.0f, 20.0f, "%.2f")){
+                setFoliageLayerProperty("density", std::max(0.0f, layer.density));
+            }
+            const TerrainFoliageLayer& currentLayer = terrain.foliageLayers[selectedFoliageLayer];
+            terrainPropertyRow("Scale range", "Minimum and maximum random scale per instance.");
+            if (ImGui::DragFloatRange2("##foliage_scale", &layer.minScale, &layer.maxScale, 0.01f, 0.01f, 20.0f, "%.2f", "%.2f")){
+                layer.minScale = std::max(0.01f, layer.minScale);
+                layer.maxScale = std::max(layer.minScale, layer.maxScale);
+                if (layer.minScale != currentLayer.minScale){
+                    setFoliageLayerProperty("minScale", layer.minScale);
+                }
+                if (layer.maxScale != currentLayer.maxScale){
+                    setFoliageLayerProperty("maxScale", layer.maxScale);
                 }
             }
-            ImGui::EndDragDropTarget();
+            terrainPropertyRow("Slope range", "Allowed ground slope in degrees, from flat (0) to vertical (90).");
+            if (ImGui::DragFloatRange2("##foliage_slope", &layer.minSlope, &layer.maxSlope, 0.5f, 0.0f, 90.0f, "%.0f deg", "%.0f deg", ImGuiSliderFlags_AlwaysClamp)){
+                if (layer.minSlope != currentLayer.minSlope){
+                    setFoliageLayerProperty("minSlope", layer.minSlope);
+                }
+                if (layer.maxSlope != currentLayer.maxSlope){
+                    setFoliageLayerProperty("maxSlope", layer.maxSlope);
+                }
+            }
+            terrainPropertyRow("Rotation", "Random yaw as a share of a full turn.");
+            float rotation = layer.rotationJitter * 100.0f;
+            if (ImGui::SliderFloat("##foliage_rotation", &rotation, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+                setFoliageLayerProperty("rotationJitter", rotation / 100.0f);
+            }
+            terrainPropertyRow("Normal alignment", "Blend from upright (0%) to aligned with the terrain normal (100%).");
+            float alignment = layer.alignToNormal * 100.0f;
+            if (ImGui::SliderFloat("##foliage_align", &alignment, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+                setFoliageLayerProperty("alignToNormal", alignment / 100.0f);
+            }
+            terrainPropertyRow("Draw distance", "Foliage visibility distance in world units. Ignored while editing terrain; restored when editing ends or play starts.");
+            if (ImGui::DragFloat("##foliage_distance", &layer.drawDistance, 1.0f, 1.0f, 500.0f, "%.0f")){
+                setFoliageLayerProperty("drawDistance", std::max(1.0f, layer.drawDistance));
+            }
+            terrainPropertyRow("Seed", "Change the seed to reshuffle instance positions.");
+            if (ImGui::InputScalar("##foliage_seed", ImGuiDataType_U32, &layer.seed)){
+                setFoliageLayerProperty("seed", layer.seed);
+            }
         }
-        showTooltip(layer.meshPath.empty() ? "Drag a model from Resources to scatter it over the painted area" : layer.meshPath.c_str());
-
-        float density = layer.density;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::DragFloat("##foliage_density", &density, 0.05f, 0.0f, 20.0f, "Density  %.2f")){
-            setFoliageLayerProperty<float>("density", std::max(0.0f, density));
-        }
-        showTooltip("Instances per square world unit where the density map is fully painted");
-
-        float minScale = layer.minScale;
-        float maxScale = layer.maxScale;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::DragFloatRange2("##foliage_scale", &minScale, &maxScale, 0.01f, 0.01f, 20.0f, "Scale  %.2f", "to %.2f")){
-            setFoliageLayerProperty<float>("minScale", std::max(0.01f, minScale));
-            setFoliageLayerProperty<float>("maxScale", std::max(minScale, maxScale));
-        }
-        showTooltip("Random scale range applied per instance");
-
-        float minSlope = layer.minSlope;
-        float maxSlope = layer.maxSlope;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::DragFloatRange2("##foliage_slope", &minSlope, &maxSlope, 0.5f, 0.0f, 90.0f, "Slope  %.0f" ICON_FA_ANGLE_UP, "to %.0f" ICON_FA_ANGLE_UP)){
-            setFoliageLayerProperty<float>("minSlope", std::clamp(minSlope, 0.0f, 90.0f));
-            setFoliageLayerProperty<float>("maxSlope", std::clamp(maxSlope, minSlope, 90.0f));
-        }
-        showTooltip("Instances only land on ground within this slope range, in degrees");
-
-        float rotationJitter = layer.rotationJitter;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::SliderFloat("##foliage_rotation", &rotationJitter, 0.0f, 1.0f, "Rotation  %.2f")){
-            setFoliageLayerProperty<float>("rotationJitter", rotationJitter);
-        }
-        showTooltip("Share of a full turn of random yaw per instance");
-
-        float alignToNormal = layer.alignToNormal;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::SliderFloat("##foliage_align", &alignToNormal, 0.0f, 1.0f, "Align  %.2f")){
-            setFoliageLayerProperty<float>("alignToNormal", alignToNormal);
-        }
-        showTooltip("0 stands instances upright, 1 lays them along the surface");
-
-        float drawDistance = layer.drawDistance;
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::DragFloat("##foliage_distance", &drawDistance, 1.0f, 1.0f, 500.0f, "Distance  %.0f")){
-            setFoliageLayerProperty<float>("drawDistance", std::max(1.0f, drawDistance));
-        }
-        showTooltip("Instances beyond this distance from the camera are not resolved");
-
-        int seed = static_cast<int>(layer.seed);
-        ImGui::SetNextItemWidth(-1.0f);
-        if (ImGui::DragInt("##foliage_seed", &seed, 1.0f, 0, 100000, "Seed  %d")){
-            setFoliageLayerProperty<unsigned int>("seed", static_cast<unsigned int>(std::max(0, seed)));
-        }
-        showTooltip("Changing the seed reshuffles where instances land");
-
-        ImGui::BeginDisabled(!hasDensityMap);
-        paintButton(TerrainBrushMode::PaintDensity, "terrain_paint_density", "Paint foliage density (Ctrl-drag erases)", ImVec4(0.45f, 0.75f, 0.35f, 1.0f));
-        ImGui::SameLine();
-        paintButton(TerrainBrushMode::EraseDensity, "terrain_erase_density", "Erase foliage density (Ctrl-drag paints)", ImVec4(0.72f, 0.72f, 0.72f, 1.0f));
-        ImGui::EndDisabled();
-        if (!hasDensityMap){
-            ImGui::TextDisabled("Density map missing");
-        }
+        ImGui::EndTable();
     }
 
-    ImGui::SeparatorText("Brush");
-
-    ImGui::BeginDisabled(!brushTargetAvailable);
-
-    if (iconButton(ICON_FA_CIRCLE, "shape_circle", "Circle shape", brushShape == TerrainBrushShape::Circle, toolButtonSize)){
-        brushShape = TerrainBrushShape::Circle;
+    Texture* brushTexture = TerrainMapUtils::findTexture(terrain, getBrushMapRef());
+    const bool brushTargetAvailable = brushTexture && !brushTexture->empty();
+    if (brushActive && !brushTargetAvailable){
+        brushActive = false;
+        endStroke();
     }
-    ImGui::SameLine();
-    if (iconButton(ICON_FA_SQUARE, "shape_square", "Square shape", brushShape == TerrainBrushShape::Square, toolButtonSize)){
-        brushShape = TerrainBrushShape::Square;
-    }
-    ImGui::SameLine();
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
-    ImGui::SameLine();
-    if (iconButton(ICON_FA_WATER, "falloff_smooth", "Smooth falloff", brushFalloff == TerrainBrushFalloff::Smooth, toolButtonSize)){
-        brushFalloff = TerrainBrushFalloff::Smooth;
-    }
-    ImGui::SameLine();
-    if (iconButton(ICON_FA_SLASH, "falloff_linear", "Linear falloff", brushFalloff == TerrainBrushFalloff::Linear, toolButtonSize)){
-        brushFalloff = TerrainBrushFalloff::Linear;
-    }
-    ImGui::SameLine();
-    if (iconButton(ICON_FA_CIRCLE_DOT, "falloff_constant", "Constant falloff", brushFalloff == TerrainBrushFalloff::Constant, toolButtonSize)){
-        brushFalloff = TerrainBrushFalloff::Constant;
-    }
-
-    brushSize = std::clamp(brushSize, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE);
-    ImGui::SetNextItemWidth(-1.0f);
-    UIUtils::sliderFloatInput("##brush_size", &brushSize, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, ICON_FA_CIRCLE "  %.2f");
-    showTooltip("Brush size ([ and ] while painting)");
-
-    brushStrength = std::clamp(brushStrength, MIN_BRUSH_STRENGTH, MAX_BRUSH_STRENGTH);
-    ImGui::SetNextItemWidth(-1.0f);
-    UIUtils::sliderFloatInput("##brush_strength", &brushStrength, MIN_BRUSH_STRENGTH, MAX_BRUSH_STRENGTH, ICON_FA_GAUGE_HIGH "  %.2f");
-    showTooltip("Brush strength: how fast the brush acts while held (Shift+[ and Shift+] while painting)");
-
-    if (brushMode == TerrainBrushMode::Flatten){
-        if (iconButton(ICON_FA_EYE_DROPPER, "flatten_pick", "Pick the flatten height from the terrain at the start of each stroke", flattenPickOnStroke, toolButtonSize)){
-            flattenPickOnStroke = !flattenPickOnStroke;
+    if (ImGui::CollapsingHeader("Brush", ImGuiTreeNodeFlags_DefaultOpen) && beginTerrainProperties("brush_properties")){
+        ImGui::BeginDisabled(!brushTargetAvailable);
+        terrainPropertyRow("Shape");
+        if (iconButton(ICON_FA_CIRCLE, "shape_circle", "Circle brush", brushShape == TerrainBrushShape::Circle, buttonSize)){
+            brushShape = TerrainBrushShape::Circle;
         }
         ImGui::SameLine();
-        ImGui::BeginDisabled(flattenPickOnStroke);
-        ImGui::SetNextItemWidth(-1.0f);
-        UIUtils::sliderFloatInput("##flatten_height", &flattenHeight, 0.0f, 1.0f, ICON_FA_GRIP_LINES "  %.3f");
-        showTooltip("Flatten height (normalized)");
+        if (iconButton(ICON_FA_SQUARE, "shape_square", "Square brush", brushShape == TerrainBrushShape::Square, buttonSize)){
+            brushShape = TerrainBrushShape::Square;
+        }
+        terrainPropertyRow("Falloff", "How brush strength fades from its center to its edge.");
+        int falloff = static_cast<int>(brushFalloff);
+        if (ImGui::Combo("##falloff", &falloff, "Smooth\0Linear\0Constant\0")){
+            brushFalloff = static_cast<TerrainBrushFalloff>(falloff);
+        }
+        terrainPropertyRow("Size", "Brush size in world units. Adjust with [ and ] while painting.");
+        brushSize = std::clamp(brushSize, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE);
+        UIUtils::sliderFloatInput("##brush_size", &brushSize, MIN_BRUSH_SIZE, MAX_BRUSH_SIZE, "%.2f");
+        terrainPropertyRow("Strength", "Brush flow while held. Adjust with Shift+[ and Shift+] while painting.");
+        float strength = std::clamp(brushStrength, MIN_BRUSH_STRENGTH, MAX_BRUSH_STRENGTH) * 100.0f;
+        if (UIUtils::sliderFloatInput("##brush_strength", &strength, MIN_BRUSH_STRENGTH * 100.0f, MAX_BRUSH_STRENGTH * 100.0f, "%.0f%%")){
+            brushStrength = strength / 100.0f;
+        }
+        if (brushMode == TerrainBrushMode::Flatten){
+            terrainPropertyRow("Sample height", "Pick the flatten height from the terrain at the start of each stroke.");
+            ImGui::Checkbox("##flatten_pick", &flattenPickOnStroke);
+            terrainPropertyRow("Flatten height", "Normalized terrain height.");
+            ImGui::BeginDisabled(flattenPickOnStroke);
+            UIUtils::sliderFloatInput("##flatten_height", &flattenHeight, 0.0f, 1.0f, "%.3f");
+            ImGui::EndDisabled();
+        }
         ImGui::EndDisabled();
+        ImGui::EndTable();
     }
-
-    ImGui::EndDisabled();
-
     ImGui::End();
 
-    // Persist brush settings back to project so they survive across sessions
-    {
-        TerrainEditorSettings& ts = project->getTerrainEditorSettings();
-        ts.brushMode           = static_cast<int>(brushMode);
-        ts.brushShape          = static_cast<int>(brushShape);
-        ts.brushFalloff        = static_cast<int>(brushFalloff);
-        ts.brushSize           = brushSize;
-        ts.brushStrength       = brushStrength;
-        ts.flattenHeight       = flattenHeight;
-        ts.heightMapResolution = heightMapResolution;
-        ts.blendMapResolution  = blendMapResolution;
-        ts.densityMapResolution = densityMapResolution;
-        ts.normalizeBlendPaint = normalizeBlendPaint;
-        ts.heightMapStartAtMiddle = heightMapStartAtMiddle;
-        ts.flattenPickOnStroke = flattenPickOnStroke;
-    }
-
-    if (wasOpen && !windowOpen){
+    TerrainEditorSettings& ts = project->getTerrainEditorSettings();
+    ts.brushMode = static_cast<int>(brushMode);
+    ts.brushShape = static_cast<int>(brushShape);
+    ts.brushFalloff = static_cast<int>(brushFalloff);
+    ts.brushSize = brushSize;
+    ts.brushStrength = brushStrength;
+    ts.flattenHeight = flattenHeight;
+    ts.heightMapResolution = heightMapResolution;
+    ts.blendMapResolution = blendMapResolution;
+    ts.densityMapResolution = densityMapResolution;
+    ts.normalizeBlendPaint = normalizeBlendPaint;
+    ts.heightMapStartAtMiddle = heightMapStartAtMiddle;
+    ts.flattenPickOnStroke = flattenPickOnStroke;
+    if (!windowOpen){
         setOpen(false);
     }
 }
 
 void editor::TerrainEditWindow::open(){
     setOpen(true);
-    updateTargetFromSelection();
 }
 
 void editor::TerrainEditWindow::setOpen(bool open){
@@ -2015,6 +1970,8 @@ void editor::TerrainEditWindow::setOpen(bool open){
             focusRequested = true;
         }
         windowOpen = true;
+        updateTargetFromSelection();
+        updateFoliagePreview();
         return;
     }
 
@@ -2022,12 +1979,14 @@ void editor::TerrainEditWindow::setOpen(bool open){
     focusRequested = false;
     brushActive = false;
     endStroke();
+    updateFoliagePreview();
 }
 
 void editor::TerrainEditWindow::openForEntity(Entity entity, uint32_t sceneId){
     open();
     selectedSceneId = sceneId;
     selectedEntity = entity;
+    updateFoliagePreview();
 
     const TerrainEditorSettings& ts = project->getTerrainEditorSettings();
     brushMode     = static_cast<TerrainBrushMode>(ts.brushMode);

@@ -53,16 +53,18 @@ namespace doriax{
             int chunkZ = 0;
             bool assigned = false; //false until the slot holds the resolve of the coordinate above
             bool meshLoaded = false;
-            unsigned int loadedCapacity = 0; //what the buffer holds, lagging maxInstances until the reload
         };
 
         struct TerrainFoliageInstances{
-            std::vector<TerrainFoliageChunk> chunks; //(2*radius+1)^2 grid, indexed by coordinate modulo its side
+            std::vector<TerrainFoliageChunk> chunks; //grid indexed by wrapped coordinates
             std::string loadedMeshPath;
             bool loadFailed = false;
             float chunkSize = 0; //the size the slot coordinates are in
             bool needUpdate = true;
+            bool pending = false;
         };
+
+        Entity foliagePreviewEntity = NULL_ENTITY;
 
         // Resolve of each terrain's foliageLayers. Kept here so the authored component stays copiable.
         std::unordered_map<Entity, std::vector<TerrainFoliageInstances>> terrainFoliage;
@@ -137,13 +139,16 @@ namespace doriax{
         bool loadFoliageMesh(Entity entity, const std::string& path);
         void sampleTerrainSurface(TerrainComponent& terrain, float localX, float localZ, float& height, Vector3& normal);
         float sampleFoliageDensity(TerrainComponent& terrain, TerrainFoliageLayer& layer, float localX, float localZ);
-        void fillFoliageChunk(TerrainComponent& terrain, TerrainFoliageLayer& layer, float chunkSize, int chunkX, int chunkZ, std::vector<InstanceData>& instances);
-        void updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal);
+        void appendFoliageCell(TerrainComponent& terrain, TerrainFoliageLayer& layer, int cellX, int cellZ, std::vector<InstanceData>& instances);
+        void updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLayer& layer, TerrainFoliageInstances& instances, const Vector3& viewLocal, bool preview);
         void updateTerrainFoliage(Entity entity, TerrainComponent& terrain, Transform& transform);
 
     public:
         MeshSystem(Scene* scene);
         virtual ~MeshSystem();
+
+        bool setFoliagePreviewEntity(Entity entity);
+        bool hasPendingFoliageUpdates() const;
 
         // Foliage ownership, for editor shader collection and selection.
         std::vector<Entity> getFoliageEntities(Entity terrainEntity) const;
