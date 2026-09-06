@@ -1962,6 +1962,7 @@ void editor::TerrainEditWindow::show(){
 
 void editor::TerrainEditWindow::open(){
     setOpen(true);
+    focusRequested = true;
 }
 
 void editor::TerrainEditWindow::setOpen(bool open){
