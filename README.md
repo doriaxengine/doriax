@@ -236,6 +236,7 @@ These small projects demonstrate real Doriax builds running on the web. Play the
 
 - **Character Control** — [Play](https://doriaxengine.github.io/charactercontrol/) · [Source](https://github.com/doriaxengine/charactercontrol)
 - **Simple Physics Control** — [Play](https://doriaxengine.github.io/simplephysicscontrol/) · [Source](https://github.com/doriaxengine/simplephysicscontrol)
+- **Tappy Plane** — [Play](https://doriaxengine.github.io/tappyplane/) · [Source](https://github.com/doriaxengine/tappyplane)
 
 ## Repository layout
 
