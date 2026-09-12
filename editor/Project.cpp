@@ -2542,6 +2542,12 @@ uint32_t editor::Project::createNewSceneInternal(std::string sceneName, SceneTyp
 
         clearSelectedEntities(data.id);
         getScene(data.id)->isModified = false; // New scene starts as unmodified
+    } else if (data.sceneType == SceneType::SCENE_2D) {
+        data.scene->setLightState(LightState::OFF);
+        data.scene->setBackgroundColor(Vector4(0.231, 0.298, 0.475, 1.0));
+    } else if (data.sceneType == SceneType::SCENE_UI) {
+        data.scene->setLightState(LightState::OFF);
+        data.scene->setBackgroundColor(Vector4(0.525, 0.525, 0.525, 1.0));
     }
 
     editor::getEditorHost().addNewSceneToDock(data.id);

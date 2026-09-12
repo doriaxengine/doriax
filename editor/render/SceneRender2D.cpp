@@ -40,14 +40,6 @@ editor::SceneRender2D::SceneRender2D(Scene* scene, unsigned int width, unsigned 
 
     createLines(width, height);
 
-    scene->setLightState(LightState::OFF);
-
-    if (isUI){
-        scene->setBackgroundColor(Vector4(0.525, 0.525, 0.525, 1.0));
-    }else{
-        scene->setBackgroundColor(Vector4(0.231, 0.298, 0.475, 1.0));
-    }
-
     viewportWidth = width;
     viewportHeight = height;
     applyZoomProjection();
