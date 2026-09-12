@@ -3822,9 +3822,6 @@ void editor::Project::finalizeStart(SceneProject* mainSceneProject, std::vector<
     }
 
     Engine::pauseGameEvents(false);
-    Engine::setCanvasSize(canvasWidth, canvasHeight);
-    Engine::setScalingMode(scalingMode);
-    Engine::setTextureStrategy(textureStrategy);
     Engine::onViewLoaded.call();
     Engine::systemViewChanged();
 
@@ -7762,6 +7759,12 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                 }
                 // C++ projects run Lua scripts too, through the plugin's initScripts
                 LuaBinding::clearLoadedProjectModules();
+
+                // Apply project display settings before scripts read the canvas size.
+                Engine::setCanvasSize(canvasWidth, canvasHeight);
+                Engine::setScalingMode(scalingMode);
+                Engine::setTextureStrategy(textureStrategy);
+                Engine::systemViewChanged();
 
                 for (const auto& entry : runtimeScenesToInitialize) {
                     if (!entry.runtime) continue;
