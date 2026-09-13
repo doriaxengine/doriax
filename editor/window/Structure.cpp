@@ -1631,7 +1631,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                     CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new DuplicateEntityCmd(project, project->getSelectedSceneId(), entitiesToDuplicate));
                 }
             }
-            if (ImGui::MenuItem(ICON_FA_TRASH "Delete", "Del, Delete", false, !node.isLocked)){
+            if (ImGui::MenuItem(ICON_FA_TRASH "Delete", "Del, Backspace", false, !node.isLocked)){
                 if (!node.isScene){
                     CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new DeleteEntityCmd(project, project->getSelectedSceneId(), node.id));
                     entityDeleted = true;
