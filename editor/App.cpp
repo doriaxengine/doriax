@@ -40,6 +40,8 @@
 #include <limits>
 #include <utility>
 
+#include "../libs/imgui/imgui.h"
+
 #if defined(_WIN32)
   #include <windows.h>
   #include <shlobj.h>
@@ -1632,7 +1634,7 @@ void editor::App::show(){
             CommandHandle::get(sceneId)->redo();
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) deleteSelection();
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) deleteSelection();
 
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection();
     }
