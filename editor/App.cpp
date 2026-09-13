@@ -40,8 +40,6 @@
 #include <limits>
 #include <utility>
 
-#include "../libs/imgui/imgui.h"
-
 #if defined(_WIN32)
   #include <windows.h>
   #include <shlobj.h>
