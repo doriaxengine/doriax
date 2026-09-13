@@ -1632,7 +1632,7 @@ void editor::App::show(){
             CommandHandle::get(sceneId)->redo();
         }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete)) deleteSelection();
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete) || ImGui::IsKeyPressed(ImGuiKey_Backspace)) deleteSelection();
 
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection();
     }

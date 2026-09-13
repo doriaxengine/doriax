@@ -1622,7 +1622,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
             ImGui::Separator();
             bool entityDeleted = false;
-            if (ImGui::MenuItem(ICON_FA_COPY"  Duplicate", "Ctrl+D", false, !node.isScene && !node.isLocked)){
+            if (ImGui::MenuItem(ICON_FA_COPY "Duplicate", "Ctrl+D", false, !node.isScene && !node.isLocked)){
                 if (!node.isScene){
                     std::vector<Entity> entitiesToDuplicate = project->getSelectedEntities(project->getSelectedSceneId());
                     if (entitiesToDuplicate.empty() || !project->isSelectedEntity(project->getSelectedSceneId(), node.id)){
@@ -1631,7 +1631,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                     CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new DuplicateEntityCmd(project, project->getSelectedSceneId(), entitiesToDuplicate));
                 }
             }
-            if (ImGui::MenuItem(ICON_FA_TRASH"  Delete", "Del", false, !node.isLocked)){
+            if (ImGui::MenuItem(ICON_FA_TRASH "Delete", "Del, Delete", false, !node.isLocked)){
                 if (!node.isScene){
                     CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new DeleteEntityCmd(project, project->getSelectedSceneId(), node.id));
                     entityDeleted = true;
