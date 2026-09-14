@@ -48,6 +48,7 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
+#include "../../libs/imgui/imgui.h"
 
 using namespace doriax;
 
@@ -1926,6 +1927,11 @@ void editor::ResourcesWindow::handleRename(){
         }
 
         ImGui::SameLine();
+
+        if (ImGui::IsKeyDown(ImGuiKey_Escape)) {
+            isRenaming = false;
+            ImGui::CloseCurrentPopup();
+        }
 
         if (ImGui::Button("Cancel", ImVec2(buttonWidth, 0))) {
             isRenaming = false;

@@ -1578,7 +1578,6 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
     if (ImGui::BeginPopup("RenameMenu")) {
         ImGui::Text("Name:");
 
-        // Focus the next item on the frame the popup opens
         if (ImGui::IsWindowAppearing()) {
             ImGui::SetKeyboardFocusHere();
         }
@@ -1599,6 +1598,11 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                 }
             }
         }
+
+        if (ImGui::IsKeyDown(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+
         ImGui::EndPopup();
     }
 
