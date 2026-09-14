@@ -48,7 +48,6 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
-#include "../Backend.h"
 #if defined(_WIN32)
     #include <windows.h>
 #elif defined(__APPLE__)
