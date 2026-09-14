@@ -48,6 +48,13 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
+#if defined(_WIN32)
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #include <CoreServices/CoreServices.h>
+#elif defined(__linux__)
+    #include <cstdlib>
+#endif
 
 using namespace doriax;
 
@@ -170,6 +177,16 @@ editor::ResourcesWindow::ResourcesWindow(Project* project, CodeEditor* codeEdito
     this->showDeleteConfirmation = false;
     this->stopThumbnailThread = false;
     memset(this->nameBuffer, 0, sizeof(this->nameBuffer));
+
+    #if defined(_WIN32)
+    this->fileBrowserName "File Explorer";
+    #elif defined(__APPLE__)
+    this->fileBrowserName = "Finder";
+    #elif defined(__linux__)
+    this->fileBrowserName = "Files";
+    #else
+    this->fileBrowserName = "Unkown File Browser";
+    #endif
 
     thumbnailThread = std::thread(&ResourcesWindow::thumbnailWorker, this);
 }
@@ -805,6 +822,65 @@ void editor::ResourcesWindow::renderPathBreadcrumb(const ImVec2& size) {
     }
 }
 
+
+
+
+
+void editor::ResourcesWindow::openFolderInFileManager(const std::string& path)
+{
+#if defined(_WIN32)
+    HINSTANCE result = ShellExecuteA(
+        NULL,
+        "open",
+        path.c_str(),
+        NULL,
+        NULL,
+        SW_SHOWNORMAL
+    );
+
+    if ((INT_PTR)result <= 32) {
+        registerAlert("Open in File Manager", "Failed to open File Explorer on Windows.");
+    }
+
+#elif defined(__APPLE__)
+    CFStringRef pathString = CFStringCreateWithCString(
+        kCFAllocatorDefault,
+        path.c_str(),
+        kCFStringEncodingUTF8
+    );
+
+    if (pathString) {
+        CFURLRef url = CFURLCreateWithFileSystemPath(
+            kCFAllocatorDefault,
+            pathString,
+            kCFURLPOSIXPathStyle,
+            true
+        );
+
+        if (url) {
+            OSStatus status = LSOpenCFURLRef(url, NULL);
+            if (status != noErr) {
+                registerAlert("Open in File Manager", "Failed to open Finder on macOS.");
+            }
+            CFRelease(url);
+        }
+        CFRelease(pathString);
+    }
+
+#elif defined(__linux__)
+    std::string command = "xdg-open \"" + path + "\" &";
+    int status = std::system(command.c_str());
+
+    if (status != 0) {
+        //App::registerAlert("Open in File Manager", "Failed to open default File Manager on Linux.");
+         std::cerr << "Failed to open default File Manager on Linux." << std::endl;
+    }
+
+#else
+    App::registerAlert("Unknown OS", "Opening in selected file system failed due to unknown OS.");
+#endif
+}
+
 void editor::ResourcesWindow::renderFileListing(bool showDirectories){
     // Stored iconSize stays logical; layout/draw use the current window DPI.
     const float uiIconSize = static_cast<float>(iconSize) * Theme::dpiScale();
@@ -1277,6 +1353,16 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
 
                 if (ImGui::MenuItem(ICON_FA_COPY " Copy")) copySelectedFiles(false);
                 if (ImGui::MenuItem(ICON_FA_SCISSORS " Cut")) copySelectedFiles(true);
+                if (ImGui::MenuItem((std::string(ICON_FA_FOLDER " Open in ") + fileBrowserName).c_str())) {
+                    for (auto file: clipboardFiles) {
+
+                    }
+                    fs::path p(files[0].filePath);
+
+                    // Get the directory containing the file
+                    fs::path dirPath = p.parent_path();
+                    openFolderInFileManager(dirPath);
+                }
                 if (ImGui::MenuItem(ICON_FA_PASTE " Paste", nullptr, false, !clipboardFiles.empty())){
                     pasteFiles(currentPath / lastSelectedFile);
                 }
@@ -1324,6 +1410,11 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
     if (ImGui::BeginPopup("ResourcesContextMenu")){
         if (ImGui::MenuItem(ICON_FA_FILE_IMPORT " Import Files")){
             importExternalPaths(editor::FileDialogs::openFileDialogMultiple());
+        }
+
+
+        if (ImGui::MenuItem((std::string(ICON_FA_FOLDER " Open in ") + fileBrowserName).c_str())) {
+            openFolderInFileManager(currentPath);
         }
 
         if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN " Import Folders")){
@@ -1613,7 +1704,7 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
         fileEntry.name = entry.path().filename().string();
         std::error_code entryEc;
         fileEntry.isDirectory = entry.is_directory(entryEc) && !entryEc;
-
+        fileEntry.filePath = entry.path();
         fileEntry.displayName = BidiText::toVisual(fileEntry.name);
         std::string baseName = fileEntry.name;
         if (!fileEntry.isDirectory){
