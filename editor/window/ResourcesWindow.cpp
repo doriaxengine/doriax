@@ -48,6 +48,7 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
+#include "../Backend.h"
 #if defined(_WIN32)
     #include <windows.h>
 #elif defined(__APPLE__)
@@ -839,7 +840,7 @@ void editor::ResourcesWindow::openFolderInFileManager(const std::string& path)
     );
 
     if ((INT_PTR)result <= 32) {
-        registerAlert("Open in File Manager", "Failed to open File Explorer on Windows.");
+        Backend::getApp().registerAlert("Open in File Manager", "Failed to open File Explorer on Windows.");
     }
 
 #elif defined(__APPLE__)
@@ -860,7 +861,7 @@ void editor::ResourcesWindow::openFolderInFileManager(const std::string& path)
         if (url) {
             OSStatus status = LSOpenCFURLRef(url, NULL);
             if (status != noErr) {
-                registerAlert("Open in File Manager", "Failed to open Finder on macOS.");
+                Backend::getApp().registerAlert("Open in File Manager", "Failed to open Finder on macOS.");
             }
             CFRelease(url);
         }
@@ -872,12 +873,11 @@ void editor::ResourcesWindow::openFolderInFileManager(const std::string& path)
     int status = std::system(command.c_str());
 
     if (status != 0) {
-        //App::registerAlert("Open in File Manager", "Failed to open default File Manager on Linux.");
-         std::cerr << "Failed to open default File Manager on Linux." << std::endl;
+        Backend::getApp().registerAlert("Open in File Manager", "Failed to open default File Manager on Linux.");
     }
 
 #else
-    App::registerAlert("Unknown OS", "Opening in selected file system failed due to unknown OS.");
+    Backend::getApp().registerAlert("Open in File Manager", "Failed to open default File manager failed due to unknown OS.");
 #endif
 }
 
