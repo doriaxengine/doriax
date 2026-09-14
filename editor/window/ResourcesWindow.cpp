@@ -1354,14 +1354,15 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 if (ImGui::MenuItem(ICON_FA_COPY " Copy")) copySelectedFiles(false);
                 if (ImGui::MenuItem(ICON_FA_SCISSORS " Cut")) copySelectedFiles(true);
                 if (ImGui::MenuItem((std::string(ICON_FA_FOLDER " Open in ") + fileBrowserName).c_str())) {
-                    for (auto file: clipboardFiles) {
+                    for (auto file: selectedFiles) {
+                        std::cout << file << std::endl;
+                        fs::path p(files[0].filePath);
 
+                        // Get the directory containing the file
+                        fs::path dirPath = p.parent_path();
+                        openFolderInFileManager(dirPath / file);
                     }
-                    fs::path p(files[0].filePath);
 
-                    // Get the directory containing the file
-                    fs::path dirPath = p.parent_path();
-                    openFolderInFileManager(dirPath);
                 }
                 if (ImGui::MenuItem(ICON_FA_PASTE " Paste", nullptr, false, !clipboardFiles.empty())){
                     pasteFiles(currentPath / lastSelectedFile);
