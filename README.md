@@ -50,7 +50,9 @@ Doriax is for developers who want a smaller, native, code-transparent engine wit
 
 ## Native projects you control
 
-**Source Code** export produces a standalone native CMake project—not an opaque package or a build that depends on a closed service. The project contains the generated C++ scene code, your Lua and C++ scripts, assets, platform backends, compiled shaders, and the engine source it needs.
+**Source Code** export produces a standalone CMake project containing generated C++ scene and bundle code, your Lua and C++ scripts, assets, platform backends, compiled shaders, and the engine source it needs.
+
+Export converts `.scene` and `.bundle` authoring data into C++ factory functions that call the public engine API, and compiles your C++ scripts unchanged alongside them, so scene setup runs as compiled code with no editor file format left to parse at runtime. Lua scripts, textures, models, and audio stay runtime resources. See the [export guide](https://docs.doriax.org/editor/export/#from-editor-data-to-runtime-code) for the generated output structure and asset filtering.
 
 The exported project is yours: inspect the result, add native integrations, change the engine, and compile the game yourself outside the editor with standard native toolchains.
 
