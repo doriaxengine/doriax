@@ -48,7 +48,6 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
-#include "../../libs/imgui/imgui.h"
 
 using namespace doriax;
 
