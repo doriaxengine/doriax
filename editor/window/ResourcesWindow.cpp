@@ -48,6 +48,7 @@
 #include <algorithm>
 #include "stb_image_write.h"
 #include "stb_image_resize2.h"
+#include "../../libs/imgui/imgui.h"
 
 using namespace doriax;
 
@@ -1265,6 +1266,16 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 selectedFiles.insert(file.name);
                 lastSelectedFile = file.name;
                 ImGui::OpenPopup("FileContextMenu");
+            }
+
+
+            if (ImGui::IsKeyDown(ImGuiKey_F2) && ImGui::IsMouseHoveringRect(itemMin, itemMax, true)){
+                isRenaming = true;
+                renameSelectPending = true;
+                fileBeingRenamed = file.name;
+                strncpy(nameBuffer, file.name.c_str(), sizeof(nameBuffer) - 1);
+                nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+                ImGui::CloseCurrentPopup();
             }
 
             if (ImGui::BeginPopup("FileContextMenu")){
