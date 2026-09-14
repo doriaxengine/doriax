@@ -41,8 +41,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "../../libs/imgui/imgui.h"
-
 using namespace doriax;
 
 std::vector<Entity> editor::Structure::getTopLevelSelectedEntities(Entity draggedEntity) {
