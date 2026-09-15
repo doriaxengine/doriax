@@ -86,6 +86,7 @@ CustomTextEditor::CustomTextEditor()
     , autoComplete(true)
     , isDragging(false)
     , isDraggingText(false)
+    , isMiddleDragging(false)
     , cursorBlinkOn(false)
     , mayDragText(false)
     , clickCount(0)
@@ -3277,6 +3278,7 @@ void CustomTextEditor::handleMouseInput() {
     // 1. Handle the initial middle-click press
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
         isBlockSelecting = true;
+        isMiddleDragging = true;
         blockSelectStartScreenPos = mousePos;
         blockSelectStartTextPos = screenToText(mousePos, contentPos);
 
@@ -3323,6 +3325,8 @@ void CustomTextEditor::handleMouseInput() {
 
             cursors.push_back(cursor);
         }
+    }else {
+        isMiddleDragging = false;
     }
 
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -3563,7 +3567,7 @@ void CustomTextEditor::renderCursors(ImDrawList* drawList, const ImVec2& origin)
     if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows)) return;
 
     float time = ImGui::GetTime();
-    bool showCursor = isDraggingText || (fmod(time, 1.0f) < 0.5f);
+    bool showCursor = (isDraggingText || isMiddleDragging) || (fmod(time, 1.0f) < 0.5f);
 
     // The loop idles without input, so the blink has to ask for its frames
     if (showCursor != cursorBlinkOn) {

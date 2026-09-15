@@ -239,6 +239,7 @@ namespace doriax::editor {
         bool matchBrackets;
         bool autoComplete;
         bool isDragging;
+        bool isMiddleDragging;
         bool isDraggingText;
         bool cursorBlinkOn;
         bool isBlockSelecting = false;
