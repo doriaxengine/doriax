@@ -3274,6 +3274,57 @@ void CustomTextEditor::handleMouseInput() {
         }
     }
 
+    // 1. Handle the initial middle-click press
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+        isBlockSelecting = true;
+        blockSelectStartScreenPos = mousePos;
+        blockSelectStartTextPos = screenToText(mousePos, contentPos);
+
+        ClearSelection();
+        cursors.clear();
+    }
+
+    // 2. Handle the drag state to build the multi-cursors
+    if (isBlockSelecting && ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+        TextPosition currentDragPos = screenToText(mousePos, contentPos);
+
+        // Clear cursors so we can rebuild them cleanly for this frame
+        cursors.clear();
+
+        // Determine top and bottom lines of the selection box
+        int startLine = std::min(blockSelectStartTextPos.line, currentDragPos.line);
+        int endLine   = std::max(blockSelectStartTextPos.line, currentDragPos.line);
+
+        for (int l = startLine; l <= endLine; ++l) {
+            int lineLen = static_cast<int>(lines[l].size());
+
+            // Calculate the screen Y coordinate for this specific line
+            float lineY = contentPos.y + (l * lineHeight);
+
+            // Calculate the text positions for the left and right sides of the box on this line
+            TextPosition boxStart = screenToText({blockSelectStartScreenPos.x, lineY}, contentPos);
+            TextPosition boxEnd   = screenToText({mousePos.x, lineY}, contentPos);
+
+            // Determine the left-most column of the box on this line
+            int boxLeftCol = std::min(boxStart.column, boxEnd.column);
+
+            // Filter out short lines: skip if the line ends before the selection box starts
+            if (boxLeftCol >= lineLen) {
+                continue;
+            }
+
+            Cursor cursor;
+            cursor.position = boxEnd; // The blinking cursor stays at the mouse's current X edge
+
+            // If the box has width, create a selection range
+            if (boxStart != boxEnd) {
+                cursor.selection = Selection{boxStart, boxEnd};
+            }
+
+            cursors.push_back(cursor);
+        }
+    }
+
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (isDraggingText) {
             TextPosition dropPos = screenToText(mousePos, contentPos);
