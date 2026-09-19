@@ -32,23 +32,24 @@ std::vector<uint32_t> SceneManager::buildSceneStackIds(uint32_t id, const std::v
     return result;
 }
 
-void SceneManager::registerScene(uint32_t id, const std::string& name, std::function<void()> factory) {
-    registerScene(id, name, std::move(factory), std::vector<uint32_t>{id});
+void SceneManager::registerScene(uint32_t id, const std::string& name, std::function<void()> loadFactory, std::function<void()> addFactory) {
+    registerScene(id, name, std::move(loadFactory), std::move(addFactory), std::vector<uint32_t>{id});
 }
 
-void SceneManager::registerScene(uint32_t id, const std::string& name, std::function<void()> factory, const std::vector<uint32_t>& sceneIds) {
+void SceneManager::registerScene(uint32_t id, const std::string& name, std::function<void()> loadFactory, std::function<void()> addFactory, const std::vector<uint32_t>& sceneIds) {
     std::vector<uint32_t> stackSceneIds = buildSceneStackIds(id, sceneIds);
 
     // Overwrite if the id already exists
     for (auto& entry : entries) {
         if (entry.id == id) {
             entry.name = name;
-            entry.factory = std::move(factory);
+            entry.loadFactory = std::move(loadFactory);
+            entry.addFactory = std::move(addFactory);
             entry.sceneIds = std::move(stackSceneIds);
             return;
         }
     }
-    entries.push_back({id, name, std::move(factory), std::move(stackSceneIds)});
+    entries.push_back({id, name, std::move(loadFactory), std::move(addFactory), std::move(stackSceneIds)});
 }
 
 bool SceneManager::loadScene(const std::string& name) {
@@ -75,7 +76,7 @@ void SceneManager::runFactory(uint32_t id) {
     Engine::removeAllScenes();
 
     currentId = id;
-    entry->factory();
+    entry->loadFactory();
 }
 
 bool SceneManager::loadScene(uint32_t id) {
@@ -118,8 +119,9 @@ bool SceneManager::addChildScene(uint32_t id) {
         for (uint32_t sceneId : entry.sceneIds) {
             Scene* scene = getScenePtr(sceneId);
             if (!scene) {
-                Log::error("SceneManager: scene id %u is not loaded", sceneId);
-                return false;
+                Log::warn("SceneManager: scene id %u is not loaded. Loading child scene...", sceneId);
+
+                entry.addFactory();
             }
         }
 

@@ -35,7 +35,8 @@ namespace doriax {
         struct SceneEntry {
             uint32_t id;
             std::string name;
-            std::function<void()> factory;
+            std::function<void()> loadFactory;
+            std::function<void()> addFactory;
             std::vector<uint32_t> sceneIds;
         };
 
@@ -52,8 +53,8 @@ namespace doriax {
         // The factory must call Engine::setScene() / Engine::addSceneLayer() to set up
         // the scene hierarchy. It should also call Engine::removeAllScenes() first if
         // a scene transition is desired (this is done automatically by loadScene()).
-        static void registerScene(uint32_t id, const std::string& name, std::function<void()> factory);
-        static void registerScene(uint32_t id, const std::string& name, std::function<void()> factory, const std::vector<uint32_t>& sceneIds);
+        static void registerScene(uint32_t id, const std::string& name, std::function<void()> loadFactory, std::function<void()> addFactory);
+        static void registerScene(uint32_t id, const std::string& name, std::function<void()> loadFactory, std::function<void()> addFactory, const std::vector<uint32_t>& sceneIds);
 
         // Load a scene stack by name. Calls Engine::removeAllScenes() then invokes the
         // registered factory. Returns false if the name is not found.

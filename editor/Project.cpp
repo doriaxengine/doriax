@@ -8405,6 +8405,102 @@ void editor::Project::registerSceneManager() {
                     }
                 }
             }
+        }, [this, sceneId = sceneProject.id]() {
+            std::shared_ptr<PlaySession> session;
+            {
+                std::scoped_lock lock(playSessionMutex);
+                session = activePlaySession;
+            }
+            if (!session || session->cancelled.load(std::memory_order_acquire)) return;
+
+            std::vector<uint32_t> involvedSceneIds;
+            std::vector<uint32_t> activeSceneIds;
+            collectInvolvedScenes(sceneId, involvedSceneIds);
+            collectStartActiveScenes(sceneId, activeSceneIds);
+
+            std::vector<size_t> currentStackIndices;
+
+            for (uint32_t invSceneId : involvedSceneIds) {
+                size_t entryIndex = (size_t)-1;
+                {
+                    std::scoped_lock lock(playSessionMutex);
+                    auto it = std::find_if(session->runtimeScenes.begin(), session->runtimeScenes.end(),
+                        [invSceneId](const PlayRuntimeScene& entry) {
+                            return entry.sourceSceneId == invSceneId;
+                        });
+
+                    if (it != session->runtimeScenes.end()) {
+                        entryIndex = std::distance(session->runtimeScenes.begin(), it);
+                    } else {
+                        SceneProject* sourceScene = getScene(invSceneId);
+                        if (sourceScene) {
+                            PlayRuntimeScene newEntry;
+                            newEntry.sourceSceneId = invSceneId;
+                            newEntry.runtime = createRuntimeCloneFromSource(sourceScene);
+                            newEntry.ownedRuntime = true;
+
+                            if (newEntry.runtime) {
+                                session->runtimeScenes.push_back(newEntry);
+                                entryIndex = session->runtimeScenes.size() - 1;
+                            }
+                        }
+                    }
+                }
+
+                if (entryIndex != (size_t)-1) {
+                    currentStackIndices.push_back(entryIndex);
+                }
+            }
+
+            // Register all runtime scenes so cross-scene entity references can resolve
+            for (size_t entryIndex : currentStackIndices) {
+                PlayRuntimeScene& entry = session->runtimeScenes[entryIndex];
+                if (entry.runtime && entry.runtime->scene) {
+                    SceneManager::setScenePtr(entry.sourceSceneId, entry.runtime->scene);
+                }
+            }
+
+            for (size_t entryIndex : currentStackIndices) {
+                PlayRuntimeScene& entry = session->runtimeScenes[entryIndex];
+                if (entry.initialized) {
+                    continue;
+                }
+
+                if (conector.isLibraryConnected()) {
+                    conector.init(entry.runtime->scene);
+                }else{
+                    LuaBinding::initializeLuaScripts(entry.runtime->scene);
+                }
+
+                prepareRuntimeScene(entry);
+
+                if (entry.runtime && entry.runtime->scene) {
+                    SceneManager::setScenePtr(entry.sourceSceneId, entry.runtime->scene);
+                }
+            }
+
+            std::vector<size_t> activeStackIndices;
+            for (uint32_t activeSceneId : activeSceneIds) {
+                auto it = std::find_if(session->runtimeScenes.begin(), session->runtimeScenes.end(),
+                    [activeSceneId](const PlayRuntimeScene& entry) {
+                        return entry.sourceSceneId == activeSceneId;
+                    });
+
+                if (it != session->runtimeScenes.end()) {
+                    activeStackIndices.push_back(std::distance(session->runtimeScenes.begin(), it));
+                }
+            }
+
+            for (size_t entryIndex : activeStackIndices) {
+                PlayRuntimeScene& entry = session->runtimeScenes[entryIndex];
+                if (!entry.runtime || !entry.runtime->scene) {
+                    continue;
+                }
+
+                if (entry.sourceSceneId != sceneId) {
+                    Engine::addSceneLayer(entry.runtime->scene);
+                }
+            }
         }, stackSceneIds);
     }
 }

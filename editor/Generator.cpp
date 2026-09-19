@@ -1458,6 +1458,48 @@ void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& sce
         mainContent += "}\n\n";
     }
 
+    for (const auto& sceneData : scenes) {
+        std::string stackId = Factory::toIdentifier(sceneData.name);
+        mainContent += "// --- Scene stack: " + sceneData.name + " ---\n";
+        mainContent += "void add_" + stackId + "() {\n";
+        for (const auto sceneId : sceneData.involvedScenes) {
+            std::string sceneName = "_" + Factory::toIdentifier(sceneIdToName[sceneId]);
+            mainContent += "    bool " + sceneName + "_needsInit = false;\n";
+        }
+        mainContent += "\n";
+        for (const auto sceneId : sceneData.involvedScenes) {
+            std::string sceneName = "_" + Factory::toIdentifier(sceneIdToName[sceneId]);
+            mainContent += "    if (!" + sceneName + "){\n";
+            mainContent += "        " + sceneName + " = new Scene();\n";
+            mainContent += "        SceneManager::setScenePtr(" + std::to_string(sceneId) + ", " + sceneName + ");\n";
+            mainContent += "        " + sceneName + "_needsInit = true;\n";
+            mainContent += "    }\n";
+        }
+        mainContent += "\n";
+        for (const auto sceneId : sceneData.involvedScenes) {
+            std::string sceneName = "_" + Factory::toIdentifier(sceneIdToName[sceneId]);
+            mainContent += "    if (" + sceneName + "_needsInit) {\n";
+            mainContent += "        create" + sceneName + "(" + sceneName + ");\n";
+            mainContent += "    }\n";
+        }
+        mainContent += "\n";
+        for (const auto sceneId : sceneData.involvedScenes) {
+            std::string sceneName = "_" + Factory::toIdentifier(sceneIdToName[sceneId]);
+            mainContent += "    if (" + sceneName + "_needsInit) {\n";
+            mainContent += "        initScripts(" + sceneName + ");\n";
+            mainContent += "    }\n";
+        }
+        mainContent += "\n";
+        for (const auto sceneId : sceneData.activeScenes) {
+            std::string sceneName = "_" + Factory::toIdentifier(sceneIdToName[sceneId]);
+            if (sceneData.id != sceneId) {
+                mainContent += "    Engine::addSceneLayer(" + sceneName + ");\n";
+            }
+        }
+
+        mainContent += "}\n\n";
+    }
+
     // Entry point of the native application backend for this OS. On Apple the
     // process starts in platform/apple/macos/main.m instead, so defining main()
     // here would collide with it.
@@ -1507,7 +1549,7 @@ void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& sce
             if (i > 0) sceneIds += ", ";
             sceneIds += std::to_string(sceneData.activeScenes[i]);
         }
-        mainContent += "    SceneManager::registerScene(" + std::to_string(sceneData.id) + ", \"" + sceneData.name + "\", load_" + stackId + ", {" + sceneIds + "});\n";
+        mainContent += "    SceneManager::registerScene(" + std::to_string(sceneData.id) + ", \"" + sceneData.name + "\", load_" + stackId + ", add_" + stackId + ", {" + sceneIds + "});\n";
     }
     mainContent += "\n";
 
