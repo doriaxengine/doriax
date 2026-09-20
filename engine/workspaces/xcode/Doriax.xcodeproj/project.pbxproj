@@ -1096,6 +1096,8 @@
 		71E824912A9C23A600C8E6F2 /* Body2D.h in Headers */ = {isa = PBXBuildFile; fileRef = 71E8248B2A9C23A600C8E6F2 /* Body2D.h */; };
 		71E824942A9C242B00C8E6F2 /* PhysicsSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 71E824922A9C242B00C8E6F2 /* PhysicsSystem.cpp */; };
 		71E824952A9C242B00C8E6F2 /* PhysicsSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 71E824922A9C242B00C8E6F2 /* PhysicsSystem.cpp */; };
+		D0A1A0012FA0000100000001 /* PhysicsSystemDisabled.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0A1A0012FA0000100000000 /* PhysicsSystemDisabled.cpp */; };
+		D0A1A0012FA0000100000002 /* PhysicsSystemDisabled.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0A1A0012FA0000100000000 /* PhysicsSystemDisabled.cpp */; };
 		71E824962A9C242B00C8E6F2 /* PhysicsSystem.h in Headers */ = {isa = PBXBuildFile; fileRef = 71E824932A9C242B00C8E6F2 /* PhysicsSystem.h */; };
 		71EA6DA52AE20B8C00CA9A75 /* Contact3D.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EA6DA12AE20B8C00CA9A75 /* Contact3D.h */; };
 		71EA6DA62AE20B8C00CA9A75 /* CollideShapeResult3D.h in Headers */ = {isa = PBXBuildFile; fileRef = 71EA6DA22AE20B8C00CA9A75 /* CollideShapeResult3D.h */; };
@@ -2913,6 +2915,7 @@
 		71E8248B2A9C23A600C8E6F2 /* Body2D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Body2D.h; sourceTree = "<group>"; };
 		71E824922A9C242B00C8E6F2 /* PhysicsSystem.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = PhysicsSystem.cpp; sourceTree = "<group>"; };
 		71E824932A9C242B00C8E6F2 /* PhysicsSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PhysicsSystem.h; sourceTree = "<group>"; };
+		D0A1A0012FA0000100000000 /* PhysicsSystemDisabled.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = PhysicsSystemDisabled.cpp; sourceTree = "<group>"; };
 		71EA6DA12AE20B8C00CA9A75 /* Contact3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Contact3D.h; sourceTree = "<group>"; };
 		71EA6DA22AE20B8C00CA9A75 /* CollideShapeResult3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CollideShapeResult3D.h; sourceTree = "<group>"; };
 		71EA6DA32AE20B8C00CA9A75 /* CollideShapeResult3D.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = CollideShapeResult3D.cpp; sourceTree = "<group>"; };
@@ -4260,6 +4263,7 @@
 				71ABBD4727A87A2E001CE3AF /* MeshSystem.cpp */,
 				71ABBD4827A87A2E001CE3AF /* MeshSystem.h */,
 				71E824922A9C242B00C8E6F2 /* PhysicsSystem.cpp */,
+				D0A1A0012FA0000100000000 /* PhysicsSystemDisabled.cpp */,
 				71E824932A9C242B00C8E6F2 /* PhysicsSystem.h */,
 				7162FC7025962A0E0075B97D /* RenderSystem.cpp */,
 				7162FC7125962A0E0075B97D /* RenderSystem.h */,
@@ -7123,6 +7127,7 @@
 				7181A0B12BC8B6CB00AC230B /* Panel.cpp in Sources */,
 				71CC839626B8C4D800EEBB93 /* Light.cpp in Sources */,
 				71E824952A9C242B00C8E6F2 /* PhysicsSystem.cpp in Sources */,
+				D0A1A0012FA0000100000001 /* PhysicsSystemDisabled.cpp in Sources */,
 				1787AD942F6C333300DB1D75 /* SceneManager.cpp in Sources */,
 				1787AD952F6C333300DB1D75 /* BundleManager.cpp in Sources */,
 				713D8295259D307F00567F9F /* UserSettings.cpp in Sources */,
@@ -7311,6 +7316,7 @@
 				7181A0B02BC8B6CB00AC230B /* Panel.cpp in Sources */,
 				71CC839526B8C4D800EEBB93 /* Light.cpp in Sources */,
 				71E824942A9C242B00C8E6F2 /* PhysicsSystem.cpp in Sources */,
+				D0A1A0012FA0000100000002 /* PhysicsSystemDisabled.cpp in Sources */,
 				1787AD982F6C333300DB1D75 /* SceneManager.cpp in Sources */,
 				1787AD992F6C333300DB1D75 /* BundleManager.cpp in Sources */,
 				7162FE102596A5BE0075B97D /* SokolCamera.cpp in Sources */,
@@ -8111,6 +8117,12 @@
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_STYLE = Automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
+				EXCLUDED_SOURCE_FILE_NAMES = PhysicsSystemDisabled.cpp;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8135,6 +8147,12 @@
 			buildSettings = {
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_STYLE = Automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
+				EXCLUDED_SOURCE_FILE_NAMES = PhysicsSystemDisabled.cpp;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8454,6 +8472,12 @@
 				EXECUTABLE_PREFIX = lib;
 				GCC_ENABLE_CPP_EXCEPTIONS = YES;
 				GCC_ENABLE_CPP_RTTI = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
+				EXCLUDED_SOURCE_FILE_NAMES = PhysicsSystemDisabled.cpp;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8481,6 +8505,12 @@
 				EXECUTABLE_PREFIX = lib;
 				GCC_ENABLE_CPP_EXCEPTIONS = YES;
 				GCC_ENABLE_CPP_RTTI = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
+				EXCLUDED_SOURCE_FILE_NAMES = PhysicsSystemDisabled.cpp;
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",

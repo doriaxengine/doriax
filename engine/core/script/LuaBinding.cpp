@@ -41,10 +41,14 @@
 #include "object/ui/Scrollbar.h"
 #include "object/ui/Progressbar.h"
 #include "object/ui/TextEdit.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "object/physics/Body2D.h"
-#include "object/physics/Body3D.h"
 #include "object/physics/Joint2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
+#include "object/physics/Body3D.h"
 #include "object/physics/Joint3D.h"
+#endif
 #include "action/Action.h"
 #include "action/TimedAction.h"
 #include "action/AlphaAction.h"
@@ -580,10 +584,14 @@ bool LuaBinding::pushEntityHandleByType(lua_State* L, doriax::Scene* scene, dori
     DISPATCH_TYPE(Progressbar, "progressbar");
     DISPATCH_TYPE(TextEdit, "textedit");
     DISPATCH_TYPE(Bone, "bone");
+#ifdef DORIAX_PHYSICS_2D
     DISPATCH_TYPE(Body2D, "body2d");
-    DISPATCH_TYPE(Body3D, "body3d");
     DISPATCH_TYPE(Joint2D, "joint2d");
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    DISPATCH_TYPE(Body3D, "body3d");
     DISPATCH_TYPE(Joint3D, "joint3d");
+#endif
     DISPATCH_TYPE(Action, "action");
     DISPATCH_TYPE(TimedAction, "timedaction");
     DISPATCH_TYPE(AlphaAction, "alphaaction");

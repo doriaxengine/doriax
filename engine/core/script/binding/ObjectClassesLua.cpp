@@ -38,14 +38,18 @@
 #include "TextEdit.h"
 #include "Container.h"
 #include "Sound.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "Body2D.h"
 #include "Joint2D.h"
 #include "Contact2D.h"
 #include "Manifold2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "Body3D.h"
 #include "Joint3D.h"
 #include "Contact3D.h"
 #include "CollideShapeResult3D.h"
+#endif
 
 using namespace doriax;
 
@@ -77,6 +81,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("SPOT", LightType::SPOT)
         .endNamespace();
 
+#ifdef DORIAX_PHYSICS_2D
     luabridge::getGlobalNamespace(L)
         .beginNamespace("Shape2DType")
         .addVariable("POLYGON", Shape2DType::POLYGON)
@@ -85,7 +90,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("SEGMENT", Shape2DType::SEGMENT)
         .addVariable("CHAIN", Shape2DType::CHAIN)
         .endNamespace();
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
         .beginNamespace("Shape3DType")
         .addVariable("SPHERE", Shape3DType::SPHERE)
@@ -97,20 +104,26 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("MESH", Shape3DType::MESH)
         .addVariable("HEIGHTFIELD", Shape3DType::HEIGHTFIELD)
         .endNamespace();
+#endif
 
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
     luabridge::getGlobalNamespace(L)
         .beginNamespace("BodyType")
         .addVariable("STATIC", BodyType::STATIC)
         .addVariable("KINEMATIC", BodyType::KINEMATIC)
         .addVariable("DYNAMIC", BodyType::DYNAMIC)
         .endNamespace();
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
         .beginNamespace("Body3DMotionQuality")
         .addVariable("DISCRETE", Body3DMotionQuality::DISCRETE)
         .addVariable("LINEAR_CAST", Body3DMotionQuality::LINEAR_CAST)
         .endNamespace();
+#endif
 
+#ifdef DORIAX_PHYSICS_2D
     luabridge::getGlobalNamespace(L)
         .beginNamespace("Joint2DType")
         .addVariable("DISTANCE", Joint2DType::DISTANCE)
@@ -123,7 +136,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("WELD", Joint2DType::WELD)
         .addVariable("MOTOR", Joint2DType::MOTOR)
         .endNamespace();
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
         .beginNamespace("Joint3DType")
         .addVariable("FIXED", Joint3DType::FIXED)
@@ -139,6 +154,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("RACKANDPINON", Joint3DType::RACKANDPINON)
         .addVariable("PULLEY", Joint3DType::PULLEY)
         .endNamespace();
+#endif
 
     luabridge::getGlobalNamespace(L)
         .beginClass<EntityHandle>("EntityHandle")
@@ -227,10 +243,14 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("modelMatrix", &Object::getModelMatrix)
         .addProperty("normalMatrix", &Object::getNormalMatrix)
         .addFunction("updateTransform", &Object::updateTransform)
+#ifdef DORIAX_PHYSICS_2D
         .addFunction("getBody2D", &Object::getBody2D)
         .addFunction("removeBody2D", &Object::removeBody2D)
+#endif
+#ifdef DORIAX_PHYSICS_3D
         .addFunction("getBody3D", &Object::getBody3D)
         .addFunction("removeBody3D", &Object::removeBody3D)
+#endif
         .addFunction("getRay", &Object::getRay)
         .endClass();
 
@@ -1110,6 +1130,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getSoundComponent", &Sound::getComponent<SoundComponent>)
         .endClass();
 
+#ifdef DORIAX_PHYSICS_2D
     luabridge::getGlobalNamespace(L)
         .deriveClass<Body2D, EntityHandle>("Body2D")
         .addConstructor <void (Scene*, Entity)> ()
@@ -1276,7 +1297,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getBodyB", &Contact2D::getBodyB)
         .addFunction("getShapeIndexB", &Contact2D::getShapeIndexB)
         .endClass();
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
         .deriveClass<Body3D, EntityHandle>("Body3D")
         .addConstructor <void (Scene*, Entity)> ()
@@ -1402,6 +1425,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getShapeIndex1", &CollideShapeResult3D::getShapeIndex1)
         .addFunction("getShapeIndex2", &CollideShapeResult3D::getShapeIndex2)
         .endClass();
+#endif
 
 #endif //DISABLE_LUA_BINDINGS
 }

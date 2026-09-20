@@ -57,10 +57,14 @@
 #include "component/TerrainComponent.h"
 #include "component/SoundComponent.h"
 #include "component/TilemapComponent.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "component/Body2DComponent.h"
 #include "component/Joint2DComponent.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "component/Body3DComponent.h"
 #include "component/Joint3DComponent.h"
+#endif
 #include "component/InstancedMeshComponent.h"
 #include "component/BundleComponent.h"
 

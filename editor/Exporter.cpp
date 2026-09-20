@@ -2041,6 +2041,10 @@ bool editor::Exporter::copyEngine() {
             projectSettings += indent + "set(DORIAX_WINDOW_ICON ON)";
         }
         projectSettings += indent + "set(DORIAX_CXX_STANDARD " + std::to_string(project->getCxxStandard()) + ")";
+        // Normal variables set before add_subdirectory(engine) shadow the engine
+        // option() cache entries, so toggling physics only needs a re-configure.
+        projectSettings += indent + std::string("set(DORIAX_PHYSICS_2D ") + (project->isPhysics2DEnabled() ? "ON" : "OFF") + ")";
+        projectSettings += indent + std::string("set(DORIAX_PHYSICS_3D ") + (project->isPhysics3DEnabled() ? "ON" : "OFF") + ")";
         cmakeContent.replace(projectSettingsPos, projectSettingsMarker.size(), projectSettings);
     } else {
         Out::warning("Exported CMakeLists.txt is missing the project settings marker; using platform defaults");
@@ -2522,6 +2526,59 @@ bool editor::Exporter::writeAppleProjectSettings() {
     const fs::path projectFile = xcodeDir / "Doriax.xcodeproj" / "project.pbxproj";
     std::string xcodeProject;
     if (!readText(projectFile, xcodeProject)) return false;
+
+    // The Apple workspace builds the engine from an explicit Xcode file list,
+    // not through engine/CMakeLists.txt. Mirror the project physics switches so
+    // disabled backends are neither compiled nor linked there either.
+    auto removeProjectLinesContaining = [&](const std::string& needle) {
+        size_t match = 0;
+        while ((match = xcodeProject.find(needle, match)) != std::string::npos) {
+            const size_t lineStart = xcodeProject.rfind('\n', match);
+            const size_t eraseStart = lineStart == std::string::npos ? 0 : lineStart + 1;
+            const size_t lineEnd = xcodeProject.find('\n', match);
+            const size_t eraseEnd = lineEnd == std::string::npos ? xcodeProject.size() : lineEnd + 1;
+            xcodeProject.erase(eraseStart, eraseEnd - eraseStart);
+            match = eraseStart;
+        }
+    };
+
+    std::vector<std::string> excludedPhysicsSources;
+    if (!project->isPhysics2DEnabled()) {
+        removeProjectLinesContaining("DORIAX_PHYSICS_2D,");
+        excludedPhysicsSources.insert(excludedPhysicsSources.end(), {
+            "Body2D.cpp", "Contact2D.cpp", "Joint2D.cpp", "Manifold2D.cpp"
+        });
+        for (const char* id : {"71E8247F2A9C22E100C8E6F2", "71E824822A9C235A00C8E6F2",
+                               "71E8247E2A9C22D000C8E6F2", "71E824812A9C22F100C8E6F2"}) {
+            removeProjectLinesContaining(id);
+        }
+    }
+    if (!project->isPhysics3DEnabled()) {
+        removeProjectLinesContaining("DORIAX_PHYSICS_3D,");
+        excludedPhysicsSources.insert(excludedPhysicsSources.end(), {
+            "Body3D.cpp", "CollideShapeResult3D.cpp", "Contact3D.cpp", "Joint3D.cpp"
+        });
+        for (const char* id : {"7105CEAA2AD62363007C91BA", "7105CEAD2AD62381007C91BA",
+                               "7105CEA92AD62350007C91BA", "7105CEAC2AD62376007C91BA"}) {
+            removeProjectLinesContaining(id);
+        }
+    }
+
+    if (project->isPhysics2DEnabled() || project->isPhysics3DEnabled()) {
+        excludedPhysicsSources.push_back("PhysicsSystemDisabled.cpp");
+    } else {
+        excludedPhysicsSources.push_back("PhysicsSystem.cpp");
+    }
+
+    std::string excludedSources;
+    for (const std::string& source : excludedPhysicsSources) {
+        if (!excludedSources.empty()) excludedSources += " ";
+        excludedSources += source;
+    }
+    replaceAll(xcodeProject,
+        "EXCLUDED_SOURCE_FILE_NAMES = PhysicsSystemDisabled.cpp;",
+        "EXCLUDED_SOURCE_FILE_NAMES = \"" + excludedSources + "\";");
+
     size_t blockStart = 0;
     while ((blockStart = xcodeProject.find("buildSettings = {", blockStart)) != std::string::npos) {
         const size_t blockEnd = xcodeProject.find("};", blockStart);

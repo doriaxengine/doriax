@@ -4,7 +4,9 @@
 #include "Object.h"
 
 #include "subsystem/RenderSystem.h"
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
 #include "subsystem/PhysicsSystem.h"
+#endif
 
 using namespace doriax;
 
@@ -247,6 +249,7 @@ void Object::updateTransform(){
     scene->getSystem<RenderSystem>()->updateTransform(transform);
 }
 
+#ifdef DORIAX_PHYSICS_2D
 Body2D Object::getBody2D(){
     scene->getSystem<PhysicsSystem>()->createBody2D(entity);
     return Body2D(scene, entity);
@@ -255,7 +258,9 @@ Body2D Object::getBody2D(){
 void Object::removeBody2D(){
     scene->getSystem<PhysicsSystem>()->removeBody2D(entity);
 }
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
 Body3D Object::getBody3D(){
     scene->getSystem<PhysicsSystem>()->createBody3D(entity);
     return Body3D(scene, entity);
@@ -264,6 +269,7 @@ Body3D Object::getBody3D(){
 void Object::removeBody3D(){
     scene->getSystem<PhysicsSystem>()->removeBody3D(entity);
 }
+#endif
 
 Ray Object::getRay(Vector3 direction){
     return Ray(getWorldPosition(), direction);

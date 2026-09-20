@@ -39,8 +39,12 @@
 #include "component/AlphaActionComponent.h"
 #include "component/AnimationComponent.h"
 #include "component/SoundComponent.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "component/Body2DComponent.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "component/Body3DComponent.h"
+#endif
 #include "component/BoneComponent.h"
 #include "component/ButtonComponent.h"
 #include "component/CameraComponent.h"
@@ -48,8 +52,12 @@
 #include "component/FogComponent.h"
 #include "component/ImageComponent.h"
 #include "component/InstancedMeshComponent.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "component/Joint2DComponent.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "component/Joint3DComponent.h"
+#endif
 #include "component/KeyframeTracksComponent.h"
 #include "component/LightComponent.h"
 #include "component/Light2DComponent.h"
@@ -129,14 +137,18 @@
 #include "object/Object.h"
 #include "object/Occluder2D.h"
 #include "object/Points.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "object/physics/Body2D.h"
+#include "object/physics/Contact2D.h"
+#include "object/physics/Joint2D.h"
+#include "object/physics/Manifold2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "object/physics/Body3D.h"
 #include "object/physics/CollideShapeResult3D.h"
-#include "object/physics/Contact2D.h"
 #include "object/physics/Contact3D.h"
-#include "object/physics/Joint2D.h"
 #include "object/physics/Joint3D.h"
-#include "object/physics/Manifold2D.h"
+#endif
 #include "object/Shape.h"
 #include "object/Sprite.h"
 #include "object/Terrain.h"

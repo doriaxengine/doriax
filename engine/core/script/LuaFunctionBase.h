@@ -5,6 +5,7 @@
 #define LUA_FUNCTIONBASE_H
 
 #include <string>
+#include "math/Vector2.h"
 #include "math/Vector3.h"
 
 typedef struct lua_State lua_State;

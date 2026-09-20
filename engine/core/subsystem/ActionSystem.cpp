@@ -10,6 +10,7 @@
 #include "subsystem/MeshSystem.h"
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
 #include <functional>
 #include <unordered_set>

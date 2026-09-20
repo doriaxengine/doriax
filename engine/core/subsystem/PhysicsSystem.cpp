@@ -6,8 +6,12 @@
 #include "subsystem/RenderSystem.h"
 #include "util/Angle.h"
 
+#ifdef DORIAX_PHYSICS_2D
 #include "util/Box2DAux.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "util/JoltPhysicsAux.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -51,6 +55,7 @@ namespace {
         }
     }
 
+#ifdef DORIAX_PHYSICS_3D
     // Jolt's global allocator/factory/type registration is process-wide; run once
     // (the old per-constructor path re-created and leaked a Factory per scene).
     void ensureJoltGlobalInit(){
@@ -82,6 +87,8 @@ namespace {
             new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workers);
         return *instance;
     }
+
+#endif
 
     // POSITION/INDEX buffers one submesh reads: component-level first, overridden by
     // any per-submesh attribute.
@@ -191,10 +198,14 @@ namespace {
 
 }
 
+#ifdef DORIAX_PHYSICS_3D
 Vector3 PhysicsSystem::absScale(const Vector3& scale){
     return Vector3(std::fabs(scale.x), std::fabs(scale.y), std::fabs(scale.z));
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 Vector2 PhysicsSystem::absScale2D(const Vector2& scale){
     return Vector2(std::fabs(scale.x), std::fabs(scale.y));
 }
@@ -203,6 +214,9 @@ float PhysicsSystem::maxScaleXY(const Vector2& scale){
     return std::max(scale.x, scale.y);
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 float PhysicsSystem::maxScaleXZ(const Vector3& scale){
     return std::max(scale.x, scale.z);
 }
@@ -211,6 +225,9 @@ float PhysicsSystem::maxScaleXYZ(const Vector3& scale){
     return std::max(scale.x, std::max(scale.y, scale.z));
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 JPH::Quat PhysicsSystem::toValidatedJoltRotation(const Quaternion& rotation, Entity entity, int shapeIndex){
     const double w = rotation.w;
     const double x = rotation.x;
@@ -277,8 +294,12 @@ JPH::EMotionQuality PhysicsSystem::getBody3DMotionQualityToJolt(Body3DMotionQual
 }
 
 
+#endif
+
 PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
-	signature.set(scene->getComponentId<Body2DComponent>());
+#ifdef DORIAX_PHYSICS_2D
+    signature.set(scene->getComponentId<Body2DComponent>());
+#endif
 
 	this->scene = scene;
 
@@ -288,13 +309,18 @@ PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
     SceneSettings settingsDefaults;
     this->gravity2D = settingsDefaults.gravity2D;
     this->gravity3D = settingsDefaults.gravity3D;
+#ifdef DORIAX_PHYSICS_2D
     this->pointsToMeterScale2D = 64.0;
+#endif
 
+#ifdef DORIAX_PHYSICS_2D
     // The Box2D world is created lazily (see ensureWorld2D): Box2D's global b2_worlds[] pool is
     // capped at B2_MAX_WORLDS (128) and is not thread-safe. Editor preview/thumbnail/gizmo scenes
     // (and pure-3D scenes) have no 2D bodies, so they must not consume a world slot.
     world2D = b2_nullWorldId;
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     // https://github.com/jrouwe/JoltPhysics/issues/244
     // Jolt globals are initialized once per process (see helper).
     ensureJoltGlobalInit();
@@ -323,8 +349,10 @@ PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
     world3D.SetContactListener(contactListener3D);
 
     lock3DBodies = true;
+#endif
 }
 
+#ifdef DORIAX_PHYSICS_2D
 void PhysicsSystem::ensureWorld2D(){
     if (b2World_IsValid(world2D)){
         return;
@@ -344,14 +372,20 @@ void PhysicsSystem::ensureWorld2D(){
     b2World_SetCustomFilterCallback(world2D, Box2DAux::CollisionFilter, scene);
 }
 
-PhysicsSystem::~PhysicsSystem(){
-    flushPendingDestroys3D();
+#endif
 
+PhysicsSystem::~PhysicsSystem(){
+#ifdef DORIAX_PHYSICS_3D
+    flushPendingDestroys3D();
+#endif
+#ifdef DORIAX_PHYSICS_2D
     if (b2World_IsValid(world2D)){
         b2DestroyWorld(world2D);
     }
     world2D = b2_nullWorldId;
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     delete activationListener3D;
     delete contactListener3D;
 
@@ -363,6 +397,7 @@ PhysicsSystem::~PhysicsSystem(){
 
     //delete JPH::Factory::sInstance;
     //JPH::UnregisterTypes();
+#endif
 }
 
 Vector2 PhysicsSystem::getGravity2D() const{
@@ -372,9 +407,11 @@ Vector2 PhysicsSystem::getGravity2D() const{
 void PhysicsSystem::setGravity2D(Vector2 gravity){
     if (this->gravity2D != gravity){
         this->gravity2D = gravity;
+#ifdef DORIAX_PHYSICS_2D
         if (b2World_IsValid(world2D)){
             b2World_SetGravity(world2D, {gravity.x, gravity.y});
         }
+#endif
     }
 }
 
@@ -389,7 +426,9 @@ Vector3 PhysicsSystem::getGravity3D() const{
 void PhysicsSystem::setGravity3D(Vector3 gravity){
     if (this->gravity3D != gravity){
         this->gravity3D = gravity;
+#ifdef DORIAX_PHYSICS_3D
         world3D.SetGravity(JPH::Vec3(gravity.x, gravity.y, gravity.z));
+#endif
     }
 }
 
@@ -414,6 +453,7 @@ void PhysicsSystem::setGravity(float x, float y, float z){
     setGravity(Vector3(x, y, z));
 }
 
+#ifdef DORIAX_PHYSICS_2D
 float PhysicsSystem::getPointsToMeterScale2D() const{
     return pointsToMeterScale2D;
 }
@@ -423,6 +463,9 @@ void PhysicsSystem::setPointsToMeterScale2D(float pointsToMeterScale2D){
 }
 
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 void PhysicsSystem::setLock3DBodies(bool lock3DBodies){
     this->lock3DBodies = lock3DBodies;
 }
@@ -470,18 +513,36 @@ void PhysicsSystem::flushPendingDestroys3D(){
     pendingBodyDestroy3D.clear();
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 void PhysicsSystem::updateTransformFromBody2D(Entity entity, Vector2 position, float angle){
     Transform* transform = scene->findComponent<Transform>(entity);
     if (!transform){
         return;
     }
 
-    // Box2D does not own Z, it is kept from the current world position
-    Vector3 worldPosition = Vector3(position.x, position.y, transform->worldPosition.z);
+    // Box2D does not own Z, it is kept from the current world position.
+    Vector3 worldPosition(position.x, position.y, transform->worldPosition.z);
+    Quaternion worldRotation(angle, Vector3(0, 0, 1));
+    transform->worldPosition = worldPosition;
+    transform->worldRotation = worldRotation;
 
-    updateTransformFromBody3D(entity, worldPosition, Quaternion(angle, Vector3(0, 0, 1)));
+    Transform* parent = transform->parent != NULL_ENTITY
+        ? scene->findComponent<Transform>(transform->parent) : NULL;
+    if (parent){
+        transform->position = parent->modelMatrix.inverse() * worldPosition;
+        transform->rotation = parent->worldRotation.inverse() * worldRotation;
+    }else{
+        transform->position = worldPosition;
+        transform->rotation = worldRotation;
+    }
+    transform->needUpdate = true;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 void PhysicsSystem::updateTransformFromBody3D(Entity entity, Vector3 position, Quaternion rotation){
     Transform* transform = scene->findComponent<Transform>(entity);
     if (!transform){
@@ -507,6 +568,9 @@ void PhysicsSystem::updateTransformFromBody3D(Entity entity, Vector3 position, Q
     transform->needUpdate = true;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 void PhysicsSystem::updateBody2DPosition(Signature signature, Entity entity, Body2DComponent& body){
     if (signature.test(scene->getComponentId<Transform>())){
         Transform& transform = scene->getComponent<Transform>(entity);
@@ -529,6 +593,9 @@ void PhysicsSystem::updateBody2DPosition(Signature signature, Entity entity, Bod
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 void PhysicsSystem::updateBody3DPosition(Signature signature, Entity entity, Body3DComponent& body){
     if (signature.test(scene->getComponentId<Transform>())){
         Transform& transform = scene->getComponent<Transform>(entity);
@@ -554,6 +621,9 @@ void PhysicsSystem::updateBody3DPosition(Signature signature, Entity entity, Bod
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 bool PhysicsSystem::loadJoint2D(Entity entity, Joint2DComponent& joint){
     ensureWorld2D();
     if (!b2World_IsValid(world2D)){
@@ -595,6 +665,9 @@ bool PhysicsSystem::loadJoint2D(Entity entity, Joint2DComponent& joint){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
     // The step holds the constraint list; the update loop retries any joint without one.
     if (steppingWorld3D){
@@ -712,6 +785,9 @@ bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
     if (!b2Body_IsValid(body.body)){
         return false;
@@ -879,6 +955,8 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
     return true;
 }
 
+#endif
+#ifdef DORIAX_PHYSICS_3D
 bool PhysicsSystem::createShape3DForIndex(Entity entity, Body3DComponent& body, size_t index){
     Shape3D& shapeData = body.shapes[index];
     shapeData.shape = NULL;
@@ -1275,6 +1353,9 @@ bool PhysicsSystem::createGenericJoltBody(Entity entity, Body3DComponent& body, 
     return true;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 void PhysicsSystem::createBody2D(Entity entity){
     Signature signature = scene->getSignature(entity);
 
@@ -1294,6 +1375,9 @@ void PhysicsSystem::removeBody2D(Entity entity){
 }
 
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 void PhysicsSystem::createBody3D(Entity entity){
     Signature signature = scene->getSignature(entity);
 
@@ -1312,14 +1396,23 @@ void PhysicsSystem::removeBody3D(Entity entity){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 b2WorldId PhysicsSystem::getWorld2D() const{
      return world2D;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 JPH::PhysicsSystem* PhysicsSystem::getWorld3D(){
     return &world3D;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 b2BodyId PhysicsSystem::getBody(Entity entity){
     Body2DComponent* body = scene->findComponent<Body2DComponent>(entity);
 
@@ -1330,6 +1423,9 @@ b2BodyId PhysicsSystem::getBody(Entity entity){
     return b2_nullBodyId;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 bool PhysicsSystem::loadBody2D(Entity entity){
     ensureWorld2D();
     if (!b2World_IsValid(world2D)){
@@ -1393,6 +1489,9 @@ void PhysicsSystem::destroyBody2D(Body2DComponent& body){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 bool PhysicsSystem::loadBody3D(Entity entity){
     // The step holds the broad phase; the update loop retries any body without a handle.
     if (steppingWorld3D){
@@ -1437,6 +1536,9 @@ void PhysicsSystem::destroyBody3D(Body3DComponent& body){
     body.body = JPH::BodyID();
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 int PhysicsSystem::loadShape2D(Body2DComponent& body, void* shape, Shape2DType type){
     if (!b2Shape_IsValid(body.shapes[body.numShapes].shape)){
         b2ShapeDef shapeDef = b2DefaultShapeDef();
@@ -1483,6 +1585,9 @@ void PhysicsSystem::destroyShape2D(Body2DComponent& body, size_t index){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 int PhysicsSystem::loadShape3D(Body3DComponent& body, const Vector3& position, const Quaternion& rotation, JPH::ShapeSettings* shapeSettings){
     JPH::ShapeSettings::ShapeResult shape_result = shapeSettings->Create();
     if (shape_result.IsValid()){
@@ -1508,6 +1613,9 @@ void PhysicsSystem::destroyShape3D(Body3DComponent& body, size_t index){
     body.shapes[index].shape = nullptr;
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_2D
 bool PhysicsSystem::loadDistanceJoint2D(Entity entity, Joint2DComponent& joint, Entity bodyA, Entity bodyB, Vector2 anchorA, Vector2 anchorB, bool autoAnchors, bool rope){
     Signature signatureA = scene->getSignature(bodyA);
     Signature signatureB = scene->getSignature(bodyB);
@@ -1788,6 +1896,9 @@ void PhysicsSystem::destroyJoint2D(Joint2DComponent& joint){
     }
 }
 
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
 bool PhysicsSystem::loadFixedJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB){
     Signature signatureA = scene->getSignature(bodyA);
     Signature signatureB = scene->getSignature(bodyB);
@@ -2551,11 +2662,14 @@ void PhysicsSystem::addBroadPhaseLayer3D(uint8_t index, uint32_t groupsToInclude
     }
 }
 
+#endif
+
 void PhysicsSystem::load(){
     // A newly loaded scene can receive a variable-timestep gameplay update before
     // the fixed-step accumulator has enough time for its first physics update.
     // Materialize physics objects now so Body2D/Body3D APIs are valid from the
     // first gameplay callback, but do not advance either physics world here.
+#ifdef DORIAX_PHYSICS_2D
     auto bodies2d = scene->getComponentArray<Body2DComponent>();
     for (size_t i = 0; i < bodies2d->size(); i++){
         Body2DComponent& body = bodies2d->getComponentFromIndex(i);
@@ -2574,7 +2688,8 @@ void PhysicsSystem::load(){
             joint.needUpdateJoint = false;
         }
     }
-
+#endif
+#ifdef DORIAX_PHYSICS_3D
     auto bodies3d = scene->getComponentArray<Body3DComponent>();
     for (size_t i = 0; i < bodies3d->size(); i++){
         Body3DComponent& body = bodies3d->getComponentFromIndex(i);
@@ -2593,6 +2708,7 @@ void PhysicsSystem::load(){
             joint.needUpdateJoint = false;
         }
     }
+#endif
 }
 
 void PhysicsSystem::destroy(){
@@ -2612,9 +2728,10 @@ void PhysicsSystem::fixedUpdate(double dt){
 
     const float fixedStep = (float)dt;
 
-	auto bodies2d = scene->getComponentArray<Body2DComponent>();
+#ifdef DORIAX_PHYSICS_2D
+    auto bodies2d = scene->getComponentArray<Body2DComponent>();
 
-	for (int i = 0; i < bodies2d->size(); i++){
+    for (int i = 0; i < bodies2d->size(); i++){
 		Body2DComponent& body = bodies2d->getComponentFromIndex(i);
 		Entity entity = bodies2d->getEntity(i);
 		Signature signature = scene->getSignature(entity);
@@ -2684,7 +2801,9 @@ void PhysicsSystem::fixedUpdate(double dt){
 
         Box2DAux::manageEvents(scene, world2D);
     }
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     auto bodies3d = scene->getComponentArray<Body3DComponent>();
 
 	for (int i = 0; i < bodies3d->size(); i++){
@@ -2767,6 +2886,7 @@ void PhysicsSystem::fixedUpdate(double dt){
             }
         }
     }
+#endif
 }
 
 void PhysicsSystem::draw(){
@@ -2778,19 +2898,24 @@ void PhysicsSystem::onComponentAdded(Entity entity, ComponentId componentId) {
 }
 
 void PhysicsSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
-	if (componentId == scene->getComponentId<Body2DComponent>()) {
-		Body2DComponent& body2d = scene->getComponent<Body2DComponent>(entity);
-		destroyBody2D(body2d);
-	} else if (componentId == scene->getComponentId<Body3DComponent>()) {
-		Body3DComponent& body3d = scene->getComponent<Body3DComponent>(entity);
-		destroyBody3D(body3d);
-		warnedNonNormalizedRotations.erase(entity);
-		reportedInvalidRotations.erase(entity);
-	} else if (componentId == scene->getComponentId<Joint2DComponent>()) {
-		Joint2DComponent& joint2d = scene->getComponent<Joint2DComponent>(entity);
-		destroyJoint2D(joint2d);
-	} else if (componentId == scene->getComponentId<Joint3DComponent>()) {
-		Joint3DComponent& joint3d = scene->getComponent<Joint3DComponent>(entity);
-		destroyJoint3D(joint3d);
-	}
+#ifdef DORIAX_PHYSICS_2D
+    if (componentId == scene->getComponentId<Body2DComponent>()) {
+        Body2DComponent& body2d = scene->getComponent<Body2DComponent>(entity);
+        destroyBody2D(body2d);
+    } else if (componentId == scene->getComponentId<Joint2DComponent>()) {
+        Joint2DComponent& joint2d = scene->getComponent<Joint2DComponent>(entity);
+        destroyJoint2D(joint2d);
+    }
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    if (componentId == scene->getComponentId<Body3DComponent>()) {
+        Body3DComponent& body3d = scene->getComponent<Body3DComponent>(entity);
+        destroyBody3D(body3d);
+        warnedNonNormalizedRotations.erase(entity);
+        reportedInvalidRotations.erase(entity);
+    } else if (componentId == scene->getComponentId<Joint3DComponent>()) {
+        Joint3DComponent& joint3d = scene->getComponent<Joint3DComponent>(entity);
+        destroyJoint3D(joint3d);
+    }
+#endif
 }

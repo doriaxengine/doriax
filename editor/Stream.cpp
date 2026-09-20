@@ -1839,6 +1839,12 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
     if (project->getCxxStandard() != Project::defaultCxxStandard) {
         root["cxxStandard"] = project->getCxxStandard();
     }
+    if (project->isPhysics2DEnabled() != Project::defaultPhysics2DEnabled) {
+        root["physics2D"] = project->isPhysics2DEnabled();
+    }
+    if (project->isPhysics3DEnabled() != Project::defaultPhysics3DEnabled) {
+        root["physics3D"] = project->isPhysics3DEnabled();
+    }
     if (project->shouldPackNativeResources() != Project::defaultPackNativeResources) {
         root["packNativeResources"] = project->shouldPackNativeResources();
     }
@@ -2126,6 +2132,15 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
 
     if (node["cxxStandard"]) {
         project->setCxxStandard(node["cxxStandard"].as<int>());
+    }
+
+    // Old projects carry no physics keys: both backends default ON, which is how
+    // pre-settings projects must load.
+    if (node["physics2D"]) {
+        project->setPhysics2DEnabled(node["physics2D"].as<bool>());
+    }
+    if (node["physics3D"]) {
+        project->setPhysics3DEnabled(node["physics3D"].as<bool>());
     }
 
     // Backward compatibility: the compiler and job count used to live here before

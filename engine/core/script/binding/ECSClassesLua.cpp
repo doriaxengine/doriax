@@ -154,6 +154,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("removeInstancedMesh", &MeshSystem::removeInstancedMesh)
         .endClass();
 
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
     luabridge::getGlobalNamespace(L)
         .beginClass<PhysicsSystem>("PhysicsSystem")
         .addProperty("gravity", (Vector3(PhysicsSystem::*)() const)&PhysicsSystem::getGravity, (void(PhysicsSystem::*)(Vector3))&PhysicsSystem::setGravity)
@@ -169,10 +170,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("setGravity3D",
             luabridge::overload<Vector3>(&PhysicsSystem::setGravity3D),
             luabridge::overload<float, float, float>(&PhysicsSystem::setGravity3D))
+#ifdef DORIAX_PHYSICS_2D
         .addProperty("pointsToMeterScale2D", &PhysicsSystem::getPointsToMeterScale2D,  &PhysicsSystem::setPointsToMeterScale2D)
-        .addProperty("lock3DBodies", &PhysicsSystem::isLock3DBodies, &PhysicsSystem::setLock3DBodies)
-        // True inside a contact callback, where a body can be moved but not created
-        .addProperty("steppingWorld3D", &PhysicsSystem::isSteppingWorld3D)
         .addProperty("beginContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->beginContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->beginContact2D = L; })
         .addProperty("endContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->endContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->endContact2D = L; })
         .addProperty("beginSensorContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->beginSensorContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->beginSensorContact2D = L; })
@@ -180,40 +179,38 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("hitContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->hitContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->hitContact2D = L; })
         .addProperty("preSolve2D", [] (PhysicsSystem* self, lua_State* L) { return &self->preSolve2D; }, [] (PhysicsSystem* self, lua_State* L) { self->preSolve2D = L; })
         .addProperty("shouldCollide2D", [] (PhysicsSystem* self, lua_State* L) { return &self->shouldCollide2D; }, [] (PhysicsSystem* self, lua_State* L) { self->shouldCollide2D = L; })
-
+#endif
+#ifdef DORIAX_PHYSICS_3D
+        .addProperty("lock3DBodies", &PhysicsSystem::isLock3DBodies, &PhysicsSystem::setLock3DBodies)
+        .addProperty("steppingWorld3D", &PhysicsSystem::isSteppingWorld3D)
         .addProperty("onBodyActivated3D", [] (PhysicsSystem* self, lua_State* L) { return &self->onBodyActivated3D; }, [] (PhysicsSystem* self, lua_State* L) { self->onBodyActivated3D = L; })
         .addProperty("onBodyDeactivated3D", [] (PhysicsSystem* self, lua_State* L) { return &self->onBodyDeactivated3D; }, [] (PhysicsSystem* self, lua_State* L) { self->onBodyDeactivated3D = L; })
         .addProperty("onContactAdded3D", [] (PhysicsSystem* self, lua_State* L) { return &self->onContactAdded3D; }, [] (PhysicsSystem* self, lua_State* L) { self->onContactAdded3D = L; })
         .addProperty("onContactPersisted3D", [] (PhysicsSystem* self, lua_State* L) { return &self->onContactPersisted3D; }, [] (PhysicsSystem* self, lua_State* L) { self->onContactPersisted3D = L; })
         .addProperty("onContactRemoved3D", [] (PhysicsSystem* self, lua_State* L) { return &self->onContactRemoved3D; }, [] (PhysicsSystem* self, lua_State* L) { self->onContactRemoved3D = L; })
         .addProperty("shouldCollide3D", [] (PhysicsSystem* self, lua_State* L) { return &self->shouldCollide3D; }, [] (PhysicsSystem* self, lua_State* L) { self->shouldCollide3D = L; })
-
+#endif
+#ifdef DORIAX_PHYSICS_2D
         .addFunction("createBody2D", &PhysicsSystem::createBody2D)
         .addFunction("removeBody2D", &PhysicsSystem::removeBody2D)
-
-        .addFunction("createBody3D", &PhysicsSystem::createBody3D)
-        .addFunction("removeBody3D", &PhysicsSystem::removeBody3D)
-
         .addFunction("loadBody2D", &PhysicsSystem::loadBody2D)
         .addFunction("destroyBody2D", &PhysicsSystem::destroyBody2D)
-        .addFunction("loadBody3D", &PhysicsSystem::loadBody3D)
-        .addFunction("destroyBody3D", &PhysicsSystem::destroyBody3D)
-        //.addFunction("loadShape2D", &PhysicsSystem::loadShape2D) // has body2d components
         .addFunction("destroyShape2D", &PhysicsSystem::destroyShape2D)
-        //.addFunction("loadShape3D", &PhysicsSystem::loadShape3D) // has jolt components
-        .addFunction("destroyShape3D", &PhysicsSystem::destroyShape3D)
-
         .addFunction("loadDistanceJoint2D", &PhysicsSystem::loadDistanceJoint2D)
         .addFunction("loadRevoluteJoint2D", &PhysicsSystem::loadRevoluteJoint2D)
         .addFunction("loadPrismaticJoint2D", &PhysicsSystem::loadPrismaticJoint2D)
-        //.addFunction("loadPulleyJoint2D", &PhysicsSystem::loadPulleyJoint2D)
-        //.addFunction("loadGearJoint2D", &PhysicsSystem::loadGearJoint2D)
         .addFunction("loadMouseJoint2D", &PhysicsSystem::loadMouseJoint2D)
         .addFunction("loadWheelJoint2D", &PhysicsSystem::loadWheelJoint2D)
         .addFunction("loadWeldJoint2D", &PhysicsSystem::loadWeldJoint2D)
         .addFunction("loadMotorJoint2D", &PhysicsSystem::loadMotorJoint2D)
         .addFunction("destroyJoint2D", &PhysicsSystem::destroyJoint2D)
-
+#endif
+#ifdef DORIAX_PHYSICS_3D
+        .addFunction("createBody3D", &PhysicsSystem::createBody3D)
+        .addFunction("removeBody3D", &PhysicsSystem::removeBody3D)
+        .addFunction("loadBody3D", &PhysicsSystem::loadBody3D)
+        .addFunction("destroyBody3D", &PhysicsSystem::destroyBody3D)
+        .addFunction("destroyShape3D", &PhysicsSystem::destroyShape3D)
         .addFunction("loadFixedJoint3D", &PhysicsSystem::loadFixedJoint3D)
         .addFunction("loadDistanceJoint3D", &PhysicsSystem::loadDistanceJoint3D)
         .addFunction("loadPointJoint3D", &PhysicsSystem::loadPointJoint3D)
@@ -227,11 +224,19 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("loadRackAndPinionJoint3D", &PhysicsSystem::loadRackAndPinionJoint3D)
         .addFunction("loadPulleyJoint3D", &PhysicsSystem::loadPulleyJoint3D)
         .addFunction("destroyJoint3D", &PhysicsSystem::destroyJoint3D)
-
-        .addFunction("addBroadPhaseLayer3D", 
+        .addFunction("addBroadPhaseLayer3D",
             luabridge::overload<uint8_t, uint32_t>(&PhysicsSystem::addBroadPhaseLayer3D),
             luabridge::overload<uint8_t, uint32_t, uint32_t>(&PhysicsSystem::addBroadPhaseLayer3D))
+#endif
         .endClass();
+#else
+    luabridge::getGlobalNamespace(L)
+        .beginClass<PhysicsSystem>("PhysicsSystem")
+        .addProperty("gravity", (Vector3(PhysicsSystem::*)() const)&PhysicsSystem::getGravity, (void(PhysicsSystem::*)(Vector3))&PhysicsSystem::setGravity)
+        .addProperty("gravity2D", (Vector2(PhysicsSystem::*)() const)&PhysicsSystem::getGravity2D, (void(PhysicsSystem::*)(Vector2))&PhysicsSystem::setGravity2D)
+        .addProperty("gravity3D", (Vector3(PhysicsSystem::*)() const)&PhysicsSystem::getGravity3D, (void(PhysicsSystem::*)(Vector3))&PhysicsSystem::setGravity3D)
+        .endClass();
+#endif
 
     luabridge::getGlobalNamespace(L)
         .beginClass<RenderSystem>("RenderSystem")

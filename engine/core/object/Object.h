@@ -5,8 +5,12 @@
 #define OBJECT_H
 
 #include "EntityHandle.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "Body2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "Body3D.h"
+#endif
 #include "math/Ray.h"
 
 namespace doriax{
@@ -74,12 +78,16 @@ namespace doriax{
         void updateTransform();
 
         // 2D physics
+#ifdef DORIAX_PHYSICS_2D
         Body2D getBody2D();
         void removeBody2D();
+#endif
 
         // 3D physics
+#ifdef DORIAX_PHYSICS_3D
         Body3D getBody3D();
         void removeBody3D();
+#endif
 
         Ray getRay(Vector3 direction);
     };

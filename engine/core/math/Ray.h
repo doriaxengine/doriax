@@ -9,15 +9,18 @@
 #include "AABB.h"
 #include "Sphere.h"
 #include "OBB.h"
-#include "object/physics/Body2D.h"
-#include "object/physics/Body3D.h"
+#include "Entity.h"
+#include <cstdint>
 #include <vector>
 
 namespace doriax {
 
+    class Scene;
+
     enum class RayFilter{
         BODY_2D,
-        BODY_3D
+        BODY_3D,
+        BOUNDS
     };
 
     struct RayReturn{
@@ -63,10 +66,14 @@ namespace doriax {
         RayReturn intersects(const AABB& box) const;
         RayReturn intersects(const OBB& obb) const;
         RayReturn intersects(const Sphere& sphere) const;
-        RayReturn intersects(const Body2D& body) const;
-        RayReturn intersects(const Body2D& body, size_t shape) const;
-        RayReturn intersects(const Body3D& body) const;
-        RayReturn intersects(const Body3D& body, size_t shape) const;
+#ifdef DORIAX_PHYSICS_2D
+        RayReturn intersects(const class Body2D& body) const;
+        RayReturn intersects(const class Body2D& body, size_t shape) const;
+#endif
+#ifdef DORIAX_PHYSICS_3D
+        RayReturn intersects(const class Body3D& body) const;
+        RayReturn intersects(const class Body3D& body, size_t shape) const;
+#endif
         RayReturn intersects(Scene* scene, RayFilter raytest) const;
         RayReturn intersects(Scene* scene, RayFilter raytest, bool onlyStatic) const;
         RayReturn intersects(Scene* scene, RayFilter raytest, uint16_t categoryBits, uint16_t maskBits) const;
@@ -75,17 +82,21 @@ namespace doriax {
         RayReturn intersects(Scene* scene, RayFilter raytest, const std::vector<Entity>& ignoreEntities) const;
         RayReturn intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint16_t categoryBits, uint16_t maskBits, Entity ignoreEntity) const;
         RayReturn intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint16_t categoryBits, uint16_t maskBits, const std::vector<Entity>& ignoreEntities) const;
+#ifdef DORIAX_PHYSICS_3D
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D) const; // only 3D bodies
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, uint16_t categoryBits, uint16_t maskBits) const; // only 3D bodies
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, Entity ignoreEntity) const; // only 3D bodies
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, const std::vector<Entity>& ignoreEntities) const; // only 3D bodies
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, uint16_t categoryBits, uint16_t maskBits, Entity ignoreEntity) const; // only 3D bodies
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, uint16_t categoryBits, uint16_t maskBits, const std::vector<Entity>& ignoreEntities) const; // only 3D bodies
+#endif
 
     private:
 
         RayReturn intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint16_t categoryBits, uint16_t maskBits, const std::vector<Entity>* ignoreEntities) const;
+#ifdef DORIAX_PHYSICS_3D
         RayReturn intersects(Scene* scene, uint8_t broadPhaseLayer3D, uint16_t categoryBits, uint16_t maskBits, const std::vector<Entity>* ignoreEntities) const;
+#endif
     };
     
 }

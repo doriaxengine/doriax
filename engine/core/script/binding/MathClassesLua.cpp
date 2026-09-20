@@ -543,6 +543,7 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .beginNamespace("RayFilter")
         .addVariable("BODY_2D", RayFilter::BODY_2D)
         .addVariable("BODY_3D", RayFilter::BODY_3D)
+        .addVariable("BOUNDS", RayFilter::BOUNDS)
         .endNamespace();
 
     luabridge::getGlobalNamespace(L)
@@ -567,10 +568,14 @@ void LuaBinding::registerMathClasses(lua_State *L){
             luabridge::overload<const AABB&>(&Ray::intersects),
             luabridge::overload<const OBB&>(&Ray::intersects),
             luabridge::overload<const Plane&>(&Ray::intersects),
+#ifdef DORIAX_PHYSICS_2D
             luabridge::overload<const Body2D&>(&Ray::intersects),
             luabridge::overload<const Body2D&, size_t>(&Ray::intersects),
+#endif
+#ifdef DORIAX_PHYSICS_3D
             luabridge::overload<const Body3D&>(&Ray::intersects),
             luabridge::overload<const Body3D&, size_t>(&Ray::intersects),
+#endif
             luabridge::overload<Scene*, RayFilter>(&Ray::intersects),
             luabridge::overload<Scene*, RayFilter, bool>(&Ray::intersects),
             luabridge::overload<Scene*, RayFilter, uint16_t, uint16_t>(&Ray::intersects),
@@ -578,13 +583,17 @@ void LuaBinding::registerMathClasses(lua_State *L){
             luabridge::overload<Scene*, RayFilter, Entity>(&Ray::intersects),
             luabridge::overload<Scene*, RayFilter, const std::vector<Entity>&>(&Ray::intersects),
             luabridge::overload<Scene*, RayFilter, bool, uint16_t, uint16_t, Entity>(&Ray::intersects),
-            luabridge::overload<Scene*, RayFilter, bool, uint16_t, uint16_t, const std::vector<Entity>&>(&Ray::intersects),
+            luabridge::overload<Scene*, RayFilter, bool, uint16_t, uint16_t, const std::vector<Entity>&>(&Ray::intersects)
+#ifdef DORIAX_PHYSICS_3D
+            ,
             luabridge::overload<Scene*, uint8_t>(&Ray::intersects),
             luabridge::overload<Scene*, uint8_t, uint16_t, uint16_t>(&Ray::intersects),
             luabridge::overload<Scene*, uint8_t, Entity>(&Ray::intersects),
             luabridge::overload<Scene*, uint8_t, const std::vector<Entity>&>(&Ray::intersects),
             luabridge::overload<Scene*, uint8_t, uint16_t, uint16_t, Entity>(&Ray::intersects),
-            luabridge::overload<Scene*, uint8_t, uint16_t, uint16_t, const std::vector<Entity>&>(&Ray::intersects))
+            luabridge::overload<Scene*, uint8_t, uint16_t, uint16_t, const std::vector<Entity>&>(&Ray::intersects)
+#endif
+        )
         .endClass();
 
 #endif //DISABLE_LUA_BINDINGS

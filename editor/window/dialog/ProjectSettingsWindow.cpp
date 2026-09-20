@@ -806,6 +806,8 @@ void ProjectSettingsWindow::open(Project* project) {
     m_luaDir = project->getLuaDir();
     m_scriptDirs = project->getScriptDirs();
     m_cxxStandardIndex = findCxxStandardIndex(project->getCxxStandard());
+    m_physics2DEnabled = project->isPhysics2DEnabled();
+    m_physics3DEnabled = project->isPhysics3DEnabled();
 
     const ApplicationSettings& application = project->getApplicationSettings();
     snprintf(m_applicationNameBuffer, sizeof(m_applicationNameBuffer), "%s", application.name.c_str());
@@ -1232,6 +1234,18 @@ void ProjectSettingsWindow::drawDirectoriesSettings() {
 
 void ProjectSettingsWindow::drawBuildSettings() {
     drawSettingsPanel("##BuildSettingsPanel", [this]() {
+        if (beginSettingsRow("2D Physics", m_physics2DEnabled != Project::defaultPhysics2DEnabled)) {
+            m_physics2DEnabled = Project::defaultPhysics2DEnabled;
+        }
+        ImGui::Checkbox("##Physics2D", &m_physics2DEnabled);
+        endSettingsRow("Box2D-based 2D physics. When off, Box2D is not compiled or linked into exported builds.");
+
+        if (beginSettingsRow("3D Physics", m_physics3DEnabled != Project::defaultPhysics3DEnabled)) {
+            m_physics3DEnabled = Project::defaultPhysics3DEnabled;
+        }
+        ImGui::Checkbox("##Physics3D", &m_physics3DEnabled);
+        endSettingsRow("Jolt-based 3D physics. When off, Jolt is not compiled or linked into exported builds.");
+
         drawComboSetting("C++ Standard", "##CxxStandard", cxxStandardNames, cxxStandardCount, m_cxxStandardIndex,
             findCxxStandardIndex(Project::defaultCxxStandard),
             "Language standard for C++ scripts in Play and exported games. Saved with the project. "
@@ -1565,6 +1579,8 @@ bool ProjectSettingsWindow::applySettings() {
         m_cxxStandardIndex = 0;
     }
     m_project->setCxxStandard(cxxStandards[m_cxxStandardIndex]);
+    m_project->setPhysics2DEnabled(m_physics2DEnabled);
+    m_project->setPhysics3DEnabled(m_physics3DEnabled);
 
     // The project already carries the values applied above
     const std::string inheritedName = m_project->getApplicationName();

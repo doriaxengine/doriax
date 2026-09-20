@@ -297,6 +297,8 @@ namespace doriax::editor{
         std::filesystem::path luaDir;
         std::vector<std::filesystem::path> scriptDirs;  // extra C++ include and source roots
         int cxxStandard;  // C++ standard for Play and exported builds
+        bool physics2DEnabled;  // Enable 2D physics (Box2D)
+        bool physics3DEnabled;  // Enable 3D physics (Jolt)
         bool packNativeResources;
         bool versionControlMetadata;
         ShaderOverrides shaderOverrides;
@@ -490,6 +492,8 @@ namespace doriax::editor{
         static constexpr const char* defaultLuaDir = ".";
         static constexpr bool defaultPackNativeResources = false;
         static constexpr bool defaultVersionControlMetadata = true;
+        static constexpr bool defaultPhysics2DEnabled = true;
+        static constexpr bool defaultPhysics3DEnabled = true;
         static constexpr int defaultCxxStandard = cxxStandards[0];
 
         Project();
@@ -548,6 +552,12 @@ namespace doriax::editor{
 
         void setCxxStandard(int standard);
         int getCxxStandard() const;
+
+        void setPhysics2DEnabled(bool enabled);
+        bool isPhysics2DEnabled() const;
+
+        void setPhysics3DEnabled(bool enabled);
+        bool isPhysics3DEnabled() const;
 
         // Absolute roots stored references are relative to: assets for textures, models,
         // sounds and fonts ("asset://"), Lua for script entries ("lua://").

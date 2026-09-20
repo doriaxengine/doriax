@@ -4,12 +4,16 @@
 #include "LuaFunction.h"
 
 #include "util/StringUtils.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "object/physics/Body2D.h"
 #include "object/physics/Contact2D.h"
 #include "object/physics/Manifold2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "object/physics/Body3D.h"
 #include "object/physics/Contact3D.h"
 #include "object/physics/CollideShapeResult3D.h"
+#endif
 #include "LuaBinding.h"
 #include "Log.h"
 
@@ -136,6 +140,7 @@ void LuaFunctionBase::push_value(lua_State *vm, Vector3 o){
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
 }
 
+#ifdef DORIAX_PHYSICS_2D
 void LuaFunctionBase::push_value(lua_State *vm, Body2D o){
     if (!luabridge::push<Body2D>(vm, o))
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
@@ -150,7 +155,9 @@ void LuaFunctionBase::push_value(lua_State *vm, Contact2D o){
     if (!luabridge::push<Contact2D>(vm, o))
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
 }
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
 void LuaFunctionBase::push_value(lua_State *vm, Body3D o){
     if (!luabridge::push<Body3D>(vm, o))
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
@@ -165,6 +172,7 @@ void LuaFunctionBase::push_value(lua_State *vm, CollideShapeResult3D o){
     if (!luabridge::push<CollideShapeResult3D>(vm, o))
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
 }
+#endif
 
 template <>
 int LuaFunctionBase::get_value<int>(lua_State* vm){

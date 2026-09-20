@@ -51,10 +51,14 @@ EntityRegistry::EntityRegistry() {
     registerComponent<TerrainComponent>();
     registerComponent<SoundComponent>();
     registerComponent<TilemapComponent>();
+#ifdef DORIAX_PHYSICS_2D
     registerComponent<Body2DComponent>();
     registerComponent<Joint2DComponent>();
+#endif
+#ifdef DORIAX_PHYSICS_3D
     registerComponent<Body3DComponent>();
     registerComponent<Joint3DComponent>();
+#endif
     registerComponent<InstancedMeshComponent>();
     registerComponent<BundleComponent>();
     registerComponent<ReflectionProbeComponent>();

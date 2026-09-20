@@ -3,8 +3,17 @@
 
 #include "Ray.h"
 
+#include "Scene.h"
+#include "component/MeshComponent.h"
+#ifdef DORIAX_PHYSICS_2D
+#include "object/physics/Body2D.h"
 #include "util/Box2DAux.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
+#include "object/physics/Body3D.h"
 #include "util/JoltPhysicsAux.h"
+#endif
+#include <algorithm>
 #include <stdlib.h>
 
 using namespace doriax;
@@ -313,6 +322,7 @@ RayReturn Ray::intersects(const Sphere& sphere) const{
     return NO_HIT;
 }
 
+#ifdef DORIAX_PHYSICS_2D
 RayReturn Ray::intersects(const Body2D& body) const{
     Body2DComponent& bodycomp = body.getComponent<Body2DComponent>();
 
@@ -379,7 +389,9 @@ RayReturn Ray::intersects(const Body2D& body, size_t shape) const{
 
     return NO_HIT;
 }
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
 RayReturn Ray::intersects(const Body3D& body) const{
     Body3DComponent& bodycomp = body.getComponent<Body3DComponent>();
     std::shared_ptr<PhysicsSystem> physicsSystem = body.getScene()->getSystem<PhysicsSystem>();
@@ -422,6 +434,7 @@ RayReturn Ray::intersects(const Body3D& body, size_t shape) const{
 
     return NO_HIT;
 }
+#endif
 
 RayReturn Ray::intersects(Scene* scene, RayFilter raytest) const{
     return intersects(scene, raytest, false);
@@ -458,6 +471,7 @@ RayReturn Ray::intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint
 }
 
 RayReturn Ray::intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint16_t categoryBits, uint16_t maskBits, const std::vector<Entity>* ignoreEntities) const{
+#ifdef DORIAX_PHYSICS_2D
     if (raytest == RayFilter::BODY_2D){
 
         b2WorldId world = scene->getSystem<PhysicsSystem>()->getWorld2D();
@@ -507,7 +521,10 @@ RayReturn Ray::intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint
             return {true, closestFraction, point, normal, entity, shapeIndex};
         }
 
-    }else if (raytest == RayFilter::BODY_3D){
+    }else
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    if (raytest == RayFilter::BODY_3D){
 
         std::shared_ptr<PhysicsSystem> physicsSystem = scene->getSystem<PhysicsSystem>();
         JPH::PhysicsSystem* world = physicsSystem->getWorld3D();
@@ -534,11 +551,41 @@ RayReturn Ray::intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint
             }
         }
 
+    }else
+#endif
+    if (raytest == RayFilter::BOUNDS){
+        // BOUNDS is a scene query over existing render bounds. Physics-only filters
+        // have no equivalent on MeshComponent and intentionally do not apply here.
+        (void)onlyStatic;
+        (void)categoryBits;
+        (void)maskBits;
+
+        RayReturn closest = NO_HIT;
+        auto meshes = scene->getComponentArray<MeshComponent>();
+        if (!meshes) return closest;
+
+        for (size_t i = 0; i < meshes->size(); i++){
+            Entity entity = meshes->getEntity(i);
+            if (ignoreEntities && std::find(ignoreEntities->begin(), ignoreEntities->end(), entity) != ignoreEntities->end()){
+                continue;
+            }
+
+            MeshComponent* mesh = meshes->findComponentFromIndex(i);
+            if (!mesh || mesh->worldAABB.isNull()) continue;
+
+            RayReturn hit = intersects(mesh->worldAABB);
+            if (hit && (!closest || hit.distance < closest.distance)){
+                hit.body = entity; // For BOUNDS, body stores the hit render entity.
+                closest = hit;
+            }
+        }
+        return closest;
     }
 
     return NO_HIT;
 }
 
+#ifdef DORIAX_PHYSICS_3D
 RayReturn Ray::intersects(Scene* scene, uint8_t broadPhaseLayer3D) const{
     return intersects(scene, broadPhaseLayer3D, (uint16_t)~0u, (uint16_t)~0u);
 }
@@ -594,3 +641,4 @@ RayReturn Ray::intersects(Scene* scene, uint8_t broadPhaseLayer3D, uint16_t cate
 
     return NO_HIT;
 }
+#endif

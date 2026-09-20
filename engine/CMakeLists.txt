@@ -6,6 +6,10 @@ if(NOT DEFINED DORIAX_CXX_STANDARD)
     set_property(CACHE DORIAX_CXX_STANDARD PROPERTY STRINGS ${DORIAX_CXX_STANDARDS})
 endif()
 
+option(DORIAX_PHYSICS_2D "Enable Box2D-based 2D physics" ON)
+option(DORIAX_PHYSICS_3D "Enable Jolt-based 3D physics" ON)
+option(DORIAX_BUILD_TESTS "Build Doriax engine tests" OFF)
+
 # =============================================================
 # STANDALONE PROJECT SETUP
 # Only runs when this file is used as the top-level build
@@ -698,8 +702,12 @@ include_directories(SYSTEM libs/soloud/include)
 include_directories(SYSTEM libs/tinyobjloader)
 include_directories(SYSTEM libs/tinygltf)
 include_directories(SYSTEM libs/tinyxml2)
-include_directories(SYSTEM libs/box2d/include)
-include_directories(SYSTEM libs/joltphysics)
+if(DORIAX_PHYSICS_2D)
+    include_directories(SYSTEM libs/box2d/include)
+endif()
+if(DORIAX_PHYSICS_3D)
+    include_directories(SYSTEM libs/joltphysics)
+endif()
 include_directories(SYSTEM libs/harfbuzz)
 include_directories(SYSTEM libs/sheenbidi/Headers)
 include_directories(SYSTEM libs/meshoptimizer)
@@ -711,8 +719,12 @@ add_subdirectory(libs/soloud)
 add_subdirectory(libs/tinyobjloader)
 add_subdirectory(libs/tinygltf)
 add_subdirectory(libs/tinyxml2)
-add_subdirectory(libs/box2d)
-add_subdirectory(libs/joltphysics)
+if(DORIAX_PHYSICS_2D)
+    add_subdirectory(libs/box2d)
+endif()
+if(DORIAX_PHYSICS_3D)
+    add_subdirectory(libs/joltphysics)
+endif()
 add_subdirectory(libs/harfbuzz)
 add_subdirectory(libs/sheenbidi)
 add_subdirectory(libs/meshoptimizer)
@@ -726,9 +738,15 @@ endif()
 
 foreach(lib IN ITEMS
     sokol lua stb soloud tinyobjloader tinygltf tinyxml2
-    box2d joltphysics harfbuzz sheenbidi meshoptimizer)
+    harfbuzz sheenbidi meshoptimizer)
     target_compile_options(${lib} PRIVATE ${EXTERNAL_WARNING_FLAG})
 endforeach()
+if(DORIAX_PHYSICS_2D)
+    target_compile_options(box2d PRIVATE ${EXTERNAL_WARNING_FLAG})
+endif()
+if(DORIAX_PHYSICS_3D)
+    target_compile_options(joltphysics PRIVATE ${EXTERNAL_WARNING_FLAG})
+endif()
 
 if(DEFINED NO_LUA_INIT)
     add_definitions("-DNO_LUA_INIT=${NO_LUA_INIT}")
@@ -807,14 +825,6 @@ set(DORIAX_SRCS
     core/object/environment/Fog.cpp
     core/object/environment/ReflectionProbe.cpp
     core/object/environment/SkyBox.cpp
-    core/object/physics/Body2D.cpp
-    core/object/physics/Body3D.cpp
-    core/object/physics/CollideShapeResult3D.cpp
-    core/object/physics/Contact2D.cpp
-    core/object/physics/Contact3D.cpp
-    core/object/physics/Joint2D.cpp
-    core/object/physics/Joint3D.cpp
-    core/object/physics/Manifold2D.cpp
     core/object/ui/Button.cpp
     core/object/ui/Container.cpp
     core/object/ui/Image.cpp
@@ -859,7 +869,6 @@ set(DORIAX_SRCS
     core/subsystem/ActionSystem.cpp
     core/subsystem/AudioSystem.cpp
     core/subsystem/MeshSystem.cpp
-    core/subsystem/PhysicsSystem.cpp
     core/subsystem/RenderSystem.cpp
     core/subsystem/UISystem.cpp
     core/texture/Framebuffer.cpp
@@ -876,6 +885,30 @@ set(DORIAX_SRCS
     core/util/UniqueToken.cpp
     core/util/XMLUtils.cpp
 )
+
+if(DORIAX_PHYSICS_2D OR DORIAX_PHYSICS_3D)
+    list(APPEND DORIAX_SRCS core/subsystem/PhysicsSystem.cpp)
+else()
+    list(APPEND DORIAX_SRCS core/subsystem/PhysicsSystemDisabled.cpp)
+endif()
+
+if(DORIAX_PHYSICS_2D)
+    list(APPEND DORIAX_SRCS
+        core/object/physics/Body2D.cpp
+        core/object/physics/Contact2D.cpp
+        core/object/physics/Joint2D.cpp
+        core/object/physics/Manifold2D.cpp
+    )
+endif()
+
+if(DORIAX_PHYSICS_3D)
+    list(APPEND DORIAX_SRCS
+        core/object/physics/Body3D.cpp
+        core/object/physics/CollideShapeResult3D.cpp
+        core/object/physics/Contact3D.cpp
+        core/object/physics/Joint3D.cpp
+    )
+endif()
 
 set(RENDER_SOKOL_SRC
     renders/sokol/SokolBuffer.cpp
@@ -897,6 +930,12 @@ add_library(
     ${DORIAX_SRCS}
 )
 
+target_compile_definitions(doriax
+    PUBLIC
+        $<$<BOOL:${DORIAX_PHYSICS_2D}>:DORIAX_PHYSICS_2D>
+        $<$<BOOL:${DORIAX_PHYSICS_3D}>:DORIAX_PHYSICS_3D>
+)
+
 find_package(Threads REQUIRED)
 target_link_libraries(doriax PRIVATE Threads::Threads)
 
@@ -909,8 +948,14 @@ target_link_libraries(
 
     PUBLIC
 
-    sokol lua stb tinyobjloader tinygltf tinyxml2 soloud box2d joltphysics harfbuzz sheenbidi meshoptimizer
+    sokol lua stb tinyobjloader tinygltf tinyxml2 soloud harfbuzz sheenbidi meshoptimizer
 )
+if(DORIAX_PHYSICS_2D)
+    target_link_libraries(doriax PUBLIC box2d)
+endif()
+if(DORIAX_PHYSICS_3D)
+    target_link_libraries(doriax PUBLIC joltphysics)
+endif()
 
 # Checked after the marker above, so the value the Exporter injects is validated too
 if(NOT DORIAX_CXX_STANDARD IN_LIST DORIAX_CXX_STANDARDS)
@@ -940,6 +985,17 @@ if(DORIAX_SHARED)
         PUBLIC
         DORIAX_SHARED
     )
+endif()
+
+if(DORIAX_BUILD_TESTS)
+    enable_testing()
+    add_executable(doriax-ray-bounds-test tests/RayBoundsTest.cpp)
+    target_link_libraries(doriax-ray-bounds-test PRIVATE doriax)
+    set_target_properties(doriax-ray-bounds-test PROPERTIES
+        CXX_STANDARD ${DORIAX_CXX_STANDARD}
+        CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME doriax-ray-bounds COMMAND doriax-ray-bounds-test)
 endif()
 
 # =============================================================

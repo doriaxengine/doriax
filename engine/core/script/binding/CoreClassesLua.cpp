@@ -15,12 +15,16 @@
 #include "BundleManager.h"
 #include "Input.h"
 #include "System.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "Body2D.h"
 #include "Contact2D.h"
 #include "Manifold2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
 #include "Body3D.h"
 #include "Contact3D.h"
 #include "CollideShapeResult3D.h"
+#endif
 
 #include "subsystem/ActionSystem.h"
 #include "subsystem/AudioSystem.h"
@@ -428,6 +432,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("add", (bool (FunctionSubscribe<float(float)>::*)(const std::string&, lua_State*))&FunctionSubscribe<float(float)>::add)
         .endClass();
 
+#ifdef DORIAX_PHYSICS_2D
     luabridge::getGlobalNamespace(L)
         .beginClass<FunctionSubscribe<void(Body2D, unsigned long, Body2D, unsigned long)>>("FunctionSubscribe_V_B2ULB2UL")
         .addFunction("__call", &FunctionSubscribe<void(Body2D, unsigned long, Body2D, unsigned long)>::call)
@@ -455,7 +460,9 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("call", &FunctionSubscribe<bool(Body2D, unsigned long, Body2D, unsigned long, Manifold2D)>::call)
         .addFunction("add", (bool (FunctionSubscribe<bool(Body2D, unsigned long, Body2D, unsigned long, Manifold2D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<bool(Body2D, unsigned long, Body2D, unsigned long, Manifold2D)>::add)
         .endClass();
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
         .beginClass<FunctionSubscribe<void(Body3D)>>("FunctionSubscribe_V_B3")
         .addFunction("__call", &FunctionSubscribe<void(Body3D)>::call)
@@ -483,6 +490,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("call", &FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::call)
         .addFunction("add", (bool (FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::add)
         .endClass();
+#endif
 
     luabridge::getGlobalNamespace(L)
         .beginClass<Texture>("Texture")

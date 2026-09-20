@@ -1893,6 +1893,22 @@ int editor::Project::getCxxStandard() const{
     return cxxStandard;
 }
 
+void editor::Project::setPhysics2DEnabled(bool enabled){
+    this->physics2DEnabled = enabled;
+}
+
+bool editor::Project::isPhysics2DEnabled() const{
+    return physics2DEnabled;
+}
+
+void editor::Project::setPhysics3DEnabled(bool enabled){
+    this->physics3DEnabled = enabled;
+}
+
+bool editor::Project::isPhysics3DEnabled() const{
+    return physics3DEnabled;
+}
+
 static bool isInsideRoot(const std::filesystem::path& path, const std::filesystem::path& root){
     std::error_code ec;
     std::filesystem::path relativePath = std::filesystem::relative(path, root, ec);
@@ -3817,6 +3833,8 @@ void editor::Project::resetConfigs() {
     luaDir = defaultLuaDir;
     scriptDirs.clear();
     cxxStandard = defaultCxxStandard;
+    physics2DEnabled = defaultPhysics2DEnabled;
+    physics3DEnabled = defaultPhysics3DEnabled;
     packNativeResources = defaultPackNativeResources;
     versionControlMetadata = defaultVersionControlMetadata;
     shaderOverrides = {};
