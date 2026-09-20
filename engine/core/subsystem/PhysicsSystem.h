@@ -7,43 +7,6 @@
 #include "SubSystem.h"
 #include "math/Vector2.h"
 #include "math/Vector3.h"
-#if !defined(DORIAX_PHYSICS_2D) && !defined(DORIAX_PHYSICS_3D)
-
-namespace doriax{
-
-    class DORIAX_API PhysicsSystem : public SubSystem {
-    private:
-        Vector2 gravity2D;
-        Vector3 gravity3D;
-
-    public:
-        PhysicsSystem(Scene* scene);
-
-        Vector2 getGravity2D() const;
-        void setGravity2D(Vector2 gravity);
-        void setGravity2D(float x, float y);
-
-        Vector3 getGravity3D() const;
-        void setGravity3D(Vector3 gravity);
-        void setGravity3D(float x, float y, float z);
-
-        Vector3 getGravity() const;
-        void setGravity(Vector3 gravity);
-        void setGravity(float x, float y);
-        void setGravity(float x, float y, float z);
-
-        void load() override;
-        void draw() override;
-        void destroy() override;
-        void update(double dt) override;
-        void fixedUpdate(double dt) override;
-        void onComponentAdded(Entity entity, ComponentId componentId) override;
-        void onComponentRemoved(Entity entity, ComponentId componentId) override;
-    };
-
-}
-
-#else
 #ifdef DORIAX_PHYSICS_2D
 #include "component/Body2DComponent.h"
 #include "component/Joint2DComponent.h"
@@ -287,6 +250,5 @@ namespace doriax{
 	};
 
 }
-#endif
 
 #endif //PHYSICSSYSTEM_H

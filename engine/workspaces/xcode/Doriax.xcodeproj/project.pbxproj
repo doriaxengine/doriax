@@ -8333,6 +8333,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_STYLE = Automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8365,6 +8370,11 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
 				CODE_SIGN_STYLE = Automatic;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8403,6 +8413,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",
@@ -8438,7 +8453,11 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				DEAD_CODE_STRIPPING = YES;
-				GCC_PREPROCESSOR_DEFINITIONS = "";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					DORIAX_PHYSICS_2D,
+					DORIAX_PHYSICS_3D,
+				);
 				HEADER_SEARCH_PATHS = (
 					"$(SRCROOT)/../../core",
 					"$(SRCROOT)/../../renders",

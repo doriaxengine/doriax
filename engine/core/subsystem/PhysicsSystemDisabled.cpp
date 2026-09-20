@@ -14,6 +14,8 @@ PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
     gravity3D = settingsDefaults.gravity3D;
 }
 
+PhysicsSystem::~PhysicsSystem() = default;
+
 Vector2 PhysicsSystem::getGravity2D() const{
     return gravity2D;
 }

@@ -948,6 +948,16 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "set(CMAKE_OBJCXX_STANDARD ${CMAKE_CXX_STANDARD})\n";
     cmakeContent += "set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)\n\n";
 
+    // Project sources include public engine headers whose declarations and class
+    // layouts depend on the physics backends used by this editor's engine library.
+#ifdef DORIAX_PHYSICS_2D
+    cmakeContent += "add_compile_definitions(DORIAX_PHYSICS_2D)\n";
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    cmakeContent += "add_compile_definitions(DORIAX_PHYSICS_3D)\n";
+#endif
+    cmakeContent += "\n";
+
     cmakeContent += "# Build mode: when ON, build as Doriax Editor plugin (shared library)\n";
     cmakeContent += "option(DORIAX_EDITOR_PLUGIN \"Build as Doriax Editor plugin\" OFF)\n";
     cmakeContent += getEditorPluginAbiCheck();
