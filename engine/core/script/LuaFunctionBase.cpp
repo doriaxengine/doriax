@@ -3,6 +3,7 @@
 
 #include "LuaFunction.h"
 
+#include "math/Vector2.h"
 #include "util/StringUtils.h"
 #ifdef DORIAX_PHYSICS_2D
 #include "object/physics/Body2D.h"

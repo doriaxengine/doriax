@@ -522,27 +522,15 @@ void PhysicsSystem::updateTransformFromBody2D(Entity entity, Vector2 position, f
         return;
     }
 
-    // Box2D does not own Z, it is kept from the current world position.
-    Vector3 worldPosition(position.x, position.y, transform->worldPosition.z);
-    Quaternion worldRotation(angle, Vector3(0, 0, 1));
-    transform->worldPosition = worldPosition;
-    transform->worldRotation = worldRotation;
+    // Box2D does not own Z, it is kept from the current world position
+    Vector3 worldPosition = Vector3(position.x, position.y, transform->worldPosition.z);
 
-    Transform* parent = transform->parent != NULL_ENTITY
-        ? scene->findComponent<Transform>(transform->parent) : NULL;
-    if (parent){
-        transform->position = parent->modelMatrix.inverse() * worldPosition;
-        transform->rotation = parent->worldRotation.inverse() * worldRotation;
-    }else{
-        transform->position = worldPosition;
-        transform->rotation = worldRotation;
-    }
-    transform->needUpdate = true;
+    updateTransformFromBody3D(entity, worldPosition, Quaternion(angle, Vector3(0, 0, 1)));
 }
 
 #endif
 
-#ifdef DORIAX_PHYSICS_3D
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
 void PhysicsSystem::updateTransformFromBody3D(Entity entity, Vector3 position, Quaternion rotation){
     Transform* transform = scene->findComponent<Transform>(entity);
     if (!transform){

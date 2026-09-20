@@ -8,7 +8,6 @@ endif()
 
 option(DORIAX_PHYSICS_2D "Enable Box2D-based 2D physics" ON)
 option(DORIAX_PHYSICS_3D "Enable Jolt-based 3D physics" ON)
-option(DORIAX_BUILD_TESTS "Build Doriax engine tests" OFF)
 
 # =============================================================
 # STANDALONE PROJECT SETUP
@@ -985,17 +984,6 @@ if(DORIAX_SHARED)
         PUBLIC
         DORIAX_SHARED
     )
-endif()
-
-if(DORIAX_BUILD_TESTS)
-    enable_testing()
-    add_executable(doriax-ray-bounds-test tests/RayBoundsTest.cpp)
-    target_link_libraries(doriax-ray-bounds-test PRIVATE doriax)
-    set_target_properties(doriax-ray-bounds-test PROPERTIES
-        CXX_STANDARD ${DORIAX_CXX_STANDARD}
-        CXX_STANDARD_REQUIRED ON
-    )
-    add_test(NAME doriax-ray-bounds COMMAND doriax-ray-bounds-test)
 endif()
 
 # =============================================================

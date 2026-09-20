@@ -87,8 +87,10 @@ namespace luabridge
 
 #ifdef DORIAX_PHYSICS_2D
     template<> struct Stack<Shape2DType> : EnumWrapper<Shape2DType>{};
-    template<> struct Stack<BodyType> : EnumWrapper<BodyType>{};
     template<> struct Stack<Joint2DType> : EnumWrapper<Joint2DType>{};
+#endif
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
+    template<> struct Stack<BodyType> : EnumWrapper<BodyType>{};
 #endif
 #ifdef DORIAX_PHYSICS_3D
     template<> struct Stack<Shape3DType> : EnumWrapper<Shape3DType>{};

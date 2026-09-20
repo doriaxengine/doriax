@@ -226,9 +226,11 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_2D
 		void updateTransformFromBody2D(Entity entity, Vector2 position, float angle);
 #endif
-#ifdef DORIAX_PHYSICS_3D
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
 		void updateTransformFromBody3D(Entity entity, Vector3 position, Quaternion rotation);
+#endif
 
+#ifdef DORIAX_PHYSICS_3D
 		JPH::Quat toValidatedJoltRotation(const Quaternion& rotation, Entity entity, int shapeIndex);
 #endif
 
