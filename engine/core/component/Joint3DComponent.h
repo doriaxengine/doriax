@@ -5,7 +5,12 @@
 #define JOINT3D_COMPONENT_H
 
 #include "Engine.h"
+#include "ecs/Entity.h"
+#include "math/Vector3.h"
+#include <vector>
+#ifdef DORIAX_PHYSICS_3D
 #include "Jolt/Physics/Constraints/TwoBodyConstraint.h"
+#endif
 
 namespace doriax{
 
@@ -25,7 +30,9 @@ namespace doriax{
     };
 
     struct DORIAX_API Joint3DComponent{
+#ifdef DORIAX_PHYSICS_3D
         JPH::TwoBodyConstraint* joint = NULL;
+#endif
         Joint3DType type = Joint3DType::FIXED;
 
         Entity bodyA = NULL_ENTITY;

@@ -6,11 +6,15 @@
 
 #include "Engine.h"
 #include "ecs/Entity.h"
+#include "math/Quaternion.h"
+#include "math/Vector3.h"
 #include "util/HybridArray.h"
+#include <cstdint>
 
+#ifdef DORIAX_PHYSICS_3D
 #include "Jolt/Jolt.h"
 #include "Jolt/Physics/Body/Body.h"
-#include "Jolt/Physics/Body/AllowedDOFs.h"
+#endif
 
 namespace doriax{
 
@@ -38,8 +42,20 @@ namespace doriax{
         LINEAR_CAST
     };
 
+    enum class Body3DAllowedDOF : uint8_t{
+        TRANSLATION_X = 1 << 0,
+        TRANSLATION_Y = 1 << 1,
+        TRANSLATION_Z = 1 << 2,
+        ROTATION_X = 1 << 3,
+        ROTATION_Y = 1 << 4,
+        ROTATION_Z = 1 << 5,
+        ALL = 0x3F
+    };
+
     struct DORIAX_API Shape3D{
+#ifdef DORIAX_PHYSICS_3D
         JPH::ShapeRefC shape = NULL;
+#endif
         Vector3 position = Vector3::ZERO;
         Quaternion rotation = Quaternion::IDENTITY;
 
@@ -68,7 +84,9 @@ namespace doriax{
     };
 
     struct Body3DComponent{
+#ifdef DORIAX_PHYSICS_3D
         JPH::BodyID body;
+#endif
 
         HybridArray<Shape3D, MAX_SHAPES> shapes;
         size_t numShapes = 0;
@@ -83,7 +101,9 @@ namespace doriax{
         BodyType type = BodyType::STATIC;
         Body3DMotionQuality motionQuality = Body3DMotionQuality::DISCRETE;
         float gravityFactor = 1.0f;
-        JPH::EAllowedDOFs allowedDOFs = JPH::EAllowedDOFs::All;
+        // Bit layout matches Jolt EAllowedDOFs, but keeps project metadata
+        // independent from Jolt headers when the 3D backend is disabled.
+        uint8_t allowedDOFs = static_cast<uint8_t>(Body3DAllowedDOF::ALL);
         bool sensor = false;
         bool newBody = true;
         Vector3 loadedScale = Vector3::UNIT_SCALE;

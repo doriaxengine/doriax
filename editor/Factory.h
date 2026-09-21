@@ -6,6 +6,10 @@
 #include "Scene.h"
 #include "Catalog.h"
 #include "action/Ease.h"
+#include "component/Body2DComponent.h"
+#include "component/Body3DComponent.h"
+#include "component/Joint2DComponent.h"
+#include "component/Joint3DComponent.h"
 #include <string>
 #include <sstream>
 #include <filesystem>

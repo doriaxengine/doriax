@@ -39,12 +39,8 @@
 #include "component/AlphaActionComponent.h"
 #include "component/AnimationComponent.h"
 #include "component/SoundComponent.h"
-#ifdef DORIAX_PHYSICS_2D
 #include "component/Body2DComponent.h"
-#endif
-#ifdef DORIAX_PHYSICS_3D
 #include "component/Body3DComponent.h"
-#endif
 #include "component/BoneComponent.h"
 #include "component/ButtonComponent.h"
 #include "component/CameraComponent.h"
@@ -52,12 +48,8 @@
 #include "component/FogComponent.h"
 #include "component/ImageComponent.h"
 #include "component/InstancedMeshComponent.h"
-#ifdef DORIAX_PHYSICS_2D
 #include "component/Joint2DComponent.h"
-#endif
-#ifdef DORIAX_PHYSICS_3D
 #include "component/Joint3DComponent.h"
-#endif
 #include "component/KeyframeTracksComponent.h"
 #include "component/LightComponent.h"
 #include "component/Light2DComponent.h"

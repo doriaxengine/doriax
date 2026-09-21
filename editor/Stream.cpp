@@ -6404,15 +6404,19 @@ Body2DComponent editor::Stream::decodeBody2DComponent(const YAML::Node& node, co
                 }
             }
 
+#ifdef DORIAX_PHYSICS_2D
             body.shapes[i].shape = b2_nullShapeId;
             body.shapes[i].chain = b2_nullChainId;
+#endif
         }
     }
 
+#ifdef DORIAX_PHYSICS_2D
     if (oldBody && b2Body_IsValid(oldBody->body)) {
         body.needReloadBody = true;
         body.needUpdateShapes = true;
     }
+#endif
 
     return body;
 }
@@ -6429,17 +6433,17 @@ YAML::Node editor::Stream::encodeBody3DComponent(const Body3DComponent& body) {
     node["sensor"] = body.sensor;
     node["gravityFactor"] = body.gravityFactor;
 
-    // Six booleans instead of Jolt's bit value, so the file stays readable.
+    // Six booleans instead of the runtime bit value, so the file stays readable.
     YAML::Node dofsNode;
-    auto dof = [&](const char* name, JPH::EAllowedDOFs bit) {
-        dofsNode[name] = (body.allowedDOFs & bit) != JPH::EAllowedDOFs::None;
+    auto dof = [&](const char* name, uint8_t bit) {
+        dofsNode[name] = (body.allowedDOFs & bit) != 0;
     };
-    dof("translationX", JPH::EAllowedDOFs::TranslationX);
-    dof("translationY", JPH::EAllowedDOFs::TranslationY);
-    dof("translationZ", JPH::EAllowedDOFs::TranslationZ);
-    dof("rotationX", JPH::EAllowedDOFs::RotationX);
-    dof("rotationY", JPH::EAllowedDOFs::RotationY);
-    dof("rotationZ", JPH::EAllowedDOFs::RotationZ);
+    dof("translationX", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_X));
+    dof("translationY", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_Y));
+    dof("translationZ", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_Z));
+    dof("rotationX", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_X));
+    dof("rotationY", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_Y));
+    dof("rotationZ", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_Z));
     node["allowedDOFs"] = dofsNode;
 
     node["numShapes"] = static_cast<unsigned int>(body.numShapes);
@@ -6503,20 +6507,20 @@ Body3DComponent editor::Stream::decodeBody3DComponent(const YAML::Node& node, co
 
     if (node["allowedDOFs"]) {
         const YAML::Node& dofsNode = node["allowedDOFs"];
-        JPH::EAllowedDOFs dofs = JPH::EAllowedDOFs::None;
+        uint8_t dofs = 0;
         // A present map is authoritative, so a missing key means that axis is locked.
-        auto dof = [&](const char* name, JPH::EAllowedDOFs bit) {
-            if (dofsNode[name] && dofsNode[name].as<bool>()) dofs = dofs | bit;
+        auto dof = [&](const char* name, uint8_t bit) {
+            if (dofsNode[name] && dofsNode[name].as<bool>()) dofs |= bit;
         };
-        dof("translationX", JPH::EAllowedDOFs::TranslationX);
-        dof("translationY", JPH::EAllowedDOFs::TranslationY);
-        dof("translationZ", JPH::EAllowedDOFs::TranslationZ);
-        dof("rotationX", JPH::EAllowedDOFs::RotationX);
-        dof("rotationY", JPH::EAllowedDOFs::RotationY);
-        dof("rotationZ", JPH::EAllowedDOFs::RotationZ);
+        dof("translationX", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_X));
+        dof("translationY", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_Y));
+        dof("translationZ", static_cast<uint8_t>(Body3DAllowedDOF::TRANSLATION_Z));
+        dof("rotationX", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_X));
+        dof("rotationY", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_Y));
+        dof("rotationZ", static_cast<uint8_t>(Body3DAllowedDOF::ROTATION_Z));
         // None crashes Jolt on body creation, and a static body is how you freeze
         // everything, so an all-false map falls back to All.
-        body.allowedDOFs = (dofs == JPH::EAllowedDOFs::None) ? JPH::EAllowedDOFs::All : dofs;
+        body.allowedDOFs = dofs == 0 ? static_cast<uint8_t>(Body3DAllowedDOF::ALL) : dofs;
     }
 
     if (node["numShapes"]) body.numShapes = node["numShapes"].as<unsigned int>();
@@ -6586,14 +6590,18 @@ Body3DComponent editor::Stream::decodeBody3DComponent(const YAML::Node& node, co
                 }
             }
 
+#ifdef DORIAX_PHYSICS_3D
             body.shapes[i].shape = NULL;
+#endif
         }
     }
 
+#ifdef DORIAX_PHYSICS_3D
     if (oldBody && !oldBody->body.IsInvalid()) {
         body.needReloadBody = true;
         body.needUpdateShapes = true;
     }
+#endif
 
     return body;
 }
@@ -6635,9 +6643,11 @@ Joint2DComponent editor::Stream::decodeJoint2DComponent(const YAML::Node& node, 
     if (node["autoAnchors"]) joint.autoAnchors = node["autoAnchors"].as<bool>();
     if (node["rope"]) joint.rope = node["rope"].as<bool>();
 
+#ifdef DORIAX_PHYSICS_2D
     if (oldJoint && b2Joint_IsValid(oldJoint->joint)) {
         joint.needUpdateJoint = true;
     }
+#endif
 
     return joint;
 }
@@ -6736,9 +6746,11 @@ Joint3DComponent editor::Stream::decodeJoint3DComponent(const YAML::Node& node, 
     if (node["isLooping"]) joint.isLooping = node["isLooping"].as<bool>();
     if (node["autoAnchors"]) joint.autoAnchors = node["autoAnchors"].as<bool>();
 
+#ifdef DORIAX_PHYSICS_3D
     if (oldJoint && oldJoint->joint) {
         joint.needUpdateJoint = true;
     }
+#endif
 
     return joint;
 }

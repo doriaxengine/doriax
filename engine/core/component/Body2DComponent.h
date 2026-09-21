@@ -7,7 +7,9 @@
 #include "Engine.h"
 #include "math/Vector2.h"
 #include "util/HybridArray.h"
+#ifdef DORIAX_PHYSICS_2D
 #include "box2d/box2d.h"
+#endif
 
 namespace doriax{
 
@@ -20,8 +22,10 @@ namespace doriax{
     };
 
     struct DORIAX_API Shape2D{
+#ifdef DORIAX_PHYSICS_2D
         b2ShapeId shape = b2_nullShapeId;
         b2ChainId chain = b2_nullChainId;
+#endif
 
         Shape2DType type = Shape2DType::POLYGON;
 
@@ -53,7 +57,9 @@ namespace doriax{
     };
 
     struct Body2DComponent{
+#ifdef DORIAX_PHYSICS_2D
         b2BodyId body = b2_nullBodyId;
+#endif
 
         HybridArray<Shape2D, MAX_SHAPES> shapes;
         size_t numShapes = 0;

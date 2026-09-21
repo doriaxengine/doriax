@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ScaleGizmo.h"
+#include <cfloat>
 
 using namespace doriax;
 

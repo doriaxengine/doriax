@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "TranslateGizmo.h"
+#include <cfloat>
 
 using namespace doriax;
 
