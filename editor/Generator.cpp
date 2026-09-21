@@ -1029,8 +1029,12 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += includeDirsBlock + "\n";
     cmakeContent += "    " + engineApiPathStr + "\n";
     cmakeContent += "    " + engineApiPathStr + "/libs/sokol\n";
-    cmakeContent += "    " + engineApiPathStr + "/libs/box2d/include\n";
-    cmakeContent += "    " + engineApiPathStr + "/libs/joltphysics\n";
+    if (physics2DEnabled) {
+        cmakeContent += "    " + engineApiPathStr + "/libs/box2d/include\n";
+    }
+    if (physics3DEnabled) {
+        cmakeContent += "    " + engineApiPathStr + "/libs/joltphysics\n";
+    }
     cmakeContent += "    " + engineApiPathStr + "/renders\n";
     cmakeContent += "    " + engineApiPathStr + "/core\n";
     cmakeContent += "    " + engineApiPathStr + "/core/action\n";

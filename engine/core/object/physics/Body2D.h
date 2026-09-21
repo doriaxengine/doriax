@@ -4,6 +4,10 @@
 #ifndef BODY2D_H
 #define BODY2D_H
 
+// Backend-only public API. This header is available only when the Box2D
+// backend is enabled with DORIAX_PHYSICS_2D.
+#ifdef DORIAX_PHYSICS_2D
+
 #include "EntityHandle.h"
 #include "math/Vector2.h"
 #include "component/Body2DComponent.h"
@@ -161,4 +165,5 @@ namespace doriax{
     };
 }
 
+#endif // DORIAX_PHYSICS_2D
 #endif //BODY2D_H
