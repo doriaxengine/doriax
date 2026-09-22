@@ -2541,6 +2541,33 @@ bool editor::Exporter::writeAppleProjectSettings() {
             match = eraseStart;
         }
     };
+    auto removeProjectEntriesWithId = [&](const std::string& id) {
+        size_t match = 0;
+        while ((match = xcodeProject.find(id, match)) != std::string::npos) {
+            const size_t lineStart = xcodeProject.rfind('\n', match);
+            const size_t eraseStart = lineStart == std::string::npos ? 0 : lineStart + 1;
+            const size_t lineEnd = xcodeProject.find('\n', match);
+            const size_t currentLineEnd = lineEnd == std::string::npos ? xcodeProject.size() : lineEnd;
+            const size_t objectStart = xcodeProject.find(" = {", match);
+            const size_t inlineObjectEnd = xcodeProject.find("};", objectStart);
+            const bool isMultilineObject = objectStart < currentLineEnd
+                && (inlineObjectEnd == std::string::npos || inlineObjectEnd >= currentLineEnd);
+
+            size_t eraseEnd = lineEnd == std::string::npos ? xcodeProject.size() : lineEnd + 1;
+            if (isMultilineObject) {
+                const size_t objectEnd = xcodeProject.find("\n\t\t};", currentLineEnd);
+                if (objectEnd == std::string::npos) {
+                    setError("Apple export template contains an incomplete PBX object: " + id);
+                    return false;
+                }
+                const size_t objectLineEnd = xcodeProject.find('\n', objectEnd + 1);
+                eraseEnd = objectLineEnd == std::string::npos ? xcodeProject.size() : objectLineEnd + 1;
+            }
+            xcodeProject.erase(eraseStart, eraseEnd - eraseStart);
+            match = eraseStart;
+        }
+        return true;
+    };
 
     std::vector<std::string> excludedPhysicsSources;
     if (!project->isPhysics2DEnabled()) {
@@ -2550,7 +2577,7 @@ bool editor::Exporter::writeAppleProjectSettings() {
         });
         for (const char* id : {"71E8247F2A9C22E100C8E6F2", "71E824822A9C235A00C8E6F2",
                                "71E8247E2A9C22D000C8E6F2", "71E824812A9C22F100C8E6F2"}) {
-            removeProjectLinesContaining(id);
+            if (!removeProjectEntriesWithId(id)) return false;
         }
     }
     if (!project->isPhysics3DEnabled()) {
@@ -2560,7 +2587,7 @@ bool editor::Exporter::writeAppleProjectSettings() {
         });
         for (const char* id : {"7105CEAA2AD62363007C91BA", "7105CEAD2AD62381007C91BA",
                                "7105CEA92AD62350007C91BA", "7105CEAC2AD62376007C91BA"}) {
-            removeProjectLinesContaining(id);
+            if (!removeProjectEntriesWithId(id)) return false;
         }
     }
 

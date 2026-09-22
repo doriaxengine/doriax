@@ -101,9 +101,11 @@ namespace doriax{
         BodyType type = BodyType::STATIC;
         Body3DMotionQuality motionQuality = Body3DMotionQuality::DISCRETE;
         float gravityFactor = 1.0f;
-        // Bit layout matches Jolt EAllowedDOFs, but keeps project metadata
-        // independent from Jolt headers when the 3D backend is disabled.
+#ifdef DORIAX_PHYSICS_3D
+        JPH::EAllowedDOFs allowedDOFs = JPH::EAllowedDOFs::All;
+#else
         uint8_t allowedDOFs = static_cast<uint8_t>(Body3DAllowedDOF::ALL);
+#endif
         bool sensor = false;
         bool newBody = true;
         Vector3 loadedScale = Vector3::UNIT_SCALE;

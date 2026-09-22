@@ -470,7 +470,7 @@ void Body3D::applyAllowedDOFs(JPH::EAllowedDOFs allowedDOFs){
     }
 
     Body3DComponent& body = getComponent<Body3DComponent>();
-    body.allowedDOFs = static_cast<uint8_t>(allowedDOFs);
+    body.allowedDOFs = allowedDOFs;
 
     if (!body.body.IsInvalid()){
         JPH::Body& jbody = getJoltBodyWrite();

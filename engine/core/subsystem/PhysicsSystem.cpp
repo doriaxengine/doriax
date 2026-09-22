@@ -1315,7 +1315,7 @@ bool PhysicsSystem::createGenericJoltBody(Entity entity, Body3DComponent& body, 
     settings.mMotionQuality = getBody3DMotionQualityToJolt(body.motionQuality);
     settings.mIsSensor = body.sensor;
     settings.mGravityFactor = body.gravityFactor;
-    settings.mAllowedDOFs = static_cast<JPH::EAllowedDOFs>(body.allowedDOFs);
+    settings.mAllowedDOFs = body.allowedDOFs;
 
     JPH::BodyInterface &body_interface = getBodyInterface3D();
 

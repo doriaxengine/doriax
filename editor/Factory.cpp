@@ -1735,8 +1735,13 @@ std::string editor::Factory::createBody3DComponent(int indentSpaces, EntityRegis
     code << ind << "body3d.sensor = " << formatBool(body.sensor) << ";\n";
     code << ind << "body3d.gravityFactor = " << formatFloat(body.gravityFactor) << ";\n";
     // The bit mask, rather than six OR'd enumerators in the generated source.
+    code << ind << "#ifdef DORIAX_PHYSICS_3D\n";
+    code << ind << "body3d.allowedDOFs = static_cast<JPH::EAllowedDOFs>("
+         << static_cast<unsigned int>(body.allowedDOFs) << ");\n";
+    code << ind << "#else\n";
     code << ind << "body3d.allowedDOFs = static_cast<uint8_t>("
          << static_cast<unsigned int>(body.allowedDOFs) << ");\n";
+    code << ind << "#endif\n";
     code << ind << "body3d.needReloadBody = " << formatBool(body.needReloadBody) << ";\n";
     code << ind << "body3d.needUpdateShapes = " << formatBool(body.needUpdateShapes) << ";\n";
     code << ind << "body3d.newBody = " << formatBool(body.newBody) << ";\n";

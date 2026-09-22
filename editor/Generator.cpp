@@ -1029,12 +1029,6 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += includeDirsBlock + "\n";
     cmakeContent += "    " + engineApiPathStr + "\n";
     cmakeContent += "    " + engineApiPathStr + "/libs/sokol\n";
-    if (physics2DEnabled) {
-        cmakeContent += "    " + engineApiPathStr + "/libs/box2d/include\n";
-    }
-    if (physics3DEnabled) {
-        cmakeContent += "    " + engineApiPathStr + "/libs/joltphysics\n";
-    }
     cmakeContent += "    " + engineApiPathStr + "/renders\n";
     cmakeContent += "    " + engineApiPathStr + "/core\n";
     cmakeContent += "    " + engineApiPathStr + "/core/action\n";
@@ -1059,6 +1053,28 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "    " + engineApiPathStr + "/core/texture\n";
     cmakeContent += "    " + engineApiPathStr + "/core/util\n";
     cmakeContent += ")\n\n";
+
+#if defined(DORIAX_PHYSICS_2D) || defined(DORIAX_PHYSICS_3D)
+    cmakeContent += "if(DORIAX_EDITOR_PLUGIN)\n";
+    cmakeContent += "    target_include_directories(" + libName + " ${DORIAX_LIB_SYSTEM} PRIVATE\n";
+#ifdef DORIAX_PHYSICS_2D
+    cmakeContent += "        " + engineApiPathStr + "/libs/box2d/include\n";
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    cmakeContent += "        " + engineApiPathStr + "/libs/joltphysics\n";
+#endif
+    cmakeContent += "    )\n";
+    cmakeContent += "endif()\n";
+#endif
+    if (physics2DEnabled || physics3DEnabled) {
+        cmakeContent += "if(NOT DORIAX_EDITOR_PLUGIN)\n";
+        cmakeContent += "    target_include_directories(" + libName + " ${DORIAX_LIB_SYSTEM} PRIVATE\n";
+        if (physics2DEnabled) cmakeContent += "        " + engineApiPathStr + "/libs/box2d/include\n";
+        if (physics3DEnabled) cmakeContent += "        " + engineApiPathStr + "/libs/joltphysics\n";
+        cmakeContent += "    )\n";
+        cmakeContent += "endif()\n";
+    }
+    cmakeContent += "\n";
 
     cmakeContent += "# libdoriax is searched in DORIAX_LIB_DIR; by default it points to the Doriax editor\n";
     cmakeContent += "# executable directory, which differs per machine and so comes from LocalPaths.cmake.\n";
