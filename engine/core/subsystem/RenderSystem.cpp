@@ -401,6 +401,8 @@ void RenderSystem::destroy(){
         if (signature.test(scene->getComponentId<MeshComponent>())){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
             if (mesh.loaded){
+                // Keep CPU geometry available when the scene is loaded after view recreation.
+                mesh.needReload = true;
                 destroyMesh(entity, mesh);
             }
         }else if (signature.test(scene->getComponentId<UIComponent>())){

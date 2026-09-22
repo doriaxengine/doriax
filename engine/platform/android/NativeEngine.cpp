@@ -708,8 +708,10 @@ bool NativeEngine::prepareToRender() {
 
         // bind them
         if (EGL_FALSE == eglMakeCurrent(mEglDisplay, mEglSurface, mEglSurface, mEglContext)) {
-            doriax::Log::error("NativeEngine: eglMakeCurrent failed, EGL error %d", eglGetError());
-            handleEglError(eglGetError());
+            const EGLint error = eglGetError();
+            doriax::Log::error("NativeEngine: eglMakeCurrent failed, EGL error %d", error);
+            handleEglError(error);
+            return false;
         }
 
     }
@@ -758,8 +760,10 @@ void NativeEngine::doFrame() {
 
     // swap buffers
     if (!SwappyGL_swap(mEglDisplay, mEglSurface)) {        // failed to swap buffers...
-        doriax::Log::error("NativeEngine: SwappyGL_swap failed, EGL error %d", eglGetError());
-        handleEglError(eglGetError());
+        const EGLint error = eglGetError();
+        doriax::Log::error("NativeEngine: SwappyGL_swap failed, EGL error %d", error);
+        handleEglError(error);
+        return;
     }
 
     // print out GL errors, if any
