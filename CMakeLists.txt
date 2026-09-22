@@ -394,12 +394,6 @@ include_directories (SYSTEM ${DORIAX_ROOT}/libs/sokol)
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/json)
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/lua)
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/luabridge3)
-if(DORIAX_PHYSICS_2D)
-    include_directories (SYSTEM ${DORIAX_ROOT}/libs/box2d/include)
-endif()
-if(DORIAX_PHYSICS_3D)
-    include_directories (SYSTEM ${DORIAX_ROOT}/libs/joltphysics)
-endif()
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/stb)
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/harfbuzz)
 include_directories (SYSTEM ${DORIAX_ROOT}/libs/sheenbidi/Headers)
@@ -444,6 +438,14 @@ include_directories (${DORIAX_ROOT}/renders)
 include_directories (${SHADERCOMPILER_ROOT}/src)
 
 add_subdirectory(${DORIAX_ROOT})
+
+# The engine declares the physics options, including their defaults.
+if(DORIAX_PHYSICS_2D)
+    include_directories (SYSTEM ${DORIAX_ROOT}/libs/box2d/include)
+endif()
+if(DORIAX_PHYSICS_3D)
+    include_directories (SYSTEM ${DORIAX_ROOT}/libs/joltphysics)
+endif()
 
 # Signed alongside the exes, so it needs the same metadata. MinGW prefixes the name.
 if(WIN32 AND DORIAX_SHARED)

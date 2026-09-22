@@ -2542,29 +2542,43 @@ bool editor::Exporter::writeAppleProjectSettings() {
         }
     };
     auto removeProjectEntriesWithId = [&](const std::string& id) {
+        bool removedObject = false;
+        bool removedReference = false;
         size_t match = 0;
         while ((match = xcodeProject.find(id, match)) != std::string::npos) {
             const size_t lineStart = xcodeProject.rfind('\n', match);
             const size_t eraseStart = lineStart == std::string::npos ? 0 : lineStart + 1;
             const size_t lineEnd = xcodeProject.find('\n', match);
             const size_t currentLineEnd = lineEnd == std::string::npos ? xcodeProject.size() : lineEnd;
-            const size_t objectStart = xcodeProject.find(" = {", match);
-            const size_t inlineObjectEnd = xcodeProject.find("};", objectStart);
-            const bool isMultilineObject = objectStart < currentLineEnd
-                && (inlineObjectEnd == std::string::npos || inlineObjectEnd >= currentLineEnd);
+            const size_t assignment = xcodeProject.find('=', match);
+            const bool isObject = assignment < currentLineEnd;
 
             size_t eraseEnd = lineEnd == std::string::npos ? xcodeProject.size() : lineEnd + 1;
-            if (isMultilineObject) {
-                const size_t objectEnd = xcodeProject.find("\n\t\t};", currentLineEnd);
-                if (objectEnd == std::string::npos) {
+            if (isObject) {
+                // These PBXBuildFile/PBXTargetDependency objects have no nested dictionaries.
+                const size_t objectStart = xcodeProject.find_first_not_of(" \t\r\n", assignment + 1);
+                const size_t objectEnd = xcodeProject.find('}', objectStart);
+                const size_t terminator = objectEnd == std::string::npos ? std::string::npos
+                    : xcodeProject.find_first_not_of(" \t\r\n", objectEnd + 1);
+                if (objectStart == std::string::npos || xcodeProject[objectStart] != '{'
+                    || objectEnd == std::string::npos || terminator == std::string::npos
+                    || xcodeProject[terminator] != ';'
+                    || xcodeProject.find('{', objectStart + 1) < objectEnd) {
                     setError("Apple export template contains an incomplete PBX object: " + id);
                     return false;
                 }
-                const size_t objectLineEnd = xcodeProject.find('\n', objectEnd + 1);
+                const size_t objectLineEnd = xcodeProject.find('\n', terminator + 1);
                 eraseEnd = objectLineEnd == std::string::npos ? xcodeProject.size() : objectLineEnd + 1;
+                removedObject = true;
+            } else {
+                removedReference = true;
             }
             xcodeProject.erase(eraseStart, eraseEnd - eraseStart);
             match = eraseStart;
+        }
+        if (!removedObject || !removedReference) {
+            setError("Apple export template is missing a PBX object or reference: " + id);
+            return false;
         }
         return true;
     };
