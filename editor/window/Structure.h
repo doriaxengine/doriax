@@ -29,6 +29,7 @@ namespace doriax::editor{
         bool isMainCamera = false;
         bool isBone = false;
         bool isLocked = false;
+        bool isPlayCreated = false;         // Made by the running scene, gone again on Stop
         bool canEditModelHierarchy = false;
         std::string hierarchyReason;        // Why a model node or part stays put, shown in its tooltip
         bool separator = false;
@@ -70,6 +71,7 @@ namespace doriax::editor{
         // is only rebuilt when the structure changes (see cache keys) or on a timer.
         TreeNode cachedRoot;
         std::unordered_set<Entity> cachedSceneEntitiesSet;
+        std::unordered_set<Entity> cachedPlayCreatedEntities;
         uint32_t cacheSceneId = NULL_PROJECT_SCENE;
         uint64_t cacheStructureVersion = UINT64_MAX;
         size_t cacheEntityCount = SIZE_MAX;

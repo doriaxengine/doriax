@@ -753,6 +753,9 @@ namespace doriax::editor{
         fs::path getThumbnailPath(const fs::path& originalPath) const;
 
         std::vector<Entity> getEntities(uint32_t sceneId) const;
+        // What the running scene made for itself: listed while playing, destroyed by Stop,
+        // and never part of the authored entities a file keeps
+        std::vector<Entity> getPlayCreatedEntities(SceneProject* sceneProject) const;
 
         void replaceSelectedEntities(uint32_t sceneId, std::vector<Entity> selectedEntities);
         void setSelectedEntity(uint32_t sceneId, Entity selectedEntity);

@@ -102,8 +102,17 @@ std::vector<Entity> editor::Structure::getMovableDraggedEntities(Entity draggedE
     std::vector<Entity> movableEntities;
     movableEntities.reserve(draggedEntities.size());
 
+    if (targetNode.isPlayCreated) {
+        return {};
+    }
+
     for (Entity sourceEntity : draggedEntities) {
         if (sourceEntity == NULL_ENTITY || !scene->isEntityCreated(sourceEntity)) {
+            return {};
+        }
+
+        // Stop destroys these, so a move command would undo onto an entity that is gone
+        if (cachedPlayCreatedEntities.count(sourceEntity) > 0) {
             return {};
         }
 
@@ -1184,6 +1193,9 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
     } else if (hasSearch && node.matchesSearch) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.5f, 1.0f)); // Yellow for search matches
         pushedHighlightColor = true;
+    } else if (node.isPlayCreated) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.85f, 0.65f, 1.0f)); // Green: created by the running scene
+        pushedHighlightColor = true;
     } else if (!node.isScene && !node.isChildScene && node.isLocked && node.isBundle) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.67f, 0.74f, 0.85f, 0.95f)); // Muted blue-gray for locked bundle entities
         pushedHighlightColor = true;
@@ -2044,6 +2056,13 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
 
     sceneEntitiesSet = std::unordered_set<Entity>(sceneProject->entities.begin(), sceneProject->entities.end());
 
+    // Whatever the scene spawned while running is listed alongside the authored entities, so a
+    // script's object shows up under its parent instead of nowhere. It is never authored, so
+    // it is drawn as read-only and disappears again once Stop destroys it.
+    const std::vector<Entity> playCreated = project->getPlayCreatedEntities(sceneProject);
+    cachedPlayCreatedEntities = std::unordered_set<Entity>(playCreated.begin(), playCreated.end());
+    sceneEntitiesSet.insert(playCreated.begin(), playCreated.end());
+
     Entity mainCamera = sceneProject->mainCamera;
     size_t order = 0;
     std::unordered_map<Entity, TreeNode*> entityNodeMap;
@@ -2157,7 +2176,10 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
     bool separatorAfterChildScenes = hasChildScenes;
 
     // non-hierarchical entities
-    for (auto& entity : sceneProject->entities) {
+    std::vector<Entity> flatEntities = sceneProject->entities;
+    flatEntities.insert(flatEntities.end(), playCreated.begin(), playCreated.end());
+
+    for (auto& entity : flatEntities) {
         Signature signature = sceneProject->scene->getSignature(entity);
 
         if (!signature.test(sceneProject->scene->getComponentId<Transform>())){
@@ -2171,7 +2193,8 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.id = entity;
             child.isMainCamera = (entity == mainCamera);
             child.isBone = signature.test(sceneProject->scene->getComponentId<BoneComponent>());
-            child.isLocked = ProjectUtils::isEntityLocked(sceneProject->scene, entity);
+            child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
+            child.isLocked = child.isPlayCreated || ProjectUtils::isEntityLocked(sceneProject->scene, entity);
             child.order = order++;
             child.name = sceneProject->scene->getEntityName(entity);
             auto bundleIt = bundleEntityPaths.find(entity);
@@ -2253,7 +2276,9 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.isMainCamera = (entity == mainCamera);
             child.isBone = signature.test(sceneProject->scene->getComponentId<BoneComponent>());
             child.hasTransform = true;
-            child.isLocked = ProjectUtils::isEntityLocked(sceneProject->scene, entity)
+            child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
+            child.isLocked = child.isPlayCreated
+                || ProjectUtils::isEntityLocked(sceneProject->scene, entity)
                 || ProjectUtils::getModelBranchOwner(sceneProject->scene, entity) != NULL_ENTITY;
             child.canEditModelHierarchy = ProjectUtils::canEditModelBranch(sceneProject->scene, entity, &child.hierarchyReason);
             child.order = order++;

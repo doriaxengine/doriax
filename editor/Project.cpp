@@ -4033,21 +4033,47 @@ void editor::Project::finalizeStart(SceneProject* mainSceneProject, std::vector<
     }
 }
 
+// Foliage chunks belong to MeshSystem and are streamed in while playing
+static void collectFoliageEntities(Scene* scene, std::set<Entity>& out) {
+    auto meshSystem = scene->getSystem<MeshSystem>();
+    auto terrains = scene->getComponentArray<TerrainComponent>();
+    for (size_t i = 0; i < terrains->size(); i++) {
+        const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
+        out.insert(foliage.begin(), foliage.end());
+    }
+}
+
+// Alive now but absent when Play started, so the running scene is what put it there. The
+// engine keeps its own cameras in the system range and the terrain streams its foliage in,
+// so neither counts as something the game made.
+std::vector<Entity> editor::Project::getPlayCreatedEntities(SceneProject* sceneProject) const {
+    if (!sceneProject || !sceneProject->scene || sceneProject->playState == ScenePlayState::STOPPED) {
+        return {};
+    }
+
+    Scene* scene = sceneProject->scene;
+
+    std::set<Entity> ignored = sceneProject->playStateEntities;
+    collectFoliageEntities(scene, ignored);
+
+    std::vector<Entity> created;
+    for (Entity entity : scene->getEntityList()) {
+        if (entity > EntityManager::lastSystemEntity() && ignored.count(entity) == 0) {
+            created.push_back(entity);
+        }
+    }
+
+    return created;
+}
+
 // Entities a script spawns while playing are not in the editor list, so without this they
-// stay alive after Stop: drawn in the viewport but missing from Structure and unpickable.
+// stay alive after Stop: drawn in the viewport but no longer reachable from the Structure.
 void editor::Project::destroyPlayCreatedEntities(SceneProject* sceneProject) {
     Scene* scene = sceneProject->scene;
 
     std::set<Entity> keep = sceneProject->playStateEntities;
     keep.insert(sceneProject->entities.begin(), sceneProject->entities.end());
-
-    // Foliage chunks belong to MeshSystem and are streamed in while playing
-    auto meshSystem = scene->getSystem<MeshSystem>();
-    auto terrains = scene->getComponentArray<TerrainComponent>();
-    for (size_t i = 0; i < terrains->size(); i++) {
-        const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
-        keep.insert(foliage.begin(), foliage.end());
-    }
+    collectFoliageEntities(scene, keep);
 
     for (Entity entity : scene->getEntityList()) {
         // an owner's removal can destroy other entities in this list
@@ -4130,6 +4156,14 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             }
 
             destroyPlayCreatedEntities(sceneProject);
+
+            // The Structure lists them while playing, so one can still be selected here
+            for (Entity entity : getSelectedEntities(sceneProject->id)) {
+                if (!sceneProject->scene->isEntityCreated(entity)) {
+                    clearSelectedEntities(sceneProject->id);
+                    break;
+                }
+            }
 
             // snapshot decode leaves camera-linked textures unresolved (no framebuffer)
             CameraTextureLink::resolve(sceneProject->scene);
