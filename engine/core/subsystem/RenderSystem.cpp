@@ -327,6 +327,9 @@ void RenderSystem::load(){
 }
 
 void RenderSystem::destroy(){
+    // View teardown keeps the scene alive; retain CPU assets for its next load.
+    const bool reloadView = !Engine::isViewLoaded();
+
     // Before the transform traversal below, which the camera entities are part of.
     while (!mirrorCameras.empty()){
         destroyMirrorCamera(mirrorCameras.begin()->first);
@@ -375,6 +378,11 @@ void RenderSystem::destroy(){
         SkyComponent& sky = skys->getComponentFromIndex(0);
         Entity entity = skys->getEntity(0);
         if (sky.loaded){
+            if (reloadView){
+                sky.needReload = true;
+                releaseSkyEnvironment(sky);
+                sky.needUpdateEnvironment = true;
+            }
             destroySky(entity, sky);
         }
     }
@@ -401,23 +409,25 @@ void RenderSystem::destroy(){
         if (signature.test(scene->getComponentId<MeshComponent>())){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
             if (mesh.loaded){
-                // Keep CPU geometry available when the scene is loaded after view recreation.
-                mesh.needReload = true;
+                if (reloadView) mesh.needReload = true;
                 destroyMesh(entity, mesh);
             }
         }else if (signature.test(scene->getComponentId<UIComponent>())){
             UIComponent& ui = scene->getComponent<UIComponent>(entity);
             if (ui.loaded){
+                if (reloadView) ui.needReload = true;
                 destroyUI(entity, ui);
             }
         }else if (signature.test(scene->getComponentId<PointsComponent>())){
             PointsComponent& points = scene->getComponent<PointsComponent>(entity);
             if (points.loaded){
+                if (reloadView) points.needReload = true;
                 destroyPoints(entity, points);
             }
         }else if (signature.test(scene->getComponentId<LinesComponent>())){
             LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
             if (lines.loaded){
+                if (reloadView) lines.needReload = true;
                 destroyLines(entity, lines);
             }
         }else if (signature.test(scene->getComponentId<LightComponent>())){
@@ -5357,7 +5367,13 @@ void RenderSystem::destroyUI(Entity entity, UIComponent& ui){
     ui.customVSParams.clear();
     ui.customFSParams.clear();
 
-    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    // Renderer shutdown does not execute custom queue callbacks.
+    if (!Engine::isViewLoaded()){
+        ui.loaded = false;
+        ui.loadCalled = false;
+    }else{
+        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    }
 }
 
 bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t pipelines){
@@ -5636,7 +5652,12 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
     points.customVSParams.clear();
     points.customFSParams.clear();
 
-    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    if (!Engine::isViewLoaded()){
+        points.loaded = false;
+        points.loadCalled = false;
+    }else{
+        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    }
 }
 
 bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transform& camTransform, PipelineType pipType){
@@ -5689,7 +5710,12 @@ void RenderSystem::destroyLines(Entity entity, LinesComponent& lines){
     lines.customVSParams.clear();
     lines.customFSParams.clear();
 
-    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    if (!Engine::isViewLoaded()){
+        lines.loaded = false;
+        lines.loadCalled = false;
+    }else{
+        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    }
 }
 
 bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines){
@@ -5863,7 +5889,12 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
     sky.customVSParams.clear();
     sky.customFSParams.clear();
 
-    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    if (!Engine::isViewLoaded()){
+        sky.loaded = false;
+        sky.loadCalled = false;
+    }else{
+        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
+    }
 }
 
 void RenderSystem::destroyLight(LightComponent& light){

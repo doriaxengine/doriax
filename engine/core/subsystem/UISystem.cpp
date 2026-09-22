@@ -1805,7 +1805,12 @@ void UISystem::destroy(){
         if (signature.test(scene->getComponentId<ButtonComponent>())) {
             ButtonComponent &button = scene->getComponent<ButtonComponent>(entity);
 
-            destroyButton(button);
+            if (Engine::isViewLoaded()){
+                destroyButton(button);
+            }else{
+                // Keep in-memory state textures available after view recreation.
+                button.needUpdateButton = true;
+            }
         }
     }
 }
