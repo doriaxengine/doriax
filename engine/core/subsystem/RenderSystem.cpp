@@ -438,6 +438,11 @@ void RenderSystem::destroy(){
             destroyCamera(camera, false);
         }
     }
+
+    // Cached GPU arrays cannot survive renderer shutdown, even when CPU assets are retained.
+    while (!terrainDetailArrays.empty()){
+        destroyTerrainDetailArray(terrainDetailArrays.begin()->first);
+    }
 }
 
 void RenderSystem::updateFramebuffer(CameraComponent& camera){
@@ -5367,13 +5372,7 @@ void RenderSystem::destroyUI(Entity entity, UIComponent& ui){
     ui.customVSParams.clear();
     ui.customFSParams.clear();
 
-    // Renderer shutdown does not execute custom queue callbacks.
-    if (!Engine::isViewLoaded()){
-        ui.loaded = false;
-        ui.loadCalled = false;
-    }else{
-        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
-    }
+    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
 
 bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t pipelines){
@@ -5652,12 +5651,7 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
     points.customVSParams.clear();
     points.customFSParams.clear();
 
-    if (!Engine::isViewLoaded()){
-        points.loaded = false;
-        points.loadCalled = false;
-    }else{
-        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
-    }
+    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
 
 bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transform& camTransform, PipelineType pipType){
@@ -5710,12 +5704,7 @@ void RenderSystem::destroyLines(Entity entity, LinesComponent& lines){
     lines.customVSParams.clear();
     lines.customFSParams.clear();
 
-    if (!Engine::isViewLoaded()){
-        lines.loaded = false;
-        lines.loadCalled = false;
-    }else{
-        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
-    }
+    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
 
 bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines){
@@ -5889,12 +5878,7 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
     sky.customVSParams.clear();
     sky.customFSParams.clear();
 
-    if (!Engine::isViewLoaded()){
-        sky.loaded = false;
-        sky.loadCalled = false;
-    }else{
-        SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
-    }
+    SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
 
 void RenderSystem::destroyLight(LightComponent& light){
