@@ -319,6 +319,9 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("__add", (Quaternion (Quaternion::*)(const Quaternion&) const)&Quaternion::operator+)
         .addFunction("__mul", (Quaternion (Quaternion::*)(const Quaternion&) const)&Quaternion::operator*)
         .addFunction("__unm", (Quaternion (Quaternion::*)() const)&Quaternion::operator-)
+        .addFunction("__mul",
+            luabridge::overload<const Quaternion&>(&Quaternion::operator*),
+            luabridge::overload<const Vector3&>(&Quaternion::operator*))
         .addFunction("fromEulerAngles", &Quaternion::fromEulerAngles)
         .addFunction("fromAxes", 
             luabridge::overload<const Vector3*>(&Quaternion::fromAxes),
