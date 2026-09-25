@@ -69,7 +69,7 @@ namespace doriax {
         void fromAxes (const Vector3* akAxis);
         void fromAxes (const Vector3& xaxis, const Vector3& yaxis, const Vector3& zaxis);
         static Quaternion lookRotation(const Vector3& forward);
-        static Quaternion lookRotation(const Vector3& forward, const Vector3& up = Vector3::UNIT_Y);
+        static Quaternion lookRotation(const Vector3& forward, const Vector3& up);
         Quaternion& fromRotationMatrix (const Matrix3& kRot);
         Quaternion& fromRotationMatrix (const Matrix4& kRot);
         Matrix4 getRotationMatrix() const;
