@@ -250,6 +250,28 @@ void Quaternion::fromAxes (const Vector3& xaxis, const Vector3& yaxis, const Vec
 
 }
 
+Quaternion Quaternion::lookRotation(const Vector3& forward)
+{
+    return lookRotation(forward, Vector3::UNIT_Y);
+}
+
+Quaternion Quaternion::lookRotation(
+    const Vector3& forward,
+    const Vector3& up)
+{
+    Vector3 direction = forward.normalized();
+
+    Vector3 right = up.crossProduct(direction);
+    right.normalize();
+
+    Vector3 realUp = direction.crossProduct(right);
+
+    Quaternion rotation;
+    rotation.fromAxes(right, realUp, direction);
+
+    return rotation;
+}
+
 Quaternion& Quaternion::fromRotationMatrix (const Matrix3& kRot){
     float trace = kRot[0][0] + kRot[1][1] + kRot[2][2];
     if (trace > 0) {

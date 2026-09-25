@@ -325,6 +325,9 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("fromAxes", 
             luabridge::overload<const Vector3*>(&Quaternion::fromAxes),
             luabridge::overload<const Vector3&, const Vector3&, const Vector3&>(&Quaternion::fromAxes))
+        .addStaticFunction("lookRotation",
+            luabridge::overload<const Vector3&>(&Quaternion::lookRotation),
+            luabridge::overload<const Vector3&, const Vector3&>(&Quaternion::lookRotation))
         .addFunction("fromRotationMatrix", 
             luabridge::overload<const Matrix3&>(&Quaternion::fromRotationMatrix),
             luabridge::overload<const Matrix4&>(&Quaternion::fromRotationMatrix))
