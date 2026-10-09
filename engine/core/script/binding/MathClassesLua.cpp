@@ -138,6 +138,8 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("normalizeL", &Vector3::normalizeL)
         .addFunction("crossProduct", &Vector3::crossProduct)
         .addFunction("midPoint", &Vector3::midPoint)
+        .addFunction("moveTowards", &Vector3::moveTowards)
+        .addFunction("lerp", &Vector3::lerp)
         .addFunction("makeFloor", &Vector3::makeFloor)
         .addFunction("makeCeil", &Vector3::makeCeil)
         .addFunction("perpendicular", &Vector3::perpendicular)
