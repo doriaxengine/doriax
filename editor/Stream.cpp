@@ -2917,6 +2917,18 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
         passNode["enabled"] = pass.enabled;
         if (!pass.uniforms.empty())
             passNode["uniforms"] = encodeShaderUniforms(pass.uniforms);
+
+        if (!pass.customTextures.empty()) {
+            YAML::Node customNode;
+            for (const auto& custom : pass.customTextures) {
+                YAML::Node entry;
+                entry["name"] = custom.first;
+                entry["texture"] = encodeTexture(custom.second, false);
+                customNode.push_back(entry);
+            }
+            passNode["customTextures"] = customNode;
+        }
+
         sceneNode["postProcess"].push_back(passNode);
     }
 
@@ -3043,6 +3055,18 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
             pass.shader = passNode["shader"] ? passNode["shader"].as<std::string>() : "";
             pass.enabled = passNode["enabled"] ? passNode["enabled"].as<bool>() : true;
             pass.uniforms = decodeShaderUniforms(passNode["uniforms"]);
+
+            pass.customTextures.clear();
+            if (passNode["customTextures"] && passNode["customTextures"].IsSequence()) {
+                for (const auto& entry : passNode["customTextures"]) {
+                    if (!entry["name"] || !entry["texture"]) continue;
+                    pass.customTextures.push_back({
+                        entry["name"].as<std::string>(),
+                        decodeTexture(entry["texture"])
+                    });
+                }
+            }
+
             postProcess.push_back(pass);
         }
     }
@@ -3665,6 +3689,17 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
     node["emissiveTexCoord"] = material.emissiveTexCoord;
     node["normalTexCoord"] = material.normalTexCoord;
 
+    if (!material.customTextures.empty()) {
+    YAML::Node customNode;
+    for (const auto& custom : material.customTextures) {
+        YAML::Node entry;
+        entry["name"] = custom.first;
+        entry["texture"] = encodeTexture(custom.second, embedTextureData);
+        customNode.push_back(entry);
+    }
+    node["customTextures"] = customNode;
+}
+
     // Encode material name
     node["name"] = material.name;
 
@@ -3703,6 +3738,17 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
     if (node["occlusionTexCoord"]) material.occlusionTexCoord = node["occlusionTexCoord"].as<int>();
     if (node["emissiveTexCoord"]) material.emissiveTexCoord = node["emissiveTexCoord"].as<int>();
     if (node["normalTexCoord"]) material.normalTexCoord = node["normalTexCoord"].as<int>();
+
+    material.customTextures.clear();
+    if (node["customTextures"] && node["customTextures"].IsSequence()) {
+        for (const auto& entry : node["customTextures"]) {
+            if (!entry["name"] || !entry["texture"]) continue;
+            material.customTextures.push_back({
+                entry["name"].as<std::string>(),
+                decodeTexture(entry["texture"])
+            });
+        }
+    }
 
     if (node["name"]) material.name = node["name"].as<std::string>();
 

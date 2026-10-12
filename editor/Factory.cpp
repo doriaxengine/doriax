@@ -674,6 +674,28 @@ std::string editor::Factory::formatTexture(int indentSpaces, const Texture& text
     return code.str();
 }
 
+std::string editor::Factory::formatCustomTextures(int indentSpaces, const std::vector<std::pair<std::string, Texture>>& customTextures, const std::string& variableName, const fs::path& projectPath) {
+    if (customTextures.empty()) return "";
+
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+
+    for (size_t i = 0; i < customTextures.size(); i++) {
+        const std::string& name = customTextures[i].first;
+        const Texture& texture = customTextures[i].second;
+        const std::string tempVar = "customTexture" + std::to_string(i);
+
+        code << ind << "{\n";
+        code << ind << "    Texture " << tempVar << ";\n";
+        code << formatTexture(indentSpaces + 4, texture, tempVar, projectPath);
+        code << ind << "    " << variableName << ".customTextures.push_back({"
+             << formatString(name) << ", " << tempVar << "});\n";
+        code << ind << "}\n";
+    }
+
+    return code.str();
+}
+
 std::string editor::Factory::formatPropertyValue(const PropertyData& property, const std::string& propertyName) {
     switch (property.type) {
         case PropertyType::Bool: {
@@ -853,6 +875,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.metallicRoughnessTexture, "mesh.submeshes[" + idx + "].material.metallicRoughnessTexture", projectPath);
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.occlusionTexture, "mesh.submeshes[" + idx + "].material.occlusionTexture", projectPath);
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.normalTexture, "mesh.submeshes[" + idx + "].material.normalTexture", projectPath);
+
+        code << formatCustomTextures(indentSpaces, mesh.submeshes[s].material.customTextures, "mesh.submeshes[" + idx + "].material", projectPath);
 
         // The UV set each texture samples: only a model or a linked material sets it, and an
         // overridden texture is put back together with it.
@@ -2675,9 +2699,26 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, std::st
     if (!scene->getPostProcessPasses().empty()) {
         out << ind2 << "{\n";
         out << ind3 << "std::vector<PostProcessPass> postProcess;\n";
-        for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
-            out << ind3 << "postProcess.push_back({" << formatString(pass.shader) << ", " << formatBool(pass.enabled) << ", "
-                << formatShaderUniforms(pass.uniforms) << "});\n";
+        for (size_t p = 0; p < scene->getPostProcessPasses().size(); p++) {
+            const PostProcessPass& pass = scene->getPostProcessPasses()[p];
+            out << ind3 << "{\n";
+            out << ind3 << "    PostProcessPass p;\n";
+            out << ind3 << "    p.shader = " << formatString(pass.shader) << ";\n";
+            out << ind3 << "    p.enabled = " << formatBool(pass.enabled) << ";\n";
+            out << ind3 << "    p.uniforms = " << formatShaderUniforms(pass.uniforms) << ";\n";
+
+            if (!pass.customTextures.empty()) {
+                for (size_t a = 0; a < pass.customTextures.size(); a++) {
+                    const std::string texVar = "ppCustomTex" + std::to_string(a);
+                    out << ind3 << "    Texture " << texVar << ";\n";
+                    out << formatTexture(indentSpaces + 8, pass.customTextures[a].second, texVar, projectPath);
+                    out << ind3 << "    p.customTextures.push_back({"
+                        << formatString(pass.customTextures[a].first) << ", " << texVar << "});\n";
+                }
+            }
+
+            out << ind3 << "    postProcess.push_back(p);\n";
+            out << ind3 << "}\n";
         }
         out << ind3 << "scene->setPostProcessPasses(postProcess);\n";
         out << ind2 << "}\n";

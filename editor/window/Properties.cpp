@@ -1541,6 +1541,130 @@ void editor::Properties::drawTextureSettingsPopup(const char* popupId, Component
     ImGui::EndPopup();
 }
 
+void editor::Properties::drawCustomTextureSettingsPopup(const char* popupId, Texture& texture, bool& changed){
+    ImGui::SetNextWindowSizeConstraints(ImVec2(19 * ImGui::GetFontSize(), 0), ImVec2(FLT_MAX, FLT_MAX));
+    if (!ImGui::BeginPopup(popupId))
+        return;
+
+    auto invalidate = [&texture](){
+        texture.invalidateRender();
+    };
+
+    const Texture defaults;
+    bool isSvg = TextureData::hasSvgExtension(texture.getPath().c_str());
+    float svgCurrentScale = texture.getSvgScale();
+
+    ImGui::Text("Texture settings");
+    ImGui::Separator();
+
+    beginTable(ComponentType::MeshComponent, getLabelSize("Alpha Border"), "custom_tex_settings_" + texture.getId());
+
+    struct SamplerRow {
+        const char* label;
+        const char* comboId;
+        const std::vector<editor::EnumEntry>* entries;
+        int current;
+        int def;
+        void (*set)(Texture&, int);
+    };
+    const SamplerRow samplerRows[] = {
+        {"Min Filter", "##cts_min", &entriesTextureMinFilter, (int)texture.getMinFilter(), (int)defaults.getMinFilter(), [](Texture& t, int v){ t.setMinFilter((TextureFilter)v); }},
+        {"Mag Filter", "##cts_mag", &entriesTextureFilter, (int)texture.getMagFilter(), (int)defaults.getMagFilter(), [](Texture& t, int v){ t.setMagFilter((TextureFilter)v); }},
+        {"Wrap U", "##cts_wrapu", &entriesTextureWrap, (int)texture.getWrapU(), (int)defaults.getWrapU(), [](Texture& t, int v){ t.setWrapU((TextureWrap)v); }},
+        {"Wrap V", "##cts_wrapv", &entriesTextureWrap, (int)texture.getWrapV(), (int)defaults.getWrapV(), [](Texture& t, int v){ t.setWrapV((TextureWrap)v); }},
+        {"Alpha Border", "##cts_alphaborder", &entriesTextureAlphaBorder, (int)texture.getAlphaBorder(), (int)defaults.getAlphaBorder(), [](Texture& t, int v){ t.setAlphaBorder((TextureAlphaBorder)v); }},
+    };
+
+    auto comboRow = [this](const char* label, const char* comboId, const std::vector<editor::EnumEntry>& entries, int currentValue, int defaultValue, int& outValue) -> bool {
+        int item = 0;
+        for (size_t i = 0; i < entries.size(); ++i){
+            if (entries[i].value == currentValue){
+                item = (int)i;
+                break;
+            }
+        }
+        std::vector<const char*> names;
+        for (const auto& entry : entries)
+            names.push_back(entry.name);
+
+        bool reset = propertyHeader(label, 12 * ImGui::GetFontSize(), currentValue != defaultValue, false);
+        if (ImGui::Combo(comboId, &item, names.data(), (int)names.size())){
+            outValue = entries[item].value;
+            return true;
+        }
+        if (reset){
+            outValue = defaultValue;
+            return true;
+        }
+        return false;
+    };
+
+    for (const SamplerRow& row : samplerRows){
+        int chosen = 0;
+        if (comboRow(row.label, row.comboId, *row.entries, row.current, row.def, chosen)){
+            row.set(texture, chosen);
+            invalidate();
+            changed = true;
+        }
+    }
+
+    endTable();
+
+    if (isSvg){
+        beginTable(ComponentType::MeshComponent, getLabelSize("Alpha Border"), "custom_tex_settings_svg_" + texture.getId());
+
+        static std::map<std::string, float> svgScaleEditing;
+        const std::string editKey = texture.getId();
+        auto editIt = svgScaleEditing.find(editKey);
+        float editScale = (editIt != svgScaleEditing.end()) ? editIt->second : svgCurrentScale;
+
+        float svgDefaultScale = defaults.getSvgScale();
+
+        bool resetScale = propertyHeader("SVG Scale", 6 * ImGui::GetFontSize(), std::fabs(svgCurrentScale - svgDefaultScale) > 1e-4f, false);
+        if (ImGui::DragFloat("##cts_svgscale", &editScale, 0.05f, 0.1f, 16.0f, "%.2fx")) {
+            svgScaleEditing[editKey] = editScale;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            svgScaleEditing.erase(editKey);
+            texture.setSvgScale(editScale);
+            invalidate();
+            changed = true;
+        }
+        if (resetScale) {
+            svgScaleEditing.erase(editKey);
+            texture.setSvgScale(svgDefaultScale);
+            invalidate();
+            changed = true;
+        }
+
+        propertyHeader("Presets", -1, false, false);
+        struct ScalePreset { const char* label; float value; };
+        static const ScalePreset presets[] = {
+            {"0.5x", 0.5f}, {"1x", 1.0f}, {"2x", 2.0f}, {"3x", 3.0f}, {"4x", 4.0f}
+        };
+        for (int i = 0; i < IM_ARRAYSIZE(presets); ++i){
+            if (i > 0)
+                ImGui::SameLine();
+            bool selected = std::fabs(svgCurrentScale - presets[i].value) < 1e-4f;
+            if (selected)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x / 1.4, ImGui::GetStyle().FramePadding.y));
+            if (ImGui::SmallButton(presets[i].label)) {
+                texture.setSvgScale(presets[i].value);
+                invalidate();
+                changed = true;
+            }
+            ImGui::PopStyleVar(1);
+            if (selected)
+                ImGui::PopStyleColor();
+        }
+
+        endTable();
+    }
+
+    ImGui::EndPopup();
+}
+
 void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities, ComponentType componentType){
     // Block DnD while playing for non-script components
     if (sceneProject && sceneProject->playState != ScenePlayState::STOPPED) {
@@ -5470,7 +5594,7 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
         PostProcessShader resolved = resolvePostProcessShader(passes[i]);
 
         if (ImGui::BeginTable("scene_post_process_pass_table", 2, tableFlags)){
-            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getPostProcessLabelSize(resolved));
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Met. Roug. Texture"));
             ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
             ImGui::TableNextRow();
@@ -5512,6 +5636,143 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
             drawShaderRowContents(ShaderType::POSTPROCESS, passes[i].shader, setShader, onFork, "post_process_" + std::to_string(i));
 
             drawPostProcessUniforms(sceneId, passes, i, resolved);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Custom Textures");
+            ImGui::TableSetColumnIndex(1);
+
+            if (ImGui::Button(ICON_FA_PLUS " Add Custom Texture##pp_add_custom_texture")) {
+                std::vector<PostProcessPass> newPasses = passes;
+                newPasses[i].customTextures.push_back({"u_", Texture()});
+                setPasses(newPasses);
+            }
+
+            const float frameHeight = ImGui::GetFrameHeight();
+            const float itemSpacing = ImGui::GetStyle().ItemSpacing.x;
+            const float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
+            const ImVec2 iconButtonSize = ImGui::CalcItemSize(ImVec2(0, 0), frameHeight, frameHeight);
+
+            for (size_t a = 0; a < passes[i].customTextures.size(); a++) {
+                ImGui::PushID((int)a);
+                ImGui::PushID((int)(3000 + a));
+
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                {
+                    const float trashWidth = frameHeight;
+
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_TRASH_CAN "##pp_tex_remove",
+                                    ImVec2(trashWidth, frameHeight))) {
+                        std::vector<PostProcessPass> newPasses = passes;
+                        newPasses[i].customTextures.erase(
+                            newPasses[i].customTextures.begin() + a);
+                        setPasses(newPasses);
+                        ImGui::PopStyleVar();
+                        ImGui::PopStyleColor(2);
+                        ImGui::PopID();
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(2);
+
+                    ImGui::SameLine();
+
+                    char nameBuf[128];
+                    strncpy(nameBuf, passes[i].customTextures[a].first.c_str(),
+                            sizeof(nameBuf));
+                    nameBuf[sizeof(nameBuf) - 1] = '\0';
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                    if (ImGui::InputText("##pp_tex_name", nameBuf, sizeof(nameBuf))) {
+                        std::vector<PostProcessPass> newPasses = passes;
+                        newPasses[i].customTextures[a].first = nameBuf;
+                        setPasses(newPasses);
+                    }
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                {
+                    const float availableWidth = ImGui::GetContentRegionAvail().x;
+                    const float texWidth = std::max(40.0f,
+                        availableWidth - iconButtonSize.x * 2.0f - itemSpacing * 3.0f);
+
+                    char pathBuf[256];
+                    strncpy(pathBuf,
+                            passes[i].customTextures[a].second.getPath(0).c_str(),
+                            sizeof(pathBuf));
+                    pathBuf[sizeof(pathBuf) - 1] = '\0';
+                    ImGui::SetNextItemWidth(texWidth);
+                    ImGui::PushStyleColor(ImGuiCol_Text,
+                        ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    ImGui::InputText("##pp_tex_path", pathBuf, sizeof(pathBuf),
+                                    ImGuiInputTextFlags_ReadOnly);
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_FOLDER_OPEN "##pp_tex_pick",
+                                    iconButtonSize)) {
+                        std::string path = editor::FileDialogs::openFileDialog(
+                            project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+                        if (!path.empty()) {
+                            std::filesystem::path assetsPath = project->getAssetsPath();
+                            std::filesystem::path filePath =
+                                std::filesystem::absolute(path);
+                            std::error_code ec;
+                            auto relative =
+                                std::filesystem::relative(filePath, assetsPath, ec);
+                            if (ec || relative.empty() || *relative.begin() == "..") {
+                                Backend::getApp().registerOutsideAssetsAlert(path);
+                            } else {
+                                std::vector<PostProcessPass> newPasses = passes;
+                                newPasses[i].customTextures[a].second =
+                                    Texture(relative.string());
+                                setPasses(newPasses);
+                            }
+                        }
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::SetItemTooltip("Image file");
+                    ImGui::SameLine();
+
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_SLIDERS "##pp_tex_settings",
+                                    iconButtonSize)) {
+                        ImGui::OpenPopup(("##pp_tex_settings_" + std::to_string(i) +
+                                        "_" + std::to_string(a)).c_str());
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::SetItemTooltip("Texture settings (filter, wrap, SVG scale)");
+
+                    // popup — та же функция, что для материала
+                    // копируем Texture локально, чтобы не мутировать const passes
+                    Texture editedTexture = passes[i].customTextures[a].second;
+                    bool texChanged = false;
+                    drawCustomTextureSettingsPopup(
+                        ("##pp_tex_settings_" + std::to_string(i) +
+                        "_" + std::to_string(a)).c_str(),
+                        editedTexture,
+                        texChanged);
+                    if (texChanged) {
+                        std::vector<PostProcessPass> newPasses = passes;
+                        newPasses[i].customTextures[a].second = editedTexture;
+                        setPasses(newPasses);
+                    }
+                }
+
+                ImGui::PopID();
+                ImGui::PopID();
+            }
 
             ImGui::EndTable();
         }
@@ -6147,6 +6408,209 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.occlusionTexture", "Occlusion Texture", sceneProject, entities, settingsMaterial);
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.normalTexture", "Normal Texture", sceneProject, entities, settingsMaterial);
             endTable();
+
+            beginTable(cpType, getLabelSize("Met. Roug. Texture"), "submeshes_custom_textures");
+
+            if (entities.empty()) { endTable(); return; }
+            Entity primaryEntity = entities[0];
+            MeshComponent* primaryMesh = sceneProject->scene->findComponent<MeshComponent>(primaryEntity);
+            if (!primaryMesh || s >= primaryMesh->numSubmeshes) { endTable(); return; }
+            Material& primaryMaterial = primaryMesh->submeshes[s].material;
+
+            bool changed = false;
+            int removeIndex = -1;
+
+            const float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
+            const float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x;
+            const ImVec2 deleteButtonSize = ImVec2(clearButtonWidth + clearButtonFramePadding * 2, 0);
+            const ImVec2 iconButtonSize = ImGui::CalcItemSize(ImVec2(0, 0), ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+            const float itemSpacing = ImGui::GetStyle().ItemSpacing.x;
+
+            const int maxButtonCount = 3;
+            const float maxButtonsWidth = iconButtonSize.x * (float)maxButtonCount;
+            const float maxSpacingWidth = itemSpacing * (float)(maxButtonCount + 1);
+
+            ImGui::TableNextRow();
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_PopupBg]));
+            ImGui::TableSetColumnIndex(0);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextUnformatted("Custom Textures");
+            ImGui::TableSetColumnIndex(1);
+            {
+                float addWidth = ImGui::GetContentRegionAvail().x;
+                if (ImGui::Button(ICON_FA_PLUS " Add Custom Texture##add_custom_tex", ImVec2(addWidth, 0))) {
+                    primaryMaterial.customTextures.push_back({"u_", Texture()});
+                    changed = true;
+                }
+            }
+
+            for (size_t i = 0; i < primaryMaterial.customTextures.size(); i++) {
+                ImGui::PushID((int)i);
+                ImGui::PushID((int)(1000 + i));
+
+                ImGui::TableNextRow();
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0,
+                    ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_PopupBg]));
+
+                ImGui::TableSetColumnIndex(0);
+                {
+                    const float trashWidth = ImGui::GetFrameHeight();
+
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_TRASH_CAN "##custom_tex_remove",
+                                    ImVec2(trashWidth, ImGui::GetFrameHeight()))) {
+                        removeIndex = (int)i;
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopStyleColor(2);
+
+                    ImGui::SameLine();
+
+                    char nameBuf[128];
+                    strncpy(nameBuf, primaryMaterial.customTextures[i].first.c_str(), sizeof(nameBuf));
+                    nameBuf[sizeof(nameBuf) - 1] = '\0';
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                    if (ImGui::InputText("##custom_tex_name", nameBuf, sizeof(nameBuf))) {
+                        primaryMaterial.customTextures[i].first = nameBuf;
+                        changed = true;
+                    }
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                {
+                    const bool isCameraTexture =
+                        CameraTextureLink::isCameraTexture(primaryMaterial.customTextures[i].second);
+
+                    const int buttonCount = isCameraTexture ? 2 : 3;
+                    const float availableWidth = ImGui::GetContentRegionAvail().x;
+                    const float texWidth = std::max(40.0f,
+                        availableWidth - iconButtonSize.x * (float)buttonCount
+                                    - itemSpacing * (float)(buttonCount + 1));
+
+                    // path (read-only)
+                    char pathBuf[256];
+                    strncpy(pathBuf, primaryMaterial.customTextures[i].second.getPath(0).c_str(), sizeof(pathBuf));
+                    pathBuf[sizeof(pathBuf) - 1] = '\0';
+
+                    if (isCameraTexture && pathBuf[0] == '\0') {
+                        strncpy(pathBuf, "<camera>", sizeof(pathBuf) - 1);
+                        pathBuf[sizeof(pathBuf) - 1] = '\0';
+                    }
+
+                    ImGui::SetNextItemWidth(texWidth);
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    ImGui::InputText("##custom_tex_path", pathBuf, sizeof(pathBuf),
+                                    ImGuiInputTextFlags_ReadOnly);
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+
+                    // file picker
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_FOLDER_OPEN "##custom_tex_pick", iconButtonSize)) {
+                        std::string path = editor::FileDialogs::openFileDialog(
+                            project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+                        if (!path.empty()) {
+                            std::filesystem::path assetsPath = project->getAssetsPath();
+                            std::filesystem::path filePath = std::filesystem::absolute(path);
+                            std::error_code ec;
+                            auto relative = std::filesystem::relative(filePath, assetsPath, ec);
+                            if (ec || relative.empty() || *relative.begin() == "..") {
+                                Backend::getApp().registerOutsideAssetsAlert(path);
+                            } else {
+                                primaryMaterial.customTextures[i].second = Texture(relative.string());
+                                changed = true;
+                            }
+                        }
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::SetItemTooltip("Image file");
+                    ImGui::SameLine();
+
+                    // camera as source
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                    if (ImGui::Button(ICON_FA_VIDEO "##custom_tex_camera", iconButtonSize)) {
+                        ImGui::OpenPopup(("##custom_tex_camera_popup_" + std::to_string(i)).c_str());
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::SetItemTooltip("Camera as source (render to texture)");
+                    ImGui::SameLine();
+
+                    if (ImGui::BeginPopup(("##custom_tex_camera_popup_" + std::to_string(i)).c_str())) {
+                        Scene* scene = sceneProject->scene;
+                        auto camerasArray = scene->getComponentArray<CameraComponent>();
+                        bool hasCamera = false;
+                        for (size_t c = 0; c < camerasArray->size(); c++) {
+                            Entity cameraEntity = camerasArray->getEntity(c);
+                            // only user scene entities; skips editor-internal cameras
+                            if (std::find(sceneProject->entities.begin(), sceneProject->entities.end(), cameraEntity) == sceneProject->entities.end())
+                                continue;
+
+                            hasCamera = true;
+                            std::string cameraLabel = std::string(ICON_FA_VIDEO) + " " + scene->getEntityName(cameraEntity);
+                            if (ImGui::MenuItem(cameraLabel.c_str())) {
+                                CameraComponent* camera = scene->findComponent<CameraComponent>(cameraEntity);
+                                if (camera) {
+                                    if (!camera->renderToTexture) {
+                                        camera->renderToTexture = true;
+                                    }
+                                    primaryMaterial.customTextures[i].second =
+                                        CameraTextureLink::make(scene, cameraEntity);
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if (!hasCamera) {
+                            ImGui::TextDisabled("No camera in scene");
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    // ⚙ texture settings, только для не-камерных текстур
+                    if (!isCameraTexture) {
+                        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                            ImVec2(clearButtonFramePadding, ImGui::GetStyle().FramePadding.y));
+                        if (ImGui::Button(ICON_FA_SLIDERS "##custom_tex_settings", iconButtonSize)) {
+                            ImGui::OpenPopup(("##custom_tex_settings_" + std::to_string(i)).c_str());
+                        }
+                        ImGui::PopStyleVar();
+                        ImGui::SetItemTooltip("Texture settings (filter, wrap, SVG scale)");
+
+                        drawCustomTextureSettingsPopup(
+                            ("##custom_tex_settings_" + std::to_string(i)).c_str(),
+                            primaryMaterial.customTextures[i].second,
+                            changed);
+                    }
+                }
+
+                ImGui::PopID();
+                ImGui::PopID();
+            }
+
+            if (removeIndex >= 0) {
+                primaryMaterial.customTextures.erase(
+                    primaryMaterial.customTextures.begin() + removeIndex);
+                changed = true;
+            }
+
+            endTable();
+
+            if (changed) {
+                for (const Entity& entity : entities) {
+                    MeshComponent* mesh = sceneProject->scene->findComponent<MeshComponent>(entity);
+                    if (!mesh || s >= mesh->numSubmeshes) continue;
+                    mesh->submeshes[s].material.customTextures = primaryMaterial.customTextures;
+                    mesh->submeshes[s].customTextureBindings.clear();
+                    mesh->submeshes[s].needUpdateTexture = true;
+                    mesh->needReload = true;
+                }
+                sceneProject->isModified = true;
+            }
         }
 
         beginTable(cpType, getLabelSize("Texture Shadow"), "submeshes_settings");

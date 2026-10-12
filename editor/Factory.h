@@ -94,6 +94,8 @@ namespace doriax::editor{
 
         static std::string formatTexture(int indentSpaces, const Texture& texture, const std::string& variableName, const fs::path& projectPath);
 
+        static std::string formatCustomTextures(int indentSpaces, const std::vector<std::pair<std::string, Texture>>& customTextures, const std::string& variableName, const fs::path& projectPath);
+
         static std::string formatPropertyValue(const PropertyData& property, const std::string& propertyName);
 
         static std::string beginHeapComponentCode(std::ostringstream& code, const std::string& ind, const std::string& componentType, const std::string& varName);

@@ -37,6 +37,8 @@ namespace doriax{
         Texture occlusionTexture;
         Texture normalTexture;
 
+        std::vector<std::pair<std::string, Texture>> customTextures;
+
         MaterialAlphaMode alphaMode = MaterialAlphaMode::AUTO;
 
         // glTF texCoord index (UV set) each texture samples: 0 = primary (a_texcoord1),
@@ -63,6 +65,7 @@ namespace doriax{
                    metallicRoughnessTexture == other.metallicRoughnessTexture &&
                    occlusionTexture == other.occlusionTexture &&
                    normalTexture == other.normalTexture &&
+                   customTextures == other.customTextures &&
                    alphaMode == other.alphaMode &&
                    baseColorTexCoord == other.baseColorTexCoord &&
                    metallicRoughnessTexCoord == other.metallicRoughnessTexCoord &&

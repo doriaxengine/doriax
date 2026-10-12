@@ -2997,6 +2997,25 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (!loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
             return false;
         }
+
+        mesh.submeshes[i].customTextureBindings.clear();
+        for (auto& custom : mesh.submeshes[i].material.customTextures){
+            std::pair<int, int> slot = shaderData.getTextureIndexByName(custom.first);
+            if (slot.first == -1){
+                continue;
+            }
+
+            Submesh::CustomTextureBinding binding;
+            binding.name = custom.first;
+            binding.slot = slot;
+
+            TextureLoadResult result = custom.second.load();
+            if (result.state == ResourceLoadState::Finished){
+                binding.render = custom.second.getRender(&emptyWhite);
+            }
+            mesh.submeshes[i].customTextureBindings.push_back(std::move(binding));
+        }
+
         loadShadowTextures(shaderData, mesh.submeshes[i].render, mesh.receiveLights, p_receiveShadows);
         loadShadow2DTexture(shaderData, mesh.submeshes[i].render, p_shadows2d);
 
@@ -4076,6 +4095,22 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 applyTerrainLayersUniform(render, mesh.submeshes[i].slotFSTerrainLayers, entity, *terrain);
             }
 
+            for (Submesh::CustomTextureBinding& binding : mesh.submeshes[i].customTextureBindings){
+                if (!binding.render && binding.slot.first != -1){
+                    for (auto& custom : mesh.submeshes[i].material.customTextures){
+                        if (custom.first == binding.name){
+                            TextureLoadResult result = custom.second.load();
+                            if (result.state == ResourceLoadState::Finished){
+                                binding.render = custom.second.getRender(&emptyWhite);
+                            }
+                            break;
+                        }
+                    }
+                }
+                render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
+                                    binding.render ? binding.render : &emptyWhite);
+            }
+
             //model, normal and mvp matrix
             render.applyUniformBlock(mesh.submeshes[i].slotVSParams, sizeof(float) * 48, &transform.modelMatrix);
 
@@ -5048,6 +5083,26 @@ void RenderSystem::loadPostProcess(){
         pass.slotGBuffer = sd.getTextureIndexByName("u_gbufferTexture");
         pass.slotSSAO = sd.getTextureIndexByName("u_ssaoTexture");
 
+        pass.customTextureBindings.clear();
+        for (const auto& custom : passes[i].customTextures){
+            std::pair<int, int> slot = sd.getTextureIndexByName(custom.first);
+            if (slot.first == -1){
+                continue;
+            }
+
+            PostProcessRuntime::CustomTextureBinding binding;
+            binding.name = custom.first;
+            binding.slot = slot;
+
+            Texture& texture = const_cast<Texture&>(custom.second);
+
+            TextureLoadResult result = texture.load();
+            if (result.state == ResourceLoadState::Finished){
+                binding.render = texture.getRender(&emptyWhite);
+            }
+            pass.customTextureBindings.push_back(std::move(binding));
+        }
+
         if (pass.slotDepth.first != -1)
             postProcessNeedsDepth = true;
         if (pass.slotGBuffer.first != -1)
@@ -5164,6 +5219,26 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
             pass.render.addTexture(pass.slotDepth, ShaderStageType::FRAGMENT, depthTexture);
             pass.render.addTexture(pass.slotGBuffer, ShaderStageType::FRAGMENT, gbufferTexture);
             pass.render.addTexture(pass.slotSSAO, ShaderStageType::FRAGMENT, ssaoTexture);
+
+            for (PostProcessRuntime::CustomTextureBinding& binding : pass.customTextureBindings){
+                Texture* sourceTexture = nullptr;
+                const std::vector<PostProcessPass>& currentPasses = scene->getPostProcessPasses();
+                if (pass.passIndex < (int)currentPasses.size()){
+                    for (const auto& custom : currentPasses[pass.passIndex].customTextures){
+                        if (custom.first == binding.name){
+                            sourceTexture = const_cast<Texture*>(&custom.second);
+                            break;
+                        }
+                    }
+                }
+
+                if (!sourceTexture)
+                    continue;
+
+                binding.render = sourceTexture->getRender(&emptyWhite);
+                pass.render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
+            }
+            
             applyCustomUniforms(pass.render, pass.params, frameTime, Vector2((float)postProcessWidth, (float)postProcessHeight));
             pass.render.draw(0, 3, 1);
         }
@@ -5306,6 +5381,8 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.customFSParams.clear();
         submesh.customVSDepthParams.clear();
         submesh.customFSDepthParams.clear();
+
+        submesh.customTextureBindings.clear();
     }
 
     //Destroy buffer
@@ -8292,6 +8369,11 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
             material.occlusionTexture.getFramebuffer() == camera.framebuffer ||
             material.emissiveTexture.getFramebuffer() == camera.framebuffer){
             return true;
+        }
+        for (const auto& custom : material.customTextures){
+            if (custom.second.getFramebuffer() == camera.framebuffer){
+                return true;
+            }
         }
     }
 

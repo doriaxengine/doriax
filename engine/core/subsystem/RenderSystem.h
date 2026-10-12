@@ -547,6 +547,13 @@ namespace doriax{
 			std::pair<int, int> slotDepth;
 			std::pair<int, int> slotGBuffer;
 			std::pair<int, int> slotSSAO;
+
+			struct CustomTextureBinding{
+				std::string name;
+				std::pair<int, int> slot = {-1, -1};
+				TextureRender* render = nullptr;
+			};
+			std::vector<CustomTextureBinding> customTextureBindings;
 		};
 		bool postProcessLoaded;
 		bool postProcessNeedReload;

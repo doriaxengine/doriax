@@ -116,6 +116,14 @@ namespace doriax{
         CustomUniformBlock customVSDepthParams;
         CustomUniformBlock customFSDepthParams;
 
+        struct CustomTextureBinding
+        {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
         PrimitiveType primitiveType = PrimitiveType::TRIANGLES;

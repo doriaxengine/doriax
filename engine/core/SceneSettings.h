@@ -6,6 +6,7 @@
 
 #include "render/Render.h"
 #include "shader/ShaderUniforms.h"
+#include "texture/Texture.h"
 #include "math/Vector2.h"
 #include "math/Vector3.h"
 #include "math/Vector4.h"
@@ -38,6 +39,8 @@ namespace doriax{
         std::string shader; // project-relative fork base, empty = built-in passthrough
         bool enabled = true;
         ShaderUniformValues uniforms;
+
+        std::vector<std::pair<std::string, Texture>> customTextures;
 
         // applied by Scene::setPostProcessPasses (Scene::setPostProcessUniform edits a live pass)
         void setUniform(const std::string& name, const Vector4& value) { ShaderUniforms::set(uniforms, name, value); }
