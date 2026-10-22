@@ -40,6 +40,17 @@ namespace doriax{
         CustomUniformBlock customVSParams;
         CustomUniformBlock customFSParams;
 
+        struct CustomTextureBinding
+        {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+
+        std::vector<std::pair<std::string, Texture>> customTextures;
+        bool needUpdateCustomTextures = false;
+
         PrimitiveType primitiveType = PrimitiveType::TRIANGLES;
         unsigned int vertexCount = 0;
 

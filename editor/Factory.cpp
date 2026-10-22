@@ -674,6 +674,28 @@ std::string editor::Factory::formatTexture(int indentSpaces, const Texture& text
     return code.str();
 }
 
+std::string editor::Factory::formatCustomTextures(int indentSpaces, const std::vector<std::pair<std::string, Texture>>& customTextures, const std::string& variableName, const fs::path& projectPath) {
+    if (customTextures.empty()) return "";
+
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+
+    for (size_t i = 0; i < customTextures.size(); i++) {
+        const std::string& name = customTextures[i].first;
+        const Texture& texture = customTextures[i].second;
+        const std::string tempVar = "customTexture" + std::to_string(i);
+
+        code << ind << "{\n";
+        code << ind << "    Texture " << tempVar << ";\n";
+        code << formatTexture(indentSpaces + 4, texture, tempVar, projectPath);
+        code << ind << "    " << variableName << ".customTextures.push_back({"
+             << formatString(name) << ", " << tempVar << "});\n";
+        code << ind << "}\n";
+    }
+
+    return code.str();
+}
+
 std::string editor::Factory::formatPropertyValue(const PropertyData& property, const std::string& propertyName) {
     switch (property.type) {
         case PropertyType::Bool: {
@@ -828,6 +850,7 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << ind << "mesh.customDepthShader = " << formatString(mesh.customDepthShader) << ";\n";
     if (!mesh.shaderUniforms.empty())
         code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
+    code << formatCustomTextures(indentSpaces, mesh.customTextures, "mesh", projectPath);
     code << ind << "mesh.vertexCount = " << formatUInt(mesh.vertexCount) << ";\n";
     //code << ind << "mesh.submeshes.resize(" << formatUInt(mesh.numSubmeshes) << ");\n";
     // Kept for a model too: its load reads the count to find the edited submeshes.
@@ -987,6 +1010,7 @@ std::string editor::Factory::createUIComponent(int indentSpaces, EntityRegistry*
     if (!ui.shaderUniforms.empty())
         code << ind << "ui.shaderUniforms = " << formatShaderUniforms(ui.shaderUniforms) << ";\n";
     code << formatTexture(indentSpaces, ui.texture, "ui.texture", projectPath);
+    code << formatCustomTextures(indentSpaces, ui.customTextures, "ui", projectPath);
     addComponentCode(code, ind, sceneName, entityName, entity, "UIComponent", "ui", assignExisting);
     return code.str();
 }
@@ -1614,7 +1638,8 @@ std::string editor::Factory::createSkyComponent(int indentSpaces, EntityRegistry
         code << ind << "sky.customShader = " << formatString(sky.customShader) << ";\n";
     if (!sky.shaderUniforms.empty())
         code << ind << "sky.shaderUniforms = " << formatShaderUniforms(sky.shaderUniforms) << ";\n";
-
+    code << formatCustomTextures(indentSpaces, sky.customTextures, "sky", projectPath);
+        
     addComponentCode(code, ind, sceneName, entityName, entity, "SkyComponent", "sky", assignExisting);
     return code.str();
 }
@@ -1662,6 +1687,7 @@ std::string editor::Factory::createWaterComponent(int indentSpaces, EntityRegist
         code << ind << "water.customUnderwaterShader = " << formatString(water.customUnderwaterShader) << ";\n";
     if (!water.shaderUniforms.empty())
         code << ind << "water.shaderUniforms = " << formatShaderUniforms(water.shaderUniforms) << ";\n";
+    code << formatCustomTextures(indentSpaces, water.customTextures, "water", projectPath);
 
     addComponentCode(code, ind, sceneName, entityName, entity, "WaterComponent", "water", assignExisting);
     return code.str();
@@ -2323,7 +2349,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::ScaleTracksComponent: return createScaleTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::MorphTracksComponent: return createMorphTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ParticlesComponent: return createParticlesComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
-        case ComponentType::LinesComponent: return createLinesComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::LinesComponent: return createLinesComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::PointsComponent: return createPointsComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::InstancedMeshComponent: return createInstancedMeshComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         default: return "";
@@ -2684,12 +2710,48 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         if (!values.empty())
             out << ind2 << "scene->setDefaultShaderUniforms(ShaderType::" << token << ", " << formatShaderUniforms(values) << ");\n";
     }
+
+    for (const auto& [type, token] : defaultShaderTypes) {
+        const auto& textures = scene->getDefaultShaderTextures(type);
+        if (textures.empty())
+            continue;
+
+        out << ind2 << "{\n";
+        out << ind3 << "std::vector<std::pair<std::string, Texture>> defaultTextures;\n";
+        for (size_t i = 0; i < textures.size(); i++) {
+            const std::string texVar = "defaultTex" + std::to_string(i);
+            out << ind3 << "Texture " << texVar << ";\n";
+            out << formatTexture(indentSpaces + 8, textures[i].second, texVar, projectPath);
+            out << ind3 << "defaultTextures.push_back({"
+                << formatString(textures[i].first) << ", " << texVar << "});\n";
+        }
+        out << ind3 << "scene->setDefaultShaderTextures(ShaderType::" << token << ", defaultTextures);\n";
+        out << ind2 << "}\n";
+    }
+
     if (!scene->getPostProcessPasses().empty()) {
         out << ind2 << "{\n";
         out << ind3 << "std::vector<PostProcessPass> postProcess;\n";
-        for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
-            out << ind3 << "postProcess.push_back({" << formatString(pass.shader) << ", " << formatBool(pass.enabled) << ", "
-                << formatShaderUniforms(pass.uniforms) << "});\n";
+        for (size_t p = 0; p < scene->getPostProcessPasses().size(); p++) {
+            const PostProcessPass& pass = scene->getPostProcessPasses()[p];
+            out << ind3 << "{\n";
+            out << ind3 << "    PostProcessPass p;\n";
+            out << ind3 << "    p.shader = " << formatString(pass.shader) << ";\n";
+            out << ind3 << "    p.enabled = " << formatBool(pass.enabled) << ";\n";
+            out << ind3 << "    p.uniforms = " << formatShaderUniforms(pass.uniforms) << ";\n";
+
+            if (!pass.customTextures.empty()) {
+                for (size_t a = 0; a < pass.customTextures.size(); a++) {
+                    const std::string texVar = "ppCustomTex" + std::to_string(a);
+                    out << ind3 << "    Texture " << texVar << ";\n";
+                    out << formatTexture(indentSpaces + 8, pass.customTextures[a].second, texVar, projectPath);
+                    out << ind3 << "    p.customTextures.push_back({"
+                        << formatString(pass.customTextures[a].first) << ", " << texVar << "});\n";
+                }
+            }
+
+            out << ind3 << "    postProcess.push_back(p);\n";
+            out << ind3 << "}\n";
         }
         out << ind3 << "scene->setPostProcessPasses(postProcess);\n";
         out << ind2 << "}\n";
@@ -3206,6 +3268,7 @@ std::string editor::Factory::createPointsComponent(int indentSpaces, EntityRegis
         code << ind << "pointscomp.customShader = " << formatString(p.customShader) << ";\n";
     if (!p.shaderUniforms.empty())
         code << ind << "pointscomp.shaderUniforms = " << formatShaderUniforms(p.shaderUniforms) << ";\n";
+    code << formatCustomTextures(indentSpaces, p.customTextures, "pointscomp", projectPath);
     code << formatTexture(indentSpaces, p.texture, "pointscomp.texture", projectPath);
 
     if (p.numFramesRect > 0) {
@@ -3241,7 +3304,7 @@ std::string editor::Factory::createPointsComponent(int indentSpaces, EntityRegis
     return code.str();
 }
 
-std::string editor::Factory::createLinesComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+std::string editor::Factory::createLinesComponent(int indentSpaces, EntityRegistry* scene, Entity entity, const fs::path& projectPath, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<LinesComponent>(entity)) return "";
     LinesComponent& l = scene->getComponent<LinesComponent>(entity);
     std::ostringstream code;
@@ -3254,6 +3317,7 @@ std::string editor::Factory::createLinesComponent(int indentSpaces, EntityRegist
         code << ind << "linescomp.customShader = " << formatString(l.customShader) << ";\n";
     if (!l.shaderUniforms.empty())
         code << ind << "linescomp.shaderUniforms = " << formatShaderUniforms(l.shaderUniforms) << ";\n";
+    code << formatCustomTextures(indentSpaces, l.customTextures, "linescomp", projectPath);
 
     for (size_t i = 0; i < l.lines.size(); i++) {
         const LineData& line = l.lines[i];

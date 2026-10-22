@@ -195,6 +195,7 @@ namespace {
         makeFastProperty<UIComponent, Texture, &UIComponent::texture>("texture", PropertyType::Texture, UpdateFlags_UI_Texture),
         makeFastProperty<UIComponent, std::string, &UIComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<UIComponent, ShaderUniformValues, &UIComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
+        makeFastProperty<UIComponent, std::vector<std::pair<std::string, Texture>>, &UIComponent::customTextures>("customTextures", PropertyType::Custom, UpdateFlags_UI_Custom_Textures),
     };
 
     static const FastPropertyDescriptor kUILayoutProperties[] = {
@@ -557,6 +558,8 @@ namespace {
         makeFastProperty<WaterComponent, std::string, &WaterComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, std::string, &WaterComponent::customUnderwaterShader>("customUnderwaterShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, ShaderUniformValues, &WaterComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
+        makeFastProperty<WaterComponent, std::vector<std::pair<std::string, Texture>>, &WaterComponent::customTextures>("customTextures", PropertyType::Custom, UpdateFlags_Water_Custom_Textures),
+        makeFastProperty<WaterComponent, std::vector<std::pair<std::string, Texture>>, &WaterComponent::customUnderwaterTextures>("customUnderwaterTextures", PropertyType::Custom, UpdateFlags_Water_Custom_Textures),
     };
 
     static const FastPropertyDescriptor kWaterExclusionProperties[] = {
@@ -572,6 +575,7 @@ namespace {
         makeFastProperty<SkyComponent, bool, &SkyComponent::visible>("visible", PropertyType::Bool, UpdateFlags_None),
         makeFastProperty<SkyComponent, std::string, &SkyComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<SkyComponent, ShaderUniformValues, &SkyComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
+        makeFastProperty<SkyComponent, std::vector<std::pair<std::string, Texture>>, &SkyComponent::customTextures>("customTextures", PropertyType::Custom, UpdateFlags_Sky_Custom_Textures),
     };
 
     static const FastPropertyDescriptor kTextProperties[] = {
@@ -647,6 +651,8 @@ namespace {
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
+        makeFastProperty<MeshComponent, std::vector<std::pair<std::string, Texture>>, &MeshComponent::customTextures>("customTextures", PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures),
+        makeFastProperty<MeshComponent, std::vector<std::pair<std::string, Texture>>, &MeshComponent::customDepthTextures>("customDepthTextures", PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures),
     };
 
     static const FastPropertyDescriptor kUIContainerTopProperties[] = {
@@ -667,6 +673,50 @@ namespace {
         // Flat properties
         PropertyData result = resolveDirectProperties(comp, propertyName, kMeshTopProperties);
         if (result.ref) return result;
+
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures, (void*)&defCustomTextures, (void*)&comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+            std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture, UpdateFlags_Mesh_Custom_Textures, (void*)&defTexture, (void*)&comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String, UpdateFlags_Mesh_Custom_Textures, (void*)&defName, (void*)&comp->customTextures[index].first};
+            }
+        }
+
+        if (propertyName == "customDepthTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomDepthTextures;
+            return {PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures, (void*)&defCustomDepthTextures, (void*)&comp->customDepthTextures};
+        }
+        static const std::string kCustomDepthTexturesPrefix = "customDepthTextures[";
+        if (propertyName.compare(0, kCustomDepthTexturesPrefix.size(), kCustomDepthTexturesPrefix) == 0) {
+            size_t pos = kCustomDepthTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= comp->customDepthTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+            std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture, UpdateFlags_Mesh_Custom_Textures, (void*)&defTexture, (void*)&comp->customDepthTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String, UpdateFlags_Mesh_Custom_Textures, (void*)&defName, (void*)&comp->customDepthTextures[index].first};
+            }
+        }
 
         // Submeshes: submeshes[N].field
         if (propertyName.compare(0, 10, "submeshes[") != 0) {
@@ -1154,7 +1204,46 @@ namespace {
     }
 
     PropertyData resolveUIPropertyFast(void* comp, const std::string& propertyName) {
-        return resolveDirectProperties(static_cast<UIComponent*>(comp), propertyName, kUIProperties);
+        UIComponent* _comp = static_cast<UIComponent*>(comp);
+        if (!_comp) return PropertyData();
+
+        PropertyData result = resolveDirectProperties(_comp, propertyName, kUIProperties);
+        if (result.ref) return result;
+
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom,
+                    UpdateFlags_UI_Custom_Textures,
+                    (void*)&defCustomTextures,
+                    (void*)&_comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) ||
+                pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= _comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+
+            const std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture,
+                        UpdateFlags_UI_Custom_Textures,
+                        (void*)&defTexture,
+                        (void*)&_comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String,
+                        UpdateFlags_UI_Custom_Textures,
+                        (void*)&defName,
+                        (void*)&_comp->customTextures[index].first};
+            }
+        }
+
+        return PropertyData();
     }
 
     PropertyData resolveUILayoutPropertyFast(void* comp, const std::string& propertyName) {
@@ -1497,8 +1586,81 @@ namespace {
         return resolveDirectProperties(static_cast<SoundComponent*>(comp), propertyName, kSoundProperties);
     }
 
-    PropertyData resolveWaterPropertyFast(void* comp, const std::string& propertyName) {
-        return resolveDirectProperties(static_cast<WaterComponent*>(comp), propertyName, kWaterProperties);
+    PropertyData resolveWaterPropertyFast(void* compRef, const std::string& propertyName) {
+        WaterComponent* comp = static_cast<WaterComponent*>(compRef);
+        if (!comp) return PropertyData();
+
+        PropertyData result = resolveDirectProperties(comp, propertyName, kWaterProperties);
+        if (result.ref) return result;
+
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom,
+                    UpdateFlags_Water_Custom_Textures,
+                    (void*)&defCustomTextures,
+                    (void*)&comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) ||
+                pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+
+            const std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture,
+                        UpdateFlags_Water_Custom_Textures,
+                        (void*)&defTexture,
+                        (void*)&comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String,
+                        UpdateFlags_Water_Custom_Textures,
+                        (void*)&defName,
+                        (void*)&comp->customTextures[index].first};
+            }
+        }
+
+        if (propertyName == "customUnderwaterTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomUnderwaterTextures;
+            return {PropertyType::Custom,
+                    UpdateFlags_Water_Custom_Textures,
+                    (void*)&defCustomUnderwaterTextures,
+                    (void*)&comp->customUnderwaterTextures};
+        }
+        static const std::string kCustomUnderwaterTexturesPrefix = "customUnderwaterTextures[";
+        if (propertyName.compare(0, kCustomUnderwaterTexturesPrefix.size(),
+                                kCustomUnderwaterTexturesPrefix) == 0) {
+            size_t pos = kCustomUnderwaterTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) ||
+                pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= comp->customUnderwaterTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+
+            const std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture,
+                        UpdateFlags_Water_Custom_Textures,
+                        (void*)&defTexture,
+                        (void*)&comp->customUnderwaterTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String,
+                        UpdateFlags_Water_Custom_Textures,
+                        (void*)&defName,
+                        (void*)&comp->customUnderwaterTextures[index].first};
+            }
+        }
+
+        return PropertyData();
     }
 
     PropertyData resolveWaterExclusionPropertyFast(void* comp, const std::string& propertyName) {
@@ -1506,7 +1668,46 @@ namespace {
     }
 
     PropertyData resolveSkyPropertyFast(void* comp, const std::string& propertyName) {
-        return resolveDirectProperties(static_cast<SkyComponent*>(comp), propertyName, kSkyProperties);
+        SkyComponent* _comp = static_cast<SkyComponent*>(comp);
+        if (!_comp) return PropertyData();
+
+        PropertyData result = resolveDirectProperties(comp, propertyName, kSkyProperties);
+        if (result.ref) return result;
+
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom,
+                    UpdateFlags_Sky_Custom_Textures,
+                    (void*)&defCustomTextures,
+                    (void*)&_comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) ||
+                pos >= propertyName.size() || propertyName[pos] != ']') return PropertyData();
+            if (index >= _comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+
+            const std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture,
+                        UpdateFlags_Sky_Custom_Textures,
+                        (void*)&defTexture,
+                        (void*)&_comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String,
+                        UpdateFlags_Sky_Custom_Textures,
+                        (void*)&defName,
+                        (void*)&_comp->customTextures[index].first};
+            }
+        }
+
+        return PropertyData();
     }
 
     PropertyData resolveTextPropertyFast(void* comp, const std::string& propertyName) {
@@ -2307,7 +2508,21 @@ namespace {
     }
 
     void enumerateUIProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        UIComponent* _comp = static_cast<UIComponent*>(comp);
+
         enumerateFromDescriptors(comp, ps, kUIProperties);
+
+        ps["customTextures"] = {PropertyType::Custom,
+                                UpdateFlags_UI_Custom_Textures,
+                                nullptr,
+                                _comp ? (void*)&_comp->customTextures : nullptr};
+        if (_comp) {
+            for (size_t i = 0; i < _comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_UI_Custom_Textures, nullptr, (void*)&_comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_UI_Custom_Textures, nullptr, (void*)&_comp->customTextures[i].second};
+            }
+        }
     }
 
     void enumerateUILayoutProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2496,8 +2711,34 @@ namespace {
         enumerateFromDescriptors(comp, ps, kSoundProperties);
     }
 
-    void enumerateWaterProperties(void* comp, std::map<std::string, PropertyData>& ps) {
-        enumerateFromDescriptors(comp, ps, kWaterProperties);
+    void enumerateWaterProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
+        WaterComponent* comp = static_cast<WaterComponent*>(compRef);
+
+        enumerateFromDescriptors(compRef, ps, kWaterProperties);
+
+        ps["customTextures"] = {PropertyType::Custom,
+                                UpdateFlags_Water_Custom_Textures,
+                                nullptr,
+                                comp ? (void*)&comp->customTextures : nullptr};
+        if (comp) {
+            for (size_t i = 0; i < comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_Water_Custom_Textures, nullptr, (void*)&comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Water_Custom_Textures, nullptr, (void*)&comp->customTextures[i].second};
+            }
+        }
+
+        ps["customUnderwaterTextures"] = {PropertyType::Custom,
+                                        UpdateFlags_Water_Custom_Textures,
+                                        nullptr,
+                                        comp ? (void*)&comp->customUnderwaterTextures : nullptr};
+        if (comp) {
+            for (size_t i = 0; i < comp->customUnderwaterTextures.size(); i++) {
+                std::string prefix = "customUnderwaterTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_Water_Custom_Textures, nullptr, (void*)&comp->customUnderwaterTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Water_Custom_Textures, nullptr, (void*)&comp->customUnderwaterTextures[i].second};
+            }
+        }
     }
 
     void enumerateWaterExclusionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2505,7 +2746,21 @@ namespace {
     }
 
     void enumerateSkyProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        SkyComponent* _comp = static_cast<SkyComponent*>(comp);
+
         enumerateFromDescriptors(comp, ps, kSkyProperties);
+
+        ps["customTextures"] = {PropertyType::Custom,
+                                UpdateFlags_Sky_Custom_Textures,
+                                nullptr,
+                                _comp ? (void*)&_comp->customTextures : nullptr};
+        if (_comp) {
+            for (size_t i = 0; i < _comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_Sky_Custom_Textures, nullptr, (void*)&_comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Sky_Custom_Textures, nullptr, (void*)&_comp->customTextures[i].second};
+            }
+        }
     }
 
     void enumerateTextProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2643,6 +2898,24 @@ namespace {
             ps["submeshes[" + idx + "].faceCulling"] = {PropertyType::Bool, UpdateFlags_Mesh_Reload, (void*)&defSub.faceCulling, compRef ? (void*)&sub.faceCulling : nullptr};
             ps["submeshes[" + idx + "].textureShadow"] = {PropertyType::Bool, UpdateFlags_Mesh_Reload, (void*)&defSub.textureShadow, compRef ? (void*)&sub.textureShadow : nullptr};
             ps["submeshes[" + idx + "].textureRect"] = {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.textureRect, compRef ? (void*)&sub.textureRect : nullptr};
+        }
+
+        ps["customTextures"] = {PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures, nullptr, compRef ? (void*)&comp->customTextures : nullptr};
+        if (compRef) {
+            for (size_t i = 0; i < comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"] = {PropertyType::String, UpdateFlags_Mesh_Custom_Textures, nullptr, (void*)&comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Mesh_Custom_Textures, nullptr, (void*)&comp->customTextures[i].second};
+            }
+        }
+
+        ps["customDepthTextures"] = {PropertyType::Custom, UpdateFlags_Mesh_Custom_Textures, nullptr, compRef ? (void*)&comp->customDepthTextures : nullptr};
+        if (compRef) {
+            for (size_t i = 0; i < comp->customDepthTextures.size(); i++) {
+                std::string prefix = "customDepthTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"] = {PropertyType::String, UpdateFlags_Mesh_Custom_Textures, nullptr, (void*)&comp->customDepthTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Mesh_Custom_Textures, nullptr, (void*)&comp->customDepthTextures[i].second};
+            }
         }
     }
 
@@ -2915,6 +3188,32 @@ namespace {
             }
         }
 
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom, UpdateFlags_Points_Custom_Textures,
+                    (void*)&defCustomTextures, (void*)&comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']')
+                return PropertyData();
+            if (index >= comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+            std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture, UpdateFlags_Points_Custom_Textures,
+                        (void*)&defTexture, (void*)&comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String, UpdateFlags_Points_Custom_Textures,
+                        (void*)&defName, (void*)&comp->customTextures[index].first};
+            }
+        }
+
         return PropertyData();
     }
 
@@ -2959,6 +3258,15 @@ namespace {
                 ps["points[" + idx + "].visible"] = {PropertyType::Bool, UpdateFlags_Points, (void*)&defVisible, (void*)&comp->points[i].visible};
             }
         }
+
+        ps["customTextures"] = {PropertyType::Custom, UpdateFlags_Points_Custom_Textures, nullptr, comp ? (void*)&comp->customTextures : nullptr};
+        if (comp) {
+            for (size_t i = 0; i < comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_Points_Custom_Textures, nullptr, (void*)&comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Points_Custom_Textures, nullptr, (void*)&comp->customTextures[i].second};
+            }
+        }
     }
 
     PropertyData getLinesPropertyFast(LinesComponent* comp, const std::string& propertyName) {
@@ -3000,6 +3308,32 @@ namespace {
             }
         }
 
+        if (propertyName == "customTextures") {
+            static std::vector<std::pair<std::string, Texture>> defCustomTextures;
+            return {PropertyType::Custom, UpdateFlags_Lines_Custom_Textures,
+                    (void*)&defCustomTextures, (void*)&comp->customTextures};
+        }
+        static const std::string kCustomTexturesPrefix = "customTextures[";
+        if (propertyName.compare(0, kCustomTexturesPrefix.size(), kCustomTexturesPrefix) == 0) {
+            size_t pos = kCustomTexturesPrefix.size();
+            size_t index = 0;
+            if (!parseIndex(propertyName, pos, index) || pos >= propertyName.size() || propertyName[pos] != ']')
+                return PropertyData();
+            if (index >= comp->customTextures.size()) return PropertyData();
+            if (pos + 1 >= propertyName.size()) return PropertyData();
+            std::string fieldName = propertyName.substr(pos + 1);
+            if (fieldName == ".second") {
+                static Texture defTexture;
+                return {PropertyType::Texture, UpdateFlags_Lines_Custom_Textures,
+                        (void*)&defTexture, (void*)&comp->customTextures[index].second};
+            }
+            if (fieldName == ".first") {
+                static std::string defName;
+                return {PropertyType::String, UpdateFlags_Lines_Custom_Textures,
+                        (void*)&defName, (void*)&comp->customTextures[index].first};
+            }
+        }
+
         return PropertyData();
     }
 
@@ -3027,6 +3361,15 @@ namespace {
                 ps["lines[" + idx + "].colorA"] = {PropertyType::Vector4, UpdateFlags_Lines, (void*)&defColor, (void*)&comp->lines[i].colorA};
                 ps["lines[" + idx + "].pointB"] = {PropertyType::Vector3, UpdateFlags_Lines, (void*)&defPoint, (void*)&comp->lines[i].pointB};
                 ps["lines[" + idx + "].colorB"] = {PropertyType::Vector4, UpdateFlags_Lines, (void*)&defColor, (void*)&comp->lines[i].colorB};
+            }
+        }
+
+        ps["customTextures"] = {PropertyType::Custom, UpdateFlags_Lines_Custom_Textures, nullptr, comp ? (void*)&comp->customTextures : nullptr};
+        if (comp) {
+            for (size_t i = 0; i < comp->customTextures.size(); i++) {
+                std::string prefix = "customTextures[" + std::to_string(i) + "]";
+                ps[prefix + ".first"]  = {PropertyType::String,  UpdateFlags_Lines_Custom_Textures, nullptr, (void*)&comp->customTextures[i].first};
+                ps[prefix + ".second"] = {PropertyType::Texture, UpdateFlags_Lines_Custom_Textures, nullptr, (void*)&comp->customTextures[i].second};
             }
         }
     }
@@ -4096,6 +4439,18 @@ const char* editor::Catalog::getDefaultShaderUniformsProperty(ShaderType type) {
     }
 }
 
+const char* editor::Catalog::getDefaultShaderCustomTexturesProperty(ShaderType type) {
+    switch (type) {
+        case ShaderType::MESH:   return "default_mesh_shader_custom_textures";
+        case ShaderType::UI:     return "default_ui_shader_custom_textures";
+        case ShaderType::SKYBOX: return "default_sky_shader_custom_textures";
+        case ShaderType::POINTS: return "default_points_shader_custom_textures";
+        case ShaderType::LINES:  return "default_lines_shader_custom_textures";
+        case ShaderType::WATER:  return "default_water_shader_custom_textures";
+        default: return "";
+    }
+}
+
 bool editor::Catalog::getDefaultShaderUniformsType(const std::string& propertyName, ShaderType& type) {
     for (ShaderType candidate : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX,
                                  ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
@@ -4314,6 +4669,43 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
     if (updateFlags & UpdateFlags_Sound){
         if (SoundComponent* audio = registry->findComponent<SoundComponent>(entity)){
             audio->needUpdate = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Mesh_Custom_Textures){
+        if (MeshComponent* m = registry->findComponent<MeshComponent>(entity)){
+            m->needUpdateCustomTextures = true;
+            m->needUpdateCustomDepthTextures = true;
+        }
+    }
+
+    if (updateFlags & UpdateFlags_Water_Custom_Textures){
+        if (WaterComponent* w = registry->findComponent<WaterComponent>(entity)){
+            w->needUpdateCustomTextures = true;
+            w->needUpdateCustomUnderwaterTextures = true;
+        }
+    }
+
+    if (updateFlags & UpdateFlags_UI_Custom_Textures){
+        if (UIComponent* ui = registry->findComponent<UIComponent>(entity)){
+            ui->needUpdateCustomTextures = true;
+        }
+    }
+
+    if (updateFlags & UpdateFlags_Sky_Custom_Textures){
+        if (SkyComponent* sky = registry->findComponent<SkyComponent>(entity)){
+            sky->needUpdateCustomTextures = true;
+        }
+    }
+
+    if (updateFlags & UpdateFlags_Points_Custom_Textures){
+        if (PointsComponent* p = registry->findComponent<PointsComponent>(entity)){
+            p->needUpdateCustomTextures = true;
+        }
+    }
+
+    if (updateFlags & UpdateFlags_Lines_Custom_Textures){
+        if (LinesComponent* l = registry->findComponent<LinesComponent>(entity)){
+            l->needUpdateCustomTextures = true;
         }
     }
 }

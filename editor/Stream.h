@@ -129,6 +129,9 @@ namespace doriax::editor {
         static YAML::Node encodeShaderUniforms(const ShaderUniformValues& uniforms);
         static ShaderUniformValues decodeShaderUniforms(const YAML::Node& node);
 
+        static YAML::Node encodeCustomTextures(const std::vector<std::pair<std::string, Texture>>& textures, bool embedData);
+        static std::vector<std::pair<std::string, Texture>> decodeCustomTextures(const YAML::Node& node);
+
         static YAML::Node encodeRect(const Rect& rect);
         static Rect decodeRect(const YAML::Node& node);
 

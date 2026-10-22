@@ -6,8 +6,12 @@
 
 #include "buffer/Buffer.h"
 #include "shader/ShaderUniforms.h"
+#include "texture/Texture.h"
+#include "render/TextureRender.h"
 #include "Engine.h"
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace doriax{
 
@@ -53,6 +57,16 @@ namespace doriax{
         bool needUpdateShaderUniforms = false;
         CustomUniformBlock customVSParams;
         CustomUniformBlock customFSParams;
+
+        struct CustomTextureBinding {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+
+        std::vector<std::pair<std::string, Texture>> customTextures;
+        bool needUpdateCustomTextures = false;
 
         bool needUpdateBuffer = false;
         bool needReload = false;

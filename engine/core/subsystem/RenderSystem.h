@@ -572,6 +572,13 @@ namespace doriax{
 			std::pair<int, int> slotDepth;
 			std::pair<int, int> slotGBuffer;
 			std::pair<int, int> slotSSAO;
+
+			struct CustomTextureBinding{
+				std::string name;
+				std::pair<int, int> slot = {-1, -1};
+				TextureRender* render = nullptr;
+			};
+			std::vector<CustomTextureBinding> customTextureBindings;
 		};
 		bool postProcessLoaded;
 		bool postProcessNeedReload;
@@ -591,6 +598,11 @@ namespace doriax{
 		static void changeWaterDestroy(void* data);
 
 		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
+		static bool samplesCameraTarget(const CameraComponent& camera, const PointsComponent& points);
+		static bool samplesCameraTarget(const CameraComponent& camera, const LinesComponent& lines);
+		static bool samplesCameraTarget(const CameraComponent& camera, const UIComponent& ui);
+		static bool samplesCameraTarget(const CameraComponent& camera, const SkyComponent& sky);
+		static bool samplesCameraTarget(const CameraComponent& camera, const WaterComponent& water);
 		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
@@ -877,6 +889,7 @@ namespace doriax{
 		void needUpdatePostProcessUniforms();
 		// components inheriting the default shader of this type rewrite their custom blocks
 		void needUpdateDefaultShaderUniforms(ShaderType type);
+		void needUpdateDefaultShaderCustomTextures(ShaderType type);
 		void needReloadUIs();
 		void needReloadSky();
 		void needReloadWater();

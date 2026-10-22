@@ -1608,6 +1608,130 @@ void editor::Properties::drawTextureSettingsPopup(const char* popupId, Component
     ImGui::EndPopup();
 }
 
+void editor::Properties::drawCustomTextureSettingsPopup(const char* popupId, Texture& texture, bool& changed){
+    ImGui::SetNextWindowSizeConstraints(ImVec2(19 * ImGui::GetFontSize(), 0), ImVec2(FLT_MAX, FLT_MAX));
+    if (!ImGui::BeginPopup(popupId))
+        return;
+
+    auto invalidate = [&texture](){
+        texture.invalidateRender();
+    };
+
+    const Texture defaults;
+    bool isSvg = TextureData::hasSvgExtension(texture.getPath().c_str());
+    float svgCurrentScale = texture.getSvgScale();
+
+    ImGui::Text("Texture settings");
+    ImGui::Separator();
+
+    beginTable(ComponentType::MeshComponent, getLabelSize("Alpha Border"), "custom_tex_settings_" + texture.getId());
+
+    struct SamplerRow {
+        const char* label;
+        const char* comboId;
+        const std::vector<editor::EnumEntry>* entries;
+        int current;
+        int def;
+        void (*set)(Texture&, int);
+    };
+    const SamplerRow samplerRows[] = {
+        {"Min Filter", "##cts_min", &entriesTextureMinFilter, (int)texture.getMinFilter(), (int)defaults.getMinFilter(), [](Texture& t, int v){ t.setMinFilter((TextureFilter)v); }},
+        {"Mag Filter", "##cts_mag", &entriesTextureFilter, (int)texture.getMagFilter(), (int)defaults.getMagFilter(), [](Texture& t, int v){ t.setMagFilter((TextureFilter)v); }},
+        {"Wrap U", "##cts_wrapu", &entriesTextureWrap, (int)texture.getWrapU(), (int)defaults.getWrapU(), [](Texture& t, int v){ t.setWrapU((TextureWrap)v); }},
+        {"Wrap V", "##cts_wrapv", &entriesTextureWrap, (int)texture.getWrapV(), (int)defaults.getWrapV(), [](Texture& t, int v){ t.setWrapV((TextureWrap)v); }},
+        {"Alpha Border", "##cts_alphaborder", &entriesTextureAlphaBorder, (int)texture.getAlphaBorder(), (int)defaults.getAlphaBorder(), [](Texture& t, int v){ t.setAlphaBorder((TextureAlphaBorder)v); }},
+    };
+
+    auto comboRow = [this](const char* label, const char* comboId, const std::vector<editor::EnumEntry>& entries, int currentValue, int defaultValue, int& outValue) -> bool {
+        int item = 0;
+        for (size_t i = 0; i < entries.size(); ++i){
+            if (entries[i].value == currentValue){
+                item = (int)i;
+                break;
+            }
+        }
+        std::vector<const char*> names;
+        for (const auto& entry : entries)
+            names.push_back(entry.name);
+
+        bool reset = propertyHeader(label, 12 * ImGui::GetFontSize(), currentValue != defaultValue, false);
+        if (ImGui::Combo(comboId, &item, names.data(), (int)names.size())){
+            outValue = entries[item].value;
+            return true;
+        }
+        if (reset){
+            outValue = defaultValue;
+            return true;
+        }
+        return false;
+    };
+
+    for (const SamplerRow& row : samplerRows){
+        int chosen = 0;
+        if (comboRow(row.label, row.comboId, *row.entries, row.current, row.def, chosen)){
+            row.set(texture, chosen);
+            invalidate();
+            changed = true;
+        }
+    }
+
+    endTable();
+
+    if (isSvg){
+        beginTable(ComponentType::MeshComponent, getLabelSize("Alpha Border"), "custom_tex_settings_svg_" + texture.getId());
+
+        static std::map<std::string, float> svgScaleEditing;
+        const std::string editKey = texture.getId();
+        auto editIt = svgScaleEditing.find(editKey);
+        float editScale = (editIt != svgScaleEditing.end()) ? editIt->second : svgCurrentScale;
+
+        float svgDefaultScale = defaults.getSvgScale();
+
+        bool resetScale = propertyHeader("SVG Scale", 6 * ImGui::GetFontSize(), std::fabs(svgCurrentScale - svgDefaultScale) > 1e-4f, false);
+        if (ImGui::DragFloat("##cts_svgscale", &editScale, 0.05f, 0.1f, 16.0f, "%.2fx")) {
+            svgScaleEditing[editKey] = editScale;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            svgScaleEditing.erase(editKey);
+            texture.setSvgScale(editScale);
+            invalidate();
+            changed = true;
+        }
+        if (resetScale) {
+            svgScaleEditing.erase(editKey);
+            texture.setSvgScale(svgDefaultScale);
+            invalidate();
+            changed = true;
+        }
+
+        propertyHeader("Presets", -1, false, false);
+        struct ScalePreset { const char* label; float value; };
+        static const ScalePreset presets[] = {
+            {"0.5x", 0.5f}, {"1x", 1.0f}, {"2x", 2.0f}, {"3x", 3.0f}, {"4x", 4.0f}
+        };
+        for (int i = 0; i < IM_ARRAYSIZE(presets); ++i){
+            if (i > 0)
+                ImGui::SameLine();
+            bool selected = std::fabs(svgCurrentScale - presets[i].value) < 1e-4f;
+            if (selected)
+                ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x / 1.4, ImGui::GetStyle().FramePadding.y));
+            if (ImGui::SmallButton(presets[i].label)) {
+                texture.setSvgScale(presets[i].value);
+                invalidate();
+                changed = true;
+            }
+            ImGui::PopStyleVar(1);
+            if (selected)
+                ImGui::PopStyleColor();
+        }
+
+        endTable();
+    }
+
+    ImGui::EndPopup();
+}
+
 void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities, ComponentType componentType){
     // Block DnD while playing for non-script components
     if (sceneProject && sceneProject->playState != ScenePlayState::STOPPED) {
@@ -5149,12 +5273,29 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
         return;
 
     ShaderUniformRows uniformRows = resolveShaderUniformRows(cpType, shaderType, sceneProject, shaderEntity);
+    ShaderTextureRows textureRows = resolveShaderTextureRows(cpType, shaderType, sceneProject, shaderEntity);
+    ShaderTextureRows depthTextureRows;
+    if (cpType == ComponentType::MeshComponent) {
+        depthTextureRows = resolveShaderTextureRows(cpType, ShaderType::DEPTH, sceneProject, shaderEntity);
+    }
+    ShaderTextureRows underwaterTextureRows;
+    if (cpType == ComponentType::WaterComponent) {
+        underwaterTextureRows = resolveShaderTextureRows(cpType, ShaderType::UNDERWATER, sceneProject, shaderEntity);
+    }
     const char* longestLabel = "Shader";
     if (cpType == ComponentType::MeshComponent)
         longestLabel = "Depth Shader";
     else if (cpType == ComponentType::WaterComponent)
         longestLabel = "Underwater Shader";
     float labelSize = getLabelSize(longestLabel, false);
+    for (const ShaderUniform& uniform : uniformRows.members)
+        labelSize = std::max(labelSize, getLabelSize(uniform.name, false));
+    for (const std::string& name : textureRows.names)
+        labelSize = std::max(labelSize, getLabelSize(name, false));
+    for (const std::string& name : depthTextureRows.names)
+        labelSize = std::max(labelSize, getLabelSize(name, false));
+    for (const std::string& name : underwaterTextureRows.names)
+        labelSize = std::max(labelSize, getLabelSize(name, false));
 
     ImGui::SeparatorText("Shaders");
     beginTable(cpType, labelSize, "custom_shader_table");
@@ -5190,7 +5331,12 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
 
     endTable();
 
-    if (!uniformRows.members.empty()) {
+    const bool hasTextures =
+        !textureRows.names.empty() ||
+        !depthTextureRows.names.empty() ||
+        !underwaterTextureRows.names.empty();
+
+    if (!uniformRows.members.empty() || hasTextures) {
         // named after the color fork, own or inherited, else the depth or underwater one
         std::string forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customShader");
         if (forkShader.empty())
@@ -5204,6 +5350,12 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
         // inherited rows can show the reset arrow
         beginTable(cpType, getShaderUniformsLabelSize(uniformRows.members, uniformRows.inherited != nullptr), "custom_shader_uniforms_table");
         drawShaderUniformRows(cpType, sceneProject, shaderEntity, uniformRows, false);
+
+        drawShaderTextureRows(cpType, sceneProject, shaderEntity, textureRows);
+        if (cpType == ComponentType::MeshComponent)
+            drawShaderTextureRows(cpType, sceneProject, shaderEntity, depthTextureRows, "customDepthTextures");
+        if (cpType == ComponentType::WaterComponent)
+            drawShaderTextureRows(cpType, sceneProject, shaderEntity, underwaterTextureRows, "customUnderwaterTextures");
         endTable();
     }
 }
@@ -5463,6 +5615,263 @@ void editor::Properties::drawSceneShaderRow(SceneProject* sceneProject, ShaderTy
     drawShaderRowContents(shaderType, currentShader, setShader, onFork, scenePropertyName);
 }
 
+editor::Properties::ShaderTextureRows editor::Properties::resolveShaderTextureRows(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity) {
+    ShaderTextureRows rows;
+    Scene* scene = sceneProject->scene;
+
+    if (shaderType == ShaderType::DEPTH && cpType == ComponentType::MeshComponent) {
+        rows.buildFailed = Catalog::isCustomDepthShaderBuildFailed(scene, entity);
+    } else if (shaderType == ShaderType::UNDERWATER && cpType == ComponentType::WaterComponent) {
+        rows.buildFailed = Catalog::isCustomUnderwaterShaderBuildFailed(scene, entity);
+    } else {
+        rows.buildFailed = Catalog::isCustomShaderBuildFailed(scene, entity, cpType);
+    }
+
+    std::shared_ptr<ShaderRender> shader;
+    switch (cpType) {
+        case ComponentType::MeshComponent:
+            if (MeshComponent* m = scene->findComponent<MeshComponent>(entity))
+                if (m->numSubmeshes > 0) {
+                    if (shaderType == ShaderType::DEPTH) shader = m->submeshes[0].depthShader;
+                    else                                  shader = m->submeshes[0].shader;
+                }
+            break;
+        case ComponentType::UIComponent:
+            if (UIComponent* u = scene->findComponent<UIComponent>(entity)) shader = u->shader;
+            break;
+        case ComponentType::PointsComponent:
+            if (PointsComponent* p = scene->findComponent<PointsComponent>(entity)) shader = p->shader;
+            break;
+        case ComponentType::LinesComponent:
+            if (LinesComponent* l = scene->findComponent<LinesComponent>(entity)) shader = l->shader;
+            break;
+        case ComponentType::SkyComponent:
+            if (SkyComponent* s = scene->findComponent<SkyComponent>(entity)) shader = s->shader;
+            break;
+        case ComponentType::WaterComponent:
+            if (WaterComponent* w = scene->findComponent<WaterComponent>(entity)) {
+                if (shaderType == ShaderType::UNDERWATER) shader = w->underwaterShader;
+                else                                      shader = w->shader;
+            }
+            break;
+        default: break;
+    }
+    if (shader && shader->isCreated()) {
+        for (const std::string& name : shader->shaderData.getCustomTextureNames()) {
+            rows.names.push_back(name);
+        }
+    }
+    return rows;
+}
+
+void editor::Properties::drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ShaderTextureRows& rows, const std::string& propertyName) {
+    if (rows.names.empty()) return;
+
+    auto* valuesRef = Catalog::getPropertyRef<std::vector<std::pair<std::string, Texture>>>(
+        sceneProject->scene, entity, cpType, propertyName);
+    if (!valuesRef) return;
+
+    std::vector<std::pair<std::string, Texture>> values = *valuesRef;
+
+    std::vector<std::pair<std::string, Texture>> newValues;
+    newValues.reserve(rows.names.size());
+    for (const std::string& name : rows.names) {
+        auto it = std::find_if(values.begin(), values.end(),
+            [&](const auto& e) { return e.first == name; });
+        newValues.push_back(it != values.end() ? *it : std::make_pair(name, Texture()));
+    }
+
+    bool structureChanged = (newValues.size() != values.size());
+    if (!structureChanged) {
+        for (size_t i = 0; i < newValues.size(); ++i) {
+            if (newValues[i].first != values[i].first) { structureChanged = true; break; }
+        }
+    }
+    if (structureChanged) {
+        CommandHandle::get(sceneProject->id)->addCommand(
+            new PropertyCmd<std::vector<std::pair<std::string, Texture>>>(
+                project, sceneProject->id, entity, cpType, propertyName, newValues));
+        values = newValues;
+    }
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float spacing = style.ItemSpacing.x;
+
+    const ImVec2 iconButtonSize = ImGui::CalcItemSize(
+        ImVec2(0, 0), ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+
+    auto commitTexture = [&](size_t index, const Texture& newTexture) {
+    CommandHandle::get(sceneProject->id)->addCommandNoMerge(
+        new PropertyCmd<Texture>(
+            project, sceneProject->id, entity, cpType,
+            propertyName + "[" + std::to_string(index) + "].second",
+            newTexture));
+    };
+
+    for (size_t i = 0; i < values.size(); ++i) {
+        ImGui::TableNextRow();
+        ImGui::PushID(propertyName.c_str());
+        ImGui::PushID(static_cast<int>(i));
+
+        const Texture& tex = values[i].second;
+        const bool hasTexture = !tex.empty();
+        const bool isCameraTexture = CameraTextureLink::isCameraTexture(tex);
+        const bool canReset = hasTexture || isCameraTexture;
+
+        ImGui::TableSetColumnIndex(0);
+        static const std::string prefix = "u_custom_";
+        const std::string& samplerName = values[i].first;
+        const std::string displayName = samplerName.rfind(prefix, 0) == 0
+            ? samplerName.substr(prefix.size())
+            : samplerName;
+        ImGui::TextUnformatted(displayName.c_str());
+
+        if (canReset) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, style.ItemSpacing.y));
+            ImGui::SameLine();
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, style.FramePadding.y));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            if (ImGui::Button((ICON_FA_ROTATE_LEFT "##reset_tex_" + std::to_string(i)).c_str())) {
+                commitTexture(i, Texture());
+            }
+            ImGui::SetItemTooltip("Clear texture");
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(3);
+        }
+
+        ImGui::TableSetColumnIndex(1);
+
+        std::string display;
+        if (isCameraTexture) {
+            display = std::string(ICON_FA_VIDEO) + " "
+                    + CameraTextureLink::cameraName(sceneProject->scene, tex);
+        } else {
+            display = tex.getPath();
+            if (!display.empty()) {
+                std::filesystem::path p(display);
+                display = p.filename().string();
+            }
+        }
+        if (display.empty()) display = "< Not set >";
+
+        const bool showTexSettings = !isCameraTexture && hasTexture;
+        const int buttonCount =  2 + (showTexSettings ? 1 : 0);
+        const float buttonsWidth = iconButtonSize.x * (float)buttonCount + spacing * (float)(buttonCount + 1);
+        float rowWidth = ImGui::GetContentRegionAvail().x;
+        float fieldWidth = std::max(40.0f, rowWidth - buttonsWidth);
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::Colors::filenameLabel);
+        ImGui::BeginChild(("##texframe_" + std::to_string(i)).c_str(),
+                          ImVec2(fieldWidth, ImGui::GetFontSize() + style.FramePadding.y * 2),
+                          false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        float textWidth = ImGui::CalcTextSize(display.c_str()).x;
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(std::max(0.0f, availWidth - textWidth - 2));
+        ImGui::SetCursorPosY(style.FramePadding.y);
+
+        if (isCameraTexture) {
+            ImGui::TextUnformatted(display.c_str());
+        } else if (tex.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextUnformatted(display.c_str());
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::TextUnformatted(display.c_str());
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        if (ImGui::IsItemHovered()) {
+            if (isCameraTexture) {
+                ImGui::SetTooltip("Camera: %s",
+                    CameraTextureLink::cameraName(sceneProject->scene, tex).c_str());
+            } else if (!tex.getPath().empty()) {
+                ImGui::SetTooltip("%s", tex.getPath().c_str());
+            }
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, style.FramePadding.y));
+
+        ImGui::SameLine(0.0f, spacing);
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN, iconButtonSize)) {
+            std::string path = editor::FileDialogs::openFileDialog(
+                project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+            if (!path.empty()) {
+                std::filesystem::path assetsPath = project->getAssetsPath();
+                std::filesystem::path filePath = std::filesystem::absolute(path);
+                std::error_code ec;
+                auto relative = std::filesystem::relative(filePath, assetsPath, ec);
+                if (ec || relative.empty() || *relative.begin() == "..") {
+                    Backend::getApp().registerOutsideAssetsAlert(path);
+                } else {
+                    commitTexture(i, Texture(relative.string()));
+                }
+            }
+        }
+        ImGui::SetItemTooltip("Choose image file");
+
+        ImGui::SameLine(0.0f, spacing);
+        const std::string cameraPopupId = "##shader_sampler_camera_popup_" + std::to_string(i);
+        if (ImGui::Button(ICON_FA_VIDEO, iconButtonSize)) {
+            ImGui::OpenPopup(cameraPopupId.c_str());
+        }
+        ImGui::SetItemTooltip("Camera as source (render to texture)");
+
+        if (ImGui::BeginPopup(cameraPopupId.c_str())) {
+            Scene* scene = sceneProject->scene;
+            auto camerasArray = scene->getComponentArray<CameraComponent>();
+            bool hasCamera = false;
+            for (size_t c = 0; c < camerasArray->size(); c++) {
+                Entity cameraEntity = camerasArray->getEntity(c);
+                if (std::find(sceneProject->entities.begin(), sceneProject->entities.end(),
+                            cameraEntity) == sceneProject->entities.end())
+                    continue;
+                hasCamera = true;
+                std::string cameraLabel = std::string(ICON_FA_VIDEO) + " "
+                                        + scene->getEntityName(cameraEntity);
+                if (ImGui::MenuItem(cameraLabel.c_str())) {
+                    CameraComponent* cam = scene->findComponent<CameraComponent>(cameraEntity);
+                    if (cam) {
+                        if (!cam->renderToTexture) cam->renderToTexture = true;
+                        if (sceneProject->mainCamera == cameraEntity) {
+                            CommandHandle::get(sceneProject->id)->addCommandNoMerge(
+                                new SetMainCameraCmd(project, sceneProject->id, NULL_ENTITY));
+                        }
+                        commitTexture(i, CameraTextureLink::make(scene, cameraEntity));
+                    }
+                }
+            }
+            if (!hasCamera) ImGui::TextDisabled("No camera in scene");
+            ImGui::EndPopup();
+        }
+
+        if (showTexSettings) {
+            ImGui::SameLine(0.0f, spacing);
+            const std::string settingsPopupId = "##shader_sampler_settings_popup_" + std::to_string(i);
+            if (ImGui::Button(ICON_FA_SLIDERS, iconButtonSize)) {
+                ImGui::OpenPopup(settingsPopupId.c_str());
+            }
+            ImGui::SetItemTooltip("Texture settings (filter, wrap, SVG scale)");
+
+            Texture editedTexture = values[i].second;
+            bool texChanged = false;
+            drawCustomTextureSettingsPopup(settingsPopupId.c_str(), editedTexture, texChanged);
+            if (texChanged) {
+                commitTexture(i, editedTexture);
+            }
+        }
+
+        ImGui::PopStyleVar();
+
+        ImGui::PopID();
+        ImGui::PopID();
+    }
+}
+
 void editor::Properties::drawSceneShaderUniforms(SceneProject* sceneProject, ShaderType shaderType, const ShaderUniformRows& rows, bool used, bool status){
     if (status){
         if (used){
@@ -5500,6 +5909,353 @@ void editor::Properties::drawSceneShaderUniforms(SceneProject* sceneProject, Sha
             cmd->setNoMerge();
             cmd = nullptr;
         }
+    }
+}
+
+editor::Properties::ShaderTextureRows editor::Properties::resolveSceneTextureRows(SceneProject* sceneProject, ShaderType shaderType, bool& used){
+    ShaderTextureRows rows;
+    used = false;
+
+    Scene* scene = sceneProject->scene;
+    std::vector<const ShaderRender*> variants;
+    bool failed = false;
+
+    auto addShader = [&](const std::shared_ptr<ShaderRender>& shader){
+        if (!shader || !shader->isCreated())
+            return;
+        used = true;
+        if (std::find(variants.begin(), variants.end(), shader.get()) != variants.end())
+            return;
+        variants.push_back(shader.get());
+        for (const std::string& name : shader->shaderData.getCustomTextureNames()){
+            if (std::find(rows.names.begin(), rows.names.end(), name) == rows.names.end())
+                rows.names.push_back(name);
+        }
+    };
+
+    switch (shaderType) {
+        case ShaderType::MESH: {
+            auto components = scene->getComponentArray<MeshComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const MeshComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                for (unsigned int s = 0; s < component.numSubmeshes; s++){
+                    if (component.submeshes[s].customShaderId != 0)
+                        addShader(component.submeshes[s].shader);
+                }
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::MeshComponent))
+                    failed = true;
+            }
+            break;
+        }
+        case ShaderType::UI: {
+            auto components = scene->getComponentArray<UIComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const UIComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                if (component.customShaderId != 0)
+                    addShader(component.shader);
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::UIComponent))
+                    failed = true;
+            }
+            break;
+        }
+        case ShaderType::SKYBOX: {
+            auto components = scene->getComponentArray<SkyComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const SkyComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                if (component.customShaderId != 0)
+                    addShader(component.shader);
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::SkyComponent))
+                    failed = true;
+            }
+            break;
+        }
+        case ShaderType::POINTS: {
+            auto components = scene->getComponentArray<PointsComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const PointsComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                if (component.customShaderId != 0)
+                    addShader(component.shader);
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::PointsComponent))
+                    failed = true;
+            }
+            break;
+        }
+        case ShaderType::LINES: {
+            auto components = scene->getComponentArray<LinesComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const LinesComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                if (component.customShaderId != 0)
+                    addShader(component.shader);
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::LinesComponent))
+                    failed = true;
+            }
+            break;
+        }
+        case ShaderType::WATER: {
+            auto components = scene->getComponentArray<WaterComponent>();
+            for (size_t i = 0; i < components->size(); i++){
+                const WaterComponent& component = components->getComponentFromIndex(i);
+                if (!component.customShader.empty() || !component.loaded)
+                    continue;
+                if (component.customShaderId != 0)
+                    addShader(component.shader);
+                if (!used && Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), ComponentType::WaterComponent))
+                    failed = true;
+            }
+            break;
+        }
+        default:
+            return rows;
+    }
+
+    rows.buildFailed = !used && failed;
+    return rows;
+}
+
+void editor::Properties::drawSceneTextureRows(SceneProject* sceneProject, ShaderType shaderType, const ShaderTextureRows& rows, bool used, bool status){
+    if (status){
+        if (used)
+            return;
+
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(1);
+        if (rows.buildFailed){
+            ImGui::TextDisabled("Shader failed to build");
+        }else{
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextWrapped("Textures show once a component uses it");
+            ImGui::PopStyleColor();
+        }
+        return;
+    }
+
+    if (rows.names.empty())
+        return;
+
+    const char* propertyName = Catalog::getDefaultShaderCustomTexturesProperty(shaderType);
+    const auto currentTextures = Catalog::getSceneProperty<std::vector<std::pair<std::string, Texture>>>(sceneProject->scene, propertyName);
+
+
+    std::vector<std::pair<std::string, Texture>> syncedTextures;
+    syncedTextures.reserve(rows.names.size());
+    for (const std::string& name : rows.names){
+        auto it = std::find_if(currentTextures.begin(), currentTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        syncedTextures.push_back(it != currentTextures.end() ? *it : std::make_pair(name, Texture()));
+    }
+
+    bool structureChanged = (syncedTextures.size() != currentTextures.size());
+    if (!structureChanged){
+        for (size_t t = 0; t < syncedTextures.size(); ++t){
+            if (syncedTextures[t].first != currentTextures[t].first){
+                structureChanged = true;
+                break;
+            }
+        }
+    }
+
+    const uint32_t sceneId = sceneProject->id;
+    auto commitTextures = [&](const std::vector<std::pair<std::string, Texture>>& newTextures){
+        CommandHandle::get(sceneId)->addCommandNoMerge(
+            new ScenePropertyCmd<std::vector<std::pair<std::string, Texture>>>(
+                project, sceneId, propertyName, newTextures));
+    };
+
+    if (structureChanged){
+        commitTextures(syncedTextures);
+    }
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float spacing = style.ItemSpacing.x;
+
+    const ImVec2 iconButtonSize = ImGui::CalcItemSize(
+        ImVec2(0, 0), ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+
+    static const std::string prefix = "u_custom_";
+
+    for (size_t t = 0; t < syncedTextures.size(); ++t){
+        ImGui::TableNextRow();
+        ImGui::PushID(static_cast<int>(30000 + t));
+
+        const Texture& tex = syncedTextures[t].second;
+        const bool hasTexture = !tex.empty();
+        const bool isCameraTexture = CameraTextureLink::isCameraTexture(tex);
+        const bool canReset = hasTexture || isCameraTexture;
+
+        ImGui::TableSetColumnIndex(0);
+        const std::string& samplerName = syncedTextures[t].first;
+        const std::string displayName = samplerName.rfind(prefix, 0) == 0
+            ? samplerName.substr(prefix.size())
+            : samplerName;
+        ImGui::TextUnformatted(displayName.c_str());
+
+        if (canReset){
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, style.ItemSpacing.y));
+            ImGui::SameLine();
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, style.FramePadding.y));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            if (ImGui::Button((ICON_FA_ROTATE_LEFT "##scene_reset_tex_" + std::to_string(t)).c_str())){
+                std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                modified[t].second = Texture();
+                commitTextures(modified);
+            }
+            ImGui::SetItemTooltip("Clear texture");
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(3);
+        }
+
+        ImGui::TableSetColumnIndex(1);
+
+        std::string display;
+        if (isCameraTexture){
+            display = std::string(ICON_FA_VIDEO) + " "
+                    + CameraTextureLink::cameraName(sceneProject->scene, tex);
+        }else{
+            display = tex.getPath();
+            if (!display.empty()){
+                std::filesystem::path p(display);
+                display = p.filename().string();
+            }
+        }
+        if (display.empty()) display = "< Not set >";
+
+        const bool showTexSettings = !isCameraTexture && hasTexture;
+        const int buttonCount = 2 + (showTexSettings ? 1 : 0);
+        const float buttonsWidth =
+            iconButtonSize.x * (float)buttonCount + spacing * (float)(buttonCount + 1);
+        float rowWidth = ImGui::GetContentRegionAvail().x;
+        float fieldWidth = std::max(40.0f, rowWidth - buttonsWidth);
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::Colors::filenameLabel);
+        ImGui::BeginChild(("##scene_texframe_" + std::to_string(t)).c_str(),
+                          ImVec2(fieldWidth, ImGui::GetFontSize() + style.FramePadding.y * 2),
+                          false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        float textWidth = ImGui::CalcTextSize(display.c_str()).x;
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(std::max(0.0f, availWidth - textWidth - 2));
+        ImGui::SetCursorPosY(style.FramePadding.y);
+
+        if (tex.empty()){
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextUnformatted(display.c_str());
+            ImGui::PopStyleColor();
+        }else{
+            ImGui::TextUnformatted(display.c_str());
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        if (ImGui::IsItemHovered() && !tex.getPath().empty()){
+            ImGui::SetTooltip("%s", tex.getPath().c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, style.FramePadding.y));
+
+        ImGui::SameLine(0.0f, spacing);
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN, iconButtonSize)){
+            std::string path = editor::FileDialogs::openFileDialog(
+                project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+            if (!path.empty()){
+                std::filesystem::path assetsPath = project->getAssetsPath();
+                std::filesystem::path filePath = std::filesystem::absolute(path);
+                std::error_code ec;
+                auto relative = std::filesystem::relative(filePath, assetsPath, ec);
+                if (ec || relative.empty() || *relative.begin() == ".."){
+                    Backend::getApp().registerOutsideAssetsAlert(path);
+                }else{
+                    std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                    modified[t].second = Texture(relative.string());
+                    commitTextures(modified);
+                }
+            }
+        }
+        ImGui::SetItemTooltip("Choose image file");
+
+        ImGui::SameLine(0.0f, spacing);
+        const std::string cameraPopupId = "##scene_shader_sampler_camera_popup_" + std::to_string(t);
+        if (ImGui::Button(ICON_FA_VIDEO, iconButtonSize)){
+            ImGui::OpenPopup(cameraPopupId.c_str());
+        }
+        ImGui::SetItemTooltip("Camera as source (render to texture)");
+
+        if (ImGui::BeginPopup(cameraPopupId.c_str())){
+            Scene* scene = sceneProject->scene;
+            auto camerasArray = scene->getComponentArray<CameraComponent>();
+            bool hasCamera = false;
+            for (size_t c = 0; c < camerasArray->size(); c++){
+                Entity cameraEntity = camerasArray->getEntity(c);
+                if (std::find(sceneProject->entities.begin(), sceneProject->entities.end(),
+                            cameraEntity) == sceneProject->entities.end())
+                    continue;
+
+                hasCamera = true;
+                std::string cameraLabel = std::string(ICON_FA_VIDEO) + " "
+                                        + scene->getEntityName(cameraEntity);
+                if (ImGui::MenuItem(cameraLabel.c_str())){
+                    CameraComponent* cam = scene->findComponent<CameraComponent>(cameraEntity);
+                    if (!cam)
+                        continue;
+
+                    bool needRenderToTexture = !cam->renderToTexture;
+                    bool needClearMainCamera = (sceneProject->mainCamera == cameraEntity);
+
+                    if (needRenderToTexture || needClearMainCamera){
+                        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+                        if (needRenderToTexture){
+                            multiCmd->addPropertyCmd<bool>(project, sceneProject->id, cameraEntity,
+                                ComponentType::CameraComponent, "renderToTexture", true);
+                        }
+                        if (needClearMainCamera){
+                            multiCmd->addCommand(std::make_unique<SetMainCameraCmd>(
+                                project, sceneProject->id, NULL_ENTITY));
+                        }
+                        CommandHandle::get(sceneProject->id)->addCommandNoMerge(multiCmd);
+                    }
+
+                    std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                    modified[t].second = CameraTextureLink::make(scene, cameraEntity);
+                    commitTextures(modified);
+                }
+            }
+            if (!hasCamera)
+                ImGui::TextDisabled("No camera in scene");
+            ImGui::EndPopup();
+        }
+
+        if (showTexSettings){
+            ImGui::SameLine(0.0f, spacing);
+            const std::string settingsPopupId = "##scene_tex_settings_" + std::to_string(t);
+            if (ImGui::Button(ICON_FA_SLIDERS, iconButtonSize)){
+                ImGui::OpenPopup(settingsPopupId.c_str());
+            }
+            ImGui::SetItemTooltip("Texture settings (filter, wrap, SVG scale)");
+
+            Texture editedTexture = syncedTextures[t].second;
+            bool texChanged = false;
+            drawCustomTextureSettingsPopup(settingsPopupId.c_str(), editedTexture, texChanged);
+            if (texChanged){
+                std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                modified[t].second = editedTexture;
+                commitTextures(modified);
+            }
+        }
+
+        ImGui::PopStyleVar();
+        ImGui::PopID();
     }
 }
 
@@ -5558,6 +6314,188 @@ void editor::Properties::drawPostProcessUniforms(uint32_t sceneId, const std::ve
             cmd->setNoMerge();
             cmd = nullptr;
         }
+    }
+}
+
+editor::Properties::PostProcessTextureRows editor::Properties::resolvePostProcessTextureRows(
+        const PostProcessShader& resolved) {
+    PostProcessTextureRows rows;
+    rows.buildFailed = resolved.buildFailed;
+
+    if (resolved.shader && resolved.shader->isCreated()) {
+        rows.names = resolved.shader->shaderData.getCustomTextureNames();
+    }
+
+    return rows;
+}
+
+void editor::Properties::drawPostProcessTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const PostProcessTextureRows& rows) {
+    if (rows.names.empty()) return;
+
+    std::vector<std::pair<std::string, Texture>> currentTextures = passes[index].customTextures;
+
+    std::vector<std::pair<std::string, Texture>> syncedTextures;
+    syncedTextures.reserve(rows.names.size());
+    for (const std::string& name : rows.names) {
+        auto it = std::find_if(currentTextures.begin(), currentTextures.end(),
+            [&](const auto& e) { return e.first == name; });
+        syncedTextures.push_back(it != currentTextures.end()
+            ? *it
+            : std::make_pair(name, Texture()));
+    }
+
+    bool structureChanged = (syncedTextures.size() != currentTextures.size());
+    if (!structureChanged) {
+        for (size_t t = 0; t < syncedTextures.size(); ++t) {
+            if (syncedTextures[t].first != currentTextures[t].first) {
+                structureChanged = true;
+                break;
+            }
+        }
+    }
+
+    auto commitTextures = [&](const std::vector<std::pair<std::string, Texture>>& newTextures) {
+        std::vector<PostProcessPass> newPasses = passes;
+        newPasses[index].customTextures = newTextures;
+        CommandHandle::get(sceneId)->addCommandNoMerge(
+            new ScenePropertyCmd<std::vector<PostProcessPass>>(
+                project, sceneId, "post_process", newPasses));
+    };
+
+    if (structureChanged) {
+        commitTextures(syncedTextures);
+    }
+
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float spacing = style.ItemSpacing.x;
+
+    const ImVec2 iconButtonSize = ImGui::CalcItemSize(
+        ImVec2(0, 0), ImGui::GetFrameHeight(), ImGui::GetFrameHeight());
+
+    for (size_t t = 0; t < syncedTextures.size(); ++t) {
+        ImGui::TableNextRow();
+        ImGui::PushID(static_cast<int>(20000 + t));
+
+        const Texture& tex = syncedTextures[t].second;
+        const bool hasTexture = !tex.empty();
+        const bool isCameraTexture = CameraTextureLink::isCameraTexture(tex);
+        const bool canReset = hasTexture || isCameraTexture;
+
+        ImGui::TableSetColumnIndex(0);
+        static const std::string prefix = "u_custom_";
+        const std::string& samplerName = syncedTextures[t].first;
+        const std::string displayName = samplerName.rfind(prefix, 0) == 0
+            ? samplerName.substr(prefix.size())
+            : samplerName;
+        ImGui::TextUnformatted(displayName.c_str());
+
+        if (canReset) {
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, style.ItemSpacing.y));
+            ImGui::SameLine();
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, style.FramePadding.y));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            if (ImGui::Button((ICON_FA_ROTATE_LEFT "##pp_reset_tex_" + std::to_string(t)).c_str())) {
+                std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                modified[t].second = Texture();
+                commitTextures(modified);
+            }
+            ImGui::SetItemTooltip("Clear texture");
+            ImGui::PopStyleColor(2);
+            ImGui::PopStyleVar(3);
+        }
+
+        ImGui::TableSetColumnIndex(1);
+
+        std::string display;
+        if (isCameraTexture) {
+            display = std::string(ICON_FA_VIDEO) + " "
+                    + CameraTextureLink::cameraName(project->getScene(sceneId)->scene, tex);
+        } else {
+            display = tex.getPath();
+            if (!display.empty()) {
+                std::filesystem::path p(display);
+                display = p.filename().string();
+            }
+        }
+        if (display.empty()) display = "< Not set >";
+
+        const bool showTexSettings = !isCameraTexture && hasTexture;
+        const int buttonCount = 1 + (showTexSettings ? 1 : 0);
+        const float buttonsWidth =
+            iconButtonSize.x * (float)buttonCount + spacing * (float)(buttonCount + 1);
+        float rowWidth = ImGui::GetContentRegionAvail().x;
+        float fieldWidth = std::max(40.0f, rowWidth - buttonsWidth);
+
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, Theme::Colors::filenameLabel);
+        ImGui::BeginChild(("##pp_texframe_" + std::to_string(t)).c_str(),
+                          ImVec2(fieldWidth, ImGui::GetFontSize() + style.FramePadding.y * 2),
+                          false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+        float textWidth = ImGui::CalcTextSize(display.c_str()).x;
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        ImGui::SetCursorPosX(std::max(0.0f, availWidth - textWidth - 2));
+        ImGui::SetCursorPosY(style.FramePadding.y);
+
+        if (tex.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, style.Colors[ImGuiCol_TextDisabled]);
+            ImGui::TextUnformatted(display.c_str());
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::TextUnformatted(display.c_str());
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+
+        if (ImGui::IsItemHovered() && !tex.getPath().empty()) {
+            ImGui::SetTooltip("%s", tex.getPath().c_str());
+        }
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, style.FramePadding.y));
+
+        ImGui::SameLine(0.0f, spacing);
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN, iconButtonSize)) {
+            std::string path = editor::FileDialogs::openFileDialog(
+                project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+            if (!path.empty()) {
+                std::filesystem::path assetsPath = project->getAssetsPath();
+                std::filesystem::path filePath = std::filesystem::absolute(path);
+                std::error_code ec;
+                auto relative = std::filesystem::relative(filePath, assetsPath, ec);
+                if (ec || relative.empty() || *relative.begin() == "..") {
+                    Backend::getApp().registerOutsideAssetsAlert(path);
+                } else {
+                    std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                    modified[t].second = Texture(relative.string());
+                    commitTextures(modified);
+                }
+            }
+        }
+        ImGui::SetItemTooltip("Choose image file");
+
+        if (showTexSettings) {
+            ImGui::SameLine(0.0f, spacing);
+            const std::string settingsPopupId = "##pp_tex_settings_" + std::to_string(t);
+            if (ImGui::Button(ICON_FA_SLIDERS, iconButtonSize)) {
+                ImGui::OpenPopup(settingsPopupId.c_str());
+            }
+            ImGui::SetItemTooltip("Texture settings (filter, wrap, SVG scale)");
+
+            Texture editedTexture = syncedTextures[t].second;
+            bool texChanged = false;
+            drawCustomTextureSettingsPopup(settingsPopupId.c_str(), editedTexture, texChanged);
+            if (texChanged) {
+                std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
+                modified[t].second = editedTexture;
+                commitTextures(modified);
+            }
+        }
+
+        ImGui::PopStyleVar();
+
+        ImGui::PopID();
     }
 }
 
@@ -5689,6 +6627,13 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
         }
 
         PostProcessShader resolved = resolvePostProcessShader(passes[i]);
+        PostProcessTextureRows textureRows = resolvePostProcessTextureRows(resolved);
+
+        float labelSize = getLabelSize("Shader");
+        for (const ShaderUniform& uniform : resolved.block.members)
+            labelSize = std::max(labelSize, getLabelSize(uniform.name, false));
+        for (const std::string& name : textureRows.names)
+            labelSize = std::max(labelSize, getLabelSize(name, false));
 
         if (ImGui::BeginTable("scene_post_process_pass_table", 2, tableFlags)){
             ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Shader", false));
@@ -5747,13 +6692,15 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
         }
 
         // only drawn once the shader is built, so the first width of its column fits the names
-        if (!resolved.block.members.empty()){
+        if (!resolved.block.members.empty() || !textureRows.names.empty()){
             shaderUniformsSeparator(passes[i].shader);
             if (ImGui::BeginTable("scene_post_process_uniforms_table", 2, tableFlags)){
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(resolved.block.members, false));
                 ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
                 drawPostProcessUniforms(sceneId, passes, i, resolved, false);
+
+                drawPostProcessTextureRows(sceneId, passes, i, textureRows);
 
                 ImGui::EndTable();
             }
@@ -14301,26 +15248,45 @@ void editor::Properties::show(){
 
                 bool used = false;
                 ShaderUniformRows rows;
+                ShaderTextureRows textureRows;
+                const std::string defaultShader = sceneProject->scene->getDefaultCustomShader(type);
+
                 if (ImGui::BeginTable((std::string(propertyName) + "_table").c_str(), 2, tableFlags)) {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("Points").x);
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
                     drawSceneShaderRow(sceneProject, type, propertyName, label);
-                    if (!sceneProject->scene->getDefaultCustomShader(type).empty()) {
+                    if (!defaultShader.empty()) {
                         rows = resolveSceneShaderUniformRows(sceneProject, type, used);
                         drawSceneShaderUniforms(sceneProject, type, rows, used, true);
+
+                        textureRows = resolveSceneTextureRows(sceneProject, type, used);
+                        drawSceneTextureRows(sceneProject, type, textureRows, used, true);
                     }
                     ImGui::EndTable();
                 }
-                if (rows.members.empty())
+
+                const bool hasUniforms = !rows.members.empty();
+                const bool hasTextures = !textureRows.names.empty();
+                if (!hasUniforms && !hasTextures)
                     return;
 
-                shaderUniformsSeparator(sceneProject->scene->getDefaultCustomShader(type));
+                shaderUniformsSeparator(defaultShader);
+
+                float labelWidth = getShaderUniformsLabelSize(rows.members, false);
+                static const std::string prefix = "u_custom_";
+                for (const std::string& name : textureRows.names) {
+                    const std::string display = name.rfind(prefix, 0) == 0 ? name.substr(prefix.size()) : name;
+                    labelWidth = std::max(labelWidth, getLabelSize(display, false));
+                }
+
                 if (ImGui::BeginTable((std::string(propertyName) + "_uniforms_table").c_str(), 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(rows.members, false));
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, labelWidth);
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
                     drawSceneShaderUniforms(sceneProject, type, rows, used, false);
+                    drawSceneTextureRows(sceneProject, type, textureRows, used, false);
                     ImGui::EndTable();
                 }
+                afterUniforms = true;
                 afterUniforms = true;
             };
 

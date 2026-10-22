@@ -61,6 +61,15 @@ namespace doriax{
         CustomUniformBlock customVSParams;
         CustomUniformBlock customFSParams;
 
+        struct CustomTextureBinding
+        {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+        std::vector<CustomTextureBinding> customUnderwaterTextureBindings;
+
         // the fullscreen fade seen from inside, loaded with the water while underwater is on
         bool underwaterLoaded = false;
         ObjectRender underwaterRender;
@@ -69,6 +78,12 @@ namespace doriax{
         uint16_t customUnderwaterShaderId = 0;
         int slotUnderwaterParams = -1;
         CustomUniformBlock customUnderwaterParams;
+
+        std::vector<std::pair<std::string, Texture>> customTextures;
+        bool needUpdateCustomTextures = false;
+
+        std::vector<std::pair<std::string, Texture>> customUnderwaterTextures;
+        bool needUpdateCustomUnderwaterTextures = false;
 
         Vector2 size = Vector2(50.0f, 50.0f);
         unsigned int subdivisions = 128;

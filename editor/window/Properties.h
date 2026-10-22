@@ -263,6 +263,7 @@ namespace doriax::editor{
         void dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities, ComponentType componentType);
         void applyCameraTexture(Entity cameraEntity, ComponentType cpType, const std::string& id, SceneProject* sceneProject, std::vector<Entity>& entities, std::function<void()> onValueChanged);
         void drawTextureSettingsPopup(const char* popupId, ComponentType cpType, const std::string& id, SceneProject* sceneProject, std::vector<Entity>& entities, std::function<void()> onValueChanged);
+        void drawCustomTextureSettingsPopup(const char* popupId, Texture& texture, bool& changed);
         void dragDropResourcesTextureCubeSingleFile(ComponentType cpType, const std::string& id, const ImVec2& rectMin, const ImVec2& rectMax, SceneProject* sceneProject, const std::vector<Entity>& entities, ComponentType componentType);
         void dragDropResourcesTextureCubeFace(ComponentType cpType, const std::string& id, size_t faceIndex, const ImVec2& rectMin, const ImVec2& rectMax, SceneProject* sceneProject, const std::vector<Entity>& entities, ComponentType componentType);
 
@@ -328,9 +329,20 @@ namespace doriax::editor{
         // used by every component of that type whose customShader is empty.
         void drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label);
         // members of a scene default fork, from the components rendering with it (used)
+        
+        struct ShaderTextureRows {
+            std::vector<std::string> names;
+            bool buildFailed = false;
+        };
+        ShaderTextureRows resolveShaderTextureRows(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
+        void drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ShaderTextureRows& rows, const std::string& propertyName = "customTextures");
+        
         ShaderUniformRows resolveSceneShaderUniformRows(SceneProject* sceneProject, ShaderType shaderType, bool& used);
         // same split for a default shader's rows, whose values are stored on the scene
         void drawSceneShaderUniforms(SceneProject* sceneProject, ShaderType shaderType, const ShaderUniformRows& rows, bool used, bool status);
+
+        ShaderTextureRows resolveSceneTextureRows(SceneProject* sceneProject, ShaderType shaderType, bool& used);
+        void drawSceneTextureRows(SceneProject* sceneProject, ShaderType shaderType, const ShaderTextureRows& rows, bool used, bool status);
 
         // Ordered user post-process chain: per-pass enable, shader fork/pick, reorder
         // and remove. Uniform rows come from the fork's own u_fs_postParams block.
@@ -346,6 +358,14 @@ namespace doriax::editor{
         // same split as drawShaderUniformRows, for a pass's u_fs_postParams members
         void drawPostProcessUniforms(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index,
                                      const PostProcessShader& resolved, bool status);
+        
+        struct PostProcessTextureRows {
+            std::vector<std::string> names;
+            bool buildFailed = false;
+        };
+
+        PostProcessTextureRows resolvePostProcessTextureRows(const PostProcessShader& resolved);
+        void drawPostProcessTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const PostProcessTextureRows& rows);
 
         // Commits a planned fork as one undoable step and opens the new .vert/.frag in the
         // code editor. Alerts instead when the plan is invalid or the files cannot be written.

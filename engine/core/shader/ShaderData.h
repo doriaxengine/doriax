@@ -118,6 +118,8 @@ namespace doriax {
         int getUniformBlockIndexByName(const std::string& name);
         std::pair<int, int> getTextureIndexByName(const std::string& name);
 
+        std::vector<std::string> getCustomTextureNames() const;
+
         // block members, to build its byte blob by name
         const std::vector<ShaderUniform>* getUniformBlockMembers(const std::string& name, unsigned int& sizeBytes);
         // members are reflected as "instance.member"; the short name is what is stored
