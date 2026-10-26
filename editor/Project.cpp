@@ -2969,6 +2969,9 @@ bool editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
             std::error_code walkEc;
             for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, walkEc);
                  it != fs::recursive_directory_iterator(); ++it){
+                if (!FileUtils::isNarrowPath(it->path())){
+                    continue;
+                }
                 const std::string name = it->path().filename().string();
                 if (it->is_directory() && !name.empty() && (name[0] == '.' || name == "build")){
                     it.disable_recursion_pending();
