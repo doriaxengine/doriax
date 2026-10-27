@@ -28,7 +28,7 @@
 
 <p align="center">
   <a href="https://www.youtube.com/watch?v=3eqhaAZBNss">
-    <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-pirate-adventure.png" alt="The Doriax editor with a 3D adventure scene, linking to the introduction video">
+    <img src="https://raw.githubusercontent.com/doriaxengine/doriax-site/main/screenshots/editor-lighthouse.png" alt="The Doriax editor with the Lighthouse water scene, linking to the introduction video">
   </a>
   <br>
   <a href="https://www.youtube.com/watch?v=3eqhaAZBNss">Watch the introduction video</a>
