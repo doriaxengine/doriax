@@ -39,13 +39,13 @@ ProviderId providerFromString(const std::string& value) {
 
 std::string defaultModelForProvider(ProviderId provider) {
     switch (provider) {
-        case ProviderId::OpenAI: return "gpt-4.1";
-        case ProviderId::Anthropic: return "claude-sonnet-4-20250514";
-        case ProviderId::Gemini: return "gemini-2.5-flash"; // Flash has a free tier; Pro does not
+        case ProviderId::OpenAI: return "gpt-5.6-terra"; // GPT-6 calls tools only through /v1/responses
+        case ProviderId::Anthropic: return "claude-sonnet-5-5";
+        case ProviderId::Gemini: return "gemini-3.8-flash"; // Flash has a free tier; Pro does not
         case ProviderId::DeepSeek: return "deepseek-flash";
         case ProviderId::OpenAICompatible: return ""; // whatever the endpoint serves
     }
-    return "gpt-4.1";
+    return "gpt-5.6-terra";
 }
 
 std::string accountKey(ProviderId provider, const std::string& endpointId) {

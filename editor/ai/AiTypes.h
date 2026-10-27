@@ -60,7 +60,7 @@ enum class ApprovalMode {
 
 struct Settings {
     ProviderId provider = ProviderId::OpenAI;
-    std::string model = "gpt-4.1";
+    std::string model = "gpt-5.6-terra";
     // Which custom endpoint is selected when provider == OpenAICompatible.
     std::string endpointId;
     std::vector<CustomEndpoint> customEndpoints;
