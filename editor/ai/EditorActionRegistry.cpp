@@ -131,7 +131,7 @@ Json propertyValueFields(std::initializer_list<std::pair<const char*, Json>> ext
         {"vector3_value", vector3Schema("Vector3 or Color3 property value")},
         {"vector4_value", vector4Schema("Vector4 or Color4 property value")},
         {"quat_value", quaternionSchema("Quaternion property value")},
-        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
+        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'assets/ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
         {"entity_value", integerSchema("Entity id for Entity or EntityReference properties")},
         {"entity_scene_id", integerSchema("Scene id for EntityReference properties, only for an entity in another scene. Omit for the same scene")},
         {"bursts_value", {
