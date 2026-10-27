@@ -614,7 +614,7 @@ const std::vector<ToolDefinition>& cachedTools() {
             "Copy an existing local file into the project through CopyFileCmd. No shell is used.",
             objectSchema({
                 {"source_path", stringSchema("Absolute local file path to import")},
-                {"target_dir", stringSchema("Safe project-relative destination directory")}
+                {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
             }, {"source_path", "target_dir"}),
             false
         },
@@ -649,7 +649,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"entity_id", integerSchema("Mesh entity id")},
                 {"entity_name", stringSchema("Mesh entity name, used only when entity_id is omitted")},
                 {"submesh_index", integerSchema("Submesh index. Defaults to 0")},
-                {"target_dir", stringSchema("Safe project-relative directory for the material file")}
+                {"target_dir", stringSchema("Safe project-relative directory for the material file, or . for the project root")}
             }, {"target_dir"}),
             false
         },
@@ -1192,7 +1192,7 @@ const std::vector<ToolDefinition>& cachedTools() {
             "Copy a project file or directory to another project directory through CopyFileCmd.",
             objectSchema({
                 {"source_path", stringSchema("Safe project-relative source file or directory path")},
-                {"target_dir", stringSchema("Safe project-relative destination directory")}
+                {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
             }, {"source_path", "target_dir"}),
             false
         },

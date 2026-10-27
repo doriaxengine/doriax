@@ -1424,6 +1424,18 @@ bool safeRelativePath(Project* project, const Json& args, const char* key, fs::p
     return true;
 }
 
+// Same as safeRelativePath, but "." (the project root) is a valid destination
+bool safeTargetDir(Project* project, const Json& args, fs::path& rel, std::string& error) {
+    if (args.contains("target_dir") && args["target_dir"].is_string()) {
+        const fs::path dir = FileUtils::pathFromUtf8(args["target_dir"].get<std::string>()).lexically_normal();
+        if (dir.empty() || dir == ".") {
+            rel.clear();
+            return true;
+        }
+    }
+    return safeRelativePath(project, args, "target_dir", rel, error);
+}
+
 constexpr const char* kClosedParentScene = "The parent scene is closed, so the change would be lost when it opens. Open it with open_scene first.";
 constexpr const char* kUnsavedScriptEdits = "A script open in the code editor has unsaved edits. Ask the user to save or discard them first.";
 constexpr const char* kProjectChangeBusy = "The editor is already switching projects. Try again once it has loaded.";
@@ -3583,7 +3595,7 @@ ActionResult EditorActionExecutor::importResourceFile(const Json& arguments) {
 
     std::string error;
     fs::path targetRel;
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -3656,7 +3668,7 @@ ActionResult EditorActionExecutor::createMaterialFile(const Json& arguments) {
 
     std::string error;
     fs::path targetRel;
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -6253,7 +6265,7 @@ ActionResult EditorActionExecutor::copyResource(const Json& arguments) {
     fs::path sourceRel;
     fs::path targetRel;
     if (!safeRelativePath(project, arguments, "source_path", sourceRel, error, true)) return failResult(error);
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
 
     const fs::path sourceFull = project->getProjectPath() / sourceRel;
     const fs::path targetFull = project->getProjectPath() / targetRel;
