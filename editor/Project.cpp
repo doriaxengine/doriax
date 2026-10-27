@@ -3148,6 +3148,25 @@ bool editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
     visitReferences(assetTransform, luaTransform);
 
+    // Folders the moves emptied, except the project and the configured roots
+    for (const auto& [source, destination] : completedMoves){
+        std::error_code removeEc;
+        for (fs::path dir = source.parent_path(); isInsideRoot(dir, projectPath); dir = dir.parent_path()){
+            if (fs::equivalent(dir, projectPath, removeEc) || fs::equivalent(dir, newAssetsRoot, removeEc) ||
+                fs::equivalent(dir, newLuaRoot, removeEc)){
+                break;
+            }
+            // A folder moved whole is already gone, and a link stays whatever its target holds
+            const fs::file_status status = fs::symlink_status(dir, removeEc);
+            if (status.type() == fs::file_type::not_found){
+                continue;
+            }
+            if (!fs::is_directory(status) || !fs::remove(dir, removeEc)){
+                break;
+            }
+        }
+    }
+
     // Open tabs still hold the old path, where a later save would recreate the script.
     if (CodeEditor* codeEditor = editor::getEditorHost().getCodeEditor()){
         for (const auto& [source, destination] : completedMoves){
