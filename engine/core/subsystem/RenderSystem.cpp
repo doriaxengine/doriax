@@ -6695,10 +6695,11 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
 bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transform& camTransform, PipelineType pipType){
     flushSpriteBatch();
     if (lines.loaded && lines.lines.size() > 0){
+        size_t linesSize = (lines.lines.size() < lines.maxLines)? lines.lines.size() : lines.maxLines;
 
         if (lines.needUpdateBuffer){
             // setData here because component can change order and lose reference
-            lines.buffer.setData((unsigned char*)(&lines.lines[0]), sizeof(LineData)*lines.lines.size());
+            lines.buffer.setData((unsigned char*)(&lines.lines[0]), sizeof(LineData)*linesSize);
             lines.buffer.getRender()->updateBuffer(lines.buffer.getSize(), lines.buffer.getData());
             lines.needUpdateBuffer = false;
         }
@@ -6711,7 +6712,7 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
         }
         render.applyUniformBlock(lines.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
         applyCustomUniforms(render, lines, scene, ShaderType::LINES, frameTime, passResolution);
-        render.draw(0, lines.lines.size() * 2, 1);
+        render.draw(0, linesSize * 2, 1);
     }
 
     return true;
