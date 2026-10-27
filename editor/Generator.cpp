@@ -1999,7 +1999,7 @@ std::vector<editor::CMakeKit> editor::Generator::detectAvailableKits() {
         std::string vswhere = CommandRunner::findVswherePath();
         std::string vsName;
         if (!vswhere.empty()) {
-            vsName = runCmd("\"" + vswhere + "\" -products * -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName");
+            vsName = runCmd("\"" + vswhere + "\" -products * -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName -utf8");
         }
         // cl.exe on PATH (e.g. a Developer Command Prompt) also signals MSVC is
         // available even if vswhere cannot be located.
@@ -2018,7 +2018,7 @@ std::vector<editor::CMakeKit> editor::Generator::detectAvailableKits() {
             for (const auto& entry : generators) {
                 if (!vswhere.empty()) {
                     const std::string versionRange = "[" + std::to_string(entry.first) + "," + std::to_string(entry.first + 1) + ")";
-                    const std::string name = runCmd("\"" + vswhere + "\" -products * -latest -version \"" + versionRange + "\" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName");
+                    const std::string name = runCmd("\"" + vswhere + "\" -products * -latest -version \"" + versionRange + "\" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName -utf8");
                     if (name.empty()) continue;
                     kit.displayName = name;
                 } else {
