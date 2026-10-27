@@ -442,8 +442,7 @@ namespace doriax{
 		};
 		SpriteBatch spriteBatch;
 
-		// A batchable sprite whose mesh nothing fetched since it settled: its batch data is
-		// kept here, so a frame draws it without reading its MeshComponent
+		// batch data of a sprite whose mesh did not change, so frames draw it without reading the mesh
 		struct SettledSprite{
 			Entity entity = NULL_ENTITY;
 			uint32_t state = 0;
@@ -495,7 +494,6 @@ namespace doriax{
 		std::map<std::vector<uint32_t>, uint32_t> spriteStateOf;
 		SpriteSegment spriteSegment;
 		Signature spriteLoopComponents; // ones the frame loops act on, which keep a sprite unsettled
-		bool trackMeshAccess = true;
 		uint32_t spriteUpdates = 0;
 		bool settledSkippedMVP = false; // the last update left the MVP of settled sprites as it was
 		// by entity: how long a sprite written again soon after it settled waits to settle again
@@ -783,7 +781,6 @@ namespace doriax{
 		void flushSpriteItems();
 		void flushSpriteBatch();
 		void prepareSpriteBatchBuffers();
-		static void onMeshAccess(void* data, Entity entity);
 		void settleSprite(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform);
 		void unsettleSprite(Entity entity);
 		void unsettleSprites();
@@ -1002,6 +999,7 @@ namespace doriax{
 		bool isSpriteSettled(Entity entity) const{
 			return settledIndex(entity) >= 0;
 		}
+		void updateSpriteBatch(Entity entity);
 		void needReloadPostProcess();
 		void needUpdatePostProcessUniforms();
 		// components inheriting the default shader of this type rewrite their custom blocks

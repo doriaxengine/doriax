@@ -439,10 +439,10 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
     static FontArray originalFont;
     static Entity lastSelEntity = NULL_ENTITY;
 
-    // fetched again each frame: the pointer would go stale, and the fetch tells the scene the mesh changes;
-    // by id, as the scene can close during the drag
+    // fetched by id each frame: the pointer goes stale, and the scene can close during the drag
+    SceneProject* selMeshScene = nullptr;
     if (selMesh) {
-        SceneProject* selMeshScene = project->getScene(selMeshSceneId);
+        selMeshScene = project->getScene(selMeshSceneId);
         selMesh = selMeshScene ? selMeshScene->scene->findComponent<MeshComponent>(lastSelEntity) : nullptr;
     }
 
@@ -480,6 +480,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                 selMesh->submeshes[s].needUpdateTexture = true;
                             }
                         }
+                        Catalog::updateSpriteBatch(selMeshScene->scene, lastSelEntity);
                         selMesh = nullptr;
                         originalMeshMaterials.clear();
                     }
@@ -584,6 +585,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                         }
                                         originalTex = mesh->submeshes[0].material.baseColorTexture;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, selEntity);
                                     const bool isSprite = sceneProject->scene->findComponent<SpriteComponent>(selEntity) != nullptr;
                                     Texture newTex = isSprite ? edgeClampedTexture(droppedAssetPath) : Texture(droppedAssetPath);
                                     if (mesh->submeshes[0].material.baseColorTexture != newTex) {
@@ -657,6 +659,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                                 originalMeshMaterials.push_back(mesh->submeshes[s].material);
                                             }
                                         }
+                                        Catalog::updateSpriteBatch(sceneProject->scene, selEntity);
 
                                         // Preview: apply to all submeshes
                                         for (unsigned int s = 0; s < mesh->numSubmeshes; s++) {
@@ -759,6 +762,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                         selMesh->submeshes[s].needUpdateTexture = true;
                     }
                 }
+                Catalog::updateSpriteBatch(selMeshScene->scene, lastSelEntity);
                 selMesh = nullptr;
                 originalMeshMaterials.clear();
             }

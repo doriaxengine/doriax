@@ -33,16 +33,6 @@ namespace doriax {
         std::unordered_map<Entity, size_t> entityToIndexMap{};
         std::vector<Entity> indexToEntityMap{};
 
-        // told about each component fetched for writing, by entity or by index
-        void (*accessListener)(void* data, Entity entity) = nullptr;
-        void* accessListenerData = nullptr;
-
-        void notifyAccess(Entity entity){
-            if (accessListener){
-                accessListener(accessListenerData, entity);
-            }
-        }
-
         template<typename... Args>
         void emplace(Entity entity, Args&&... args) {
             if (entityToIndexMap.find(entity) != entityToIndexMap.end()) {
@@ -222,11 +212,6 @@ namespace doriax {
             return true;
         }
 
-        void setAccessListener(void (*listener)(void* data, Entity entity), void* data){
-            accessListener = listener;
-            accessListenerData = data;
-        }
-
         T* findComponent(Entity entity) {
             auto it = entityToIndexMap.find(entity);
 
@@ -234,17 +219,13 @@ namespace doriax {
                  return NULL;
             }
 
-            notifyAccess(entity);
-
             return &componentArray[it->second];
         }
 
         T& getComponent(Entity entity) {
             try{
 
-                T& component = componentArray[entityToIndexMap.at(entity)];
-                notifyAccess(entity);
-                return component;
+                return componentArray[entityToIndexMap.at(entity)];
 
             }catch (const std::out_of_range& e){
                 Log::error("Retrieving non-existent component: %s", e.what());
@@ -257,26 +238,10 @@ namespace doriax {
                 return NULL;
             }
 
-            notifyAccess(indexToEntityMap[index]);
-
             return &componentArray[index];
         }
 
         T& getComponentFromIndex(size_t index) {
-            try{
-
-                T& component = componentArray.at(index);
-                notifyAccess(indexToEntityMap[index]);
-                return component;
-
-            }catch (const std::out_of_range& e){
-                Log::error("Retrieving non-existent component: %s", e.what());
-                throw;
-            }
-        }
-
-        // reads without telling the listener
-        const T& getComponentFromIndex(size_t index) const {
             try{
 
                 return componentArray.at(index);
@@ -298,7 +263,7 @@ namespace doriax {
             }
         }
 
-        Entity getEntity(size_t index) const{
+        Entity getEntity(size_t index){
             if (index >= indexToEntityMap.size()){
                 Log::error("Entity not found");
                 return NULL_ENTITY;
@@ -307,7 +272,7 @@ namespace doriax {
             return indexToEntityMap[index];
         }
 
-        size_t size() const{
+        size_t size(){
             return componentArray.size();
         }
 

@@ -4131,7 +4131,22 @@ bool editor::Catalog::getDefaultShaderUniformsType(const std::string& propertyNa
     return false;
 }
 
+void editor::Catalog::updateSpriteBatch(EntityRegistry* registry, Entity entity){
+    if (SpriteComponent* sprite = registry->findComponent<SpriteComponent>(entity)){
+        sprite->needUpdateBatch = true;
+    }
+}
+
+void editor::Catalog::updateSpriteBatches(EntityRegistry* registry){
+    auto sprites = registry->getComponentArray<SpriteComponent>();
+    for (int i = 0; i < sprites->size(); i++){
+        sprites->getComponentFromIndex(i).needUpdateBatch = true;
+    }
+}
+
 void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint64_t updateFlags){
+    // any edit may change a sprite's mesh
+    updateSpriteBatch(registry, entity);
     if (updateFlags & UpdateFlags_Transform){
         if (Transform* transform = registry->findComponent<Transform>(entity)){
             transform->needUpdate = true;
@@ -4148,6 +4163,7 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
             mesh.needReload = true;
         }
+        updateSpriteBatches(registry);
     }
     if (updateFlags & (UpdateFlags_Mesh_Reload | UpdateFlags_Mesh_Texture)){
         if (MeshComponent* mesh = registry->findComponent<MeshComponent>(entity)){

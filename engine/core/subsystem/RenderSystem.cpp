@@ -70,14 +70,6 @@ namespace {
         return true;
     }
 
-    // the meshes the render system reads while it updates and draws are not changed by it
-    struct UntrackedScope{
-        bool& tracked;
-        bool previous;
-        explicit UntrackedScope(bool& tracked): tracked(tracked), previous(tracked){ tracked = false; }
-        ~UntrackedScope(){ tracked = previous; }
-    };
-
     // every light, not just the selected ones, so the variant does not change with the camera
     bool allLightsDirectional(Scene* scene){
         auto lights = scene->getComponentArray<LightComponent>();
@@ -428,11 +420,9 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
             scene->getComponentId<BoneComponent>()}){
         spriteLoopComponents.set(id);
     }
-    scene->getComponentArray<MeshComponent>()->setAccessListener(&RenderSystem::onMeshAccess, this);
 }
 
 RenderSystem::~RenderSystem(){
-    scene->getComponentArray<MeshComponent>()->setAccessListener(nullptr, nullptr);
 }
 
 void RenderSystem::load(){
@@ -2881,6 +2871,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
     if (!Engine::isViewLoaded()) 
         return false;
 
+    // Mesh::load can reload a settled sprite
+    unsettleSprite(entity);
+
     if (terrain && !terrain->heightMapLoaded)
         return false;
 
@@ -4466,29 +4459,26 @@ void RenderSystem::flushSpriteBatch(){
     flushSpriteSegment();
 }
 
-void RenderSystem::onMeshAccess(void* data, Entity entity){
-    RenderSystem* system = static_cast<RenderSystem*>(data);
-    if (!system->trackMeshAccess || !system->isSpriteSettled(entity))
+void RenderSystem::updateSpriteBatch(Entity entity){
+    if (!isSpriteSettled(entity))
         return;
 
     // one written every few frames keeps the per-frame batch for a while instead
-    SettleWait& wait = system->settleWaits[entity];
-    if (system->spriteUpdates - system->settledSprites[system->settledIndex(entity)].settledAt < SPRITE_SETTLE_HOLD){
+    SettleWait& wait = settleWaits[entity];
+    if (spriteUpdates - settledSprites[settledIndex(entity)].settledAt < SPRITE_SETTLE_HOLD){
         wait.length = std::min(std::max(wait.length * 2, SPRITE_SETTLE_WAIT), SPRITE_SETTLE_WAIT_MAX);
     }else{
         wait.length = 0;
     }
-    wait.until = system->spriteUpdates + wait.length;
-    system->unsettleSprite(entity);
+    wait.until = spriteUpdates + wait.length;
+    unsettleSprite(entity);
 }
 
-// A sprite the batch draws keeps a copy of its batch data until its mesh is fetched for writing
-// or one of its components is added or removed. Until then frames draw it from the copy and skip
-// the checks of a mesh that may have changed; only the copy's positions, its bounds, and its MVP
-// where a pass reads it, follow the transform. A write through a reference kept from an earlier
-// fetch is not seen: a mesh is written through a fresh fetch, as a held reference can dangle anyway.
+// Frames draw a settled sprite from its copy until SpriteComponent::needUpdateBatch or a component
+// change drops it; only the transform is followed
 void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform){
-    if (isSpriteSettled(entity) || (signature & spriteLoopComponents).any() || transform.billboard || !hasAffineModel(transform))
+    if (isSpriteSettled(entity) || !signature.test(scene->getComponentId<SpriteComponent>()) ||
+            (signature & spriteLoopComponents).any() || transform.billboard || !hasAffineModel(transform))
         return;
     if (!settleWaits.empty()){
         auto wait = settleWaits.find(entity);
@@ -8614,13 +8604,13 @@ void RenderSystem::getLoadCount(size_t& loaded, size_t& total) const{
             loaded++;
     };
 
-    // Check MeshComponents, reading them without unsettling a sprite
-    const auto& meshes = *scene->getComponentArray<MeshComponent>();
-    for (int i = 0; i < meshes.size(); i++) {
-        const MeshComponent& mesh = meshes.getComponentFromIndex(i);
+    // Check MeshComponents
+    auto meshes = scene->getComponentArray<MeshComponent>();
+    for (int i = 0; i < meshes->size(); i++) {
+        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         // An empty tilemap never loads: loadMesh() has no buffers to create until a tile is added.
         if (!mesh.loaded) {
-            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(meshes.getEntity(i));
+            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(meshes->getEntity(i));
             if (tilemap && tilemap->numTiles == 0)
                 continue;
         }
@@ -9492,7 +9482,6 @@ void RenderSystem::update(double dt){
         return;
     }
 
-    const UntrackedScope untracked(trackMeshAccess);
     spriteUpdates++;
 
     checkLightsAndShadow();
@@ -10197,8 +10186,6 @@ void RenderSystem::update(double dt){
 }
 
 void RenderSystem::draw(){
-    const UntrackedScope untracked(trackMeshAccess);
-
     prepareSpriteBatchBuffers();
     std::priority_queue<TransparentRenderData, std::vector<TransparentRenderData>, TransparentRenderComparison> transparentRenders;
     // drawn before the water, which covers them

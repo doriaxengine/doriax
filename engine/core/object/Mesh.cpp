@@ -92,7 +92,15 @@ std::vector<MeshComponent*> Mesh::getMeshes(){
         addComponent<MeshComponent>();
         meshes.push_back(&getComponent<MeshComponent>());
     }
+    // the setters change them
+    updateSpriteBatch();
     return meshes;
+}
+
+void Mesh::updateSpriteBatch(){
+    if (SpriteComponent* sprite = scene->findComponent<SpriteComponent>(entity)){
+        sprite->needUpdateBatch = true;
+    }
 }
 
 const MeshComponent& Mesh::getMesh() const{
@@ -212,6 +220,7 @@ void Mesh::setMaterial(unsigned int submesh, const Material& material){
     if (mesh && mesh->submeshes[submesh].material != material){
         mesh->submeshes[submesh].material = material;
         mesh->submeshes[submesh].needUpdateTexture = true;
+        updateSpriteBatch();
     }
 }
 
@@ -240,6 +249,7 @@ void Mesh::setPrimitiveType(unsigned int submesh, PrimitiveType primitiveType){
         mesh->submeshes[submesh].primitiveType = primitiveType;
 
         mesh->needReload = true;
+        updateSpriteBatch();
     }
 }
 
@@ -268,6 +278,7 @@ void Mesh::setFaceCulling(unsigned int submesh, bool faceCulling){
         mesh->submeshes[submesh].faceCulling = faceCulling;
 
         mesh->needReload = true;
+        updateSpriteBatch();
     }
 }
 
@@ -293,6 +304,7 @@ void Mesh::setCastShadowsWithTexture(unsigned int submesh, bool castShadowsWithT
         mesh->submeshes[submesh].textureShadow = castShadowsWithTexture;
 
         mesh->needReload = true;
+        updateSpriteBatch();
     }
 }
 

@@ -177,6 +177,8 @@ namespace doriax::editor{
         static uint64_t getComponentStructuralUpdateFlags(ComponentType compType);
 
         static void updateEntity(EntityRegistry* registry, Entity entity, uint64_t updateFlags);
+        static void updateSpriteBatch(EntityRegistry* registry, Entity entity);
+        static void updateSpriteBatches(EntityRegistry* registry);
 
         static void copyComponent(EntityRegistry* sourceRegistry, Entity sourceEntity,
                                 EntityRegistry* targetRegistry, Entity targetEntity,

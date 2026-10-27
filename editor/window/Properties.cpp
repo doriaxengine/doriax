@@ -95,6 +95,7 @@ static void markTextureUpdate(Scene* scene, Entity entity, editor::ComponentType
         for (unsigned int i = 0; i < mesh.numSubmeshes; i++) {
             mesh.submeshes[i].needUpdateTexture = true;
         }
+        editor::Catalog::updateSpriteBatch(scene, entity);
     }
     if (componentType == editor::ComponentType::UIComponent) {
         scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1639,6 +1640,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                                     for (unsigned int i = 0; i < numSubmeshes; i++){
                                         sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                 }
                                 if (componentType == ComponentType::UIComponent){
                                     sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1700,6 +1702,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                         for (unsigned int i = 0; i < numSubmeshes; i++){
                             sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                         }
+                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     }
                     if (componentType == ComponentType::UIComponent){
                         sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1749,6 +1752,7 @@ void editor::Properties::dragDropResourcesTextureCubeFace(ComponentType cpType, 
                                     for (unsigned int i = 0; i < numSubmeshes; i++){
                                         sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                 }
                                 if (componentType == ComponentType::UIComponent){
                                     sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1801,6 +1805,7 @@ void editor::Properties::dragDropResourcesTextureCubeFace(ComponentType cpType, 
                         for (unsigned int i = 0; i < numSubmeshes; i++){
                             sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                         }
+                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     }
                     if (componentType == ComponentType::UIComponent){
                         sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1849,6 +1854,7 @@ void editor::Properties::dragDropResourcesTextureCubeSingleFile(ComponentType cp
                                     for (unsigned int i = 0; i < numSubmeshes; i++){
                                         sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                 }
                                 if (componentType == ComponentType::UIComponent){
                                     sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1901,6 +1907,7 @@ void editor::Properties::dragDropResourcesTextureCubeSingleFile(ComponentType cp
                         for (unsigned int i = 0; i < numSubmeshes; i++){
                             sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                         }
+                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     }
                     if (componentType == ComponentType::UIComponent){
                         sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -4385,6 +4392,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                 unsigned int sIdx = std::stoul(matDropPropertyId.substr(p + 1, e - p - 1));
                                 if (sIdx < mesh->numSubmeshes) {
                                     mesh->submeshes[sIdx].needUpdateTexture = true;
+                                    Catalog::updateSpriteBatch(sceneProject->scene, ent);
                                 }
                             }
                         }
@@ -4448,6 +4456,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                                     unsigned int sIdx = std::stoul(id.substr(pos + 1, end - pos - 1));
                                                     if (sIdx < mesh->numSubmeshes) {
                                                         mesh->submeshes[sIdx].needUpdateTexture = true;
+                                                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                                     }
                                                 }
                                             }
@@ -4503,6 +4512,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                                 unsigned int sIdx = std::stoul(id.substr(pos + 1, end - pos - 1));
                                                 if (sIdx < mesh->numSubmeshes) {
                                                     mesh->submeshes[sIdx].needUpdateTexture = true;
+                                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                                 }
                                             }
                                         }

@@ -83,7 +83,7 @@ namespace doriax{
 		void setSpriteTextureRect(MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim);
 		void spriteActionStart(MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim);
 		void spriteActionStop(MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim);
-		void spriteActionUpdate(double dt, Entity entity, ActionComponent& action, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim);
+		void spriteActionUpdate(double dt, Entity entity, ActionComponent& action, MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim);
 
 		void timedActionStop(TimedActionComponent& timedaction);
 		// true when a non-looping action reached its end

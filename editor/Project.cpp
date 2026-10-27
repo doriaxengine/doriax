@@ -655,6 +655,9 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
             }
         }
     });
+    if (changed) {
+        Catalog::updateSpriteBatches(registry);
+    }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         if (visitTexturePaths(ui.texture, transform)) {
@@ -1125,6 +1128,7 @@ void editor::Project::remapMaterialFilePath(const std::filesystem::path& oldPath
                 if (remapRelativeString(oldRelative, newRelative, material.name, updatedMaterialName)) {
                     material.name = updatedMaterialName;
                     mesh->submeshes[submeshIndex].needUpdateTexture = true;
+                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     sceneProject->needUpdateRender = true;
                     sceneProject->isModified = true;
                 }
@@ -1326,6 +1330,7 @@ void editor::Project::cleanupMaterialFilePath(const std::filesystem::path& delet
 
                 material.name.clear();
                 mesh.submeshes[submeshIndex].needUpdateTexture = true;
+                Catalog::updateSpriteBatch(sceneProject.scene, entity);
                 sceneProject.needUpdateRender = true;
                 sceneProject.isModified = true;
                 sceneChanged = true;
@@ -1808,6 +1813,7 @@ void editor::Project::refreshLinkedMaterials(bool force) {
         if (mesh->submeshes[keySubmeshIndex].material != updatedMaterial) {
             mesh->submeshes[keySubmeshIndex].material = updatedMaterial;
             mesh->submeshes[keySubmeshIndex].needUpdateTexture = true;
+            Catalog::updateSpriteBatch(sceneProject->scene, keyEntity);
             sceneProject->needUpdateRender = true;
             sceneProject->isModified = true;
         }
@@ -4274,6 +4280,7 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                         if (material != fileMaterial) {
                             material = fileMaterial;
                             mesh->submeshes[submeshIndex].needUpdateTexture = true;
+                            Catalog::updateSpriteBatch(targetScene->scene, entity);
                             targetScene->needUpdateRender = true;
                         }
                     } catch (const std::exception& e) {

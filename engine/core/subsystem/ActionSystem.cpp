@@ -608,7 +608,7 @@ void ActionSystem::spriteActionStop(MeshComponent& mesh, SpriteComponent& sprite
     setSpriteTextureRect(mesh, sprite, spriteanim);
 }
 
-void ActionSystem::spriteActionUpdate(double dt, Entity entity, ActionComponent& action, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim){
+void ActionSystem::spriteActionUpdate(double dt, Entity entity, ActionComponent& action, MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim){
     spriteanim.spriteFrameCount += dt * 1000;
     while (spriteanim.spriteFrameCount >= spriteanim.framesTime[spriteanim.frameTimeIndex]) {
 
@@ -628,8 +628,7 @@ void ActionSystem::spriteActionUpdate(double dt, Entity entity, ActionComponent&
         if (spriteanim.frameTimeIndex >= spriteanim.framesTimeSize)
             spriteanim.frameTimeIndex = 0;
 
-        // fetched only when the frame changes: fetching a mesh for writing tells the render system it changed
-        setSpriteTextureRect(scene->getComponent<MeshComponent>(action.target), sprite, spriteanim);
+        setSpriteTextureRect(mesh, sprite, spriteanim);
 
         // checked after the wrap so a single frame animation also stops
         if (!spriteanim.loop && spriteanim.frameIndex == spriteanim.framesSize - 1) {
@@ -1815,8 +1814,9 @@ void ActionSystem::processRunningAction(double dt, Entity entity, ActionComponen
         SpriteAnimationComponent& spriteanim = scene->getComponent<SpriteAnimationComponent>(entity);
         if (targetSignature.test(scene->getComponentId<SpriteComponent>()) && targetSignature.test(scene->getComponentId<MeshComponent>())){
             SpriteComponent& sprite = scene->getComponent<SpriteComponent>(action.target);
+            MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
-            spriteActionUpdate(dt, entity, action, sprite, spriteanim);
+            spriteActionUpdate(dt, entity, action, mesh, sprite, spriteanim);
             if (action.state != ActionState::Running) return;
         }
     }
@@ -1934,6 +1934,9 @@ void ActionSystem::processRunningAction(double dt, Entity entity, ActionComponen
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
                 colorActionMeshUpdate(dt, action, timedaction, coloraction, mesh);
+                if (targetSignature.test(scene->getComponentId<SpriteComponent>())){
+                    scene->getComponent<SpriteComponent>(action.target).needUpdateBatch = true;
+                }
             }
             if (targetSignature.test(scene->getComponentId<UIComponent>())){
                 UIComponent& ui = scene->getComponent<UIComponent>(action.target);
@@ -1950,6 +1953,9 @@ void ActionSystem::processRunningAction(double dt, Entity entity, ActionComponen
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
                 alphaActionMeshUpdate(dt, action, timedaction, alphaaction, mesh);
+                if (targetSignature.test(scene->getComponentId<SpriteComponent>())){
+                    scene->getComponent<SpriteComponent>(action.target).needUpdateBatch = true;
+                }
             }
             if (targetSignature.test(scene->getComponentId<UIComponent>())){
                 UIComponent& ui = scene->getComponent<UIComponent>(action.target);

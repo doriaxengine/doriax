@@ -147,6 +147,7 @@ void Sprite::setTextureRect(Rect textureRect){
     // An explicit UV rectangle supersedes a frame waiting for its texture size.
     spritecomp.needUpdateFrameRect = false;
     mesh.submeshes[0].textureRect = textureRect;
+    spritecomp.needUpdateBatch = true;
 }
 
 Rect Sprite::getTextureRect() const{

@@ -910,6 +910,7 @@ void MeshSystem::setSpriteFrameRect(MeshComponent& mesh, SpriteComponent& sprite
 
     sprite.needUpdateFrameRect = false;
     mesh.submeshes[0].textureRect = frameRect;
+    sprite.needUpdateBatch = true;
 }
 
 // createSprite sizes the inset by the frame, mirrored frames only flip the sign
@@ -6254,6 +6255,7 @@ bool MeshSystem::createOrUpdateSprite(SpriteComponent& sprite, MeshComponent& me
 
         if (createSprite(sprite, mesh, camera)){
             sprite.needUpdateSprite = false;
+            sprite.needUpdateBatch = true;
         }else{
             return false;
         }
@@ -6422,15 +6424,22 @@ void MeshSystem::update(double dt){
         return;
     }
 
+    RenderSystem* render = scene->getSystem<RenderSystem>().get();
     auto sprites = scene->getComponentArray<SpriteComponent>();
     for (int i = 0; i < sprites->size(); i++){
         SpriteComponent& sprite = sprites->getComponentFromIndex(i);
-        if (!sprite.needUpdateSprite && !sprite.needUpdateFrameRect)
+        if (!sprite.needUpdateSprite && !sprite.needUpdateFrameRect && !sprite.needUpdateBatch)
             continue;
 
-        MeshComponent* mesh = scene->findComponent<MeshComponent>(sprites->getEntity(i));
+        Entity entity = sprites->getEntity(i);
+        MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
         if (mesh){
             createOrUpdateSprite(sprite, *mesh);
+        }
+
+        if (sprite.needUpdateBatch){
+            render->updateSpriteBatch(entity);
+            sprite.needUpdateBatch = false;
         }
     }
 
@@ -6506,9 +6515,8 @@ void MeshSystem::update(double dt){
     }
 
     auto meshes = scene->getComponentArray<MeshComponent>();
-    const RenderSystem* render = scene->getSystem<RenderSystem>().get();
     for (int i = 0; i < meshes->size(); i++){
-        // nothing touched a settled sprite since it passed these checks
+        // nothing changed a settled sprite since it passed these checks
         if (render->isSpriteSettled(meshes->getEntity(i)))
             continue;
 
