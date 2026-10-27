@@ -118,7 +118,8 @@ vec4 getShadowCubeMap(int baseIndex, vec3 coords) {
     vec2 inset = 0.5 / vec2(uPointShadows.bias_texSize_nearFar[slot].y);
     uv = clamp(uv, inset, 1.0 - inset);
     vec2 atlasUV = getShadowAtlasUV(rect, uv);
-    return texture(sampler2D(u_shadowPointAtlas, u_shadowPointAtlas_smp), atlasUV);
+    // the atlas has no mips; implicit derivatives in this loop hang the GPU on some GL drivers
+    return textureLod(sampler2D(u_shadowPointAtlas, u_shadowPointAtlas_smp), atlasUV, 0.0);
 }
 #endif
 

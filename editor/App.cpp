@@ -2937,7 +2937,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v36: probe_filter prefilters runtime reflection probe captures into roughness mips.
     // v37: probe_filter downsamples each level from the one above.
     // v38: ssr fades out rough surfaces (SSR_MAX_ROUGHNESS).
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v38";
+    // v39: point shadow atlas sampled at an explicit LOD.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v39";
 }
 
 void editor::App::pushTabNotificationStyle(){
