@@ -19,6 +19,7 @@
 #include "util/FileDialogs.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
+#include "util/SystemFonts.h"
 #include "util/Util.h"
 
 #include "EditorVersion.h"
@@ -1573,6 +1574,18 @@ void editor::App::setup() {
     configArabic.RasterizerMultiply = 1.5f;
     io.Fonts->AddFontFromMemoryTTF(noto_sans_arabic_ttf, noto_sans_arabic_ttf_len, 16.0f, &configArabic);
 
+    // CJK from the system fonts, too large to ship
+    auto mergeCjkFonts = [&io](const ImFontConfig& rasterizer) {
+        for (const SystemFonts::Font& cjk : SystemFonts::cjkFonts()) {
+            ImFontConfig configCjk = rasterizer;
+            configCjk.MergeMode = true;
+            configCjk.FontDataOwnedByAtlas = false;
+            configCjk.FontNo = cjk.faceIndex;
+            io.Fonts->AddFontFromMemoryTTF(cjk.data, cjk.size, 16.0f, &configCjk);
+        }
+    };
+    mergeCjkFonts(configArabic);
+
     ImFontConfig config3;
     strcpy(config3.Name, "jetbrains-mono-regular");
     config3.FontDataOwnedByAtlas = false;
@@ -1587,6 +1600,7 @@ void editor::App::setup() {
     configCodeArabic.OversampleH = 2;
     configCodeArabic.OversampleV = 2;
     io.Fonts->AddFontFromMemoryTTF(noto_sans_arabic_ttf, noto_sans_arabic_ttf_len, 16.0f, &configCodeArabic);
+    mergeCjkFonts(configCodeArabic);
 
     io.FontDefault = font1;
 
