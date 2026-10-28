@@ -130,7 +130,7 @@ Json propertyValueFields(std::initializer_list<std::pair<const char*, Json>> ext
         {"vector2_value", vector2Schema("Vector2 property value")},
         {"vector3_value", vector3Schema("Vector3 or Color3 property value")},
         {"vector4_value", vector4Schema("Vector4 or Color4 property value")},
-        {"quat_value", quaternionSchema("Quaternion property value")},
+        {"quat_value", quaternionSchema("Quaternion property value, not Euler angles")},
         {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'assets/ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
         {"entity_value", integerSchema("Entity id for Entity or EntityReference properties")},
         {"entity_scene_id", integerSchema("Scene id for EntityReference properties, only for an entity in another scene. Omit for the same scene")},
@@ -256,7 +256,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"entity_id", integerSchema("Entity id")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
                 {"position", vector3Schema("Optional local position")},
-                {"rotation", quaternionSchema("Optional local rotation quaternion")},
+                {"rotation", quaternionSchema("Optional local rotation quaternion, not Euler angles")},
                 {"scale", vector3Schema("Optional local scale")}
             }),
             false
@@ -372,7 +372,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"shape_type", stringSchema("Collision shape: box, sphere, capsule, tapered_capsule, cylinder, convex_hull, or mesh. convex_hull and mesh take their geometry from the entity's mesh and ignore all size arguments; convex_hull is exact and cheap for boxy level geometry, mesh suits static concave geometry")},
                 {"fit_to_mesh", boolSchema("Size the shape from the entity mesh's local bounds and centre it on them. Defaults to true; any explicit size argument overrides the fitted value for that axis. Set false to keep the shape defaults")},
                 {"position", vector3Schema("Optional shape local position in entity-local units. Overrides the centre chosen by fit_to_mesh")},
-                {"rotation", quaternionSchema("Optional shape local rotation")},
+                {"rotation", quaternionSchema("Optional shape local rotation quaternion, not Euler angles")},
                 {"width", numberSchema("Box width in mesh-local units, i.e. before the entity's transform scale, which the engine applies itself; defaults to 1")},
                 {"height", numberSchema("Box height in mesh-local units; defaults to 1")},
                 {"depth", numberSchema("Box depth in mesh-local units; defaults to 1")},

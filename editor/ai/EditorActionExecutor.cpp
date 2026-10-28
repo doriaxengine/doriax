@@ -431,6 +431,13 @@ bool parseQuaternion(const Json& value, Quaternion& out) {
     return true;
 }
 
+// Far from unit length it is more likely Euler angles than rounding
+bool parseRotation(const Json& value, Quaternion& out) {
+    if (!parseQuaternion(value, out) || std::fabs(out.norm() - 1.0f) > 0.2f) return false;
+    out.normalize();
+    return true;
+}
+
 // Strict ease-name parse: Stream::stringToEaseType maps unknown names to LINEAR,
 // so accept LINEAR results only when the input really spells "linear".
 bool parseEaseName(const std::string& name, EaseType& out) {
@@ -1742,8 +1749,12 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
         }
         case PropertyType::Quat: {
             Quaternion value = Quaternion::IDENTITY;
-            if (!valueFieldPresent(args, "quat_value") || !parseQuaternion(args["quat_value"], value)) {
+            if (!valueFieldPresent(args, "quat_value")) {
                 error = "Property requires quat_value.";
+                return nullptr;
+            }
+            if (!parseRotation(args["quat_value"], value)) {
+                error = "quat_value must be a unit quaternion, not Euler angles.";
                 return nullptr;
             }
             return new PropertyCmd<Quaternion>(project, sceneId, entity, component, propertyName, value, onChanged);
@@ -2759,7 +2770,9 @@ ActionResult EditorActionExecutor::setEntityTransform(const Json& arguments) {
     Quaternion rotation = transform->rotation;
     Vector3 scale = transform->scale;
     if (arguments.contains("position")) parseVector3(arguments["position"], position);
-    if (arguments.contains("rotation")) parseQuaternion(arguments["rotation"], rotation);
+    if (arguments.contains("rotation") && !parseRotation(arguments["rotation"], rotation)) {
+        return failResult("rotation must be a unit quaternion, not Euler angles.");
+    }
     if (arguments.contains("scale")) parseVector3(arguments["scale"], scale);
 
     CommandHandle::get(sceneId)->addCommandNoMerge(
@@ -2995,8 +3008,8 @@ ActionResult EditorActionExecutor::addBody3DShape(const Json& arguments) {
     if (arguments.contains("position") && !parseVector3(arguments["position"], shape.position)) {
         return failResult("position must be a Vector3 object.");
     }
-    if (arguments.contains("rotation") && !parseQuaternion(arguments["rotation"], shape.rotation)) {
-        return failResult("rotation must be a quaternion object.");
+    if (arguments.contains("rotation") && !parseRotation(arguments["rotation"], shape.rotation)) {
+        return failResult("rotation must be a unit quaternion, not Euler angles.");
     }
 
     BodyType requestedBodyType = BodyType::STATIC;
