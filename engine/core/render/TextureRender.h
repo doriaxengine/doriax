@@ -54,6 +54,13 @@ namespace doriax {
         static bool isViewValid(uint32_t viewId);
 
         bool isCreated();
+
+        // of the data it was created from, which can be released by now
+        void setTransparent(bool transparent);
+        bool isTransparent() const;
+
+    private:
+        bool transparent = false;
     };
 }
 

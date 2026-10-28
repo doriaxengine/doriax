@@ -94,6 +94,7 @@ std::shared_ptr<TextureRender> TexturePool::get(const std::string& id, TextureTy
 		return NULL;
 	}
 	//Log::debug("Create texture %s", id.c_str());
+	shared->setTransparent(data->at(0).isTransparent());
 
 	map[id] = shared;
 	getInvalidated().erase(id);

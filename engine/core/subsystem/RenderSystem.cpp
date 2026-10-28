@@ -6455,12 +6455,6 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
 
     render.beginLoad(PrimitiveType::POINTS);
 
-    if (points.autoTransparency && !points.transparent){
-        if (points.texture.isTransparent()){ // Particle color is not tested here
-            points.transparent = true;
-        }
-    }
-
     bool hasPointsTexture = !points.texture.empty();
 
     bool p_hasTexture = false;
@@ -6528,6 +6522,13 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
     }
 
     points.needUpdateTexture = false;
+
+    // after getRender(): a texture taken from the pool knows it from its render
+    if (points.autoTransparency && !points.transparent){
+        if (points.texture.isTransparent()){ // Particle color is not tested here
+            points.transparent = true;
+        }
+    }
 
     // no depth write: transparent quads would hide the points drawn after them
     if (!render.endLoad(pipelines, false, !points.transparent, CullingMode::BACK, WindingOrder::CCW)){

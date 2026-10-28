@@ -9,10 +9,11 @@ using namespace doriax;
 TextureRender::TextureRender(){
  }
 
-TextureRender::TextureRender(const TextureRender& rhs) : backend(rhs.backend) { }
+TextureRender::TextureRender(const TextureRender& rhs) : backend(rhs.backend), transparent(rhs.transparent) { }
 
 TextureRender& TextureRender::operator=(const TextureRender& rhs) { 
     backend = rhs.backend;
+    transparent = rhs.transparent;
     return *this; 
 }
 
@@ -93,4 +94,12 @@ bool TextureRender::isViewValid(uint32_t viewId){
 
 bool TextureRender::isCreated(){
     return backend.isCreated();
+}
+
+void TextureRender::setTransparent(bool transparent){
+    this->transparent = transparent;
+}
+
+bool TextureRender::isTransparent() const{
+    return transparent;
 }

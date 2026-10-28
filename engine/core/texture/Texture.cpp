@@ -606,7 +606,8 @@ unsigned int Texture::getHeight() const{
 
 bool Texture::isTransparent() const{
     if (!data){
-        return false;
+        // a copy that took its render from the pool has no data
+        return render && render->isTransparent();
     }
     return getData().isTransparent();
 }
