@@ -256,4 +256,7 @@ def build():
 
 
 if __name__ == '__main__':
+    # piped output on Windows uses the ANSI code page, which cannot print every path
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     build()
