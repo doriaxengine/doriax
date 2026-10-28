@@ -110,7 +110,7 @@ void ComponentAddDialog::show() {
 
     ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(400, 0.0f), ImGuiCond_Once);
+    ImGui::SetNextWindowSize(ImVec2(Theme::dpi(400.0f), 0.0f), ImGuiCond_Always);
 
     ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | 
                              ImGuiWindowFlags_Modal;
@@ -133,13 +133,14 @@ void ComponentAddDialog::show() {
     std::string searchStr(m_searchBuffer);
     std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
 
-    // Scrollable component list
-    ImGui::BeginChild("ComponentList", ImVec2(0, 320), false);
+    // Scrollable component list, fitting small windows
+    const float listHeight = std::min(Theme::dpi(320.0f), ImGui::GetMainViewport()->WorkSize.y * 0.5f);
+    ImGui::BeginChild("ComponentList", ImVec2(0, listHeight), false);
 
     int componentIndex = 0;
     bool foundAny = false;
 
-    ImGui::Dummy(ImVec2(0, 5));
+    ImGui::Dummy(Theme::dpi(ImVec2(0, 5)));
 
     for (const auto& category : m_categories) {
         std::vector<ComponentEntry> filteredEntries;
@@ -164,7 +165,7 @@ void ComponentAddDialog::show() {
 
             // Category header
             ImGui::PushStyleColor(ImGuiCol_Text, category.color);
-            ImGui::SetCursorPosX(10);
+            ImGui::SetCursorPosX(Theme::dpi(10.0f));
             ImGui::Text("%s %s", category.icon, category.name);
             ImGui::PopStyleColor();
             ImGui::Separator();
@@ -186,7 +187,7 @@ void ComponentAddDialog::show() {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.0f)); // Left align
 
                 // Create button with empty label (we'll draw content manually)
-                bool clicked = ImGui::Button("##component", ImVec2(ImGui::GetContentRegionAvail().x, 45 * Theme::dpiScale()));
+                bool clicked = ImGui::Button("##component", ImVec2(ImGui::GetContentRegionAvail().x, Theme::dpi(45.0f)));
 
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(3);
@@ -197,20 +198,20 @@ void ComponentAddDialog::show() {
                 }
 
                 // Draw icon and text on top of the button
-                ImGui::SetCursorPos(ImVec2(cursorPos.x + 20, cursorPos.y + 5));
+                ImGui::SetCursorPos(ImVec2(cursorPos.x + Theme::dpi(20.0f), cursorPos.y + Theme::dpi(5.0f)));
 
                 ImGui::PushStyleColor(ImGuiCol_Text, entry.color);
                 ImGui::Text("%s", entry.icon);
                 ImGui::PopStyleColor();
 
                 ImGui::SameLine();
-                ImGui::SetCursorPosX(cursorPos.x + 50);
+                ImGui::SetCursorPosX(cursorPos.x + Theme::dpi(50.0f));
 
                 // Component name and description
                 ImGui::BeginGroup();
                 ImGui::Text("%s", entry.name);
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 3);  // Tighten spacing
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() - Theme::dpi(3.0f));  // Tighten spacing
                 ImGui::TextWrapped("%s", entry.description);
                 ImGui::PopStyleColor();
                 ImGui::EndGroup();
@@ -232,7 +233,7 @@ void ComponentAddDialog::show() {
                 ImGui::PopID();
                 componentIndex++;
 
-                ImGui::Dummy(ImVec2(0, 5));
+                ImGui::Dummy(Theme::dpi(ImVec2(0, 5)));
 
             }
 
@@ -241,7 +242,7 @@ void ComponentAddDialog::show() {
 
     if (!foundAny) {
         // No components available message
-        ImGui::Dummy(ImVec2(0, 100));
+        ImGui::Dummy(Theme::dpi(ImVec2(0, 100)));
 
         ImVec2 textSize = ImGui::CalcTextSize("No components available");
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - textSize.x) * 0.5f);
@@ -257,7 +258,7 @@ void ComponentAddDialog::show() {
             ImGui::TextDisabled("Try a different search term");
         }
 
-        ImGui::Dummy(ImVec2(0, 100));
+        ImGui::Dummy(Theme::dpi(ImVec2(0, 100)));
     }
 
     ImGui::EndChild();
@@ -265,7 +266,7 @@ void ComponentAddDialog::show() {
     // Footer with Cancel button
     ImGui::Separator();
 
-    float buttonWidth = 100;
+    float buttonWidth = Theme::dpi(100.0f);
     ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - buttonWidth) * 0.5f);
 
     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
