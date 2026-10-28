@@ -1413,6 +1413,16 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
     return Json();
 }
 
+// Windows also finds it as .TRASH or .trash., even before it exists, and then by a short name or a link
+bool isInProjectTrash(Project* project, const fs::path& rel) {
+    std::string name = lower(FileUtils::pathToGenericUtf8(*rel.lexically_normal().begin()));
+    name.erase(name.find_last_not_of(". ") + 1);
+    if (name == ".trash") return true;
+    std::error_code ec;
+    const fs::path trash = fs::canonical(project->getProjectPath() / ".trash", ec);
+    return !ec && Util::isInsidePath(fs::weakly_canonical(project->getProjectPath() / rel, ec), trash);
+}
+
 bool safeRelativePath(Project* project, const Json& args, const char* key, fs::path& rel, std::string& error,
                       bool requireExists = false) {
     if (!args.contains(key) || !args[key].is_string()) {
@@ -1423,6 +1433,10 @@ bool safeRelativePath(Project* project, const Json& args, const char* key, fs::p
     if (rel.empty()) rel = ".";
     if (!PathUtils::isSafeRelativePath(rel)) {
         error = std::string(key) + " must be a safe project-relative path.";
+        return false;
+    }
+    if (project && isInProjectTrash(project, rel)) {
+        error = std::string(key) + " is in the project trash.";
         return false;
     }
     if (requireExists && project && !fs::exists(project->getProjectPath() / rel)) {
@@ -2536,12 +2550,15 @@ ActionResult EditorActionExecutor::searchResources(const Json& arguments) {
          it != end && !ec && static_cast<int>(matches.size()) < maxResults;
          it.increment(ec)) {
         const fs::path path = it->path();
+        // hidden as in the Resources window
+        const bool hidden = path.filename().native()[0] == '.';
         if (it->is_directory(ec)) {
-            if (path.filename() == ".doriax" || path.filename() == "build") {
+            if (hidden || path.filename() == "build") {
                 it.disable_recursion_pending();
             }
             continue;
         }
+        if (hidden) continue;
 
         fs::path rel = fs::relative(path, projectPath, ec);
         if (ec) continue;
@@ -3564,6 +3581,9 @@ ActionResult EditorActionExecutor::createFolder(const Json& arguments) {
     if (name.empty() || fs::path(name).filename().string() != name) {
         return failResult("Folder name must be a single safe path segment.");
     }
+    if (isInProjectTrash(project, parentRel / name)) {
+        return failResult("The folder would be in the project trash.");
+    }
     project->getProjectCommandHistory()->addCommandNoMerge(new CreateDirCmd(name, parentFull.string()));
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
     return okResult("Created folder through the project command history.");
@@ -4098,6 +4118,7 @@ ActionResult EditorActionExecutor::createScript(const Json& arguments) {
     const std::string className = sanitizeIdentifier(arguments.value("class_name", "NewScript"), "NewScript");
     fs::path targetRel = FileUtils::pathFromUtf8(arguments.value("target_dir", std::string("scripts")));
     if (!PathUtils::isSafeRelativePath(targetRel)) return failResult("target_dir must be a safe project-relative directory.");
+    if (isInProjectTrash(project, targetRel)) return failResult("target_dir is in the project trash.");
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -5105,6 +5126,9 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
         "directory", FileUtils::pathToGenericUtf8(ProjectUtils::defaultShaderForkDir()))).lexically_normal();
     if (targetDirectory != "." && !PathUtils::isSafeRelativePath(targetDirectory)) {
         return failResult("directory must be a safe project-relative path.");
+    }
+    if (isInProjectTrash(project, targetDirectory)) {
+        return failResult("directory is in the project trash.");
     }
 
     // No entity selector: fork a scene-wide default shader for the given type instead of a
