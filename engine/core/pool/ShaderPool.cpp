@@ -533,6 +533,26 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
     return shortName ? "?" : "Unknown";
 }
 
+int ShaderPool::getShaderPropertyBit(ShaderType shaderType, const std::string& name){
+    auto token = [](const std::string& value){
+        std::string result;
+        for (char c : value) {
+            if (std::isalnum((unsigned char)c))
+                result += std::tolower((unsigned char)c);
+        }
+        return result;
+    };
+    const std::string wanted = token(name);
+    for (int bit = 0; bit < getShaderPropertyCount(shaderType); bit++) {
+        const std::string shortName = getShaderPropertyName(shaderType, bit, true);
+        if (shortName == "?") // retired
+            continue;
+        if (wanted == token(shortName) || wanted == token(getShaderPropertyName(shaderType, bit, false)))
+            return bit;
+    }
+    return -1;
+}
+
 std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties, uint16_t customId){
 
     std::string str = getShaderTypeName(shaderType, true);

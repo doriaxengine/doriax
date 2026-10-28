@@ -4937,18 +4937,31 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
             uint32_t properties = 0;
             if (separator != std::string::npos) {
                 const std::string mask = builtIn.substr(separator + 1);
-                size_t used = 0;
-                unsigned long long value = 0;
-                try {
-                    value = std::stoull(mask, &used, 0);
-                } catch (...) {
-                    used = 0;
+                if (!mask.empty() && !std::isdigit(static_cast<unsigned char>(mask[0]))) {
+                    // names, as missing shaders are listed: Uv1,Nor
+                    std::istringstream names(mask);
+                    for (std::string name; std::getline(names, name, ',');) {
+                        const int bit = ShaderPool::getShaderPropertyBit(type, name);
+                        if (bit < 0) {
+                            error = "Unknown property '" + name + "' in '" + spec + "'.";
+                            return false;
+                        }
+                        properties |= (1u << bit);
+                    }
+                } else {
+                    size_t used = 0;
+                    unsigned long long value = 0;
+                    try {
+                        value = std::stoull(mask, &used, 0);
+                    } catch (...) {
+                        used = 0;
+                    }
+                    if (mask.empty() || used != mask.size() || value > 0xFFFFFFFFull) {
+                        error = "Invalid property mask in '" + spec + "'.";
+                        return false;
+                    }
+                    properties = static_cast<uint32_t>(value);
                 }
-                if (mask.empty() || used != mask.size() || value > 0xFFFFFFFFull) {
-                    error = "Invalid property mask in '" + spec + "'.";
-                    return false;
-                }
-                properties = static_cast<uint32_t>(value);
             }
             uint16_t customId = 0;
             if (customSeparator != std::string::npos) {
