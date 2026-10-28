@@ -487,6 +487,12 @@ static void attachHostConsoleIfNeeded() {
         (void)freopen_s(&stderrFile, "CONOUT$", "w", stderr);
         (void)freopen_s(&stdinFile,  "CONIN$",  "r", stdin);
     }
+
+    // The output is UTF-8, the shell gets its code page back on exit
+    static const UINT shellCodePage = GetConsoleOutputCP();
+    if (shellCodePage != CP_UTF8 && SetConsoleOutputCP(CP_UTF8)) {
+        std::atexit([]() { SetConsoleOutputCP(shellCodePage); });
+    }
 #endif
 }
 

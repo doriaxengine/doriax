@@ -206,7 +206,7 @@ public:
         return std::string(utf8.begin(), utf8.end());
     }
 
-    // False when string() would throw, as on Windows for names outside the ANSI code page
+    // False when string() would throw, as before Windows 10 1903 for names outside the ANSI code page
     static bool isNarrowPath(const std::filesystem::path& path) {
         try {
             (void)path.string();

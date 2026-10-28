@@ -7,6 +7,7 @@
 #include "Stream.h"
 #include "render/SceneRender2D.h"
 #include "render/SceneRender3D.h"
+#include "util/TextEncoding.h"
 
 #include <fstream>
 
@@ -110,7 +111,7 @@ void Workspace::load(const fs::path& projectPath) {
 
     YAML::Node root;
     try {
-        root = YAML::LoadFile(file.string());
+        root = TextEncoding::loadYamlFile(file);
     } catch (const std::exception& e) {
         Out::warning("Ignoring unreadable editor workspace \"%s\": %s", file.string().c_str(), e.what());
         return;

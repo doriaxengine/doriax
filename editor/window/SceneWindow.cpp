@@ -10,6 +10,7 @@
 #include "Backend.h"
 #include "util/Util.h"
 #include "util/EntityPayload.h"
+#include "util/TextEncoding.h"
 #include "command/CommandHandle.h"
 #include "command/type/MultiPropertyCmd.h"
 #include "command/type/LinkMaterialCmd.h"
@@ -644,7 +645,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                         // Cache the decoded material — only reload when the path changes
                                         if (cachedDragPath != droppedRelativePath) {
                                             fs::path materialPath = project->getProjectPath() / droppedRelativePath;
-                                            YAML::Node materialNode = YAML::LoadFile(materialPath.string());
+                                            YAML::Node materialNode = TextEncoding::loadYamlFile(materialPath);
                                             cachedDragMaterial = Stream::decodeMaterial(materialNode);
                                             cachedDragMaterial.name = fs::path(droppedRelativePath).lexically_normal().generic_string();
                                             cachedDragPath = droppedRelativePath;

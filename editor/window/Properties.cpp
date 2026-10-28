@@ -9,6 +9,7 @@
 #include "util/Util.h"
 #include "util/UIUtils.h"
 #include "util/FileDialogs.h"
+#include "util/TextEncoding.h"
 #include "util/EntityPayload.h"
 #include "util/CameraTextureLink.h"
 #include "external/IconsFontAwesome6.h"
@@ -4427,7 +4428,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                             try {
                                 if (cachedMatDropPath != droppedRelativePath) {
                                     cachedMatDropPath = droppedRelativePath;
-                                    YAML::Node materialNode = YAML::LoadFile((project->getProjectPath() / relativePath).string());
+                                    YAML::Node materialNode = TextEncoding::loadYamlFile(project->getProjectPath() / relativePath);
                                     cachedMatDropMaterial = Stream::decodeMaterial(materialNode);
                                     cachedMatDropMaterial.name = droppedRelativePath;
                                 }

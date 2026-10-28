@@ -8,6 +8,7 @@
 #include "EditorHost.h"
 #include "util/FileUtils.h"
 #include "util/FbxImporter.h"
+#include "util/TextEncoding.h"
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
 #include "window/TerrainEditWindow.h"
@@ -1766,7 +1767,7 @@ void editor::Project::refreshLinkedMaterials(bool force) {
             // Only load the file once per unique path
             if (changedFiles.find(linkEntry.filePath) == changedFiles.end()) {
                 try {
-                    YAML::Node materialNode = YAML::LoadFile(absolutePath.string());
+                    YAML::Node materialNode = TextEncoding::loadYamlFile(absolutePath);
                     Material updatedMaterial = Stream::decodeMaterial(materialNode);
                     updatedMaterial.name = linkEntry.filePath;
                     changedFiles[linkEntry.filePath] = {linkEntry.filePath, updatedMaterial};
@@ -2682,7 +2683,7 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
 
         Material material;
         try {
-            material = Stream::decodeMaterial(YAML::LoadFile(entry.path().string()));
+            material = Stream::decodeMaterial(TextEncoding::loadYamlFile(entry.path()));
         } catch (const std::exception& e) {
             Out::warning("Could not read material %s: %s", entry.path().string().c_str(), e.what());
             continue;
@@ -3536,7 +3537,7 @@ editor::SceneProject* editor::Project::createRuntimeCloneFromSource(const SceneP
         fullPath = getProjectPath() / fullPath;
     }
 
-    YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+    YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
     Stream::decodeSceneProject(runtime.get(), sceneNode, true);
     // the file's id differs if loading replaced a duplicate
     runtime->id = source->id;
@@ -4183,7 +4184,7 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
         }
 
         editor::getEditorHost().reportLoadingProgress("Loading scenes...");
-        YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+        YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
 
         if (isNewScene) {
             scenes.emplace_back();
@@ -4270,7 +4271,7 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                     if (!fs::exists(materialPath) || fs::is_directory(materialPath)) continue;
 
                     try {
-                        YAML::Node materialNode = YAML::LoadFile(materialPath.string());
+                        YAML::Node materialNode = TextEncoding::loadYamlFile(materialPath);
                         Material fileMaterial = Stream::decodeMaterial(materialNode);
                         fileMaterial.name = normalizedPath;
 
@@ -4642,7 +4643,7 @@ bool editor::Project::loadChildSceneInline(uint32_t childSceneId) {
             fullPath = getProjectPath() / fullPath;
         }
 
-        YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+        YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
 
         Stream::decodeSceneProject(childScene, sceneNode, true);
         loadSceneProjectData(childScene, sceneNode);
@@ -5740,7 +5741,7 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
 
         // Load and parse project file
         editor::getEditorHost().reportLoadingProgress("Loading project...");
-        YAML::Node projectNode = YAML::LoadFile(projectFile.string());
+        YAML::Node projectNode = TextEncoding::loadYamlFile(projectFile);
 
         // The workspace is written from the live model, which resetConfigs() is about
         // to drop, so the outgoing project is flushed first
@@ -5850,7 +5851,7 @@ bool editor::Project::saveSceneShaderKeys(const SceneProject* sceneProject) {
     }
 
     try {
-        YAML::Node root = YAML::LoadFile(fullPath.string());
+        YAML::Node root = TextEncoding::loadYamlFile(fullPath);
         root["shaderKeys"] = Stream::encodeShaderKeys(sceneProject->shaderKeys);
         if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n")) {
             Out::error("Failed to write scene file: %s", fullPath.string().c_str());
@@ -7631,7 +7632,7 @@ void editor::Project::setStandaloneBundles(std::vector<std::filesystem::path> bu
             bundle.registry = std::make_unique<EntityRegistry>();
 
             try {
-                YAML::Node node = YAML::LoadFile(fullPath.string());
+                YAML::Node node = TextEncoding::loadYamlFile(fullPath);
                 Stream::decodeEntitySelection(node, bundle.registry.get(), &bundle.registryEntities);
                 entityBundles.emplace(*it, std::move(bundle));
             } catch (const std::exception& e) {
@@ -7878,7 +7879,7 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
     } else {
         try {
             std::filesystem::path fullBundlePath = getProjectPath() / filepath;
-            node = YAML::LoadFile(fullBundlePath.string());
+            node = TextEncoding::loadYamlFile(fullBundlePath);
             bundle.registry->clear();
             bundle.registryEntities.clear();
             Stream::decodeEntitySelection(node, bundle.registry.get(), &bundle.registryEntities);

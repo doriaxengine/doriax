@@ -20,6 +20,7 @@
 #include "util/Angle.h"
 #include "util/Color.h"
 #include "util/FileDialogs.h"
+#include "util/TextEncoding.h"
 #include "util/FileUtils.h"
 #include "util/TerrainMapFileWriter.h"
 #include "util/TerrainMapUtils.h"
@@ -2545,7 +2546,7 @@ void editor::TerrainEditWindow::applyLayerMaterial(TerrainComponent& terrain, in
 
     Material material;
     try{
-        material = Stream::decodeMaterial(YAML::LoadFile((project->getProjectPath() / materialPath).string()));
+        material = Stream::decodeMaterial(TextEncoding::loadYamlFile(project->getProjectPath() / materialPath));
     }catch (const std::exception& e){
         Out::error("Failed to read material '%s': %s", materialPath.c_str(), e.what());
         return;

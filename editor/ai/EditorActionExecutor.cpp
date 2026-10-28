@@ -20,6 +20,7 @@
 #include "util/CxxStandards.h"
 #include "util/ProjectUtils.h"
 #include "util/FileUtils.h"
+#include "util/TextEncoding.h"
 #include "util/ScriptParser.h"
 #include "component/Body2DComponent.h"
 #include "component/Body3DComponent.h"
@@ -3622,7 +3623,7 @@ ActionResult EditorActionExecutor::linkMaterial(const Json& arguments) {
 
     Material material;
     try {
-        material = Stream::decodeMaterial(YAML::LoadFile((project->getProjectPath() / rel).string()));
+        material = Stream::decodeMaterial(TextEncoding::loadYamlFile(project->getProjectPath() / rel));
     } catch (const std::exception& e) {
         return failResult(std::string("Failed to load material: ") + e.what());
     }
@@ -5777,7 +5778,7 @@ ActionResult EditorActionExecutor::downloadCuratedAsset(const Json& arguments, c
     YAML::Node root;
     if (fs::exists(attributionPath)) {
         try {
-            root = YAML::LoadFile(attributionPath.string());
+            root = TextEncoding::loadYamlFile(attributionPath);
         } catch (...) {
             root = YAML::Node(YAML::NodeType::Map);
         }

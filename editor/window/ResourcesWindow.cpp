@@ -36,6 +36,7 @@
 #include "subsystem/MeshSystem.h"
 #include "util/FileDialogs.h"
 #include "util/FileUtils.h"
+#include "util/TextEncoding.h"
 #include "util/SHA1.h"
 #include "util/FbxImporter.h"
 #include "util/GraphicUtils.h"
@@ -2252,7 +2253,7 @@ void editor::ResourcesWindow::thumbnailWorker() {
             }
         } else if (thumbFile.type == FileType::MATERIAL) {
             try {
-                if (YAML::Node materialNode = YAML::LoadFile(thumbFile.path.string())) {
+                if (YAML::Node materialNode = TextEncoding::loadYamlFile(thumbFile.path)) {
                     Material material = Stream::decodeMaterial(materialNode);
                     materialRender.applyMaterial(material);
 
