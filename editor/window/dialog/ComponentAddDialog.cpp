@@ -5,6 +5,7 @@
 #include "external/IconsFontAwesome6.h"
 #include "util/UIUtils.h"
 #include <cctype>
+#include "Theme.h"
 
 namespace doriax {
 namespace editor {
@@ -185,7 +186,7 @@ void ComponentAddDialog::show() {
                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.0f)); // Left align
 
                 // Create button with empty label (we'll draw content manually)
-                bool clicked = ImGui::Button("##component", ImVec2(ImGui::GetContentRegionAvail().x, 45));
+                bool clicked = ImGui::Button("##component", ImVec2(ImGui::GetContentRegionAvail().x, 45 * Theme::dpiScale()));
 
                 ImGui::PopStyleVar();
                 ImGui::PopStyleColor(3);
