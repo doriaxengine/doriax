@@ -101,6 +101,7 @@ namespace doriax{
         bool sharesState(const SokolObject& other, PipelineType pipType) const;
         bool sharesPipeline(const SokolObject& other, PipelineType pipType) const;
         void getStateKey(std::vector<uint32_t>& key) const;
+        uint64_t getSortKey(PipelineType pipType) const;
         bool beginDraw(PipelineType pipType);
         void applyUniformBlock(int slot, unsigned int count, void* data);
         void draw(unsigned int baseElement, unsigned int vertexCount, unsigned int instanceCount);

@@ -630,6 +630,11 @@ void SokolObject::getStateKey(std::vector<uint32_t>& key) const{
     key.push_back((uint32_t)bind.index_buffer_offset);
 }
 
+uint64_t SokolObject::getSortKey(PipelineType pipType) const{
+    const uint32_t resources = bind.vertex_buffers[0].id ^ (bind.views[0].id << 16);
+    return ((uint64_t)getPipeline(pipType).id << 32) | resources;
+}
+
 bool SokolObject::beginDraw(PipelineType pipType){
     sg_pipeline selectedPipeline = getPipeline(pipType);
 

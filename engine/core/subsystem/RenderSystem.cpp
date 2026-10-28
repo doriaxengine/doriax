@@ -148,6 +148,13 @@ namespace {
         return mesh.worldAABB != AABB::ZERO && (!instmesh || instmesh->cullInstances);
     }
 
+    // nearest band first (one per doubling of the distance), then grouped by render state
+    uint64_t opaqueSortKey(const MeshComponent& mesh, float squaredDistance, PipelineType pipType){
+        // ilogb is a domain error for zero, NaN and infinity
+        const uint64_t band = (squaredDistance > 1.0f) ? std::min(std::ilogb(std::min(squaredDistance, FLT_MAX)) / 2, 63) : 0;
+        return (band << 58) | (mesh.submeshes[0].render.getSortKey(pipType) & ((1ull << 58) - 1));
+    }
+
     // a box without finite bounds counts as inside
     bool isInsidePlanes(const Plane* planes, int count, const AABB& box){
         if (!box.isFinite())
@@ -10758,8 +10765,11 @@ void RenderSystem::draw(){
                 TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
                 if (!mesh.transparent){
+                    // culled before the sort
+                    if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera, mesh.worldAABB))
+                        continue;
                     const float distance = mesh.worldAABB.isNull() ? 0.0f : mesh.worldAABB.squaredDistance(cameraTransform.worldPosition);
-                    opaqueRenders.push_back({entity, &mesh, instmesh, terrain, tilemap, &transform, distance});
+                    opaqueRenders.push_back({entity, &mesh, instmesh, terrain, tilemap, &transform, distance, opaqueSortKey(mesh, distance, colorPip)});
                 }else if (distanceSort){
                     auto& renders = isBehindWater(passWaters, mesh.worldAABB) ? behindWaterRenders : transparentRenders;
                     renders.push({TransparentRenderType::MESH, entity, &mesh, nullptr, instmesh, terrain, tilemap, &transform, transform.distanceToCamera});
@@ -10768,6 +10778,8 @@ void RenderSystem::draw(){
 
             if (distanceSort){
                 std::sort(opaqueRenders.begin(), opaqueRenders.end(), [](const OpaqueRenderData& a, const OpaqueRenderData& b){
+                    if (a.sortKey != b.sortKey)
+                        return a.sortKey < b.sortKey;
                     return a.distanceToCamera < b.distanceToCamera;
                 });
             }

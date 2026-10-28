@@ -74,6 +74,10 @@ void ObjectRender::getStateKey(std::vector<uint32_t>& key) const{
     backend.getStateKey(key);
 }
 
+uint64_t ObjectRender::getSortKey(PipelineType pipType) const{
+    return backend.getSortKey(pipType);
+}
+
 bool ObjectRender::beginDraw(PipelineType pipType){
     return backend.beginDraw(pipType);
 }

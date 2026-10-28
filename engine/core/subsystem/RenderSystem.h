@@ -236,6 +236,7 @@ namespace doriax{
 			TilemapComponent* tilemap;
 			Transform* transform;
 			float distanceToCamera;
+			uint64_t sortKey;
 		};
 
 		// water a camera pass draws
