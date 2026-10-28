@@ -4248,10 +4248,11 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
     constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
 
+    // shader properties first, they rule out lit meshes
     const Submesh& submesh = mesh.submeshes[0];
-    return mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
+    return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
+        mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         !submesh.needUpdateTexture && !submesh.lodData;
 }
 
