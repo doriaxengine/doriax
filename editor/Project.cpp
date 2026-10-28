@@ -3854,6 +3854,24 @@ void editor::Project::calculateMaxValues(const EntityRegistry* registry, SceneMa
     }
 }
 
+// The scene file and the bundle versions its instances hold, which it doesn't store
+std::string editor::Project::hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const {
+    std::string sources = Stream::hashSceneContent(sceneNode);
+    for (const auto& bundlePath : sceneNode["bundles"]) {
+        auto it = sceneProject->bundleHashes.find(bundlePath.as<std::string>());
+        sources += "\n" + bundlePath.as<std::string>() + " " + (it != sceneProject->bundleHashes.end() ? it->second : std::string());
+    }
+    return SHA1::hash(sources);
+}
+
+bool editor::Project::hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const {
+    // older editors saved keys without a hash
+    if (!sceneNode["shaderKeysHash"]) {
+        return !sceneNode["shaderKeys"];
+    }
+    return sceneNode["shaderKeysHash"].as<std::string>() != hashShaderKeySources(sceneProject, sceneNode);
+}
+
 void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& keys) const {
     if (!sceneProject || !sceneProject->scene) {
         return;
@@ -4251,7 +4269,9 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                 }
             }
 
+            targetScene->bundleHashes.clear();
             loadSceneProjectData(targetScene, sceneNode);
+            targetScene->shaderKeysStale = hasStaleShaderKeys(targetScene, sceneNode);
         }
 
         if (opened){
@@ -4283,6 +4303,8 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                             mesh->submeshes[submeshIndex].needUpdateTexture = true;
                             Catalog::updateSpriteBatch(targetScene->scene, entity);
                             targetScene->needUpdateRender = true;
+                            // the saved keys were for the old material, and this is no user edit
+                            targetScene->shaderKeysStale = true;
                         }
                     } catch (const std::exception& e) {
                         Out::error("Error loading linked material file '%s': %s", materialPath.string().c_str(), e.what());
@@ -4646,7 +4668,9 @@ bool editor::Project::loadChildSceneInline(uint32_t childSceneId) {
         YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
 
         Stream::decodeSceneProject(childScene, sceneNode, true);
+        childScene->bundleHashes.clear();
         loadSceneProjectData(childScene, sceneNode);
+        childScene->shaderKeysStale = hasStaleShaderKeys(childScene, sceneNode);
 
         childScene->expandedInline = true;
         childScene->needUpdateRender = true;
@@ -5830,7 +5854,11 @@ bool editor::Project::saveLoadedSceneOnStop(SceneProject* loadedSceneProject, Sc
 
     bool success = false;
     if (loadedSceneProject == editorScene) {
+        // modified only for the keys Play found, so the restored content counts as it was
+        const bool modified = editorScene->isModified;
+        editorScene->isModified = keepModified;
         success = saveSceneFile(editorScene, editorScene->filepath, false);
+        editorScene->isModified = modified;
     } else {
         // the runtime clone holds the played state, so only the shader keys are written
         success = saveSceneShaderKeys(editorScene);
@@ -5979,6 +6007,16 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
     sceneProject->shaderKeys = std::move(shaderKeys);
+    // Keys are complete once every change was drawn and nothing waits to load or reload
+    auto meshSystem = sceneProject->scene->getSystem<MeshSystem>();
+    bool keysComplete = !sceneProject->needUpdateRender && sceneProject->scene->getSystem<RenderSystem>()->isAllLoaded() &&
+        !meshSystem->hasPendingAsyncModelLoads() && !meshSystem->hasPendingFoliageUpdates();
+    auto meshes = sceneProject->scene->getComponentArray<MeshComponent>();
+    for (size_t i = 0; keysComplete && i < meshes->size(); i++) {
+        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        keysComplete = !(mesh.loaded && mesh.needReload);
+    }
+    sceneProject->shaderKeysStale = !keysComplete && (sceneProject->shaderKeysStale || sceneProject->isModified);
 
     updateSceneCppScripts(sceneProject);
     updateSceneBundles(sceneProject);
@@ -5986,6 +6024,8 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
 
     try {
         YAML::Node root = Stream::encodeSceneProject(this, sceneProject);
+        // an empty hash keeps the keys stale in the file
+        root["shaderKeysHash"] = sceneProject->shaderKeysStale ? std::string() : hashShaderKeySources(sceneProject, root);
         if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n")) {
             Out::error("Failed to write scene file: %s", fullPath.string().c_str());
             return false;
@@ -7696,9 +7736,17 @@ void editor::Project::saveEntityBundleToDisk(const std::filesystem::path& filepa
     YAML::Node encodedNode = encodeEntityBundleNode(filepath);
     if (encodedNode && !encodedNode.IsNull()) {
         std::filesystem::path fullBundlePath = getProjectPath() / filepath;
-        if (FileUtils::writeFileReplacing(fullBundlePath, YAML::Dump(encodedNode))) {
+        const std::string content = YAML::Dump(encodedNode);
+        if (FileUtils::writeFileReplacing(fullBundlePath, content)) {
             bundle->isModified = false;
             markReferencedSceneIdsPersisted(bundle->registry.get());
+            // edits reach every instance, so each scene now holds this version
+            const std::string contentHash = SHA1::hash(content);
+            for (const auto& [sceneId, instances] : bundle->instances) {
+                if (SceneProject* sceneProject = getScene(sceneId)) {
+                    sceneProject->bundleHashes[filepath.generic_string()] = contentHash;
+                }
+            }
         } else {
             Out::error("Failed to open file for writing: %s", fullBundlePath.string().c_str());
         }
@@ -7888,6 +7936,8 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
             return {};
         }
     }
+
+    sceneProject->bundleHashes[filepath.generic_string()] = SHA1::hash(YAML::Dump(node));
 
     Scene* scene = sceneProject->scene;
 

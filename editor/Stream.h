@@ -236,6 +236,8 @@ namespace doriax::editor {
         static bool hasSceneDisplaySettings(const YAML::Node& node);
 
         static YAML::Node encodeShaderKeys(const std::set<ShaderKey>& shaderKeys);
+        // Hash of a scene file without its shader keys, to find edits made outside the editor
+        static std::string hashSceneContent(const YAML::Node& node);
         static YAML::Node encodeSceneProject(const Project* project, const SceneProject* sceneProject);
         static void decodeSceneProject(SceneProject* sceneProject, const YAML::Node& node, bool loadScene);
         static void decodeSceneProjectEntities(Project* project, SceneProject* sceneProject, const YAML::Node& node);

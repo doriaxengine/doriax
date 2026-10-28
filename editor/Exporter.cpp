@@ -798,10 +798,17 @@ void editor::Exporter::resolveShaderKeys() {
             keys.insert(ShaderPool::normalizeKey(key));
         }
     } else {
+        std::string staleScenes;
         for (const auto& sceneProject : project->getScenes()) {
             for (ShaderKey key : sceneProject.shaderKeys) {
                 keys.insert(ShaderPool::normalizeKey(key));
             }
+            if (sceneProject.shaderKeysStale) {
+                staleScenes += (staleScenes.empty() ? "" : ", ") + sceneProject.name;
+            }
+        }
+        if (!staleScenes.empty()) {
+            Out::warning("Shader keys of %s may be out of date, and the game exits if it needs a missing shader. Open and save these scenes in the editor to update them.", staleScenes.c_str());
         }
     }
     for (ShaderKey key : config.shaderAdditions) {

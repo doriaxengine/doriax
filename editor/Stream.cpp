@@ -15,6 +15,7 @@
 #include "subsystem/MeshSystem.h"
 #include "util/CameraTextureLink.h"
 #include "util/ProjectUtils.h"
+#include "util/SHA1.h"
 #include "util/StringUtils.h"
 #include "render/SceneRender2D.h"
 #include "render/SceneRender3D.h"
@@ -54,6 +55,20 @@ YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKey
         node.push_back(entry);
     }
     return node;
+}
+
+// Hashes the emitted nodes, not the file text, so a save and the next load agree
+std::string editor::Stream::hashSceneContent(const YAML::Node& node) {
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    for (const auto& entry : node) {
+        const std::string key = entry.first.as<std::string>();
+        if (key != "shaderKeys" && key != "shaderKeysHash") {
+            out << YAML::Key << key << YAML::Value << entry.second;
+        }
+    }
+    out << YAML::EndMap;
+    return SHA1::hash(out.c_str());
 }
 
 namespace {

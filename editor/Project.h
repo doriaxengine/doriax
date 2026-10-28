@@ -114,6 +114,11 @@ namespace doriax::editor{
         std::set<Entity> playStateEntities;
         SceneMaxValues maxValues;
         std::set<ShaderKey> shaderKeys;
+        // Keys may miss variants: file changed outside the editor, or saved before all of it loaded
+        bool shaderKeysStale = false;
+        // Content hash of the bundle version its instances hold, by bundle path: the scene
+        // stores only their roots, and the file can change while it is open
+        std::map<std::string, std::string> bundleHashes;
         std::vector<ChildSceneRef> childScenes;
         std::vector<SceneScriptSource> cppScripts;
         std::vector<BundleSceneInfo> bundles;
@@ -589,6 +594,8 @@ namespace doriax::editor{
         // Live-derive the shader keys a scene needs from its current components
         // (used at scene save and by the Export window's pre-populated list).
         void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys) const;
+        std::string hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
+        bool hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
 
         std::string getName() const;
         void setName(std::string name);
