@@ -5,6 +5,7 @@
 
 #include "System.h"
 #include "SokolCmdQueue.h"
+#include "SokolObject.h"
 
 #include "sokol_gfx.h"
 #include <cmath>
@@ -124,6 +125,7 @@ void SokolCamera::applyScissor(Rect rect){
 void SokolCamera::endRenderPass(){
     //SokolCmdQueue::add_command_end_pass();
     sg_end_pass();
+    SokolObject::resetAppliedState();
 
     if (textureView.id != SG_INVALID_ID){
         sg_destroy_view(textureView);

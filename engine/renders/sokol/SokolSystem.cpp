@@ -48,6 +48,10 @@ void sokol_log(const char* tag,                // e.g. 'sg'
         Log::debug("%s\n", message_or_null);
         return;
     }
+    // a draw call that failed can leave sokol skipping draws until the next sg_apply_pipeline
+    if (log_level <= 1 && !Engine::isAsyncThread()){
+        SokolObject::resetAppliedState();
+    }
     if (log_level == 0){
         Log::print("(PANIC): %s\n", message_or_null);
     }else if (log_level == 1){

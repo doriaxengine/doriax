@@ -4,6 +4,7 @@
 #include "SokolBuffer.h"
 #include "Log.h"
 #include "SokolCmdQueue.h"
+#include "SokolObject.h"
 #include "Engine.h"
 #include "SokolResourceCache.h"
 #include "pool/MeshLodPool.h"
@@ -107,6 +108,7 @@ void SokolBuffer::updateBuffer(unsigned int size, void* data){
             SokolCmdQueue::add_command_update_buffer(buffer, {data, (size_t)size});
         }else{
             sg_update_buffer(buffer, {data, (size_t)size});
+            SokolObject::resetAppliedState();
         }
     }
 }
@@ -114,6 +116,7 @@ void SokolBuffer::updateBuffer(unsigned int size, void* data){
 int SokolBuffer::appendBuffer(unsigned int size, const void* data){
     if (buffer.id == SG_INVALID_ID || Engine::isAsyncThread() || sg_query_buffer_will_overflow(buffer, size))
         return -1;
+    SokolObject::resetAppliedState();
     return sg_append_buffer(buffer, {data, (size_t)size});
 }
 

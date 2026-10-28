@@ -18,6 +18,34 @@ using namespace doriax;
 namespace {
     using PipelineKey = std::vector<uint32_t>;
 
+    // what the current pass applied last
+    sg_pipeline appliedPipeline = {};
+    sg_bindings appliedBindings = {};
+    bool bindingsApplied = false;
+
+    bool isReady(sg_buffer buffer){
+        return buffer.id == SG_INVALID_ID || sg_query_buffer_state(buffer) == SG_RESOURCESTATE_VALID;
+    }
+
+    // what sokol checks before drawing: a resource still being created skips the draw
+    bool isReady(const sg_bindings& bind){
+        for (const sg_buffer& buffer : bind.vertex_buffers){
+            if (!isReady(buffer))
+                return false;
+        }
+        if (!isReady(bind.index_buffer))
+            return false;
+        for (const sg_view& view : bind.views){
+            if (view.id == SG_INVALID_ID)
+                continue;
+            const sg_image image = sg_query_view_image(view);
+            if (sg_query_view_state(view) != SG_RESOURCESTATE_VALID || !isReady(sg_query_view_buffer(view)) ||
+                    (image.id != SG_INVALID_ID && sg_query_image_state(image) != SG_RESOURCESTATE_VALID))
+                return false;
+        }
+        return true;
+    }
+
     SokolResourceCache<PipelineKey, sg_pipeline>& getSharedPipelines(){
         // never destroyed: objects can release their pipelines at exit
         static auto* shared = new SokolResourceCache<PipelineKey, sg_pipeline>();
@@ -635,8 +663,17 @@ uint64_t SokolObject::getSortKey(PipelineType pipType) const{
     return ((uint64_t)getPipeline(pipType).id << 32) | resources;
 }
 
+void SokolObject::resetAppliedState(){
+    appliedPipeline = {};
+    bindingsApplied = false;
+}
+
 bool SokolObject::beginDraw(PipelineType pipType){
     sg_pipeline selectedPipeline = getPipeline(pipType);
+
+    if (selectedPipeline.id != SG_INVALID_ID && selectedPipeline.id == appliedPipeline.id){
+        return true;
+    }
 
     // Deferred resource creation can leave an allocated handle in FAILED state.
     // Never apply it: doing so would turn one creation error into a cascade of
@@ -646,6 +683,9 @@ bool SokolObject::beginDraw(PipelineType pipType){
         return false;
     }
 
+    // set before the call, an error in it resets them from the logger
+    appliedPipeline = selectedPipeline;
+    bindingsApplied = false;
     sg_apply_pipeline(selectedPipeline);
     return true;
 }
@@ -658,7 +698,17 @@ void SokolObject::applyUniformBlock(int slot, unsigned int count, void* data){
 
 void SokolObject::draw(unsigned int baseElement, unsigned int vertexCount, unsigned int instanceCount){
     //SokolCmdQueue::add_command_apply_bindings(bind);
-    sg_apply_bindings(bind);
+    if (!bindingsApplied || std::memcmp(&appliedBindings, &bind, sizeof(sg_bindings)) != 0){
+        // set before the call, as in beginDraw; bindings not ready make sokol skip draws until
+        // the next sg_apply_pipeline
+        if (isReady(bind)){
+            appliedBindings = bind;
+            bindingsApplied = true;
+        }else{
+            resetAppliedState();
+        }
+        sg_apply_bindings(bind);
+    }
     //SokolCmdQueue::add_command_draw(0, vertexCount, 1);
     sg_draw(baseElement, vertexCount, instanceCount);
 }
