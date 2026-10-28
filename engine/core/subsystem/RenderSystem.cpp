@@ -59,15 +59,16 @@ namespace {
     bool isInsideFrustum(const CameraComponent& camera, const float lo[3], const float hi[3]){
         const float center[3] = {(hi[0] + lo[0]) * 0.5f, (hi[1] + lo[1]) * 0.5f, (hi[2] + lo[2]) * 0.5f};
         const float half[3] = {(hi[0] - lo[0]) * 0.5f, (hi[1] - lo[1]) * 0.5f, (hi[2] - lo[2]) * 0.5f};
+        // no early return, it mispredicts when the camera moves
+        bool outside = false;
         for (int p = 0; p < 6; p++){
             if (p == FRUSTUM_PLANE_FAR && camera.farClip == 0)
                 continue;
             const Vector3& n = camera.frustumPlanes[p].normal;
             const float distance = n.x * center[0] + n.y * center[1] + n.z * center[2] + camera.frustumPlanes[p].d;
-            if (distance < -(fabsf(n.x * half[0]) + fabsf(n.y * half[1]) + fabsf(n.z * half[2])))
-                return false;
+            outside |= distance < -(fabsf(n.x * half[0]) + fabsf(n.y * half[1]) + fabsf(n.z * half[2]));
         }
-        return true;
+        return !outside;
     }
 
     // every light, not just the selected ones, so the variant does not change with the camera
@@ -4507,7 +4508,8 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
     sprite.settledAt = spriteUpdates;
     sprite.vertexCount = vertexCount;
     sprite.indexCount = submesh.vertexCount;
-    sprite.culls = mesh.worldAABB != AABB::ZERO;
+    SettledBounds bounds;
+    bounds.culls = mesh.worldAABB != AABB::ZERO;
     sprite.aabb = mesh.aabb;
     std::memcpy(sprite.vertices, mesh.buffer.getData(), (size_t)vertexCount * layout.stride);
     bakeSpriteVertices(sprite.vertices, vertexCount, layout, submesh);
@@ -4542,10 +4544,11 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
     }
     sprite.state = it->second;
     spriteStates[sprite.state].sprites++;
-    placeSettledSprite(sprite, transform);
+    placeSettledSprite(sprite, bounds, transform);
 
     setSettledIndex(entity, (int)settledSprites.size());
     settledSprites.push_back(sprite);
+    settledBounds.push_back(bounds);
 }
 
 void RenderSystem::unsettleSprite(Entity entity){
@@ -4563,9 +4566,11 @@ void RenderSystem::unsettleSprite(Entity entity){
 
     if (index != (int)settledSprites.size() - 1){
         settledSprites[index] = settledSprites.back();
+        settledBounds[index] = settledBounds.back();
         setSettledIndex(settledSprites[index].entity, index);
     }
     settledSprites.pop_back();
+    settledBounds.pop_back();
     setSettledIndex(entity, -1);
 
     // a draw of its own needs the MVP the batch did without. A billboard that turns gets it from
@@ -4614,7 +4619,7 @@ void RenderSystem::setSettledIndex(Entity entity, int index){
 
 // world positions and bounds, redone when the transform changes; a settled sprite has an
 // affine model matrix, so w is 1
-void RenderSystem::placeSettledSprite(SettledSprite& sprite, const Transform& transform){
+void RenderSystem::placeSettledSprite(SettledSprite& sprite, SettledBounds& bounds, const Transform& transform){
     const SpriteLayout& layout = spriteStates[sprite.state].layout;
     // copied, so the vertex writes need no reload of it
     float model[16];
@@ -4634,26 +4639,55 @@ void RenderSystem::placeSettledSprite(SettledSprite& sprite, const Transform& tr
             hi[a] = std::max(hi[a], world[a]);
         }
     }
-    std::memcpy(sprite.lo, lo, sizeof(lo));
-    std::memcpy(sprite.hi, hi, sizeof(hi));
-    sprite.cullFrustum = 0;
+    std::memcpy(bounds.lo, lo, sizeof(lo));
+    std::memcpy(bounds.hi, hi, sizeof(hi));
+    bounds.cullFrustum = 0;
+}
+
+// a 2D camera has its planes along the axes
+void RenderSystem::updateAxisPlanes(const CameraComponent& camera){
+    spriteBatch.hasAxisPlanes = false;
+    if (camera.farClip == 0)
+        return;
+    for (int p = 0; p < 6; p++){
+        const Plane& plane = camera.frustumPlanes[p];
+        const float n[3] = {plane.normal.x, plane.normal.y, plane.normal.z};
+        if ((n[0] != 0.0f) + (n[1] != 0.0f) + (n[2] != 0.0f) != 1)
+            return;
+        const int axis = (n[0] != 0.0f) ? 0 : (n[1] != 0.0f) ? 1 : 2;
+        spriteBatch.axisPlanes[p] = {axis, n[axis], plane.d};
+    }
+    spriteBatch.hasAxisPlanes = true;
 }
 
 // copies the sprite into the segment drawn at the next flush
-void RenderSystem::drawSettledSprite(SettledSprite& sprite, size_t index){
+void RenderSystem::drawSettledSprite(int settled, size_t index){
     // sprites batched from their meshes come first, and the next one starts its own run
     flushSpriteItems();
     spriteBatch.previous = nullptr;
 
-    if (sprite.culls){
-        if (sprite.cullFrustum != spriteBatch.frustum){
-            sprite.inside = isInsideFrustum(*spriteBatch.camera, sprite.lo, sprite.hi);
-            sprite.cullFrustum = spriteBatch.frustum;
+    SettledBounds& bounds = settledBounds[settled];
+    if (bounds.culls){
+        if (bounds.cullFrustum != spriteBatch.frustum){
+            if (spriteBatch.hasAxisPlanes){
+                // isInsideFrustum with the zero terms left out, same result
+                bool outside = false;
+                for (const AxisPlane& plane : spriteBatch.axisPlanes){
+                    const int a = plane.axis;
+                    const float distance = plane.normal * ((bounds.hi[a] + bounds.lo[a]) * 0.5f) + plane.d;
+                    outside |= distance < -fabsf(plane.normal * ((bounds.hi[a] - bounds.lo[a]) * 0.5f));
+                }
+                bounds.inside = !outside;
+            }else{
+                bounds.inside = isInsideFrustum(*spriteBatch.camera, bounds.lo, bounds.hi);
+            }
+            bounds.cullFrustum = spriteBatch.frustum;
         }
-        if (!sprite.inside)
+        if (!bounds.inside)
             return;
     }
 
+    const SettledSprite& sprite = settledSprites[settled];
     // a run draws one state from at most 65536 vertices
     const SpriteLayout& layout = spriteStates[sprite.state].layout;
     const size_t start = spriteSegment.vertices.size();
@@ -9777,8 +9811,9 @@ void RenderSystem::update(double dt){
                 updateMVP(i, transform, mainCamera, mainCameraTransform);
             }
             if (transform.needUpdate){
-                SettledSprite& sprite = settledSprites[settledIndex(entity)];
-                placeSettledSprite(sprite, transform);
+                const int settled = settledIndex(entity);
+                SettledSprite& sprite = settledSprites[settled];
+                placeSettledSprite(sprite, settledBounds[settled], transform);
                 // meshes seldom move in their array, so the last index is tried before a lookup
                 if (sprite.meshIndex >= meshes->size() || meshes->getEntity(sprite.meshIndex) != entity){
                     sprite.meshIndex = meshes->getIndex(entity);
@@ -10828,6 +10863,7 @@ void RenderSystem::draw(){
             std::copy(camera.frustumPlanes, camera.frustumPlanes + 6, spriteBatch.frustumPlanes);
             spriteBatch.farClip = camera.farClip;
             spriteBatch.frustum++;
+            updateAxisPlanes(camera);
         }
 
         if (distanceSort){
@@ -10843,9 +10879,10 @@ void RenderSystem::draw(){
             Transform& transform = transforms->getComponentFromIndex(i);
             Entity entity = transforms->getEntity(i);
 
-            if (drawSettled && isSpriteSettled(entity)){
+            const int settled = drawSettled ? settledIndex(entity) : -1;
+            if (settled >= 0){
                 if (transform.visible){
-                    drawSettledSprite(settledSprites[settledIndex(entity)], i);
+                    drawSettledSprite(settled, i);
                 }
                 continue;
             }

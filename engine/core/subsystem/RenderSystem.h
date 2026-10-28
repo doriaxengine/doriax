@@ -418,6 +418,12 @@ namespace doriax{
 			size_t colorOffset = 0;
 			int texcoordOffset = -1;
 		};
+		// a frustum plane along one axis
+		struct AxisPlane{
+			int axis;
+			float normal;
+			float d;
+		};
 		struct SpriteBatch{
 			bool active = false;
 			bool depthPrepass = false;
@@ -440,6 +446,8 @@ namespace doriax{
 			Plane frustumPlanes[6];
 			float farClip = 0;
 			uint64_t frustum = 0;
+			bool hasAxisPlanes = false; // 2D cameras
+			AxisPlane axisPlanes[6] = {};
 		};
 		SpriteBatch spriteBatch;
 
@@ -449,14 +457,9 @@ namespace doriax{
 			uint32_t state = 0;
 			unsigned int vertexCount = 0;
 			unsigned int indexCount = 0;
-			bool culls = false;
-			bool inside = false;
 			uint32_t settledAt = 0; // in spriteUpdates
-			uint64_t cullFrustum = 0; // the frustum inside was found for, 0 for none
 			size_t meshIndex = 0; // where its MeshComponent was last found
 			AABB aabb; // of the mesh, so moving only writes the mesh's worldAABB
-			float lo[3] = {};
-			float hi[3] = {};
 			float positions[4][3] = {}; // local
 			uint16_t indices[6] = {};
 			unsigned char vertices[4 * 64]; // world positions, texture rect and color applied
@@ -483,6 +486,15 @@ namespace doriax{
 			std::vector<std::pair<size_t, Entity>> sprites;
 		};
 		std::vector<SettledSprite> settledSprites;
+		// culling data of settledSprites (same index), apart so a moving camera reads only these
+		struct SettledBounds{
+			float lo[3] = {};
+			float hi[3] = {};
+			uint64_t cullFrustum = 0; // the frustum inside was found for, 0 for none
+			bool culls = false;
+			bool inside = false;
+		};
+		std::vector<SettledBounds> settledBounds;
 		// the settled sprite of each entity, -1 when none, in pages freed once none of theirs is
 		// settled: entity ids only grow, so a plain array would grow with every sprite ever spawned
 		struct SettledPage{
@@ -790,8 +802,9 @@ namespace doriax{
 			return (page < settledPages.size() && settledPages[page]) ? settledPages[page]->index[entity & 1023] : -1;
 		}
 		void setSettledIndex(Entity entity, int index);
-		void placeSettledSprite(SettledSprite& sprite, const Transform& transform);
-		void drawSettledSprite(SettledSprite& sprite, size_t index);
+		void placeSettledSprite(SettledSprite& sprite, SettledBounds& bounds, const Transform& transform);
+		void updateAxisPlanes(const CameraComponent& camera);
+		void drawSettledSprite(int settled, size_t index);
 		void flushSpriteSegment();
 		Rect getScissorRect(UILayoutComponent& layout, ImageComponent& img, Transform& transform, const Rect& passViewport);
 
