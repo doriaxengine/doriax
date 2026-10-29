@@ -2334,11 +2334,13 @@ void editor::App::engineRender(){
                     sceneChanged = false;
                 }
 
-                // Update child scene render systems so their entities display correctly
+                // Update child scene render systems so their entities display correctly.
+                // Only once loaded as a layer: one loaded inline during Play (or before the
+                // reactivation after Stop) has no camera from Scene::load() yet.
                 for (const ChildSceneRef& childSceneRef : sceneProject.childScenes) {
                     uint32_t childId = childSceneRef.id;
                     SceneProject* childScene = project.getScene(childId);
-                    if (childScene && childScene->expandedInline && childScene->scene) {
+                    if (childScene && childScene->expandedInline && childScene->scene && Engine::isSceneRunning(childScene->scene)) {
                         if (childScene->sceneRender) {
                             childScene->sceneRender->hideAllGizmos();
                         }
