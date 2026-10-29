@@ -13741,6 +13741,10 @@ void editor::Properties::show(){
                 return std::find(authored.begin(), authored.end(), entity) == authored.end();
             });
 
+        if (ImGui::GetScrollY() > 0.0f) {
+            ImGui::SetScrollY(0.0f);
+        }
+
         if (entities.size() == 1){
             ImGui::Text("Entity");
         }else{
@@ -13875,195 +13879,206 @@ void editor::Properties::show(){
         // Show the component add dialog
         componentAddDialog.show();
 
-        bool isBundle = !bundlePath.empty();
-
-        // Root entity of a bundle is always local, not part of the bundle template
-        if (isBundle) {
-            EntityBundle* bundle = project->getEntityBundle(bundlePath);
-            if (bundle) {
-                for (Entity& entity : entities) {
-                    Entity root = bundle->getRootEntity(sceneProject->id, entity);
-                    if (root == entity && bundle->getRegistryEntity(sceneProject->id, entity) == NULL_ENTITY) {
-                        isBundle = false;
-                        break;
-                    }
-                }
-            }
+        std::string scrollId = "PropertiesScrollRegion";
+        if (entities.size() == 1) {
+            scrollId += "_" + std::to_string(sceneProject->id) + "_" + std::to_string(entities[0]);
+        } else {
+            scrollId += "_Multi";
         }
 
-        for (ComponentType& cpType : components){
+        if (ImGui::BeginChild(scrollId.c_str(), ImVec2(0, 0), ImGuiChildFlags_NavFlattened)) {
+            bool isBundle = !bundlePath.empty();
 
-            // Check if this component is overridden for bundle entities
-            bool isBundleOverridden = false;
-            EntityBundle* entityBundle = nullptr;
+            // Root entity of a bundle is always local, not part of the bundle template
             if (isBundle) {
-                entityBundle = project->getEntityBundle(bundlePath);
-                if (entityBundle) {
+                EntityBundle* bundle = project->getEntityBundle(bundlePath);
+                if (bundle) {
                     for (Entity& entity : entities) {
-                        if (entityBundle->hasComponentOverride(sceneProject->id, entity, cpType)) {
-                            isBundleOverridden = true;
+                        Entity root = bundle->getRootEntity(sceneProject->id, entity);
+                        if (root == entity && bundle->getRegistryEntity(sceneProject->id, entity) == NULL_ENTITY) {
+                            isBundle = false;
                             break;
                         }
-                        isBundleOverridden = false;
                     }
                 }
             }
 
-            // Create header with appropriate styling
-            ImGui::PushID(static_cast<int>(cpType));
+            for (ComponentType& cpType : components){
 
-            // Build header text with icon
-            std::string headerText;
-
-            if (isBundle && !isBundleOverridden) {
-                // Bundle components - light blue with cube icon (same as Structure window)
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
-                headerText = ICON_FA_CUBE " ";
-            }
-            headerText += Catalog::getComponentName(cpType);
-
-            ImGui::SetNextItemOpen(true, ImGuiCond_Once);
-            bool headerOpen = ImGui::CollapsingHeader(headerText.c_str());
-
-            if (isBundle && !isBundleOverridden) {
-                ImGui::PopStyleColor();
-            }
-
-            // Context menu and body disabled for a runtime selection
-            const bool compReadOnly = isRuntimeSelection;
-            handleComponentMenu(sceneProject, entities, cpType, isBundle, isBundleOverridden, headerOpen, compReadOnly);
-
-            // Add hover tooltip for bundle components
-            if (isBundle && !isBundleOverridden && ImGui::IsItemHovered()) {
-                ImGui::BeginTooltip();
-                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_CUBE " Bundle Component");
-                ImGui::Text("This component comes from the bundle template.");
-                ImGui::EndTooltip();
-            }
-
-            ImGui::PopID();
-
-            if (headerOpen){
-                // Disable non-script components while playing
-                if (compReadOnly) ImGui::BeginDisabled(true);
-
-                if (cpType == ComponentType::Transform){
-                    drawTransform(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::MeshComponent){
-                    drawMeshComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ModelComponent){
-                    drawModelComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::UIComponent){
-                    drawUIComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ButtonComponent){
-                    drawButtonComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ScrollbarComponent){
-                    drawScrollbarComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ProgressbarComponent){
-                    drawProgressbarComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TextEditComponent){
-                    drawTextEditComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::PanelComponent){
-                    drawPanelComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::PolygonComponent){
-                    drawPolygonComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::MeshPolygonComponent){
-                    drawMeshPolygonComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TextComponent){
-                    drawTextComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::UILayoutComponent){
-                    drawUILayoutComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::UIContainerComponent){
-                    drawUIContainerComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ImageComponent){
-                    drawImageComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::SpriteComponent){
-                    drawSpriteComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TilemapComponent){
-                    drawTilemapComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TerrainComponent){
-                    drawTerrainComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::LightComponent){
-                    drawLightComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Light2DComponent){
-                    drawLight2DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Occluder2DComponent){
-                    drawOccluder2DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::FogComponent){
-                    drawFogComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::MirrorComponent){
-                    drawMirrorComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ReflectionProbeComponent){
-                    drawReflectionProbeComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::CameraComponent){
-                    drawCameraComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::SoundComponent){
-                    drawAudioComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::WaterComponent){
-                    drawWaterComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::WaterExclusionComponent){
-                    drawWaterExclusionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::SkyComponent){
-                    drawSkyComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ScriptComponent){
-                    drawScriptComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Body2DComponent){
-                    drawBody2DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Body3DComponent){
-                    drawBody3DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Joint2DComponent){
-                    drawJoint2DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::Joint3DComponent){
-                    drawJoint3DComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ActionComponent){
-                    drawActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TimedActionComponent){
-                    drawTimedActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::PositionActionComponent){
-                    drawPositionActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::RotationActionComponent){
-                    drawRotationActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ScaleActionComponent){
-                    drawScaleActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ColorActionComponent){
-                    drawColorActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::AlphaActionComponent){
-                    drawAlphaActionComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::SpriteAnimationComponent){
-                    drawSpriteAnimationComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::AnimationComponent){
-                    drawAnimationComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::BundleComponent){
-                    drawBundleComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::BoneComponent){
-                    drawBoneComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::SkinComponent){
-                    drawSkinComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::KeyframeTracksComponent){
-                    drawKeyframeTracksComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::TranslateTracksComponent){
-                    drawTranslateTracksComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::RotateTracksComponent){
-                    drawRotateTracksComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ScaleTracksComponent){
-                    drawScaleTracksComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::MorphTracksComponent){
-                    drawMorphTracksComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::ParticlesComponent){
-                    drawParticlesComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::LinesComponent){
-                    drawLinesComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::PointsComponent){
-                    drawPointsComponent(cpType, sceneProject, entities);
-                }else if (cpType == ComponentType::InstancedMeshComponent){
-                    drawInstancedMeshComponent(cpType, sceneProject, entities);
+                // Check if this component is overridden for bundle entities
+                bool isBundleOverridden = false;
+                EntityBundle* entityBundle = nullptr;
+                if (isBundle) {
+                    entityBundle = project->getEntityBundle(bundlePath);
+                    if (entityBundle) {
+                        for (Entity& entity : entities) {
+                            if (entityBundle->hasComponentOverride(sceneProject->id, entity, cpType)) {
+                                isBundleOverridden = true;
+                                break;
+                            }
+                            isBundleOverridden = false;
+                        }
+                    }
                 }
 
-                if (compReadOnly) ImGui::EndDisabled();
+                // Create header with appropriate styling
+                ImGui::PushID(static_cast<int>(cpType));
+
+                // Build header text with icon
+                std::string headerText;
+
+                if (isBundle && !isBundleOverridden) {
+                    // Bundle components - light blue with cube icon (same as Structure window)
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
+                    headerText = ICON_FA_CUBE " ";
+                }
+                headerText += Catalog::getComponentName(cpType);
+
+                ImGui::SetNextItemOpen(true, ImGuiCond_Once);
+                bool headerOpen = ImGui::CollapsingHeader(headerText.c_str());
+
+                if (isBundle && !isBundleOverridden) {
+                    ImGui::PopStyleColor();
+                }
+
+                // Context menu and body disabled for a runtime selection
+                const bool compReadOnly = isRuntimeSelection;
+                handleComponentMenu(sceneProject, entities, cpType, isBundle, isBundleOverridden, headerOpen, compReadOnly);
+
+                // Add hover tooltip for bundle components
+                if (isBundle && !isBundleOverridden && ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_CUBE " Bundle Component");
+                    ImGui::Text("This component comes from the bundle template.");
+                    ImGui::EndTooltip();
+                }
+
+                ImGui::PopID();
+
+                if (headerOpen){
+                    // Disable non-script components while playing
+                    if (compReadOnly) ImGui::BeginDisabled(true);
+
+                    if (cpType == ComponentType::Transform){
+                        drawTransform(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::MeshComponent){
+                        drawMeshComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ModelComponent){
+                        drawModelComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::UIComponent){
+                        drawUIComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ButtonComponent){
+                        drawButtonComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ScrollbarComponent){
+                        drawScrollbarComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ProgressbarComponent){
+                        drawProgressbarComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TextEditComponent){
+                        drawTextEditComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::PanelComponent){
+                        drawPanelComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::PolygonComponent){
+                        drawPolygonComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::MeshPolygonComponent){
+                        drawMeshPolygonComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TextComponent){
+                        drawTextComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::UILayoutComponent){
+                        drawUILayoutComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::UIContainerComponent){
+                        drawUIContainerComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ImageComponent){
+                        drawImageComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::SpriteComponent){
+                        drawSpriteComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TilemapComponent){
+                        drawTilemapComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TerrainComponent){
+                        drawTerrainComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::LightComponent){
+                        drawLightComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Light2DComponent){
+                        drawLight2DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Occluder2DComponent){
+                        drawOccluder2DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::FogComponent){
+                        drawFogComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::MirrorComponent){
+                        drawMirrorComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ReflectionProbeComponent){
+                        drawReflectionProbeComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::CameraComponent){
+                        drawCameraComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::SoundComponent){
+                        drawAudioComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::WaterComponent){
+                        drawWaterComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::WaterExclusionComponent){
+                        drawWaterExclusionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::SkyComponent){
+                        drawSkyComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ScriptComponent){
+                        drawScriptComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Body2DComponent){
+                        drawBody2DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Body3DComponent){
+                        drawBody3DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Joint2DComponent){
+                        drawJoint2DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::Joint3DComponent){
+                        drawJoint3DComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ActionComponent){
+                        drawActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TimedActionComponent){
+                        drawTimedActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::PositionActionComponent){
+                        drawPositionActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::RotationActionComponent){
+                        drawRotationActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ScaleActionComponent){
+                        drawScaleActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ColorActionComponent){
+                        drawColorActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::AlphaActionComponent){
+                        drawAlphaActionComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::SpriteAnimationComponent){
+                        drawSpriteAnimationComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::AnimationComponent){
+                        drawAnimationComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::BundleComponent){
+                        drawBundleComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::BoneComponent){
+                        drawBoneComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::SkinComponent){
+                        drawSkinComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::KeyframeTracksComponent){
+                        drawKeyframeTracksComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::TranslateTracksComponent){
+                        drawTranslateTracksComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::RotateTracksComponent){
+                        drawRotateTracksComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ScaleTracksComponent){
+                        drawScaleTracksComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::MorphTracksComponent){
+                        drawMorphTracksComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::ParticlesComponent){
+                        drawParticlesComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::LinesComponent){
+                        drawLinesComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::PointsComponent){
+                        drawPointsComponent(cpType, sceneProject, entities);
+                    }else if (cpType == ComponentType::InstancedMeshComponent){
+                        drawInstancedMeshComponent(cpType, sceneProject, entities);
+                    }
+
+                    if (compReadOnly) ImGui::EndDisabled();
+                }
             }
         }
+        ImGui::EndChild();
 
-    }else{
+    }
+    else {
         ImGui::Text("Scene");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(-1);
@@ -14085,280 +14100,287 @@ void editor::Properties::show(){
         }
         ImGui::Separator();
 
-        if (sceneProject->scene) {
-            ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchSame;
-            const float shadowQualityLabelColWidth = getLabelSize("Filter Quality") + ImGui::GetStyle().CellPadding.x * 2.0f;
-            const float shadowQualityComboWidth = ImGui::CalcTextSize("Medium").x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f;
+        if (ImGui::GetScrollY() > 0.0f) {
+            ImGui::SetScrollY(0.0f);
+        }
 
-            if (ImGui::BeginTable("scene_settings_table", 2, tableFlags)) {
-                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Background"));
-                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+        if (ImGui::BeginChild("PropertiesScrollRegion_Scene", ImVec2(0, 0), ImGuiChildFlags_NavFlattened)) {
+            if (sceneProject->scene) {
+                ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchSame;
+                const float shadowQualityLabelColWidth = getLabelSize("Filter Quality") + ImGui::GetStyle().CellPadding.x * 2.0f;
+                const float shadowQualityComboWidth = ImGui::CalcTextSize("Medium").x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f;
 
-                drawScenePropertyRow<Vector4>(sceneProject, "background_color", "Background", ScenePropertyInputType::ColorRGBA);
-                drawScenePropertyRow<LightState>(sceneProject, "light_state", "Lights", ScenePropertyInputType::Combo, 5 * ImGui::GetFontSize());
-
-                ImGui::EndTable();
-            }
-
-            if (sceneProject->sceneType != SceneType::SCENE_3D) {
-                ImGui::SeparatorText("Ambient Light (2D)");
-
-                if (ImGui::BeginTable("scene_ambient2d_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
+                if (ImGui::BeginTable("scene_settings_table", 2, tableFlags)) {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Background"));
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
-                    drawScenePropertyRow<Vector3>(sceneProject, "ambient_light_2d_color", "Color", ScenePropertyInputType::ColorRGB);
-                    drawScenePropertyRow<float>(sceneProject, "ambient_light_2d_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
+                    drawScenePropertyRow<Vector4>(sceneProject, "background_color", "Background", ScenePropertyInputType::ColorRGBA);
+                    drawScenePropertyRow<LightState>(sceneProject, "light_state", "Lights", ScenePropertyInputType::Combo, 5 * ImGui::GetFontSize());
 
                     ImGui::EndTable();
                 }
 
-                ImGui::SeparatorText("2D Shadows");
+                if (sceneProject->sceneType != SceneType::SCENE_3D) {
+                    ImGui::SeparatorText("Ambient Light (2D)");
 
-                if (ImGui::BeginTable("scene_shadows2d_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, shadowQualityLabelColWidth);
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                    if (ImGui::BeginTable("scene_ambient2d_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
-                    drawScenePropertyRow<ShadowQuality>(sceneProject, "shadows_2d_quality", "Filter Quality", ScenePropertyInputType::Combo, shadowQualityComboWidth, 0.0f, 1.0f,
-                        "Smoothness of 2D light shadow edges. The penumbra width is set per light (Shadow Softness):\n"
-                        "- None: 1 sample, no filtering, hard edges (softness is ignored)\n"
-                        "- Low: 5 samples\n"
-                        "- Medium: 9 samples\n"
-                        "- High: 13 samples, smooth even with very wide penumbras\n"
-                        "Higher values cost more per lit pixel. Raise it if wide penumbras show banding.");
+                        drawScenePropertyRow<Vector3>(sceneProject, "ambient_light_2d_color", "Color", ScenePropertyInputType::ColorRGB);
+                        drawScenePropertyRow<float>(sceneProject, "ambient_light_2d_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
 
-                    ImGui::EndTable();
-                }
-            }
-
-            LightState currentLightState = doriax::editor::Catalog::getSceneProperty<LightState>(sceneProject->scene, "light_state");
-            if (currentLightState != LightState::OFF) {
-                ImGui::SeparatorText("Global Illumination");
-
-                if (ImGui::BeginTable("scene_globalillum_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                    drawScenePropertyRow<Vector3>(sceneProject, "global_illumination_color", "Color", ScenePropertyInputType::ColorRGB);
-                    drawScenePropertyRow<float>(sceneProject, "global_illumination_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
-
-                    ImGui::EndTable();
-                }
-
-                ImGui::SeparatorText("Shadows");
-
-                if (ImGui::BeginTable("scene_shadow_settings_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, shadowQualityLabelColWidth);
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                    drawScenePropertyRow<ShadowQuality>(sceneProject, "shadows_quality", "Filter Quality", ScenePropertyInputType::Combo, shadowQualityComboWidth, 0.0f, 1.0f,
-                        "Smoothness of shadow edges (PCF size):\n"
-                        "- None: 1 sample, hard edges\n"
-                        "- Low: 3x3 samples\n"
-                        "- Medium: 5x5 samples\n"
-                        "- High: 7x7 samples\n"
-                        "Higher values cost more per shadowed pixel.");
-
-                    ImGui::EndTable();
-                }
-
-                ImGui::SeparatorText("Mesh Detail (LOD)");
-
-                if (ImGui::BeginTable("scene_lod_settings_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Threshold"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                    drawScenePropertyRow<bool>(sceneProject, "mesh_lod_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
-                        "Draw simplified versions of meshes when their detail no longer shows on screen. Off: every mesh draws at full detail and no levels are built.");
-                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "mesh_lod_enabled")) {
-                        drawScenePropertyRow<float>(sceneProject, "mesh_lod_threshold", "Threshold", ScenePropertyInputType::SliderFloat, -1.0f, 0.25f, 8.0f,
-                            "Screen pixels of geometric error a simplified mesh may show. Lower keeps more detail.");
+                        ImGui::EndTable();
                     }
 
-                    ImGui::EndTable();
+                    ImGui::SeparatorText("2D Shadows");
+
+                    if (ImGui::BeginTable("scene_shadows2d_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, shadowQualityLabelColWidth);
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<ShadowQuality>(sceneProject, "shadows_2d_quality", "Filter Quality", ScenePropertyInputType::Combo, shadowQualityComboWidth, 0.0f, 1.0f,
+                            "Smoothness of 2D light shadow edges. The penumbra width is set per light (Shadow Softness):\n"
+                            "- None: 1 sample, no filtering, hard edges (softness is ignored)\n"
+                            "- Low: 5 samples\n"
+                            "- Medium: 9 samples\n"
+                            "- High: 13 samples, smooth even with very wide penumbras\n"
+                            "Higher values cost more per lit pixel. Raise it if wide penumbras show banding.");
+
+                        ImGui::EndTable();
+                    }
                 }
 
-                ImGui::SeparatorText("Depth Prepass");
+                LightState currentLightState = doriax::editor::Catalog::getSceneProperty<LightState>(sceneProject->scene, "light_state");
+                if (currentLightState != LightState::OFF) {
+                    ImGui::SeparatorText("Global Illumination");
 
-                if (ImGui::BeginTable("scene_prepass_settings_table", 2, tableFlags)) {
+                    if (ImGui::BeginTable("scene_globalillum_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<Vector3>(sceneProject, "global_illumination_color", "Color", ScenePropertyInputType::ColorRGB);
+                        drawScenePropertyRow<float>(sceneProject, "global_illumination_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::SeparatorText("Shadows");
+
+                    if (ImGui::BeginTable("scene_shadow_settings_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, shadowQualityLabelColWidth);
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<ShadowQuality>(sceneProject, "shadows_quality", "Filter Quality", ScenePropertyInputType::Combo, shadowQualityComboWidth, 0.0f, 1.0f,
+                            "Smoothness of shadow edges (PCF size):\n"
+                            "- None: 1 sample, hard edges\n"
+                            "- Low: 3x3 samples\n"
+                            "- Medium: 5x5 samples\n"
+                            "- High: 7x7 samples\n"
+                            "Higher values cost more per shadowed pixel.");
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::SeparatorText("Mesh Detail (LOD)");
+
+                    if (ImGui::BeginTable("scene_lod_settings_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Threshold"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<bool>(sceneProject, "mesh_lod_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
+                            "Draw simplified versions of meshes when their detail no longer shows on screen. Off: every mesh draws at full detail and no levels are built.");
+                        if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "mesh_lod_enabled")) {
+                            drawScenePropertyRow<float>(sceneProject, "mesh_lod_threshold", "Threshold", ScenePropertyInputType::SliderFloat, -1.0f, 0.25f, 8.0f,
+                                "Screen pixels of geometric error a simplified mesh may show. Lower keeps more detail.");
+                        }
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::SeparatorText("Depth Prepass");
+
+                    if (ImGui::BeginTable("scene_prepass_settings_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Enabled"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<bool>(sceneProject, "depth_prepass_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
+                            "Write depth before the opaque color pass so each pixel is shaded once. Pays off with heavy overdraw (dense foliage); costs an extra geometry pass.");
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::SeparatorText("Ambient Occlusion (SSAO)");
+
+                    if (ImGui::BeginTable("scene_ssao_settings_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<bool>(sceneProject, "ssao_enabled", "Enabled", ScenePropertyInputType::Checkbox);
+
+                        if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssao_enabled")) {
+                            drawScenePropertyRow<float>(sceneProject, "ssao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
+                            drawScenePropertyRow<float>(sceneProject, "ssao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
+                            drawScenePropertyRow<float>(sceneProject, "ssao_bias", "Bias", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 0.1f);
+                            drawScenePropertyRow<bool>(sceneProject, "ssao_debug", "Debug View", ScenePropertyInputType::Checkbox);
+                        }
+
+                        ImGui::EndTable();
+                    }
+
+                    ImGui::SeparatorText("Reflections (SSR)");
+
+                    if (ImGui::BeginTable("scene_ssr_settings_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Max Distance"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        drawScenePropertyRow<bool>(sceneProject, "ssr_enabled", "Enabled", ScenePropertyInputType::Checkbox);
+
+                        if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssr_enabled")) {
+                            drawScenePropertyRow<float>(sceneProject, "ssr_max_distance", "Max Distance", ScenePropertyInputType::SliderFloat, -1.0f, 1.0f, 50.0f);
+                            drawScenePropertyRow<float>(sceneProject, "ssr_thickness", "Thickness", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 4.0f);
+                            drawScenePropertyRow<float>(sceneProject, "ssr_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f);
+                            drawScenePropertyRow<float>(sceneProject, "ssr_blur", "Glossy Blur", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
+
+                            // Debug View: visualize the SSR G-buffer channels (centralized in the composite)
+                            {
+                                const char* ssrDebugNames[] = { "Off", "Reflection", "Normal", "Roughness", "Metallic", "Albedo", "IBL Specular" };
+                                int debugMode = doriax::editor::Catalog::getSceneProperty<int>(sceneProject->scene, "ssr_debug_mode");
+                                int debugModeDefault = doriax::editor::Catalog::getScenePropertyDefault<int>("ssr_debug_mode");
+                                ImGui::TableNextRow();
+                                ImGui::TableSetColumnIndex(0);
+                                ImGui::Text("Debug View");
+                                if (debugMode != debugModeDefault) {
+                                    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, ImGui::GetStyle().ItemSpacing.y));
+                                    ImGui::SameLine();
+                                    ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+                                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, ImGui::GetStyle().FramePadding.y));
+                                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+                                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                                    if (ImGui::Button(ICON_FA_ROTATE_LEFT"##reset_ssr_debug_mode")) {
+                                        Command* resetCmd = new ScenePropertyCmd<int>(project, sceneProject->id, "ssr_debug_mode", debugModeDefault);
+                                        CommandHandle::get(sceneProject->id)->addCommandNoMerge(resetCmd);
+                                    }
+                                    ImGui::PopStyleColor(2);
+                                    ImGui::PopStyleVar(3);
+                                }
+                                ImGui::TableSetColumnIndex(1);
+                                ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
+                                if (ImGui::Combo("##ssr_debug_mode", &debugMode, ssrDebugNames, IM_ARRAYSIZE(ssrDebugNames))) {
+                                    Command* cmd = new ScenePropertyCmd<int>(project, sceneProject->id, "ssr_debug_mode", debugMode);
+                                    CommandHandle::get(sceneProject->id)->addCommand(cmd);
+                                }
+                            }
+                        }
+
+                        ImGui::EndTable();
+                    }
+                }
+
+                if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                    ImGui::SeparatorText("Physics");
+
+                    if (ImGui::BeginTable("scene_physics_table", 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Gravity"));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                        if (sceneProject->sceneType == SceneType::SCENE_3D) {
+                            drawScenePropertyRow<Vector3>(sceneProject, "physics_gravity_3d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
+                                "Gravity applied to 3D physics bodies (meters/s^2).");
+                        } else {
+                            drawScenePropertyRow<Vector2>(sceneProject, "physics_gravity_2d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
+                                "Gravity applied to 2D physics bodies (meters/s^2).");
+                        }
+
+                        ImGui::EndTable();
+                    }
+                }
+
+                ImGui::SeparatorText("Fixed Resolution");
+
+                if (ImGui::BeginTable("scene_fixed_resolution_table", 2, tableFlags)) {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Enabled"));
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
-                    drawScenePropertyRow<bool>(sceneProject, "depth_prepass_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
-                        "Write depth before the opaque color pass so each pixel is shaded once. Pays off with heavy overdraw (dense foliage); costs an extra geometry pass.");
+                    drawScenePropertyRow<bool>(sceneProject, "fixed_resolution_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
+                        "Renders the main camera at a fixed resolution and upscales it to the view.\n"
+                        "Applies only in play mode and when this scene is the main scene; layer\n"
+                        "scenes stay at native resolution on top. Letterbox/crop still follows the\n"
+                        "project canvas and scaling mode.");
 
-                    ImGui::EndTable();
-                }
-
-                ImGui::SeparatorText("Ambient Occlusion (SSAO)");
-
-                if (ImGui::BeginTable("scene_ssao_settings_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Intensity"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                    drawScenePropertyRow<bool>(sceneProject, "ssao_enabled", "Enabled", ScenePropertyInputType::Checkbox);
-
-                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssao_enabled")) {
-                        drawScenePropertyRow<float>(sceneProject, "ssao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssao_bias", "Bias", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 0.1f);
-                        drawScenePropertyRow<bool>(sceneProject, "ssao_debug", "Debug View", ScenePropertyInputType::Checkbox);
+                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "fixed_resolution_enabled")) {
+                        drawScenePropertyRow<int>(sceneProject, "fixed_resolution_width", "Width", ScenePropertyInputType::DragInt, 6 * ImGui::GetFontSize(), 1.0f, 8192.0f);
+                        drawScenePropertyRow<int>(sceneProject, "fixed_resolution_height", "Height", ScenePropertyInputType::DragInt, 6 * ImGui::GetFontSize(), 1.0f, 8192.0f);
+                        drawScenePropertyRow<TextureFilter>(sceneProject, "fixed_resolution_filter", "Filter", ScenePropertyInputType::Combo, 7 * ImGui::GetFontSize(), 0.0f, 1.0f,
+                            "How the low-resolution image is sampled when upscaled:\n"
+                            "- Nearest: crisp pixels (pixel-art look)\n"
+                            "- Linear: smooth interpolation");
                     }
 
                     ImGui::EndTable();
                 }
 
-                ImGui::SeparatorText("Reflections (SSR)");
+                // Ordered fullscreen passes run after the scene color (and SSR) pass; each one
+                // is a forked shader whose uniforms become rows here.
+                if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                    ImGui::SeparatorText("Post-processing");
+                    drawScenePostProcess(sceneProject);
+                }
 
-                if (ImGui::BeginTable("scene_ssr_settings_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Max Distance"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                // Scene default shaders: used by components of each type whose customShader is
+                // empty (priority: component shader > scene default > built-in).
+                ImGui::SeparatorText("Default Shaders");
 
-                    drawScenePropertyRow<bool>(sceneProject, "ssr_enabled", "Enabled", ScenePropertyInputType::Checkbox);
+                // each shader type, and a forked default's uniforms, in a table of its own
+                bool afterUniforms = false;
+                auto drawDefaultShader = [&](ShaderType type, const char* propertyName, const char* label) {
+                    // a line closes the uniforms above
+                    if (afterUniforms)
+                        ImGui::Separator();
+                    afterUniforms = false;
 
-                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssr_enabled")) {
-                        drawScenePropertyRow<float>(sceneProject, "ssr_max_distance", "Max Distance", ScenePropertyInputType::SliderFloat, -1.0f, 1.0f, 50.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssr_thickness", "Thickness", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 4.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssr_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssr_blur", "Glossy Blur", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f);
-
-                        // Debug View: visualize the SSR G-buffer channels (centralized in the composite)
-                        {
-                            const char* ssrDebugNames[] = { "Off", "Reflection", "Normal", "Roughness", "Metallic", "Albedo", "IBL Specular" };
-                            int debugMode = doriax::editor::Catalog::getSceneProperty<int>(sceneProject->scene, "ssr_debug_mode");
-                            int debugModeDefault = doriax::editor::Catalog::getScenePropertyDefault<int>("ssr_debug_mode");
-                            ImGui::TableNextRow();
-                            ImGui::TableSetColumnIndex(0);
-                            ImGui::Text("Debug View");
-                            if (debugMode != debugModeDefault) {
-                                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(2, ImGui::GetStyle().ItemSpacing.y));
-                                ImGui::SameLine();
-                                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-                                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, ImGui::GetStyle().FramePadding.y));
-                                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-                                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                                if (ImGui::Button(ICON_FA_ROTATE_LEFT"##reset_ssr_debug_mode")) {
-                                    Command* resetCmd = new ScenePropertyCmd<int>(project, sceneProject->id, "ssr_debug_mode", debugModeDefault);
-                                    CommandHandle::get(sceneProject->id)->addCommandNoMerge(resetCmd);
-                                }
-                                ImGui::PopStyleColor(2);
-                                ImGui::PopStyleVar(3);
-                            }
-                            ImGui::TableSetColumnIndex(1);
-                            ImGui::SetNextItemWidth(8 * ImGui::GetFontSize());
-                            if (ImGui::Combo("##ssr_debug_mode", &debugMode, ssrDebugNames, IM_ARRAYSIZE(ssrDebugNames))) {
-                                Command* cmd = new ScenePropertyCmd<int>(project, sceneProject->id, "ssr_debug_mode", debugMode);
-                                CommandHandle::get(sceneProject->id)->addCommand(cmd);
-                            }
+                    bool used = false;
+                    ShaderUniformRows rows;
+                    if (ImGui::BeginTable((std::string(propertyName) + "_table").c_str(), 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("Points").x);
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                        drawSceneShaderRow(sceneProject, type, propertyName, label);
+                        if (!sceneProject->scene->getDefaultCustomShader(type).empty()) {
+                            rows = resolveSceneShaderUniformRows(sceneProject, type, used);
+                            drawSceneShaderUniforms(sceneProject, type, rows, used, true);
                         }
+                        ImGui::EndTable();
                     }
+                    if (rows.members.empty())
+                        return;
 
-                    ImGui::EndTable();
-                }
-            }
+                    shaderUniformsSeparator(sceneProject->scene->getDefaultCustomShader(type));
+                    if (ImGui::BeginTable((std::string(propertyName) + "_uniforms_table").c_str(), 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(rows.members, false));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                        drawSceneShaderUniforms(sceneProject, type, rows, used, false);
+                        ImGui::EndTable();
+                    }
+                    afterUniforms = true;
+                };
 
-            if (sceneProject->sceneType != SceneType::SCENE_UI) {
-                ImGui::SeparatorText("Physics");
-
-                if (ImGui::BeginTable("scene_physics_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Gravity"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
+                if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                    drawDefaultShader(ShaderType::MESH, "default_mesh_shader", "Mesh");
                     if (sceneProject->sceneType == SceneType::SCENE_3D) {
-                        drawScenePropertyRow<Vector3>(sceneProject, "physics_gravity_3d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
-                            "Gravity applied to 3D physics bodies (meters/s^2).");
-                    } else {
-                        drawScenePropertyRow<Vector2>(sceneProject, "physics_gravity_2d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
-                            "Gravity applied to 2D physics bodies (meters/s^2).");
+                        drawDefaultShader(ShaderType::SKYBOX, "default_sky_shader", "Sky");
+                        drawDefaultShader(ShaderType::WATER, "default_water_shader", "Water");
                     }
-
-                    ImGui::EndTable();
+                }
+                drawDefaultShader(ShaderType::UI, "default_ui_shader", "UI");
+                if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                    drawDefaultShader(ShaderType::POINTS, "default_points_shader", "Points");
+                    drawDefaultShader(ShaderType::LINES, "default_lines_shader", "Lines");
                 }
             }
 
-            ImGui::SeparatorText("Fixed Resolution");
-
-            if (ImGui::BeginTable("scene_fixed_resolution_table", 2, tableFlags)) {
-                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Enabled"));
-                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                drawScenePropertyRow<bool>(sceneProject, "fixed_resolution_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
-                    "Renders the main camera at a fixed resolution and upscales it to the view.\n"
-                    "Applies only in play mode and when this scene is the main scene; layer\n"
-                    "scenes stay at native resolution on top. Letterbox/crop still follows the\n"
-                    "project canvas and scaling mode.");
-
-                if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "fixed_resolution_enabled")) {
-                    drawScenePropertyRow<int>(sceneProject, "fixed_resolution_width", "Width", ScenePropertyInputType::DragInt, 6 * ImGui::GetFontSize(), 1.0f, 8192.0f);
-                    drawScenePropertyRow<int>(sceneProject, "fixed_resolution_height", "Height", ScenePropertyInputType::DragInt, 6 * ImGui::GetFontSize(), 1.0f, 8192.0f);
-                    drawScenePropertyRow<TextureFilter>(sceneProject, "fixed_resolution_filter", "Filter", ScenePropertyInputType::Combo, 7 * ImGui::GetFontSize(), 0.0f, 1.0f,
-                        "How the low-resolution image is sampled when upscaled:\n"
-                        "- Nearest: crisp pixels (pixel-art look)\n"
-                        "- Linear: smooth interpolation");
-                }
-
-                ImGui::EndTable();
-            }
-
-            // Ordered fullscreen passes run after the scene color (and SSR) pass; each one
-            // is a forked shader whose uniforms become rows here.
-            if (sceneProject->sceneType != SceneType::SCENE_UI) {
-                ImGui::SeparatorText("Post-processing");
-                drawScenePostProcess(sceneProject);
-            }
-
-            // Scene default shaders: used by components of each type whose customShader is
-            // empty (priority: component shader > scene default > built-in).
-            ImGui::SeparatorText("Default Shaders");
-
-            // each shader type, and a forked default's uniforms, in a table of its own
-            bool afterUniforms = false;
-            auto drawDefaultShader = [&](ShaderType type, const char* propertyName, const char* label) {
-                // a line closes the uniforms above
-                if (afterUniforms)
-                    ImGui::Separator();
-                afterUniforms = false;
-
-                bool used = false;
-                ShaderUniformRows rows;
-                if (ImGui::BeginTable((std::string(propertyName) + "_table").c_str(), 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("Points").x);
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-                    drawSceneShaderRow(sceneProject, type, propertyName, label);
-                    if (!sceneProject->scene->getDefaultCustomShader(type).empty()) {
-                        rows = resolveSceneShaderUniformRows(sceneProject, type, used);
-                        drawSceneShaderUniforms(sceneProject, type, rows, used, true);
-                    }
-                    ImGui::EndTable();
-                }
-                if (rows.members.empty())
-                    return;
-
-                shaderUniformsSeparator(sceneProject->scene->getDefaultCustomShader(type));
-                if (ImGui::BeginTable((std::string(propertyName) + "_uniforms_table").c_str(), 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(rows.members, false));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-                    drawSceneShaderUniforms(sceneProject, type, rows, used, false);
-                    ImGui::EndTable();
-                }
-                afterUniforms = true;
-            };
-
-            if (sceneProject->sceneType != SceneType::SCENE_UI) {
-                drawDefaultShader(ShaderType::MESH, "default_mesh_shader", "Mesh");
-                if (sceneProject->sceneType == SceneType::SCENE_3D) {
-                    drawDefaultShader(ShaderType::SKYBOX, "default_sky_shader", "Sky");
-                    drawDefaultShader(ShaderType::WATER, "default_water_shader", "Water");
-                }
-            }
-            drawDefaultShader(ShaderType::UI, "default_ui_shader", "UI");
-            if (sceneProject->sceneType != SceneType::SCENE_UI) {
-                drawDefaultShader(ShaderType::POINTS, "default_points_shader", "Points");
-                drawDefaultShader(ShaderType::LINES, "default_lines_shader", "Lines");
-            }
+            thumbnailTextures.clear();
         }
-
-        thumbnailTextures.clear();
+        ImGui::EndChild();
     }
 
     // Clean up unused material renders whose scene is not running
