@@ -4511,7 +4511,6 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
     sprite.indexCount = submesh.vertexCount;
     SettledBounds bounds;
     bounds.culls = mesh.worldAABB != AABB::ZERO;
-    sprite.aabb = mesh.aabb;
     std::memcpy(sprite.vertices, mesh.buffer.getData(), (size_t)vertexCount * layout.stride);
     bakeSpriteVertices(sprite.vertices, vertexCount, layout, submesh);
     std::memcpy(sprite.indices, mesh.indices.getData(), sizeof(uint16_t) * submesh.vertexCount);
@@ -9815,12 +9814,15 @@ void RenderSystem::update(double dt){
             if (transform.needUpdate){
                 const int settled = settledIndex(entity);
                 SettledSprite& sprite = settledSprites[settled];
-                placeSettledSprite(sprite, settledBounds[settled], transform);
+                SettledBounds& bounds = settledBounds[settled];
+                placeSettledSprite(sprite, bounds, transform);
                 // meshes seldom move in their array, so the last index is tried before a lookup
                 if (sprite.meshIndex >= meshes->size() || meshes->getEntity(sprite.meshIndex) != entity){
                     sprite.meshIndex = meshes->getIndex(entity);
                 }
-                meshes->getComponentFromIndex(sprite.meshIndex).worldAABB = transform.modelMatrix * sprite.aabb;
+                // the moved vertices give the box modelMatrix * mesh.aabb would
+                meshes->getComponentFromIndex(sprite.meshIndex).worldAABB.setExtents(
+                    bounds.lo[0], bounds.lo[1], bounds.lo[2], bounds.hi[0], bounds.hi[1], bounds.hi[2]);
             }
             transform.needUpdateChildVisibility = false;
             transform.needUpdate = false;

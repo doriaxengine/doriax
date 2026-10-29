@@ -459,7 +459,6 @@ namespace doriax{
 			unsigned int indexCount = 0;
 			uint32_t settledAt = 0; // in spriteUpdates
 			size_t meshIndex = 0; // where its MeshComponent was last found
-			AABB aabb; // of the mesh, so moving only writes the mesh's worldAABB
 			float positions[4][3] = {}; // local
 			uint16_t indices[6] = {};
 			unsigned char vertices[4 * 64]; // world positions, texture rect and color applied
