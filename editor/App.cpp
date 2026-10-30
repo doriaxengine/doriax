@@ -138,6 +138,8 @@ void editor::App::saveFunc(){
         if (!codeEditor->saveLastFocused()) {
             registerAlert("Save Failed", "The script could not be saved. Check its file permissions and try again.");
         }
+    }else if (project.isPlaySessionActive()) {
+        registerAlert("Scene Running", "A scene is currently running or stopping. Stop it before saving.");
     }else if (!project.isAnyScenePlaying()) {
         project.saveLastSelectedScene();
     }
@@ -145,6 +147,9 @@ void editor::App::saveFunc(){
 
 void editor::App::saveAllFunc(std::function<void(bool)> callback){
     if (project.isAnyScenePlaying() || saveDialogInProgress) {
+        if (project.isPlaySessionActive()) {
+            registerAlert("Scene Running", "A scene is currently running or stopping. Stop it before saving.");
+        }
         if (callback) callback(false);
         return;
     }
