@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cerrno>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -160,22 +161,32 @@ public:
 
     // Writes a temporary file and renames it over the target, so a failed save keeps the old file
     static bool writeFileReplacing(const std::filesystem::path& filePath, const std::string& content) {
+        std::error_code ec;
+        return writeFileReplacing(filePath, content, ec);
+    }
+
+    // ec holds the reason when it fails
+    static bool writeFileReplacing(const std::filesystem::path& filePath, const std::string& content, std::error_code& ec) {
         std::filesystem::path tempName = ".";
         tempName += filePath.filename();
         tempName += ".tmp";
         const std::filesystem::path tempPath = filePath.parent_path() / tempName;
+        errno = 0;
         std::ofstream ofs(tempPath, std::ios::out | std::ios::binary | std::ios::trunc);
         ofs.write(content.data(), static_cast<std::streamsize>(content.size()));
         ofs.close();
 
-        std::error_code ec;
+        ec.clear();
         if (ofs) {
             std::filesystem::rename(tempPath, filePath, ec);
             if (!ec) {
                 return true;
             }
+        } else {
+            ec = std::error_code(errno ? errno : EIO, std::generic_category());
         }
-        std::filesystem::remove(tempPath, ec);
+        std::error_code removeEc;
+        std::filesystem::remove(tempPath, removeEc);
         return false;
     }
 

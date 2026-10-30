@@ -6053,8 +6053,9 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
         YAML::Node root = Stream::encodeSceneProject(this, sceneProject);
         // an empty hash keeps the keys stale in the file
         root["shaderKeysHash"] = sceneProject->shaderKeysStale ? std::string() : hashShaderKeySources(sceneProject, root);
-        if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n")) {
-            Out::error("Failed to write scene file: %s", fullPath.string().c_str());
+        std::error_code writeEc;
+        if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n", writeEc)) {
+            Out::error("Failed to write scene file %s: %s", fullPath.string().c_str(), writeEc.message().c_str());
             return false;
         }
 
@@ -6264,6 +6265,9 @@ void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesyst
             if (SceneProject* sceneProject = getScene(sceneId)) {
                 if (sceneProject->playState == ScenePlayState::SAVING) {
                     sceneProject->playState = ScenePlayState::STOPPED;
+                }
+                if (!success) {
+                    editor::getEditorHost().registerAlert("Save Failed", "Scene '" + sceneProject->name + "' could not be saved. See Output for details.");
                 }
             }
 

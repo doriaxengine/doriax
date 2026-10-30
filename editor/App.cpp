@@ -3084,9 +3084,6 @@ void editor::App::processNextSaveDialog() {
                         saveDialogInProgress = false;
                         popSaveDialogQueueItem();
 
-                        if (!success) {
-                            Backend::getApp().registerAlert("Error", "Scene could not be saved. See Output for details.");
-                        }
                         if (completionCallback) {
                             completionCallback(success);
                         }
