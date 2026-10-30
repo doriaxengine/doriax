@@ -9244,8 +9244,9 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
 
                 if (changed) {
                     std::string newName = nameBuffer;
-                    std::string newSource = srcPath.string();
-                    std::string newHeader = hdrPath.string();
+                    // '/' so scenes saved on Windows load elsewhere
+                    std::string newSource = srcPath.generic_string();
+                    std::string newHeader = hdrPath.generic_string();
 
                     // Empty class name falls back to header (or source) filename stem
                     if (newName.empty()) {
@@ -13844,12 +13845,12 @@ void editor::Properties::show(){
                         entry.enabled = true;
 
                         if (type == ScriptType::CPP) {
-                            entry.headerPath = headerPath.string();
-                            entry.path = sourcePath.string();
+                            entry.headerPath = headerPath.generic_string();
+                            entry.path = sourcePath.generic_string();
                             entry.className = name;
                         } else if (type == ScriptType::LUA) {
                             entry.headerPath.clear();
-                            entry.path = sourcePath.string();
+                            entry.path = sourcePath.generic_string();
                             entry.className = name; // module (file base) name
                         }
 
