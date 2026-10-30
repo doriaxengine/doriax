@@ -811,6 +811,8 @@ namespace doriax::editor{
 
         std::vector<std::filesystem::path> findSceneFiles() const;
         uint32_t findSceneByPath(const std::filesystem::path& filepath) const;
+        // Another scene saved at filepath, or nullptr
+        const SceneProject* findOtherSceneUsingFile(const std::filesystem::path& filepath, uint32_t sceneId) const;
 
         bool loadChildSceneInline(uint32_t childSceneId);
         void unloadChildSceneInline(uint32_t childSceneId);

@@ -4603,6 +4603,27 @@ uint32_t editor::Project::findSceneByPath(const std::filesystem::path& filepath)
     return NULL_PROJECT_SCENE;
 }
 
+const editor::SceneProject* editor::Project::findOtherSceneUsingFile(const fs::path& filepath, uint32_t sceneId) const {
+    const fs::path normalized = normalizeToProjectRelative(filepath);
+    if (normalized.empty()) {
+        return nullptr;
+    }
+
+    for (const SceneProject& sceneProject : scenes) {
+        if (sceneProject.id == sceneId || sceneProject.filepath.empty()) {
+            continue;
+        }
+        // equivalent() also catches names that differ only in case
+        std::error_code ec;
+        if (sceneProject.filepath.lexically_normal() == normalized ||
+                fs::equivalent(getProjectPath() / sceneProject.filepath, getProjectPath() / normalized, ec)) {
+            return &sceneProject;
+        }
+    }
+
+    return nullptr;
+}
+
 void editor::Project::markParentScenesNeedUpdate(uint32_t childSceneId) {
     bool foundParent = false;
 
@@ -5982,6 +6003,12 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     fs::path relPath = fs::relative(fullPath, getProjectPath(), ec);
     if (ec || relPath.empty() || relPath.is_absolute() || relPath == "." || *relPath.begin() == "..") {
         Out::error("Scene filepath must be inside the project folder: %s", path.string().c_str());
+        return false;
+    }
+
+    // Two scenes on one file would overwrite each other
+    if (const SceneProject* owner = findOtherSceneUsingFile(relPath, sceneProject->id)) {
+        Out::error("Cannot save scene '%s' to \"%s\": the file belongs to scene '%s'", sceneProject->name.c_str(), FileUtils::pathToUtf8(relPath).c_str(), owner->name.c_str());
         return false;
     }
 

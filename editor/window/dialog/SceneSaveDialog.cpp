@@ -16,7 +16,8 @@ namespace editor {
 
 void SceneSaveDialog::open(const fs::path& projectPath, const fs::path& initialDirectory, const std::string& defaultName,
         std::function<void(const fs::path&)> onSave,
-        std::function<void()> onCancel) {
+        std::function<void()> onCancel,
+        std::function<std::string(const fs::path&)> fileOwner) {
     m_isOpen = true;
     m_projectPath = projectPath;
 
@@ -39,6 +40,7 @@ void SceneSaveDialog::open(const fs::path& projectPath, const fs::path& initialD
     m_selectedPath = selectedPath.lexically_normal();
     m_onSave = onSave;
     m_onCancel = onCancel;
+    m_fileOwner = fileOwner;
 
     // Set default filename
     strncpy(m_fileNameBuffer, defaultName.c_str(), sizeof(m_fileNameBuffer) - 1);
@@ -135,7 +137,8 @@ void SceneSaveDialog::show() {
         // ".." or an absolute path in the name would leave the folders listed above
         bool insideProject = Util::isInsidePath(fullPath, m_projectPath);
         bool validName = FileUtils::isNarrowPath(fullPath);
-        bool canSave = !fileName.empty() && insideProject && validName;
+        std::string owner = (m_fileOwner && insideProject && validName) ? m_fileOwner(fullPath) : std::string();
+        bool canSave = !fileName.empty() && insideProject && validName && owner.empty();
         std::error_code ec;
         bool fileExists = insideProject && fs::exists(fullPath, ec);
 
@@ -143,6 +146,8 @@ void SceneSaveDialog::show() {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Scene files must be inside the project folder.");
         } else if (!validName) {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "The name has characters the editor cannot save on this system.");
+        } else if (!owner.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "This file belongs to scene '%s'. Choose another name.", owner.c_str());
         } else if (fileExists) {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: File already exists and will be overwritten!");
         }
@@ -159,6 +164,7 @@ void SceneSaveDialog::show() {
         if (ImGui::Button("Save", ImVec2(120, 0))) {
             auto onSave = std::exchange(m_onSave, nullptr);
             m_onCancel = nullptr;
+            m_fileOwner = nullptr;
             if (onSave) {
                 onSave(fullPath);
             }
@@ -199,6 +205,7 @@ void SceneSaveDialog::cancel() {
 
     auto onCancel = std::exchange(m_onCancel, nullptr);
     m_onSave = nullptr;
+    m_fileOwner = nullptr;
     if (onCancel) {
         onCancel();
     }

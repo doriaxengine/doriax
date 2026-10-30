@@ -3111,6 +3111,10 @@ void editor::App::processNextSaveDialog() {
 
                 // Process the next item if available
                 processNextSaveDialog();
+            },
+            [this, sceneId](const fs::path& fullPath) {
+                const SceneProject* owner = project.findOtherSceneUsingFile(fullPath, sceneId);
+                return owner ? owner->name : std::string();
             }
         );
     }

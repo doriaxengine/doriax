@@ -26,14 +26,17 @@ private:
 
     std::function<void(const fs::path&)> m_onSave;
     std::function<void()> m_onCancel;
+    std::function<std::string(const fs::path&)> m_fileOwner;
 
 public:
     SceneSaveDialog() = default;
     ~SceneSaveDialog() = default;
 
+    // fileOwner returns the name of the scene already saved at a path
     void open(const fs::path& projectPath, const fs::path& initialDirectory, const std::string& defaultName,
         std::function<void(const fs::path&)> onSave,
-        std::function<void()> onCancel = nullptr);
+        std::function<void()> onCancel = nullptr,
+        std::function<std::string(const fs::path&)> fileOwner = nullptr);
     void show();
     bool isOpen() const { return m_isOpen; }
     void close(); // same as Cancel

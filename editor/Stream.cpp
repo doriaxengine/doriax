@@ -2484,11 +2484,17 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
             }
 
             const std::string relStr = sceneNode["filepath"].as<std::string>();
-            const size_t position = listPosition++;
             fs::path scenePath = relStr;
             if (scenePath.is_relative()) {
                 scenePath = project->getProjectPath() / scenePath;
             }
+
+            // Saving over another scene file could list it twice
+            if (project->findSceneByPath(scenePath) != NULL_PROJECT_SCENE) {
+                Out::warning("Scene file is listed twice in the project, loading it once: %s", relStr.c_str());
+                continue;
+            }
+            const size_t position = listPosition++;
 
             const bool opened = hasTabs ? openedScenePaths.count(relStr) > 0 : isFirstScene;
 
