@@ -1328,7 +1328,7 @@ void editor::Properties::drawFontSlot(ComponentType cpType, const std::string& i
             if (ec || relative.empty() || *relative.begin() == "..") {
                 ImGui::OpenPopup("File Import Error");
             }else{
-                setFontSlot(cpType, id, slot, relative.string(), sceneProject, entities, onValueChanged);
+                setFontSlot(cpType, id, slot, relative.generic_string(), sceneProject, entities, onValueChanged);
             }
         }
     }
@@ -3814,7 +3814,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                 if (ec || relative.empty() || *relative.begin() == "..") {
                     ImGui::OpenPopup("File Import Error");
                 }else{
-                    Texture texture(relative.string());
+                    Texture texture(relative.generic_string());
                     for (Entity& entity : entities){
                         cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                         CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -4029,7 +4029,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                         ImGui::OpenPopup("File Import Error##cube");
                     }else{
                         Texture texture = newValue;
-                        texture.setCubeMap(relative.string());
+                        texture.setCubeMap(relative.generic_string());
                         for (Entity& entity : entities){
                             cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                             CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -4144,7 +4144,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                             ImGui::OpenPopup("File Import Error##cube");
                         }else{
                             Texture texture = newValue;
-                            texture.setCubePath(faceIndex, relative.string());
+                            texture.setCubePath(faceIndex, relative.generic_string());
                             for (Entity& entity : entities){
                                 cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -6467,7 +6467,7 @@ void editor::Properties::drawModelComponent(ComponentType cpType, SceneProject* 
                 if (ec || relative.empty() || *relative.begin() == "..") {
                     ImGui::OpenPopup("Model Import Error");
                 }else{
-                    CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new ModelLoadCmd(project, sceneProject->id, entity, relative.string()));
+                    CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new ModelLoadCmd(project, sceneProject->id, entity, relative.generic_string()));
                 }
             }
         }
