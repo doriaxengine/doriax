@@ -6612,10 +6612,23 @@ void editor::Properties::drawModelComponent(ComponentType cpType, SceneProject* 
 }
 
 void editor::Properties::drawUIComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    // a button overwrites both with the ones of its state
+    const bool hasButton = std::any_of(entities.begin(), entities.end(), [sceneProject](Entity entity){
+        return sceneProject->scene->findComponent<ButtonComponent>(entity) != nullptr;
+    });
+
     beginTable(cpType, getLabelSize("Texture"));
+    ImGui::BeginDisabled(hasButton);
     propertyRow(RowPropertyType::Color4L, cpType, "color", "Color", sceneProject, entities);
     propertyRow(RowPropertyType::Texture, cpType, "texture", "Texture", sceneProject, entities);
+    ImGui::EndDisabled();
     endTable();
+
+    if (hasButton){
+        ImGui::TextDisabled("Set by the Button component");
+        ImGui::SameLine();
+        helpMarker("Buttons show the texture and color of their current state. Edit them in the Button component.");
+    }
 
     drawCustomShaderRow(cpType, ShaderType::UI, sceneProject, entities);
 }
