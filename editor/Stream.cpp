@@ -1930,14 +1930,14 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         root["windowTitle"] = project->getWindowTitle();
     }
     if (!project->getWindowIcon().empty()) {
-        root["windowIcon"] = project->getWindowIcon().string();
+        root["windowIcon"] = project->getWindowIcon().generic_string();
     }
 
     if (!project->getAssetsDir().empty() && project->getAssetsDir() != ".") {
-        root["assetsDir"] = project->getAssetsDir().string();
+        root["assetsDir"] = project->getAssetsDir().generic_string();
     }
     if (!project->getLuaDir().empty()) {
-        root["luaDir"] = project->getLuaDir().string();
+        root["luaDir"] = project->getLuaDir().generic_string();
     }
     if (!project->getScriptDirs().empty()) {
         YAML::Node scriptDirsNode;
@@ -2079,13 +2079,13 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         if (android.versionCode != defaults.versionCode) androidNode["versionCode"] = android.versionCode;
         if (!android.versionName.empty()) androidNode["versionName"] = android.versionName;
         if (!android.launcherIcon.empty()) {
-            androidNode["launcherIcon"] = android.launcherIcon.string();
+            androidNode["launcherIcon"] = android.launcherIcon.generic_string();
         }
         if (!android.adaptiveIconForeground.empty()) {
-            androidNode["adaptiveIconForeground"] = android.adaptiveIconForeground.string();
+            androidNode["adaptiveIconForeground"] = android.adaptiveIconForeground.generic_string();
         }
         if (!android.adaptiveIconBackground.empty()) {
-            androidNode["adaptiveIconBackground"] = android.adaptiveIconBackground.string();
+            androidNode["adaptiveIconBackground"] = android.adaptiveIconBackground.generic_string();
         }
         if (android.minSdk != defaults.minSdk) androidNode["minSdk"] = android.minSdk;
         if (android.targetSdk != defaults.targetSdk) androidNode["targetSdk"] = android.targetSdk;
