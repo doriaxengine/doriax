@@ -3767,15 +3767,13 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         ImGui::BeginChild("textureframe", ImVec2(-texButtonsReserve, ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2),
             false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        std::string texName = newValue.getId();
+        // the id can end in pool suffixes like "|alphaborder"
+        const std::string texSource = newValue.getPath().empty() ? newValue.getId() : newValue.getPath();
+        std::string texName = texSource;
         if (isCameraTexture) {
             texName = std::string(ICON_FA_VIDEO) + " " + CameraTextureLink::cameraName(sceneProject->scene, newValue);
-        } else {
-            // Never show the "?svgScale=" suffix in the slot; display the clean path/name.
-            texName = TextureData::parseSvgScalePath(texName);
-            if (std::filesystem::exists(texName)) {
-                texName = std::filesystem::path(texName).filename().string();
-            }
+        } else if (std::filesystem::exists(texName)) {
+            texName = std::filesystem::path(texName).filename().string();
         }
         if (texName.empty()) {
             texName = "< Not set >";
@@ -3792,8 +3790,8 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
             ImGui::PopStyleColor();
 
         ImGui::EndChild();
-        if (!newValue.getId().empty()){
-            ImGui::SetItemTooltip("%s", newValue.getId().c_str());
+        if (!texSource.empty()){
+            ImGui::SetItemTooltip("%s", texSource.c_str());
         }
         ImGui::PopStyleColor();
 
