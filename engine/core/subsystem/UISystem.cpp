@@ -615,20 +615,22 @@ void UISystem::createTextEditObjects(Entity entity, TextEditComponent& textedit)
     }
 }
 
-void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition){
-    Texture targetTexture = button.textureNormal;
+static bool hasButtonTexture(const Texture& texture){
+    return !texture.empty() && (!texture.getId().empty() || texture.isFramebuffer());
+}
 
+void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition){
+    const Texture* stateTexture = nullptr;
     if (button.disabled){
-        targetTexture = button.textureDisabled;
+        stateTexture = &button.textureDisabled;
     }else if (button.pressed){
-        targetTexture = button.texturePressed;
+        stateTexture = &button.texturePressed;
     }else if (button.hovered){
-        bool hasHoveredTexture = !button.textureHovered.empty() &&
-            (!button.textureHovered.getId().empty() || button.textureHovered.isFramebuffer());
-        if (hasHoveredTexture){
-            targetTexture = button.textureHovered;
-        }
+        stateTexture = &button.textureHovered;
     }
+
+    // a state without its own texture keeps the normal one
+    Texture targetTexture = (stateTexture && hasButtonTexture(*stateTexture)) ? *stateTexture : button.textureNormal;
 
     if (ui.texture != targetTexture){
         ui.texture = targetTexture;
