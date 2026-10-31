@@ -1610,7 +1610,7 @@ void editor::Properties::drawTextureSettingsPopup(const char* popupId, Component
     ImGui::EndPopup();
 }
 
-void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities, ComponentType componentType){
+void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities){
     // Block DnD while playing for non-script components
     if (sceneProject && sceneProject->playState != ScenePlayState::STOPPED) {
         return;
@@ -1619,6 +1619,11 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
     if (ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) {
         return;
     }
+
+    // previews are not commands, so they apply the update flags here
+    auto markUpdate = [&](Entity entity){
+        Catalog::updateEntity(sceneProject->scene, entity, Catalog::findProperty(sceneProject->scene, entity, cpType, id).updateFlags);
+    };
 
     if (ImGui::BeginDragDropTarget()){
 
@@ -1636,20 +1641,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                             originalTex[id][entity] = Texture(*valueRef);
                             if (*valueRef != Texture(droppedRelativePath)){
                                 *valueRef = Texture(droppedRelativePath);
-                                if (componentType == ComponentType::MeshComponent){
-                                    unsigned int numSubmeshes = sceneProject->scene->getComponent<MeshComponent>(entity).numSubmeshes;
-                                    for (unsigned int i = 0; i < numSubmeshes; i++){
-                                        sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
-                                    }
-                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
-                                }
-                                if (componentType == ComponentType::UIComponent){
-                                    sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
-                                }
-                                if (componentType == ComponentType::WaterComponent){
-                                    sceneProject->scene->getComponent<WaterComponent>(entity).needUpdateTexture = true;
-                                }
-                                //printf("needUpdateTexture %s\n", name.c_str());
+                                markUpdate(entity);
                             }
                         }
                     }
@@ -1659,7 +1651,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                             Texture* valueRef = Catalog::getPropertyRef<Texture>(sceneProject->scene, entity, cpType, id);
                             *valueRef = originalTex[id][entity];
                             if (!insideAssets){
-                                markTextureUpdate(sceneProject->scene, entity, componentType);
+                                markUpdate(entity);
                                 continue;
                             }
                             cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture);
@@ -1698,20 +1690,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                 Texture* valueRef = Catalog::getPropertyRef<Texture>(sceneProject->scene, entity, cpType, id);
                 if (*valueRef != originalTex[id][entity]){
                     *valueRef = originalTex[id][entity];
-                    if (componentType == ComponentType::MeshComponent){
-                        unsigned int numSubmeshes = sceneProject->scene->getComponent<MeshComponent>(entity).numSubmeshes;
-                        for (unsigned int i = 0; i < numSubmeshes; i++){
-                            sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
-                        }
-                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
-                    }
-                    if (componentType == ComponentType::UIComponent){
-                        sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
-                    }
-                    if (componentType == ComponentType::WaterComponent){
-                        sceneProject->scene->getComponent<WaterComponent>(entity).needUpdateTexture = true;
-                    }
-                    //printf("needUpdateTexture %s\n", id.c_str());
+                    markUpdate(entity);
                 }
             }
 
@@ -3907,7 +3886,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         ImGui::PopID();
         ImGui::EndGroup();
 
-        dragDropResourcesTexture(cpType, id, sceneProject, entities, cpType);
+        dragDropResourcesTexture(cpType, id, sceneProject, entities);
 
     }else if (type == RowPropertyType::TextureCube){
         Texture* value = nullptr;
