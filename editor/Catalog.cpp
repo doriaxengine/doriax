@@ -225,19 +225,19 @@ namespace {
     };
 
     static const FastPropertyDescriptor kButtonProperties[] = {
-        makeFastProperty<ButtonComponent, Entity, &ButtonComponent::label>("label", PropertyType::Entity, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureNormal>("textureNormal", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureHovered>("textureHovered", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::texturePressed>("texturePressed", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureDisabled>("textureDisabled", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorNormal>("colorNormal", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorHovered>("colorHovered", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorPressed>("colorPressed", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorDisabled>("colorDisabled", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::scaleHovered>("scaleHovered", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::scalePressed>("scalePressed", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::transitionTime>("transitionTime", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, bool, &ButtonComponent::disabled>("disabled", PropertyType::Bool, UpdateFlags_None),
+        makeFastProperty<ButtonComponent, Entity, &ButtonComponent::label>("label", PropertyType::Entity, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureNormal>("textureNormal", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureHovered>("textureHovered", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::texturePressed>("texturePressed", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureDisabled>("textureDisabled", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorNormal>("colorNormal", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorHovered>("colorHovered", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorPressed>("colorPressed", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorDisabled>("colorDisabled", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::scaleHovered>("scaleHovered", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::scalePressed>("scalePressed", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::transitionTime>("transitionTime", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, bool, &ButtonComponent::disabled>("disabled", PropertyType::Bool, UpdateFlags_Button),
     };
 
     static const FastPropertyDescriptor kScrollbarProperties[] = {
@@ -4203,6 +4203,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
     if (updateFlags & UpdateFlags_Image_Patches){
         if (ImageComponent* image = registry->findComponent<ImageComponent>(entity)){
             image->needUpdatePatches = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Button){
+        if (ButtonComponent* button = registry->findComponent<ButtonComponent>(entity)){
+            button->needUpdateButton = true;
         }
     }
     if (updateFlags & (UpdateFlags_Layout_Sizes | UpdateFlags_Layout_Anchors)){

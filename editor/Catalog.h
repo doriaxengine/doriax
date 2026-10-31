@@ -59,6 +59,8 @@ namespace doriax::editor{
         // water grid size or subdivisions
         UpdateFlags_Water               = (uint64_t)1 << 37,
         UpdateFlags_Water_Texture       = (uint64_t)1 << 38,
+        // button visuals, applied to its UI component
+        UpdateFlags_Button              = (uint64_t)1 << 39,
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };

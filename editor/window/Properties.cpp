@@ -6642,31 +6642,21 @@ void editor::Properties::drawUIComponent(ComponentType cpType, SceneProject* sce
 }
 
 void editor::Properties::drawButtonComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
-    RowSettings settings;
-    settings.onValueChanged = [sceneProject, entities](){
-        for (const Entity& entity : entities){
-            if (ButtonComponent* button = sceneProject->scene->findComponent<ButtonComponent>(entity)){
-                button->needUpdateButton = true;
-            }
-        }
-    };
-
     RowSettings settingsScale;
     settingsScale.stepSize = 0.01f;
     settingsScale.secondColSize = 6 * ImGui::GetFontSize();
-    settingsScale.onValueChanged = settings.onValueChanged;
 
     beginTable(cpType, getLabelSize("Texture Disabled"));
-    propertyRow(RowPropertyType::LocalEntity, cpType, "label", "Label", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Bool, cpType, "disabled", "Disabled", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureNormal", "Texture Normal", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureHovered", "Texture Hovered", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "texturePressed", "Texture Pressed", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureDisabled", "Texture Disabled", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorNormal", "Color Normal", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorHovered", "Color Hovered", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorPressed", "Color Pressed", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorDisabled", "Color Disabled", sceneProject, entities, settings);
+    propertyRow(RowPropertyType::LocalEntity, cpType, "label", "Label", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "disabled", "Disabled", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureNormal", "Texture Normal", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureHovered", "Texture Hovered", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "texturePressed", "Texture Pressed", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureDisabled", "Texture Disabled", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorNormal", "Color Normal", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorHovered", "Color Hovered", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorPressed", "Color Pressed", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorDisabled", "Color Disabled", sceneProject, entities);
     propertyRow(RowPropertyType::Float, cpType, "scaleHovered", "Scale Hovered", sceneProject, entities, settingsScale);
     propertyRow(RowPropertyType::Float, cpType, "scalePressed", "Scale Pressed", sceneProject, entities, settingsScale);
     propertyRow(RowPropertyType::FloatPositive, cpType, "transitionTime", "Transition Time", sceneProject, entities, settingsScale);
