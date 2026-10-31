@@ -889,6 +889,16 @@ bool hasComponent(EntityRegistry* registry, Entity entity, ComponentType compone
     return std::find(components.begin(), components.end(), component) != components.end();
 }
 
+// A button overwrites its UI color and texture with the ones of its state
+bool validateButtonUIProperty(EntityRegistry* registry, Entity entity, ComponentType component, const std::string& property, std::string& error) {
+    if (component != ComponentType::UIComponent || (property != "color" && property != "texture") ||
+            !hasComponent(registry, entity, ComponentType::ButtonComponent)) {
+        return true;
+    }
+    error = "UIComponent." + property + " is set by the ButtonComponent. Set ButtonComponent." + property + "Normal instead.";
+    return false;
+}
+
 // Maps a renderable component to its forkable built-in shader type.
 bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     switch (component) {
@@ -3193,6 +3203,7 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
 
     std::string error;
+    if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, error)) return failResult(error);
     if (!validateCustomShaderValue(propertyName, arguments, error)) return failResult(error);
 
     std::unique_ptr<Command> cmd(buildPropertyCommand(project, sceneId, entity, component, propertyName, it->second, arguments, error));
@@ -3216,9 +3227,11 @@ ActionResult EditorActionExecutor::setTextureSettings(const Json& arguments) {
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
     if (it->second.type != PropertyType::Texture) return failResult("Property is not a Texture.");
 
+    std::string error;
+    if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, error)) return failResult(error);
+
     Texture* current = static_cast<Texture*>(it->second.ref);
     Texture modified = *current;
-    std::string error;
 
     // Reject unknown enum strings instead of silently defaulting: the Stream converters
     // fall back to linear/repeat, so a value only counts when it round-trips.
@@ -6401,7 +6414,8 @@ ActionResult EditorActionExecutor::setComponentProperties(const Json& arguments)
         }
 
         std::string validationError;
-        if (!validateCustomShaderValue(propertyName, item, validationError)) {
+        if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, validationError) ||
+                !validateCustomShaderValue(propertyName, item, validationError)) {
             delete multiCmd;
             return failResult(validationError);
         }
