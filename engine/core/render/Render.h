@@ -185,7 +185,7 @@ namespace doriax{
         SCENECOLORTEXTURE,
         SSRTEXTURE,
         GBUFFERTEXTURE,      // view-space normal (rg, octahedral) + roughness (b) + metallic (a)
-        GBUFFERALBEDOTEXTURE, // linear base color (rgb) + hasIBL flag (a)
+        GBUFFERALBEDOTEXTURE, // linear base color (rgb) + IBL source code (a)
         SHADOW2DATLAS,       // 1D polar shadow rows (one per 2D light)
         SPOTMASKATLAS,       // projected spot masks, one horizontal tile per 3D light slot
         BONES,

@@ -496,6 +496,8 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 7))  defs.push_back({"HAS_INSTANCING", "1"});                // 'Ist'
     if (prop & (1 << 8))  defs.push_back({"HAS_METALLICROUGHNESS_TEXTURE", "1"}); // 'Mrt'
     if (prop & (1 << 9))  defs.push_back({"HAS_TERRAIN_PBR", "1"});               // 'Tpb'
+    if (prop & (1 << 10)) defs.push_back({"HAS_OCCLUSION_TEXTURE", "1"});         // 'Occ'
+    if (prop & (1 << 11)) defs.push_back({"OCCLUSION_UV2", "1"});                 // 'Ou2'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {

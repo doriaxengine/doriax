@@ -2960,7 +2960,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v38: ssr fades out rough surfaces (SSR_MAX_ROUGHNESS).
     // v39: point shadow atlas sampled at an explicit LOD.
     // v40: water samples the wake map of moving exclusions.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v40";
+    // v41: the SSR composite rebuilds local probes; the G-buffer keeps material occlusion.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v41";
 }
 
 void editor::App::pushTabNotificationStyle(){

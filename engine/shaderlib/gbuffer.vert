@@ -32,14 +32,21 @@ out vec3 v_normal;          // view space
 #endif
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE)
-    // Terrain carries no texcoord vertex attribute (its UVs are generated from the
-    // world position in-shader, like mesh.vert). Declaring a_texcoord1 for terrain
-    // would leave that attribute slot unbound, making the pipeline's vertex layout
-    // non-continuous and failing sokol validation, so only non-terrain declares it.
-    #ifndef HAS_TERRAIN
-        in vec2 a_texcoord1;
-    #endif
     out vec2 v_uv1;
+#endif
+// Terrain carries no texcoord vertex attribute (its UVs are generated from the
+// world position in-shader, like mesh.vert). Declaring a_texcoord1 for terrain
+// would leave that attribute slot unbound, making the pipeline's vertex layout
+// non-continuous and failing sokol validation, so only non-terrain declares it.
+#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)))
+    in vec2 a_texcoord1;
+#endif
+// baked occlusion (material occlusionTexture), on the UV set the material names
+#ifdef HAS_OCCLUSION_TEXTURE
+    #ifdef OCCLUSION_UV2
+        in vec2 a_texcoord2;
+    #endif
+    out vec2 v_uvOcclusion;
 #endif
 
 #include "includes/skinning.glsl"
@@ -110,6 +117,14 @@ void main() {
             v_uv1 = (objPos.xz + (terrain.size / 2.0)) / terrain.size * float(terrain.textureBaseTiles);
         #else
             v_uv1 = a_texcoord1;
+        #endif
+    #endif
+
+    #ifdef HAS_OCCLUSION_TEXTURE
+        #ifdef OCCLUSION_UV2
+            v_uvOcclusion = a_texcoord2;
+        #else
+            v_uvOcclusion = a_texcoord1;
         #endif
     #endif
 

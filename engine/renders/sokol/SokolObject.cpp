@@ -465,10 +465,11 @@ bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t 
     }
 
     if (pipelines & (int)PipelineType::PIP_GBUFFER) {
-        // Mesh geometry pass with three color attachments (MRT):
+        // Mesh geometry pass with four color attachments (MRT):
         //   color[0] = packed depth (same as PIP_DEPTH, so SSAO/SSR depth is unchanged)
         //   color[1] = view-space normal (octahedral .rg) + roughness (.b) + metallic (.a)
-        //   color[2] = linear base color (.rgb) + hasIBL flag (.a)
+        //   color[2] = linear base color (.rgb) + IBL source code (.a)
+        //   color[3] = material occlusion (.r)
         sg_pipeline_desc pip_gbuffer_desc = pipeline_desc;
 
         pip_gbuffer_desc.face_winding = getFaceWinding(windingOrder);
@@ -480,10 +481,11 @@ bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t 
         pip_gbuffer_desc.depth.pixel_format = SG_PIXELFORMAT_DEPTH;
         pip_gbuffer_desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
         pip_gbuffer_desc.depth.write_enabled = true;
-        pip_gbuffer_desc.color_count = 3;
+        pip_gbuffer_desc.color_count = 4;
         pip_gbuffer_desc.colors[0].pixel_format = SG_PIXELFORMAT_RGBA8;
         pip_gbuffer_desc.colors[1].pixel_format = SG_PIXELFORMAT_RGBA8;
         pip_gbuffer_desc.colors[2].pixel_format = SG_PIXELFORMAT_RGBA8;
+        pip_gbuffer_desc.colors[3].pixel_format = SG_PIXELFORMAT_R8;
 
         gbuffer_pip = makePipeline(pip_gbuffer_desc);
         if (gbuffer_pip.id == SG_INVALID_ID){

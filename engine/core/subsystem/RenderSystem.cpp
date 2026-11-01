@@ -376,6 +376,12 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     ssrSlotParams = -1;
     ssrBlurSlotParams = -1;
     compositeSlotParams = -1;
+    for (int s = 0; s < SSR_PROBE_SLOTS; s++){
+        compositeProbeSlots[s] = std::pair<int, int>(-1, -1);
+        ssrProbeTextures[s] = nullptr;
+    }
+    compositeOcclusionSlot = std::pair<int, int>(-1, -1);
+    ssrProbeCount = 0;
     swapchainRedirect = false;
 
     blitLoaded = false;
@@ -2454,6 +2460,16 @@ bool RenderSystem::loadGBufferTextures(Material& material, ShaderData& shaderDat
         render.addTexture(slotMR, ShaderStageType::FRAGMENT, t);
     }
 
+    // baked occlusion, written to color[3] for the SSR composite
+    std::pair<int, int> slotOcclusion = shaderData.getTextureIndex(TextureShaderType::OCCULSION);
+    if (slotOcclusion.first != -1){
+        TextureRender* t = material.occlusionTexture.getRender(&emptyWhite);
+        if (!t || !t->isCreated()){
+            return false;
+        }
+        render.addTexture(slotOcclusion, ShaderStageType::FRAGMENT, t);
+    }
+
     return true;
 }
 
@@ -3241,10 +3257,14 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (scene->isSSREnabled()){
             bool gbufferHasBaseColorTex = !mesh.submeshes[i].material.baseColorTexture.empty();
             bool gbufferHasMRTex = !mesh.submeshes[i].material.metallicRoughnessTexture.empty();
+            // the color pass's baked occlusion, on the same UV set
+            bool gbufferHasOcclusionTex = !terrain && p_hasTexture1 && !mesh.submeshes[i].material.occlusionTexture.empty();
+            bool gbufferOcclusionUV2 = p_hasTexture2 && mesh.submeshes[i].material.occlusionTexCoord == 1;
             mesh.submeshes[i].gbufferShaderProperties = ShaderPool::getGBufferMeshProperties(
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
-                (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal);
+                (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
+                gbufferHasOcclusionTex, gbufferOcclusionUV2);
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties);
             if (!mesh.submeshes[i].gbufferShader->isCreated())
                 return false;
@@ -3600,7 +3620,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         gbufferRender.setIndex(buf.second->getRender(), indexattr.getDataType(), indexattr.getOffset());
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
-                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL){
+                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                                    attr.first == AttributeType::TEXCOORD2){
                                 gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3628,7 +3649,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 if (bufferNameToRender.count(attr.second.getBufferName())){
                     if (attr.first == AttributeType::INDEX){
                         gbufferRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
-                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL){
+                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                            attr.first == AttributeType::TEXCOORD2){
                         gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
@@ -5343,9 +5365,10 @@ bool RenderSystem::ensureGBufferFramebuffer(unsigned int width, unsigned int hei
 
     // MRT: color[0] = packed depth (point-sampled like the depth pre-pass),
     //      color[1] = view-space normal (oct .rg) + roughness (.b) + metallic (.a),
-    //      color[2] = linear base color (.rgb) + hasIBL flag (.a)
-    ColorFormat formats[3] = { ColorFormat::RGBA, ColorFormat::RGBA, ColorFormat::RGBA };
-    gbufferFramebuffer.setColorAttachments(3, formats);
+    //      color[2] = linear base color (.rgb) + IBL source code (.a),
+    //      color[3] = material occlusion (.r)
+    ColorFormat formats[4] = { ColorFormat::RGBA, ColorFormat::RGBA, ColorFormat::RGBA, ColorFormat::RED };
+    gbufferFramebuffer.setColorAttachments(4, formats);
     gbufferFramebuffer.setWidth(width);
     gbufferFramebuffer.setHeight(height);
     gbufferFramebuffer.setMinFilter(TextureFilter::NEAREST);
@@ -5357,7 +5380,7 @@ bool RenderSystem::ensureGBufferFramebuffer(unsigned int width, unsigned int hei
     return gbufferFramebuffer.isCreated();
 }
 
-bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_gbuffer_t vsGBufferParams, bool hasLocalProbe, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, int instanceView, const LodView* lodView){
+bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_gbuffer_t vsGBufferParams, int iblCode, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, int instanceView, const LodView* lodView){
     if (!mesh.loaded || mesh.needReload)
         return true;
 
@@ -5416,10 +5439,8 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferParams, sizeof(vs_gbuffer_t), &vsGBufferParams);
 
         fs_gbuffer_material_t mat;
-        // IBL source encoding: 0 = none, 0.5 = sky, 1 = local probe. The SSR
-        // composite can exactly replace sky IBL; local probes need a deferred
-        // cubemap array to be reconstructed per pixel, so they use additive SSR.
-        float iblSource = mesh.submeshes[i].hasIBL ? (hasLocalProbe ? 1.0f : 0.5f) : 0.0f;
+        // IBL source code of the object (renderGBufferPass), 0 for submeshes without IBL
+        float iblSource = mesh.submeshes[i].hasIBL ? (float)iblCode / 255.0f : 0.0f;
         const Material& material = mesh.submeshes[i].material;
         const float alphaCutoff = usesAlphaMask(material, mesh.submeshes[i].textureShadow)
             ? material.alphaCutoff
@@ -5473,6 +5494,9 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
     gbufferPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0)); // color[0] background -> depth ~1.0
     gbufferPassRender.startRenderPass(&gbufferFramebuffer.getRender());
 
+    // composite probe slots, given in first-use order
+    ssrProbeCount = 0;
+
     auto transforms = scene->getComponentArray<Transform>();
     for (int i = 0; i < transforms->size(); i++){
         Transform& transform = transforms->getComponentFromIndex(i);
@@ -5490,18 +5514,40 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
         TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
         TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
 
+        // off-screen objects neither draw nor take a probe slot
+        if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera.farClip, camera.frustumPlanes, mesh.worldAABB))
+            continue;
+
+        // the IBL source the composite reads back, coded as in composite.frag
         fs_reflection_probe_t probeParams;
         TextureRender* probeTexture = nullptr;
         Vector3 probeSamplePosition = meshProbeSamplePosition(mesh, transform);
-        bool hasLocalProbe = selectReflectionProbe(probeSamplePosition, probeParams, probeTexture)
-            && probeParams.position_weight.w > 0.001f;
+        int iblCode = 1;
+        if (selectReflectionProbe(probeSamplePosition, probeParams, probeTexture) && probeParams.position_weight.w > 0.001f){
+            int slot = 0;
+            while (slot < ssrProbeCount && ssrProbeTextures[slot] != probeTexture)
+                slot++;
+            if (slot == ssrProbeCount && ssrProbeCount < SSR_PROBE_SLOTS){
+                ssrProbeTextures[slot] = probeTexture;
+                fs_composite.probePosition[slot] = probeParams.position_weight;
+                fs_composite.probeBoxMin[slot] = probeParams.boxMin_intensity;
+                fs_composite.probeBoxMax[slot] = probeParams.boxMax_lod;
+                ssrProbeCount++;
+            }
+            if (slot < ssrProbeCount){
+                const int q = std::max((int)std::lround(std::min(probeParams.position_weight.w, 1.0f) * 63.0f), 1);
+                iblCode = 3 + slot * 63 + (q - 1);
+            }else{
+                iblCode = 2;
+            }
+        }
 
         // view-space normal matrix = transpose(inverse(view * model))
         Matrix4 viewModel = viewMatrix * transform.modelMatrix;
         Matrix4 normalMatrix = viewModel.inverse().transpose();
 
         vs_gbuffer_t params = {transform.modelMatrix, renderVP, normalMatrix};
-        drawMeshGBuffer(entity, mesh, transform, camera.farClip, camera.frustumPlanes, params, hasLocalProbe, instmesh, terrain, tilemap, 0, &mainLodView);
+        drawMeshGBuffer(entity, mesh, transform, camera.farClip, camera.frustumPlanes, params, iblCode, instmesh, terrain, tilemap, 0, &mainLodView);
     }
     gbufferPassRender.endRenderPass();
 }
@@ -5536,6 +5582,10 @@ void RenderSystem::loadSSR(){
     compositeRender.beginLoad(PrimitiveType::TRIANGLES);
     compositeRender.setShader(compositeShader.get());
     compositeSlotParams = compositeShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::COMPOSITE_FS_PARAMS);
+    for (int s = 0; s < SSR_PROBE_SLOTS; s++){
+        compositeProbeSlots[s] = compositeShader.get()->shaderData.getTextureIndexByName("u_probeTexture" + std::to_string(s));
+    }
+    compositeOcclusionSlot = compositeShader.get()->shaderData.getTextureIndexByName("u_occlusionGBufferTexture");
     if (!compositeRender.endLoad(PIP_RTT | PIP_DEFAULT, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
@@ -5571,6 +5621,11 @@ void RenderSystem::destroySSR(){
     ssrSlotParams = -1;
     ssrBlurSlotParams = -1;
     compositeSlotParams = -1;
+    for (int s = 0; s < SSR_PROBE_SLOTS; s++){
+        compositeProbeSlots[s] = std::pair<int, int>(-1, -1);
+    }
+    compositeOcclusionSlot = std::pair<int, int>(-1, -1);
+    ssrProbeCount = 0;
     ssrLoaded = false;
 }
 
@@ -5689,9 +5744,9 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
     }
 
     // --- 3. composite pass: energy-conserving SSR-over-IBL -> real destination ---
-    // The composite recomputes the IBL specular term per pixel (for surfaces flagged
-    // hasIBL in the G-buffer) and replaces it with the SSR reflection, so the env
-    // reflection already in the scene is not double-counted.
+    // The composite recomputes the environment specular per pixel (the sky, or the
+    // local probe the G-buffer pass recorded for the object) and replaces it with the
+    // SSR reflection, so the reflection already in the scene is not double-counted.
     fs_composite.invProjection = renderProj.inverse();
     fs_composite.invView = camera.viewMatrix.inverse();
 
@@ -5699,6 +5754,7 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
     // so a swapchain destination samples them flipped (renderBlit does the same)
     float flipDest = (!destination && Engine::isOpenGL()) ? 1.0f : 0.0f;
     fs_composite.params = Vector4(scene->getSSRIntensity(), flipGL, (float)scene->getSSRDebugMode(), flipDest);
+    // fs_composite.probe* were filled by renderGBufferPass for slots below ssrProbeCount
 
     // environment color/rotation, matching mesh.frag's lighting.envColor; the prefiltered
     // GGX map comes from the sky (fall back to a black cube when there is no IBL sky)
@@ -5733,7 +5789,14 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(0));
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::GBUFFERTEXTURE), ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(1));
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::GBUFFERALBEDOTEXTURE), ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(2));
+        compositeRender.addTexture(compositeOcclusionSlot, ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(3));
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::PREFILTEREDMAP), ShaderStageType::FRAGMENT, prefilteredTexture);
+        compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::SSAOTEXTURE), ShaderStageType::FRAGMENT,
+                                   currentSSAOTexture ? currentSSAOTexture : &emptyWhite);
+        for (int s = 0; s < SSR_PROBE_SLOTS; s++){
+            compositeRender.addTexture(compositeProbeSlots[s], ShaderStageType::FRAGMENT,
+                                       s < ssrProbeCount ? ssrProbeTextures[s] : &emptyCubeBlack);
+        }
         compositeRender.applyUniformBlock(compositeSlotParams, sizeof(fs_composite_t), &fs_composite);
         compositeRender.draw(0, 3, 1);
     }

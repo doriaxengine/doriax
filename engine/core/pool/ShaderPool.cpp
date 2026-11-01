@@ -427,7 +427,7 @@ int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
     switch (shaderType) {
         case ShaderType::MESH:   return 29;
         case ShaderType::DEPTH:  return 9;
-        case ShaderType::GBUFFER: return 10;
+        case ShaderType::GBUFFER: return 12;
         case ShaderType::UI:     return 4;
         case ShaderType::POINTS: return 4;
         case ShaderType::LINES:  return 2;
@@ -501,6 +501,8 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 7: return shortName ? "Ist" : "Instancing";
             case 8: return shortName ? "Mrt" : "MetalRough Texture";
             case 9: return shortName ? "Tpb" : "Terrain PBR";
+            case 10: return shortName ? "Occ" : "Occlusion Texture";
+            case 11: return shortName ? "Ou2" : "Occlusion UV2";
         }
     } else if (shaderType == ShaderType::UI) {
         switch (bit) {
@@ -607,13 +609,18 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     }else if (shaderType == ShaderType::DEPTH){
         optionalBits = {7, 0}; // Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){
-        optionalBits = {8, 0}; // Mrt Bct
+        optionalBits = {10, 8, 0}; // Occ Mrt Bct
     }
 
     std::vector<uint32_t> present;
     for (int bit : optionalBits){
         if (properties & (1u << bit)){
-            present.push_back(1u << bit);
+            uint32_t mask = 1u << bit;
+            // the G-buffer occlusion UV set goes with the occlusion texture
+            if (shaderType == ShaderType::GBUFFER && bit == 10){
+                mask |= 1u << 11;
+            }
+            present.push_back(mask);
         }
     }
 
@@ -847,7 +854,7 @@ uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool mo
     return prop;
 }
 
-uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR){
+uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2){
     uint32_t prop = 0;
 
     prop |= baseColorTexture        ? (1 <<  0) : 0;
@@ -860,6 +867,8 @@ uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normal
     prop |= instanced               ? (1 <<  7) : 0;
     prop |= metallicRoughnessTexture ? (1 << 8) : 0;
     prop |= terrainPBR              ? (1 <<  9) : 0;
+    prop |= occlusionTexture        ? (1 << 10) : 0;
+    prop |= (occlusionTexture && occlusionUV2) ? (1 << 11) : 0;
 
     return prop;
 }
