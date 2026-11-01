@@ -832,6 +832,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("localMatrix", &Transform::localMatrix)
         .addProperty("modelMatrix", &Transform::modelMatrix)
         .addProperty("visible", &Transform::visible, &Transform::visible)
+        .addProperty("visibleInHierarchy", &Transform::visibleInHierarchy)
         // reparent with addChild
         .addProperty("parent", &Transform::parent)
         .addProperty("distanceToCamera", &Transform::distanceToCamera)
@@ -839,7 +840,6 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("billboard", &Transform::billboard, &Transform::billboard)
         .addProperty("fakeBillboard", &Transform::fakeBillboard, &Transform::fakeBillboard)
         .addProperty("cylindricalBillboard", &Transform::cylindricalBillboard, &Transform::cylindricalBillboard)
-        .addProperty("needUpdateChildVisibility", &Transform::needUpdateChildVisibility, &Transform::needUpdateChildVisibility)
         .addProperty("needUpdate", &Transform::needUpdate, &Transform::needUpdate)
         .endClass();
 

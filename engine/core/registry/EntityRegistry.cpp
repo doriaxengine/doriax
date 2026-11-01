@@ -196,7 +196,6 @@ void EntityRegistry::changeTransformChildren(Entity entity){
                 childTransform->parent = newParent;
                 // Mark for update since hierarchy changed
                 childTransform->needUpdate = true;
-                childTransform->needUpdateChildVisibility = true;
             }
         }
     }

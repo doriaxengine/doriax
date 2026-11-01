@@ -1802,7 +1802,7 @@ void RenderSystem::renderReflectionProbeCapture(){
             continue;
         Transform& transform = transforms->getComponentFromIndex(i);
         MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
-        if (!mesh || !transform.visible || mesh->transparent || !mesh->renderInReflectionProbes)
+        if (!mesh || !transform.visibleInHierarchy || mesh->transparent || !mesh->renderInReflectionProbes)
             continue;
 
         updateMVP(i, transform, captureCamera, captureTransform);
@@ -2320,7 +2320,7 @@ unsigned int RenderSystem::buildOccluder2DSegments(){
         }
         Entity entity = occluders->getEntity(i);
         Transform* transform = scene->findComponent<Transform>(entity);
-        if (!transform || !transform->visible){
+        if (!transform || !transform->visibleInHierarchy){
             continue;
         }
 
@@ -5350,7 +5350,7 @@ void RenderSystem::renderDepthPrePass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visible || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
@@ -5518,7 +5518,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visible || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
@@ -7992,7 +7992,7 @@ WaterComponent* RenderSystem::findUnderwater(const Vector3& eye){
     for (int i = 0; i < waters->size(); i++){
         WaterComponent& water = waters->getComponentFromIndex(i);
         Transform* transform = scene->findComponent<Transform>(waters->getEntity(i));
-        if (!water.underwater || !water.loaded || water.needReload || !transform || !transform->visible)
+        if (!water.underwater || !water.loaded || water.needReload || !transform || !transform->visibleInHierarchy)
             continue;
 
         const AABB& area = water.worldAABB;
@@ -8157,7 +8157,7 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
         for (int w = 0; w < waters->size(); w++){
             const WaterComponent& water = waters->getComponentFromIndex(w);
             Transform* waterTransform = scene->findComponent<Transform>(waters->getEntity(w));
-            if (!water.loaded || !waterTransform || !waterTransform->visible)
+            if (!water.loaded || !waterTransform || !waterTransform->visibleInHierarchy)
                 continue;
             const AABB& area = water.worldAABB;
             if (center.x < area.getMinimum().x || center.x > area.getMaximum().x ||
@@ -10064,6 +10064,7 @@ void RenderSystem::update(double dt){
     for (int i = 0; i < transforms->size(); i++){
         Transform& transform = transforms->getComponentFromIndex(i);
 
+        transform.visibleInHierarchy = transform.visible;
         if (transform.parent != NULL_ENTITY){
             Transform* transformParent = scene->findComponent<Transform>(transform.parent);
             if (transformParent){
@@ -10071,10 +10072,7 @@ void RenderSystem::update(double dt){
                     transform.needUpdate = true;
                 }
 
-                if (transformParent->needUpdateChildVisibility){
-                    transform.visible = transformParent->visible;
-                    transform.needUpdateChildVisibility = true;
-                }
+                transform.visibleInHierarchy = transform.visible && transformParent->visibleInHierarchy;
             }
         }
 
@@ -10346,7 +10344,6 @@ void RenderSystem::update(double dt){
                 meshes->getComponentFromIndex(sprite.meshIndex).worldAABB.setExtents(
                     bounds.lo[0], bounds.lo[1], bounds.lo[2], bounds.hi[0], bounds.hi[1], bounds.hi[2]);
             }
-            transform.needUpdateChildVisibility = false;
             transform.needUpdate = false;
             continue;
         }
@@ -10739,7 +10736,6 @@ void RenderSystem::update(double dt){
 
         }
 
-        transform.needUpdateChildVisibility = false;
         transform.needUpdate = false;
     }
 
@@ -10835,7 +10831,7 @@ void RenderSystem::draw(){
                 Signature signature = scene->getSignature(entity);
                 Transform* transform = findComponent<Transform>(scene, entity, signature);
 
-                if (!transform || !transform->visible){
+                if (!transform || !transform->visibleInHierarchy){
                     continue;
                 }
 
@@ -11194,7 +11190,7 @@ void RenderSystem::draw(){
             WaterComponent& water = waters->getComponentFromIndex(w);
             Transform* waterTransform = scene->findComponent<Transform>(waterEntity);
             // a water cannot sample its own reflection while rendering it
-            if (!water.loaded || water.needReload || !waterTransform || !waterTransform->visible ||
+            if (!water.loaded || water.needReload || !waterTransform || !waterTransform->visibleInHierarchy ||
                     getMirrorCamera(waterEntity) == cameraEntity || !isInsideCamera(camera, water.worldAABB))
                 continue;
 
@@ -11340,7 +11336,7 @@ void RenderSystem::draw(){
                 }
 
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-                if (!transform.visible || samplesCameraTarget(camera, mesh)){
+                if (!transform.visibleInHierarchy || samplesCameraTarget(camera, mesh)){
                     continue;
                 }
 
@@ -11433,7 +11429,7 @@ void RenderSystem::draw(){
 
             const int settled = drawSettled ? settledIndex(entity) : -1;
             if (settled >= 0){
-                if (transform.visible){
+                if (transform.visibleInHierarchy){
                     drawSettledSprite(settled, i);
                 }
                 continue;
@@ -11511,7 +11507,7 @@ void RenderSystem::draw(){
             if (signature.test(scene->getComponentId<MeshComponent>())){
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
 
-                if (transform.visible && !samplesCameraTarget(camera, mesh)){
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, mesh)){
 
                     // Per-camera transparent-instance sorting is intentionally NOT done
                     // here: the instance buffer is shared across all cameras and sokol
@@ -11550,7 +11546,7 @@ void RenderSystem::draw(){
                 if (signature.test(scene->getComponentId<TextComponent>())){
                     isText = true;
                 }
-                if (transform.visible && !samplesCameraTarget(camera, ui.texture))
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture))
                     drawUI(ui, transform, colorPip);
 
             }else if (signature.test(scene->getComponentId<PointsComponent>())){
@@ -11560,7 +11556,7 @@ void RenderSystem::draw(){
                 // shared across all cameras and sokol only allows one sg_update_buffer per
                 // buffer per frame (VALIDATE_UPDATEBUF_ONCE). Every camera reuses the main
                 // camera's ordering computed in update().
-                if (transform.visible && !samplesCameraTarget(camera, points.texture)){
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture)){
                     if (!points.transparent){
                         drawPoints(points, transform, camera, cameraTransform, colorPip);
                     }else{
@@ -11580,7 +11576,7 @@ void RenderSystem::draw(){
             }else if (signature.test(scene->getComponentId<LinesComponent>())){
                 LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
 
-                if (transform.visible)
+                if (transform.visibleInHierarchy)
                     drawLines(lines, transform, cameraTransform, colorPip);
 
             }

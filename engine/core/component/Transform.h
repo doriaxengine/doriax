@@ -29,6 +29,8 @@ namespace doriax{
         Matrix4 modelViewProjectionMatrix;
 
         bool visible = true;
+        // visible and every ancestor visible, set by RenderSystem
+        bool visibleInHierarchy = true;
 
         Entity parent = NULL_ENTITY;
 
@@ -40,7 +42,6 @@ namespace doriax{
         bool fakeBillboard = false;
         bool cylindricalBillboard = false;
 
-        bool needUpdateChildVisibility = false;
         bool needUpdate = true;
     };
 

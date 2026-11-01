@@ -96,10 +96,7 @@ Vector3 Object::getWorldScale() const{
 
 void Object::setVisible(bool visible){
     Transform& transform = getComponent<Transform>();
-    if (transform.visible != visible){
-        transform.visible = visible;
-        transform.needUpdateChildVisibility = true;
-    }
+    transform.visible = visible;
 }
 
 bool Object::isVisible() const{
@@ -107,9 +104,13 @@ bool Object::isVisible() const{
     return transform.visible;
 }
 
-void Object::setVisibleOnly(bool visible){
+bool Object::isVisibleInHierarchy() const{
     Transform& transform = getComponent<Transform>();
-    transform.visible = visible;
+    return transform.visibleInHierarchy;
+}
+
+void Object::setVisibleOnly(bool visible){
+    setVisible(visible);
 }
 
 void Object::setBillboard(bool billboard, bool fake, bool cylindrical){

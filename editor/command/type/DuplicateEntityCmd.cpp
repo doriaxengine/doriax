@@ -78,6 +78,8 @@ bool editor::DuplicateEntityCmd::execute(){
         }
         encoded["members"] = membersNode;
     }
+    // not an older file, so the decode keeps hidden children hidden
+    encoded["visibilityInherited"] = true;
 
     // Decode keeping the source entity IDs: every source entity is still alive, so recreateEntity
     // fails and a fresh ID is allocated, recording old->new in entityRemap. Stripping the IDs

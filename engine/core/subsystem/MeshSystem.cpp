@@ -4873,11 +4873,6 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
                 scene->setEntityName(meshEntity, nodeName.empty() ? ("MeshNode " + std::to_string(nodeIdx)) : nodeName);
 
                 Transform& childTransform = scene->getComponent<Transform>(meshEntity);
-                // Visibility only propagates to children on change, and these arrive well
-                // after the root was set, so an invisible model would render every node
-                if (Transform* rootTransform = scene->findComponent<Transform>(entity)) {
-                    childTransform.visible = rootTransform->visible;
-                }
                 if (model.gltfModel->nodes[nodeIdx].skin >= 0) {
                     // Skinned nodes ignore their own transform (glTF spec): the skeleton drives the
                     // vertices in the model's space, so the child stays at identity under the root.

@@ -2923,7 +2923,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
         if (signature.test(scene->getComponentId<Transform>())){
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            if (transform.visible){
+            if (transform.visibleInHierarchy){
                 if (signature.test(scene->getComponentId<ImageComponent>())){
                     Rect uirect(transform.worldPosition.x, transform.worldPosition.y, layout->width * transform.worldScale.x, layout->height * transform.worldScale.y);
 
@@ -3009,7 +3009,7 @@ bool UISystem::eventOnPointerUp(float x, float y){
         Transform* transform = scene->findComponent<Transform>(entity);
         UIComponent* ui = scene->findComponent<UIComponent>(entity);
 
-        if (transform->visible && signature.test(scene->getComponentId<ImageComponent>())){
+        if (transform->visibleInHierarchy && signature.test(scene->getComponentId<ImageComponent>())){
             Rect uirect(transform->worldPosition.x, transform->worldPosition.y, layout->width * transform->worldScale.x, layout->height * transform->worldScale.y);
 
             if (layout->panel != NULL_ENTITY){
@@ -3287,7 +3287,7 @@ bool UISystem::eventOnPointerMove(float x, float y){
         if (signature.test(scene->getComponentId<Transform>())){
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            if (transform.visible){
+            if (transform.visibleInHierarchy){
                 if (signature.test(scene->getComponentId<ImageComponent>())){
                     Rect uirect(transform.worldPosition.x, transform.worldPosition.y, layout.width * transform.worldScale.x, layout.height * transform.worldScale.y);
 

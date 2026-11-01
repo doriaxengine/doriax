@@ -188,9 +188,9 @@ void editor::SceneRender2D::createOrUpdateLight2DLines(Entity entity, const Tran
     Lines* lightLinesObj = light2DLines[entity];
 
     lightLinesObj->clearLines();
-    lightLinesObj->setVisible(transform.visible && visible);
+    lightLinesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible){
+    if (!transform.visibleInHierarchy || !visible){
         return;
     }
 
@@ -211,9 +211,9 @@ void editor::SceneRender2D::createOrUpdateOccluder2DLines(Entity entity, const T
     Lines* occluderLinesObj = occluder2DLines[entity];
 
     occluderLinesObj->clearLines();
-    occluderLinesObj->setVisible(transform.visible && visible && occluder.enabled);
+    occluderLinesObj->setVisible(transform.visibleInHierarchy && visible && occluder.enabled);
 
-    if (!transform.visible || !visible || !occluder.enabled){
+    if (!transform.visibleInHierarchy || !visible || !occluder.enabled){
         return;
     }
 
@@ -279,9 +279,9 @@ void editor::SceneRender2D::createOrUpdateLinePointLines(Entity entity, const Tr
     Lines* handlesObj = linePointLines[entity];
 
     handlesObj->clearLines();
-    handlesObj->setVisible(transform.visible && visible);
+    handlesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible){
+    if (!transform.visibleInHierarchy || !visible){
         return;
     }
 
@@ -355,9 +355,9 @@ void editor::SceneRender2D::createOrUpdatePolygonPointLines(Entity entity, const
     Lines* handlesObj = polygonPointLines[entity];
 
     handlesObj->clearLines();
-    handlesObj->setVisible(transform.visible && visible);
+    handlesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible){
+    if (!transform.visibleInHierarchy || !visible){
         return;
     }
 
@@ -379,9 +379,9 @@ void editor::SceneRender2D::createOrUpdateBodyLines(Entity entity, const Transfo
     Lines* bodyLinesObj = bodyLines[entity];
 
     bodyLinesObj->clearLines();
-    bodyLinesObj->setVisible(transform.visible && visible);
+    bodyLinesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible || body.numShapes == 0){
+    if (!transform.visibleInHierarchy || !visible || body.numShapes == 0){
         return;
     }
 
@@ -972,7 +972,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
             UILayoutComponent& layout = scene->getComponent<UILayoutComponent>(entity);
             UIContainerComponent& container = scene->getComponent<UIContainerComponent>(entity);
 
-            if (transform.visible && !displaySettings.hideContainerGuides){
+            if (transform.visibleInHierarchy && !displaySettings.hideContainerGuides){
                 containerLinesObj->setVisible(true);
 
                 Vector4 borderColor(0.55f, 0.35f, 0.85f, 1.0f); // Purple color for container
@@ -1048,7 +1048,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
 
             lo.icon->setPosition(transform.worldPosition);
             lo.icon->setScale(billboardScreenScale(transform.worldPosition, 0.25f));
-            lo.icon->setVisible(transform.visible);
+            lo.icon->setVisible(transform.visibleInHierarchy);
         }
 
         if (signature.test(scene->getComponentId<Occluder2DComponent>()) && signature.test(scene->getComponentId<Transform>())){
@@ -1151,7 +1151,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
                 rotation.fromRotationMatrix(cameraComp.viewMatrix.inverse());
                 co.lines->setRotation(rotation);
 
-                if (transform.visible && !displaySettings.hideCameraView){
+                if (transform.visibleInHierarchy && !displaySettings.hideCameraView){
                     co.icon->setVisible(true);
                     co.lines->setVisible(true);
 
@@ -1186,7 +1186,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
 
             so.icon->setPosition(transform.worldPosition);
             so.icon->setScale(billboardScreenScale(transform.worldPosition, 0.25f));
-            so.icon->setVisible(transform.visible);
+            so.icon->setVisible(transform.visibleInHierarchy);
 
             if (displaySettings.hideSoundIcons) {
                 so.icon->setVisible(false);
@@ -1205,7 +1205,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
             Transform& transform = scene->getComponent<Transform>(selEntity);
             const Matrix4& modelMatrix = transform.modelMatrix;
 
-            if (transform.visible && tilemap.numTiles > 0){
+            if (transform.visibleInHierarchy && tilemap.numTiles > 0){
                 tileLines->setVisible(true);
 
                 const Vector4 normalColor(0.4f, 0.7f, 0.9f, 0.5f);

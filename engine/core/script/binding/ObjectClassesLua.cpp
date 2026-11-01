@@ -234,6 +234,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setScale", (void(Object::*)(const float))&Object::setScale)
         .addFunction("getWorldScale", &Object::getWorldScale)
         .addProperty("visible", &Object::isVisible, &Object::setVisible)
+        .addProperty("visibleInHierarchy", &Object::isVisibleInHierarchy)
         .addFunction("setVisibleOnly", &Object::setVisibleOnly)
         .addFunction("setBillboard", (void(Object::*)(bool, bool, bool))&Object::setBillboard)
         .addProperty("billboard", &Object::isBillboard, (void(Object::*)(bool))&Object::setBillboard)

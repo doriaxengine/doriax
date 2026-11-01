@@ -2565,6 +2565,34 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
     }
 }
 
+namespace {
+
+// Older files hid the children of a hidden entity too, and showing it showed them
+void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<Entity>& entities) {
+    std::unordered_set<Entity> hidden;
+    for (Entity entity : entities) {
+        const Transform* transform = registry->findComponent<Transform>(entity);
+        if (transform && !transform->visible) {
+            hidden.insert(entity);
+        }
+    }
+    if (hidden.empty()) return;
+
+    for (Entity entity : entities) {
+        Transform* transform = registry->findComponent<Transform>(entity);
+        Entity ancestor = transform ? transform->parent : NULL_ENTITY;
+        while (ancestor != NULL_ENTITY && !hidden.count(ancestor)) {
+            const Transform* ancestorTransform = registry->findComponent<Transform>(ancestor);
+            ancestor = ancestorTransform ? ancestorTransform->parent : NULL_ENTITY;
+        }
+        if (ancestor != NULL_ENTITY) {
+            transform->visible = true;
+        }
+    }
+}
+
+} // namespace
+
 YAML::Node editor::Stream::encodeSceneProject(const Project* project, const SceneProject* sceneProject) {
     YAML::Node root;
     root["id"] = sceneProject->id;
@@ -2572,6 +2600,7 @@ YAML::Node editor::Stream::encodeSceneProject(const Project* project, const Scen
     root["scene"] = encodeScene(sceneProject->scene);
     root["sceneType"] = sceneTypeToString(sceneProject->sceneType);
     root["mainCamera"] = sceneProject->mainCamera;
+    root["visibilityInherited"] = true;
 
     YAML::Node maxValuesNode;
     maxValuesNode["maxSubmeshes"] = sceneProject->maxValues.maxSubmeshes;
@@ -2846,6 +2875,10 @@ void editor::Stream::decodeSceneProjectEntities(Project* project, SceneProject* 
         decodeEntity(entityNode, sceneProject->scene, &sceneProject->entities, project, sceneProject);
     }
 
+    if (!node["visibilityInherited"]) {
+        showChildrenOfHiddenEntities(sceneProject->scene, sceneProject->entities);
+    }
+
     CameraTextureLink::resolve(sceneProject->scene);
 }
 
@@ -3097,11 +3130,14 @@ YAML::Node editor::Stream::encodeEntitySelection(const std::vector<Entity>& enti
     }
 
     if (entities.size() == 1) {
-        return encodeEntity(entities[0], registry, project, sceneProject);
+        YAML::Node entityNode = encodeEntity(entities[0], registry, project, sceneProject);
+        entityNode["visibilityInherited"] = true;
+        return entityNode;
     }
 
     YAML::Node bundleNode;
     bundleNode["type"] = "EntityBundle";
+    bundleNode["visibilityInherited"] = true;
     YAML::Node membersNode(YAML::NodeType::Sequence);
     for (Entity entity : entities) {
         membersNode.push_back(encodeEntity(entity, registry, project, sceneProject));
@@ -3116,16 +3152,20 @@ std::vector<Entity> editor::Stream::decodeEntitySelection(const YAML::Node& enti
         return {};
     }
 
+    std::vector<Entity> allEntities;
     if (entityNode["members"] && entityNode["members"].IsSequence()) {
-        std::vector<Entity> allEntities;
         for (const auto& memberNode : entityNode["members"]) {
-            std::vector<Entity> memberEntities = decodeEntitySelection(memberNode, registry, entities, project, sceneProject, parent, createNewIfExists, entityRemap);
+            std::vector<Entity> memberEntities = decodeEntity(memberNode, registry, entities, project, sceneProject, parent, createNewIfExists, false, entityRemap);
             allEntities.insert(allEntities.end(), memberEntities.begin(), memberEntities.end());
         }
-        return allEntities;
+    } else {
+        allEntities = decodeEntity(entityNode, registry, entities, project, sceneProject, parent, createNewIfExists, false, entityRemap);
     }
 
-    return decodeEntity(entityNode, registry, entities, project, sceneProject, parent, createNewIfExists, false, entityRemap);
+    if (!entityNode["visibilityInherited"]) {
+        showChildrenOfHiddenEntities(registry, allEntities);
+    }
+    return allEntities;
 }
 
 YAML::Node editor::Stream::encodeEntity(const Entity entity, const EntityRegistry* registry,
@@ -4841,7 +4881,6 @@ YAML::Node editor::Stream::encodeTransform(const Transform& transform) {
     transformNode["billboard"] = transform.billboard;
     transformNode["fakeBillboard"] = transform.fakeBillboard;
     transformNode["cylindricalBillboard"] = transform.cylindricalBillboard;
-    //transformNode["needUpdateChildVisibility"] = transform.needUpdateChildVisibility;
     //transformNode["needUpdate"] = transform.needUpdate;
 
     return transformNode;
@@ -4872,7 +4911,6 @@ Transform editor::Stream::decodeTransform(const YAML::Node& node, const Transfor
     if (node["billboard"]) transform.billboard = node["billboard"].as<bool>();
     if (node["fakeBillboard"]) transform.fakeBillboard = node["fakeBillboard"].as<bool>();
     if (node["cylindricalBillboard"]) transform.cylindricalBillboard = node["cylindricalBillboard"].as<bool>();
-    //transform.needUpdateChildVisibility = node["needUpdateChildVisibility"].as<bool>();
     //transform.needUpdate = node["needUpdate"].as<bool>();
 
     return transform;

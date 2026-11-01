@@ -474,8 +474,8 @@ bool editor::SceneRender3D::instanciateReflectionProbeLines(Entity entity){
 void editor::SceneRender3D::createOrUpdateReflectionProbeLines(Entity entity, const Transform& transform, const ReflectionProbeComponent& probe, bool visible){
     Lines* probeLines = reflectionProbeLines[entity];
     probeLines->clearLines();
-    probeLines->setVisible(transform.visible && visible);
-    if (!transform.visible || !visible) return;
+    probeLines->setVisible(transform.visibleInHierarchy && visible);
+    if (!transform.visibleInHierarchy || !visible) return;
 
     Vector3 center = transform.modelMatrix * probe.boxOffset;
     Vector3 half(
@@ -526,8 +526,8 @@ bool editor::SceneRender3D::instanciateWaterExclusionLines(Entity entity){
 void editor::SceneRender3D::createOrUpdateWaterExclusionLines(Entity entity, const Transform& transform, const WaterExclusionComponent& exclusion, bool visible){
     Lines* exclusionLines = waterExclusionLines[entity];
     exclusionLines->clearLines();
-    exclusionLines->setVisible(transform.visible && visible);
-    if (!transform.visible || !visible) return;
+    exclusionLines->setVisible(transform.visibleInHierarchy && visible);
+    if (!transform.visibleInHierarchy || !visible) return;
 
     const Vector4 color(1.0f, 0.6f, 0.2f, 1.0f);
     auto addLine = [&](const Vector3& a, const Vector3& b) {
@@ -571,9 +571,9 @@ void editor::SceneRender3D::createOrUpdateLinePointLines(Entity entity, const Tr
     Lines* handlesObj = linePointLines[entity];
 
     handlesObj->clearLines();
-    handlesObj->setVisible(transform.visible && visible);
+    handlesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible){
+    if (!transform.visibleInHierarchy || !visible){
         return;
     }
 
@@ -614,9 +614,9 @@ void editor::SceneRender3D::createOrUpdatePolygonPointLines(Entity entity, const
     Lines* handlesObj = polygonPointLines[entity];
 
     handlesObj->clearLines();
-    handlesObj->setVisible(transform.visible && visible);
+    handlesObj->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible){
+    if (!transform.visibleInHierarchy || !visible){
         return;
     }
 
@@ -716,7 +716,7 @@ void editor::SceneRender3D::createOrUpdateBoneLines(Entity entity, const ModelCo
 
     for (const auto& [boneId, boneEntity] : model.bonesIdMapping) {
         Transform* boneTransform = scene->findComponent<Transform>(boneEntity);
-        if (!boneTransform || !boneTransform->visible) continue;
+        if (!boneTransform || !boneTransform->visibleInHierarchy) continue;
 
         Vector3 bonePos = boneTransform->worldPosition;
 
@@ -788,9 +788,9 @@ void editor::SceneRender3D::createOrUpdateBodyLines(Entity entity, const Transfo
     BodyObjects& bo = bodyObjects[entity];
 
     bo.lines->clearLines();
-    bo.lines->setVisible(transform.visible && visible);
+    bo.lines->setVisible(transform.visibleInHierarchy && visible);
 
-    if (!transform.visible || !visible || body.numShapes == 0) {
+    if (!transform.visibleInHierarchy || !visible || body.numShapes == 0) {
         return;
     }
 
@@ -1559,7 +1559,7 @@ void editor::SceneRender3D::createOrUpdateLightIcon(Entity entity, const Transfo
 
     // Update light icon position
     lo.icon->setPosition(transform.worldPosition);
-    lo.icon->setVisible(transform.visible);
+    lo.icon->setVisible(transform.visibleInHierarchy);
     lo.icon->setScale(billboardScreenScale(transform.worldPosition, 0.25f));
 }
 
@@ -1573,7 +1573,7 @@ void editor::SceneRender3D::createOrUpdateCameraIcon(Entity entity, const Transf
 
     // Update camera icon position
     co.icon->setPosition(transform.worldPosition);
-    co.icon->setVisible(transform.visible);
+    co.icon->setVisible(transform.visibleInHierarchy);
     co.icon->setScale(billboardScreenScale(transform.worldPosition, 0.25f));
 }
 
@@ -1586,7 +1586,7 @@ void editor::SceneRender3D::createOrUpdateSoundIcon(Entity entity, const Transfo
     }
 
     so.icon->setPosition(transform.worldPosition);
-    so.icon->setVisible(transform.visible);
+    so.icon->setVisible(transform.visibleInHierarchy);
     so.icon->setScale(billboardScreenScale(transform.worldPosition, 0.25f));
 }
 
@@ -1594,7 +1594,7 @@ void editor::SceneRender3D::createCameraFrustum(Entity entity, const Transform& 
     CameraObjects& co = cameraObjects[entity];
 
     co.lines->setPosition(transform.worldPosition);
-    co.lines->setVisible(transform.visible);
+    co.lines->setVisible(transform.visibleInHierarchy);
 
     Quaternion rotation;
     rotation.fromRotationMatrix(cameraComponent.viewMatrix.inverse());

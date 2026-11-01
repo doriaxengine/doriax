@@ -7993,17 +7993,7 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
 
     YAML::Node node;
     if (bundle.isModified) {
-        YAML::Node bundleNode;
-        bundleNode["type"] = "EntityBundle";
-        YAML::Node membersNode(YAML::NodeType::Sequence);
-        if (!bundle.registryEntities.empty()) {
-            std::vector<Entity> topLevelEntities = getTopLevelEntities(bundle.registry.get(), bundle.registryEntities);
-            for (Entity entity : topLevelEntities) {
-                membersNode.push_back(Stream::encodeEntity(entity, bundle.registry.get(), this));
-            }
-        }
-        bundleNode["members"] = membersNode;
-        node = bundleNode;
+        node = encodeEntityBundleNode(filepath);
     } else {
         try {
             std::filesystem::path fullBundlePath = getProjectPath() / filepath;

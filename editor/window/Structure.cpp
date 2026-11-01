@@ -1119,14 +1119,7 @@ std::string editor::Structure::encodeDraggedEntities(Entity draggedEntity) {
     std::vector<Entity> virtualChildren = ProjectUtils::getVirtualChildren(sceneProject->scene, draggedEntities);
     exportEntities.insert(exportEntities.end(), virtualChildren.begin(), virtualChildren.end());
 
-    YAML::Node entityData;
-    if (exportEntities.size() == 1) {
-        entityData = Stream::encodeEntity(draggedEntities[0], sceneProject->scene, project, sceneProject);
-    } else {
-        entityData = Stream::encodeEntitySelection(exportEntities, sceneProject->scene, project, sceneProject);
-    }
-
-    return YAML::Dump(entityData);
+    return YAML::Dump(Stream::encodeEntitySelection(exportEntities, sceneProject->scene, project, sceneProject));
 }
 
 std::filesystem::path editor::Structure::getBundleSaveDirectory() const {
