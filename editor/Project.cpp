@@ -6070,6 +6070,15 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
+    // Except those of deleted forks, which exports could not build
+    for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
+        const std::string fork = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
+        if (!fork.empty() && !fs::exists(projectPath / (fork + ".frag")) && !fs::exists(projectPath / (fork + ".vert"))) {
+            it = shaderKeys.erase(it);
+        } else {
+            ++it;
+        }
+    }
     sceneProject->shaderKeys = std::move(shaderKeys);
     // Keys are complete once every change was drawn and nothing waits to load or reload
     auto meshSystem = sceneProject->scene->getSystem<MeshSystem>();
