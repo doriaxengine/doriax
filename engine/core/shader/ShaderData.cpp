@@ -6,6 +6,8 @@
 #include "Log.h"
 
 #include <cstring>
+#include <set>
+#include <algorithm>
 
 using namespace doriax;
 
@@ -408,6 +410,25 @@ std::pair<int, int> ShaderData::getTextureIndexByName(const std::string& texstr)
     }
 
     return std::pair(-1, -1);
+}
+
+std::vector<std::string> ShaderData::getCustomTextureNames() const{
+    std::vector<std::string> names;
+    for (const ShaderStage& stage : stages){
+        for (const ShaderTexture& tex : stage.textures){
+            if (tex.name.rfind("u_custom_", 0) != 0)
+                continue;
+            if (std::find(names.begin(), names.end(), tex.name) == names.end())
+                names.push_back(tex.name);
+        }
+        for (const ShaderTextureSamplerPair& pair : stage.textureSamplerPairs) {
+            if (pair.textureName.rfind("u_custom_", 0) != 0)
+                continue;
+            if (std::find(names.begin(), names.end(), pair.textureName) == names.end())
+                names.push_back(pair.textureName);
+        }
+    }
+    return names;
 }
 
 void ShaderData::releaseSourceData(){

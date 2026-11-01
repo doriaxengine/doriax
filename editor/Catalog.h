@@ -61,6 +61,14 @@ namespace doriax::editor{
         UpdateFlags_Water_Texture       = (uint64_t)1 << 38,
         // button visuals, applied to its UI component
         UpdateFlags_Button              = (uint64_t)1 << 39,
+
+        UpdateFlags_Mesh_Custom_Textures   = (uint64_t)1 << 40,
+        UpdateFlags_Water_Custom_Textures  = (uint64_t)1 << 41,
+        UpdateFlags_UI_Custom_Textures     = (uint64_t)1 << 42,
+        UpdateFlags_Sky_Custom_Textures    = (uint64_t)1 << 43,
+        UpdateFlags_Points_Custom_Textures = (uint64_t)1 << 44,
+        UpdateFlags_Lines_Custom_Textures  = (uint64_t)1 << 45,
+  
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };
@@ -210,6 +218,7 @@ namespace doriax::editor{
         static bool isCustomUnderwaterShaderBuildFailed(Scene* scene, Entity entity);
         // scene property of a default shader's uniform values ("default_mesh_shader_uniforms"...)
         static const char* getDefaultShaderUniformsProperty(ShaderType type);
+        static const char* getDefaultShaderCustomTexturesProperty(ShaderType type);
         static bool getDefaultShaderUniformsType(const std::string& propertyName, ShaderType& type);
 
         template<typename T>
@@ -237,6 +246,7 @@ namespace doriax::editor{
                 if constexpr (std::is_same_v<T, TextureFilter>) return TextureFilter::NEAREST;
                 if constexpr (std::is_same_v<T, std::string>) return std::string();
                 if constexpr (std::is_same_v<T, ShaderUniformValues>) return ShaderUniformValues();
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return std::vector<std::pair<std::string, Texture>>();
                 // Add other types as needed
             }
 
@@ -420,6 +430,36 @@ namespace doriax::editor{
                     return scene->getPostProcessPasses();
                 }
             }
+            else if (propertyName == "default_mesh_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::MESH);
+                }
+            }
+            else if (propertyName == "default_ui_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::UI);
+                }
+            }
+            else if (propertyName == "default_sky_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::SKYBOX);
+                }
+            }
+            else if (propertyName == "default_points_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::POINTS);
+                }
+            }
+            else if (propertyName == "default_lines_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::LINES);
+                }
+            }
+            else if (propertyName == "default_water_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    return scene->getDefaultShaderTextures(ShaderType::WATER);
+                }
+            }
 
             if constexpr (std::is_same_v<T, ShaderUniformValues>) {
                 ShaderType type;
@@ -440,6 +480,7 @@ namespace doriax::editor{
             if constexpr (std::is_same_v<T, std::string>) return std::string();
             if constexpr (std::is_same_v<T, std::vector<PostProcessPass>>) return std::vector<PostProcessPass>();
             if constexpr (std::is_same_v<T, ShaderUniformValues>) return ShaderUniformValues();
+            if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return std::vector<std::pair<std::string, Texture>>();
             // Add other types as needed
         }
 
@@ -557,6 +598,24 @@ namespace doriax::editor{
             }
             else if (propertyName == "default_water_shader") {
                 if constexpr (std::is_same_v<T, std::string>) return d.defaultWaterShader;
+            }
+            else if (propertyName == "default_mesh_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultMeshShaderCustomTextures;
+            }
+            else if (propertyName == "default_ui_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultUIShaderCustomTextures;
+            }
+            else if (propertyName == "default_sky_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultSkyShaderCustomTextures;
+            }
+            else if (propertyName == "default_points_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultPointsShaderCustomTextures;
+            }
+            else if (propertyName == "default_lines_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultLinesShaderCustomTextures;
+            }
+            else if (propertyName == "default_water_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) return d.defaultWaterShaderCustomTextures;
             }
             else if (propertyName == "post_process") {
                 if constexpr (std::is_same_v<T, std::vector<PostProcessPass>>) return d.postProcess;
@@ -748,6 +807,36 @@ namespace doriax::editor{
             else if (propertyName == "post_process") {
                 if constexpr (std::is_same_v<T, std::vector<PostProcessPass>>) {
                     scene->setPostProcessPasses(value);
+                }
+            }
+            else if (propertyName == "default_mesh_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::MESH, value);
+                }
+            }
+            else if (propertyName == "default_ui_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::UI, value);
+                }
+            }
+            else if (propertyName == "default_sky_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::SKYBOX, value);
+                }
+            }
+            else if (propertyName == "default_points_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::POINTS, value);
+                }
+            }
+            else if (propertyName == "default_lines_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::LINES, value);
+                }
+            }
+            else if (propertyName == "default_water_shader_custom_textures") {
+                if constexpr (std::is_same_v<T, std::vector<std::pair<std::string, Texture>>>) {
+                    scene->setDefaultShaderTextures(ShaderType::WATER, value);
                 }
             }
 

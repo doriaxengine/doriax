@@ -117,6 +117,15 @@ namespace doriax{
         CustomUniformBlock customVSDepthParams;
         CustomUniformBlock customFSDepthParams;
 
+        struct CustomTextureBinding
+        {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+        std::vector<CustomTextureBinding> customDepthTextureBindings;
+
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
         PrimitiveType primitiveType = PrimitiveType::TRIANGLES;
@@ -185,6 +194,16 @@ namespace doriax{
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
 
+        std::vector<std::pair<std::string, Texture>> customTextures;
+        bool needUpdateCustomTextures = false;
+
+        std::vector<std::pair<std::string, Texture>> customDepthTextures;
+        bool needUpdateCustomDepthTextures = false;
+
+        HybridArray<Matrix4, MAX_BONES> bonesMatrix;
+        BufferRender bonesBuffer;
+        TextureRender bonesTexture;
+        bool needUpdateBones = false;
         float normAdjustJoint = 1;
         float normAdjustWeight = 1;
 

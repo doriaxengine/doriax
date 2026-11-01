@@ -1023,6 +1023,15 @@ static const std::pair<ShaderType, const char*> defaultShaderUniformKeys[] = {
     {ShaderType::WATER, "defaultWaterShaderUniforms"},
 };
 
+static const std::pair<ShaderType, const char*> defaultShaderTextureKeys[] = {
+    {ShaderType::MESH, "defaultMeshShaderCustomTextures"},
+    {ShaderType::UI, "defaultUIShaderCustomTextures"},
+    {ShaderType::SKYBOX, "defaultSkyShaderCustomTextures"},
+    {ShaderType::POINTS, "defaultPointsShaderCustomTextures"},
+    {ShaderType::LINES, "defaultLinesShaderCustomTextures"},
+    {ShaderType::WATER, "defaultWaterShaderCustomTextures"},
+};
+
 static std::string shadowQualityToString(ShadowQuality quality) {
     switch (quality) {
         case ShadowQuality::NONE: return "none";
@@ -1250,6 +1259,28 @@ ShaderUniformValues editor::Stream::decodeShaderUniforms(const YAML::Node& node)
         }
     }
     return uniforms;
+}
+
+YAML::Node editor::Stream::encodeCustomTextures(const std::vector<std::pair<std::string, Texture>>& textures, bool embedData) {
+    YAML::Node node(YAML::NodeType::Sequence);
+    for (const auto& entry : textures) {
+        YAML::Node item;
+        item["name"] = entry.first;
+        item["texture"] = encodeTexture(entry.second, embedData);
+        node.push_back(item);
+    }
+    return node;
+}
+
+std::vector<std::pair<std::string, Texture>> editor::Stream::decodeCustomTextures(const YAML::Node& node) {
+    std::vector<std::pair<std::string, Texture>> textures;
+    if (node && node.IsSequence()) {
+        for (const auto& item : node) {
+            if (!item["name"] || !item["texture"]) continue;
+            textures.push_back({item["name"].as<std::string>(), decodeTexture(item["texture"])});
+        }
+    }
+    return textures;
 }
 
 YAML::Node editor::Stream::encodeQuaternion(const Quaternion& quat) {
@@ -2948,12 +2979,30 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
             sceneNode[key] = encodeShaderUniforms(values);
     }
 
+    for (const auto& [type, key] : defaultShaderTextureKeys) {
+        const auto& textures = scene->getDefaultShaderTextures(type);
+        if (!textures.empty())
+            sceneNode[key] = encodeCustomTextures(textures, false);
+    }
+
     for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
         YAML::Node passNode;
         passNode["shader"] = pass.shader;
         passNode["enabled"] = pass.enabled;
         if (!pass.uniforms.empty())
             passNode["uniforms"] = encodeShaderUniforms(pass.uniforms);
+
+        if (!pass.customTextures.empty()) {
+            YAML::Node customNode;
+            for (const auto& custom : pass.customTextures) {
+                YAML::Node entry;
+                entry["name"] = custom.first;
+                entry["texture"] = encodeTexture(custom.second, false);
+                customNode.push_back(entry);
+            }
+            passNode["customTextures"] = customNode;
+        }
+
         sceneNode["postProcess"].push_back(passNode);
     }
 
@@ -3075,6 +3124,10 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
         scene->setDefaultShaderUniforms(type, decodeShaderUniforms(node[key]));
     }
 
+    for (const auto& [type, key] : defaultShaderTextureKeys) {
+        scene->setDefaultShaderTextures(type, decodeCustomTextures(node[key]));
+    }
+
     // absent key clears the chain so decoding into a reused scene (play restore) is exact
     std::vector<PostProcessPass> postProcess;
     if (node["postProcess"]) {
@@ -3083,6 +3136,18 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
             pass.shader = passNode["shader"] ? passNode["shader"].as<std::string>() : "";
             pass.enabled = passNode["enabled"] ? passNode["enabled"].as<bool>() : true;
             pass.uniforms = decodeShaderUniforms(passNode["uniforms"]);
+
+            pass.customTextures.clear();
+            if (passNode["customTextures"] && passNode["customTextures"].IsSequence()) {
+                for (const auto& entry : passNode["customTextures"]) {
+                    if (!entry["name"] || !entry["texture"]) continue;
+                    pass.customTextures.push_back({
+                        entry["name"].as<std::string>(),
+                        decodeTexture(entry["texture"])
+                    });
+                }
+            }
+
             postProcess.push_back(pass);
         }
     }
@@ -4948,6 +5013,12 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     if (!mesh.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
 
+    if (!mesh.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(mesh.customTextures, embedTextureData);
+
+    if (!mesh.customDepthTextures.empty())
+        node["customDepthTextures"] = encodeCustomTextures(mesh.customDepthTextures, embedTextureData);
+
     //node["needUpdateBuffer"] = mesh.needUpdateBuffer;
     //node["needReload"] = mesh.needReload;
 
@@ -5028,7 +5099,9 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
     mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    mesh.needUpdateShaderUniforms = true;
+
+    mesh.customTextures = decodeCustomTextures(node["customTextures"]);
+    mesh.customDepthTextures = decodeCustomTextures(node["customDepthTextures"]);
 
     //mesh.needUpdateBuffer = node["needUpdateBuffer"].as<bool>();
     //mesh.needReload = node["needReload"].as<bool>();
@@ -5079,6 +5152,9 @@ YAML::Node editor::Stream::encodeUIComponent(const UIComponent& ui, bool encodeB
     //node["needUpdateBuffer"] = ui.needUpdateBuffer;
     //node["needUpdateTexture"] = ui.needUpdateTexture;
 
+    if (!ui.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(ui.customTextures, embedTextureData);
+
     return node;
 }
 
@@ -5121,12 +5197,13 @@ UIComponent editor::Stream::decodeUIComponent(const YAML::Node& node, const UICo
     // Written only when set
     ui.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     ui.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    ui.needUpdateShaderUniforms = true;
 
     //ui.needReload = node["needReload"].as<bool>();
     //ui.needUpdateAABB = node["needUpdateAABB"].as<bool>();
     //ui.needUpdateBuffer = node["needUpdateBuffer"].as<bool>();
     //ui.needUpdateTexture = node["needUpdateTexture"].as<bool>();
+
+    ui.customTextures = decodeCustomTextures(node["customTextures"]);
 
     return ui;
 }
@@ -6471,6 +6548,9 @@ YAML::Node editor::Stream::encodeSkyComponent(const SkyComponent& sky) {
     if (!sky.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(sky.shaderUniforms);
 
+    if (!sky.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(sky.customTextures, false);
+
     return node;
 }
 
@@ -6505,7 +6585,8 @@ SkyComponent editor::Stream::decodeSkyComponent(const YAML::Node& node, const Sk
     // Written only when set
     sky.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     sky.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    sky.needUpdateShaderUniforms = true;
+
+    sky.customTextures = decodeCustomTextures(node["customTextures"]);
 
     return sky;
 }
@@ -6551,6 +6632,11 @@ YAML::Node editor::Stream::encodeWaterComponent(const WaterComponent& water) {
         node["customUnderwaterShader"] = water.customUnderwaterShader;
     if (!water.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(water.shaderUniforms);
+
+    if (!water.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(water.customTextures, false);
+    if (!water.customUnderwaterTextures.empty())
+        node["customUnderwaterTextures"] = encodeCustomTextures(water.customUnderwaterTextures, false);
 
     return node;
 }
@@ -6598,8 +6684,10 @@ WaterComponent editor::Stream::decodeWaterComponent(const YAML::Node& node, cons
     water.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     water.customUnderwaterShader = node["customUnderwaterShader"] ? node["customUnderwaterShader"].as<std::string>() : "";
     water.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    water.needUpdateShaderUniforms = true;
     water.needUpdateTexture = true;
+
+    water.customTextures = decodeCustomTextures(node["customTextures"]);
+    water.customUnderwaterTextures = decodeCustomTextures(node["customUnderwaterTextures"]);
 
     return water;
 }
@@ -8250,6 +8338,9 @@ YAML::Node editor::Stream::encodePointsComponent(const PointsComponent& points) 
     if (!points.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(points.shaderUniforms);
 
+    if (!points.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(points.customTextures, false);
+
     return node;
 }
 
@@ -8289,7 +8380,8 @@ PointsComponent editor::Stream::decodePointsComponent(const YAML::Node& node, co
 
     points.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     points.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    points.needUpdateShaderUniforms = true;
+
+    points.customTextures = decodeCustomTextures(node["customTextures"]);
 
     // Reset runtime fields, a loaded component reloads so its render resources are released
     points.renderPoints.clear();
@@ -8323,6 +8415,9 @@ YAML::Node editor::Stream::encodeLinesComponent(const LinesComponent& lines) {
     if (!lines.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(lines.shaderUniforms);
 
+    if (!lines.customTextures.empty())
+        node["customTextures"] = encodeCustomTextures(lines.customTextures, false);
+
     return node;
 }
 
@@ -8351,7 +8446,8 @@ LinesComponent editor::Stream::decodeLinesComponent(const YAML::Node& node, cons
     // Written only when set
     lines.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     lines.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    lines.needUpdateShaderUniforms = true;
+
+    lines.customTextures = decodeCustomTextures(node["customTextures"]);
 
     // A loaded component reloads so its render resources are released
     lines.needUpdateBuffer = false;

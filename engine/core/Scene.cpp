@@ -627,6 +627,88 @@ bool Scene::removeDefaultShaderUniform(ShaderType type, const std::string& name)
     return true;
 }
 
+// null for the types without a scene default
+static std::vector<std::pair<std::string, Texture>>* defaultShaderTexturesField(SceneSettings& settings, ShaderType type){
+    switch (type){
+        case ShaderType::MESH:   return &settings.defaultMeshShaderCustomTextures;
+        case ShaderType::UI:     return &settings.defaultUIShaderCustomTextures;
+        case ShaderType::SKYBOX: return &settings.defaultSkyShaderCustomTextures;
+        case ShaderType::POINTS: return &settings.defaultPointsShaderCustomTextures;
+        case ShaderType::LINES:  return &settings.defaultLinesShaderCustomTextures;
+        case ShaderType::WATER:  return &settings.defaultWaterShaderCustomTextures;
+        default: return nullptr;
+    }
+}
+
+void Scene::setDefaultShaderTextures(ShaderType type, const std::vector<std::pair<std::string, Texture>>& textures){
+    std::vector<std::pair<std::string, Texture>>* field = defaultShaderTexturesField(settings, type);
+    if (!field)
+        return;
+
+    *field = textures;
+    getSystem<RenderSystem>()->needUpdateDefaultShaderCustomTextures(type);
+}
+
+const std::vector<std::pair<std::string, Texture>>& Scene::getDefaultShaderTextures(ShaderType type) const{
+    static const std::vector<std::pair<std::string, Texture>> empty;
+    switch (type){
+        case ShaderType::MESH:   return settings.defaultMeshShaderCustomTextures;
+        case ShaderType::UI:     return settings.defaultUIShaderCustomTextures;
+        case ShaderType::SKYBOX: return settings.defaultSkyShaderCustomTextures;
+        case ShaderType::POINTS: return settings.defaultPointsShaderCustomTextures;
+        case ShaderType::LINES:  return settings.defaultLinesShaderCustomTextures;
+        case ShaderType::WATER:  return settings.defaultWaterShaderCustomTextures;
+        default: return empty;
+    }
+}
+
+void Scene::setDefaultShaderTexture(ShaderType type, const std::string& name, const Texture& texture){
+    std::vector<std::pair<std::string, Texture>>* field = defaultShaderTexturesField(settings, type);
+    if (!field)
+        return;
+
+    auto it = std::find_if(field->begin(), field->end(),
+        [&](const auto& e){ return e.first == name; });
+    if (it != field->end()){
+        if (it->second == texture)
+            return;
+        it->second = texture;
+    }else{
+        field->push_back({name, texture});
+    }
+
+    getSystem<RenderSystem>()->needUpdateDefaultShaderCustomTextures(type);
+}
+
+Texture Scene::getDefaultShaderTexture(ShaderType type, const std::string& name) const{
+    const auto& textures = getDefaultShaderTextures(type);
+    auto it = std::find_if(textures.begin(), textures.end(),
+        [&](const auto& e){ return e.first == name; });
+    return it != textures.end() ? it->second : Texture();
+}
+
+bool Scene::removeDefaultShaderTexture(ShaderType type, const std::string& name){
+    std::vector<std::pair<std::string, Texture>>* field = defaultShaderTexturesField(settings, type);
+    if (!field)
+        return false;
+
+    auto it = std::find_if(field->begin(), field->end(),
+        [&](const auto& e){ return e.first == name; });
+    if (it == field->end())
+        return false;
+
+    field->erase(it);
+    getSystem<RenderSystem>()->needUpdateDefaultShaderCustomTextures(type);
+    return true;
+}
+
+const std::vector<std::pair<std::string, Texture>>* Scene::getInheritedShaderTextures(ShaderType type, const std::string& customShader) const{
+    if (!customShader.empty() || getDefaultCustomShader(type).empty())
+        return nullptr;
+
+    return &getDefaultShaderTextures(type);
+}
+
 const ShaderUniformValues* Scene::getInheritedShaderUniforms(ShaderType type, const std::string& customShader) const{
     if (!customShader.empty() || getDefaultCustomShader(type).empty())
         return nullptr;
@@ -643,7 +725,8 @@ void Scene::setPostProcessPasses(const std::vector<PostProcessPass>& passes){
     bool sameChain = passes.size() == settings.postProcess.size();
     for (size_t i = 0; sameChain && i < passes.size(); i++){
         sameChain = passes[i].shader == settings.postProcess[i].shader &&
-                    passes[i].enabled == settings.postProcess[i].enabled;
+                    passes[i].enabled == settings.postProcess[i].enabled &&
+                    passes[i].customTextures == settings.postProcess[i].customTextures;
     }
 
     settings.postProcess = passes;

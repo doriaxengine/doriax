@@ -33,6 +33,16 @@ namespace doriax{
         CustomUniformBlock customVSParams;
         CustomUniformBlock customFSParams;
 
+        struct CustomTextureBinding {
+            std::string name;
+            std::pair<int, int> slot = {-1, -1};
+            TextureRender* render = nullptr;
+        };
+        std::vector<CustomTextureBinding> customTextureBindings;
+
+        std::vector<std::pair<std::string, Texture>> customTextures;
+        bool needUpdateCustomTextures = false;
+
         Texture texture;
         Vector4 color = Vector4(1.0, 1.0, 1.0, 1.0); //sRGB
 

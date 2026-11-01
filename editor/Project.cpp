@@ -642,6 +642,14 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
         }
     };
 
+    auto visitCustomTextureList = [&](std::vector<std::pair<std::string, Texture>>& textures) {
+        bool listChanged = false;
+        for (auto& entry : textures) {
+            listChanged |= visitTexturePaths(entry.second, transform);
+        }
+        return listChanged;
+    };
+
     visitComponents(registry->getComponentArray<MeshComponent>(), [&](MeshComponent& mesh) {
         for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
             Material& material = mesh.submeshes[s].material;
@@ -656,6 +664,16 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
                 changed = true;
             }
         }
+
+        if (visitCustomTextureList(mesh.customTextures)) {
+            mesh.needUpdateCustomTextures = true;
+            changed = true;
+        }
+        if (visitCustomTextureList(mesh.customDepthTextures)) {
+            mesh.needUpdateCustomDepthTextures = true;
+            changed = true;
+        }
+
     });
     if (changed) {
         Catalog::updateSpriteBatches(registry);
@@ -664,6 +682,11 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         if (visitTexturePaths(ui.texture, transform)) {
             ui.needUpdateTexture = true;
+            changed = true;
+        }
+
+        if (visitCustomTextureList(ui.customTextures)) {
+            ui.needUpdateCustomTextures = true;
             changed = true;
         }
     });
@@ -685,11 +708,25 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
             sky.needUpdateTexture = true;
             changed = true;
         }
+
+        if (visitCustomTextureList(sky.customTextures)) {
+            sky.needUpdateCustomTextures = true;
+            changed = true;
+        }
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
         if (visitTexturePaths(water.normalTexture, transform)) {
             water.needUpdateTexture = true;
+            changed = true;
+        }
+
+        if (visitCustomTextureList(water.customTextures)) {
+            water.needUpdateCustomTextures = true;
+            changed = true;
+        }
+        if (visitCustomTextureList(water.customUnderwaterTextures)) {
+            water.needUpdateCustomUnderwaterTextures = true;
             changed = true;
         }
     });
@@ -739,6 +776,18 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
             points.needUpdateTexture = true;
             changed = true;
         }
+
+        if (visitCustomTextureList(points.customTextures)) {
+            points.needUpdateCustomTextures = true;
+            changed = true;
+        }
+    });
+
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        if (visitCustomTextureList(lines.customTextures)) {
+            lines.needUpdateCustomTextures = true;
+            changed = true;
+        }
     });
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
@@ -773,6 +822,38 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
         }
     });
 
+    if (Scene* scene = dynamic_cast<Scene*>(registry)) {
+        for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX,
+                                ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
+            const auto& current = scene->getDefaultShaderTextures(type);
+            if (current.empty()) {
+                continue;
+            }
+
+            std::vector<std::pair<std::string, Texture>> textures = current;
+            bool texturesChanged = false;
+            for (auto& entry : textures) {
+                texturesChanged |= visitTexturePaths(entry.second, transform);
+            }
+            if (texturesChanged) {
+                scene->setDefaultShaderTextures(type, textures);
+                changed = true;
+            }
+        }
+
+        std::vector<PostProcessPass> passes = scene->getPostProcessPasses();
+        bool passesChanged = false;
+        for (PostProcessPass& pass : passes) {
+            for (auto& entry : pass.customTextures) {
+                passesChanged |= visitTexturePaths(entry.second, transform);
+            }
+        }
+        if (passesChanged) {
+            scene->setPostProcessPasses(passes);
+            changed = true;
+        }
+    }
+
     return changed;
 }
 
@@ -796,6 +877,12 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
         auto sameRender = [&file](const Texture& other) { return other.getRenderId() == file.getRenderId(); };
         if (std::none_of(resources.textures.begin(), resources.textures.end(), sameRender)) {
             resources.textures.push_back(file);
+        }
+    };
+
+    auto addCustomTextures = [&](const std::vector<std::pair<std::string, Texture>>& textures, bool alphaBorderAuto) {
+        for (const auto& entry : textures) {
+            addTexture(entry.second, alphaBorderAuto);
         }
     };
 
@@ -828,10 +915,14 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
             addTexture(material.occlusionTexture, false);
             addTexture(material.normalTexture, false);
         }
+
+        addCustomTextures(mesh.customTextures, false);
+        addCustomTextures(mesh.customDepthTextures, false);
     }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         addTexture(ui.texture, true);
+        addCustomTextures(ui.customTextures, true);
     });
 
     visitComponents(registry->getComponentArray<ButtonComponent>(), [&](ButtonComponent& button) {
@@ -843,10 +934,13 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<SkyComponent>(), [&](SkyComponent& sky) {
         addTexture(sky.texture, false);
+        addCustomTextures(sky.customTextures, false);
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
         addTexture(water.normalTexture, false);
+        addCustomTextures(water.customTextures, false);
+        addCustomTextures(water.customUnderwaterTextures, false);
     });
 
     visitComponents(registry->getComponentArray<TerrainComponent>(), [&](TerrainComponent& terrain) {
@@ -871,6 +965,11 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<PointsComponent>(), [&](PointsComponent& points) {
         addTexture(points.texture, true);
+        addCustomTextures(points.customTextures, true);
+    });
+
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        addCustomTextures(lines.customTextures, true);
     });
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
@@ -10124,6 +10223,37 @@ void editor::Project::registerSceneManager() {
     }
 }
 
+static void appendSceneLevelResources(Scene* scene, SceneResources& resources) {
+    if (!scene) {
+        return;
+    }
+
+    auto add = [&resources](const Texture& texture) {
+        if (texture.getPath(0).empty() || texture.isFramebuffer()) {
+            return;
+        }
+        auto same = [&texture](const Texture& other) {
+            return other.getRenderId() == texture.getRenderId();
+        };
+        if (std::none_of(resources.textures.begin(), resources.textures.end(), same)) {
+            resources.textures.push_back(texture);
+        }
+    };
+
+    for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX,
+                            ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
+        for (const auto& entry : scene->getDefaultShaderTextures(type)) {
+            add(entry.second);
+        }
+    }
+
+    for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
+        for (const auto& entry : pass.customTextures) {
+            add(entry.second);
+        }
+    }
+}
+
 // The Play copy when the session built one, else the open scene, else a probe of its file
 SceneResources editor::Project::collectPlaySceneResources(uint32_t sceneId) {
     Scene* runtimeScene = nullptr;
@@ -10139,7 +10269,9 @@ SceneResources editor::Project::collectPlaySceneResources(uint32_t sceneId) {
         }
     }
     if (runtimeScene) {
-        return collectResourcesInRegistry(runtimeScene);
+        SceneResources resources = collectResourcesInRegistry(runtimeScene);
+        appendSceneLevelResources(runtimeScene, resources);
+        return resources;
     }
 
     SceneProject* sceneProject = getScene(sceneId);
@@ -10147,7 +10279,9 @@ SceneResources editor::Project::collectPlaySceneResources(uint32_t sceneId) {
         return {};
     }
     if (sceneProject->scene) {
-        return collectResourcesInRegistry(sceneProject->scene);
+        SceneResources resources = collectResourcesInRegistry(sceneProject->scene);
+        appendSceneLevelResources(sceneProject->scene, resources);
+        return resources;
     }
 
     SceneResources resources;
@@ -10155,13 +10289,13 @@ SceneResources editor::Project::collectPlaySceneResources(uint32_t sceneId) {
     try {
         probe.reset(createRuntimeCloneFromSource(sceneProject));
         resources = collectResourcesInRegistry(probe->scene);
+        appendSceneLevelResources(probe->scene, resources);
     } catch (const std::exception& e) {
         Out::warning("Files of scene '%s' not preloaded: %s", sceneProject->name.c_str(), e.what());
     }
     if (probe) {
         deleteSceneProject(probe.get());
     }
-    // forget the bundle instances the probe registered
     cleanupEntityBundlesForScene(sceneId);
 
     return resources;
