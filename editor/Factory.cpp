@@ -851,6 +851,7 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     if (!mesh.shaderUniforms.empty())
         code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
     code << formatCustomTextures(indentSpaces, mesh.customTextures, "mesh", projectPath);
+    code << formatCustomTextures(indentSpaces, mesh.customDepthTextures, "mesh.customDepthTextures", projectPath);
     code << ind << "mesh.vertexCount = " << formatUInt(mesh.vertexCount) << ";\n";
     //code << ind << "mesh.submeshes.resize(" << formatUInt(mesh.numSubmeshes) << ");\n";
     // Kept for a model too: its load reads the count to find the edited submeshes.
@@ -1688,6 +1689,7 @@ std::string editor::Factory::createWaterComponent(int indentSpaces, EntityRegist
     if (!water.shaderUniforms.empty())
         code << ind << "water.shaderUniforms = " << formatShaderUniforms(water.shaderUniforms) << ";\n";
     code << formatCustomTextures(indentSpaces, water.customTextures, "water", projectPath);
+    code << formatCustomTextures(indentSpaces, water.customUnderwaterTextures, "water.customUnderwaterTextures", projectPath);
 
     addComponentCode(code, ind, sceneName, entityName, entity, "WaterComponent", "water", assignExisting);
     return code.str();

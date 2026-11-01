@@ -4250,7 +4250,20 @@ uint64_t editor::Catalog::getChangedUpdateFlags(ComponentType compType, void* ol
                 break;
             case PropertyType::Custom:
                 // Conservative: assume changed for complex types
-                changed = true;
+                if (newProp.updateFlags & UpdateFlags_Shader_Uniforms) {
+                    changed = *static_cast<ShaderUniformValues*>(oldProp.ref)
+                            != *static_cast<ShaderUniformValues*>(newProp.ref);
+                } else if (newProp.updateFlags & (UpdateFlags_Mesh_Custom_Textures
+                                                | UpdateFlags_UI_Custom_Textures
+                                                | UpdateFlags_Sky_Custom_Textures
+                                                | UpdateFlags_Points_Custom_Textures
+                                                | UpdateFlags_Lines_Custom_Textures
+                                                | UpdateFlags_Water_Custom_Textures)) {
+                    changed = *static_cast<std::vector<std::pair<std::string, Texture>>*>(oldProp.ref)
+                            != *static_cast<std::vector<std::pair<std::string, Texture>>*>(newProp.ref);
+                } else {
+                    changed = true;
+                }
                 break;
         }
 

@@ -5055,13 +5055,9 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
     mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    mesh.needUpdateShaderUniforms = true;
 
     mesh.customTextures = decodeCustomTextures(node["customTextures"]);
-    mesh.needUpdateCustomTextures = true;
-
     mesh.customDepthTextures = decodeCustomTextures(node["customDepthTextures"]);
-    mesh.needUpdateCustomDepthTextures = true;
 
     //mesh.needUpdateBuffer = node["needUpdateBuffer"].as<bool>();
     //mesh.needReload = node["needReload"].as<bool>();
@@ -5157,7 +5153,6 @@ UIComponent editor::Stream::decodeUIComponent(const YAML::Node& node, const UICo
     // Written only when set
     ui.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     ui.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    ui.needUpdateShaderUniforms = true;
 
     //ui.needReload = node["needReload"].as<bool>();
     //ui.needUpdateAABB = node["needUpdateAABB"].as<bool>();
@@ -5165,7 +5160,6 @@ UIComponent editor::Stream::decodeUIComponent(const YAML::Node& node, const UICo
     //ui.needUpdateTexture = node["needUpdateTexture"].as<bool>();
 
     ui.customTextures = decodeCustomTextures(node["customTextures"]);
-    ui.needUpdateCustomTextures = true;
 
     return ui;
 }
@@ -6547,10 +6541,8 @@ SkyComponent editor::Stream::decodeSkyComponent(const YAML::Node& node, const Sk
     // Written only when set
     sky.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     sky.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    sky.needUpdateShaderUniforms = true;
 
     sky.customTextures = decodeCustomTextures(node["customTextures"]);
-    sky.needUpdateCustomTextures = true;
 
     return sky;
 }
@@ -6648,14 +6640,10 @@ WaterComponent editor::Stream::decodeWaterComponent(const YAML::Node& node, cons
     water.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     water.customUnderwaterShader = node["customUnderwaterShader"] ? node["customUnderwaterShader"].as<std::string>() : "";
     water.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    water.needUpdateShaderUniforms = true;
     water.needUpdateTexture = true;
 
     water.customTextures = decodeCustomTextures(node["customTextures"]);
-    water.needUpdateCustomTextures = true;
-
     water.customUnderwaterTextures = decodeCustomTextures(node["customUnderwaterTextures"]);
-    water.needUpdateCustomUnderwaterTextures = true;
 
     return water;
 }
@@ -8316,10 +8304,8 @@ PointsComponent editor::Stream::decodePointsComponent(const YAML::Node& node, co
 
     points.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     points.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    points.needUpdateShaderUniforms = true;
 
     points.customTextures = decodeCustomTextures(node["customTextures"]);
-    points.needUpdateCustomTextures = true;
 
     // Reset runtime fields, a loaded component reloads so its render resources are released
     points.renderPoints.clear();
@@ -8384,10 +8370,8 @@ LinesComponent editor::Stream::decodeLinesComponent(const YAML::Node& node, cons
     // Written only when set
     lines.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     lines.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    lines.needUpdateShaderUniforms = true;
 
     lines.customTextures = decodeCustomTextures(node["customTextures"]);
-    lines.needUpdateCustomTextures = true;
 
     // A loaded component reloads so its render resources are released
     lines.needUpdateBuffer = false;
