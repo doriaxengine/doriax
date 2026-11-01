@@ -5681,19 +5681,6 @@ void editor::Properties::drawShaderTextureRows(ComponentType cpType, SceneProjec
         newValues.push_back(it != values.end() ? *it : std::make_pair(name, Texture()));
     }
 
-    bool structureChanged = (newValues.size() != values.size());
-    if (!structureChanged) {
-        for (size_t i = 0; i < newValues.size(); ++i) {
-            if (newValues[i].first != values[i].first) { structureChanged = true; break; }
-        }
-    }
-    if (structureChanged) {
-        CommandHandle::get(sceneProject->id)->addCommand(
-            new PropertyCmd<std::vector<std::pair<std::string, Texture>>>(
-                project, sceneProject->id, entity, cpType, propertyName, newValues));
-        values = newValues;
-    }
-
     const ImGuiStyle& style = ImGui::GetStyle();
     const float spacing = style.ItemSpacing.x;
 
@@ -5834,15 +5821,11 @@ void editor::Properties::drawShaderTextureRows(ComponentType cpType, SceneProjec
                 std::string cameraLabel = std::string(ICON_FA_VIDEO) + " "
                                         + scene->getEntityName(cameraEntity);
                 if (ImGui::MenuItem(cameraLabel.c_str())) {
-                    CameraComponent* cam = scene->findComponent<CameraComponent>(cameraEntity);
-                    if (cam) {
-                        if (!cam->renderToTexture) cam->renderToTexture = true;
-                        if (sceneProject->mainCamera == cameraEntity) {
-                            CommandHandle::get(sceneProject->id)->addCommandNoMerge(
-                                new SetMainCameraCmd(project, sceneProject->id, NULL_ENTITY));
-                        }
-                        commitTexture(i, CameraTextureLink::make(scene, cameraEntity));
-                    }
+                    std::vector<Entity> single{entity};
+                    applyCameraTexture(cameraEntity, cpType,
+                        propertyName + "[" + std::to_string(i) + "].second",
+                        sceneProject, single, nullptr);
+                    finishProperty = true;
                 }
             }
             if (!hasCamera) ImGui::TextDisabled("No camera in scene");
@@ -6054,26 +6037,12 @@ void editor::Properties::drawSceneTextureRows(SceneProject* sceneProject, Shader
         syncedTextures.push_back(it != currentTextures.end() ? *it : std::make_pair(name, Texture()));
     }
 
-    bool structureChanged = (syncedTextures.size() != currentTextures.size());
-    if (!structureChanged){
-        for (size_t t = 0; t < syncedTextures.size(); ++t){
-            if (syncedTextures[t].first != currentTextures[t].first){
-                structureChanged = true;
-                break;
-            }
-        }
-    }
-
     const uint32_t sceneId = sceneProject->id;
     auto commitTextures = [&](const std::vector<std::pair<std::string, Texture>>& newTextures){
         CommandHandle::get(sceneId)->addCommandNoMerge(
             new ScenePropertyCmd<std::vector<std::pair<std::string, Texture>>>(
                 project, sceneId, propertyName, newTextures));
     };
-
-    if (structureChanged){
-        commitTextures(syncedTextures);
-    }
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float spacing = style.ItemSpacing.x;
@@ -6207,28 +6176,25 @@ void editor::Properties::drawSceneTextureRows(SceneProject* sceneProject, Shader
                                         + scene->getEntityName(cameraEntity);
                 if (ImGui::MenuItem(cameraLabel.c_str())){
                     CameraComponent* cam = scene->findComponent<CameraComponent>(cameraEntity);
-                    if (!cam)
-                        continue;
+                    if (!cam) continue;
 
-                    bool needRenderToTexture = !cam->renderToTexture;
-                    bool needClearMainCamera = (sceneProject->mainCamera == cameraEntity);
-
-                    if (needRenderToTexture || needClearMainCamera){
-                        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
-                        if (needRenderToTexture){
-                            multiCmd->addPropertyCmd<bool>(project, sceneProject->id, cameraEntity,
-                                ComponentType::CameraComponent, "renderToTexture", true);
-                        }
-                        if (needClearMainCamera){
-                            multiCmd->addCommand(std::make_unique<SetMainCameraCmd>(
-                                project, sceneProject->id, NULL_ENTITY));
-                        }
-                        CommandHandle::get(sceneProject->id)->addCommandNoMerge(multiCmd);
+                    auto* multiCmd = new MultiPropertyCmd();
+                    if (!cam->renderToTexture) {
+                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, cameraEntity,
+                            ComponentType::CameraComponent, "renderToTexture", true);
+                    }
+                    if (sceneProject->mainCamera == cameraEntity) {
+                        multiCmd->addCommand(std::make_unique<SetMainCameraCmd>(
+                            project, sceneProject->id, NULL_ENTITY));
                     }
 
                     std::vector<std::pair<std::string, Texture>> modified = syncedTextures;
                     modified[t].second = CameraTextureLink::make(scene, cameraEntity);
-                    commitTextures(modified);
+                    multiCmd->addCommand(std::make_unique<ScenePropertyCmd<
+                        std::vector<std::pair<std::string, Texture>>>>(
+                            project, sceneId, propertyName, modified));
+
+                    CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
                 }
             }
             if (!hasCamera)
@@ -6344,16 +6310,6 @@ void editor::Properties::drawPostProcessTextureRows(uint32_t sceneId, const std:
             : std::make_pair(name, Texture()));
     }
 
-    bool structureChanged = (syncedTextures.size() != currentTextures.size());
-    if (!structureChanged) {
-        for (size_t t = 0; t < syncedTextures.size(); ++t) {
-            if (syncedTextures[t].first != currentTextures[t].first) {
-                structureChanged = true;
-                break;
-            }
-        }
-    }
-
     auto commitTextures = [&](const std::vector<std::pair<std::string, Texture>>& newTextures) {
         std::vector<PostProcessPass> newPasses = passes;
         newPasses[index].customTextures = newTextures;
@@ -6361,10 +6317,6 @@ void editor::Properties::drawPostProcessTextureRows(uint32_t sceneId, const std:
             new ScenePropertyCmd<std::vector<PostProcessPass>>(
                 project, sceneId, "post_process", newPasses));
     };
-
-    if (structureChanged) {
-        commitTextures(syncedTextures);
-    }
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float spacing = style.ItemSpacing.x;
