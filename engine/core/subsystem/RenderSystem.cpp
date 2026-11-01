@@ -8653,8 +8653,15 @@ void RenderSystem::getLoadCount(size_t& loaded, size_t& total) const{
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         // An empty tilemap never loads: loadMesh() has no buffers to create until a tile is added.
         if (!mesh.loaded) {
-            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(meshes->getEntity(i));
+            Entity entity = meshes->getEntity(i);
+            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
             if (tilemap && tilemap->numTiles == 0)
+                continue;
+            // Nor does a mesh with no geometry and nothing to build it, until a script fills it
+            const ModelComponent* model = scene->findComponent<ModelComponent>(entity);
+            const bool empty = mesh.buffer.getSize() == 0 && mesh.indices.getSize() == 0 && mesh.numExternalBuffers == 0;
+            if (empty && !tilemap && (!model || model->filename.empty()) && !scene->findComponent<TerrainComponent>(entity) &&
+                    !scene->findComponent<SpriteComponent>(entity) && !scene->findComponent<MeshPolygonComponent>(entity))
                 continue;
         }
         count(mesh.loaded);
