@@ -460,8 +460,8 @@ void main(){
     float crestFoam = water.ripples.w;
     float crestMask = smoothstep(1.0 - crestFoam * 2.0, 1.0 - crestFoam, crest) * step(0.001, crestFoam);
     foam = max(foam, crestMask * smoothstep(0.4, 0.7, noise));
-    // wake foam breaks up as it fades
-    foam = max(foam, smoothstep(noise - 0.15, noise + 0.15, wake.r * 1.5) * min(0.35 + wake.r * 2.0, 1.0));
+    // wake foam breaks up as it fades, none without a wake
+    foam = max(foam, smoothstep(noise - 0.15, noise + 0.15, wake.r * 1.5) * min(0.35 + wake.r * 2.0, 1.0) * smoothstep(0.0, 0.03, wake.r));
 
     vec3 color;
     float alpha;
