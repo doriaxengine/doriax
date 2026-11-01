@@ -7984,7 +7984,7 @@ WaterComponent* RenderSystem::findUnderwater(const Vector3& eye){
     auto exclusions = scene->getComponentArray<WaterExclusionComponent>();
     for (int i = 0; i < exclusions->size(); i++){
         Transform* transform = scene->findComponent<Transform>(exclusions->getEntity(i));
-        if (transform && isInsideWaterExclusion(exclusions->getComponentFromIndex(i), *transform, eye))
+        if (transform && transform->visibleInHierarchy && isInsideWaterExclusion(exclusions->getComponentFromIndex(i), *transform, eye))
             return NULL;
     }
 
@@ -8093,6 +8093,10 @@ void RenderSystem::setWaterExclusionParams(const WaterComponent& water, const Ve
         const WaterExclusionComponent& exclusion = exclusions->getComponentFromIndex(i);
         if (!exclusion.worldAABB.intersects(water.worldAABB))
             continue;
+        // a hidden exclusion cuts no hole
+        Transform* exclusionTransform = scene->findComponent<Transform>(exclusions->getEntity(i));
+        if (!exclusionTransform || !exclusionTransform->visibleInHierarchy)
+            continue;
         // a hull waits for its map in the texture
         if (exclusion.shape == WaterExclusionShape::HULL && exclusion.hullLayer >= waterExclusionMapLayers)
             continue;
@@ -8131,7 +8135,8 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
         WaterExclusionComponent& exclusion = exclusions->getComponentFromIndex(i);
         Transform* transform = scene->findComponent<Transform>(exclusions->getEntity(i));
         exclusion.wakeWater = NULL_ENTITY;
-        if ((exclusion.wakeFoam <= 0.0f && exclusion.wakeWaves <= 0.0f) || !transform || exclusion.aabb.isNull()){
+        // hidden counts as off, so it leaves no trail when shown elsewhere
+        if ((exclusion.wakeFoam <= 0.0f && exclusion.wakeWaves <= 0.0f) || !transform || !transform->visibleInHierarchy || exclusion.aabb.isNull()){
             resetWaterWake(exclusion);
             continue;
         }
