@@ -2270,7 +2270,6 @@ bool editor::Exporter::copyEngine() {
     fs::path sdkRoot;
     const std::vector<fs::path> sdkCandidates = {
         FileUtils::getEngineDir(),
-        exeDir / "engine",
         exeDir.parent_path() / "engine",
         exeDir
     };

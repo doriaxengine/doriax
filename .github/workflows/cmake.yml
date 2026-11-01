@@ -257,7 +257,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
 
-          # The AppDir is the same install tree under usr/: $ORIGIN and engine/
+          # The AppDir is the same install tree under usr/: $ORIGIN and engine-sdk/
           # already resolve relative to the binary, so nothing moves.
           rm -rf AppDir && mkdir AppDir
           cp -a instdir AppDir/usr
@@ -373,20 +373,18 @@ jobs:
           codesign --verify --strict --verbose=2 "$APP" || echo "::warning::strict verify failed"
 
           set -e
-          # Same loose tree the zip had before the bundle: doriax-editor,
-          # libdoriax.dylib, engine/. Actions wraps this as doriax_macos.zip.
+          # The bundle's files as a loose tree: doriax-editor, libdoriax.dylib,
+          # engine-sdk/. Actions wraps this as doriax_macos.zip.
           BIN="$APP/Contents/MacOS"
           mkdir -p dist/macos-zip
           cp "$BIN/$(basename "$APP" .app)" dist/macos-zip/doriax-editor
           for dylib in "$BIN"/*.dylib; do
             [ -e "$dylib" ] && cp "$dylib" dist/macos-zip/
           done
-          if [ -d "$APP/Contents/Resources/engine" ]; then
-            cp -R "$APP/Contents/Resources/engine" dist/macos-zip/engine
-          elif [ -d "$BIN/engine" ]; then
-            cp -R "$BIN/engine" dist/macos-zip/engine
+          if [ -d "$APP/Contents/Resources/engine-sdk" ]; then
+            cp -R "$APP/Contents/Resources/engine-sdk" dist/macos-zip/engine-sdk
           else
-            echo "::error::no engine/ in the bundle"
+            echo "::error::no engine-sdk/ in the bundle"
             find "$APP" | head -40
             exit 1
           fi

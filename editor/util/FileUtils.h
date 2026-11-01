@@ -100,12 +100,12 @@ public:
         const fs::path exeDir = getExecutableDir();
 #if defined(__APPLE__)
         std::error_code ec;
-        const fs::path bundled = exeDir.parent_path() / "Resources" / "engine";
+        const fs::path bundled = exeDir.parent_path() / "Resources" / "engine-sdk";
         if (fs::exists(bundled, ec)) {
             return bundled;
         }
 #endif
-        return exeDir / "engine";
+        return exeDir / "engine-sdk";
     }
 
     // An AppImage mounts at a fresh path every launch, so anything written into
