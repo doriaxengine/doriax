@@ -16,6 +16,7 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <sstream>
 #include <system_error>
 #include <chrono>
 #include <unordered_set>
@@ -5650,6 +5651,33 @@ const char* versionControlAttributes =
     "*.ttf     binary\n"
     "*.otf     binary\n";
 
+// The lines of a refreshed file that the editor did not write, in their order
+std::string addedVersionControlLines(std::istream& file, const char* content) {
+    std::multiset<std::string> generated;
+    std::istringstream stream(content);
+    std::string line;
+    while (std::getline(stream, line)) {
+        generated.insert(line);
+    }
+
+    std::string added;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        auto it = generated.find(line);
+        if (it != generated.end()) {
+            generated.erase(it);
+        } else if (!added.empty() || !line.empty()) {
+            added += line + "\n";
+        }
+    }
+    while (!added.empty() && added.back() == '\n') {
+        added.pop_back();
+    }
+    return added.empty() ? added : added + "\n";
+}
+
 } // namespace
 
 bool editor::Project::writeVersionControlMetadata() {
@@ -5667,7 +5695,8 @@ bool editor::Project::writeVersionControlMetadata() {
         const fs::path target = projectPath / name;
 
         // Rules the project wrote itself are worth more than the editor's, so only a
-        // file carrying the marker is refreshed
+        // file carrying the marker is refreshed, and the lines added to it are kept
+        std::string merged = content;
         std::ifstream fin(target);
         if (fin) {
             std::string firstLine;
@@ -5675,10 +5704,15 @@ bool editor::Project::writeVersionControlMetadata() {
             if (firstLine.rfind(versionControlMarker, 0) != 0) {
                 continue;
             }
+            fin.seekg(0);
+            const std::string added = addedVersionControlLines(fin, content);
+            if (!added.empty()) {
+                merged += "\n" + added;
+            }
         }
         fin.close();
 
-        if (!FileUtils::writeIfChanged(target, content)) {
+        if (!FileUtils::writeIfChanged(target, merged)) {
             Out::error("Failed to write %s", target.string().c_str());
             success = false;
         }
