@@ -184,6 +184,8 @@ namespace doriax{
 		Vector4 exclusionCount; // x = volumes keeping the water out
 		Vector4 exclusionRows[MAX_WATER_EXCLUSIONS * 3]; // world to 0-1 across the volume, three rows each
 		Vector4 exclusionShapes[MAX_WATER_EXCLUSIONS];   // x = shape, y = hull map layer
+		Vector4 wakeArea;      // xy = world corner of the wake map, z = 1 / its world size, w = 1 when active
+		Vector4 wakeParams;    // x = wave slope scale, y = 1 / texels across
 	} fs_water_t;
 
 	typedef struct fs_underwater_t {
@@ -926,6 +928,7 @@ namespace doriax{
 		bool loadUnderwater(WaterComponent& water);
 		void updateWaterExclusions();
 		void setWaterExclusionParams(const WaterComponent& water, const Vector3& eye, fs_water_t& params);
+		void updateWaterWakes(double dt, const CameraComponent& camera, const Transform& cameraTransform);
 		// the fullscreen fade of the scene copy, in the pass already started
 		void drawUnderwater(WaterComponent& water, CameraComponent& camera, Transform& cameraTransform);
 
@@ -963,6 +966,8 @@ namespace doriax{
 		void setWaterPaused(bool waterPaused);
 		// moves the waves by the update time since the last call; draw() does it after drawing
 		void advanceWaters();
+		// drops all wakes, the editor calls it on Stop
+		void clearWaterWakes();
 
 		// the depth pass alpha-tests the submesh (MASK, or the legacy AUTO + textureShadow);
 		// the editor derives export keys from it, so the rule lives in one place

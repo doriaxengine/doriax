@@ -5352,6 +5352,9 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
         // Destroy all bundle instances created during play
         BundleManager::destroyAllInstances(sceneProject->scene);
 
+        // Drop the wakes left during play
+        sceneProject->scene->getSystem<RenderSystem>()->clearWaterWakes();
+
         // Restore snapshot if present
         if (sceneProject->playStateSnapshot && !sceneProject->playStateSnapshot.IsNull()) {
             Stream::decodeScene(sceneProject->scene, sceneProject->playStateSnapshot["scene"]);

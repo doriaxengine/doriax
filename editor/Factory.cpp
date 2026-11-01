@@ -1656,6 +1656,8 @@ std::string editor::Factory::createWaterComponent(int indentSpaces, EntityRegist
     code << ind << "water.underwater = " << formatBool(water.underwater) << ";\n";
     code << ind << "water.buoyancy = " << formatBool(water.buoyancy) << ";\n";
     code << ind << "water.buoyancyDepth = " << formatFloat(water.buoyancyDepth) << ";\n";
+    code << ind << "water.wakeArea = " << formatFloat(water.wakeArea) << ";\n";
+    code << ind << "water.wakeFade = " << formatFloat(water.wakeFade) << ";\n";
     if (!water.customShader.empty())
         code << ind << "water.customShader = " << formatString(water.customShader) << ";\n";
     if (!water.customUnderwaterShader.empty())
@@ -1679,6 +1681,8 @@ std::string editor::Factory::createWaterExclusionComponent(int indentSpaces, Ent
     code << ind << "exclusion.shape = WaterExclusionShape::" << shape << ";\n";
     code << ind << "exclusion.center = " << formatVector3(exclusion.center) << ";\n";
     code << ind << "exclusion.size = " << formatVector3(exclusion.size) << ";\n";
+    code << ind << "exclusion.wakeFoam = " << formatFloat(exclusion.wakeFoam) << ";\n";
+    code << ind << "exclusion.wakeWaves = " << formatFloat(exclusion.wakeWaves) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "WaterExclusionComponent", "exclusion", assignExisting);
     return code.str();
 }

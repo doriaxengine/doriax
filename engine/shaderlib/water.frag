@@ -37,6 +37,8 @@ uniform u_fs_waterParams {
     vec4 exclusionCount;           // x = volumes keeping the water out
     vec4 exclusionRows[MAX_WATER_EXCLUSIONS * 3]; // world to 0-1 across the volume, three rows each
     vec4 exclusionShapes[MAX_WATER_EXCLUSIONS];   // x = 0 box, 1 sphere, 2 hull; y = hull map layer
+    vec4 wakeArea;                 // xy = world corner of the wake map, z = 1 / its world size, w = 1 when active
+    vec4 wakeParams;               // x = wave slope scale, y = 1 / texels across
 } water;
 
 // same layout as fs_lighting_t (RenderSystem.h) and mesh.frag
@@ -68,6 +70,10 @@ uniform sampler u_sky_smp;
 // per hull: r = bottom, g = top (0-1 of its height), b < 0.5 inside its vertical walls
 uniform texture2DArray u_waterExclusionMaps;
 uniform sampler u_waterExclusionMaps_smp;
+
+// r = foam, g = wave height, repeating: each world texel is at its position modulo the size
+uniform texture2D u_waterWakeTexture;
+uniform sampler u_waterWake_smp;
 
 #ifdef USE_PLANAR_REFLECTION
     uniform texture2D u_reflectionTexture;
@@ -264,6 +270,30 @@ vec3 getRippleNormal(vec2 worldXZ){
     return normalize(vec3(n1.xy + n2.xy, n1.z * n2.z));
 }
 
+// one level, so it needs no derivatives inside a branch
+vec2 sampleWake(vec2 uv){
+    return textureLod(sampler2D(u_waterWakeTexture, u_waterWake_smp), uv, 0.0).rg;
+}
+
+// foam and wave height, faded at the map edges; slope is the wave tilt along x and z
+vec2 getWake(vec2 worldXZ, out vec2 slope){
+    slope = vec2(0.0);
+    if (water.wakeArea.w < 0.5)
+        return vec2(0.0);
+
+    vec2 local = (worldXZ - water.wakeArea.xy) * water.wakeArea.z;
+    float inside = smoothstep(0.0, 0.08, min(min(local.x, 1.0 - local.x), min(local.y, 1.0 - local.y)));
+    if (inside <= 0.0)
+        return vec2(0.0);
+
+    vec2 uv = worldXZ * water.wakeArea.z;
+    vec2 texel = vec2(water.wakeParams.y, 0.0);
+    float dx = sampleWake(uv + texel.xy).g - sampleWake(uv - texel.xy).g;
+    float dz = sampleWake(uv + texel.yx).g - sampleWake(uv - texel.yx).g;
+    slope = vec2(dx, dz) * water.wakeParams.x * inside;
+    return sampleWake(uv) * inside;
+}
+
 bool isExcluded(vec3 position){
     vec4 p = vec4(position, 1.0);
     for (int i = 0; i < int(water.exclusionCount.x); i++){
@@ -299,11 +329,15 @@ void main(){
     float waveDetail = 1.0 - smoothstep(0.04, 0.35, footprint / max(water.waveScale.x, 0.01));
     vec3 waveNormal = normalize(mix(vec3(0.0, 1.0, 0.0), v_normal, waveDetail));
 
-    // distant ripples fade, they would only shimmer
+    vec2 wakeSlope;
+    vec2 wake = getWake(v_position.xz, wakeSlope);
+
+    // distant ripples fade, they would only shimmer; wake foam calms them
     vec3 ripple = getRippleNormal(v_position.xz);
     float tileSize = 1.0 / max(water.ripples.x, 0.0001);
     float rippleStrength = water.ripples.y * mix(1.0, 0.3, smoothstep(tileSize * 15.0, tileSize * 120.0, eyeDistance));
-    vec3 n = normalize(waveNormal + vec3(ripple.x, 0.0, ripple.y) * (rippleStrength / max(ripple.z, 0.1)));
+    rippleStrength *= 1.0 - 0.6 * clamp(wake.r * 3.0, 0.0, 1.0);
+    vec3 n = normalize(waveNormal + vec3(ripple.x, 0.0, ripple.y) * (rippleStrength / max(ripple.z, 0.1)) - vec3(wakeSlope.x, 0.0, wakeSlope.y));
 
     // not gl_FrontFacing, which flips with the winding of offscreen passes; a grazing eye
     // above the water also sees the backs of waves facing away from it
@@ -426,6 +460,8 @@ void main(){
     float crestFoam = water.ripples.w;
     float crestMask = smoothstep(1.0 - crestFoam * 2.0, 1.0 - crestFoam, crest) * step(0.001, crestFoam);
     foam = max(foam, crestMask * smoothstep(0.4, 0.7, noise));
+    // wake foam breaks up as it fades
+    foam = max(foam, smoothstep(noise - 0.15, noise + 0.15, wake.r * 1.5) * min(0.35 + wake.r * 2.0, 1.0));
 
     vec3 color;
     float alpha;

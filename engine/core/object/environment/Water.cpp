@@ -416,6 +416,30 @@ float Water::getBuoyancyDepth() const{
     return water.buoyancyDepth;
 }
 
+void Water::setWakeArea(float wakeArea){
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    water.wakeArea = wakeArea;
+}
+
+float Water::getWakeArea() const{
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    return water.wakeArea;
+}
+
+void Water::setWakeFade(float wakeFade){
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    water.wakeFade = wakeFade;
+}
+
+float Water::getWakeFade() const{
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    return water.wakeFade;
+}
+
 void Water::setCustomShader(const std::string& path){
     WaterComponent& water = getComponent<WaterComponent>();
 

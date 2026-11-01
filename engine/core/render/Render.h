@@ -193,7 +193,8 @@ namespace doriax{
         WATERREFLECTION,     // water planar reflection camera target
         WATERREFRACTION,     // copy of the scene drawn before the water
         WATEREXCLUSION,      // hull maps of the volumes keeping the water out
-        PROBESOURCE          // reflection probe capture read by the prefilter
+        PROBESOURCE,         // reflection probe capture read by the prefilter
+        WATERWAKE            // foam and waves left by moving water exclusions
     };
 
     enum class TextureType {

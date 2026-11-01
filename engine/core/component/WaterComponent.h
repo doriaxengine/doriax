@@ -18,9 +18,11 @@
 #include "util/Color.h"
 #include <memory>
 #include <string>
+#include <vector>
 
 #define WATER_WAVE_COUNT 4
 #define MAX_WATER_SUBDIVISIONS 512
+#define WATER_WAKE_MAP_SIZE 256
 
 namespace doriax{
 
@@ -107,6 +109,17 @@ namespace doriax{
         bool underwater = true; // a camera inside sees the scene fade into the water
         bool buoyancy = true; // floats the dynamic bodies that have Body3D buoyancy
         float buoyancyDepth = 0.0f; // how far below the surface they still float, 0 = no bottom
+        float wakeArea = 64.0f; // world size of the wake map around the camera
+        float wakeFade = 8.0f; // seconds a wake takes to fade
+
+        // wake map built by RenderSystem, each world texel at its position modulo the size
+        TextureRender wakeTexture; // r = foam, g = wave height
+        std::vector<float> wakeFoam;
+        std::vector<float> wakeWaves;
+        std::vector<unsigned char> wakeTexels;
+        int wakeOrigin[2] = {0, 0}; // world texel at the map corner
+        float wakeTexelSize = 0.0f;
+        bool wakeActive = false;
 
         // advanced by RenderSystem::advanceWaters() at the end of each frame
         float wavePhase[WATER_WAVE_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};

@@ -28,6 +28,13 @@ namespace doriax{
         void setSize(const float x, const float y, const float z);
         Vector3 getSize() const;
 
+        // left on the water while moving, 0 = none
+        void setWakeFoam(float wakeFoam);
+        float getWakeFoam() const;
+
+        void setWakeWaves(float wakeWaves);
+        float getWakeWaves() const;
+
         // whether the world point is inside the volume
         bool contains(Vector3 point) const;
     };

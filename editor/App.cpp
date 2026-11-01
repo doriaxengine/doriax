@@ -2959,7 +2959,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v37: probe_filter downsamples each level from the one above.
     // v38: ssr fades out rough surfaces (SSR_MAX_ROUGHNESS).
     // v39: point shadow atlas sampled at an explicit LOD.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v39";
+    // v40: water samples the wake map of moving exclusions.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v40";
 }
 
 void editor::App::pushTabNotificationStyle(){

@@ -560,6 +560,8 @@ namespace {
         makeFastProperty<WaterComponent, bool, &WaterComponent::underwater>("underwater", PropertyType::Bool, UpdateFlags_None),
         makeFastProperty<WaterComponent, bool, &WaterComponent::buoyancy>("buoyancy", PropertyType::Bool, UpdateFlags_None),
         makeFastProperty<WaterComponent, float, &WaterComponent::buoyancyDepth>("buoyancyDepth", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<WaterComponent, float, &WaterComponent::wakeArea>("wakeArea", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<WaterComponent, float, &WaterComponent::wakeFade>("wakeFade", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<WaterComponent, std::string, &WaterComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, std::string, &WaterComponent::customUnderwaterShader>("customUnderwaterShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, ShaderUniformValues, &WaterComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
@@ -569,6 +571,8 @@ namespace {
         makeFastProperty<WaterExclusionComponent, WaterExclusionShape, &WaterExclusionComponent::shape>("shape", PropertyType::Enum, UpdateFlags_None),
         makeFastProperty<WaterExclusionComponent, Vector3, &WaterExclusionComponent::center>("center", PropertyType::Vector3, UpdateFlags_None),
         makeFastProperty<WaterExclusionComponent, Vector3, &WaterExclusionComponent::size>("size", PropertyType::Vector3, UpdateFlags_None),
+        makeFastProperty<WaterExclusionComponent, float, &WaterExclusionComponent::wakeFoam>("wakeFoam", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<WaterExclusionComponent, float, &WaterExclusionComponent::wakeWaves>("wakeWaves", PropertyType::Float, UpdateFlags_None),
     };
 
     static const FastPropertyDescriptor kSkyProperties[] = {

@@ -464,6 +464,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("underwater", &Water::isUnderwater, &Water::setUnderwater)
         .addProperty("buoyancy", &Water::isBuoyancy, &Water::setBuoyancy)
         .addProperty("buoyancyDepth", &Water::getBuoyancyDepth, &Water::setBuoyancyDepth)
+        .addProperty("wakeArea", &Water::getWakeArea, &Water::setWakeArea)
+        .addProperty("wakeFade", &Water::getWakeFade, &Water::setWakeFade)
         .addProperty("customShader", &Water::getCustomShader, &Water::setCustomShader)
         .addProperty("customUnderwaterShader", &Water::getCustomUnderwaterShader, &Water::setCustomUnderwaterShader)
         .addFunction("setShaderUniform",
@@ -493,6 +495,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setCenter", (void(WaterExclusion::*)(const float, const float, const float))&WaterExclusion::setCenter)
         .addProperty("size", &WaterExclusion::getSize, (void(WaterExclusion::*)(Vector3))&WaterExclusion::setSize)
         .addFunction("setSize", (void(WaterExclusion::*)(const float, const float, const float))&WaterExclusion::setSize)
+        .addProperty("wakeFoam", &WaterExclusion::getWakeFoam, &WaterExclusion::setWakeFoam)
+        .addProperty("wakeWaves", &WaterExclusion::getWakeWaves, &WaterExclusion::setWakeWaves)
         .addFunction("contains", &WaterExclusion::contains)
         .addFunction("getWaterExclusionComponent", &WaterExclusion::getComponent<WaterExclusionComponent>)
         .endClass();

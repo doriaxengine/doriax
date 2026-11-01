@@ -116,6 +116,13 @@ namespace doriax{
         void setBuoyancyDepth(float buoyancyDepth);
         float getBuoyancyDepth() const;
 
+        // world size of the wake map around the camera
+        void setWakeArea(float wakeArea);
+        float getWakeArea() const;
+
+        void setWakeFade(float wakeFade);
+        float getWakeFade() const;
+
         void setCustomShader(const std::string& path);
         std::string getCustomShader() const;
 

@@ -60,6 +60,30 @@ Vector3 WaterExclusion::getSize() const{
     return exclusion.size;
 }
 
+void WaterExclusion::setWakeFoam(float wakeFoam){
+    WaterExclusionComponent& exclusion = getComponent<WaterExclusionComponent>();
+
+    exclusion.wakeFoam = wakeFoam;
+}
+
+float WaterExclusion::getWakeFoam() const{
+    WaterExclusionComponent& exclusion = getComponent<WaterExclusionComponent>();
+
+    return exclusion.wakeFoam;
+}
+
+void WaterExclusion::setWakeWaves(float wakeWaves){
+    WaterExclusionComponent& exclusion = getComponent<WaterExclusionComponent>();
+
+    exclusion.wakeWaves = wakeWaves;
+}
+
+float WaterExclusion::getWakeWaves() const{
+    WaterExclusionComponent& exclusion = getComponent<WaterExclusionComponent>();
+
+    return exclusion.wakeWaves;
+}
+
 bool WaterExclusion::contains(Vector3 point) const{
     WaterExclusionComponent& exclusion = getComponent<WaterExclusionComponent>();
     Transform& transform = getComponent<Transform>();

@@ -1162,6 +1162,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("underwater", &WaterComponent::underwater, &WaterComponent::underwater)
         .addProperty("buoyancy", &WaterComponent::buoyancy, &WaterComponent::buoyancy)
         .addProperty("buoyancyDepth", &WaterComponent::buoyancyDepth, &WaterComponent::buoyancyDepth)
+        .addProperty("wakeArea", &WaterComponent::wakeArea, &WaterComponent::wakeArea)
+        .addProperty("wakeFade", &WaterComponent::wakeFade, &WaterComponent::wakeFade)
         .addProperty("needUpdateTexture", &WaterComponent::needUpdateTexture, &WaterComponent::needUpdateTexture)
         .addProperty("needReload", &WaterComponent::needReload, &WaterComponent::needReload)
         .endClass();
@@ -1171,6 +1173,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("shape", &WaterExclusionComponent::shape, &WaterExclusionComponent::shape)
         .addProperty("center", &WaterExclusionComponent::center, &WaterExclusionComponent::center)
         .addProperty("size", &WaterExclusionComponent::size, &WaterExclusionComponent::size)
+        .addProperty("wakeFoam", &WaterExclusionComponent::wakeFoam, &WaterExclusionComponent::wakeFoam)
+        .addProperty("wakeWaves", &WaterExclusionComponent::wakeWaves, &WaterExclusionComponent::wakeWaves)
         .addProperty("aabb", &WaterExclusionComponent::aabb)
         .addProperty("worldAABB", &WaterExclusionComponent::worldAABB)
         .endClass();

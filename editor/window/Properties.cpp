@@ -8802,6 +8802,16 @@ void editor::Properties::drawWaterComponent(ComponentType cpType, SceneProject* 
         propertyRow(RowPropertyType::FloatPositive, cpType, "buoyancyDepth", "Depth", sceneProject, entities, buoyancyDepthSettings);
     }
     endTable();
+
+    ImGui::SeparatorText("Wake");
+    beginTable(cpType, getLabelSize("Area"), "water_wake");
+    RowSettings wakeAreaSettings = floatSettings;
+    wakeAreaSettings.help = "World size of the square around the camera that keeps the wakes of moving Water Exclusions. Larger reaches farther with less detail.";
+    RowSettings wakeFadeSettings = floatSettings;
+    wakeFadeSettings.help = "Seconds a wake takes to fade.";
+    propertyRow(RowPropertyType::FloatPositive, cpType, "wakeArea", "Area", sceneProject, entities, wakeAreaSettings);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "wakeFade", "Fade", sceneProject, entities, wakeFadeSettings);
+    endTable();
 }
 
 void editor::Properties::drawWaterExclusionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
@@ -8823,6 +8833,17 @@ void editor::Properties::drawWaterExclusionComponent(ComponentType cpType, Scene
     if (entities.size() == 1 && exclusion.shape == WaterExclusionShape::HULL && exclusion.hullSignature != 0 && exclusion.hullPlanes.empty()){
         ImGui::TextDisabled("No mesh on this entity to wrap");
     }
+
+    ImGui::SeparatorText("Wake");
+    beginTable(cpType, getLabelSize("Waves"), "water_exclusion_wake");
+    RowSettings wakeFoamSettings;
+    wakeFoamSettings.secondColSize = 6 * ImGui::GetFontSize();
+    wakeFoamSettings.help = "Foam left behind and along the sides while moving, more near hull speed. 0 = none, up to 2.";
+    RowSettings wakeWavesSettings = wakeFoamSettings;
+    wakeWavesSettings.help = "Kelvin wake waves left while moving. 0 = none, up to 2. The water sets how long they last.";
+    propertyRow(RowPropertyType::FloatPositive, cpType, "wakeFoam", "Foam", sceneProject, entities, wakeFoamSettings);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "wakeWaves", "Waves", sceneProject, entities, wakeWavesSettings);
+    endTable();
 }
 
 void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){

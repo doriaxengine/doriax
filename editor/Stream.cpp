@@ -6544,6 +6544,8 @@ YAML::Node editor::Stream::encodeWaterComponent(const WaterComponent& water) {
     node["underwater"] = water.underwater;
     node["buoyancy"] = water.buoyancy;
     node["buoyancyDepth"] = water.buoyancyDepth;
+    node["wakeArea"] = water.wakeArea;
+    node["wakeFade"] = water.wakeFade;
 
     if (!water.customShader.empty())
         node["customShader"] = water.customShader;
@@ -6593,6 +6595,8 @@ WaterComponent editor::Stream::decodeWaterComponent(const YAML::Node& node, cons
     if (node["underwater"]) water.underwater = node["underwater"].as<bool>();
     if (node["buoyancy"]) water.buoyancy = node["buoyancy"].as<bool>();
     if (node["buoyancyDepth"]) water.buoyancyDepth = node["buoyancyDepth"].as<float>();
+    if (node["wakeArea"]) water.wakeArea = node["wakeArea"].as<float>();
+    if (node["wakeFade"]) water.wakeFade = node["wakeFade"].as<float>();
 
     // Written only when set
     water.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
@@ -6614,6 +6618,8 @@ YAML::Node editor::Stream::encodeWaterExclusionComponent(const WaterExclusionCom
     }
     node["center"] = encodeVector3(exclusion.center);
     node["size"] = encodeVector3(exclusion.size);
+    node["wakeFoam"] = exclusion.wakeFoam;
+    node["wakeWaves"] = exclusion.wakeWaves;
 
     return node;
 }
@@ -6630,6 +6636,8 @@ WaterExclusionComponent editor::Stream::decodeWaterExclusionComponent(const YAML
     }
     if (node["center"]) exclusion.center = decodeVector3(node["center"]);
     if (node["size"]) exclusion.size = decodeVector3(node["size"]);
+    if (node["wakeFoam"]) exclusion.wakeFoam = node["wakeFoam"].as<float>();
+    if (node["wakeWaves"]) exclusion.wakeWaves = node["wakeWaves"].as<float>();
 
     return exclusion;
 }
