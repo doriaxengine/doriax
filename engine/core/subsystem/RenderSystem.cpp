@@ -9439,6 +9439,38 @@ Matrix4 RenderSystem::getDirLightProjection(const Matrix4& viewMatrix, const Mat
     return Matrix4::orthoMatrix(minX, maxX, minY, maxY, -maxZ, -minZ);
 }
 
+// Fits the cascade to the bounding sphere of its view slice, so its texel size does not change
+// as the camera turns, and snaps it to whole texels so its edges do not swim as the camera moves.
+Matrix4 RenderSystem::getStableDirLightProjection(const Matrix4& lightView, const Matrix4& cameraView, float fov, float ratio, float sliceNear, float sliceFar, float extension){
+    // the smallest sphere around the slice is centered on the view axis
+    float tanY = tanf(fov * 0.5f);
+    float tanX = tanY * ratio;
+    float diagonal2 = tanX * tanX + tanY * tanY;
+    float centerDepth = std::min(sliceFar, 0.5f * (sliceNear + sliceFar) * (1.0f + diagonal2));
+    float radius = std::sqrt((sliceFar - centerDepth) * (sliceFar - centerDepth) + diagonal2 * sliceFar * sliceFar);
+
+    // margin for the widest PCF kernel, and a rounded radius that float noise cannot change
+    const float pcfMarginTexels = 4.0f;
+    float texels = (float)std::max(shadowAtlasSlotResolution, 64u);
+    radius *= texels / (texels - 2.0f * pcfMarginTexels);
+    radius = std::ceil(radius * 16.0f) / 16.0f;
+    float texel = 2.0f * radius / texels;
+
+    Vector4 center = lightView * (cameraView.inverse() * Vector4(0.0f, 0.0f, -centerDepth, 1.0f));
+    // texel grid anchored to the world origin, not to the light position
+    Vector4 origin = lightView * Vector4(0.0f, 0.0f, 0.0f, 1.0f);
+    float minX = std::floor((center.x - radius - origin.x) / texel) * texel + origin.x;
+    float minY = std::floor((center.y - radius - origin.y) / texel) * texel + origin.y;
+    float maxX = minX + 2.0f * radius;
+    float maxY = minY + 2.0f * radius;
+
+    // casters up to extension toward the light (+Z) can shadow the sphere
+    float minZ = center.z - radius * 1.05f;
+    float maxZ = center.z + radius + extension;
+
+    return Matrix4::orthoMatrix(minX, maxX, minY, maxY, -maxZ, -minZ);
+}
+
 // Planes around the casters that can shadow a cascade's slice of the view: the slice extruded
 // toward the light, widened by the normal offset and PCF reach. Returns 0 to skip culling.
 int RenderSystem::getShadowReceiverPlanes(const CameraComponent& camera, const LightComponent& light, int cascade, Plane* planes){
@@ -9580,12 +9612,9 @@ void RenderSystem::updateLightFromScene(LightComponent& light, Transform& transf
                     splitNear[i + 1] = splitFar[i];
                 }
 
-                // Get frustum box and create light ortho
+                // Get slice bounding sphere and create light ortho
                 for (int ca = 0; ca < light.numShadowCascades; ca++) {
-                    Matrix4 cascadeProjection = Matrix4::perspectiveMatrix(fov, ratio, splitNear[ca], splitFar[ca] + planeFarOffset);
-                    Matrix4 sceneCameraInv = (cascadeProjection * camera.viewMatrix).inverse();
-
-                    projectionMatrix[ca] = getDirLightProjection(viewMatrix, sceneCameraInv, shadowMaxDistance, light.worldDirection, cameraTransform.worldPosition);
+                    projectionMatrix[ca] = getStableDirLightProjection(viewMatrix, camera.viewMatrix, fov, ratio, splitNear[ca], splitFar[ca] + planeFarOffset, shadowMaxDistance * 0.5f);
 
                     light.cameras[ca].lightViewMatrix = viewMatrix;
                     light.cameras[ca].lightProjectionMatrix = projectionMatrix[ca];

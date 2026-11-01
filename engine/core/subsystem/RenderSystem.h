@@ -758,6 +758,7 @@ namespace doriax{
 		Rect getShadowPointAtlasSlotRect(int slotIndex) const;
 		void configureLightShadowNearFar(LightComponent& light, const CameraComponent& camera);
 		Matrix4 getDirLightProjection(const Matrix4& viewMatrix, const Matrix4& sceneCameraInv, float shadowMaxDistance, const Vector3& lightDirection, const Vector3& cameraPosition);
+		Matrix4 getStableDirLightProjection(const Matrix4& lightView, const Matrix4& cameraView, float fov, float ratio, float sliceNear, float sliceFar, float extension);
 		int getShadowReceiverPlanes(const CameraComponent& camera, const LightComponent& light, int cascade, Plane* planes);
 		bool checkPBRFrabebufferUpdate(Material& material);
 		bool checkPBRTextures(Material& material, bool receiveLights);
