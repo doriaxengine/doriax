@@ -413,7 +413,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_component_property",
-            "Set one supported component property through PropertyCmd. Use the typed value field matching the property type. Color properties are stored linear, while the Properties panel and C++ setters such as Image::setColor take sRGB: convert each sRGB channel c to c/12.92 when c <= 0.04045, else ((c+0.055)/1.055)^2.4, keeping alpha.",
+            "Set one supported component property through PropertyCmd. Use the typed value field matching the property type. Color properties are stored linear, while the Properties panel and C++ setters such as Image::setColor take sRGB: store each sRGB channel c as pow(c, 2.2) (Color::sRGBToLinear), keeping alpha. SkyComponent color, and ParticlesComponent or ColorActionComponent colors while their useSRGB is true, are stored sRGB: pass them unchanged.",
             objectSchemaFromProperties(propertyValueFields({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id")},
@@ -1208,7 +1208,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_component_properties",
-            "Set multiple supported component properties atomically through MultiPropertyCmd. Color properties are stored linear, while the Properties panel and C++ setters such as Image::setColor take sRGB: convert each sRGB channel c to c/12.92 when c <= 0.04045, else ((c+0.055)/1.055)^2.4, keeping alpha.",
+            "Set multiple supported component properties atomically through MultiPropertyCmd. Color properties are stored linear, while the Properties panel and C++ setters such as Image::setColor take sRGB: store each sRGB channel c as pow(c, 2.2) (Color::sRGBToLinear), keeping alpha. SkyComponent color, and ParticlesComponent or ColorActionComponent colors while their useSRGB is true, are stored sRGB: pass them unchanged.",
             objectSchemaFromProperties(propertyValueFields({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id")},

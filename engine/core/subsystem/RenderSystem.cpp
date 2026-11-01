@@ -2066,6 +2066,17 @@ bool RenderSystem::ensureShadowAtlas(unsigned int slotResolution, int usedSlots)
         return false;
     }
 
+    if (shadowAtlasSlotResolution != slotResolution){
+        // cascades are fitted to the slot texels
+        auto lights = scene->getComponentArray<LightComponent>();
+        for (size_t i = 0; i < lights->size(); i++){
+            LightComponent& light = lights->getComponentFromIndex(i);
+            if (light.type == LightType::DIRECTIONAL){
+                light.needUpdateShadowCamera = true;
+            }
+        }
+    }
+
     shadowAtlasSlotResolution = slotResolution;
     shadowAtlasCols = atlasCols;
     shadowAtlasRows = atlasRows;
@@ -9451,8 +9462,9 @@ Matrix4 RenderSystem::getStableDirLightProjection(const Matrix4& lightView, cons
 
     // margin for the widest PCF kernel, and a rounded radius that float noise cannot change
     const float pcfMarginTexels = 4.0f;
-    float texels = (float)std::max(shadowAtlasSlotResolution, 64u);
-    radius *= texels / (texels - 2.0f * pcfMarginTexels);
+    float texels = (float)std::max(shadowAtlasSlotResolution, 1u);
+    // a full margin would eat most of a small map
+    radius /= 1.0f - 2.0f * pcfMarginTexels / std::max(texels, 64.0f);
     radius = std::ceil(radius * 16.0f) / 16.0f;
     float texel = 2.0f * radius / texels;
 
@@ -11480,7 +11492,8 @@ void RenderSystem::draw(){
                     }
                 }
 
-                if (signature.test(scene->getComponentId<ImageComponent>())){
+                // buttons do not clip their label to the patch margins
+                if (signature.test(scene->getComponentId<ImageComponent>()) && !signature.test(scene->getComponentId<ButtonComponent>())){
                     ImageComponent& img = scene->getComponent<ImageComponent>(entity);
 
                     layout.scissor = getScissorRect(layout, img, transform, colorPassViewport);
