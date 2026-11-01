@@ -6075,8 +6075,8 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
     // Except those of deleted forks, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
-        const std::string fork = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
-        if (!fork.empty() && !fs::exists(projectPath / (fork + ".frag")) && !fs::exists(projectPath / (fork + ".vert"))) {
+        const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it)));
+        if (!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) {
             it = shaderKeys.erase(it);
         } else {
             ++it;
