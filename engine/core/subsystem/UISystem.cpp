@@ -432,6 +432,9 @@ void UISystem::createButtonObjects(Entity entity, ButtonComponent& button){
 
         labelui.color = Vector4(0.0, 0.0, 0.0, 1.0);
         labellayout.ignoreEvents = true;
+        // An image clips its children inside its patch margins, which on a short
+        // 9-patch button leaves the label a band too thin for its glyphs
+        labellayout.ignoreScissor = true;
         labellayout.anchorPreset = AnchorPreset::CENTER;
         labellayout.usingAnchors = true;
     }
