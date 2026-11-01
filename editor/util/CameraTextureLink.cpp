@@ -74,6 +74,28 @@ bool editor::CameraTextureLink::isCameraUsed(EntityRegistry* registry, Entity ca
 bool editor::CameraTextureLink::resolve(EntityRegistry* registry){
     bool changed = false;
 
+    auto resolveTexture = [&](Texture& texture) -> bool {
+        Entity cameraEntity = parse(texture.getId());
+        if (cameraEntity == NULL_ENTITY)
+            return false;
+
+        CameraComponent* camera = registry->findComponent<CameraComponent>(cameraEntity);
+        Framebuffer* target = camera ? camera->framebuffer : nullptr;
+
+        if (texture.getFramebuffer() == target)
+            return false;
+
+        if (!camera) {
+            Log::verbose("CameraTextureLink: camera entity %u no longer exists, clearing framebuffer of texture '%s'",
+                         (unsigned int)cameraEntity, texture.getId().c_str());
+        }
+
+        std::string textureId = texture.getId();
+        texture.setFramebuffer(target);
+        texture.setId(textureId);
+        return true;
+    };
+
     for (Entity entity : registry->getEntityList()){
         for (ComponentType cpType : Catalog::findComponents(registry, entity)){
             std::map<std::string, PropertyData> properties = Catalog::findEntityProperties(registry, entity, cpType);
@@ -82,23 +104,43 @@ bool editor::CameraTextureLink::resolve(EntityRegistry* registry){
                     continue;
 
                 Texture* texture = static_cast<Texture*>(prop.ref);
-                Entity cameraEntity = parse(texture->getId());
-                if (cameraEntity == NULL_ENTITY)
-                    continue;
-
-                CameraComponent* camera = registry->findComponent<CameraComponent>(cameraEntity);
-                Framebuffer* target = camera ? camera->framebuffer : nullptr;
-
-                if (texture->getFramebuffer() != target){
-                    std::string textureId = texture->getId();
-                    texture->setFramebuffer(target); // clears the id
-                    texture->setId(textureId);
-
+                if (resolveTexture(*texture)){
                     Catalog::updateEntity(registry, entity, prop.updateFlags);
                     changed = true;
                 }
             }
         }
+    }
+
+    Scene* scene = dynamic_cast<Scene*>(registry);
+    if (!scene)
+        return changed;
+
+    for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX,
+                            ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
+        auto textures = scene->getDefaultShaderTextures(type);
+        bool texturesChanged = false;
+        for (auto& entry : textures) {
+            if (resolveTexture(entry.second))
+                texturesChanged = true;
+        }
+        if (texturesChanged) {
+            scene->setDefaultShaderTextures(type, textures);
+            changed = true;
+        }
+    }
+
+    auto passes = scene->getPostProcessPasses();
+    bool passesChanged = false;
+    for (auto& pass : passes) {
+        for (auto& entry : pass.customTextures) {
+            if (resolveTexture(entry.second))
+                passesChanged = true;
+        }
+    }
+    if (passesChanged) {
+        scene->setPostProcessPasses(passes);
+        changed = true;
     }
 
     return changed;

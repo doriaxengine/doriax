@@ -571,19 +571,38 @@ namespace doriax{
 		CameraRender postProcessPassRender;    // drives the offscreen post passes
 		std::vector<PostProcessRuntime> postProcessPasses;
 
+		template<typename Binding>
+		static void loadCustomTextureBindings(
+			ShaderData& shaderData,
+			const std::vector<std::pair<std::string, Texture>>& own,
+			const std::vector<std::pair<std::string, Texture>>* inherited,
+			std::vector<Binding>& bindings);
+
+		template<typename Binding>
+		static void bindCustomTextures(
+			ObjectRender& render,
+			std::vector<Binding>& bindings,
+			const std::vector<std::pair<std::string, Texture>>& own,
+			const std::vector<std::pair<std::string, Texture>>* inherited);
+
+		static const Texture* findCustomTexture(
+			const std::vector<std::pair<std::string, Texture>>& own,
+			const std::vector<std::pair<std::string, Texture>>* inherited,
+			const std::string& name);
+
 		static void changeLoaded(void* data);
 		static void changeDestroy(void* data);
 		// water can share its entity with a mesh, so it has its own callbacks
 		static void changeWaterLoaded(void* data);
 		static void changeWaterDestroy(void* data);
 
-		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
-		static bool samplesCameraTarget(const CameraComponent& camera, const PointsComponent& points);
-		static bool samplesCameraTarget(const CameraComponent& camera, const LinesComponent& lines);
-		static bool samplesCameraTarget(const CameraComponent& camera, const UIComponent& ui);
-		static bool samplesCameraTarget(const CameraComponent& camera, const SkyComponent& sky);
-		static bool samplesCameraTarget(const CameraComponent& camera, const WaterComponent& water);
-		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
+		bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
+		bool samplesCameraTarget(const CameraComponent& camera, const PointsComponent& points);
+		bool samplesCameraTarget(const CameraComponent& camera, const LinesComponent& lines);
+		bool samplesCameraTarget(const CameraComponent& camera, const UIComponent& ui);
+		bool samplesCameraTarget(const CameraComponent& camera, const SkyComponent& sky);
+		bool samplesCameraTarget(const CameraComponent& camera, const WaterComponent& water);
+		bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		void updateSwapchainRedirect();

@@ -3038,6 +3038,14 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
             // custom blocks of a forked depth shader, sharing the mesh values
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
+
+            for (const std::string& name : depthShaderData.getCustomTextureNames()) {
+                bool present = std::any_of(mesh.customDepthTextures.begin(), mesh.customDepthTextures.end(),
+                    [&](const auto& e){ return e.first == name; });
+                if (!present)
+                    mesh.customDepthTextures.push_back({name, Texture()});
+            }
+
             mesh.submeshes[i].customVSDepthParams.resolve(depthShaderData, "u_vs_customParams");
             mesh.submeshes[i].customFSDepthParams.resolve(depthShaderData, "u_fs_customParams");
             mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
@@ -3078,6 +3086,13 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         render.setShader(mesh.submeshes[i].shader.get());
         ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
+
+        for (const std::string& name : shaderData.getCustomTextureNames()) {
+            bool present = std::any_of(mesh.customTextures.begin(), mesh.customTextures.end(),
+                [&](const auto& e){ return e.first == name; });
+            if (!present)
+                mesh.customTextures.push_back({name, Texture()});
+        }
 
         mesh.submeshes[i].slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_PARAMS);
         mesh.submeshes[i].slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_PARAMS);
@@ -3129,30 +3144,11 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             return false;
         }
 
-        const std::vector<std::pair<std::string, Texture>>& meshCustomTextureSource =
-            mesh.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::MESH) : mesh.customTextures;
-
-        mesh.submeshes[i].customTextureBindings.clear();
-        for (const std::string& name : shaderData.getCustomTextureNames()){
-            std::pair<int, int> slot = shaderData.getTextureIndexByName(name);
-            if (slot.first == -1)
-                continue;
-
-            Submesh::CustomTextureBinding binding;
-            binding.name = name;
-            binding.slot = slot;
-
-            auto it = std::find_if(meshCustomTextureSource.begin(), meshCustomTextureSource.end(),
-                [&](const auto& e){ return e.first == name; });
-            if (it != meshCustomTextureSource.end()){
-                Texture& texture = const_cast<Texture&>(it->second);
-                TextureLoadResult result = texture.load();
-                if (result.state == ResourceLoadState::Finished){
-                    binding.render = texture.getRender(&emptyWhite);
-                }
-            }
-
-            mesh.submeshes[i].customTextureBindings.push_back(std::move(binding));
+        const std::vector<std::pair<std::string, Texture>>* meshInheritedTextures =
+            mesh.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::MESH) : nullptr;
+        loadCustomTextureBindings(shaderData, mesh.customTextures, meshInheritedTextures, mesh.submeshes[i].customTextureBindings);
+        for (Submesh::CustomTextureBinding& binding : mesh.submeshes[i].customTextureBindings){
+            render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
         }
 
         loadShadowTextures(shaderData, mesh.submeshes[i].render, mesh.receiveLights, p_receiveShadows);
@@ -3291,27 +3287,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 }
             }
 
-            mesh.submeshes[i].customDepthTextureBindings.clear();
-            std::vector<std::string> depthSamplerNames = depthShaderData.getCustomTextureNames();
-            for (const std::string& name : depthSamplerNames){
-                std::pair<int, int> slot = depthShaderData.getTextureIndexByName(name);
-                if (slot.first == -1)
-                    continue;
-
-                Submesh::CustomTextureBinding binding;
-                binding.name = name;
-                binding.slot = slot;
-
-                auto it = std::find_if(mesh.customDepthTextures.begin(), mesh.customDepthTextures.end(),
-                    [&](const auto& e){ return e.first == name; });
-                if (it != mesh.customDepthTextures.end()){
-                    TextureLoadResult result = it->second.load();
-                    if (result.state == ResourceLoadState::Finished){
-                        binding.render = it->second.getRender(&emptyWhite);
-                    }
-                }
-
-                mesh.submeshes[i].customDepthTextureBindings.push_back(std::move(binding));
+            loadCustomTextureBindings(depthShaderData, mesh.customDepthTextures, nullptr, mesh.submeshes[i].customDepthTextureBindings);
+            for (Submesh::CustomTextureBinding& binding : mesh.submeshes[i].customDepthTextureBindings){
+                depthRender.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
             }
 
             if (terrain){
@@ -3530,6 +3508,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
     mesh.needReload = false;
     mesh.needUpdateShaderUniforms = false;
+
+    mesh.needUpdateCustomTextures = false;
+    mesh.needUpdateCustomDepthTextures = false;
+
     mesh.needUpdateAABB = true;
     mesh.loadCalled = true;
 
@@ -4257,24 +4239,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 applyTerrainLayersUniform(render, mesh.submeshes[i].slotFSTerrainLayers, entity, *terrain);
             }
 
-            const std::vector<std::pair<std::string, Texture>>& meshCustomTextureSource =
-                mesh.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::MESH) : mesh.customTextures;
-
-            for (Submesh::CustomTextureBinding& binding : mesh.submeshes[i].customTextureBindings){
-                if (!binding.render && binding.slot.first != -1){
-                    auto it = std::find_if(meshCustomTextureSource.begin(), meshCustomTextureSource.end(),
-                        [&](const auto& e){ return e.first == binding.name; });
-                    if (it != meshCustomTextureSource.end()){
-                        Texture& texture = const_cast<Texture&>(it->second);
-                        TextureLoadResult result = texture.load();
-                        if (result.state == ResourceLoadState::Finished){
-                            binding.render = texture.getRender(&emptyWhite);
-                        }
-                    }
-                }
-                render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
-                                    binding.render ? binding.render : &emptyWhite);
-            }
+            const std::vector<std::pair<std::string, Texture>>* meshInheritedTextures =
+                mesh.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::MESH) : nullptr;
+            bindCustomTextures(render, mesh.submeshes[i].customTextureBindings, mesh.customTextures, meshInheritedTextures);
 
             //model, normal and mvp matrix
             render.applyUniformBlock(mesh.submeshes[i].slotVSParams, sizeof(float) * 48, &transform.modelMatrix);
@@ -4391,25 +4358,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthTerrain, sizeof(float) * 8, &(terrain->eyePos));
             }
 
-            for (Submesh::CustomTextureBinding& binding : mesh.submeshes[i].customDepthTextureBindings){
-                if (!binding.render && binding.slot.first != -1){
-                    auto it = std::find_if(mesh.customDepthTextures.begin(), mesh.customDepthTextures.end(),
-                        [&](const auto& e){ return e.first == binding.name; });
-                    if (it != mesh.customDepthTextures.end()){
-                        TextureLoadResult result = it->second.load();
-                        if (result.state == ResourceLoadState::Finished){
-                            binding.render = it->second.getRender(&emptyWhite);
-                        }
-                    }
-                }
-
-                if (!binding.render || !binding.render->isCreated()){
-                    depthRender.addTexture(binding.slot, ShaderStageType::FRAGMENT, &emptyWhite);
-                    continue;
-                }
-
-                depthRender.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render);
-            }
+            bindCustomTextures(depthRender, mesh.submeshes[i].customDepthTextureBindings, mesh.customDepthTextures, nullptr);
 
             if (tilemap && !tilemapDrawRanges.empty()){
                 if (instmesh){
@@ -5735,6 +5684,13 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
     render.setShader(ui.shader.get());
     ShaderData& shaderData = ui.shader.get()->shaderData;
 
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(ui.customTextures.begin(), ui.customTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        if (!present)
+            ui.customTextures.push_back({name, Texture()});
+    }
+
     ui.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_VS_PARAMS);
     ui.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_FS_PARAMS);
     ui.customVSParams.resolve(shaderData, "u_vs_customParams");
@@ -5791,27 +5747,11 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
     
     ui.needUpdateTexture = false;
 
-    const std::vector<std::pair<std::string, Texture>>& uiTextureSource =
-    ui.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::UI) : ui.customTextures;
-
-    ui.customTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        auto slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1) continue;
-
-        UIComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(uiTextureSource.begin(), uiTextureSource.end(),
-            [&](const auto& e){ return e.first == name; });
-        if (it != uiTextureSource.end()){
-            Texture& texture = const_cast<Texture&>(it->second);
-            TextureLoadResult result = texture.load();
-            if (result.state == ResourceLoadState::Finished)
-                binding.render = texture.getRender(&emptyWhite);
-        }
-        ui.customTextureBindings.push_back(std::move(binding));
+    const std::vector<std::pair<std::string, Texture>>* uiInheritedTextures =
+        ui.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::UI) : nullptr;
+    loadCustomTextureBindings(shaderData, ui.customTextures, uiInheritedTextures, ui.customTextureBindings);
+    for (UIComponent::CustomTextureBinding& binding : ui.customTextureBindings){
+        render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     if (!render.endLoad(pipelines, false, true, CullingMode::BACK, WindingOrder::CCW)){
@@ -5866,23 +5806,9 @@ bool RenderSystem::drawUI(UIComponent& ui, Transform& transform, PipelineType pi
         render.applyUniformBlock(ui.slotFSParams, sizeof(float) * 4, &ui.color);
         applyCustomUniforms(render, ui, scene, ShaderType::UI, frameTime, passResolution);
 
-        const std::vector<std::pair<std::string, Texture>>& uiTextureSource =
-            ui.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::UI) : ui.customTextures;
-
-        for (UIComponent::CustomTextureBinding& binding : ui.customTextureBindings){
-            if (!binding.render && binding.slot.first != -1){
-                auto it = std::find_if(uiTextureSource.begin(), uiTextureSource.end(),
-                    [&](const auto& e){ return e.first == binding.name; });
-                if (it != uiTextureSource.end()){
-                    Texture& texture = const_cast<Texture&>(it->second);
-                    TextureLoadResult result = texture.load();
-                    if (result.state == ResourceLoadState::Finished)
-                        binding.render = texture.getRender(&emptyWhite);
-                }
-            }
-            render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
-                            binding.render ? binding.render : &emptyWhite);
-        }
+        const std::vector<std::pair<std::string, Texture>>* uiInheritedTextures =
+            ui.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::UI) : nullptr;
+        bindCustomTextures(render, ui.customTextureBindings, ui.customTextures, uiInheritedTextures);
 
         render.draw(0, ui.vertexCount, 1);
 
@@ -5982,6 +5908,13 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
     render.setShader(points.shader.get());
     ShaderData& shaderData = points.shader.get()->shaderData;
 
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(points.customTextures.begin(), points.customTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        if (!present)
+            points.customTextures.push_back({name, Texture()});
+    }
+
     points.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::POINTS_VS_PARAMS);
     points.customVSParams.resolve(shaderData, "u_vs_customParams");
     points.customFSParams.resolve(shaderData, "u_fs_customParams");
@@ -6021,29 +5954,11 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
 
     points.needUpdateTexture = false;
 
-    const std::vector<std::pair<std::string, Texture>>& pointsTextureSource =
-        points.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::POINTS) : points.customTextures;
-
-    points.customTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        std::pair<int, int> slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1)
-            continue;
-
-        PointsComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(pointsTextureSource.begin(), pointsTextureSource.end(),
-            [&](const auto& e){ return e.first == name; });
-        if (it != pointsTextureSource.end()){
-            Texture& texture = const_cast<Texture&>(it->second);
-            TextureLoadResult result = texture.load();
-            if (result.state == ResourceLoadState::Finished)
-                binding.render = texture.getRender(&emptyWhite);
-        }
-
-        points.customTextureBindings.push_back(std::move(binding));
+    const std::vector<std::pair<std::string, Texture>>* pointsInheritedTextures =
+        points.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::POINTS) : nullptr;
+    loadCustomTextureBindings(shaderData, points.customTextures, pointsInheritedTextures, points.customTextureBindings);
+    for (PointsComponent::CustomTextureBinding& binding : points.customTextureBindings) {
+        render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     // no depth write: transparent quads would hide the points drawn after them
@@ -6089,6 +6004,13 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
     render.setShader(lines.shader.get());
     ShaderData& shaderData = lines.shader.get()->shaderData;
 
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(lines.customTextures.begin(), lines.customTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        if (!present)
+            lines.customTextures.push_back({name, Texture()});
+    }
+
     lines.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::LINES_VS_PARAMS);
     lines.customVSParams.resolve(shaderData, "u_vs_customParams");
     lines.customFSParams.resolve(shaderData, "u_fs_customParams");
@@ -6119,29 +6041,11 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
     // buffer is dynamic
     lines.needUpdateBuffer = true;
 
-    const std::vector<std::pair<std::string, Texture>>& linesTextureSource =
-        lines.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::LINES) : lines.customTextures;
-
-    lines.customTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        std::pair<int, int> slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1)
-            continue;
-
-        LinesComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(linesTextureSource.begin(), linesTextureSource.end(),
-            [&](const auto& e){ return e.first == name; });
-        if (it != linesTextureSource.end()){
-            Texture& texture = const_cast<Texture&>(it->second);
-            TextureLoadResult result = texture.load();
-            if (result.state == ResourceLoadState::Finished)
-                binding.render = texture.getRender(&emptyWhite);
-        }
-
-        lines.customTextureBindings.push_back(std::move(binding));
+    const std::vector<std::pair<std::string, Texture>>* linesInheritedTextures =
+        lines.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::LINES) : nullptr;
+    loadCustomTextureBindings(shaderData, lines.customTextures, linesInheritedTextures, lines.customTextureBindings);
+    for (LinesComponent::CustomTextureBinding& binding : lines.customTextureBindings) {
+        render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     if (!render.endLoad(pipelines, false, true, CullingMode::BACK, WindingOrder::CCW)){
@@ -6238,23 +6142,9 @@ bool RenderSystem::drawPoints(PointsComponent& points, Transform& transform, Cam
         render.applyUniformBlock(points.slotVSParams, sizeof(vs_points_params_t), &vsParams);
         applyCustomUniforms(render, points, scene, ShaderType::POINTS, frameTime, passResolution);
 
-        const std::vector<std::pair<std::string, Texture>>& pointsTextureSource =
-            points.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::POINTS) : points.customTextures;
-
-        for (PointsComponent::CustomTextureBinding& binding : points.customTextureBindings){
-            if (!binding.render && binding.slot.first != -1){
-                auto it = std::find_if(pointsTextureSource.begin(), pointsTextureSource.end(),
-                    [&](const auto& e){ return e.first == binding.name; });
-                if (it != pointsTextureSource.end()){
-                    Texture& texture = const_cast<Texture&>(it->second);
-                    TextureLoadResult result = texture.load();
-                    if (result.state == ResourceLoadState::Finished)
-                        binding.render = texture.getRender(&emptyWhite);
-                }
-            }
-            render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
-                                binding.render ? binding.render : &emptyWhite);
-        }
+        const std::vector<std::pair<std::string, Texture>>* pointsInheritedTextures =
+            points.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::POINTS) : nullptr;
+        bindCustomTextures(render, points.customTextureBindings, points.customTextures, pointsInheritedTextures);
 
         render.draw(0, points.numVisible, 1);
     }
@@ -6317,23 +6207,9 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
         render.applyUniformBlock(lines.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
         applyCustomUniforms(render, lines, scene, ShaderType::LINES, frameTime, passResolution);
 
-        const std::vector<std::pair<std::string, Texture>>& linesTextureSource =
-            lines.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::LINES) : lines.customTextures;
-
-        for (LinesComponent::CustomTextureBinding& binding : lines.customTextureBindings){
-            if (!binding.render && binding.slot.first != -1){
-                auto it = std::find_if(linesTextureSource.begin(), linesTextureSource.end(),
-                    [&](const auto& e){ return e.first == binding.name; });
-                if (it != linesTextureSource.end()){
-                    Texture& texture = const_cast<Texture&>(it->second);
-                    TextureLoadResult result = texture.load();
-                    if (result.state == ResourceLoadState::Finished)
-                        binding.render = texture.getRender(&emptyWhite);
-                }
-            }
-            render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
-                                binding.render ? binding.render : &emptyWhite);
-        }
+        const std::vector<std::pair<std::string, Texture>>* linesInheritedTextures =
+            lines.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::LINES) : nullptr;
+        bindCustomTextures(render, lines.customTextureBindings, lines.customTextures, linesInheritedTextures);
     
         render.draw(0, lines.lines.size() * 2, 1);
     }
@@ -6446,27 +6322,18 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
     render->setShader(sky.shader.get());
     ShaderData& shaderData = sky.shader.get()->shaderData;
 
-    const std::vector<std::pair<std::string, Texture>>& skyTextureSource =
-        sky.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::SKYBOX) : sky.customTextures;
-
-    sky.customTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        auto slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1) continue;
-
-        SkyComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(skyTextureSource.begin(), skyTextureSource.end(),
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(sky.customTextures.begin(), sky.customTextures.end(),
             [&](const auto& e){ return e.first == name; });
-        if (it != skyTextureSource.end()){
-            Texture& texture = const_cast<Texture&>(it->second);
-            TextureLoadResult result = texture.load();
-            if (result.state == ResourceLoadState::Finished)
-                binding.render = texture.getRender(&emptyWhite);
-        }
-        sky.customTextureBindings.push_back(std::move(binding));
+        if (!present)
+            sky.customTextures.push_back({name, Texture()});
+    }
+
+    const std::vector<std::pair<std::string, Texture>>* skyInheritedTextures =
+        sky.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::SKYBOX) : nullptr;
+    loadCustomTextureBindings(shaderData, sky.customTextures, skyInheritedTextures, sky.customTextureBindings);
+    for (SkyComponent::CustomTextureBinding& binding : sky.customTextureBindings) {
+        render->addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     sky.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::SKY_VS_PARAMS);
@@ -6534,23 +6401,9 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
         render.applyUniformBlock(sky.slotFSParams, sizeof(float) * 4, &sky.color);
         applyCustomUniforms(render, sky, scene, ShaderType::SKYBOX, frameTime, passResolution);
 
-        const std::vector<std::pair<std::string, Texture>>& skyTextureSource =
-            sky.customShader.empty() ? scene->getDefaultShaderTextures(ShaderType::SKYBOX) : sky.customTextures;
-
-        for (SkyComponent::CustomTextureBinding& binding : sky.customTextureBindings){
-            if (!binding.render && binding.slot.first != -1){
-                auto it = std::find_if(skyTextureSource.begin(), skyTextureSource.end(),
-                    [&](const auto& e){ return e.first == binding.name; });
-                if (it != skyTextureSource.end()){
-                    Texture& texture = const_cast<Texture&>(it->second);
-                    TextureLoadResult result = texture.load();
-                    if (result.state == ResourceLoadState::Finished)
-                        binding.render = texture.getRender(&emptyWhite);
-                }
-            }
-            render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
-                            binding.render ? binding.render : &emptyWhite);
-        }
+        const std::vector<std::pair<std::string, Texture>>* skyInheritedTextures =
+            sky.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::SKYBOX) : nullptr;
+        bindCustomTextures(render, sky.customTextureBindings, sky.customTextures, skyInheritedTextures);
 
         render.draw(0, 36, 1);
     }
@@ -6893,6 +6746,13 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
     render.setShader(water.shader.get());
     ShaderData& shaderData = water.shader.get()->shaderData;
 
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(water.customTextures.begin(), water.customTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        if (!present)
+            water.customTextures.push_back({name, Texture()});
+    }
+
     // built-in ripples as fallback, recreated after a view loss clears the pools
     if (!water.defaultNormalMap || !water.defaultNormalMap->isCreated()){
         water.defaultNormalMap = getDefaultWaterNormalMap();
@@ -6987,26 +6847,11 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
     render.addAttribute(shaderData.getAttrIndex(AttributeType::POSITION), water.buffer.getRender(), attVertex->getElements(), attVertex->getDataType(), water.buffer.getStride(), attVertex->getOffset(), attVertex->getNormalized(), attVertex->getPerInstance());
     render.setIndex(water.indices.getRender(), AttributeDataType::UNSIGNED_INT, 0);
 
-    water.customTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        std::pair<int, int> slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1)
-            continue;
-
-        WaterComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(water.customTextures.begin(), water.customTextures.end(),
-            [&](const auto& e){ return e.first == name; });
-        if (it != water.customTextures.end()){
-            TextureLoadResult result = it->second.load();
-            if (result.state == ResourceLoadState::Finished){
-                binding.render = it->second.getRender(&emptyWhite);
-            }
-        }
-
-        water.customTextureBindings.push_back(std::move(binding));
+    const std::vector<std::pair<std::string, Texture>>* waterInheritedTextures =
+        water.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::WATER) : nullptr;
+    loadCustomTextureBindings(shaderData, water.customTextures, waterInheritedTextures, water.customTextureBindings);
+    for (WaterComponent::CustomTextureBinding& binding : water.customTextureBindings) {
+        render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     // no culling to show it from below, depth written for the transparencies drawn after it
@@ -7220,23 +7065,9 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     applyCustomUniforms(render, water.customVSParams, frameTime, passResolution);
     applyCustomUniforms(render, water.customFSParams, frameTime, passResolution);
 
-    for (WaterComponent::CustomTextureBinding& binding : water.customTextureBindings) {
-        if (!binding.render && binding.slot.first != -1){
-            auto it = std::find_if(water.customTextures.begin(), water.customTextures.end(),
-                [&](const auto& e){ return e.first == binding.name; });
-            if (it != water.customTextures.end()) {
-                TextureLoadResult result = it->second.load();
-                if (result.state == ResourceLoadState::Finished)
-                    binding.render = it->second.getRender(&emptyWhite);
-            }
-        }
-
-        if (!binding.render || !binding.render->isCreated()){
-            render.addTexture(binding.slot, ShaderStageType::FRAGMENT, &emptyWhite);
-            continue;
-        }
-        render.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render);
-    }
+    const std::vector<std::pair<std::string, Texture>>* waterInheritedTextures =
+        water.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::WATER) : nullptr;
+    bindCustomTextures(render, water.customTextureBindings, water.customTextures, waterInheritedTextures);
 
     render.draw(0, water.indexCount, 1);
 
@@ -7491,32 +7322,23 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     }
 
     ShaderData& shaderData = water.underwaterShader.get()->shaderData;
+
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        bool present = std::any_of(water.customUnderwaterTextures.begin(), water.customUnderwaterTextures.end(),
+            [&](const auto& e){ return e.first == name; });
+        if (!present)
+            water.customUnderwaterTextures.push_back({name, Texture()});
+    }
+
     water.underwaterRender.beginLoad(PrimitiveType::TRIANGLES);
     water.underwaterRender.setShader(water.underwaterShader.get());
     water.slotUnderwaterParams = shaderData.getUniformBlockIndex(UniformBlockType::UNDERWATER_FS_PARAMS);
     water.customUnderwaterParams.resolve(shaderData, "u_fs_customParams");
     water.customUnderwaterParams.writeValues(water.shaderUniforms, scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader));
 
-    water.customUnderwaterTextureBindings.clear();
-    for (const std::string& name : shaderData.getCustomTextureNames()){
-        std::pair<int, int> slot = shaderData.getTextureIndexByName(name);
-        if (slot.first == -1)
-            continue;
-
-        WaterComponent::CustomTextureBinding binding;
-        binding.name = name;
-        binding.slot = slot;
-
-        auto it = std::find_if(water.customUnderwaterTextures.begin(), water.customUnderwaterTextures.end(),
-            [&](const auto& e){ return e.first == name; });
-        if (it != water.customUnderwaterTextures.end()){
-            TextureLoadResult result = it->second.load();
-            if (result.state == ResourceLoadState::Finished){
-                binding.render = it->second.getRender(&emptyWhite);
-            }
-        }
-
-        water.customUnderwaterTextureBindings.push_back(std::move(binding));
+    loadCustomTextureBindings(shaderData, water.customUnderwaterTextures, nullptr, water.customUnderwaterTextureBindings);
+    for (WaterComponent::CustomTextureBinding& binding : water.customUnderwaterTextureBindings) {
+        water.underwaterRender.addTexture(binding.slot, ShaderStageType::FRAGMENT, binding.render ? binding.render : &emptyWhite);
     }
 
     if (!water.underwaterRender.endLoad(PIP_RTT_NODEPTH, false, true, CullingMode::BACK, WindingOrder::CCW))
@@ -7572,6 +7394,9 @@ void RenderSystem::drawUnderwater(WaterComponent& water, CameraComponent& camera
     render.applyUniformBlock(water.slotUnderwaterParams, sizeof(fs_underwater_t), &params);
     writeCustomUniforms(water, scene);
     applyCustomUniforms(render, water.customUnderwaterParams, frameTime, passResolution);
+
+    bindCustomTextures(water.underwaterRender, water.customUnderwaterTextureBindings, water.customUnderwaterTextures, nullptr);
+
     render.draw(0, 3, 1);
 }
 
@@ -8876,6 +8701,72 @@ void RenderSystem::updateLightFromScene(LightComponent& light, Transform& transf
     }
 }
 
+const Texture* RenderSystem::findCustomTexture(
+        const std::vector<std::pair<std::string, Texture>>& own,
+        const std::vector<std::pair<std::string, Texture>>* inherited,
+        const std::string& name) {
+    auto it = std::find_if(own.begin(), own.end(),
+        [&](const auto& e){ return e.first == name; });
+    if (it != own.end() && !it->second.empty())
+        return &it->second;
+
+    if (inherited) {
+        auto jt = std::find_if(inherited->begin(), inherited->end(),
+            [&](const auto& e){ return e.first == name; });
+        if (jt != inherited->end() && !jt->second.empty())
+            return &jt->second;
+    }
+
+    return nullptr;
+}
+
+template<typename Binding>
+void RenderSystem::loadCustomTextureBindings(
+        ShaderData& shaderData,
+        const std::vector<std::pair<std::string, Texture>>& own,
+        const std::vector<std::pair<std::string, Texture>>* inherited,
+        std::vector<Binding>& bindings) {
+    bindings.clear();
+    for (const std::string& name : shaderData.getCustomTextureNames()) {
+        auto slot = shaderData.getTextureIndexByName(name);
+        if (slot.first == -1) continue;
+
+        Binding binding;
+        binding.name = name;
+        binding.slot = slot;
+
+        const Texture* source = findCustomTexture(own, inherited, name);
+        if (source) {
+            Texture& texture = const_cast<Texture&>(*source);
+            if (texture.load().state == ResourceLoadState::Finished)
+                binding.render = texture.getRender(&emptyWhite);
+        }
+        bindings.push_back(std::move(binding));
+    }
+}
+
+template<typename Binding>
+void RenderSystem::bindCustomTextures(
+        ObjectRender& render,
+        std::vector<Binding>& bindings,
+        const std::vector<std::pair<std::string, Texture>>& own,
+        const std::vector<std::pair<std::string, Texture>>* inherited) {
+    for (Binding& binding : bindings) {
+        if ((!binding.render || !binding.render->isCreated()) && binding.slot.first != -1) {
+            const Texture* source = findCustomTexture(own, inherited, binding.name);
+            if (source) {
+                Texture& texture = const_cast<Texture&>(*source);
+                if (texture.load().state == ResourceLoadState::Finished)
+                    binding.render = texture.getRender(&emptyWhite);
+            }
+        }
+
+        const bool ready = binding.render && binding.render->isCreated();
+        render.addTexture(binding.slot, ShaderStageType::FRAGMENT,
+                          ready ? binding.render : &emptyWhite);
+    }
+}
+
 void RenderSystem::changeLoaded(void* data){
     if (!Engine::isViewLoaded())
         return;
@@ -9012,6 +8903,13 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
         }
     }
 
+    if (mesh.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::MESH)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
+    }
+
     return false;
 }
 
@@ -9025,6 +8923,13 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const UICo
     for (const auto& entry : ui.customTextures){
         if (entry.second.getFramebuffer() == camera.framebuffer)
             return true;
+    }
+
+    if (ui.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::UI)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
     }
 
     return false;
@@ -9042,6 +8947,13 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const SkyC
             return true;
     }
 
+    if (sky.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::SKYBOX)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
+    }
+
     return false;
 }
 
@@ -9057,6 +8969,13 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Poin
             return true;
     }
 
+    if (points.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::POINTS)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
+    }
+
     return false;
 }
 
@@ -9069,15 +8988,19 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Line
             return true;
     }
 
+    if (lines.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::LINES)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
+    }
+
     return false;
 }
 
 bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const WaterComponent& water){
     if (!camera.renderToTexture)
         return false;
-
-    if (water.normalTexture.getFramebuffer() == camera.framebuffer)
-        return true;
 
     for (const auto& entry : water.customTextures){
         if (entry.second.getFramebuffer() == camera.framebuffer)
@@ -9087,6 +9010,13 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Wate
     for (const auto& entry : water.customUnderwaterTextures){
         if (entry.second.getFramebuffer() == camera.framebuffer)
             return true;
+    }
+
+    if (water.customShader.empty()){
+        for (const auto& entry : scene->getDefaultShaderTextures(ShaderType::WATER)){
+            if (entry.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
     }
 
     return false;
@@ -9900,13 +9830,6 @@ void RenderSystem::update(double dt){
                 water.needUpdateCustomUnderwaterTextures = false;
                 water.needReload = true;
             }
-        }else if (signature.test(scene->getComponentId<SkyComponent>())){
-            SkyComponent& sky = scene->getComponent<SkyComponent>(entity);
-
-            if (sky.needUpdateCustomTextures){
-                sky.needUpdateCustomTextures = false;
-                sky.needReload = true;
-            }
         }
 
         if (mainCamera.needUpdate || transform.needUpdate){
@@ -9978,6 +9901,15 @@ void RenderSystem::update(double dt){
 
         transform.needUpdateChildVisibility = false;
         transform.needUpdate = false;
+    }
+
+    auto skies = scene->getComponentArray<SkyComponent>();
+    for (int i = 0; i < skies->size(); i++) {
+        SkyComponent& sky = skies->getComponentFromIndex(i);
+        if (sky.needUpdateCustomTextures) {
+            sky.needUpdateCustomTextures = false;
+            sky.needReload = true;
+        }
     }
 
     for (int i = 0; i < cameras->size(); i++){
