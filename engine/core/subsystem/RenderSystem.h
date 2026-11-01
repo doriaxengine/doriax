@@ -93,7 +93,7 @@ namespace doriax{
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
 	typedef struct shadow_projection_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
-	    Vector4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x
+	    Vector4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
 	} shadow_projection_t;
 
 	typedef struct fs_shadows_t {

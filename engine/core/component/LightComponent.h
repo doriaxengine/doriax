@@ -28,6 +28,8 @@ namespace doriax{
         Plane frustumPlanes[6];
         // for point light all cameras are same calculated value that is used by distanceToDepthValue in shader
         Vector2 nearFar = Vector2(0.0, 0.0);
+        // directional cascade: view depth past nearFar.y where the next cascade fades in
+        float splitBlend = 0.0f;
     };
 
     struct DORIAX_API LightComponent{

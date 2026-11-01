@@ -2962,7 +2962,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v40: water samples the wake map of moving exclusions.
     // v41: the SSR composite rebuilds local probes; the G-buffer keeps material occlusion.
     // v42: water leaves no wake foam without a wake.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v42";
+    // v43: directional shadow cascades blend across their splits.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v43";
 }
 
 void editor::App::pushTabNotificationStyle(){

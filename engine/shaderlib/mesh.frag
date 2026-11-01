@@ -162,7 +162,7 @@ uniform u_fs_pbrParams {
     // shadows.glsl projects v_position here, so no per-slot varyings are interpolated
     uniform u_fs_shadow_projection {
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
-        vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x
+        vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
     } uShadowProjection;
     #define SHADOW_FRAGMENT_PROJECTION
     #ifdef HAS_NORMALS

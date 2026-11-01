@@ -1147,7 +1147,7 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
                         float projScale = std::max(std::abs(light.cameras[c].lightProjectionMatrix[0][0]),
                                                    std::abs(light.cameras[c].lightProjectionMatrix[1][1]));
                         float texelSizeWorld = (projScale > 0.0f) ? 2.0f / (projScale * (float)shadowAtlasSlotResolution) : 0.0f;
-                        shadowProjection.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, 0.0, 0.0, 0.0);
+                        shadowProjection.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, light.cameras[c].splitBlend, 0.0, 0.0);
 
                         fs_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
                             light.shadowBias,
@@ -9476,11 +9476,11 @@ Matrix4 RenderSystem::getStableDirLightProjection(const Matrix4& lightView, cons
 int RenderSystem::getShadowReceiverPlanes(const CameraComponent& camera, const LightComponent& light, int cascade, Plane* planes){
     Matrix4 viewProjection = camera.viewProjectionMatrix;
     if (camera.type == CameraType::CAMERA_PERSPECTIVE){
-        // cascades are not blended, each one shades only its own slice
+        // each cascade shades its own slice and the blend band past it
         float fov = atanf(1.f / camera.projectionMatrix[1][1]) * 2.f;
         float ratio = camera.projectionMatrix[1][1] / camera.projectionMatrix[0][0];
         const Vector2& slice = light.cameras[cascade].nearFar;
-        viewProjection = Matrix4::perspectiveMatrix(fov, ratio, slice.x, slice.y) * camera.viewMatrix;
+        viewProjection = Matrix4::perspectiveMatrix(fov, ratio, slice.x, slice.y + light.cameras[cascade].splitBlend) * camera.viewMatrix;
     }
 
     Matrix4 inverse = viewProjection.inverse();
@@ -9620,6 +9620,9 @@ void RenderSystem::updateLightFromScene(LightComponent& light, Transform& transf
                     light.cameras[ca].lightProjectionMatrix = projectionMatrix[ca];
                     light.cameras[ca].lightViewProjectionMatrix = projectionMatrix[ca] * viewMatrix;
                     light.cameras[ca].nearFar = Vector2(splitNear[ca], splitFar[ca]);
+                    // the next cascade fades in over part of the planeFarOffset this one covers
+                    light.cameras[ca].splitBlend = (ca + 1 < (int)light.numShadowCascades)
+                        ? std::min(planeFarOffset, 0.2f * (splitFar[ca] - splitNear[ca])) : 0.0f;
                     updateCameraFrustumPlanes(light.cameras[ca].lightViewProjectionMatrix, light.cameras[ca].frustumPlanes);
                 }
 
