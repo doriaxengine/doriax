@@ -10424,6 +10424,19 @@ void RenderSystem::update(double dt){
                     }
                 }
 
+                // Texture edits only rebind the color pass, but they select the G-buffer variant
+                if (scene->isSSREnabled() && mesh.submeshes[s].gbufferShader){
+                    const Material& material = mesh.submeshes[s].material;
+                    const bool uv1 = (mesh.submeshes[s].shaderProperties & (1u << 1)) != 0; // 'Uv1'
+                    const bool uv2 = (mesh.submeshes[s].shaderProperties & (1u << 2)) != 0; // 'Uv2'
+                    const uint32_t textureProperties = ShaderPool::getGBufferMeshProperties(!material.baseColorTexture.empty(), false, false, false, false, false, false, false,
+                            !material.metallicRoughnessTexture.empty(), false, !terrain && uv1 && !material.occlusionTexture.empty(), uv2 && material.occlusionTexCoord == 1);
+                    const uint32_t textureBits = (1u << 0) | (1u << 8) | (1u << 10) | (1u << 11); // Bct Mrt Occ Ou2
+                    if ((mesh.submeshes[s].gbufferShaderProperties & textureBits) != textureProperties){
+                        mesh.needReload = true;
+                    }
+                }
+
                 if (mesh.submeshes[s].needUpdateTexture){
                     if (terrain){
                         transform.needUpdate = true;
