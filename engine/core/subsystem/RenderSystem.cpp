@@ -7259,7 +7259,7 @@ namespace {
     // a lower crest inside and the transverse waves between; on the water it crosses, foam
     // churned behind the stern and along the hull
     void stampWaterWake(WakeGrid& foam, WakeGrid& waves, WaterExclusionComponent& exclusion, const Transform& transform,
-            bool crossing, float fade, float step){
+            Entity waterEntity, bool crossing, float fade, float step){
         const float speed = exclusion.wakeVelocity.length();
         const Vector2 direction = (speed > 0.001f) ? exclusion.wakeVelocity / speed : exclusion.wakeHistory.back().direction;
         float halfLength;
@@ -7295,7 +7295,7 @@ namespace {
         for (size_t s = 1; s < exclusion.wakeHistory.size(); s++){
             const WaterWakeSample& a = exclusion.wakeHistory[s - 1];
             const WaterWakeSample& b = exclusion.wakeHistory[s];
-            if ((b.position - a.position).length() > std::max(3.0f, halfLength))
+            if (a.water != waterEntity || b.water != waterEntity || (b.position - a.position).length() > std::max(3.0f, halfLength))
                 continue;
 
             const Crest crestA = getCrest(a);
@@ -8167,7 +8167,7 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
             getWakeFootprint(exclusion, *transform, direction, halfLength, halfWidth);
             const Vector2 bow = Vector2(center.x, center.z) + direction * halfLength;
             if (exclusion.wakeHistory.empty() || (bow - exclusion.wakeHistory.back().position).length() >= std::max(0.25f, halfLength * 0.1f)){
-                exclusion.wakeHistory.push_back({bow, direction, speed, exclusion.wakeTime});
+                exclusion.wakeHistory.push_back({bow, direction, speed, exclusion.wakeTime, exclusion.wakeWater});
             }
         }else{
             exclusion.wakeSternValid = false;
@@ -8239,9 +8239,9 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
             for (int i = 0; i < exclusions->size(); i++){
                 WaterExclusionComponent& exclusion = exclusions->getComponentFromIndex(i);
                 Transform* transform = scene->findComponent<Transform>(exclusions->getEntity(i));
-                // one that left the water still spreads the waves it made
-                if (transform && !exclusion.wakeHistory.empty() && (exclusion.wakeWater == waterEntity || exclusion.wakeWater == NULL_ENTITY)){
-                    stampWaterWake(foam, waves, exclusion, *transform, exclusion.wakeWater == waterEntity, fade, step);
+                // one that left the water still spreads the waves it made there
+                if (transform && !exclusion.wakeHistory.empty()){
+                    stampWaterWake(foam, waves, exclusion, *transform, waterEntity, exclusion.wakeWater == waterEntity, fade, step);
                 }
             }
         }

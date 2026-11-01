@@ -30,6 +30,7 @@ namespace doriax{
         Vector2 direction;
         float speed = 0.0f;
         float time = 0.0f;
+        Entity water = NULL_ENTITY; // the one it crossed
     };
 
     // Volume that keeps water out, like a boat: the water surface inside it is not drawn,
