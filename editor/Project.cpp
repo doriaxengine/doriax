@@ -3872,7 +3872,7 @@ bool editor::Project::hasStaleShaderKeys(const SceneProject* sceneProject, const
     return sceneNode["shaderKeysHash"].as<std::string>() != hashShaderKeySources(sceneProject, sceneNode);
 }
 
-void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& keys) const {
+void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& keys, bool includeRuntimeEntities) const {
     if (!sceneProject || !sceneProject->scene) {
         return;
     }
@@ -3904,6 +3904,15 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     for (size_t i = 0; i < terrains->size(); ++i) {
         const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
         shaderEntities.insert(shaderEntities.end(), foliage.begin(), foliage.end());
+    }
+    // Nor are the entities scripts create during Play; the editor's own are in the system pool
+    if (includeRuntimeEntities) {
+        const std::unordered_set<Entity> listed(shaderEntities.begin(), shaderEntities.end());
+        for (Entity entity : scene->getEntityList()) {
+            if (entity >= EntityManager::firstUserEntity() && listed.count(entity) == 0) {
+                shaderEntities.push_back(entity);
+            }
+        }
     }
 
     for (Entity entity : shaderEntities) {
@@ -5297,7 +5306,7 @@ void editor::Project::destroyPlayCreatedEntities(SceneProject* sceneProject) {
     }
 }
 
-void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& retiredShaderKeys) {
+void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& playShaderKeys) {
     bool saveMainOnStop = false;
     bool keepMainModified = false;
 
@@ -5316,21 +5325,15 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
         // Stop scene audio before restoring snapshot to prevent stale SoLoud handles on the next play
         sceneProject->scene->getSystem<AudioSystem>()->stopSceneSounds();
 
-        // Collect shader keys while components are still loaded (before snapshot restore wipes loaded state).
         // Merge newly discovered keys into the editor-side scene and mark it modified so the file is saved.
         if (entry.sourceSceneId != NULL_PROJECT_SCENE) {
-            std::set<ShaderKey> playKeys;
-            collectSceneShaderKeys(sceneProject, playKeys);
-            auto retired = retiredShaderKeys.find(entry.sourceSceneId);
-            if (retired != retiredShaderKeys.end()) {
-                playKeys.insert(retired->second.begin(), retired->second.end());
-            }
-            if (!playKeys.empty()) {
+            auto playKeys = playShaderKeys.find(entry.sourceSceneId);
+            if (playKeys != playShaderKeys.end()) {
                 SceneProject* editorScene = entry.ownedRuntime ? getScene(entry.sourceSceneId) : sceneProject;
                 if (editorScene) {
                     const bool wasModified = editorScene->isModified;
                     const size_t prevSize = editorScene->shaderKeys.size();
-                    editorScene->shaderKeys.insert(playKeys.begin(), playKeys.end());
+                    editorScene->shaderKeys.insert(playKeys->second.begin(), playKeys->second.end());
                     if (editorScene->shaderKeys.size() > prevSize) {
                         editorScene->isModified = true;
                         saveOnStop = true;
@@ -5345,7 +5348,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             }
         }
 
-        // Destroy all bundle instances created during play, after collecting their shader keys
+        // Destroy all bundle instances created during play
         BundleManager::destroyAllInstances(sceneProject->scene);
 
         // Restore snapshot if present
@@ -9952,6 +9955,9 @@ void editor::Project::retireRuntimeStack(uint32_t sceneId) {
         if (entry.initializing || !entry.runtime || !entry.runtime->scene || Engine::isSceneRunning(entry.runtime->scene)) continue;
 
         Scene* scene = entry.runtime->scene;
+        // Before the scripts go, with the entities they own
+        std::set<ShaderKey> shaderKeys;
+        collectSceneShaderKeys(entry.runtime, shaderKeys, true);
         if (entry.initialized) {
             entry.initialized = false;
             SceneManager::removeScenePtr(invSceneId);
@@ -9966,8 +9972,6 @@ void editor::Project::retireRuntimeStack(uint32_t sceneId) {
         }
 
         // Spawned bundles go too, as on Stop, or their tracking clashes with the next copy's ids
-        std::set<ShaderKey> shaderKeys;
-        collectSceneShaderKeys(session->runtimeScenes[entryIndex].runtime, shaderKeys);
         BundleManager::destroyAllInstances(scene);
 
         // Read again, the destructors may have added entries and moved the vector
@@ -10515,11 +10519,20 @@ void editor::Project::stop(uint32_t sceneId) {
             }
 
             std::vector<PlayRuntimeScene> runtimeScenes;
-            std::map<uint32_t, std::set<ShaderKey>> retiredShaderKeys;
+            std::map<uint32_t, std::set<ShaderKey>> playShaderKeys;
             {
                 std::scoped_lock lock(playSessionMutex);
                 runtimeScenes = session->runtimeScenes;
-                retiredShaderKeys = session->retiredShaderKeys;
+                playShaderKeys = session->retiredShaderKeys;
+            }
+
+            // Before the scripts go, with the entities they own
+            if (startupSucceeded) {
+                for (const auto& entry : runtimeScenes) {
+                    if (entry.runtime && entry.sourceSceneId != NULL_PROJECT_SCENE) {
+                        collectSceneShaderKeys(entry.runtime, playShaderKeys[entry.sourceSceneId], true);
+                    }
+                }
             }
 
             const bool libraryConnected = conector.isLibraryConnected();
@@ -10544,7 +10557,7 @@ void editor::Project::stop(uint32_t sceneId) {
             }
 
             if (startupSucceeded) {
-                finalizeStop(mainSceneProject, runtimeScenes, retiredShaderKeys);
+                finalizeStop(mainSceneProject, runtimeScenes, playShaderKeys);
             } else {
                 cleanupPlaySession(session);
                 SceneManager::clearAll();

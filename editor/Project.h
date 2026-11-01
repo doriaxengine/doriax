@@ -529,7 +529,7 @@ namespace doriax::editor{
 
         void destroyPlayCreatedEntities(SceneProject* sceneProject);
         void finalizeStart(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene>& runtimeScenes);
-        void finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& retiredShaderKeys);
+        void finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& playShaderKeys);
         void runPlayStartup(const std::shared_ptr<PlaySession>& session, uint32_t sceneId, const LocalBuildSettings& buildSettings);
         void failPlayStartup(const std::shared_ptr<PlaySession>& session, uint32_t sceneId, const std::string& message,
                      const std::string& alertTitle = "", const std::string& alertMessage = "");
@@ -593,7 +593,7 @@ namespace doriax::editor{
 
         // Live-derive the shader keys a scene needs from its current components
         // (used at scene save and by the Export window's pre-populated list).
-        void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys) const;
+        void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys, bool includeRuntimeEntities = false) const;
         std::string hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
         bool hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
 
