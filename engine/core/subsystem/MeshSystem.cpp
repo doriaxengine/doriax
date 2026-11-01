@@ -3257,10 +3257,10 @@ static unsigned int foliageCellAttempts(const TerrainFoliageLayer& layer){
 }
 
 // Wraps coordinates onto the grid: a ring sliding by one column reassigns only the column that left it.
-static size_t foliageSlotIndex(int chunkX, int chunkZ, int columns, int rows){
-    const int slotX = ((chunkX % columns) + columns) % columns;
-    const int slotZ = ((chunkZ % rows) + rows) % rows;
-    return static_cast<size_t>(slotZ) * columns + slotX;
+static size_t foliageSlotIndex(int chunkX, int chunkZ, int side){
+    const int slotX = ((chunkX % side) + side) % side;
+    const int slotZ = ((chunkZ % side) + side) % side;
+    return static_cast<size_t>(slotZ) * side + slotX;
 }
 
 static unsigned int hashFoliage(unsigned int seed, unsigned int chunkX, unsigned int chunkZ, unsigned int index){
@@ -3578,12 +3578,15 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
     const int startZ = firstChunk(viewLocal.z);
     const int columns = std::max(0, lastChunk(viewLocal.x) - startX + 1);
     const int rows = std::max(0, lastChunk(viewLocal.z) - startZ + 1);
+    // Sized for the widest span, so walking never resizes the ring and remaps its slots.
+    const int ringSide = preview ? 2 * terrainRadius :
+        std::min(static_cast<int>(std::ceil(2.0f * drawDistance / chunkSize)) + 1, 2 * terrainRadius);
     const unsigned int capacity = attempts * batchSide * batchSide;
     const float fadeEnd = preview ? 0.0f : drawDistance;
     const float fadeStart = fadeEnd * TERRAIN_FOLIAGE_FADE_START;
     instances.pending = false;
 
-    const size_t chunkCount = static_cast<size_t>(columns) * rows;
+    const size_t chunkCount = static_cast<size_t>(ringSide) * ringSide;
     if (instances.chunks.size() != chunkCount){
         while (instances.chunks.size() > chunkCount){
             destroyFoliageEntity(instances.chunks.back());
@@ -3627,12 +3630,25 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
     // Each chunk entity parses the mesh for itself, so a new grid spreads its loads over frames.
     int meshLoadBudget = 2;
 
-    for (int offsetZ = 0; offsetZ < rows; offsetZ++){
-        for (int offsetX = 0; offsetX < columns; offsetX++){
+    for (int offsetZ = 0; offsetZ < ringSide; offsetZ++){
+        for (int offsetX = 0; offsetX < ringSide; offsetX++){
             const int chunkX = startX + offsetX;
             const int chunkZ = startZ + offsetZ;
 
-            TerrainFoliageChunk& chunk = instances.chunks[foliageSlotIndex(chunkX, chunkZ, columns, rows)];
+            TerrainFoliageChunk& chunk = instances.chunks[foliageSlotIndex(chunkX, chunkZ, ringSide)];
+
+            // Out of view: empty, but keeps its mesh for the next chunk the ring slides onto it.
+            if (offsetX >= columns || offsetZ >= rows){
+                if (chunk.entity != NULL_ENTITY){
+                    InstancedMeshComponent& instmesh = scene->getComponent<InstancedMeshComponent>(chunk.entity);
+                    if (!instmesh.instances.empty()){
+                        instmesh.instances.clear();
+                        instmesh.needUpdateInstances = true;
+                    }
+                }
+                chunk.assigned = false;
+                continue;
+            }
 
             if (chunk.entity == NULL_ENTITY){
                 if (instances.loadFailed || meshLoadBudget == 0){
