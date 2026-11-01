@@ -468,7 +468,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "save_scene",
-            "Save one scene. Omit scene_id to save the selected scene. A scene that was never saved needs path, or the editor asks the user with a save dialog instead.",
+            "Save one scene. Omit scene_id to save the selected scene. A scene that was never saved needs path, or the editor asks the user with a save dialog instead. Its shader keys are only complete once the editor has drawn the scene since its last change; the result says shader_keys_stale when they are not.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"path", stringSchema("Project-relative .scene path for a scene that has no file yet, e.g. scenes/Level1.scene")}

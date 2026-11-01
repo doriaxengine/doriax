@@ -3390,11 +3390,19 @@ ActionResult EditorActionExecutor::saveScene(const Json& arguments) {
         }
     }
 
+    const bool keysStale = sceneProject->scene && project->wouldSaveStaleShaderKeys(sceneProject);
+
     project->saveScene(sceneId);
     if (sceneProject->filepath.empty()) {
         return warningResult("The scene has no file yet, so the editor asked the user where to save it. Pass path to save it directly.");
     }
-    return okResult("Saving scene.", Json{{"scene_id", sceneId}, {"path", FileUtils::pathToGenericUtf8(sceneProject->filepath)}});
+    Json data{{"scene_id", sceneId}, {"path", FileUtils::pathToGenericUtf8(sceneProject->filepath)}};
+    if (keysStale) {
+        data["shader_keys_stale"] = true;
+        data["next_step"] = "The editor has not drawn this scene since it changed, so an export warns about its shader keys. "
+            "Select it with select_scene, wait for it to draw, then save it again.";
+    }
+    return okResult("Saving scene.", std::move(data));
 }
 
 ActionResult EditorActionExecutor::saveAllScenes() {

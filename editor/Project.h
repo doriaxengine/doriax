@@ -596,6 +596,8 @@ namespace doriax::editor{
         void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys, bool includeRuntimeEntities = false) const;
         std::string hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
         bool hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
+        // Changes not drawn yet or pending loads would leave a save without all its keys
+        bool wouldSaveStaleShaderKeys(const SceneProject* sceneProject) const;
 
         std::string getName() const;
         void setName(std::string name);

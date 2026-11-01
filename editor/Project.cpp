@@ -5954,6 +5954,18 @@ bool editor::Project::saveSceneShaderKeys(const SceneProject* sceneProject) {
     return true;
 }
 
+bool editor::Project::wouldSaveStaleShaderKeys(const SceneProject* sceneProject) const {
+    auto meshSystem = sceneProject->scene->getSystem<MeshSystem>();
+    bool keysComplete = !sceneProject->needUpdateRender && sceneProject->scene->getSystem<RenderSystem>()->isAllLoaded() &&
+        !meshSystem->hasPendingAsyncModelLoads() && !meshSystem->hasPendingFoliageUpdates();
+    auto meshes = sceneProject->scene->getComponentArray<MeshComponent>();
+    for (size_t i = 0; keysComplete && i < meshes->size(); i++) {
+        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        keysComplete = !(mesh.loaded && mesh.needReload);
+    }
+    return !keysComplete && (sceneProject->shaderKeysStale || sceneProject->isModified);
+}
+
 void editor::Project::saveScene(uint32_t sceneId, std::function<void(bool)> callback) {
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
@@ -6083,16 +6095,7 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
         }
     }
     sceneProject->shaderKeys = std::move(shaderKeys);
-    // Keys are complete once every change was drawn and nothing waits to load or reload
-    auto meshSystem = sceneProject->scene->getSystem<MeshSystem>();
-    bool keysComplete = !sceneProject->needUpdateRender && sceneProject->scene->getSystem<RenderSystem>()->isAllLoaded() &&
-        !meshSystem->hasPendingAsyncModelLoads() && !meshSystem->hasPendingFoliageUpdates();
-    auto meshes = sceneProject->scene->getComponentArray<MeshComponent>();
-    for (size_t i = 0; keysComplete && i < meshes->size(); i++) {
-        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
-        keysComplete = !(mesh.loaded && mesh.needReload);
-    }
-    sceneProject->shaderKeysStale = !keysComplete && (sceneProject->shaderKeysStale || sceneProject->isModified);
+    sceneProject->shaderKeysStale = wouldSaveStaleShaderKeys(sceneProject);
 
     updateSceneCppScripts(sceneProject);
     updateSceneBundles(sceneProject);
