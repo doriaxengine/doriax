@@ -5514,22 +5514,33 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
         TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
         TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
 
-        // off-screen objects neither draw nor take a probe slot
+        // objects that do not draw take no probe slot
+        if (!mesh.loaded || mesh.needReload || (terrain && terrain->needUpdateTexture))
+            continue;
         if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera.farClip, camera.frustumPlanes, mesh.worldAABB))
             continue;
+
+        // nor those without IBL
+        bool meshIBL = false;
+        for (int s = 0; s < mesh.numSubmeshes && !meshIBL; s++){
+            meshIBL = mesh.submeshes[s].hasIBL && mesh.submeshes[s].gbufferShader && mesh.submeshes[s].vertexCount > 0;
+        }
 
         // the IBL source the composite reads back, coded as in composite.frag
         fs_reflection_probe_t probeParams;
         TextureRender* probeTexture = nullptr;
         Vector3 probeSamplePosition = meshProbeSamplePosition(mesh, transform);
         int iblCode = 1;
-        if (selectReflectionProbe(probeSamplePosition, probeParams, probeTexture) && probeParams.position_weight.w > 0.001f){
+        if (meshIBL && selectReflectionProbe(probeSamplePosition, probeParams, probeTexture) && probeParams.position_weight.w > 0.001f){
+            // probes can share an authored cubemap, so a slot matches all it holds
+            const Vector4 probePosition(probeParams.position_weight.x, probeParams.position_weight.y, probeParams.position_weight.z, 0.0f);
             int slot = 0;
-            while (slot < ssrProbeCount && ssrProbeTextures[slot] != probeTexture)
+            while (slot < ssrProbeCount && (ssrProbeTextures[slot] != probeTexture || fs_composite.probePosition[slot] != probePosition ||
+                    fs_composite.probeBoxMin[slot] != probeParams.boxMin_intensity || fs_composite.probeBoxMax[slot] != probeParams.boxMax_lod))
                 slot++;
             if (slot == ssrProbeCount && ssrProbeCount < SSR_PROBE_SLOTS){
                 ssrProbeTextures[slot] = probeTexture;
-                fs_composite.probePosition[slot] = probeParams.position_weight;
+                fs_composite.probePosition[slot] = probePosition;
                 fs_composite.probeBoxMin[slot] = probeParams.boxMin_intensity;
                 fs_composite.probeBoxMax[slot] = probeParams.boxMax_lod;
                 ssrProbeCount++;
