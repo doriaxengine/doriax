@@ -120,6 +120,7 @@ namespace doriax{
         int wakeOrigin[2] = {0, 0}; // world texel at the map corner
         float wakeTexelSize = 0.0f;
         bool wakeActive = false;
+        bool wakeNeedUpload = false;
 
         // advanced by RenderSystem::advanceWaters() at the end of each frame
         float wavePhase[WATER_WAVE_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};

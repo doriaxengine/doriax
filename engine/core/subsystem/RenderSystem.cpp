@@ -8252,7 +8252,8 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
             water.wakeTexels[t * 4] = toUnorm8(water.wakeFoam[t]);
             water.wakeTexels[t * 4 + 1] = toUnorm8(water.wakeWaves[t]);
         }
-        water.wakeTexture.updateTexture(water.wakeTexels.data(), water.wakeTexels.size());
+        // update() can run more than once per frame, uploaded in draw()
+        water.wakeNeedUpload = true;
         water.wakeActive = strongest > 0.004f || crossed;
     }
 }
@@ -10726,6 +10727,17 @@ void RenderSystem::update(double dt){
 
 void RenderSystem::draw(){
     prepareSpriteBatchBuffers();
+
+    // sokol takes one image update per frame
+    auto wakeWaters = scene->getComponentArray<WaterComponent>();
+    for (int i = 0; i < wakeWaters->size(); i++){
+        WaterComponent& water = wakeWaters->getComponentFromIndex(i);
+        if (water.wakeNeedUpload && water.wakeTexture.isCreated()){
+            water.wakeTexture.updateTexture(water.wakeTexels.data(), water.wakeTexels.size());
+        }
+        water.wakeNeedUpload = false;
+    }
+
     std::priority_queue<TransparentRenderData, std::vector<TransparentRenderData>, TransparentRenderComparison> transparentRenders;
     // drawn before the water, which covers them
     decltype(transparentRenders) behindWaterRenders;
