@@ -15,6 +15,7 @@
 #include "component/MeshComponent.h"
 #include "component/ModelComponent.h"
 #include "component/BoneComponent.h"
+#include "component/SkinComponent.h"
 #include "component/SkyComponent.h"
 #include "component/FogComponent.h"
 #include "component/MirrorComponent.h"

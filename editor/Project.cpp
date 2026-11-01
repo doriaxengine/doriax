@@ -8,6 +8,7 @@
 #include "EditorHost.h"
 #include "util/FileUtils.h"
 #include "util/FbxImporter.h"
+#include "util/TextEncoding.h"
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
 #include "window/TerrainEditWindow.h"
@@ -15,12 +16,14 @@
 #include <cctype>
 #include <cmath>
 #include <fstream>
+#include <sstream>
 #include <system_error>
 #include <chrono>
 #include <unordered_set>
 #include <algorithm>
 #include <unordered_map>
 #include <limits>
+#include <optional>
 #include <random>
 #include <thread>
 
@@ -672,6 +675,9 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
         }
 
     });
+    if (changed) {
+        Catalog::updateSpriteBatches(registry);
+    }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         if (visitTexturePaths(ui.texture, transform)) {
@@ -1223,6 +1229,7 @@ void editor::Project::remapMaterialFilePath(const std::filesystem::path& oldPath
                 if (remapRelativeString(oldRelative, newRelative, material.name, updatedMaterialName)) {
                     material.name = updatedMaterialName;
                     mesh->submeshes[submeshIndex].needUpdateTexture = true;
+                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     sceneProject->needUpdateRender = true;
                     sceneProject->isModified = true;
                 }
@@ -1424,6 +1431,7 @@ void editor::Project::cleanupMaterialFilePath(const std::filesystem::path& delet
 
                 material.name.clear();
                 mesh.submeshes[submeshIndex].needUpdateTexture = true;
+                Catalog::updateSpriteBatch(sceneProject.scene, entity);
                 sceneProject.needUpdateRender = true;
                 sceneProject.isModified = true;
                 sceneChanged = true;
@@ -1859,7 +1867,7 @@ void editor::Project::refreshLinkedMaterials(bool force) {
             // Only load the file once per unique path
             if (changedFiles.find(linkEntry.filePath) == changedFiles.end()) {
                 try {
-                    YAML::Node materialNode = YAML::LoadFile(absolutePath.string());
+                    YAML::Node materialNode = TextEncoding::loadYamlFile(absolutePath);
                     Material updatedMaterial = Stream::decodeMaterial(materialNode);
                     updatedMaterial.name = linkEntry.filePath;
                     changedFiles[linkEntry.filePath] = {linkEntry.filePath, updatedMaterial};
@@ -1906,6 +1914,7 @@ void editor::Project::refreshLinkedMaterials(bool force) {
         if (mesh->submeshes[keySubmeshIndex].material != updatedMaterial) {
             mesh->submeshes[keySubmeshIndex].material = updatedMaterial;
             mesh->submeshes[keySubmeshIndex].needUpdateTexture = true;
+            Catalog::updateSpriteBatch(sceneProject->scene, keyEntity);
             sceneProject->needUpdateRender = true;
             sceneProject->isModified = true;
         }
@@ -2049,6 +2058,9 @@ void editor::Project::importFbxModels() {
     std::error_code ec;
     for (fs::recursive_directory_iterator it(getAssetsPath(), fs::directory_options::skip_permission_denied, ec), end;
          !ec && it != end; it.increment(ec)) {
+        if (!FileUtils::isNarrowPath(it->path())) {
+            continue;
+        }
         // Hidden and build directories hold no assets
         const std::string name = it->path().filename().string();
         if (it->is_directory(ec) && (name.empty() || name[0] == '.' || name == "build")) {
@@ -2647,7 +2659,7 @@ static bool holdsOnlyAssets(const std::filesystem::path& directory){
     for (auto it = std::filesystem::recursive_directory_iterator(directory, std::filesystem::directory_options::skip_permission_denied, ec);
          it != std::filesystem::recursive_directory_iterator(); ++it){
         const auto& entry = *it;
-        if (!entry.is_regular_file()){
+        if (!entry.is_regular_file() || !editor::FileUtils::isNarrowPath(entry.path())){
             continue;
         }
 
@@ -2661,7 +2673,90 @@ static bool holdsOnlyAssets(const std::filesystem::path& directory){
     return !ec;
 }
 
-bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform){
+// False when the path or a parent is a file
+static bool canHoldDirectory(const std::filesystem::path& directory){
+    std::error_code ec;
+    std::filesystem::path existing = directory;
+    while (!existing.empty() && !std::filesystem::exists(existing, ec)){
+        existing = existing.parent_path();
+    }
+    return !existing.empty() && std::filesystem::is_directory(existing, ec);
+}
+
+static bool sameFileContent(const std::filesystem::path& a, const std::filesystem::path& b){
+    std::error_code ec;
+    if (!std::filesystem::is_regular_file(a, ec) || !std::filesystem::is_regular_file(b, ec) ||
+        std::filesystem::file_size(a, ec) != std::filesystem::file_size(b, ec) || ec){
+        return false;
+    }
+
+    std::ifstream fileA(a, std::ios::binary);
+    std::ifstream fileB(b, std::ios::binary);
+    if (!fileA || !fileB){
+        return false;
+    }
+    char bufferA[8192];
+    char bufferB[8192];
+    while (fileA && fileB){
+        fileA.read(bufferA, sizeof(bufferA));
+        fileB.read(bufferB, sizeof(bufferB));
+        if (fileA.gcount() != fileB.gcount() ||
+            !std::equal(bufferA, bufferA + fileA.gcount(), bufferB)){
+            return false;
+        }
+    }
+    return true;
+}
+
+// First destination file whose content differs from its source
+static std::filesystem::path findContentClash(const std::filesystem::path& source, const std::filesystem::path& destination){
+    std::error_code ec;
+    if (!std::filesystem::is_directory(std::filesystem::symlink_status(source, ec))){
+        if (std::filesystem::exists(source, ec) && std::filesystem::exists(destination, ec) &&
+            !sameFileContent(source, destination)){
+            return destination;
+        }
+        return {};
+    }
+
+    for (auto it = std::filesystem::recursive_directory_iterator(source, std::filesystem::directory_options::skip_permission_denied, ec);
+         it != std::filesystem::recursive_directory_iterator(); ++it){
+        if (!it->is_regular_file()){
+            continue;
+        }
+        const std::filesystem::path target = destination / it->path().lexically_relative(source);
+        if (std::filesystem::exists(target, ec) && !sameFileContent(it->path(), target)){
+            return target;
+        }
+    }
+    return {};
+}
+
+// Probes without changing anything: append mode, then a new uniquely named directory
+static bool isWritableForSave(const std::filesystem::path& file){
+    std::error_code ec;
+    if (std::filesystem::exists(file, ec)){
+        std::ofstream probe(file, std::ios::binary | std::ios::app);
+        if (!probe){
+            return false;
+        }
+    }
+
+    std::random_device random;
+    for (int attempt = 0; attempt < 4; attempt++){
+        const std::filesystem::path probe = file.parent_path() / (".doriax-probe-" + std::to_string(random()));
+        if (std::filesystem::create_directory(probe, ec)){
+            std::filesystem::remove(probe, ec);
+            return true;
+        }
+        if (ec){
+            return false;
+        }
+    }
+    return false;
+}
+
+bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed){
     if (projectPath.empty()){
         return false;
     }
@@ -2672,6 +2767,9 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
     for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, ec);
          it != fs::recursive_directory_iterator(); ++it){
         const auto& entry = *it;
+        if (!FileUtils::isNarrowPath(entry.path())){
+            continue;
+        }
 
         const std::string name = entry.path().filename().string();
         if (entry.is_directory() && !name.empty() && (name[0] == '.' || name == "build")){
@@ -2685,7 +2783,7 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
 
         Material material;
         try {
-            material = Stream::decodeMaterial(YAML::LoadFile(entry.path().string()));
+            material = Stream::decodeMaterial(TextEncoding::loadYamlFile(entry.path()));
         } catch (const std::exception& e) {
             Out::warning("Could not read material %s: %s", entry.path().string().c_str(), e.what());
             continue;
@@ -2701,19 +2799,20 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
             continue;
         }
 
-        std::ofstream file(entry.path(), std::ios::binary);
-        if (!file){
+        if (!FileUtils::writeFileReplacing(entry.path(), YAML::Dump(Stream::encodeMaterial(material)))){
             Out::error("Failed to write material: %s", entry.path().string().c_str());
+            if (failed){
+                failed->push_back(entry.path());
+            }
             continue;
         }
-        file << YAML::Dump(Stream::encodeMaterial(material));
         changed = true;
     }
 
     return changed;
 }
 
-void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir, const std::filesystem::path& newLuaDir){
+bool editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir, const std::filesystem::path& newLuaDir, std::string* error){
     const fs::path oldAssetsRoot = getAssetsPath();
     const fs::path oldLuaRoot = getLuaPath();
     const fs::path newAssetsRoot = resolveRootDir(projectPath, newAssetsDir);
@@ -2722,7 +2821,19 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
     if (projectPath.empty() || (oldAssetsRoot == newAssetsRoot && oldLuaRoot == newLuaRoot)){
         assetsDir = newAssetsDir;
         luaDir = newLuaDir;
-        return;
+        return true;
+    }
+
+    auto fail = [&](const std::string& reason) {
+        Out::error("%s", reason.c_str());
+        if (error){
+            *error = reason;
+        }
+        return false;
+    };
+
+    if (!canHoldDirectory(newAssetsRoot) || !canHoldDirectory(newLuaRoot)){
+        return fail("Asset directories not changed: a new directory is a file or lies under one");
     }
 
     // Buffers must reach disk before their files move, as a play session does
@@ -2732,8 +2843,6 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
     const bool luaChanged = oldLuaRoot != newLuaRoot;
 
     std::error_code ec;
-    fs::create_directories(newAssetsRoot, ec);
-    fs::create_directories(newLuaRoot, ec);
 
     // Scenes that are not open still hold references, so they are loaded and unloaded again
     std::vector<uint32_t> temporarilyLoaded;
@@ -2746,9 +2855,13 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
         temporarilyLoaded.push_back(sceneId);
     }
 
+    // Scenes that failed to save stay loaded so their new paths are kept
+    std::vector<fs::path> failedSaves;
+    std::unordered_set<uint32_t> unsavedScenes;
     auto unloadTemporaryScenes = [&]() {
         for (uint32_t sceneId : temporarilyLoaded){
-            if (SceneProject* sceneProject = getScene(sceneId)){
+            SceneProject* sceneProject = getScene(sceneId);
+            if (sceneProject && !unsavedScenes.count(sceneId)){
                 deleteSceneProject(sceneProject);
             }
         }
@@ -2767,7 +2880,8 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
             return false;
         }
 
-        if (fs::is_directory(source, moveEc)){
+        // Never walk into a linked directory
+        if (fs::is_directory(fs::symlink_status(source, moveEc))){
             fs::create_directories(destination, moveEc);
             bool moved = false;
             for (const auto& entry : fs::directory_iterator(source, moveEc)){
@@ -2851,45 +2965,136 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
     // Files outside the new root are moved into it, keeping their layout relative to
     // the old root so references between them (a model and its textures) still match.
+    struct Relocation {
+        fs::path destination;
+        // The file, or its model folder
+        fs::path source;
+        fs::path sourceDestination;
+    };
+    auto planRelocation = [&](const fs::path& absolutePath, const fs::path& oldRoot, const fs::path& newRoot) {
+        std::error_code planEc;
+        const fs::path relativeToOld = fs::relative(absolutePath, oldRoot, planEc);
+        if (planEc || relativeToOld.empty() || *relativeToOld.begin() == ".."){
+            return std::optional<Relocation>();
+        }
+
+        Relocation plan;
+        plan.destination = (newRoot / relativeToOld).lexically_normal();
+        plan.source = absolutePath;
+        plan.sourceDestination = plan.destination;
+
+        // Models carry sidecar files referenced from inside the model, so their folder
+        // moves along when it holds nothing else.
+        if (Util::isModelFile(absolutePath.string()) && relativeToOld.has_parent_path()){
+            const fs::path modelDir = (oldRoot / relativeToOld.parent_path()).lexically_normal();
+            if (!isInsideRoot(newRoot, modelDir) && holdsOnlyAssets(modelDir)){
+                plan.source = modelDir;
+                plan.sourceDestination = (newRoot / relativeToOld.parent_path()).lexically_normal();
+            }
+        }
+        return std::optional<Relocation>(plan);
+    };
+
     auto relocate = [&](const fs::path& absolutePath, const fs::path& oldRoot, const fs::path& newRoot) {
         if (relocationFailed || isInsideRoot(absolutePath, newRoot) || relocations.count(absolutePath)){
             return;
         }
 
-        std::error_code relocateEc;
-        const fs::path relativeToOld = fs::relative(absolutePath, oldRoot, relocateEc);
-        if (relocateEc || relativeToOld.empty() || *relativeToOld.begin() == ".."){
+        const std::optional<Relocation> plan = planRelocation(absolutePath, oldRoot, newRoot);
+        if (!plan){
             Out::warning("Reference outside both asset directories was kept as is: %s", absolutePath.string().c_str());
             relocations[absolutePath] = absolutePath;
             return;
         }
+        relocations[absolutePath] = plan->destination;
 
-        const fs::path destination = (newRoot / relativeToOld).lexically_normal();
-        relocations[absolutePath] = destination;
-
-        // Models carry sidecar files referenced from inside the model, so their folder
-        // moves along when it holds nothing else.
-        fs::path source = absolutePath;
-        fs::path sourceDestination = destination;
-        if (Util::isModelFile(absolutePath.string()) && relativeToOld.has_parent_path()){
-            const fs::path modelDir = (oldRoot / relativeToOld.parent_path()).lexically_normal();
-            if (!isInsideRoot(newRoot, modelDir) && holdsOnlyAssets(modelDir)){
-                source = modelDir;
-                sourceDestination = (newRoot / relativeToOld.parent_path()).lexically_normal();
-            }
-        }
-
-        if (moveEntry(source, sourceDestination)){
-            Out::info("Moved %s to %s", source.string().c_str(), sourceDestination.string().c_str());
+        if (moveEntry(plan->source, plan->sourceDestination)){
+            Out::info("Moved %s to %s", plan->source.string().c_str(), plan->sourceDestination.string().c_str());
             return;
         }
 
         // Nothing moved: the reference only follows when the file is already there.
-        if (fs::exists(destination, relocateEc)){
+        std::error_code relocateEc;
+        if (fs::exists(plan->destination, relocateEc)){
             return;
         }
 
         relocations[absolutePath] = absolutePath;
+    };
+
+    // relative() resolves links, so a linked destination shows up outside the root
+    auto findEscape = [&](const fs::path& source, const fs::path& destination, const fs::path& newRoot) {
+        if (!isInsideRoot(destination, newRoot)){
+            return destination;
+        }
+        std::error_code walkEc;
+        if (fs::is_directory(fs::symlink_status(source, walkEc))){
+            for (auto it = fs::recursive_directory_iterator(source, fs::directory_options::skip_permission_denied, walkEc);
+                 it != fs::recursive_directory_iterator(); ++it){
+                const fs::path target = destination / it->path().lexically_relative(source);
+                if (!isInsideRoot(target, newRoot)){
+                    return target;
+                }
+            }
+        }
+        return fs::path();
+    };
+
+    auto findBlocker = [&](const std::vector<fs::path>& sources, const fs::path& oldRoot, const fs::path& newRoot) {
+        for (const fs::path& source : sources){
+            if (isInsideRoot(source, newRoot)){
+                continue;
+            }
+            const std::optional<Relocation> plan = planRelocation(source, oldRoot, newRoot);
+            if (!plan){
+                continue;
+            }
+            const fs::path escape = findEscape(plan->source, plan->sourceDestination, newRoot);
+            if (!escape.empty()){
+                return escape.string() + " would leave " + newRoot.string() + " through a link";
+            }
+            const fs::path clash = findContentClash(plan->source, plan->sourceDestination);
+            if (!clash.empty()){
+                return clash.string() + " already exists and differs from the file the project references; move or rename one of them first";
+            }
+        }
+        return std::string();
+    };
+
+    // Files the change rewrites
+    auto findUnwritable = [&]() {
+        std::vector<fs::path> files = {projectPath / "project.yaml"};
+        for (const SceneProject& sceneProject : scenes){
+            if (!sceneProject.filepath.empty()){
+                files.push_back(sceneProject.filepath.is_relative() ? projectPath / sceneProject.filepath : sceneProject.filepath);
+            }
+        }
+        for (const auto& [bundlePath, bundle] : entityBundles){
+            files.push_back(projectPath / bundlePath);
+        }
+        if (assetsChanged){
+            std::error_code walkEc;
+            for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, walkEc);
+                 it != fs::recursive_directory_iterator(); ++it){
+                if (!FileUtils::isNarrowPath(it->path())){
+                    continue;
+                }
+                const std::string name = it->path().filename().string();
+                if (it->is_directory() && !name.empty() && (name[0] == '.' || name == "build")){
+                    it.disable_recursion_pending();
+                    continue;
+                }
+                if (it->is_regular_file() && Util::isMaterialFile(it->path().string())){
+                    files.push_back(it->path());
+                }
+            }
+        }
+        for (const fs::path& file : files){
+            if (!isWritableForSave(file)){
+                return file.string() + " cannot be written";
+            }
+        }
+        return std::string();
     };
 
     // Resolved before anything moves: a file that cannot be relocated aborts the whole change.
@@ -2963,8 +3168,9 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
             sceneProject.isModified = true;
             sceneProject.needUpdateRender = true;
-            if (!sceneProject.filepath.empty()){
-                saveSceneToPath(sceneProject.id, sceneProject.filepath);
+            if (!sceneProject.filepath.empty() && !saveSceneToPath(sceneProject.id, sceneProject.filepath)){
+                failedSaves.push_back(sceneProject.filepath);
+                unsavedScenes.insert(sceneProject.id);
             }
         }
 
@@ -2982,10 +3188,13 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
             bundle.isModified = true;
             saveEntityBundleToDisk(bundlePath);
+            if (bundle.isModified){
+                failedSaves.push_back(bundlePath);
+            }
         }
 
         if (assetsChanged){
-            visitAssetPathsInMaterialFiles(assetVisitor);
+            visitAssetPathsInMaterialFiles(assetVisitor, &failedSaves);
         }
     };
 
@@ -2993,8 +3202,38 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
     // Generated maps follow the assets root, moved before references resolve against it
     const fs::path oldTerrainMaps = oldAssetsRoot / "terrain_maps";
-    if (assetsChanged && fs::is_directory(oldTerrainMaps, ec) &&
-        !isInsideRoot(oldTerrainMaps, newAssetsRoot) && !isInsideRoot(newAssetsRoot, oldTerrainMaps)){
+    const bool moveTerrainMaps = assetsChanged && fs::is_directory(oldTerrainMaps, ec) &&
+        !isInsideRoot(oldTerrainMaps, newAssetsRoot) && !isInsideRoot(newAssetsRoot, oldTerrainMaps);
+
+    std::string blocker = findBlocker(assetSources, oldAssetsRoot, newAssetsRoot);
+    if (blocker.empty()){
+        blocker = findBlocker(luaSources, oldLuaRoot, newLuaRoot);
+    }
+    if (blocker.empty() && moveTerrainMaps){
+        const fs::path escape = findEscape(oldTerrainMaps, newAssetsRoot / "terrain_maps", newAssetsRoot);
+        const fs::path clash = findContentClash(oldTerrainMaps, newAssetsRoot / "terrain_maps");
+        if (!escape.empty()){
+            blocker = escape.string() + " would leave " + newAssetsRoot.string() + " through a link";
+        }else if (!clash.empty()){
+            blocker = clash.string() + " already exists and differs from the generated terrain map";
+        }
+    }
+    if (blocker.empty()){
+        blocker = findUnwritable();
+    }
+    if (blocker.empty()){
+        fs::create_directories(newAssetsRoot, ec);
+        fs::create_directories(newLuaRoot, ec);
+        if (!fs::is_directory(newAssetsRoot, ec) || !fs::is_directory(newLuaRoot, ec)){
+            blocker = "a new directory could not be created";
+        }
+    }
+    if (!blocker.empty()){
+        unloadTemporaryScenes();
+        return fail("Asset directories not changed: " + blocker);
+    }
+
+    if (moveTerrainMaps){
         moveEntry(oldTerrainMaps, newAssetsRoot / "terrain_maps");
     }
 
@@ -3008,16 +3247,32 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
     if (relocationFailed){
         undoMoves();
         unloadTemporaryScenes();
-
-        Out::error("Asset directories not changed: a referenced file could not be moved");
-        editor::getEditorHost().registerAlert("Error", "Failed to move files to the new directories!");
-        return;
+        return fail("Asset directories not changed: a referenced file could not be moved");
     }
 
     assetsDir = newAssetsDir;
     luaDir = newLuaDir;
 
     visitReferences(assetTransform, luaTransform);
+
+    // Folders the moves emptied, except the project and the configured roots
+    for (const auto& [source, destination] : completedMoves){
+        std::error_code removeEc;
+        for (fs::path dir = source.parent_path(); isInsideRoot(dir, projectPath); dir = dir.parent_path()){
+            if (fs::equivalent(dir, projectPath, removeEc) || fs::equivalent(dir, newAssetsRoot, removeEc) ||
+                fs::equivalent(dir, newLuaRoot, removeEc)){
+                break;
+            }
+            // A folder moved whole is already gone, and a link stays whatever its target holds
+            const fs::file_status status = fs::symlink_status(dir, removeEc);
+            if (status.type() == fs::file_type::not_found){
+                continue;
+            }
+            if (!fs::is_directory(status) || !fs::remove(dir, removeEc)){
+                break;
+            }
+        }
+    }
 
     // Open tabs still hold the old path, where a later save would recreate the script.
     if (CodeEditor* codeEditor = editor::getEditorHost().getCodeEditor()){
@@ -3043,7 +3298,19 @@ void editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
 
     unloadTemporaryScenes();
 
-    saveProjectFile();
+    if (!saveProjectFile()){
+        failedSaves.push_back("project.yaml");
+    }
+    if (!failedSaves.empty()){
+        std::string files;
+        for (const fs::path& file : failedSaves){
+            const fs::path shown = file.is_absolute() ? file.lexically_relative(projectPath) : file;
+            files += (files.empty() ? "" : ", ") + shown.generic_string();
+        }
+        return fail("Asset directories changed, but these files could not be saved and still hold the old paths on disk: " +
+                    files + ". Scenes and bundles keep the new paths in the editor and can be saved again");
+    }
+    return true;
 }
 
 void editor::Project::setPackNativeResources(bool enabled){
@@ -3370,7 +3637,7 @@ editor::SceneProject* editor::Project::createRuntimeCloneFromSource(const SceneP
         fullPath = getProjectPath() / fullPath;
     }
 
-    YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+    YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
     Stream::decodeSceneProject(runtime.get(), sceneNode, true);
     // the file's id differs if loading replaced a duplicate
     runtime->id = source->id;
@@ -3599,8 +3866,12 @@ void editor::Project::calculateMaxValues(const EntityRegistry* registry, SceneMa
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         maxValues.maxSubmeshes = std::max(maxValues.maxSubmeshes, mesh.numSubmeshes);
         maxValues.maxExternalBuffers = std::max(maxValues.maxExternalBuffers, mesh.numExternalBuffers);
+    }
+
+    auto skins = registry->getComponentArray<SkinComponent>();
+    for (size_t i = 0; i < skins->size(); ++i) {
         maxValues.maxBones = std::max(maxValues.maxBones,
-            static_cast<unsigned int>(mesh.bonesMatrix.size()));
+            static_cast<unsigned int>(skins->getComponentFromIndex(i).bonesMatrix.size()));
     }
 
     // models are not loaded on a command line export
@@ -3683,7 +3954,25 @@ void editor::Project::calculateMaxValues(const EntityRegistry* registry, SceneMa
     }
 }
 
-void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& keys) const {
+// The scene file and the bundle versions its instances hold, which it doesn't store
+std::string editor::Project::hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const {
+    std::string sources = Stream::hashSceneContent(sceneNode);
+    for (const auto& bundlePath : sceneNode["bundles"]) {
+        auto it = sceneProject->bundleHashes.find(bundlePath.as<std::string>());
+        sources += "\n" + bundlePath.as<std::string>() + " " + (it != sceneProject->bundleHashes.end() ? it->second : std::string());
+    }
+    return SHA1::hash(sources);
+}
+
+bool editor::Project::hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const {
+    // older editors saved keys without a hash
+    if (!sceneNode["shaderKeysHash"]) {
+        return !sceneNode["shaderKeys"];
+    }
+    return sceneNode["shaderKeysHash"].as<std::string>() != hashShaderKeySources(sceneProject, sceneNode);
+}
+
+void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& keys, bool includeRuntimeEntities) const {
     if (!sceneProject || !sceneProject->scene) {
         return;
     }
@@ -3716,16 +4005,29 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
         shaderEntities.insert(shaderEntities.end(), foliage.begin(), foliage.end());
     }
+    // Nor are the entities scripts create during Play; the editor's own are in the system pool
+    if (includeRuntimeEntities) {
+        const std::unordered_set<Entity> listed(shaderEntities.begin(), shaderEntities.end());
+        for (Entity entity : scene->getEntityList()) {
+            if (entity >= EntityManager::firstUserEntity() && listed.count(entity) == 0) {
+                shaderEntities.push_back(entity);
+            }
+        }
+    }
 
     for (Entity entity : shaderEntities) {
         Signature signature = scene->getSignature(entity);
 
         if (signature.test(scene->getComponentId<MeshComponent>())) {
             const MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-            if (mesh.loaded) {
+            // a reload keeps the mesh unloaded until its new shaders have built
+            if (mesh.loaded || mesh.submeshes[0].shader) {
                 uint16_t customShaderId = effectiveShaderId(mesh.customShader, ShaderType::MESH);
                 uint16_t customDepthShaderId = ShaderPool::registerCustomShader(mesh.customDepthShader);
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
+                    if (!mesh.loaded && !mesh.submeshes[s].shader) {
+                        continue;
+                    }
                     uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
                     // Saving/exporting can happen before RenderSystem has reloaded
                     // meshes after a probe was added. Derive the required IBL
@@ -3777,21 +4079,21 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<UIComponent>())) {
             const UIComponent& ui = scene->getComponent<UIComponent>(entity);
-            if (ui.loaded) {
+            if (ui.loaded || ui.shader) {
                 insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.customShader, ShaderType::UI));
             }
         }
 
         if (signature.test(scene->getComponentId<PointsComponent>())) {
             const PointsComponent& pts = scene->getComponent<PointsComponent>(entity);
-            if (pts.loaded) {
+            if (pts.loaded || pts.shader) {
                 insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.customShader, ShaderType::POINTS));
             }
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>())) {
             const LinesComponent& ln = scene->getComponent<LinesComponent>(entity);
-            if (ln.loaded) {
+            if (ln.loaded || ln.shader) {
                 insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.customShader, ShaderType::LINES));
             }
         }
@@ -3827,6 +4129,10 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     if (scene->isSSAOEnabled()) {
         keys.insert(ShaderPool::getShaderKey(ShaderType::SSAO, 0));
         keys.insert(ShaderPool::getShaderKey(ShaderType::SSAO_BLUR, 0));
+    }
+
+    if (hasReflectionProbes) {
+        keys.insert(ShaderPool::getShaderKey(ShaderType::PROBE_FILTER, 0));
     }
 
     if (scene->isSSREnabled()) {
@@ -4005,7 +4311,7 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
         }
 
         editor::getEditorHost().reportLoadingProgress("Loading scenes...");
-        YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+        YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
 
         if (isNewScene) {
             scenes.emplace_back();
@@ -4072,7 +4378,9 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                 }
             }
 
+            targetScene->bundleHashes.clear();
             loadSceneProjectData(targetScene, sceneNode);
+            targetScene->shaderKeysStale = hasStaleShaderKeys(targetScene, sceneNode);
         }
 
         if (opened){
@@ -4092,7 +4400,7 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                     if (!fs::exists(materialPath) || fs::is_directory(materialPath)) continue;
 
                     try {
-                        YAML::Node materialNode = YAML::LoadFile(materialPath.string());
+                        YAML::Node materialNode = TextEncoding::loadYamlFile(materialPath);
                         Material fileMaterial = Stream::decodeMaterial(materialNode);
                         fileMaterial.name = normalizedPath;
 
@@ -4102,7 +4410,10 @@ bool editor::Project::loadScene(fs::path filepath, bool opened, bool isNewScene,
                         if (material != fileMaterial) {
                             material = fileMaterial;
                             mesh->submeshes[submeshIndex].needUpdateTexture = true;
+                            Catalog::updateSpriteBatch(targetScene->scene, entity);
                             targetScene->needUpdateRender = true;
+                            // the saved keys were for the old material, and this is no user edit
+                            targetScene->shaderKeysStale = true;
                         }
                     } catch (const std::exception& e) {
                         Out::error("Error loading linked material file '%s': %s", materialPath.string().c_str(), e.what());
@@ -4401,6 +4712,27 @@ uint32_t editor::Project::findSceneByPath(const std::filesystem::path& filepath)
     return NULL_PROJECT_SCENE;
 }
 
+const editor::SceneProject* editor::Project::findOtherSceneUsingFile(const fs::path& filepath, uint32_t sceneId) const {
+    const fs::path normalized = normalizeToProjectRelative(filepath);
+    if (normalized.empty()) {
+        return nullptr;
+    }
+
+    for (const SceneProject& sceneProject : scenes) {
+        if (sceneProject.id == sceneId || sceneProject.filepath.empty()) {
+            continue;
+        }
+        // equivalent() also catches names that differ only in case
+        std::error_code ec;
+        if (sceneProject.filepath.lexically_normal() == normalized ||
+                fs::equivalent(getProjectPath() / sceneProject.filepath, getProjectPath() / normalized, ec)) {
+            return &sceneProject;
+        }
+    }
+
+    return nullptr;
+}
+
 void editor::Project::markParentScenesNeedUpdate(uint32_t childSceneId) {
     bool foundParent = false;
 
@@ -4463,10 +4795,12 @@ bool editor::Project::loadChildSceneInline(uint32_t childSceneId) {
             fullPath = getProjectPath() / fullPath;
         }
 
-        YAML::Node sceneNode = YAML::LoadFile(fullPath.string());
+        YAML::Node sceneNode = TextEncoding::loadYamlFile(fullPath);
 
         Stream::decodeSceneProject(childScene, sceneNode, true);
+        childScene->bundleHashes.clear();
         loadSceneProjectData(childScene, sceneNode);
+        childScene->shaderKeysStale = hasStaleShaderKeys(childScene, sceneNode);
 
         childScene->expandedInline = true;
         childScene->needUpdateRender = true;
@@ -5072,7 +5406,7 @@ void editor::Project::destroyPlayCreatedEntities(SceneProject* sceneProject) {
     }
 }
 
-void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& retiredShaderKeys) {
+void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& playShaderKeys) {
     bool saveMainOnStop = false;
     bool keepMainModified = false;
 
@@ -5091,21 +5425,15 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
         // Stop scene audio before restoring snapshot to prevent stale SoLoud handles on the next play
         sceneProject->scene->getSystem<AudioSystem>()->stopSceneSounds();
 
-        // Collect shader keys while components are still loaded (before snapshot restore wipes loaded state).
         // Merge newly discovered keys into the editor-side scene and mark it modified so the file is saved.
         if (entry.sourceSceneId != NULL_PROJECT_SCENE) {
-            std::set<ShaderKey> playKeys;
-            collectSceneShaderKeys(sceneProject, playKeys);
-            auto retired = retiredShaderKeys.find(entry.sourceSceneId);
-            if (retired != retiredShaderKeys.end()) {
-                playKeys.insert(retired->second.begin(), retired->second.end());
-            }
-            if (!playKeys.empty()) {
+            auto playKeys = playShaderKeys.find(entry.sourceSceneId);
+            if (playKeys != playShaderKeys.end()) {
                 SceneProject* editorScene = entry.ownedRuntime ? getScene(entry.sourceSceneId) : sceneProject;
                 if (editorScene) {
                     const bool wasModified = editorScene->isModified;
                     const size_t prevSize = editorScene->shaderKeys.size();
-                    editorScene->shaderKeys.insert(playKeys.begin(), playKeys.end());
+                    editorScene->shaderKeys.insert(playKeys->second.begin(), playKeys->second.end());
                     if (editorScene->shaderKeys.size() > prevSize) {
                         editorScene->isModified = true;
                         saveOnStop = true;
@@ -5120,7 +5448,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             }
         }
 
-        // Destroy all bundle instances created during play, after collecting their shader keys
+        // Destroy all bundle instances created during play
         BundleManager::destroyAllInstances(sceneProject->scene);
 
         // Restore snapshot if present
@@ -5422,6 +5750,33 @@ const char* versionControlAttributes =
     "*.ttf     binary\n"
     "*.otf     binary\n";
 
+// The lines of a refreshed file that the editor did not write, in their order
+std::string addedVersionControlLines(std::istream& file, const char* content) {
+    std::multiset<std::string> generated;
+    std::istringstream stream(content);
+    std::string line;
+    while (std::getline(stream, line)) {
+        generated.insert(line);
+    }
+
+    std::string added;
+    while (std::getline(file, line)) {
+        if (!line.empty() && line.back() == '\r') {
+            line.pop_back();
+        }
+        auto it = generated.find(line);
+        if (it != generated.end()) {
+            generated.erase(it);
+        } else if (!added.empty() || !line.empty()) {
+            added += line + "\n";
+        }
+    }
+    while (!added.empty() && added.back() == '\n') {
+        added.pop_back();
+    }
+    return added.empty() ? added : added + "\n";
+}
+
 } // namespace
 
 bool editor::Project::writeVersionControlMetadata() {
@@ -5439,7 +5794,8 @@ bool editor::Project::writeVersionControlMetadata() {
         const fs::path target = projectPath / name;
 
         // Rules the project wrote itself are worth more than the editor's, so only a
-        // file carrying the marker is refreshed
+        // file carrying the marker is refreshed, and the lines added to it are kept
+        std::string merged = content;
         std::ifstream fin(target);
         if (fin) {
             std::string firstLine;
@@ -5447,10 +5803,15 @@ bool editor::Project::writeVersionControlMetadata() {
             if (firstLine.rfind(versionControlMarker, 0) != 0) {
                 continue;
             }
+            fin.seekg(0);
+            const std::string added = addedVersionControlLines(fin, content);
+            if (!added.empty()) {
+                merged += "\n" + added;
+            }
         }
         fin.close();
 
-        if (!FileUtils::writeIfChanged(target, content)) {
+        if (!FileUtils::writeIfChanged(target, merged)) {
             Out::error("Failed to write %s", target.string().c_str());
             success = false;
         }
@@ -5561,7 +5922,7 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
 
         // Load and parse project file
         editor::getEditorHost().reportLoadingProgress("Loading project...");
-        YAML::Node projectNode = YAML::LoadFile(projectFile.string());
+        YAML::Node projectNode = TextEncoding::loadYamlFile(projectFile);
 
         // The workspace is written from the live model, which resetConfigs() is about
         // to drop, so the outgoing project is flushed first
@@ -5650,25 +6011,43 @@ bool editor::Project::saveLoadedSceneOnStop(SceneProject* loadedSceneProject, Sc
 
     bool success = false;
     if (loadedSceneProject == editorScene) {
+        // modified only for the keys Play found, so the restored content counts as it was
+        const bool modified = editorScene->isModified;
+        editorScene->isModified = keepModified;
         success = saveSceneFile(editorScene, editorScene->filepath, false);
-        if (success) {
-            editorScene->isModified = keepModified;
-        }
+        editorScene->isModified = modified;
     } else {
-        loadedSceneProject->shaderKeys = editorScene->shaderKeys;
-        success = saveSceneFile(loadedSceneProject, editorScene->filepath, false);
-        if (success) {
-            editorScene->filepath = loadedSceneProject->filepath;
-            editorScene->shaderKeys = loadedSceneProject->shaderKeys;
-            editorScene->isModified = keepModified;
-        }
+        // the runtime clone holds the played state, so only the shader keys are written
+        success = saveSceneShaderKeys(editorScene);
     }
 
     if (success) {
+        editorScene->isModified = keepModified;
         Out::info("Auto-saved scene '%s' on stop", editorScene->name.c_str());
     }
 
     return success;
+}
+
+bool editor::Project::saveSceneShaderKeys(const SceneProject* sceneProject) {
+    fs::path fullPath = sceneProject->filepath;
+    if (fullPath.is_relative()) {
+        fullPath = getProjectPath() / fullPath;
+    }
+
+    try {
+        YAML::Node root = TextEncoding::loadYamlFile(fullPath);
+        root["shaderKeys"] = Stream::encodeShaderKeys(sceneProject->shaderKeys);
+        if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n")) {
+            Out::error("Failed to write scene file: %s", fullPath.string().c_str());
+            return false;
+        }
+    } catch (const std::exception& e) {
+        Out::error("Failed to save shader keys of scene '%s': %s", sceneProject->name.c_str(), e.what());
+        return false;
+    }
+
+    return true;
 }
 
 void editor::Project::saveScene(uint32_t sceneId, std::function<void(bool)> callback) {
@@ -5763,6 +6142,12 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
         return false;
     }
 
+    // Two scenes on one file would overwrite each other
+    if (const SceneProject* owner = findOtherSceneUsingFile(relPath, sceneProject->id)) {
+        Out::error("Cannot save scene '%s' to \"%s\": the file belongs to scene '%s'", sceneProject->name.c_str(), FileUtils::pathToUtf8(relPath).c_str(), owner->name.c_str());
+        return false;
+    }
+
     fs::create_directories(fullPath.parent_path(), ec);
     if (ec) {
         Out::error("Failed to create scene directory: %s", ec.message().c_str());
@@ -5785,6 +6170,16 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
     sceneProject->shaderKeys = std::move(shaderKeys);
+    // Keys are complete once every change was drawn and nothing waits to load or reload
+    auto meshSystem = sceneProject->scene->getSystem<MeshSystem>();
+    bool keysComplete = !sceneProject->needUpdateRender && sceneProject->scene->getSystem<RenderSystem>()->isAllLoaded() &&
+        !meshSystem->hasPendingAsyncModelLoads() && !meshSystem->hasPendingFoliageUpdates();
+    auto meshes = sceneProject->scene->getComponentArray<MeshComponent>();
+    for (size_t i = 0; keysComplete && i < meshes->size(); i++) {
+        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        keysComplete = !(mesh.loaded && mesh.needReload);
+    }
+    sceneProject->shaderKeysStale = !keysComplete && (sceneProject->shaderKeysStale || sceneProject->isModified);
 
     updateSceneCppScripts(sceneProject);
     updateSceneBundles(sceneProject);
@@ -5792,8 +6187,11 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
 
     try {
         YAML::Node root = Stream::encodeSceneProject(this, sceneProject);
-        if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n")) {
-            Out::error("Failed to write scene file: %s", fullPath.string().c_str());
+        // an empty hash keeps the keys stale in the file
+        root["shaderKeysHash"] = sceneProject->shaderKeysStale ? std::string() : hashShaderKeySources(sceneProject, root);
+        std::error_code writeEc;
+        if (!FileUtils::writeFileReplacing(fullPath, YAML::Dump(root) + "\n", writeEc)) {
+            Out::error("Failed to write scene file %s: %s", fullPath.string().c_str(), writeEc.message().c_str());
             return false;
         }
 
@@ -6003,6 +6401,9 @@ void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesyst
             if (SceneProject* sceneProject = getScene(sceneId)) {
                 if (sceneProject->playState == ScenePlayState::SAVING) {
                     sceneProject->playState = ScenePlayState::STOPPED;
+                }
+                if (!success) {
+                    editor::getEditorHost().registerAlert("Save Failed", "Scene '" + sceneProject->name + "' could not be saved. See Output for details.");
                 }
             }
 
@@ -7438,7 +7839,7 @@ void editor::Project::setStandaloneBundles(std::vector<std::filesystem::path> bu
             bundle.registry = std::make_unique<EntityRegistry>();
 
             try {
-                YAML::Node node = YAML::LoadFile(fullPath.string());
+                YAML::Node node = TextEncoding::loadYamlFile(fullPath);
                 Stream::decodeEntitySelection(node, bundle.registry.get(), &bundle.registryEntities);
                 entityBundles.emplace(*it, std::move(bundle));
             } catch (const std::exception& e) {
@@ -7467,6 +7868,9 @@ std::vector<std::filesystem::path> editor::Project::findProjectFiles(const std::
     for (fs::recursive_directory_iterator it(projectPath, fs::directory_options::skip_permission_denied, ec), end;
          it != end && !ec; it.increment(ec)) {
         const fs::directory_entry& entry = *it;
+        if (!FileUtils::isNarrowPath(entry.path())) {
+            continue;
+        }
 
         // '.doriax' holds the engine copy and the generated resources, 'build' the artifacts
         const std::string filename = entry.path().filename().string();
@@ -7499,9 +7903,17 @@ void editor::Project::saveEntityBundleToDisk(const std::filesystem::path& filepa
     YAML::Node encodedNode = encodeEntityBundleNode(filepath);
     if (encodedNode && !encodedNode.IsNull()) {
         std::filesystem::path fullBundlePath = getProjectPath() / filepath;
-        if (FileUtils::writeFileReplacing(fullBundlePath, YAML::Dump(encodedNode))) {
+        const std::string content = YAML::Dump(encodedNode);
+        if (FileUtils::writeFileReplacing(fullBundlePath, content)) {
             bundle->isModified = false;
             markReferencedSceneIdsPersisted(bundle->registry.get());
+            // edits reach every instance, so each scene now holds this version
+            const std::string contentHash = SHA1::hash(content);
+            for (const auto& [sceneId, instances] : bundle->instances) {
+                if (SceneProject* sceneProject = getScene(sceneId)) {
+                    sceneProject->bundleHashes[filepath.generic_string()] = contentHash;
+                }
+            }
         } else {
             Out::error("Failed to open file for writing: %s", fullBundlePath.string().c_str());
         }
@@ -7682,7 +8094,7 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
     } else {
         try {
             std::filesystem::path fullBundlePath = getProjectPath() / filepath;
-            node = YAML::LoadFile(fullBundlePath.string());
+            node = TextEncoding::loadYamlFile(fullBundlePath);
             bundle.registry->clear();
             bundle.registryEntities.clear();
             Stream::decodeEntitySelection(node, bundle.registry.get(), &bundle.registryEntities);
@@ -7691,6 +8103,8 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
             return {};
         }
     }
+
+    sceneProject->bundleHashes[filepath.generic_string()] = SHA1::hash(YAML::Dump(node));
 
     Scene* scene = sceneProject->scene;
 
@@ -9674,6 +10088,9 @@ void editor::Project::retireRuntimeStack(uint32_t sceneId) {
         if (entry.initializing || !entry.runtime || !entry.runtime->scene || Engine::isSceneRunning(entry.runtime->scene)) continue;
 
         Scene* scene = entry.runtime->scene;
+        // Before the scripts go, with the entities they own
+        std::set<ShaderKey> shaderKeys;
+        collectSceneShaderKeys(entry.runtime, shaderKeys, true);
         if (entry.initialized) {
             entry.initialized = false;
             SceneManager::removeScenePtr(invSceneId);
@@ -9688,8 +10105,6 @@ void editor::Project::retireRuntimeStack(uint32_t sceneId) {
         }
 
         // Spawned bundles go too, as on Stop, or their tracking clashes with the next copy's ids
-        std::set<ShaderKey> shaderKeys;
-        collectSceneShaderKeys(session->runtimeScenes[entryIndex].runtime, shaderKeys);
         BundleManager::destroyAllInstances(scene);
 
         // Read again, the destructors may have added entries and moved the vector
@@ -10272,11 +10687,20 @@ void editor::Project::stop(uint32_t sceneId) {
             }
 
             std::vector<PlayRuntimeScene> runtimeScenes;
-            std::map<uint32_t, std::set<ShaderKey>> retiredShaderKeys;
+            std::map<uint32_t, std::set<ShaderKey>> playShaderKeys;
             {
                 std::scoped_lock lock(playSessionMutex);
                 runtimeScenes = session->runtimeScenes;
-                retiredShaderKeys = session->retiredShaderKeys;
+                playShaderKeys = session->retiredShaderKeys;
+            }
+
+            // Before the scripts go, with the entities they own
+            if (startupSucceeded) {
+                for (const auto& entry : runtimeScenes) {
+                    if (entry.runtime && entry.sourceSceneId != NULL_PROJECT_SCENE) {
+                        collectSceneShaderKeys(entry.runtime, playShaderKeys[entry.sourceSceneId], true);
+                    }
+                }
             }
 
             const bool libraryConnected = conector.isLibraryConnected();
@@ -10301,7 +10725,7 @@ void editor::Project::stop(uint32_t sceneId) {
             }
 
             if (startupSucceeded) {
-                finalizeStop(mainSceneProject, runtimeScenes, retiredShaderKeys);
+                finalizeStop(mainSceneProject, runtimeScenes, playShaderKeys);
             } else {
                 cleanupPlaySession(session);
                 SceneManager::clearAll();

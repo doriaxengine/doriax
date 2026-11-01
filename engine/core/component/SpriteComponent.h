@@ -41,6 +41,7 @@ namespace doriax{
         bool needUpdateFrameRect = false;
 
         bool needUpdateSprite = true;
+        bool needUpdateBatch = false; // set after changing its MeshComponent directly
     };
     
 }

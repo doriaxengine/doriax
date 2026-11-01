@@ -82,6 +82,10 @@ namespace doriax::editor {
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 
+        // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.
+        // Windows only: elsewhere, or without d3dcompiler_47.dll, the sources stay.
+        static void compileHlslBytecode(ShaderData& shaderData);
+
         // Compiles the keys absent from the disk cache, synchronously (buildShader hands
         // async builds to the pool and returns before they land).
         void buildMissingShaders(const std::set<ShaderKey>& shaderKeys, Project* project);

@@ -105,6 +105,8 @@ namespace luabridge
 
     template<> struct Stack<FogType> : EnumWrapper<FogType>{};
     template<> struct Stack<WaterExclusionShape> : EnumWrapper<WaterExclusionShape>{};
+    template<> struct Stack<ReflectionProbeMode> : EnumWrapper<ReflectionProbeMode>{};
+    template<> struct Stack<ReflectionProbeUpdateMode> : EnumWrapper<ReflectionProbeUpdateMode>{};
     template<> struct Stack<CameraType> : EnumWrapper<CameraType>{};
     template<> struct Stack<FrustumPlane> : EnumWrapper<FrustumPlane>{};
     template<> struct Stack<LightType> : EnumWrapper<LightType>{};
@@ -129,6 +131,8 @@ namespace luabridge
     template<> struct Stack<Shape3DType> : EnumWrapper<Shape3DType>{};
     template<> struct Stack<BodyType> : EnumWrapper<BodyType>{};
     template<> struct Stack<Joint2DType> : EnumWrapper<Joint2DType>{};
+    template<> struct Stack<Joint3DType> : EnumWrapper<Joint3DType>{};
+    template<> struct Stack<Body3DMotionQuality> : EnumWrapper<Body3DMotionQuality>{};
 
     template <>
     struct Stack <Touch>

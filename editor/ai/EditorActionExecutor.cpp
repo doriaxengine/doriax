@@ -6,6 +6,7 @@
 #include "AiPathUtils.h"
 #include "AiEngineApiContext.h"
 #include "AiTerrainCapability.h"
+#include "AppSettings.h"
 #include "EditorActionRegistry.h"
 #include "EditorHost.h"
 #include "HttpClient.h"
@@ -19,6 +20,7 @@
 #include "util/CxxStandards.h"
 #include "util/ProjectUtils.h"
 #include "util/FileUtils.h"
+#include "util/TextEncoding.h"
 #include "util/ScriptParser.h"
 #include "component/Body2DComponent.h"
 #include "component/Body3DComponent.h"
@@ -426,6 +428,13 @@ bool parseQuaternion(const Json& value, Quaternion& out) {
     if (value.contains("x") && value["x"].is_number()) out.x = value["x"].get<float>();
     if (value.contains("y") && value["y"].is_number()) out.y = value["y"].get<float>();
     if (value.contains("z") && value["z"].is_number()) out.z = value["z"].get<float>();
+    return true;
+}
+
+// Far from unit length it is more likely Euler angles than rounding
+bool parseRotation(const Json& value, Quaternion& out) {
+    if (!parseQuaternion(value, out) || std::fabs(out.norm() - 1.0f) > 0.2f) return false;
+    out.normalize();
     return true;
 }
 
@@ -880,6 +889,16 @@ bool hasComponent(EntityRegistry* registry, Entity entity, ComponentType compone
     return std::find(components.begin(), components.end(), component) != components.end();
 }
 
+// A button overwrites its UI color and texture with the ones of its state
+bool validateButtonUIProperty(EntityRegistry* registry, Entity entity, ComponentType component, const std::string& property, std::string& error) {
+    if (component != ComponentType::UIComponent || (property != "color" && property != "texture") ||
+            !hasComponent(registry, entity, ComponentType::ButtonComponent)) {
+        return true;
+    }
+    error = "UIComponent." + property + " is set by the ButtonComponent. Set ButtonComponent." + property + "Normal instead.";
+    return false;
+}
+
 // Maps a renderable component to its forkable built-in shader type.
 bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     switch (component) {
@@ -1089,14 +1108,17 @@ std::string doriaxLuaScriptGuide(const std::string& className) {
            "Use: local " + className + " = { properties = {} }; "
            "function " + className + ":init() ... end; return " + className + ". "
            "Editor-exposed properties go in the properties array as { name = \"speed\", displayName = \"Speed\", type = \"float\", default = 5.0 } "
-           "(type strings: bool, int, float, string, vector2, vector3, vector4, color3, color4, entity); at runtime read/write them as self.<name>, e.g. self.speed. "
+           "(type strings: bool, int, float, string, vector2, vector3, vector4, color3, color4, entity, or a wrapper name such as Text, Image, Object or Animation for an entity of that type); at runtime read/write them as self.<name>, e.g. self.speed. "
+           "A script drives entities already placed in the scene and does not build them: expose each one as an entity property pointed at it with set_component_property on ScriptComponent (scripts[i].<name>, entity_value), place what appears later with Transform visible off on it and on every child placed under it, since the saved flag does not cascade, and show it with obj.visible = true, which does reach the children. Spawn at runtime only what cannot be placed in advance, as a bundle with BundleManager.createBundle. "
+           "Hiding leaves an entity's physics body active, so suspend it in the first onFixedUpdate, which runs before the first physics step (bodies do not exist yet during init): turn a Body2D off with body.enabled = false; for a Body3D, keep its body.type and body.sensor, then set body.sensor = true and, if it is dynamic, body.type = BodyType.KINEMATIC and body.linearVelocity = Vector3(0, 0, 0) so gravity cannot move it. On reveal turn the Body2D back on or restore the Body3D's type and sensor flag, and ignore the entity's contacts while it is hidden. "
+           "Authored motion (spins, bobs, doors, fades, UI transitions, sprite frames) is a native animation the script only plays, e.g. a property of type Animation with self.anim:start() or self.anim:restart(), or model:playAnimation(name, fadeTime) for a model's clips; never write per-frame tween code for it. "
            "The engine injects self.scene and self.entity; self.entity is a numeric Entity id, not an object receiver. For an existing cube/shape, "
            "use local shape = Shape(self.scene, self.entity); shape:setColor(1.0, 0.0, 0.0, 1.0). "
            "There is no Transform (or other component) global in Lua: to read or move an entity, wrap it with local obj = Object(self.scene, self.entity) "
            "then use obj.position / obj:setPosition(...) and similar (check the Object binding via read_engine_source for exact members). "
            "For keyboard/mouse input use the Input class (Input.isKeyPressed(Input.KEY_LEFT), etc.). Scale continuous direct non-physics movement by Engine.deltatime, but never multiply physics forces or torques by delta time; "
            "gamepads use Input.isGamepadButtonPressed(gamepad, Input.GAMEPAD_BUTTON_A) and Input.getGamepadAxis(gamepad, Input.GAMEPAD_AXIS_LEFT_X); gamepad ids are sparse, so iterate connected pads by dense index with local id = Input.getGamepadId(i) for i in 0..Input.numGamepads()-1 rather than assuming ids are 0..n-1. "
-           "Choose the update callback by timing domain. Variable-frame UI, camera, animation, and direct non-physics movement use RegisterEngineEvent(self, \"onUpdate\") and " + className + ":onUpdate(). Continuously applied body forces or torques MUST use RegisterEngineEvent(self, \"onFixedUpdate\") and " + className + ":onFixedUpdate(), because each physics world accumulates force calls until its next fixed step, so putting them in onUpdate makes effective force depend on render FPS; velocity control and physics-driving input polling belong there too. "
+           "Choose the update callback by timing domain. Variable-frame UI, camera, and direct non-physics movement use RegisterEngineEvent(self, \"onUpdate\") and " + className + ":onUpdate(). Continuously applied body forces or torques MUST use RegisterEngineEvent(self, \"onFixedUpdate\") and " + className + ":onFixedUpdate(), because each physics world accumulates force calls until its next fixed step, so putting them in onUpdate makes effective force depend on render FPS; velocity control and physics-driving input polling belong there too. "
            "Inside onFixedUpdate a physics body must be moved through the body itself, never by writing the entity transform: the body is synced from the transform before the step and written back after it, so such a write is silently discarded. The bindings expose these as properties, not methods: body.position and body.rotation on Body3D, body.position and body.angle on Body2D. Entities with no body have no such restriction. "
            "Bodies are drawn interpolated between fixed steps, so a camera or anything else following a body reads obj:getWorldPosition(), not body.position, which moves once per step. "
            "The force calls differ by body type and are not interchangeable: Body3D uses body:applyForce(force) for a centre force, body:applyForce(force, point), and body:applyTorque(torque), and has NO applyForceToCenter; Body2D uses body:applyForceToCenter(force, wake), body:applyForce(force, point, wake) with no single-argument form, and body:applyTorque(torque, wake). "
@@ -1142,6 +1164,9 @@ std::string doriaxCppScriptGuide(bool cppSubclass, const std::string& parentClas
           << "For component/UI events (button press, click, scrollbar change, etc.) subscribe in the constructor with REGISTER_COMPONENT_EVENT(Component, event, method) or its shortcuts REGISTER_UI_EVENT/REGISTER_BUTTON_EVENT/REGISTER_SCROLLBAR_EVENT/REGISTER_PANEL_EVENT, and pair each with its UNREGISTER_* in the destructor; search_engine_api for the exact macro and the component's event names. "
           << "Use search_engine_api for a quick symbol overview, but confirm exact signatures against the real source (search_engine_source/read_engine_source) before writing engine API code. "
           << "DPROPERTY(\"Name\") exposes a public member as an editor property (optional; removing it clears stale editor properties); DPROPERTY(\"Name\", Type) forces the editor type such as Color3/Color4. "
+          << "A script drives entities already placed in the scene and does not build them: expose each one as a DPROPERTY pointer member (doriax::Object*, doriax::Text*, doriax::Animation*, ...) pointed at it with set_component_property on ScriptComponent (scripts[i].<name>, entity_value), place what appears later with Transform visible off on it and on every child placed under it, since the saved flag does not cascade, and show it with setVisible(true), which does reach the children. Spawn at runtime only what cannot be placed in advance, as a bundle with BundleManager::createBundle. "
+          << "Hiding leaves an entity's physics body active, so suspend it in the first onFixedUpdate, which runs before the first physics step (bodies do not exist yet in the constructor): turn a Body2D off with setEnabled(false); for a Body3D, keep its getType() and isSensor(), then setIsSensor(true) and, if it is dynamic, setType(BodyType::KINEMATIC) and setLinearVelocity(Vector3(0, 0, 0)) so gravity cannot move it. On reveal turn the Body2D back on or restore the Body3D's type and sensor flag, and ignore the entity's contacts while it is hidden. "
+          << "Authored motion (spins, bobs, doors, fades, UI transitions, sprite frames) is a native animation the script only plays, e.g. a doriax::Animation* property with start() or restart(), or Model::playAnimation(name, fadeTime) for a model's clips; never write per-frame tween code for it. "
           << "After writing the .h and .cpp, verify the script actually works: start the scene with control_play_mode (action=start), then read_output_log to check for a C++ build failure (compiler errors) or a runtime 'Script crash'. If it is still building, read_output_log again. If there are errors, stop play, fix with update_script_file, and verify again -- repeat until the log is clean, then stop play, before telling the user the script is ready.";
     return guide.str();
 }
@@ -1248,7 +1273,7 @@ ActionResult warningResult(const std::string& message) {
 }
 
 std::string fileTypeFromPath(const fs::path& path) {
-    const std::string value = path.string();
+    const std::string value = FileUtils::pathToUtf8(path);
     if (Util::isModelFile(value)) return "model";
     if (Util::isImageFile(value)) return "image";
     if (Util::isMaterialFile(value)) return "material";
@@ -1301,7 +1326,7 @@ std::string outsideAssetsError(Project* project, const std::string& argument) {
 
 std::string assetPathToAi(Project* project, const std::string& stored) {
     if (stored.empty()) return stored;
-    return project->normalizeToProjectRelative(project->resolveAssetPath(stored)).generic_string();
+    return FileUtils::pathToGenericUtf8(project->normalizeToProjectRelative(project->resolveAssetPath(stored)));
 }
 
 // String properties holding an asset reference instead of plain text
@@ -1398,16 +1423,30 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
     return Json();
 }
 
+// Windows also finds it as .TRASH or .trash., even before it exists, and then by a short name or a link
+bool isInProjectTrash(Project* project, const fs::path& rel) {
+    std::string name = lower(FileUtils::pathToGenericUtf8(*rel.lexically_normal().begin()));
+    name.erase(name.find_last_not_of(". ") + 1);
+    if (name == ".trash") return true;
+    std::error_code ec;
+    const fs::path trash = fs::canonical(project->getProjectPath() / ".trash", ec);
+    return !ec && Util::isInsidePath(fs::weakly_canonical(project->getProjectPath() / rel, ec), trash);
+}
+
 bool safeRelativePath(Project* project, const Json& args, const char* key, fs::path& rel, std::string& error,
                       bool requireExists = false) {
     if (!args.contains(key) || !args[key].is_string()) {
         error = std::string(key) + " is required.";
         return false;
     }
-    rel = fs::path(args[key].get<std::string>()).lexically_normal();
+    rel = FileUtils::pathFromUtf8(args[key].get<std::string>()).lexically_normal();
     if (rel.empty()) rel = ".";
     if (!PathUtils::isSafeRelativePath(rel)) {
         error = std::string(key) + " must be a safe project-relative path.";
+        return false;
+    }
+    if (project && isInProjectTrash(project, rel)) {
+        error = std::string(key) + " is in the project trash.";
         return false;
     }
     if (requireExists && project && !fs::exists(project->getProjectPath() / rel)) {
@@ -1417,11 +1456,24 @@ bool safeRelativePath(Project* project, const Json& args, const char* key, fs::p
     return true;
 }
 
+// Same as safeRelativePath, but "." (the project root) is a valid destination
+bool safeTargetDir(Project* project, const Json& args, fs::path& rel, std::string& error) {
+    if (args.contains("target_dir") && args["target_dir"].is_string()) {
+        const fs::path dir = FileUtils::pathFromUtf8(args["target_dir"].get<std::string>()).lexically_normal();
+        if (dir.empty() || dir == ".") {
+            rel.clear();
+            return true;
+        }
+    }
+    return safeRelativePath(project, args, "target_dir", rel, error);
+}
+
 constexpr const char* kClosedParentScene = "The parent scene is closed, so the change would be lost when it opens. Open it with open_scene first.";
 constexpr const char* kUnsavedScriptEdits = "A script open in the code editor has unsaved edits. Ask the user to save or discard them first.";
 constexpr const char* kProjectChangeBusy = "The editor is already switching projects. Try again once it has loaded.";
 constexpr const char* kRefusedUndo = "The last command cannot be undone now. Check read_output_log for the reason.";
 constexpr const char* kRefusedRedo = "The next command no longer applies. Check read_output_log for the reason.";
+constexpr const char* kRefusedCommand = "The editor refused the change. Check read_output_log for the reason.";
 
 // isAnyScenePlaying() is also true while a scene saves or loads
 std::string busyError(Project* project, const std::string& action) {
@@ -1444,7 +1496,7 @@ bool isUnusedSubmeshProperty(Scene* scene, Entity entity, const std::string& pro
 
 // Empty or new directory outside the current project, like the Save Project dialog
 bool prepareNewProjectDirectory(Project* project, const Json& args, fs::path& path, std::string& error) {
-    path = fs::path(args.value("path", "")).lexically_normal();
+    path = FileUtils::pathFromUtf8(args.value("path", "")).lexically_normal();
     if (!path.has_filename()) path = path.parent_path();
     if (!path.is_absolute()) {
         error = "path must be an absolute directory.";
@@ -1452,7 +1504,7 @@ bool prepareNewProjectDirectory(Project* project, const Json& args, fs::path& pa
     }
     std::error_code ec;
     if (fs::exists(path, ec) && (!fs::is_directory(path, ec) || !fs::is_empty(path, ec))) {
-        error = "path must be an empty directory or not exist yet: " + path.string();
+        error = "path must be an empty directory or not exist yet: " + FileUtils::pathToUtf8(path);
         return false;
     }
     // Canonical, so a symlinked temp path can't hide inside the project
@@ -1460,7 +1512,7 @@ bool prepareNewProjectDirectory(Project* project, const Json& args, fs::path& pa
     const fs::path target = fs::weakly_canonical(path, pathEc);
     const fs::path current = fs::weakly_canonical(project->getProjectPath(), projectEc);
     if (pathEc || projectEc) {
-        error = "Could not resolve " + path.string() + ".";
+        error = "Could not resolve " + FileUtils::pathToUtf8(path) + ".";
         return false;
     }
     const fs::path relative = target.lexically_relative(current);
@@ -1471,7 +1523,7 @@ bool prepareNewProjectDirectory(Project* project, const Json& args, fs::path& pa
     // saveProjectToPath only creates the last level
     fs::create_directories(path, ec);
     if (ec) {
-        error = "Could not create " + path.string() + ": " + ec.message();
+        error = "Could not create " + FileUtils::pathToUtf8(path) + ": " + ec.message();
         return false;
     }
     return true;
@@ -1504,22 +1556,22 @@ std::string optionalString(const Json& args, const char* key, const char* fallba
 }
 
 // Lua entries are stored relative to the Lua root, so they resolve through it first
-std::string scriptPathToAi(Project* project, const ScriptEntry& entry) {
+fs::path scriptPath(Project* project, const ScriptEntry& entry) {
     if (entry.path.empty() || entry.type != ScriptType::LUA) {
         return entry.path;
     }
-    return project->normalizeToProjectRelative(project->resolveLuaPath(entry.path)).generic_string();
+    return project->normalizeToProjectRelative(project->resolveLuaPath(entry.path));
 }
 
-// Script entries may store absolute paths, so compare them project-relative.
-std::string normalizeScriptPath(Project* project, const std::string& value) {
-    fs::path path(value);
+// Script entries may store absolute paths, so compare them project-relative. Compared as
+// paths, the ANSI entries match the UTF-8 paths the AI sends.
+fs::path normalizeScriptPath(Project* project, fs::path path) {
     if (path.is_absolute() && project) {
         std::error_code ec;
         fs::path relative = fs::relative(path, project->getProjectPath(), ec);
         if (!ec) path = relative;
     }
-    return path.lexically_normal().generic_string();
+    return path.lexically_normal();
 }
 
 // Catalog exposes scripts as an opaque Custom property, so entries are listed here instead.
@@ -1530,8 +1582,8 @@ Json scriptEntriesJson(Project* project, const std::vector<ScriptEntry>& scripts
         Json entry = {{"index", i},
                       {"type", scriptTypeName(script.type)},
                       {"class_name", script.className},
-                      {"path", scriptPathToAi(project, script)},
-                      {"header_path", script.headerPath},
+                      {"path", FileUtils::pathToGenericUtf8(scriptPath(project, script))},
+                      {"header_path", FileUtils::pathToGenericUtf8(script.headerPath)},
                       {"enabled", script.enabled}};
         if (script.type == ScriptType::CPP && !script.headerPath.empty() &&
                 !script.className.empty()) {
@@ -1564,8 +1616,8 @@ bool resolveScriptIndex(Project* project, const std::vector<ScriptEntry>& script
     }
 
     const std::string className = optionalString(args, "class_name");
-    const std::string path = className.empty()
-        ? normalizeScriptPath(project, optionalString(args, "path")) : "";
+    const fs::path path = className.empty()
+        ? normalizeScriptPath(project, FileUtils::pathFromUtf8(optionalString(args, "path"))) : fs::path();
     if (className.empty() && path.empty()) {
         error = "Select the script entry with index, class_name, or path.";
         return false;
@@ -1574,7 +1626,7 @@ bool resolveScriptIndex(Project* project, const std::vector<ScriptEntry>& script
     std::vector<size_t> matches;
     for (size_t i = 0; i < scripts.size(); i++) {
         const bool match = className.empty()
-            ? (normalizeScriptPath(project, scriptPathToAi(project, scripts[i])) == path ||
+            ? (normalizeScriptPath(project, scriptPath(project, scripts[i])) == path ||
                normalizeScriptPath(project, scripts[i].headerPath) == path)
             : scripts[i].className == className;
         if (match) matches.push_back(i);
@@ -1668,15 +1720,16 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
             {
                 std::string value = args["string_value"].get<std::string>();
                 if (isAssetPathProperty(propertyName) && !value.empty()) {
-                    if (!PathUtils::isSafeRelativePath(value)) {
+                    const fs::path rel = FileUtils::pathFromUtf8(value);
+                    if (!PathUtils::isSafeRelativePath(rel)) {
                         error = propertyName + " must be a safe project-relative path.";
                         return nullptr;
                     }
-                    if (!isInsideAssets(project, value)) {
+                    if (!isInsideAssets(project, rel)) {
                         error = outsideAssetsError(project, propertyName);
                         return nullptr;
                     }
-                    value = assetPathFromAi(project, value);
+                    value = assetPathFromAi(project, rel);
                 }
                 return new PropertyCmd<std::string>(project, sceneId, entity, component, propertyName, value, onChanged);
             }
@@ -1720,8 +1773,12 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
         }
         case PropertyType::Quat: {
             Quaternion value = Quaternion::IDENTITY;
-            if (!valueFieldPresent(args, "quat_value") || !parseQuaternion(args["quat_value"], value)) {
+            if (!valueFieldPresent(args, "quat_value")) {
                 error = "Property requires quat_value.";
+                return nullptr;
+            }
+            if (!parseRotation(args["quat_value"], value)) {
+                error = "quat_value must be a unit quaternion, not Euler angles.";
                 return nullptr;
             }
             return new PropertyCmd<Quaternion>(project, sceneId, entity, component, propertyName, value, onChanged);
@@ -1784,15 +1841,16 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 }
                 std::string value = requested[i];
                 if (!value.empty()) {
-                    if (!PathUtils::isSafeRelativePath(value)) {
+                    const fs::path rel = FileUtils::pathFromUtf8(value);
+                    if (!PathUtils::isSafeRelativePath(rel)) {
                         error = propertyName + " must hold safe project-relative paths.";
                         return nullptr;
                     }
-                    if (!isInsideAssets(project, value)) {
+                    if (!isInsideAssets(project, rel)) {
                         error = outsideAssetsError(project, propertyName);
                         return nullptr;
                     }
-                    value = assetPathFromAi(project, value);
+                    value = assetPathFromAi(project, rel);
                 }
                 fonts[i] = value;
             }
@@ -1807,7 +1865,7 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
             std::vector<std::string> paths;
             std::istringstream texturePath(args["texture_path"].get<std::string>());
             for (std::string path; std::getline(texturePath, path, '|');) {
-                fs::path rel(path);
+                fs::path rel = FileUtils::pathFromUtf8(path);
                 if (!PathUtils::isSafeRelativePath(rel)) {
                     error = "texture_path must be a safe project-relative path.";
                     return nullptr;
@@ -2303,6 +2361,10 @@ void EditorActionExecutor::logFailure(const ActionResult& result, const std::str
     }
 }
 
+bool EditorActionExecutor::isBlockedBySave(Project* project, const std::string& name) {
+    return project->isAnySceneSaving() && !EditorActionRegistry::isReadOnly(name);
+}
+
 ActionResult EditorActionExecutor::execute(const std::string& name,
                                            const Json& arguments,
                                            const std::atomic<bool>* cancel) {
@@ -2329,6 +2391,10 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
 
     if (!project) {
         return failResult("No project is available.");
+    }
+
+    if (isBlockedBySave(project, name)) {
+        return failResult(busyError(project, name));
     }
 
     if (name == "get_project_summary") return getProjectSummary();
@@ -2386,6 +2452,8 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "update_script_file") return updateScriptFile(arguments);
     if (name == "create_source_file") return createSourceFile(arguments);
     if (name == "set_project_script_dirs") return setProjectScriptDirs(arguments);
+    if (name == "set_project_asset_dirs") return setProjectAssetDirs(arguments);
+    if (name == "check_cpp_build_tools") return checkCppBuildTools();
     if (name == "set_project_cxx_standard") return setProjectCxxStandard(arguments);
     if (name == "update_project_build_file") return updateProjectBuildFile(arguments);
     if (name == "create_bundle_from_entity") return createBundleFromEntity(arguments);
@@ -2438,14 +2506,14 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
 ActionResult EditorActionExecutor::getProjectSummary() {
     Json data;
     data["name"] = project->getName();
-    data["path"] = project->getProjectPath().string();
+    data["path"] = FileUtils::pathToUtf8(project->getProjectPath());
     data["selected_scene_id"] = project->getSelectedSceneId();
     data["start_scene_id"] = project->getStartSceneId();
-    data["assets_dir"] = project->getAssetsDir().generic_string();
-    data["lua_dir"] = project->getLuaDir().generic_string();
+    data["assets_dir"] = FileUtils::pathToGenericUtf8(project->getAssetsDir());
+    data["lua_dir"] = FileUtils::pathToGenericUtf8(project->getLuaDir());
     data["script_dirs"] = Json::array();
     for (const fs::path& scriptDir : project->getScriptDirs()) {
-        data["script_dirs"].push_back(scriptDir.generic_string());
+        data["script_dirs"].push_back(FileUtils::pathToGenericUtf8(scriptDir));
     }
     data["cxx_standard"] = project->getCxxStandard();
     data["canvas"] = {{"width", project->getCanvasWidth()}, {"height", project->getCanvasHeight()}};
@@ -2454,7 +2522,7 @@ ActionResult EditorActionExecutor::getProjectSummary() {
     data["loading"] = loadingSettingsJson(project->getLoadingSettings());
     data["standalone_bundles"] = Json::array();
     for (const fs::path& bundlePath : project->getStandaloneBundles()) {
-        data["standalone_bundles"].push_back(bundlePath.generic_string());
+        data["standalone_bundles"].push_back(FileUtils::pathToGenericUtf8(bundlePath));
     }
     data["scenes"] = Json::array();
     for (const auto& scene : project->getScenes()) {
@@ -2465,7 +2533,7 @@ ActionResult EditorActionExecutor::getProjectSummary() {
             {"opened", scene.opened},
             {"modified", scene.isModified},
             {"main_camera", scene.mainCamera},
-            {"filepath", scene.filepath.generic_string()},
+            {"filepath", FileUtils::pathToGenericUtf8(scene.filepath)},
             {"entity_count", scene.entities.size()},
             {"selected_entities", scene.selectedEntities.size()}
         });
@@ -2492,16 +2560,19 @@ ActionResult EditorActionExecutor::searchResources(const Json& arguments) {
          it != end && !ec && static_cast<int>(matches.size()) < maxResults;
          it.increment(ec)) {
         const fs::path path = it->path();
+        // hidden as in the Resources window
+        const bool hidden = path.filename().native()[0] == '.';
         if (it->is_directory(ec)) {
-            if (path.filename() == ".doriax" || path.filename() == "build") {
+            if (hidden || path.filename() == "build") {
                 it.disable_recursion_pending();
             }
             continue;
         }
+        if (hidden) continue;
 
         fs::path rel = fs::relative(path, projectPath, ec);
         if (ec) continue;
-        const std::string relText = rel.generic_string();
+        const std::string relText = FileUtils::pathToGenericUtf8(rel);
         if (lower(relText).find(query) == std::string::npos) continue;
         const std::string type = fileTypeFromPath(rel);
         if (wantedType != "any" && !wantedType.empty() && type != wantedType) continue;
@@ -2647,7 +2718,7 @@ ActionResult EditorActionExecutor::inspectComponent(const Json& arguments) {
 
 ActionResult EditorActionExecutor::listComponentTypes() {
     Json components = Json::array();
-    for (int i = static_cast<int>(ComponentType::Transform); i <= static_cast<int>(ComponentType::WaterExclusionComponent); ++i) {
+    for (int i = static_cast<int>(ComponentType::Transform); i <= static_cast<int>(ComponentType::SkinComponent); ++i) {
         ComponentType type = static_cast<ComponentType>(i);
         std::string name = Catalog::getComponentName(type);
         if (!name.empty()) {
@@ -2726,7 +2797,9 @@ ActionResult EditorActionExecutor::setEntityTransform(const Json& arguments) {
     Quaternion rotation = transform->rotation;
     Vector3 scale = transform->scale;
     if (arguments.contains("position")) parseVector3(arguments["position"], position);
-    if (arguments.contains("rotation")) parseQuaternion(arguments["rotation"], rotation);
+    if (arguments.contains("rotation") && !parseRotation(arguments["rotation"], rotation)) {
+        return failResult("rotation must be a unit quaternion, not Euler angles.");
+    }
     if (arguments.contains("scale")) parseVector3(arguments["scale"], scale);
 
     CommandHandle::get(sceneId)->addCommandNoMerge(
@@ -2751,7 +2824,9 @@ ActionResult EditorActionExecutor::deleteEntity(const Json& arguments) {
     if (!sceneProject || !sceneProject->scene) return failResult("Scene not found.");
     Entity entity = resolveEntity(sceneProject, arguments);
     if (entity == NULL_ENTITY) return failResult("Entity not found.");
-    CommandHandle::get(sceneId)->addCommandNoMerge(new DeleteEntityCmd(project, sceneId, entity));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new DeleteEntityCmd(project, sceneId, entity))) {
+        return failResult(kRefusedCommand);
+    }
     return okResult("Deleted entity through the command history.");
 }
 
@@ -2788,7 +2863,9 @@ ActionResult EditorActionExecutor::reparentEntity(const Json& arguments) {
         if (!sceneProject->scene->findComponent<Transform>(entity) || !sceneProject->scene->findComponent<Transform>(parent)) {
             return failResult("Both entities need a Transform to be parented.");
         }
-        CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, parent, InsertionType::INTO));
+        if (!CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, parent, InsertionType::INTO))) {
+            return failResult(kRefusedCommand);
+        }
         return okResult("Reparented entity through the command history.");
     }
 
@@ -2805,7 +2882,9 @@ ActionResult EditorActionExecutor::reparentEntity(const Json& arguments) {
     if (rootTarget == NULL_ENTITY) {
         return failResult("Cannot move to scene root because there is no root-level target to order against.");
     }
-    CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, rootTarget, InsertionType::BEFORE));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, rootTarget, InsertionType::BEFORE))) {
+        return failResult(kRefusedCommand);
+    }
     return okResult("Moved entity to scene root through the command history.");
 }
 
@@ -2824,7 +2903,9 @@ ActionResult EditorActionExecutor::moveEntityOrder(const Json& arguments) {
     else if (insertion == "child_first" || insertion == "child_last" || insertion == "into") type = InsertionType::INTO;
     else return failResult("Unsupported insertion. Use before, after, child_first, or child_last.");
 
-    CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, target, type));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new MoveEntityOrderCmd(project, sceneId, entity, target, type))) {
+        return failResult(kRefusedCommand);
+    }
     return okResult("Moved entity order through the command history.");
 }
 
@@ -2954,8 +3035,8 @@ ActionResult EditorActionExecutor::addBody3DShape(const Json& arguments) {
     if (arguments.contains("position") && !parseVector3(arguments["position"], shape.position)) {
         return failResult("position must be a Vector3 object.");
     }
-    if (arguments.contains("rotation") && !parseQuaternion(arguments["rotation"], shape.rotation)) {
-        return failResult("rotation must be a quaternion object.");
+    if (arguments.contains("rotation") && !parseRotation(arguments["rotation"], shape.rotation)) {
+        return failResult("rotation must be a unit quaternion, not Euler angles.");
     }
 
     BodyType requestedBodyType = BodyType::STATIC;
@@ -3122,6 +3203,7 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
 
     std::string error;
+    if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, error)) return failResult(error);
     if (!validateCustomShaderValue(propertyName, arguments, error)) return failResult(error);
 
     std::unique_ptr<Command> cmd(buildPropertyCommand(project, sceneId, entity, component, propertyName, it->second, arguments, error));
@@ -3145,9 +3227,11 @@ ActionResult EditorActionExecutor::setTextureSettings(const Json& arguments) {
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
     if (it->second.type != PropertyType::Texture) return failResult("Property is not a Texture.");
 
+    std::string error;
+    if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, error)) return failResult(error);
+
     Texture* current = static_cast<Texture*>(it->second.ref);
     Texture modified = *current;
-    std::string error;
 
     // Reject unknown enum strings instead of silently defaulting: the Stream converters
     // fall back to linear/repeat, so a value only counts when it round-trips.
@@ -3216,13 +3300,13 @@ ActionResult EditorActionExecutor::addProjectScene(const Json& arguments) {
     if (!safeRelativePath(project, arguments, "scene_path", sceneRel, error, true)) return failResult(error);
     if (!Util::isSceneFile(sceneRel.string())) return failResult("scene_path must point to a .scene file.");
     if (project->isAnyScenePlaying()) {
-        return failResult("Cannot change the project scenes while play mode is active.");
+        return failResult(busyError(project, "changing the project scenes"));
     }
 
     const uint32_t existingSceneId = project->findSceneByPath(sceneRel);
     if (existingSceneId != NULL_PROJECT_SCENE) {
         return okResult("Scene is already part of the project.",
-                        Json{{"scene_path", sceneRel.generic_string()}, {"scene_id", existingSceneId}});
+                        Json{{"scene_path", FileUtils::pathToGenericUtf8(sceneRel)}, {"scene_id", existingSceneId}});
     }
 
     if (!fs::exists(project->getProjectPath() / sceneRel)) {
@@ -3240,7 +3324,7 @@ ActionResult EditorActionExecutor::addProjectScene(const Json& arguments) {
     project->saveProjectFile();
     const SceneProject* sceneProject = project->getScene(sceneId);
     return okResult("Added the scene to the project.",
-                    Json{{"scene_path", sceneRel.generic_string()},
+                    Json{{"scene_path", FileUtils::pathToGenericUtf8(sceneRel)},
                          {"scene_id", sceneId},
                          {"name", sceneProject ? sceneProject->name : std::string()}});
 }
@@ -3292,12 +3376,12 @@ ActionResult EditorActionExecutor::saveScene(const Json& arguments) {
         if (!safeRelativePath(project, arguments, "path", rel, error)) return failResult(error);
         if (rel.extension() != ".scene") return failResult("path must be a .scene file.");
         if (!sceneProject->filepath.empty() && sceneProject->filepath.lexically_normal() != rel) {
-            return failResult("The scene is already saved as " + sceneProject->filepath.generic_string() + "; save it without path.");
+            return failResult("The scene is already saved as " + FileUtils::pathToGenericUtf8(sceneProject->filepath) + "; save it without path.");
         }
         if (sceneProject->filepath.empty()) {
             const fs::path fullPath = project->getProjectPath() / rel;
             if (fs::exists(fullPath)) {
-                return failResult("A file already exists at " + rel.generic_string() + ".");
+                return failResult("A file already exists at " + FileUtils::pathToGenericUtf8(rel) + ".");
             }
             std::error_code ec;
             fs::create_directories(fullPath.parent_path(), ec);
@@ -3310,7 +3394,7 @@ ActionResult EditorActionExecutor::saveScene(const Json& arguments) {
     if (sceneProject->filepath.empty()) {
         return warningResult("The scene has no file yet, so the editor asked the user where to save it. Pass path to save it directly.");
     }
-    return okResult("Saving scene.", Json{{"scene_id", sceneId}, {"path", sceneProject->filepath.generic_string()}});
+    return okResult("Saving scene.", Json{{"scene_id", sceneId}, {"path", FileUtils::pathToGenericUtf8(sceneProject->filepath)}});
 }
 
 ActionResult EditorActionExecutor::saveAllScenes() {
@@ -3442,6 +3526,7 @@ ActionResult EditorActionExecutor::addChildScene(const Json& arguments) {
     if (!project->getScene(sceneId)->scene) return failResult(kClosedParentScene);
     if (sceneId == childSceneId) return failResult("A scene cannot be its own child.");
     if (project->wouldCreateChildSceneCycle(sceneId, childSceneId)) return failResult("The child scene already contains this scene, which would create a cycle.");
+    if (project->hasChildScene(sceneId, childSceneId)) return failResult("Child scene is already attached to this scene.");
 
     const bool startActive = arguments.value("start_active", true);
     if (startActive) {
@@ -3492,7 +3577,7 @@ ActionResult EditorActionExecutor::loadChildSceneInline(const Json& arguments) {
 }
 
 ActionResult EditorActionExecutor::createFolder(const Json& arguments) {
-    fs::path parentRel = arguments.value("parent_path", std::string());
+    fs::path parentRel = FileUtils::pathFromUtf8(arguments.value("parent_path", std::string()));
     fs::path parentFull = project->getProjectPath();
     if (!parentRel.empty()) {
         parentRel = parentRel.lexically_normal();
@@ -3505,9 +3590,12 @@ ActionResult EditorActionExecutor::createFolder(const Json& arguments) {
         return failResult("Parent directory does not exist.");
     }
 
-    const std::string name = arguments.value("name", "");
+    const std::string name = FileUtils::pathFromUtf8(arguments.value("name", "")).string();
     if (name.empty() || fs::path(name).filename().string() != name) {
         return failResult("Folder name must be a single safe path segment.");
+    }
+    if (isInProjectTrash(project, parentRel / name)) {
+        return failResult("The folder would be in the project trash.");
     }
     project->getProjectCommandHistory()->addCommandNoMerge(new CreateDirCmd(name, parentFull.string()));
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
@@ -3519,7 +3607,7 @@ ActionResult EditorActionExecutor::renameResource(const Json& arguments) {
     fs::path rel;
     if (!safeRelativePath(project, arguments, "path", rel, error, true)) return failResult(error);
 
-    const std::string newName = arguments.value("new_name", "");
+    const std::string newName = FileUtils::pathFromUtf8(arguments.value("new_name", "")).string();
     if (newName.empty() || fs::path(newName).filename().string() != newName) {
         return failResult("new_name must be a single filename, not a path.");
     }
@@ -3547,14 +3635,14 @@ ActionResult EditorActionExecutor::deleteResource(const Json& arguments) {
 }
 
 ActionResult EditorActionExecutor::importResourceFile(const Json& arguments) {
-    fs::path source = arguments.value("source_path", "");
+    fs::path source = FileUtils::pathFromUtf8(arguments.value("source_path", ""));
     if (source.empty() || source.is_relative() || !fs::exists(source)) {
         return failResult("source_path must be an existing absolute path.");
     }
 
     std::string error;
     fs::path targetRel;
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -3581,7 +3669,7 @@ ActionResult EditorActionExecutor::linkMaterial(const Json& arguments) {
 
     Material material;
     try {
-        material = Stream::decodeMaterial(YAML::LoadFile((project->getProjectPath() / rel).string()));
+        material = Stream::decodeMaterial(TextEncoding::loadYamlFile(project->getProjectPath() / rel));
     } catch (const std::exception& e) {
         return failResult(std::string("Failed to load material: ") + e.what());
     }
@@ -3627,7 +3715,7 @@ ActionResult EditorActionExecutor::createMaterialFile(const Json& arguments) {
 
     std::string error;
     fs::path targetRel;
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -3681,7 +3769,7 @@ ActionResult EditorActionExecutor::setTerrainTextures(const Json& arguments) {
     // Resolves an argument to an assets-relative texture, or reports why it cannot
     auto readTexture = [&](const char* arg, Texture& out) -> bool {
         if (!arguments.contains(arg) || !arguments[arg].is_string()) return false;
-        fs::path rel = arguments[arg].get<std::string>();
+        fs::path rel = FileUtils::pathFromUtf8(arguments[arg].get<std::string>());
         if (!PathUtils::isSafeRelativePath(rel) || !fs::exists(project->getProjectPath() / rel)) {
             error = std::string(arg) + " must be an existing safe project-relative path.";
             return false;
@@ -3846,7 +3934,7 @@ ActionResult EditorActionExecutor::setTerrainFoliageLayer(const Json& arguments)
         auto readPath = [&](const char* arg, std::string& out) -> std::string {
             if (!arguments.contains(arg)) return "";
             if (!arguments[arg].is_string()) return std::string(arg) + " must be a string.";
-            fs::path rel = arguments[arg].get<std::string>();
+            fs::path rel = FileUtils::pathFromUtf8(arguments[arg].get<std::string>());
             if (rel.empty()) { out.clear(); return ""; }
             if (!PathUtils::isSafeRelativePath(rel) || !fs::exists(project->getProjectPath() / rel)) {
                 return std::string(arg) + " must be an existing safe project-relative path.";
@@ -4041,8 +4129,9 @@ ActionResult EditorActionExecutor::createScript(const Json& arguments) {
     if (entity == NULL_ENTITY) return failResult("Entity not found.");
 
     const std::string className = sanitizeIdentifier(arguments.value("class_name", "NewScript"), "NewScript");
-    fs::path targetRel = arguments.value("target_dir", std::string("scripts"));
+    fs::path targetRel = FileUtils::pathFromUtf8(arguments.value("target_dir", std::string("scripts")));
     if (!PathUtils::isSafeRelativePath(targetRel)) return failResult("target_dir must be a safe project-relative directory.");
+    if (isInProjectTrash(project, targetRel)) return failResult("target_dir is in the project trash.");
     fs::path targetFull = project->getProjectPath() / targetRel;
     std::error_code ec;
     fs::create_directories(targetFull, ec);
@@ -4117,10 +4206,10 @@ ActionResult EditorActionExecutor::createScript(const Json& arguments) {
     }
 
     Json attachArgs = arguments;
-    attachArgs["path"] = fs::relative(sourceFull, project->getProjectPath(), ec).generic_string();
+    attachArgs["path"] = FileUtils::pathToGenericUtf8(fs::relative(sourceFull, project->getProjectPath(), ec));
     attachArgs["class_name"] = className;
     if (!headerFull.empty()) {
-        attachArgs["header_path"] = fs::relative(headerFull, project->getProjectPath(), ec).generic_string();
+        attachArgs["header_path"] = FileUtils::pathToGenericUtf8(fs::relative(headerFull, project->getProjectPath(), ec));
     }
     ActionResult attached = attachScript(attachArgs);
     if (!attached.success) return attached;
@@ -4204,7 +4293,7 @@ ActionResult EditorActionExecutor::attachScript(const Json& arguments) {
     // repoint its entry instead of leaving a stale duplicate behind.
     size_t index = scripts.size();
     for (size_t i = 0; i < scripts.size(); i++) {
-        if (normalizeScriptPath(project, scriptPathToAi(project, scripts[i])) == normalizeScriptPath(project, scriptPathToAi(project, entry)) ||
+        if (normalizeScriptPath(project, scriptPath(project, scripts[i])) == normalizeScriptPath(project, scriptPath(project, entry)) ||
             (scripts[i].type == entry.type && scripts[i].className == entry.className)) {
             index = i;
             break;
@@ -4348,7 +4437,7 @@ ActionResult EditorActionExecutor::updateScriptFile(const Json& arguments) {
         return failResult("Failed to write script file.");
     }
 
-    const std::string relString = rel.lexically_normal().generic_string();
+    const fs::path relPath = rel.lexically_normal();
     int refreshedComponents = 0;
     for (auto& sceneProject : project->getScenes()) {
         if (!sceneProject.scene) continue;
@@ -4359,11 +4448,11 @@ ActionResult EditorActionExecutor::updateScriptFile(const Json& arguments) {
 
             bool matchesFile = false;
             for (const ScriptEntry& scriptEntry : scriptComponent->scripts) {
-                if (!scriptEntry.path.empty() && normalizeScriptPath(project, scriptPathToAi(project, scriptEntry)) == relString) {
+                if (!scriptEntry.path.empty() && normalizeScriptPath(project, scriptPath(project, scriptEntry)) == relPath) {
                     matchesFile = true;
                     break;
                 }
-                if (!scriptEntry.headerPath.empty() && normalizeScriptPath(project, scriptEntry.headerPath) == relString) {
+                if (!scriptEntry.headerPath.empty() && normalizeScriptPath(project, scriptEntry.headerPath) == relPath) {
                     matchesFile = true;
                     break;
                 }
@@ -4386,7 +4475,7 @@ ActionResult EditorActionExecutor::updateScriptFile(const Json& arguments) {
     if (resourcesWindow) {
         resourcesWindow->refreshCurrentDirectory();
     }
-    Out::info("AI updated script file: %s", relString.c_str());
+    Out::info("AI updated script file: %s", relPath.generic_string().c_str());
 
     const std::string verifyStep =
         "Verify this change before telling the user it works: start the scene with "
@@ -4396,7 +4485,7 @@ ActionResult EditorActionExecutor::updateScriptFile(const Json& arguments) {
         "is clean, stop play with control_play_mode (action=stop).";
 
     return okResult("Updated script file. Now verify it by running the scene (see next_step).",
-                    Json{{"path", relString},
+                    Json{{"path", FileUtils::pathToGenericUtf8(relPath)},
                          {"bytes", content.size()},
                          {"refreshed_script_components", refreshedComponents},
                          {"next_step", verifyStep}});
@@ -4468,7 +4557,7 @@ ActionResult EditorActionExecutor::createSourceFile(const Json& arguments) {
     }
 
     return okResult("Created source file (see next_step).",
-                    Json{{"path", rel.generic_string()},
+                    Json{{"path", FileUtils::pathToGenericUtf8(rel)},
                          {"bytes", content.size()},
                          {"in_script_dir", inScriptDir},
                          {"next_step", nextStep}});
@@ -4496,7 +4585,7 @@ ActionResult EditorActionExecutor::setProjectScriptDirs(const Json& arguments) {
             return failResult("directories must contain only strings.");
         }
         const std::string raw = entry.get<std::string>();
-        fs::path directory = fs::path(raw).lexically_normal();
+        fs::path directory = FileUtils::pathFromUtf8(raw).lexically_normal();
         if (!PathUtils::isSafeRelativePath(directory) && !isConfigured(directory)) {
             return failResult("A new script directory must be project-relative and inside the project: " + raw +
                               ". The project root and outside directories are added by the user in Project Settings; "
@@ -4505,7 +4594,7 @@ ActionResult EditorActionExecutor::setProjectScriptDirs(const Json& arguments) {
 
         std::error_code ec;
         if (!fs::is_directory(directory.is_absolute() ? directory : project->getProjectPath() / directory, ec)) {
-            return failResult("Script directory does not exist: " + directory.generic_string() +
+            return failResult("Script directory does not exist: " + FileUtils::pathToGenericUtf8(directory) +
                               ". Create it with create_folder first.");
         }
         if (std::find(directories.begin(), directories.end(), directory) == directories.end()) {
@@ -4515,7 +4604,7 @@ ActionResult EditorActionExecutor::setProjectScriptDirs(const Json& arguments) {
 
     Json scriptDirs = Json::array();
     for (const fs::path& directory : directories) {
-        scriptDirs.push_back(directory.generic_string());
+        scriptDirs.push_back(FileUtils::pathToGenericUtf8(directory));
     }
 
     project->setScriptDirs(std::move(directories));
@@ -4527,6 +4616,86 @@ ActionResult EditorActionExecutor::setProjectScriptDirs(const Json& arguments) {
                         ? "Cleared the project script directories."
                         : "Set the project script directories. The next play or export builds with them.",
                     Json{{"script_dirs", scriptDirs}});
+}
+
+ActionResult EditorActionExecutor::setProjectAssetDirs(const Json& arguments) {
+    if (project->isAnyScenePlaying()) {
+        return failResult(busyError(project, "changing the asset directories"));
+    }
+    // The change saves every open buffer
+    if (hasUnsavedScriptEdits()) {
+        return failResult(kUnsavedScriptEdits);
+    }
+
+    fs::path assetsDir = project->getAssetsDir();
+    fs::path luaDir = project->getLuaDir();
+    // "." is the project root, which isSafeRelativePath rejects
+    const auto readDir = [&](const char* key, fs::path& directory, std::string& error) {
+        const auto it = arguments.find(key);
+        if (it == arguments.end() || !it->is_string()) return true;
+        fs::path value = FileUtils::pathFromUtf8(it->get<std::string>()).lexically_normal();
+        if (!value.empty() && !value.has_filename()) value = value.parent_path();
+        if (value.empty() || value == ".") {
+            directory = ".";
+            return true;
+        }
+        if (!PathUtils::isSafeRelativePath(value)) {
+            error = std::string(key) + " must be . or a project-relative directory inside the project.";
+            return false;
+        }
+        for (const fs::path& part : value) {
+            if (!part.empty() && part.string().front() == '.') {
+                error = std::string(key) + " cannot be a hidden directory: the editor and exports skip those.";
+                return false;
+            }
+        }
+        // Links can point outside the project
+        std::error_code linkEc;
+        const fs::path projectRoot = fs::weakly_canonical(project->getProjectPath(), linkEc);
+        const fs::path inside = fs::weakly_canonical(project->getProjectPath() / value, linkEc).lexically_relative(projectRoot);
+        if (linkEc || inside.empty() || *inside.begin() == "..") {
+            error = std::string(key) + " leads outside the project through a link.";
+            return false;
+        }
+        directory = value;
+        return true;
+    };
+    std::string error;
+    if (!readDir("assets_dir", assetsDir, error) || !readDir("lua_dir", luaDir, error)) {
+        return failResult(error);
+    }
+
+    if (!project->changeAssetRoots(assetsDir, luaDir, &error)) {
+        return failResult(error + ".");
+    }
+    if (!project->saveProjectFile()) {
+        return failResult("Failed to save the project with the new directories.");
+    }
+
+    return okResult("Set the project directories. Referenced files moved and their references were rewritten; "
+                    "read_output_log lists each move. Files nothing references stayed where they were.",
+                    Json{{"assets_dir", FileUtils::pathToGenericUtf8(project->getAssetsDir())},
+                         {"lua_dir", FileUtils::pathToGenericUtf8(project->getLuaDir())}});
+}
+
+ActionResult EditorActionExecutor::checkCppBuildTools() {
+    // The same check play runs before building C++ scripts
+    const LocalBuildSettings settings = AppSettings::getBuildSettings(project->getProjectPath() / "project.yaml");
+    const bool useDefaultKit = settings.cCompiler.empty() && settings.cxxCompiler.empty() && settings.generator.empty();
+    CMakeKit kit;
+    kit.cCompiler = settings.cCompiler;
+    kit.cxxCompiler = settings.cxxCompiler;
+    kit.generator = settings.generator;
+    const std::string missing = Generator::checkBuildTools(useDefaultKit, &kit);
+    if (!missing.empty()) {
+        return okResult("C++ scripts cannot build on this machine, so use Lua unless the user installs what is missing.",
+                        Json{{"ready", false}, {"missing", missing}});
+    }
+
+    const auto shown = [](const std::string& value) { return value.empty() ? std::string("default") : value; };
+    return okResult("C++ build tools found. The first play after writing a C++ script shows whether they compile; if it keeps failing, use Lua.",
+                    Json{{"ready", true}, {"c_compiler", shown(kit.cCompiler)}, {"cxx_compiler", shown(kit.cxxCompiler)},
+                         {"generator", shown(kit.generator)}});
 }
 
 ActionResult EditorActionExecutor::setProjectCxxStandard(const Json& arguments) {
@@ -4617,7 +4786,9 @@ ActionResult EditorActionExecutor::createBundleFromEntity(const Json& arguments)
     if (!node || !node.IsMap()) return failResult("Failed to encode entity selection.");
     fs::create_directories((project->getProjectPath() / bundleRel).parent_path());
 
-    CommandHandle::get(sceneId)->addCommandNoMerge(new CreateEntityBundleCmd(project, sceneId, bundleRel, node));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new CreateEntityBundleCmd(project, sceneId, bundleRel, node))) {
+        return failResult(kRefusedCommand);
+    }
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
     return okResult("Created bundle from entity through the command history.");
 }
@@ -4640,7 +4811,7 @@ ActionResult EditorActionExecutor::importBundleInstance(const Json& arguments) {
 
     auto* cmd = new ImportEntityBundleCmd(project, sceneId, bundleRel, parent, true);
     if (!CommandHandle::get(sceneId)->addCommandNoMerge(cmd)) {
-        return failResult("Failed to import " + bundleRel.string() + ".");
+        return failResult("Failed to import " + FileUtils::pathToGenericUtf8(bundleRel) + ".");
     }
 
     Entity root = cmd->getRootEntity();
@@ -4661,7 +4832,9 @@ ActionResult EditorActionExecutor::addEntityToBundle(const Json& arguments) {
     Entity bundleRoot = resolveEntityByKeys(sceneProject, arguments, "bundle_root_id", "bundle_root_name");
     if (bundleRoot == NULL_ENTITY) return failResult("Bundle root entity not found.");
 
-    CommandHandle::get(sceneId)->addCommandNoMerge(new AddEntityToBundleCmd(project, sceneId, entity, bundleRoot));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new AddEntityToBundleCmd(project, sceneId, entity, bundleRoot))) {
+        return failResult(kRefusedCommand);
+    }
     return okResult("Added entity to bundle through the command history.");
 }
 
@@ -4675,7 +4848,9 @@ ActionResult EditorActionExecutor::removeEntityFromBundle(const Json& arguments)
 
     Transform* transform = sceneProject->scene->findComponent<Transform>(entity);
     Entity parent = transform ? transform->parent : NULL_ENTITY;
-    CommandHandle::get(sceneId)->addCommandNoMerge(new RemoveEntityFromBundleCmd(project, sceneId, entity, parent));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new RemoveEntityFromBundleCmd(project, sceneId, entity, parent))) {
+        return failResult(kRefusedCommand);
+    }
     return okResult("Removed entity from bundle through the command history.");
 }
 
@@ -4688,7 +4863,9 @@ ActionResult EditorActionExecutor::makeBundleComponentUnique(const Json& argumen
     ComponentType component;
     if (!parseComponentType(arguments.value("component", ""), component)) return failResult("Unknown component type.");
 
-    CommandHandle::get(sceneId)->addCommandNoMerge(new ComponentToBundleLocalCmd(project, sceneId, entity, component));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new ComponentToBundleLocalCmd(project, sceneId, entity, component))) {
+        return failResult("The component is already a local override.");
+    }
     return okResult("Made bundle component unique through the command history.");
 }
 
@@ -4701,7 +4878,9 @@ ActionResult EditorActionExecutor::revertBundleComponent(const Json& arguments) 
     ComponentType component;
     if (!parseComponentType(arguments.value("component", ""), component)) return failResult("Unknown component type.");
 
-    CommandHandle::get(sceneId)->addCommandNoMerge(new ComponentToBundleSharedCmd(project, sceneId, entity, component));
+    if (!CommandHandle::get(sceneId)->addCommandNoMerge(new ComponentToBundleSharedCmd(project, sceneId, entity, component))) {
+        return failResult("The component has no local override to revert.");
+    }
     return okResult("Reverted bundle component through the command history.");
 }
 
@@ -4738,13 +4917,13 @@ ActionResult EditorActionExecutor::setStandaloneBundle(const Json& arguments) {
     project->setStandaloneBundles(std::move(bundlePaths));
     project->saveProjectFile();
     return okResult(standalone ? "Added the bundle to the standalone bundles." : "Removed the bundle from the standalone bundles.",
-        Json{{"bundle_path", bundleRel.generic_string()}, {"standalone", standalone}});
+        Json{{"bundle_path", FileUtils::pathToGenericUtf8(bundleRel)}, {"standalone", standalone}});
 }
 
 ActionResult EditorActionExecutor::exportProject(const Json& arguments, const std::atomic<bool>* cancel) {
     if (cancel && cancel->load()) return failResult("Export cancelled.");
     ExportConfig config;
-    config.targetDir = arguments.value("target_dir", "");
+    config.targetDir = FileUtils::pathFromUtf8(arguments.value("target_dir", ""));
     // Stored references are relative to these roots, so they are not overridable
     config.assetsDir = project->getAssetsPath();
     config.luaDir = project->getLuaPath();
@@ -4763,7 +4942,7 @@ ActionResult EditorActionExecutor::exportProject(const Json& arguments, const st
     if (!success) {
         return failResult(progress.errorMessage.empty() ? "Export failed." : progress.errorMessage);
     }
-    return okResult("Exported project.", Json{{"target_dir", config.targetDir.generic_string()}});
+    return okResult("Exported project.", Json{{"target_dir", FileUtils::pathToGenericUtf8(config.targetDir)}});
 }
 
 ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
@@ -4792,18 +4971,31 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
             uint32_t properties = 0;
             if (separator != std::string::npos) {
                 const std::string mask = builtIn.substr(separator + 1);
-                size_t used = 0;
-                unsigned long long value = 0;
-                try {
-                    value = std::stoull(mask, &used, 0);
-                } catch (...) {
-                    used = 0;
+                if (!mask.empty() && !std::isdigit(static_cast<unsigned char>(mask[0]))) {
+                    // names, as missing shaders are listed: Uv1,Nor
+                    std::istringstream names(mask);
+                    for (std::string name; std::getline(names, name, ',');) {
+                        const int bit = ShaderPool::getShaderPropertyBit(type, name);
+                        if (bit < 0) {
+                            error = "Unknown property '" + name + "' in '" + spec + "'.";
+                            return false;
+                        }
+                        properties |= (1u << bit);
+                    }
+                } else {
+                    size_t used = 0;
+                    unsigned long long value = 0;
+                    try {
+                        value = std::stoull(mask, &used, 0);
+                    } catch (...) {
+                        used = 0;
+                    }
+                    if (mask.empty() || used != mask.size() || value > 0xFFFFFFFFull) {
+                        error = "Invalid property mask in '" + spec + "'.";
+                        return false;
+                    }
+                    properties = static_cast<uint32_t>(value);
                 }
-                if (mask.empty() || used != mask.size() || value > 0xFFFFFFFFull) {
-                    error = "Invalid property mask in '" + spec + "'.";
-                    return false;
-                }
-                properties = static_cast<uint32_t>(value);
             }
             uint16_t customId = 0;
             if (customSeparator != std::string::npos) {
@@ -4886,7 +5078,7 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
 ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const std::atomic<bool>* cancel) {
     if (cancel && cancel->load()) return failResult("Shader generation cancelled.");
     ExportConfig config;
-    config.targetDir = arguments.value("target_dir", "");
+    config.targetDir = FileUtils::pathFromUtf8(arguments.value("target_dir", ""));
     std::string error;
     config.selectedBackends = parseBackendList(arguments.value("backends", "all"), error);
     if (!error.empty()) return failResult(error);
@@ -4906,7 +5098,7 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
     if (!success) {
         return failResult(progress.errorMessage.empty() ? "Shader generation failed." : progress.errorMessage);
     }
-    return okResult("Generated shaders.", Json{{"target_dir", config.targetDir.generic_string()}});
+    return okResult("Generated shaders.", Json{{"target_dir", FileUtils::pathToGenericUtf8(config.targetDir)}});
 }
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
@@ -4943,10 +5135,13 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
                            (arguments.contains("entity_name") && arguments["entity_name"].is_string());
     const std::string shaderTypeArg = arguments.value("shader_type", "");
     const bool forkIncludes = arguments.value("fork_includes", false);
-    const fs::path targetDirectory = fs::path(arguments.value(
-        "directory", ProjectUtils::defaultShaderForkDir().generic_string())).lexically_normal();
+    const fs::path targetDirectory = FileUtils::pathFromUtf8(arguments.value(
+        "directory", FileUtils::pathToGenericUtf8(ProjectUtils::defaultShaderForkDir()))).lexically_normal();
     if (targetDirectory != "." && !PathUtils::isSafeRelativePath(targetDirectory)) {
         return failResult("directory must be a safe project-relative path.");
+    }
+    if (isInProjectTrash(project, targetDirectory)) {
+        return failResult("directory is in the project trash.");
     }
 
     // No entity selector: fork a scene-wide default shader for the given type instead of a
@@ -5352,7 +5547,7 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
     Out::info("AI wrote shader file: %s", rel.generic_string().c_str());
 
     return okResult("Wrote shader file.",
-                    Json{{"path", rel.generic_string()},
+                    Json{{"path", FileUtils::pathToGenericUtf8(rel)},
                          {"bytes", content.size()}});
 }
 
@@ -5451,7 +5646,7 @@ ActionResult EditorActionExecutor::importProjectModel(const Json& arguments) {
         return failResult("Model import is only supported in 3D scenes.");
     }
 
-    fs::path relPath(arguments.value("model_path", ""));
+    fs::path relPath = FileUtils::pathFromUtf8(arguments.value("model_path", ""));
     if (!PathUtils::isSafeRelativePath(relPath) || !Util::isModelFile(relPath.string())) {
         return failResult("model_path must be a safe project-relative .gltf, .glb, .obj, or .fbx file.");
     }
@@ -5646,7 +5841,7 @@ ActionResult EditorActionExecutor::downloadCuratedAsset(const Json& arguments, c
     YAML::Node root;
     if (fs::exists(attributionPath)) {
         try {
-            root = YAML::LoadFile(attributionPath.string());
+            root = TextEncoding::loadYamlFile(attributionPath);
         } catch (...) {
             root = YAML::Node(YAML::NodeType::Map);
         }
@@ -5671,8 +5866,8 @@ ActionResult EditorActionExecutor::downloadCuratedAsset(const Json& arguments, c
     }
 
     Json data = {
-        {"imported_path", fs::relative(importedFile, project->getProjectPath()).generic_string()},
-        {"attribution_path", fs::relative(attributionPath, project->getProjectPath()).generic_string()}
+        {"imported_path", FileUtils::pathToGenericUtf8(fs::relative(importedFile, project->getProjectPath()))},
+        {"attribution_path", FileUtils::pathToGenericUtf8(fs::relative(attributionPath, project->getProjectPath()))}
     };
 
     if (arguments.contains("scene_id") || arguments.contains("entity_name") || arguments.contains("position")) {
@@ -5715,12 +5910,12 @@ ActionResult EditorActionExecutor::readResourceFile(const Json& arguments) {
     const fs::path fullPath = projectRoot / rel;
     if (!fs::exists(fullPath)) {
         return expectedMissResult(
-            "Resource file not found: " + rel.generic_string());
+            "Resource file not found: " + FileUtils::pathToGenericUtf8(rel));
     }
     std::ifstream in(fullPath, std::ios::binary);
     if (!in) {
         return failResult(
-            "Failed to open resource file: " + rel.generic_string());
+            "Failed to open resource file: " + FileUtils::pathToGenericUtf8(rel));
     }
 
     constexpr size_t kMaxBytes = 512 * 1024;
@@ -5731,7 +5926,7 @@ ActionResult EditorActionExecutor::readResourceFile(const Json& arguments) {
     }
 
     return okResult("Read resource file.",
-                    Json{{"path", rel.lexically_normal().generic_string()},
+                    Json{{"path", FileUtils::pathToGenericUtf8(rel.lexically_normal())},
                          {"bytes", content.size()},
                          {"content", content}});
 }
@@ -5804,7 +5999,7 @@ ActionResult EditorActionExecutor::readEngineSource(const Json& arguments) {
     if (!arguments.contains("path") || !arguments["path"].is_string()) {
         return failResult("read_engine_source requires path.");
     }
-    fs::path rel = fs::path(arguments["path"].get<std::string>()).lexically_normal();
+    fs::path rel = FileUtils::pathFromUtf8(arguments["path"].get<std::string>()).lexically_normal();
     if (!PathUtils::isSafeRelativePath(rel)) {
         return warningResult(
             "path must be a safe engine-source-relative path, "
@@ -5852,7 +6047,7 @@ ActionResult EditorActionExecutor::readEngineSource(const Json& arguments) {
     }
 
     return okResult("Read engine source file.",
-                    Json{{"path", rel.generic_string()}, {"content", content}});
+                    Json{{"path", FileUtils::pathToGenericUtf8(rel)}, {"content", content}});
 }
 
 ActionResult EditorActionExecutor::readOutputLog(const Json& arguments) {
@@ -5901,7 +6096,7 @@ ActionResult EditorActionExecutor::openScene(const Json& arguments) {
         return failResult("scene_path must point to a .scene file.");
     }
     if (project->isAnyScenePlaying()) {
-        return failResult("Cannot open a scene while play mode is active.");
+        return failResult(busyError(project, "opening a scene"));
     }
 
     const bool closePrevious = arguments.value("close_previous", false);
@@ -5909,7 +6104,7 @@ ActionResult EditorActionExecutor::openScene(const Json& arguments) {
     // a focused scene window would select its own scene back
     getEditorHost().requestScenePlayFocus(project->getSelectedSceneId());
     return okResult("Requested scene open.",
-                    Json{{"scene_path", rel.lexically_normal().generic_string()},
+                    Json{{"scene_path", FileUtils::pathToGenericUtf8(rel.lexically_normal())},
                          {"selected_scene_id", project->getSelectedSceneId()}});
 }
 
@@ -5977,7 +6172,7 @@ ActionResult EditorActionExecutor::deleteScene(const Json& arguments) {
         return failResult("Cannot delete the last scene in the project.");
     }
     if (project->isAnyScenePlaying()) {
-        return failResult("Cannot delete a scene while play mode is active.");
+        return failResult(busyError(project, "deleting a scene"));
     }
     if (sceneProject->filepath.empty()) {
         return failResult("Cannot delete an unsaved scene through AI because it cannot be restored on undo.");
@@ -5994,14 +6189,14 @@ ActionResult EditorActionExecutor::deleteScene(const Json& arguments) {
     }
     return okResult("Removed scene from project through the project command history.",
                     Json{{"removed_scene_id", sceneId}, {"removed_scene_name", sceneName},
-                         {"scene_path", scenePath.generic_string()},
+                         {"scene_path", FileUtils::pathToGenericUtf8(scenePath)},
                          {"selected_scene_id", project->getSelectedSceneId()}});
 }
 
 ActionResult EditorActionExecutor::saveProject(const Json& arguments) {
     if (arguments.contains("path") && arguments["path"].is_string()) {
         if (!project->isTempProject()) {
-            return failResult("The project already lives at " + project->getProjectPath().string() + "; save it without path.");
+            return failResult("The project already lives at " + FileUtils::pathToUtf8(project->getProjectPath()) + "; save it without path.");
         }
         if (project->isAnyScenePlaying()) {
             return failResult(busyError(project, "moving the project"));
@@ -6019,15 +6214,15 @@ ActionResult EditorActionExecutor::saveProject(const Json& arguments) {
             project->setName(name);
         }
         if (!project->saveProjectToPath(path)) {
-            return failResult("Failed to save the project to " + path.string() + ".");
+            return failResult("Failed to save the project to " + FileUtils::pathToUtf8(path) + ".");
         }
-        return okResult("Moved the project out of the temp folder.", Json{{"path", path.string()}});
+        return okResult("Moved the project out of the temp folder.", Json{{"path", FileUtils::pathToUtf8(path)}});
     }
 
     if (!project->saveProject(false)) {
         return failResult("Failed to save project.");
     }
-    return okResult("Saved project.", Json{{"path", project->getProjectPath().string()}});
+    return okResult("Saved project.", Json{{"path", FileUtils::pathToUtf8(project->getProjectPath())}});
 }
 
 ActionResult EditorActionExecutor::setProjectSettings(const Json& arguments) {
@@ -6096,7 +6291,7 @@ ActionResult EditorActionExecutor::createProject(const Json& arguments) {
     }
     std::string name = optionalString(arguments, "name");
     if (name.empty()) {
-        name = path.filename().string();
+        name = FileUtils::pathToUtf8(path.filename());
     }
 
     Project* target = project;
@@ -6111,13 +6306,13 @@ ActionResult EditorActionExecutor::createProject(const Json& arguments) {
         return failResult(kProjectChangeBusy);
     }
     return okResult("Creating the project, which opens after this call. Save its scene with save_scene and path.",
-                    Json{{"path", path.string()}, {"name", name}});
+                    Json{{"path", FileUtils::pathToUtf8(path)}, {"name", name}});
 }
 
 ActionResult EditorActionExecutor::openProject(const Json& arguments) {
     std::string error;
     if (!canSwitchProject(project, error)) return failResult(error);
-    const fs::path path = fs::path(arguments.value("path", "")).lexically_normal();
+    const fs::path path = FileUtils::pathFromUtf8(arguments.value("path", "")).lexically_normal();
     if (!path.is_absolute() || !fs::exists(path / "project.yaml")) {
         return failResult("path must be an absolute project directory holding project.yaml.");
     }
@@ -6126,7 +6321,7 @@ ActionResult EditorActionExecutor::openProject(const Json& arguments) {
     if (!getEditorHost().requestProjectChange([target, path]() { target->loadProject(path); })) {
         return failResult(kProjectChangeBusy);
     }
-    return okResult("Opening the project, which loads after this call.", Json{{"path", path.string()}});
+    return okResult("Opening the project, which loads after this call.", Json{{"path", FileUtils::pathToUtf8(path)}});
 }
 
 ActionResult EditorActionExecutor::copyResource(const Json& arguments) {
@@ -6134,7 +6329,7 @@ ActionResult EditorActionExecutor::copyResource(const Json& arguments) {
     fs::path sourceRel;
     fs::path targetRel;
     if (!safeRelativePath(project, arguments, "source_path", sourceRel, error, true)) return failResult(error);
-    if (!safeRelativePath(project, arguments, "target_dir", targetRel, error, false)) return failResult(error);
+    if (!safeTargetDir(project, arguments, targetRel, error)) return failResult(error);
 
     const fs::path sourceFull = project->getProjectPath() / sourceRel;
     const fs::path targetFull = project->getProjectPath() / targetRel;
@@ -6147,8 +6342,8 @@ ActionResult EditorActionExecutor::copyResource(const Json& arguments) {
         new CopyFileCmd(project, std::vector<std::string>{sourceFull.string()}, targetFull.string(), true));
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
     return okResult("Copied resource through the project command history.",
-                    Json{{"source_path", sourceRel.generic_string()},
-                         {"target_dir", targetRel.generic_string()}});
+                    Json{{"source_path", FileUtils::pathToGenericUtf8(sourceRel)},
+                         {"target_dir", FileUtils::pathToGenericUtf8(targetRel)}});
 }
 
 ActionResult EditorActionExecutor::updateMaterialFile(const Json& arguments) {
@@ -6182,7 +6377,7 @@ ActionResult EditorActionExecutor::updateMaterialFile(const Json& arguments) {
 
     Out::info("AI updated material file: %s", rel.generic_string().c_str());
     return okResult("Updated material file through the project command history.",
-                    Json{{"path", rel.lexically_normal().generic_string()}, {"bytes", normalizedContent.size()}});
+                    Json{{"path", FileUtils::pathToGenericUtf8(rel.lexically_normal())}, {"bytes", normalizedContent.size()}});
 }
 
 ActionResult EditorActionExecutor::setComponentProperties(const Json& arguments) {
@@ -6219,7 +6414,8 @@ ActionResult EditorActionExecutor::setComponentProperties(const Json& arguments)
         }
 
         std::string validationError;
-        if (!validateCustomShaderValue(propertyName, item, validationError)) {
+        if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, validationError) ||
+                !validateCustomShaderValue(propertyName, item, validationError)) {
             delete multiCmd;
             return failResult(validationError);
         }
@@ -6263,7 +6459,7 @@ ActionResult EditorActionExecutor::inspectScene(const Json& arguments) {
         {"type", sceneTypeName(sceneProject->sceneType)},
         {"opened", sceneProject->opened},
         {"modified", sceneProject->isModified},
-        {"filepath", sceneProject->filepath.generic_string()},
+        {"filepath", FileUtils::pathToGenericUtf8(sceneProject->filepath)},
         {"main_camera", sceneProject->mainCamera},
         {"entity_count", sceneProject->entities.size()},
         {"selected_entities", project->getSelectedEntities(sceneId)},

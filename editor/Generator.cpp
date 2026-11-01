@@ -989,6 +989,9 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
         try {
             for (auto it = fs::recursive_directory_iterator(rootPath, fs::directory_options::skip_permission_denied);
                  it != fs::recursive_directory_iterator(); ++it) {
+                if (!FileUtils::isNarrowPath(it->path())) {
+                    continue;
+                }
                 // Hidden and build directories hold the generated sources the
                 // target already compiles through PROJECT_SOURCE and FACTORY_SOURCES.
                 const std::string name = it->path().filename().string();
@@ -1051,17 +1054,12 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     // Jolt's object layer size changes its class layouts, so it has to match the engine.
     cmakeContent += "add_compile_definitions(DORIAX_PHYSICS_2D DORIAX_PHYSICS_3D JPH_OBJECT_LAYER_BITS=" + std::to_string(JPH_OBJECT_LAYER_BITS) + ")\n\n";
 
+    cmakeContent += "# libdoriax is the editor's shared engine build: match its linkage and data layouts\n";
+    cmakeContent += "add_compile_definitions(DORIAX_SHARED DORIAX_EDITOR JPH_SHARED_LIBRARY)\n\n";
+
     cmakeContent += getEditorPluginAbiCheck();
     cmakeContent += "if(DORIAX_EDITOR_PLUGIN)\n";
     cmakeContent += "    add_compile_definitions(DORIAX_EDITOR_PLUGIN)\n";
-    cmakeContent += "    # The editor links its own engine build, which is compiled as a shared\n";
-    cmakeContent += "    # library with editor-specific data layouts. The plugin must match both:\n";
-    cmakeContent += "    #  - DORIAX_SHARED makes DORIAX_API resolve to __declspec(dllimport) so\n";
-    cmakeContent += "    #    static members such as Engine::onUpdate link against the import lib on MSVC.\n";
-    cmakeContent += "    #  - DORIAX_EDITOR keeps HybridArray (and other editor-only layouts)\n";
-    cmakeContent += "    #    ABI-compatible across the DLL boundary.\n";
-    cmakeContent += "    #  - JPH_SHARED_LIBRARY does the same as DORIAX_SHARED for Jolt.\n";
-    cmakeContent += "    add_compile_definitions(DORIAX_SHARED DORIAX_EDITOR JPH_SHARED_LIBRARY)\n";
     cmakeContent += "endif()\n\n";
 
     // Match the engine DLL shipped beside this editor, which DORIAX_LIB_DIR defaults
@@ -1145,10 +1143,6 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "include(${INTERNAL_DIR}/LocalPaths.cmake OPTIONAL)\n";
     cmakeContent += "if(NOT DEFINED DORIAX_LIB_DIR OR DORIAX_LIB_DIR STREQUAL \"\")\n";
     cmakeContent += "    set(DORIAX_LIB_DIR \"${DORIAX_DEFAULT_LIB_DIR}\")\n";
-    cmakeContent += "    # Default target is the editor's own engine build (shared, editor layouts).\n";
-    cmakeContent += "    # Match its macros so symbols link (DORIAX_SHARED, JPH_SHARED_LIBRARY -> dllimport on MSVC)\n";
-    cmakeContent += "    # and data layouts stay ABI-compatible (DORIAX_EDITOR), avoiding ODR/ABI mismatch.\n";
-    cmakeContent += "    add_compile_definitions(DORIAX_SHARED DORIAX_EDITOR JPH_SHARED_LIBRARY)\n";
     cmakeContent += "endif()\n\n";
 
     cmakeContent += "# Find doriax library in specified location. find_library() caches its\n";
@@ -2005,7 +1999,7 @@ std::vector<editor::CMakeKit> editor::Generator::detectAvailableKits() {
         std::string vswhere = CommandRunner::findVswherePath();
         std::string vsName;
         if (!vswhere.empty()) {
-            vsName = runCmd("\"" + vswhere + "\" -products * -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName");
+            vsName = runCmd("\"" + vswhere + "\" -products * -latest -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName -utf8");
         }
         // cl.exe on PATH (e.g. a Developer Command Prompt) also signals MSVC is
         // available even if vswhere cannot be located.
@@ -2024,7 +2018,7 @@ std::vector<editor::CMakeKit> editor::Generator::detectAvailableKits() {
             for (const auto& entry : generators) {
                 if (!vswhere.empty()) {
                     const std::string versionRange = "[" + std::to_string(entry.first) + "," + std::to_string(entry.first + 1) + ")";
-                    const std::string name = runCmd("\"" + vswhere + "\" -products * -latest -version \"" + versionRange + "\" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName");
+                    const std::string name = runCmd("\"" + vswhere + "\" -products * -latest -version \"" + versionRange + "\" -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property displayName -utf8");
                     if (name.empty()) continue;
                     kit.displayName = name;
                 } else {

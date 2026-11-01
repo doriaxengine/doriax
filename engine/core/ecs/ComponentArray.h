@@ -31,7 +31,7 @@ namespace doriax {
     private:
         std::vector<T> componentArray{};
         std::unordered_map<Entity, size_t> entityToIndexMap{};
-        std::unordered_map<size_t, Entity> indexToEntityMap{};
+        std::vector<Entity> indexToEntityMap{};
 
         template<typename... Args>
         void emplace(Entity entity, Args&&... args) {
@@ -43,7 +43,7 @@ namespace doriax {
             size_t newIndex = componentArray.size();
             componentArray.emplace_back(std::forward<Args>(args)...);
             entityToIndexMap[entity] = newIndex;
-            indexToEntityMap[newIndex] = entity;
+            indexToEntityMap.push_back(entity);
         }
 
         void moveRange(size_t start, size_t length, size_t dst){
@@ -90,7 +90,7 @@ namespace doriax {
                 }
                 
                 entityToIndexMap.erase(entity);
-                indexToEntityMap.erase(componentSize);
+                indexToEntityMap.pop_back();
 
             } else {
                 Log::error("Removing non-existent component");
@@ -186,7 +186,7 @@ namespace doriax {
             // Create new arrays/maps
             std::vector<T> newComponentArray(componentArray.size());
             std::unordered_map<Entity, size_t> newEntityToIndexMap;
-            std::unordered_map<size_t, Entity> newIndexToEntityMap;
+            std::vector<Entity> newIndexToEntityMap(componentArray.size());
 
             for (size_t newIndex = 0; newIndex < indices.size(); ++newIndex) {
                 size_t oldIndex = indices[newIndex];
@@ -264,7 +264,7 @@ namespace doriax {
         }
 
         Entity getEntity(size_t index){
-            if (indexToEntityMap.find(index) == indexToEntityMap.end()){
+            if (index >= indexToEntityMap.size()){
                 Log::error("Entity not found");
                 return NULL_ENTITY;
             }

@@ -152,15 +152,27 @@ void checkModernHeaders(const httplib::Request& req, const std::string& method, 
     }
 }
 
+constexpr const char* kPreamble =
+    "You are connected to the Doriax game editor the user has open. These tools work on the open project "
+    "through the editor, so changes show up there right away and scene edits go through its undo history.\n"
+    "The editor keeps open scenes and project.yaml in memory and writes them back when it saves, so change "
+    "scenes, entities, components and project settings only through these tools, never by editing those files on disk.\n"
+    "Write scripts with update_script_file rather than editing the file on disk: it also refreshes the "
+    "exposed properties of every entity that uses the script.\n";
+
+// Claude Code keeps only the first 4096 characters, so the other rules come from get_editor_guidance
 const std::string& instructions() {
-    static const std::string text =
-        "You are connected to the Doriax game editor the user has open. These tools work on the open project "
-        "through the editor, so changes show up there right away and scene edits go through its undo history.\n"
-        "The editor keeps open scenes and project.yaml in memory and writes them back when it saves, so change "
-        "scenes, entities, components and project settings only through these tools, never by editing those files on disk.\n"
-        "Write scripts with update_script_file rather than editing the file on disk: it also refreshes the "
-        "exposed properties of every entity that uses the script.\n" +
-        EditorActionRegistry::guidance();
+    static const std::string text = std::string(kPreamble) +
+        "These instructions hold only the editor's most important rules. Before your first change in a session, "
+        "call get_editor_guidance once and follow everything it returns, which adds the rules for physics, "
+        "scripts, shaders and builds.\n" +
+        EditorActionRegistry::essentialGuidance();
+    return text;
+}
+
+// What get_editor_guidance returns: the instructions with every rule
+const std::string& fullInstructions() {
+    static const std::string text = kPreamble + EditorActionRegistry::guidance();
     return text;
 }
 
@@ -414,6 +426,10 @@ Json McpServer::callTool(const Json& id, const Json& params, const httplib::Requ
     if (!EditorActionRegistry::hasTool(name)) {
         throw RpcError{200, kInvalidParams, "Unknown tool: " + name};
     }
+    // Static text, so it needs no turn on the main thread
+    if (name == "get_editor_guidance") {
+        return toolResult({true, fullInstructions()});
+    }
     if (!allowChanges && !EditorActionRegistry::isReadOnly(name)) {
         return toolResult(changesTurnedOff());
     }
@@ -489,6 +505,11 @@ void McpServer::runCall(const std::shared_ptr<PendingCall>& call) {
         budgetFrame = ImGui::GetFrameCount();
         budgetStart = now;
     } else if (now - budgetStart > kFrameBudget) {
+        getEditorHost().enqueueMainThreadTask([this, call]() { runCall(call); });
+        return;
+    }
+    // Waits for the scene save instead of failing
+    if (EditorActionExecutor::isBlockedBySave(project, call->name)) {
         getEditorHost().enqueueMainThreadTask([this, call]() { runCall(call); });
         return;
     }

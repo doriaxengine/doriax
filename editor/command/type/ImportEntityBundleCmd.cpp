@@ -6,6 +6,7 @@
 #include "editor/Out.h"
 #include "Stream.h"
 #include "util/ProjectUtils.h"
+#include "util/TextEncoding.h"
 
 using namespace doriax;
 
@@ -53,7 +54,7 @@ bool editor::ImportEntityBundleCmd::execute(){
         // Bundle not loaded yet — load from disk to check
         try {
             std::filesystem::path fullBundlePath = project->getProjectPath() / filepath;
-            YAML::Node node = YAML::LoadFile(fullBundlePath.string());
+            YAML::Node node = TextEncoding::loadYamlFile(fullBundlePath);
             // Temporarily decode to check for transforms
             EntityRegistry tempRegistry;
             std::vector<Entity> tempEntities;

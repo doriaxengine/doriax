@@ -174,6 +174,7 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
     if (token == "postprocess" || token == "post") { out = ShaderType::POSTPROCESS; return true; }
     if (token == "water")                       { out = ShaderType::WATER;  return true; }
     if (token == "underwater")                  { out = ShaderType::UNDERWATER; return true; }
+    if (token == "probefilter")                 { out = ShaderType::PROBE_FILTER; return true; }
     return false;
 }
 
@@ -201,23 +202,13 @@ static bool parseShaderSpec(const std::string& value, ShaderKey& out, std::strin
                 return false;
             }
         } else {
-            const int propCount = ShaderPool::getShaderPropertyCount(type);
             for (const std::string& prop : splitList(propsPart)) {
-                const std::string propToken = normalizeToken(prop);
-                bool found = false;
-                for (int bit = 0; bit < propCount; bit++) {
-                    const std::string shortName = normalizeToken(ShaderPool::getShaderPropertyName(type, bit, true));
-                    const std::string longName  = normalizeToken(ShaderPool::getShaderPropertyName(type, bit, false));
-                    if (propToken == shortName || propToken == longName) {
-                        properties |= (1u << bit);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
+                const int bit = ShaderPool::getShaderPropertyBit(type, prop);
+                if (bit < 0) {
                     error = "Unknown shader property '" + prop + "' for shader type " + typePart;
                     return false;
                 }
+                properties |= (1u << bit);
             }
         }
     }
@@ -485,6 +476,12 @@ static void attachHostConsoleIfNeeded() {
         (void)freopen_s(&stdoutFile, "CONOUT$", "w", stdout);
         (void)freopen_s(&stderrFile, "CONOUT$", "w", stderr);
         (void)freopen_s(&stdinFile,  "CONIN$",  "r", stdin);
+    }
+
+    // The output is UTF-8, the shell gets its code page back on exit
+    static const UINT shellCodePage = GetConsoleOutputCP();
+    if (shellCodePage != CP_UTF8 && SetConsoleOutputCP(CP_UTF8)) {
+        std::atexit([]() { SetConsoleOutputCP(shellCodePage); });
     }
 #endif
 }

@@ -30,6 +30,10 @@ void BufferRender::updateBuffer(unsigned int size, void* data){
     backend.updateBuffer(size, data);
 }
 
+int BufferRender::appendBuffer(unsigned int size, const void* data){
+    return backend.appendBuffer(size, data);
+}
+
 void BufferRender::destroyBuffer(){
     backend.destroyBuffer();
 }

@@ -36,11 +36,18 @@ namespace doriax {
         void replaceVertexBuffer(BufferRender* original, BufferRender* replacement, size_t byteOffset = 0);
         // draw from another index buffer of the same element type (a LOD range); resetIndexBuffer
         // returns to the one bound at load
-        void setIndexBuffer(BufferRender* buffer);
+        void setIndexBuffer(BufferRender* buffer, size_t byteOffset = 0);
         void resetIndexBuffer();
         void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture);
         bool endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling = true);
 
+        // same pipeline and bindings apart from the buffers: one draw can render both
+        bool sharesState(const ObjectRender& other, PipelineType pipType) const;
+        bool sharesPipeline(const ObjectRender& other, PipelineType pipType) const;
+        // what sharesState compares, for every pipeline type
+        void getStateKey(std::vector<uint32_t>& key) const;
+        // draws sorted by it change pipeline and bindings less often
+        uint64_t getSortKey(PipelineType pipType) const;
         bool beginDraw(PipelineType pipType);
         void applyUniformBlock(int slot, unsigned int count, void* data);
         // baseElement skips that many elements of the bound index (or vertex) range,

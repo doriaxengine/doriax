@@ -13,6 +13,9 @@
 #include "sokol_gfx.h"
 
 #include <map>
+#include <vector>
+#include <memory>
+#include <tuple>
 
 
 namespace doriax{
@@ -25,13 +28,15 @@ namespace doriax{
     struct BufferInfo{
         uint32_t id;
         size_t offset;
+        unsigned int stride;
+        bool perInstance;
 
         bool operator==(const BufferInfo &o) const {
-            return id == o.id && offset == o.offset;
+            return id == o.id && offset == o.offset && stride == o.stride && perInstance == o.perInstance;
         }
 
         bool operator<(const BufferInfo &o) const {
-            return id < o.id || (id == o.id && offset < o.offset);
+            return std::tie(id, offset, stride, perInstance) < std::tie(o.id, o.offset, o.stride, o.perInstance);
         }
     };
 
@@ -52,10 +57,11 @@ namespace doriax{
         sg_pipeline nodepth_pip;
         sg_pipeline rtt_nodepth_pip;
         sg_pipeline rtt_noblend_pip;
+        sg_pipeline rtt_coloronly_pip;
         sg_pipeline zprepass_pip;
         sg_pipeline zprepass_rtt_pip;
 
-        sg_pipeline_desc pipeline_desc;
+        std::unique_ptr<sg_pipeline_desc> loadPipelineDesc; // only while loading
 
         size_t bindSlotIndex;
 
@@ -66,6 +72,9 @@ namespace doriax{
         sg_primitive_type getPrimitiveType(PrimitiveType primitiveType);
         sg_cull_mode getCullMode(CullingMode cullingMode);
         sg_face_winding getFaceWinding(WindingOrder windingOrder);
+        sg_pipeline getPipeline(PipelineType pipType) const;
+        sg_pipeline_desc& loadingDesc();
+        bool makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling);
 
     public:
 
@@ -81,18 +90,29 @@ namespace doriax{
         // keeping the same per-slot layout/offset (used to swap a per-view instance
         // buffer in just before draw). Affects only the bindings, not the pipeline.
         void replaceVertexBuffer(uint32_t fromBufferId, sg_buffer toBuffer, size_t byteOffset);
-        void setIndexBuffer(sg_buffer buffer);
+        void setIndexBuffer(sg_buffer buffer, size_t byteOffset);
         void resetIndexBuffer();
         void addStorageBuffer(int slot, ShaderStageType stage, BufferRender* buffer);
         void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture);
         // prepassFaceCulling applies to the PIP_ZPREPASS pipelines, which must cull like the color pass
         bool endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling = true);
 
+        // same pipeline and bindings apart from the buffers: one draw can render both
+        bool sharesState(const SokolObject& other, PipelineType pipType) const;
+        bool sharesPipeline(const SokolObject& other, PipelineType pipType) const;
+        void getStateKey(std::vector<uint32_t>& key) const;
+        uint64_t getSortKey(PipelineType pipType) const;
         bool beginDraw(PipelineType pipType);
         void applyUniformBlock(int slot, unsigned int count, void* data);
         void draw(unsigned int baseElement, unsigned int vertexCount, unsigned int instanceCount);
 
         void destroy();
+
+        // the shared pipelines belong to the current sokol context
+        static void clearSharedPipelines();
+        // the next draw applies pipeline and bindings again: called when a pass ends, when a buffer
+        // or image is updated (sokol may move it to another backend resource) and on sokol errors
+        static void resetAppliedState();
 
     };
 }

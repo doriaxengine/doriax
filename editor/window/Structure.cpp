@@ -62,6 +62,11 @@ static bool markBundleScripts(editor::TreeNode& node) {
     return node.hasScript || hasChildScript;
 }
 
+// Scripts often create entities without a name, so show the id instead
+static std::string getNodeLabel(const editor::TreeNode& node) {
+    return node.name.empty() ? "(" + std::to_string(node.id) + ")" : node.name;
+}
+
 std::vector<Entity> editor::Structure::getTopLevelSelectedEntities(Entity draggedEntity) {
     SceneProject* sceneProject = project->getSelectedScene();
     if (!sceneProject || !sceneProject->scene) {
@@ -1049,7 +1054,7 @@ void editor::Structure::showAddChildSceneMenu() {
 }
 
 bool editor::Structure::nodeMatchesSearch(const TreeNode& node, const std::string& searchLower) {
-    std::string nodeName = node.name;
+    std::string nodeName = getNodeLabel(node);
     std::string searchStr = searchLower;
 
     if (!matchCase) {
@@ -1219,16 +1224,19 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
     // Highlight matching nodes when searching
     if (previewingThisCamera) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.86f, 0.2f, 1.0f)); // Yellow: viewing through this camera
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::CameraPreviewText);
         pushedHighlightColor = true;
     } else if (hasSearch && node.matchesSearch) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.5f, 1.0f)); // Yellow for search matches
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::SearchMatchText);
+        pushedHighlightColor = true;
+    } else if (node.name.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, node.isPlayCreated ? Theme::Colors::DisabledGreenText : ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
         pushedHighlightColor = true;
     } else if (node.isPlayCreated) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.85f, 0.65f, 1.0f)); // Green: created by the running scene
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::RuntimeEntityText);
         pushedHighlightColor = true;
     } else if (!node.isScene && !node.isChildScene && node.isLocked && node.isBundle) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.67f, 0.74f, 0.85f, 0.95f)); // Muted blue-gray for locked bundle entities
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::LockedBundleText);
         pushedHighlightColor = true;
     } else if (!node.isScene && !node.isChildScene && node.isLocked && !node.canEditModelHierarchy) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]); // Use theme's disabled color
@@ -1237,17 +1245,17 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
         ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::ChildSceneText);
         pushedHighlightColor = true;
     } else if (node.isBundle && !node.isParentBundle) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.8f, 1.0f)); // Pale gold for bundle root
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::BundleRootText);
         pushedHighlightColor = true;
     } else if (node.isBundleRoot && node.isParentBundle) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f)); // Light blue for nested bundle root
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::NestedBundleRootText);
         pushedHighlightColor = true;
     } else if (node.isBundle && node.isParentBundle) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.62f, 0.82f, 1.0f, 0.82f)); // Softer blue for bundle children
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::BundleChildText);
         pushedHighlightColor = true;
     }
 
-    std::string nodeLabel = BidiText::toVisual(node.name);
+    std::string nodeLabel = node.name.empty() ? getNodeLabel(node) : BidiText::toVisual(node.name);
     bool nodeOpen = ImGui::TreeNodeEx("##node", flags, "%s  %s", node.icon.c_str(), nodeLabel.c_str());
     if (!node.isScene && !node.isChildScene) {
         auto& sceneCollapsedEntities = collapsedEntities[getNodeSceneId(node)];
@@ -1330,7 +1338,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                 ImGui::SetDragDropPayload("entity", &payload, sizeof(EntityPayload));
             }
 
-            ImGui::Text("Moving %s", node.name.c_str());
+            ImGui::Text("Moving %s", nodeLabel.c_str());
             ImGui::EndDragDropSource();
         }
     }
@@ -1346,7 +1354,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
             payload.entitySceneId = node.entitySceneId;
             ImGui::SetDragDropPayload("entity", &payload, sizeof(EntityPayload));
 
-            ImGui::Text("Reference %s", node.name.c_str());
+            ImGui::Text("Reference %s", nodeLabel.c_str());
             ImGui::EndDragDropSource();
         }
     }
@@ -1896,7 +1904,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
     if (node.isMainCamera) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TreeMarkText);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
         ImGui::SetWindowFontScale(0.7f);
         ImGui::TextUnformatted(ICON_FA_EYE);
@@ -1906,7 +1914,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
     if (node.hasScript || (node.hasChildScript && !nodeOpen)) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TreeMarkText);
         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
         ImGui::SetWindowFontScale(0.7f);
         ImGui::TextUnformatted(ICON_FA_FILE_CODE);
@@ -1916,7 +1924,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
     if (instanceCount > 0) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.70f, 0.70f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TreeMarkText);
         if (!node.isMainCamera) {
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
         }
@@ -1956,9 +1964,9 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
         }
 
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1, 1, 1, 0.1f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1, 1, 1, 0.2f));
-        ImGui::PushStyleColor(ImGuiCol_Text, isLoaded ? ImVec4(0.55f, 0.80f, 0.85f, 1.0f) : ImVec4(0.5f, 0.5f, 0.5f, 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, Theme::Colors::ChildSceneEyeHovered);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, Theme::Colors::ChildSceneEyeActive);
+        ImGui::PushStyleColor(ImGuiCol_Text, isLoaded ? Theme::Colors::ChildSceneText : Theme::Colors::ChildSceneUnloadedText);
 
         // Remove frame padding for this button so it doesn't stretch the tree node height
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x, 0.0f));

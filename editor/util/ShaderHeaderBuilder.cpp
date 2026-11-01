@@ -71,20 +71,12 @@ std::string ShaderHeaderBuilder::buildShaderHeader(const std::string& suffix, st
         content += ";\n\n";
     }
 
-    content += "std::string getBase64Shader(std::string name) {";
-    bool first = true;
+    // MSVC fails on else-if chains longer than 128 (C1061)
+    content += "std::string getBase64Shader(std::string name) {\n";
     for (size_t i = 0; i < shaders.size(); ++i) {
-        const auto& shader = shaders[i];
-        content += "\n";
-        content += first ? "    if (name == \"" : "    } else if (name == \"";
-        content += shader.name + "\") {\n";
-        content += "        return " + varNames[i] + ";";
-        first = false;
+        content += "    if (name == \"" + shaders[i].name + "\") return " + varNames[i] + ";\n";
     }
-    if (!first) {
-        content += "\n    }";
-    }
-    content += "\n    return \"\";\n}\n\n";
+    content += "    return \"\";\n}\n\n";
     content += "#endif //SHADER_" + suffix + "_h\n";
 
     return content;

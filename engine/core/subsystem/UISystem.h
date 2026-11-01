@@ -46,6 +46,7 @@ namespace doriax{
         int anchorReferenceHeight;
 
         bool pendingImages; // an image waited for its texture in the last update
+        uint32_t pendingHighSurrogate; // first half of a character past U+FFFF
 
         void createOrUpdateUiComponent(UILayoutComponent& layout, Entity entity, Signature signature);
         void getPanelEdges(const PanelComponent& panel, const UILayoutComponent& layout, const Transform& transform, const UILayoutComponent& headerlayout,  Rect& edgeRight, Rect& edgeRightBottom, Rect& edgeBottom, Rect& edgeLeftBottom, Rect& edgeLeft);
@@ -80,7 +81,7 @@ namespace doriax{
         //TextEdit
         void updateTextEdit(Entity entity, TextEditComponent& textedit, ImageComponent& img, UIComponent& ui, UILayoutComponent& layout);
         void blinkCursorTextEdit(double dt, TextEditComponent& textedit, UIComponent& ui);
-        bool handleTextEditCharInput(TextEditComponent& textedit, TextComponent& text, UIComponent& ui, wchar_t codepoint);
+        bool handleTextEditCharInput(TextEditComponent& textedit, TextComponent& text, UIComponent& ui, uint32_t codepoint);
         bool handleTextEditKeyDown(TextEditComponent& textedit, TextComponent& text, UIComponent& ui, int key, bool repeat, int mods);
         void setTextEditCursorFromLocalX(TextEditComponent& textedit, TextComponent& text, ImageComponent& img, float localX, bool extendSelection);
         bool textEditHasSelection(const TextEditComponent& textedit) const;
@@ -151,7 +152,7 @@ namespace doriax{
 
         void resetButtonStates();
 
-        bool eventOnCharInput(wchar_t codepoint);
+        bool eventOnCharInput(wchar_t input);
         bool eventOnKeyDown(int key, bool repeat, int mods);
         bool eventOnPointerDown(float x, float y);
         bool eventOnPointerUp(float x, float y);

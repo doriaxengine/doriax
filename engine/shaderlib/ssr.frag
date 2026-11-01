@@ -20,6 +20,7 @@
 #endif
 
 #define SSR_BINARY_STEPS 6
+#define SSR_MAX_ROUGHNESS 0.6 // rougher surfaces are left to the IBL
 
 in vec2 v_texcoord;
 out vec4 frag_color;
@@ -85,6 +86,12 @@ void main(){
     vec4 g = texture(sampler2D(u_gbufferTexture, u_gbuffer_smp), d);
     vec3 n = octDecode(g.rg);
     if (dot(n, P) > 0.0) n = -n; // orient toward the camera
+
+    float roughness = g.b;
+    if (roughness >= SSR_MAX_ROUGHNESS){ // too rough
+        frag_color = vec4(0.0);
+        return;
+    }
 
     // view-space reflection ray (camera at origin looking down -Z)
     vec3 V = normalize(P);
@@ -171,7 +178,10 @@ void main(){
     // ray-length fade: confidence drops as the ray travels further
     float distFade = 1.0 - smoothstep(0.0, maxDistance, hitTravel);
 
-    float mask = edgeFade * distFade;
+    // roughness fade: hands rough surfaces over to the IBL
+    float roughnessFade = 1.0 - smoothstep(0.5 * SSR_MAX_ROUGHNESS, SSR_MAX_ROUGHNESS, roughness);
+
+    float mask = edgeFade * distFade * roughnessFade;
 
     frag_color = vec4(reflColor, mask);
 }

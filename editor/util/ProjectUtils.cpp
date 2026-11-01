@@ -961,6 +961,13 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
                 registry->addComponent<BoneComponent>(entity, Stream::decodeBoneComponent(componentNode));
             }
             break;
+        case ComponentType::SkinComponent:
+            if (!componentNode.IsDefined() || componentNode.IsNull()){
+                registry->addComponent<SkinComponent>(entity, {});
+            }else{
+                registry->addComponent<SkinComponent>(entity, Stream::decodeSkinComponent(componentNode));
+            }
+            break;
         case ComponentType::ButtonComponent:
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<ButtonComponent>(entity, {});
@@ -1431,6 +1438,12 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
                 oldComponent = Stream::encodeBoneComponent(registry->getComponent<BoneComponent>(entity));
             }
             registry->removeComponent<BoneComponent>(entity);
+            break;
+        case ComponentType::SkinComponent:
+            if (encodeComponent){
+                oldComponent = Stream::encodeSkinComponent(registry->getComponent<SkinComponent>(entity));
+            }
+            registry->removeComponent<SkinComponent>(entity);
             break;
         case ComponentType::ButtonComponent:
             if (encodeComponent){

@@ -156,7 +156,7 @@ void ShaderDataSerializerHelper::writeShaderData(Writer& out, uint64_t shaderKey
         writeString(out, stage.name);
         writeString(out, stage.source);
 
-        // Bytecode is only present for SPIRV (Vulkan); source-based languages write 0
+        // Bytecode is present for SPIRV and for HLSL compiled at export; sources write 0
         if (stage.bytecode.data && stage.bytecode.size > 0) {
             writeU32(out, stage.bytecode.size);
             out.write(stage.bytecode.data, stage.bytecode.size);
@@ -540,7 +540,7 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
             return setErr(err, "Failed to read stage strings: " + filepath);
         }
 
-        // Bytecode is only present for SPIRV (Vulkan)
+        // Bytecode is present for SPIRV and for HLSL compiled at export
         uint32_t bytecodeSize = 0;
         if (!readU32(in, bytecodeSize)) {
             return setErr(err, "Failed to read bytecode size: " + filepath);

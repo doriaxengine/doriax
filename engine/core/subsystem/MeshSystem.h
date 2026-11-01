@@ -9,6 +9,7 @@
 
 #include "component/MeshComponent.h"
 #include "component/ModelComponent.h"
+#include "component/SkinComponent.h"
 #include "component/SpriteComponent.h"
 #include "component/MeshPolygonComponent.h"
 #include "component/CameraComponent.h"
@@ -272,7 +273,7 @@ namespace doriax{
         bool createOrUpdateTilemap(TilemapComponent& tilemap, MeshComponent& mesh);
         bool createOrUpdateModel(Entity entity, ModelComponent& model);
 
-        void calculateMeshAABB(MeshComponent& mesh);
+        void calculateMeshAABB(MeshComponent& mesh, SkinComponent* skin = nullptr);
 
         void load() override;
         void draw() override;

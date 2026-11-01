@@ -798,10 +798,17 @@ void editor::Exporter::resolveShaderKeys() {
             keys.insert(ShaderPool::normalizeKey(key));
         }
     } else {
+        std::string staleScenes;
         for (const auto& sceneProject : project->getScenes()) {
             for (ShaderKey key : sceneProject.shaderKeys) {
                 keys.insert(ShaderPool::normalizeKey(key));
             }
+            if (sceneProject.shaderKeysStale) {
+                staleScenes += (staleScenes.empty() ? "" : ", ") + sceneProject.name;
+            }
+        }
+        if (!staleScenes.empty()) {
+            Out::warning("Shader keys of %s may be out of date, and the game exits if it needs a missing shader. Open and save these scenes in the editor to update them.", staleScenes.c_str());
         }
     }
     for (ShaderKey key : config.shaderAdditions) {
@@ -1002,6 +1009,7 @@ bool editor::Exporter::configureBuild() {
     const std::string platform = config.mode == ExportMode::Desktop
         ? Generator::getGeneratorPlatform(config.cmakeGenerator) : "";
     std::string emcmake;
+    std::string webNinja;
     std::string kitId;
     if (config.mode == ExportMode::Web) {
         EmsdkInfo emsdk = detectEmsdk(config.emsdkPath);
@@ -1012,6 +1020,11 @@ bool editor::Exporter::configureBuild() {
         emcmake = emsdk.emcmake;
         Out::info("Using Emscripten %s", emsdk.description.c_str());
         kitId = "web\n" + emcmake + "\n" + config.buildType + "\n" + config.graphicBackend;
+#ifdef _WIN32
+        // emcmake looks for Ninja only on PATH, where Visual Studio does not put its own
+        webNinja = CommandRunner::findNinja();
+        if (!webNinja.empty()) kitId += "\n" + webNinja;
+#endif
     } else {
         std::string effectiveGenerator = getEffectiveGenerator();
         // The Xcode generator builds a macOS .app bundle (MACOSX_BUNDLE in the
@@ -1071,6 +1084,9 @@ bool editor::Exporter::configureBuild() {
         // Calling emcmake.py with an arbitrary system python3 can break a
         // correctly configured SDK and does not fix an outdated interpreter.
         cmd = "\"" + toCMakePath(emcmake) + "\" cmake ";
+        if (!webNinja.empty()) {
+            cmd += "-G Ninja -DCMAKE_MAKE_PROGRAM=\"" + toCMakePath(webNinja) + "\" ";
+        }
     } else {
         cmd = Generator::cmakeExecutable() + " ";
         if (!config.cmakeGenerator.empty()) {
@@ -1335,7 +1351,7 @@ bool editor::Exporter::writeNativeResourcePack(const fs::path& outputPath, bool&
                 setError("Failed to read resource for pack: " + filePath.string() + ": " + ec.message());
                 return false;
             }
-            if (!regular) continue;
+            if (!regular || !FileUtils::isNarrowPath(filePath)) continue;
             // A pack left by an earlier export into the same directory is replaced, not packed
             if (filePath == outputPath || filePath == tempPath) continue;
 
@@ -1578,11 +1594,10 @@ bool editor::Exporter::collectWebArtifacts() {
     fs::path dataSrc = buildDir / (appName + ".data");
     if (fs::exists(dataSrc, ec)) {
         fs::copy_file(dataSrc, config.destinationDir / (appName + ".data"), fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            setError("Failed to copy " + dataSrc.filename().string() + ": " + ec.message());
-            return false;
-        }
+    } else {
+        fs::remove(config.destinationDir / (appName + ".data"), ec);
     }
+    if (ec) { setError("Failed to update " + appName + ".data: " + ec.message()); return false; }
 
     return true;
 }
@@ -1648,6 +1663,11 @@ bool editor::Exporter::loadAndSaveAllScenes() {
                     error = "Failed to save scene \"" + sceneProject.name + "\", see Output for details";
                     ok = false;
                 }
+            }
+
+            // main.cpp also lists scenes never saved, whose sources come a frame later
+            if (ok) {
+                project->updateGeneratedSources();
             }
 
             // A disabled backend silently drops its components from the generated sources
@@ -1856,7 +1876,7 @@ bool editor::Exporter::copyAssets() try {
          it != fs::recursive_directory_iterator(); ++it) {
         const auto& entry = *it;
         fs::path relPath = fs::relative(entry.path(), assetsSrc);
-        if (relPath.empty()) continue;
+        if (relPath.empty() || !FileUtils::isNarrowPath(relPath)) continue;
         if (isExportDir(entry)) { it.disable_recursion_pending(); continue; }
 
         // Skip hidden directories (starting with '.') and build directories
@@ -1960,7 +1980,7 @@ bool editor::Exporter::copyLua() try {
          it != fs::recursive_directory_iterator(); ++it) {
         auto& entry = *it;
         fs::path relPath = fs::relative(entry.path(), luaSrc);
-        if (relPath.empty()) continue;
+        if (relPath.empty() || !FileUtils::isNarrowPath(relPath)) continue;
         if (isExportDir(entry)) { it.disable_recursion_pending(); continue; }
 
         // Skip hidden directories (starting with '.') and build directories
@@ -2057,7 +2077,7 @@ bool editor::Exporter::copyCppScripts() try {
              it != fs::recursive_directory_iterator(); ++it) {
             const auto& entry = *it;
             const fs::path relPath = projectRelativePath(entry.path());
-            if (relPath.empty() || isExportDir(entry)) {
+            if (relPath.empty() || isExportDir(entry) || !FileUtils::isNarrowPath(relPath)) {
                 if (entry.is_directory()) it.disable_recursion_pending();
                 continue;
             }
@@ -2097,6 +2117,7 @@ bool editor::Exporter::copyCppScripts() try {
         try {
             for (auto it = fs::recursive_directory_iterator(rootPath, fs::directory_options::skip_permission_denied);
                  it != fs::recursive_directory_iterator(); ++it) {
+                if (!FileUtils::isNarrowPath(it->path())) continue;
                 const std::string name = it->path().filename().string();
                 const fs::path relPath = projectRelativePath(it->path());
                 if ((it->is_directory() && (name.empty() || name[0] == '.' || name == "build"))
@@ -2249,7 +2270,6 @@ bool editor::Exporter::copyEngine() {
     fs::path sdkRoot;
     const std::vector<fs::path> sdkCandidates = {
         FileUtils::getEngineDir(),
-        exeDir / "engine",
         exeDir.parent_path() / "engine",
         exeDir
     };
@@ -3797,6 +3817,10 @@ bool editor::Exporter::buildAndSaveShaders() {
             try {
                 // Synchronous build without cache
                 ShaderData resultData = shaderBuilder.buildShaderForExport(shaderKey, project, backend);
+                // Spares the game compiling HLSL at every start; Json keeps the readable source
+                if (backend == ShaderBackend::D3D11 && config.shaderOutputFormat != ShaderOutputFormat::Json) {
+                    ShaderBuilder::compileHlslBytecode(resultData);
+                }
 
                 std::string basename = shaderStr + "_" + fmtStr;
                 std::string err;
@@ -3903,25 +3927,28 @@ editor::EmsdkInfo editor::Exporter::detectEmsdk(const std::string& overridePath)
     EmsdkInfo info;
 
 #ifdef _WIN32
-    const char* emcmakeName = "emcmake.bat";
+    // emcmake.bat before Emscripten 6.0
+    const char* emcmakeNames[] = {"emcmake.exe", "emcmake.bat"};
 #else
-    const char* emcmakeName = "emcmake";
+    const char* emcmakeNames[] = {"emcmake"};
 #endif
 
     auto tryRoot = [&](const fs::path& root, const std::string& source) -> bool {
         if (root.empty()) return false;
         std::error_code ec;
-        // Accept both the emsdk root and the emscripten dir pointed at directly.
-        const fs::path candidates[] = {
-            root / "upstream" / "emscripten" / emcmakeName,
-            root / emcmakeName
-        };
-        for (const fs::path& candidate : candidates) {
-            if (fs::exists(candidate, ec)) {
-                info.found = true;
-                info.emcmake = candidate.string();
-                info.description = "from " + source;
-                return true;
+        for (const char* emcmakeName : emcmakeNames) {
+            // Accept both the emsdk root and the emscripten dir pointed at directly.
+            const fs::path candidates[] = {
+                root / "upstream" / "emscripten" / emcmakeName,
+                root / emcmakeName
+            };
+            for (const fs::path& candidate : candidates) {
+                if (fs::exists(candidate, ec)) {
+                    info.found = true;
+                    info.emcmake = candidate.string();
+                    info.description = "from " + source;
+                    return true;
+                }
             }
         }
         return false;
@@ -3939,7 +3966,7 @@ editor::EmsdkInfo editor::Exporter::detectEmsdk(const std::string& overridePath)
     }
 
 #ifdef _WIN32
-    if (!CommandRunner::runCaptureNoWindow("where emcmake.bat 2>nul").empty()) {
+    if (!CommandRunner::runCaptureNoWindow("where emcmake.exe emcmake.bat 2>nul").empty()) {
         info.found = true;
         info.emcmake = "emcmake";
         info.description = "on PATH";

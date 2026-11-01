@@ -23,6 +23,7 @@
 #include <memory>
 #include <algorithm>
 #include <array>
+#include <cfloat>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -35,6 +36,40 @@ using namespace doriax;
 
 namespace {
     constexpr int SPOT_MASK_TILE_SIZE = 256;
+    // Settling a sprite costs about what a few frames drawn from its copy save, so one written
+    // again within SPRITE_SETTLE_HOLD updates waits before settling again, twice as long each time
+    constexpr uint32_t SPRITE_SETTLE_HOLD = 4;
+    constexpr uint32_t SPRITE_SETTLE_WAIT = 30;
+    constexpr uint32_t SPRITE_SETTLE_WAIT_MAX = 960;
+
+    // the sprite batches move vertices on the CPU with w = 1; a projective model matrix keeps its w on the GPU
+    bool hasAffineModel(const Transform& transform){
+        const float* model = transform.modelMatrix;
+        return model[3] == 0 && model[7] == 0 && model[11] == 0 && model[15] == 1;
+    }
+
+    // the signature already tells which components exist, so absent ones cost no lookup
+    template<typename T>
+    T* findComponent(Scene* scene, Entity entity, const Signature& signature){
+        return signature.test(scene->getComponentId<T>()) ? &scene->getComponent<T>(entity) : nullptr;
+    }
+
+    // a box from lo to hi against the camera planes, on plain floats with the operations of
+    // isInsideCamera, which the sprite loop calls too often to build an AABB for
+    bool isInsideFrustum(const CameraComponent& camera, const float lo[3], const float hi[3]){
+        const float center[3] = {(hi[0] + lo[0]) * 0.5f, (hi[1] + lo[1]) * 0.5f, (hi[2] + lo[2]) * 0.5f};
+        const float half[3] = {(hi[0] - lo[0]) * 0.5f, (hi[1] - lo[1]) * 0.5f, (hi[2] - lo[2]) * 0.5f};
+        // no early return, it mispredicts when the camera moves
+        bool outside = false;
+        for (int p = 0; p < 6; p++){
+            if (p == FRUSTUM_PLANE_FAR && camera.farClip == 0)
+                continue;
+            const Vector3& n = camera.frustumPlanes[p].normal;
+            const float distance = n.x * center[0] + n.y * center[1] + n.z * center[2] + camera.frustumPlanes[p].d;
+            outside |= distance < -(fabsf(n.x * half[0]) + fabsf(n.y * half[1]) + fabsf(n.z * half[2]));
+        }
+        return !outside;
+    }
 
     // every light, not just the selected ones, so the variant does not change with the camera
     bool allLightsDirectional(Scene* scene){
@@ -50,24 +85,24 @@ namespace {
 
     static_assert(sizeof(Matrix4) == sizeof(float) * 16);
 
-    bool bindSkinningResource(ObjectRender& render, ShaderData& shader, MeshComponent& mesh){
-        const size_t boneCount = mesh.bonesMatrix.size();
+    bool bindSkinningResource(ObjectRender& render, ShaderData& shader, SkinComponent& skin){
+        const size_t boneCount = skin.bonesMatrix.size();
         const unsigned int size = static_cast<unsigned int>(boneCount * sizeof(Matrix4));
         const int storageSlot = shader.getStorageBufferIndex(StorageBufferType::VS_SKINNING);
         if (storageSlot != -1){
-            if (!mesh.bonesBuffer.isCreated() &&
-                    !mesh.bonesBuffer.createBuffer(size, nullptr, BufferType::STORAGE_BUFFER, BufferUsage::STREAM))
+            if (!skin.bonesBuffer.isCreated() &&
+                    !skin.bonesBuffer.createBuffer(size, nullptr, BufferType::STORAGE_BUFFER, BufferUsage::STREAM))
                 return false;
-            render.addStorageBuffer(storageSlot, ShaderStageType::VERTEX, &mesh.bonesBuffer);
+            render.addStorageBuffer(storageSlot, ShaderStageType::VERTEX, &skin.bonesBuffer);
         }else{
             const auto textureSlot = shader.getTextureIndex(TextureShaderType::BONES);
-            if (textureSlot.first == -1 || (!mesh.bonesTexture.isCreated() &&
-                    !mesh.bonesTexture.createDynamicTexture("mesh-bones", 4,
+            if (textureSlot.first == -1 || (!skin.bonesTexture.isCreated() &&
+                    !skin.bonesTexture.createDynamicTexture("mesh-bones", 4,
                         static_cast<int>(boneCount))))
                 return false;
-            render.addTexture(textureSlot, ShaderStageType::VERTEX, &mesh.bonesTexture);
+            render.addTexture(textureSlot, ShaderStageType::VERTEX, &skin.bonesTexture);
         }
-        mesh.needUpdateBones = true;
+        skin.needUpdateBones = true;
         return true;
     }
 
@@ -112,6 +147,13 @@ namespace {
     // an instanced mesh with culling off keeps its whole batch, bounds or not
     bool cullsBatch(const MeshComponent& mesh, const InstancedMeshComponent* instmesh){
         return mesh.worldAABB != AABB::ZERO && (!instmesh || instmesh->cullInstances);
+    }
+
+    // nearest band first (one per doubling of the distance), then grouped by render state
+    uint64_t opaqueSortKey(const MeshComponent& mesh, float squaredDistance, PipelineType pipType){
+        // ilogb is a domain error for zero, NaN and infinity
+        const uint64_t band = (squaredDistance > 1.0f) ? std::min(std::ilogb(std::min(squaredDistance, FLT_MAX)) / 2, 63) : 0;
+        return (band << 58) | (mesh.submeshes[0].render.getSortKey(pipType) & ((1ull << 58) - 1));
     }
 
     // a box without finite bounds counts as inside
@@ -341,6 +383,10 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     fixedResHeight = 0;
     blitSlotParams = -1;
 
+    probeFilterLoaded = false;
+    probeSourceSize = 0;
+    probeFilterSlotParams = -1;
+
     postProcessLoaded = false;
     postProcessNeedReload = false;
     postProcessNeedUpdateUniforms = false;
@@ -374,6 +420,14 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     occluder2DNeedUpdateBuffer = false;
     hasReflectionProbes = false;
     capturingReflectionProbe = false;
+
+    for (ComponentId id : {scene->getComponentId<CameraComponent>(), scene->getComponentId<UILayoutComponent>(),
+            scene->getComponentId<UIComponent>(), scene->getComponentId<PointsComponent>(), scene->getComponentId<LinesComponent>(),
+            scene->getComponentId<LightComponent>(), scene->getComponentId<InstancedMeshComponent>(), scene->getComponentId<TerrainComponent>(),
+            scene->getComponentId<TilemapComponent>(), scene->getComponentId<SoundComponent>(), scene->getComponentId<ModelComponent>(),
+            scene->getComponentId<BoneComponent>()}){
+        spriteLoopComponents.set(id);
+    }
 }
 
 RenderSystem::~RenderSystem(){
@@ -406,6 +460,8 @@ void RenderSystem::destroy(){
     // View teardown keeps the scene alive; retain CPU assets for its next load.
     const bool reloadView = !Engine::isViewLoaded();
 
+    unsettleSprites();
+
     // Before the transform traversal below, which the camera entities are part of.
     while (!mirrorCameras.empty()){
         destroyMirrorCamera(mirrorCameras.begin()->first);
@@ -422,12 +478,17 @@ void RenderSystem::destroy(){
     destroySSAO();
     destroySSR();
     destroyBlit();
+    destroyProbeFilter();
     destroyPostProcess();
     for (InstanceView& view : instanceViews){
         view.buffer.getRender()->destroyBuffer();
         view.data.clear();
         view.capacity = 0;
     }
+    spriteBatch.vertexBuffer.destroyBuffer();
+    spriteBatch.indexBuffer.destroyBuffer();
+    spriteBatch.vertexCapacity = 0;
+    spriteBatch.indexCapacity = 0;
     instanceViewsDirty = true;
     shadowAtlasFramebuffer.destroyFramebuffer();
     shadowAtlasSlotResolution = 0;
@@ -486,6 +547,7 @@ void RenderSystem::destroy(){
     // its Transform and updateReflectionProbes never revisited it)
     for (auto& entry : reflectionProbeRuntimes){
         entry.second->captureFramebuffer.destroyFramebuffer();
+        entry.second->filteredMap.destroyTexture();
         releaseReflectionProbeMaps(*entry.second);
     }
     reflectionProbeRuntimes.clear();
@@ -1380,6 +1442,7 @@ void RenderSystem::destroyReflectionProbe(Entity entity, ReflectionProbeComponen
     auto it = reflectionProbeRuntimes.find(entity);
     if (it != reflectionProbeRuntimes.end()){
         it->second->captureFramebuffer.destroyFramebuffer();
+        it->second->filteredMap.destroyTexture();
         releaseReflectionProbeMaps(*it->second);
         reflectionProbeRuntimes.erase(it);
     }
@@ -1489,6 +1552,7 @@ void RenderSystem::updateReflectionProbes(double dt){
                 activeReflectionProbe = NULL_ENTITY;
             runtime.captureInProgress = false;
             runtime.captureFramebuffer.destroyFramebuffer();
+            runtime.filteredMap.destroyTexture();
             runtime.resolution = 0;
             runtime.nextFace = 0;
             runtime.ready = false;
@@ -1615,6 +1679,9 @@ bool RenderSystem::selectReflectionProbe(const Vector3& worldPosition, fs_reflec
     bool hasPrefilteredMap = selectedRuntime->prefilteredMap && selectedRuntime->prefilteredMap->isCreated();
     if (hasPrefilteredMap){
         texture = selectedRuntime->prefilteredMap.get();
+    }else if (selectedRuntime->filteredMap.isCreated()){
+        texture = &selectedRuntime->filteredMap;
+        hasPrefilteredMap = true;
     }else{
         if (!selectedRuntime->captureFramebuffer.isCreated())
             return false;
@@ -1753,8 +1820,122 @@ void RenderSystem::renderReflectionProbeCapture(){
         runtime.captureInProgress = false;
         runtime.elapsed = 0.0f;
         runtime.capturedPosition = capturePosition;
+        runtime.needFilter = true;
         probe->needUpdate = false;
         activeReflectionProbe = NULL_ENTITY;
+    }
+}
+
+void RenderSystem::loadProbeFilter(){
+    if (probeFilterLoaded)
+        return;
+
+    // the probe filter shader may still be building (async in the editor)
+    probeFilterShader = ShaderPool::get(ShaderType::PROBE_FILTER, 0);
+    if (!probeFilterShader || !probeFilterShader->isCreated())
+        return;
+
+    probeFilterRender.beginLoad(PrimitiveType::TRIANGLES);
+    probeFilterRender.setShader(probeFilterShader.get());
+    probeFilterSlotParams = probeFilterShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::PROBE_FILTER_FS_PARAMS);
+    if (!probeFilterRender.endLoad(PIP_RTT_COLORONLY, false, false, CullingMode::BACK, WindingOrder::CCW))
+        return;
+
+    probeFilterLoaded = true;
+}
+
+void RenderSystem::destroyProbeFilter(){
+    if (probeFilterLoaded){
+        probeFilterRender.destroy();
+    }
+    if (probeFilterShader){
+        probeFilterShader.reset();
+        ShaderPool::remove(ShaderType::PROBE_FILTER, 0);
+    }
+
+    probeSourceMap.destroyTexture();
+    probeReduceMap.destroyTexture();
+
+    probeSourceSize = 0;
+    probeFilterSlotParams = -1;
+    probeFilterLoaded = false;
+}
+
+// Prefilters the finished captures like IBLEnvironment does the sky: a box mip chain of
+// the capture, then one GGX roughness per level sampled from it.
+void RenderSystem::filterReflectionProbes(){
+    for (auto& entry : reflectionProbeRuntimes){
+        ReflectionProbeRuntime& runtime = *entry.second;
+        if (!runtime.needFilter || !runtime.ready || !runtime.captureFramebuffer.isCreated())
+            continue;
+
+        loadProbeFilter();
+        if (!probeFilterLoaded)
+            return;
+
+        const int size = IBLEnvironment::SPECULAR_BASE_SIZE;
+        const int levels = IBLEnvironment::SPECULAR_MIPS;
+        const int captureSize = (int)runtime.resolution;
+        // like IBLEnvironment, the chain starts no larger than the prefiltered map
+        const int sourceSize = std::min(captureSize, size);
+        int sourceLevels = 1;
+        while ((sourceSize >> sourceLevels) > 0)
+            sourceLevels++;
+        auto createMap = [](TextureRender& map, int mapSize, int mapLevels){
+            return map.createFramebufferTexture(TextureType::TEXTURE_CUBE, false, false, mapSize, mapSize,
+                    TextureFilter::LINEAR_MIPMAP_LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE,
+                    ColorFormat::RGBA, mapLevels);
+        };
+        if (!probeSourceMap.isCreated() || probeSourceSize != sourceSize){
+            probeSourceMap.destroyTexture();
+            probeReduceMap.destroyTexture();
+            if (!createMap(probeSourceMap, sourceSize, sourceLevels) || !createMap(probeReduceMap, sourceSize, sourceLevels))
+                continue;
+            probeSourceSize = sourceSize;
+        }
+        if (!runtime.filteredMap.isCreated() && !createMap(runtime.filteredMap, size, levels))
+            continue;
+
+        ShaderData& sd = probeFilterShader.get()->shaderData;
+        auto filterPass = [&](TextureRender& target, TextureRender& source, int level, int face){
+            probeFilterPassRender.startRenderPass(&target, (size_t)face, level);
+            if (probeFilterRender.beginDraw(PIP_RTT_COLORONLY)){
+                probeFilterRender.addTexture(sd.getTextureIndex(TextureShaderType::PROBESOURCE), ShaderStageType::FRAGMENT, &source);
+                probeFilterRender.applyUniformBlock(probeFilterSlotParams, sizeof(fs_probe_filter_t), &fs_probe_filter);
+                probeFilterRender.draw(0, 3, 1);
+            }
+            probeFilterPassRender.endRenderPass();
+        };
+
+        auto downsampleLevel = [&](TextureRender& target, TextureRender& source, int level, int sourceLevel, int sourceBaseSize){
+            const int levelSize = sourceSize >> level;
+            const int sourceLevelSize = sourceBaseSize >> sourceLevel;
+            const float taps = (float)std::min(16, (sourceLevelSize + levelSize - 1) / levelSize);
+            for (int face = 0; face < 6; face++){
+                fs_probe_filter.params = Vector4(0.0f, (float)face, taps, 1.0f);
+                fs_probe_filter.source = Vector4((float)levelSize, (float)sourceBaseSize, 1.0f, (float)sourceLevel);
+                filterPass(target, source, level, face);
+            }
+        };
+
+        // each level is a 2x2 box of the one above, reduced into probeReduceMap and
+        // copied back, as a pass can't sample the texture it renders to
+        downsampleLevel(probeSourceMap, runtime.captureFramebuffer.getColorTexture(), 0, 0, captureSize);
+        for (int level = 1; level < sourceLevels; level++){
+            downsampleLevel(probeReduceMap, probeSourceMap, level, level - 1, sourceSize);
+            downsampleLevel(probeSourceMap, probeReduceMap, level, level, sourceSize);
+        }
+
+        for (int level = 0; level < levels; level++){
+            const float roughness = (float)level / (float)(levels - 1);
+            for (int face = 0; face < 6; face++){
+                fs_probe_filter.params = Vector4(roughness, (float)face, 64.0f, 0.0f);
+                fs_probe_filter.source = Vector4((float)(size >> level), (float)sourceSize, (float)sourceLevels, 0.0f);
+                filterPass(runtime.filteredMap, probeSourceMap, level, face);
+            }
+        }
+
+        runtime.needFilter = false;
     }
 }
 
@@ -2646,18 +2827,15 @@ bool RenderSystem::updateTerrainRenderTextures(Entity entity, TerrainComponent& 
 }
 
 void RenderSystem::updateAllTerrainRenderTextures(){
-    auto meshes = scene->getComponentArray<MeshComponent>();
-    for (int i = 0; i < meshes->size(); i++){
-        MeshComponent& mesh = meshes->getComponentFromIndex(i);
-        if (!mesh.loaded || mesh.needReload){
+    auto terrains = scene->getComponentArray<TerrainComponent>();
+    for (int i = 0; i < terrains->size(); i++){
+        Entity entity = terrains->getEntity(i);
+        MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+        if (!mesh || !mesh->loaded || mesh->needReload){
             continue;
         }
 
-        Entity entity = meshes->getEntity(i);
-        TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
-        if (terrain){
-            updateTerrainRenderTextures(entity, *terrain, mesh);
-        }
+        updateTerrainRenderTextures(entity, terrains->getComponentFromIndex(i), *mesh);
     }
 }
 
@@ -2700,6 +2878,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
     if (!Engine::isViewLoaded()) 
         return false;
+
+    // Mesh::load can reload a settled sprite
+    unsettleSprite(entity);
 
     if (terrain && !terrain->heightMapLoaded)
         return false;
@@ -2817,6 +2998,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
     }
 
+    SkinComponent* skin = findComponent<SkinComponent>(scene, entity, signature);
+
     for (int i = 0; i < mesh.numSubmeshes; i++){
 
         ObjectRender& render = mesh.submeshes[i].render;
@@ -2911,6 +3094,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].hasMorphTangent = true;
             }
         }
+        // without a SkinComponent there is no palette, so the mesh draws in its bind pose
+        if (!skin){
+            mesh.submeshes[i].hasSkinning = false;
+        }
 
         if (!mesh.submeshes[i].material.normalTexture.empty()){
             mesh.submeshes[i].hasNormalMap = true;
@@ -2969,7 +3156,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         bool p_shadows2d = useLight2D && hasShadows2D && mesh.receiveShadows;
         if (useLight2D){
             p_hasNormal = mesh.submeshes[i].hasNormal;
-            if (p_hasNormal && mesh.submeshes[i].hasTangent){
+            // the 2D lighting reads tangents only for a normal map
+            if (p_hasNormal && mesh.submeshes[i].hasTangent && mesh.submeshes[i].hasNormalMap){
                 p_hasTangent = true;
             }
             if (mesh.submeshes[i].hasNormalMap){
@@ -3128,7 +3316,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         if (mesh.submeshes[i].hasSkinning){
             mesh.submeshes[i].slotVSSkinning = shaderData.getUniformBlockIndex(UniformBlockType::VS_SKINNING);
-            if (!bindSkinningResource(render, shaderData, mesh))
+            if (!bindSkinningResource(render, shaderData, *skin))
                 return false;
         }
         if (mesh.submeshes[i].hasMorphTarget){
@@ -3274,7 +3462,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSDepthSkinning = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
-                if (!bindSkinningResource(depthRender, depthShaderData, mesh))
+                if (!bindSkinningResource(depthRender, depthShaderData, *skin))
                     return false;
             }
             if (mesh.submeshes[i].hasMorphTarget){
@@ -3401,7 +3589,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
-                if (!bindSkinningResource(gbufferRender, gbufferShaderData, mesh))
+                if (!bindSkinningResource(gbufferRender, gbufferShaderData, *skin))
                     return false;
             }
             if (mesh.submeshes[i].hasMorphTarget){
@@ -3997,16 +4185,6 @@ void RenderSystem::drawSubmeshGeometry(ObjectRender& render, MeshComponent& mesh
 // ranges would slice the previous upload with the new offsets. Sokol allows a single
 // update per buffer per frame, which the flag already guarantees.
 void RenderSystem::updateMeshBuffers(MeshComponent& mesh){
-    if (mesh.needUpdateBones){
-        const unsigned int size = static_cast<unsigned int>(
-            mesh.bonesMatrix.size() * sizeof(Matrix4));
-        if (mesh.bonesBuffer.isCreated())
-            mesh.bonesBuffer.updateBuffer(size, mesh.bonesMatrix.data());
-        if (mesh.bonesTexture.isCreated())
-            mesh.bonesTexture.updateTexture(mesh.bonesMatrix.data(), size);
-        mesh.needUpdateBones = false;
-    }
-
     if (!mesh.needUpdateBuffer)
         return;
 
@@ -4060,6 +4238,26 @@ void RenderSystem::updateInstanceBuffers(){
     }
 }
 
+// Once per frame, before any pass, as with the instance buffers.
+void RenderSystem::updateSkinBuffers(){
+    auto skins = scene->getComponentArray<SkinComponent>();
+
+    for (int i = 0; i < skins->size(); i++){
+        SkinComponent& skin = skins->getComponentFromIndex(i);
+
+        if (!skin.needUpdateBones)
+            continue;
+
+        const unsigned int size = static_cast<unsigned int>(
+            skin.bonesMatrix.size() * sizeof(Matrix4));
+        if (skin.bonesBuffer.isCreated())
+            skin.bonesBuffer.updateBuffer(size, skin.bonesMatrix.data());
+        if (skin.bonesTexture.isCreated())
+            skin.bonesTexture.updateTexture(skin.bonesMatrix.data(), size);
+        skin.needUpdateBones = false;
+    }
+}
+
 // Uploads a terrain view's CDLOD node selection, before the first pass of the frame
 // that draws it — the same rule as updateMeshBuffers. The depth and G-buffer passes
 // draw the main camera's selection and take their instance count from the CPU-side
@@ -4076,7 +4274,560 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
     terrain.views[viewIndex].needUpdateNodesBuffer = false;
 }
 
+// Quads drawn unlit with vertex colors, optionally with Uv1, Txr, Fog, Ams and Aop: nothing else
+// in them is per object. For bigger meshes a draw with shared buffers costs less than moving the vertices
+bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
+    constexpr uint32_t required = (1u << 0) | (1u << 10);
+    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
+
+    // shader properties first, they rule out lit meshes
+    const Submesh& submesh = mesh.submeshes[0];
+    return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
+        mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
+        mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
+        !submesh.needUpdateTexture && !submesh.lodData;
+}
+
+// false when the mesh needs its own draw; culled sprites count as batched
+bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& transform, CameraComponent& camera, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap){
+    // an opaque mesh in the depth prepass keeps its own transform, or its depth would not match
+    if (instmesh || terrain || tilemap || !canBatchSprite(mesh) || (!mesh.transparent && spriteBatch.depthPrepass))
+        return false;
+
+    Submesh& submesh = mesh.submeshes[0];
+    if ((transform.billboard && transform.fakeBillboard) || !hasAffineModel(transform))
+        return false;
+
+    // an equal pipeline means the same shader, layout and blending
+    const bool alphaMask = submesh.shaderProperties & (1u << 24);
+    auto sharesState = [&](const Submesh& other){
+        return other.render.sharesState(submesh.render, spriteBatch.pipType) &&
+            (!alphaMask || other.material.alphaCutoff == submesh.material.alphaCutoff);
+    };
+
+    if (!spriteBatch.items.empty()){
+        // nothing to draw, and no reason to split the batch around it
+        if (cullsBatch(mesh, nullptr) && !isInsideCamera(camera, mesh.worldAABB))
+            return true;
+
+        MeshComponent& first = *spriteBatch.items[0].mesh;
+        const size_t batchVertices = (spriteBatch.items.size() == 1) ? first.buffer.getCount() : spriteBatch.vertices.size() / spriteBatch.layout.stride;
+        if (!sharesState(first.submeshes[0]) || batchVertices + mesh.buffer.getCount() > std::numeric_limits<uint16_t>::max()){
+            flushSpriteItems();
+        }
+    }
+
+    // a sprite unlike the one drawn before it is drawn right away, so a batch starts on
+    // the second sprite of a run and changing textures never wait for one
+    if (spriteBatch.items.empty()){
+        Submesh* previous = spriteBatch.previous;
+        spriteBatch.previous = &submesh;
+        if (!previous || !sharesState(*previous))
+            return false;
+        if (cullsBatch(mesh, nullptr) && !isInsideCamera(camera, mesh.worldAABB))
+            return true;
+        if (!getSpriteLayout(mesh, spriteBatch.layout))
+            return false;
+    }
+
+    spriteBatch.items.push_back({entity, &mesh, &transform});
+    if (spriteBatch.items.size() == 2){
+        appendSpriteGeometry(spriteBatch.items[0]);
+    }
+    if (spriteBatch.items.size() >= 2){
+        appendSpriteGeometry(spriteBatch.items.back());
+    }
+
+    return true;
+}
+
+// checks what an equal pipeline does not tell, and finds the attributes the batch rewrites
+bool RenderSystem::getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const{
+    const Submesh& submesh = mesh.submeshes[0];
+    if (submesh.customShaderId != 0 || !mesh.customShader.empty() || !scene->getDefaultMeshShader().empty() ||
+            submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
+            submesh.material.baseColorTexture.isFramebuffer())
+        return false;
+
+    const Attribute* position = mesh.buffer.getAttribute(AttributeType::POSITION);
+    const Attribute* texcoord = mesh.buffer.getAttribute(AttributeType::TEXCOORD1);
+    const Attribute* color = mesh.buffer.getAttribute(AttributeType::COLOR);
+    const Attribute* index = mesh.indices.getAttribute(AttributeType::INDEX);
+    if (!position || !color || !index ||
+            position->getDataType() != AttributeDataType::FLOAT || position->getElements() != 3 ||
+            color->getDataType() != AttributeDataType::FLOAT || color->getElements() != 4 ||
+            (texcoord && (texcoord->getDataType() != AttributeDataType::FLOAT || texcoord->getElements() != 2)) ||
+            ((submesh.shaderProperties & (1u << 1)) && !texcoord) ||
+            index->getDataType() != AttributeDataType::UNSIGNED_SHORT || index->getOffset() != 0 ||
+            index->getCount() < submesh.vertexCount)
+        return false;
+
+    layout.stride = mesh.buffer.getStride();
+    layout.positionOffset = position->getOffset();
+    layout.colorOffset = color->getOffset();
+    layout.texcoordOffset = texcoord ? (int)texcoord->getOffset() : -1;
+    return true;
+}
+
+// the texture rect and material color become vertex data, the batch draws with neutral uniforms
+void RenderSystem::bakeSpriteVertices(unsigned char* vertices, unsigned int count, const SpriteLayout& layout, const Submesh& submesh) const{
+    const Rect& rect = submesh.textureRect;
+    const Vector4& tint = submesh.material.baseColorFactor;
+
+    for (unsigned int v = 0; v < count; v++, vertices += layout.stride){
+        if (layout.texcoordOffset >= 0 && submesh.hasTextureRect){
+            float uv[2];
+            std::memcpy(uv, vertices + layout.texcoordOffset, sizeof(uv));
+            uv[0] = uv[0] * rect.getWidth() + rect.getX();
+            uv[1] = uv[1] * rect.getHeight() + rect.getY();
+            std::memcpy(vertices + layout.texcoordOffset, uv, sizeof(uv));
+        }
+
+        float color[4];
+        std::memcpy(color, vertices + layout.colorOffset, sizeof(color));
+        color[0] *= tint.x;
+        color[1] *= tint.y;
+        color[2] *= tint.z;
+        color[3] *= tint.w;
+        std::memcpy(vertices + layout.colorOffset, color, sizeof(color));
+    }
+}
+
+void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
+    const MeshComponent& mesh = *item.mesh;
+    const Submesh& submesh = mesh.submeshes[0];
+    const Matrix4& model = item.transform->modelMatrix;
+    const SpriteLayout& layout = spriteBatch.layout;
+
+    const unsigned int count = mesh.buffer.getCount();
+    const size_t start = spriteBatch.vertices.size();
+    const uint16_t base = (uint16_t)(start / layout.stride);
+    spriteBatch.vertices.resize(start + (size_t)count * layout.stride);
+    unsigned char* vertices = spriteBatch.vertices.data() + start;
+    std::memcpy(vertices, mesh.buffer.getData(), (size_t)count * layout.stride);
+    bakeSpriteVertices(vertices, count, layout, submesh);
+
+    for (unsigned int v = 0; v < count; v++){
+        unsigned char* vertex = vertices + (size_t)v * layout.stride + layout.positionOffset;
+        Vector3 position;
+        std::memcpy(&position, vertex, sizeof(float) * 3);
+        position = model * position;
+        std::memcpy(vertex, &position, sizeof(float) * 3);
+    }
+
+    const uint16_t* indices = reinterpret_cast<const uint16_t*>(mesh.indices.getData());
+    for (unsigned int i = 0; i < submesh.vertexCount; i++){
+        spriteBatch.indices.push_back(base + indices[i]);
+    }
+}
+
+// what a batch draws with: the color factor is already in the vertices
+void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh){
+    if (hasFog){
+        render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
+    }
+
+    if (submesh.hasTextureRect){
+        Rect fullRect(0, 0, 1, 1);
+        render.applyUniformBlock(submesh.slotVSSprite, sizeof(float) * 4, &fullRect);
+    }
+
+    float materialParams[8];
+    std::memcpy(materialParams, &submesh.material, sizeof(materialParams));
+    std::fill(materialParams, materialParams + 4, 1.0f);
+    const bool alphaMask = submesh.shaderProperties & (1u << 24);
+    render.applyUniformBlock(submesh.slotFSParams, sizeof(float) * (alphaMask ? 8 : 4), materialParams);
+
+    Matrix4 matrices[3];
+    matrices[2] = spriteBatch.camera->viewProjectionMatrix;
+    if (isRenderingFlipped(*spriteBatch.camera)){
+        matrices[2] = Matrix4::scaleMatrix(Vector3(1, -1, 1)) * matrices[2];
+    }
+    render.applyUniformBlock(submesh.slotVSParams, sizeof(matrices), matrices);
+}
+
+bool RenderSystem::drawSpriteBatch(){
+    const size_t vertexBytes = spriteBatch.vertices.size();
+    const size_t indexBytes = spriteBatch.indices.size() * sizeof(uint16_t);
+    spriteBatch.vertexDemand += vertexBytes;
+    spriteBatch.indexDemand += indexBytes;
+
+    if (!spriteBatch.vertexBuffer.isCreated() || !spriteBatch.indexBuffer.isCreated())
+        return false;
+    const int vertexOffset = spriteBatch.vertexBuffer.appendBuffer(vertexBytes, spriteBatch.vertices.data());
+    const int indexOffset = spriteBatch.indexBuffer.appendBuffer(indexBytes, spriteBatch.indices.data());
+    if (vertexOffset < 0 || indexOffset < 0)
+        return false;
+
+    MeshComponent& mesh = *spriteBatch.items[0].mesh;
+    Submesh& submesh = mesh.submeshes[0];
+    ObjectRender& render = submesh.render;
+    if (!render.beginDraw(spriteBatch.pipType))
+        return false;
+
+    applySpriteBatchUniforms(render, submesh);
+
+    render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset);
+    render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset);
+    render.draw(0, (unsigned int)spriteBatch.indices.size(), 1);
+    render.replaceVertexBuffer(mesh.buffer.getRender(), mesh.buffer.getRender());
+    render.resetIndexBuffer();
+
+    return true;
+}
+
+void RenderSystem::flushSpriteItems(){
+    if (spriteBatch.items.empty())
+        return;
+
+    if (spriteBatch.items.size() == 1 || !drawSpriteBatch()){
+        const bool active = spriteBatch.active;
+        spriteBatch.active = false;
+        for (const SpriteBatchItem& item : spriteBatch.items){
+            drawMesh(item.entity, *item.mesh, *item.transform, *spriteBatch.camera, *spriteBatch.cameraTransform, spriteBatch.pipType, nullptr, nullptr, nullptr);
+        }
+        spriteBatch.active = active;
+    }
+
+    spriteBatch.items.clear();
+    spriteBatch.vertices.clear();
+    spriteBatch.indices.clear();
+}
+
+// draws everything batched so far, before any other draw
+void RenderSystem::flushSpriteBatch(){
+    flushSpriteItems();
+    flushSpriteSegment();
+}
+
+void RenderSystem::updateSpriteBatch(Entity entity){
+    if (!isSpriteSettled(entity))
+        return;
+
+    // one written every few frames keeps the per-frame batch for a while instead
+    SettleWait& wait = settleWaits[entity];
+    if (spriteUpdates - settledSprites[settledIndex(entity)].settledAt < SPRITE_SETTLE_HOLD){
+        wait.length = std::min(std::max(wait.length * 2, SPRITE_SETTLE_WAIT), SPRITE_SETTLE_WAIT_MAX);
+    }else{
+        wait.length = 0;
+    }
+    wait.until = spriteUpdates + wait.length;
+    unsettleSprite(entity);
+}
+
+// Frames draw a settled sprite from its copy until SpriteComponent::needUpdateBatch or a component
+// change drops it; only the transform is followed
+void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform){
+    if (isSpriteSettled(entity) || !signature.test(scene->getComponentId<SpriteComponent>()) ||
+            (signature & spriteLoopComponents).any() || transform.billboard || !hasAffineModel(transform))
+        return;
+    if (!settleWaits.empty()){
+        auto wait = settleWaits.find(entity);
+        if (wait != settleWaits.end() && spriteUpdates < wait->second.until)
+            return;
+    }
+    if (!canBatchSprite(mesh))
+        return;
+
+    const Submesh& submesh = mesh.submeshes[0];
+    const unsigned int vertexCount = mesh.buffer.getCount();
+    SpriteLayout layout;
+    if (!getSpriteLayout(mesh, layout) || layout.stride * 4 > sizeof(SettledSprite::vertices) ||
+            submesh.vertexCount > sizeof(SettledSprite::indices) / sizeof(uint16_t))
+        return;
+
+    SettledSprite sprite;
+    sprite.entity = entity;
+    sprite.settledAt = spriteUpdates;
+    sprite.vertexCount = vertexCount;
+    sprite.indexCount = submesh.vertexCount;
+    SettledBounds bounds;
+    bounds.culls = mesh.worldAABB != AABB::ZERO;
+    std::memcpy(sprite.vertices, mesh.buffer.getData(), (size_t)vertexCount * layout.stride);
+    bakeSpriteVertices(sprite.vertices, vertexCount, layout, submesh);
+    std::memcpy(sprite.indices, mesh.indices.getData(), sizeof(uint16_t) * submesh.vertexCount);
+    for (unsigned int v = 0; v < vertexCount; v++){
+        std::memcpy(sprite.positions[v], sprite.vertices + (size_t)v * layout.stride + layout.positionOffset, sizeof(sprite.positions[v]));
+    }
+
+    // sprites with equal keys draw the same way, so a run of them is one batch
+    const bool alphaMask = submesh.shaderProperties & (1u << 24);
+    const float cutoff = alphaMask ? submesh.material.alphaCutoff : 0.0f;
+    uint32_t cutoffBits;
+    std::memcpy(&cutoffBits, &cutoff, sizeof(cutoffBits));
+    std::vector<uint32_t> key;
+    key.reserve(96); // the pipelines, views, samplers and offsets getStateKey adds
+    key.insert(key.end(), {cutoffBits, layout.stride, (uint32_t)layout.positionOffset,
+        (uint32_t)layout.colorOffset, (uint32_t)(layout.texcoordOffset + 1)});
+    submesh.render.getStateKey(key);
+
+    auto it = spriteStateOf.find(key);
+    if (it == spriteStateOf.end()){
+        uint32_t state = (uint32_t)spriteStates.size();
+        if (!freeSpriteStates.empty()){
+            state = freeSpriteStates.back();
+            freeSpriteStates.pop_back();
+        }else{
+            spriteStates.emplace_back();
+        }
+        spriteStates[state].key = key;
+        spriteStates[state].layout = layout;
+        it = spriteStateOf.emplace(std::move(key), state).first;
+    }
+    sprite.state = it->second;
+    spriteStates[sprite.state].sprites++;
+    placeSettledSprite(sprite, bounds, transform);
+
+    setSettledIndex(entity, (int)settledSprites.size());
+    settledSprites.push_back(sprite);
+    settledBounds.push_back(bounds);
+}
+
+void RenderSystem::unsettleSprite(Entity entity){
+    if (!isSpriteSettled(entity))
+        return;
+
+    const int index = settledIndex(entity);
+    const uint32_t stateIndex = settledSprites[index].state;
+    SpriteState& state = spriteStates[stateIndex];
+    if (--state.sprites == 0){
+        spriteStateOf.erase(state.key);
+        state.key.clear();
+        freeSpriteStates.push_back(stateIndex);
+    }
+
+    if (index != (int)settledSprites.size() - 1){
+        settledSprites[index] = settledSprites.back();
+        settledBounds[index] = settledBounds.back();
+        setSettledIndex(settledSprites[index].entity, index);
+    }
+    settledSprites.pop_back();
+    settledBounds.pop_back();
+    setSettledIndex(entity, -1);
+
+    // a draw of its own needs the MVP the batch did without. A billboard that turns gets it from
+    // the update loop, which has the index updateMVP walks its children from; others ignore it
+    const Entity cameraEntity = scene->getRenderCamera();
+    CameraComponent* camera = scene->findComponent<CameraComponent>(cameraEntity);
+    Transform* cameraTransform = scene->findComponent<Transform>(cameraEntity);
+    Transform* transform = scene->findComponent<Transform>(entity);
+    if (transform && transform->billboard && !transform->fakeBillboard){
+        transform->needUpdate = true;
+    }else if (camera && cameraTransform && transform){
+        updateMVP(0, *transform, *camera, *cameraTransform);
+    }
+}
+
+void RenderSystem::unsettleSprites(){
+    while (!settledSprites.empty()){
+        unsettleSprite(settledSprites.back().entity);
+    }
+    settledPages.clear();
+    spriteStates.clear();
+    freeSpriteStates.clear();
+}
+
+void RenderSystem::setSettledIndex(Entity entity, int index){
+    const size_t page = entity >> 10;
+    if (page >= settledPages.size()){
+        settledPages.resize(page + 1);
+    }
+    std::unique_ptr<SettledPage>& slot = settledPages[page];
+    if (!slot){
+        slot = std::make_unique<SettledPage>();
+        std::fill(std::begin(slot->index), std::end(slot->index), -1);
+    }
+    int& entry = slot->index[entity & 1023];
+    if (entry < 0 && index >= 0){
+        slot->count++;
+    }else if (entry >= 0 && index < 0){
+        slot->count--;
+    }
+    entry = index;
+    if (slot->count == 0){
+        slot.reset();
+    }
+}
+
+// world positions and bounds, redone when the transform changes; a settled sprite has an
+// affine model matrix, so w is 1
+void RenderSystem::placeSettledSprite(SettledSprite& sprite, SettledBounds& bounds, const Transform& transform){
+    const SpriteLayout& layout = spriteStates[sprite.state].layout;
+    // copied, so the vertex writes need no reload of it
+    float model[16];
+    std::memcpy(model, (const float*)transform.modelMatrix, sizeof(model));
+    float lo[3] = {FLT_MAX, FLT_MAX, FLT_MAX};
+    float hi[3] = {-FLT_MAX, -FLT_MAX, -FLT_MAX};
+    unsigned char* vertex = sprite.vertices + layout.positionOffset;
+    for (unsigned int v = 0; v < sprite.vertexCount; v++, vertex += layout.stride){
+        const float* local = sprite.positions[v];
+        const float world[3] = {
+            local[0] * model[0] + local[1] * model[4] + local[2] * model[8] + model[12],
+            local[0] * model[1] + local[1] * model[5] + local[2] * model[9] + model[13],
+            local[0] * model[2] + local[1] * model[6] + local[2] * model[10] + model[14]};
+        std::memcpy(vertex, world, sizeof(world));
+        for (int a = 0; a < 3; a++){
+            lo[a] = std::min(lo[a], world[a]);
+            hi[a] = std::max(hi[a], world[a]);
+        }
+    }
+    std::memcpy(bounds.lo, lo, sizeof(lo));
+    std::memcpy(bounds.hi, hi, sizeof(hi));
+    bounds.cullFrustum = 0;
+}
+
+// a 2D camera has its planes along the axes
+void RenderSystem::updateAxisPlanes(const CameraComponent& camera){
+    spriteBatch.hasAxisPlanes = false;
+    if (camera.farClip == 0)
+        return;
+    for (int p = 0; p < 6; p++){
+        const Plane& plane = camera.frustumPlanes[p];
+        const float n[3] = {plane.normal.x, plane.normal.y, plane.normal.z};
+        if ((n[0] != 0.0f) + (n[1] != 0.0f) + (n[2] != 0.0f) != 1)
+            return;
+        const int axis = (n[0] != 0.0f) ? 0 : (n[1] != 0.0f) ? 1 : 2;
+        spriteBatch.axisPlanes[p] = {axis, n[axis], plane.d};
+    }
+    spriteBatch.hasAxisPlanes = true;
+}
+
+// copies the sprite into the segment drawn at the next flush
+void RenderSystem::drawSettledSprite(int settled, size_t index){
+    // sprites batched from their meshes come first, and the next one starts its own run
+    flushSpriteItems();
+    spriteBatch.previous = nullptr;
+
+    SettledBounds& bounds = settledBounds[settled];
+    if (bounds.culls){
+        if (bounds.cullFrustum != spriteBatch.frustum){
+            if (spriteBatch.hasAxisPlanes){
+                // isInsideFrustum with the zero terms left out, same result
+                bool outside = false;
+                for (const AxisPlane& plane : spriteBatch.axisPlanes){
+                    const int a = plane.axis;
+                    const float distance = plane.normal * ((bounds.hi[a] + bounds.lo[a]) * 0.5f) + plane.d;
+                    outside |= distance < -fabsf(plane.normal * ((bounds.hi[a] - bounds.lo[a]) * 0.5f));
+                }
+                bounds.inside = !outside;
+            }else{
+                bounds.inside = isInsideFrustum(*spriteBatch.camera, bounds.lo, bounds.hi);
+            }
+            bounds.cullFrustum = spriteBatch.frustum;
+        }
+        if (!bounds.inside)
+            return;
+    }
+
+    const SettledSprite& sprite = settledSprites[settled];
+    // a run draws one state from at most 65536 vertices
+    const SpriteLayout& layout = spriteStates[sprite.state].layout;
+    const size_t start = spriteSegment.vertices.size();
+    if (spriteSegment.runs.empty() || spriteSegment.runs.back().state != sprite.state ||
+            (start - spriteSegment.runs.back().vertexStart) / layout.stride + sprite.vertexCount > 65536){
+        spriteSegment.runs.push_back({sprite.entity, sprite.state, start, spriteSegment.indices.size(), 0});
+    }
+    SpriteRun& run = spriteSegment.runs.back();
+    spriteSegment.vertices.insert(spriteSegment.vertices.end(), sprite.vertices, sprite.vertices + (size_t)sprite.vertexCount * layout.stride);
+
+    const uint16_t base = (uint16_t)((start - run.vertexStart) / layout.stride);
+    const size_t first = spriteSegment.indices.size();
+    spriteSegment.indices.insert(spriteSegment.indices.end(), sprite.indices, sprite.indices + sprite.indexCount);
+    for (size_t i = first; i < spriteSegment.indices.size(); i++){
+        spriteSegment.indices[i] += base;
+    }
+    run.indexCount += sprite.indexCount;
+    spriteSegment.sprites.push_back({index, sprite.entity});
+}
+
+// One upload for the settled sprites drawn since the last other draw. A run that keeps the
+// pipeline of the one before only rebinds, so a texture change costs a draw and nothing more.
+void RenderSystem::flushSpriteSegment(){
+    if (spriteSegment.runs.empty())
+        return;
+
+    const size_t vertexBytes = spriteSegment.vertices.size();
+    const size_t indexBytes = spriteSegment.indices.size() * sizeof(uint16_t);
+    spriteBatch.vertexDemand += vertexBytes;
+    spriteBatch.indexDemand += indexBytes;
+
+    int vertexOffset = -1;
+    int indexOffset = -1;
+    if (spriteBatch.vertexBuffer.isCreated() && spriteBatch.indexBuffer.isCreated()){
+        vertexOffset = spriteBatch.vertexBuffer.appendBuffer(vertexBytes, spriteSegment.vertices.data());
+        indexOffset = spriteBatch.indexBuffer.appendBuffer(indexBytes, spriteSegment.indices.data());
+    }
+
+    if (vertexOffset < 0 || indexOffset < 0){
+        // the buffers grow for the next frame, until then the sprites draw from their meshes
+        auto transforms = scene->getComponentArray<Transform>();
+        const bool active = spriteBatch.active;
+        spriteBatch.active = false;
+        for (const auto& [index, entity] : spriteSegment.sprites){
+            Transform& transform = transforms->getComponentFromIndex(index);
+            updateMVP(index, transform, *spriteBatch.camera, *spriteBatch.cameraTransform);
+            drawMesh(entity, scene->getComponent<MeshComponent>(entity), transform, *spriteBatch.camera, *spriteBatch.cameraTransform, spriteBatch.pipType, nullptr, nullptr, nullptr);
+        }
+        spriteBatch.active = active;
+    }else{
+        const ObjectRender* previous = nullptr;
+        uint32_t previousCutoff = 0;
+        for (const SpriteRun& run : spriteSegment.runs){
+            MeshComponent& mesh = scene->getComponent<MeshComponent>(run.entity);
+            Submesh& submesh = mesh.submeshes[0];
+            ObjectRender& render = submesh.render;
+            const uint32_t cutoff = spriteStates[run.state].key[0];
+
+            // uniforms stay applied while the pipeline does
+            if (!previous || !render.sharesPipeline(*previous, spriteBatch.pipType) || cutoff != previousCutoff){
+                previous = nullptr;
+                if (!render.beginDraw(spriteBatch.pipType))
+                    continue;
+                applySpriteBatchUniforms(render, submesh);
+            }
+            previous = &render;
+            previousCutoff = cutoff;
+
+            render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset + run.vertexStart);
+            render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset + run.indexStart * sizeof(uint16_t));
+            render.draw(0, run.indexCount, 1);
+            render.replaceVertexBuffer(mesh.buffer.getRender(), mesh.buffer.getRender());
+            render.resetIndexBuffer();
+        }
+    }
+
+    spriteSegment.vertices.clear();
+    spriteSegment.indices.clear();
+    spriteSegment.runs.clear();
+    spriteSegment.sprites.clear();
+}
+
+// sized from the last frame before any batch of this one uses the buffers
+void RenderSystem::prepareSpriteBatchBuffers(){
+    auto prepare = [](BufferRender& buffer, size_t& capacity, size_t& demand, BufferType type){
+        if (buffer.isCreated() && demand <= capacity){
+            demand = 0;
+            return;
+        }
+        buffer.destroyBuffer();
+        capacity = std::max(capacity, demand + demand / 2);
+        demand = 0;
+        if (capacity > 0){
+            buffer.createBuffer((unsigned int)capacity, nullptr, type, BufferUsage::STREAM);
+        }
+    };
+    prepare(spriteBatch.vertexBuffer, spriteBatch.vertexCapacity, spriteBatch.vertexDemand, BufferType::VERTEX_BUFFER);
+    prepare(spriteBatch.indexBuffer, spriteBatch.indexCapacity, spriteBatch.indexDemand, BufferType::INDEX_BUFFER);
+}
+
 bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& transform, CameraComponent& camera, Transform& camTransform, PipelineType pipType, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, int terrainView, int instanceView, const LodView* lodView){
+    if (spriteBatch.active){
+        flushSpriteSegment();
+        if (batchSprite(entity, mesh, transform, camera, instmesh, terrain, tilemap))
+            return true;
+        flushSpriteBatch();
+    }
+
     if (mesh.loaded && !mesh.needReload){
 
         if (terrain && terrain->needUpdateTexture){
@@ -5481,6 +6232,7 @@ void RenderSystem::presentFramebufferToSwapchain(Framebuffer* source){
 }
 
 void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAssets){
+    unsettleSprite(entity);
     InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
     TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
     const bool preserveAssets = mesh.needReload && !clearAssets;
@@ -5610,8 +6362,10 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
     }
     mesh.buffer.getRender()->destroyBuffer();
     mesh.indices.getRender()->destroyBuffer();
-    mesh.bonesBuffer.destroyBuffer();
-    mesh.bonesTexture.destroyTexture();
+    if (SkinComponent* skin = scene->findComponent<SkinComponent>(entity)){
+        skin->bonesBuffer.destroyBuffer();
+        skin->bonesTexture.destroyTexture();
+    }
     for (int i = 0; i < mesh.numExternalBuffers; i++){
         if (!preserveAssets){
             mesh.eBuffers[i].clearAll();
@@ -5767,6 +6521,7 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
 }
 
 bool RenderSystem::drawUI(UIComponent& ui, Transform& transform, PipelineType pipType){
+    flushSpriteBatch();
     if (ui.loaded && ui.buffer.getSize() > 0){
 
         if (ui.needUpdateTexture || ui.texture.isFramebufferOutdated()){
@@ -5873,12 +6628,6 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
 
     render.beginLoad(PrimitiveType::POINTS);
 
-    if (points.autoTransparency && !points.transparent){
-        if (points.texture.isTransparent()){ // Particle color is not tested here
-            points.transparent = true;
-        }
-    }
-
     bool hasPointsTexture = !points.texture.empty();
 
     bool p_hasTexture = false;
@@ -5953,6 +6702,13 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
     }
 
     points.needUpdateTexture = false;
+  
+    // after getRender(): a texture taken from the pool knows it from its render
+    if (points.autoTransparency && !points.transparent){
+        if (points.texture.isTransparent()){ // Particle color is not tested here
+            points.transparent = true;
+        }
+    }
 
     const std::vector<std::pair<std::string, Texture>>* pointsInheritedTextures =
         points.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::POINTS) : nullptr;
@@ -6107,6 +6863,7 @@ float RenderSystem::computePointsScale(const CameraComponent& camera, float view
 }
 
 bool RenderSystem::drawPoints(PointsComponent& points, Transform& transform, CameraComponent& camera, Transform& camTransform, PipelineType pipType){
+    flushSpriteBatch();
     if (points.loaded && points.numVisible > 0){
 
         if (points.needUpdateTexture || points.texture.isFramebufferOutdated()){
@@ -6189,11 +6946,13 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
 }
 
 bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transform& camTransform, PipelineType pipType){
+    flushSpriteBatch();
     if (lines.loaded && lines.lines.size() > 0){
+        size_t linesSize = (lines.lines.size() < lines.maxLines)? lines.lines.size() : lines.maxLines;
 
         if (lines.needUpdateBuffer){
             // setData here because component can change order and lose reference
-            lines.buffer.setData((unsigned char*)(&lines.lines[0]), sizeof(LineData)*lines.lines.size());
+            lines.buffer.setData((unsigned char*)(&lines.lines[0]), sizeof(LineData)*linesSize);
             lines.buffer.getRender()->updateBuffer(lines.buffer.getSize(), lines.buffer.getData());
             lines.needUpdateBuffer = false;
         }
@@ -6211,7 +6970,7 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
             lines.customShader.empty() ? &scene->getDefaultShaderTextures(ShaderType::LINES) : nullptr;
         bindCustomTextures(render, lines.customTextureBindings, lines.customTextures, linesInheritedTextures);
     
-        render.draw(0, lines.lines.size() * 2, 1);
+        render.draw(0, linesSize * 2, 1);
     }
 
     return true;
@@ -6937,6 +7696,7 @@ void RenderSystem::updateWater(Entity entity, WaterComponent& water, Transform& 
 }
 
 bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& transform, CameraComponent& camera, Transform& camTransform, PipelineType pipType, bool mainCamera){
+    flushSpriteBatch();
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
@@ -7511,11 +8271,16 @@ void RenderSystem::updateTransform(Transform& transform, Entity entity){
         origin += getUIPivotShift(*layout, transform.rotation, transform.scale);
     }
 
-    Matrix4 translateMatrix = Matrix4::translateMatrix(origin);
-    Matrix4 rotationMatrix = transform.rotation.getRotationMatrix();
-    Matrix4 scaleMatrix = Matrix4::scaleMatrix(transform.scale);
+    // most 2D objects only move, and the identity factors would not change the product
+    if (transform.rotation == Quaternion() && transform.scale == Vector3(1, 1, 1)){
+        transform.localMatrix = Matrix4::translateMatrix(origin);
+    }else{
+        Matrix4 translateMatrix = Matrix4::translateMatrix(origin);
+        Matrix4 rotationMatrix = transform.rotation.getRotationMatrix();
+        Matrix4 scaleMatrix = Matrix4::scaleMatrix(transform.scale);
 
-    transform.localMatrix = translateMatrix * rotationMatrix * scaleMatrix;
+        transform.localMatrix = translateMatrix * rotationMatrix * scaleMatrix;
+    }
 
     Transform* transformParent = NULL;
     if (transform.parent != NULL_ENTITY){
@@ -8113,6 +8878,7 @@ void RenderSystem::needReloadLines() {
 }
 
 void RenderSystem::needReloadMeshes() {
+    unsettleSprites();
     auto meshes = scene->getComponentArray<MeshComponent>();
     for (int i = 0; i < meshes->size(); i++) {
         MeshComponent& mesh = meshes->getComponentFromIndex(i);
@@ -8168,8 +8934,15 @@ void RenderSystem::getLoadCount(size_t& loaded, size_t& total) const{
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         // An empty tilemap never loads: loadMesh() has no buffers to create until a tile is added.
         if (!mesh.loaded) {
-            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(meshes->getEntity(i));
+            Entity entity = meshes->getEntity(i);
+            const TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
             if (tilemap && tilemap->numTiles == 0)
+                continue;
+            // Nor does a mesh with no geometry and nothing to build it, until a script fills it
+            const ModelComponent* model = scene->findComponent<ModelComponent>(entity);
+            const bool empty = mesh.buffer.getSize() == 0 && mesh.indices.getSize() == 0 && mesh.numExternalBuffers == 0;
+            if (empty && !tilemap && (!model || model->filename.empty()) && !scene->findComponent<TerrainComponent>(entity) &&
+                    !scene->findComponent<SpriteComponent>(entity) && !scene->findComponent<MeshPolygonComponent>(entity))
                 continue;
         }
         count(mesh.loaded);
@@ -9231,6 +10004,8 @@ void RenderSystem::update(double dt){
         return;
     }
 
+    spriteUpdates++;
+
     checkLightsAndShadow();
 
     // light types can change without adding or removing a light
@@ -9270,8 +10045,9 @@ void RenderSystem::update(double dt){
         ModelComponent& model = models->getComponentFromIndex(i);
         for (const ModelSkinBinding& binding : model.skinBindings) {
             MeshComponent* mesh = scene->findComponent<MeshComponent>(binding.mesh);
+            SkinComponent* skin = scene->findComponent<SkinComponent>(binding.mesh);
             Transform* meshTransform = scene->findComponent<Transform>(binding.mesh);
-            if (!mesh || !meshTransform)
+            if (!mesh || !skin || !meshTransform)
                 continue;
 
             bool dirty = meshTransform->needUpdate;
@@ -9291,13 +10067,13 @@ void RenderSystem::update(double dt){
 
             const size_t jointCount = std::min(binding.joints.size(), binding.inverseBindMatrices.size());
             for (size_t jointIndex = 0; jointIndex < jointCount &&
-                    mesh->bonesMatrix.validIndex(static_cast<int>(jointIndex)); jointIndex++) {
+                    skin->bonesMatrix.validIndex(static_cast<int>(jointIndex)); jointIndex++) {
                 Transform* jointTransform = scene->findComponent<Transform>(binding.joints[jointIndex]);
                 if (jointTransform)
-                    mesh->bonesMatrix[jointIndex] = inverseMeshTransform * jointTransform->modelMatrix *
+                    skin->bonesMatrix[jointIndex] = inverseMeshTransform * jointTransform->modelMatrix *
                         binding.inverseBindMatrices[jointIndex];
             }
-            mesh->needUpdateBones = true;
+            skin->needUpdateBones = true;
             mesh->needUpdateAABB = true;
         }
     }
@@ -9492,18 +10268,54 @@ void RenderSystem::update(double dt){
 
     updateWaterExclusions();
 
+    // without depth, shadows or water every pass draws settled sprites from their copies,
+    // which need no MVP; other cameras and probes update it for their own passes
+    const bool settledWithoutMVP = !mainCamera.depthTest && !hasShadows && waters->size() == 0;
+    // once that changes, the MVP they went without is updated before a pass reads it
+    const bool settledMVPStale = settledSkippedMVP && !settledWithoutMVP;
+    settledSkippedMVP = settledWithoutMVP;
+    auto meshes = scene->getComponentArray<MeshComponent>();
+
     for (int i = 0; i < transforms->size(); i++){
         Transform& transform = transforms->getComponentFromIndex(i);
 
         Entity entity = transforms->getEntity(i);
+
+        // a settled sprite only follows its transform, so one made a billboard or given a projective
+        // matrix is drawn from its mesh again
+        if ((transform.billboard || (transform.needUpdate && !hasAffineModel(transform))) && isSpriteSettled(entity)){
+            unsettleSprite(entity);
+        }
+        if (isSpriteSettled(entity)){
+            if (!settledWithoutMVP && !hasMultipleCameras && (settledMVPStale || mainCamera.needUpdate || transform.needUpdate)){
+                updateMVP(i, transform, mainCamera, mainCameraTransform);
+            }
+            if (transform.needUpdate){
+                const int settled = settledIndex(entity);
+                SettledSprite& sprite = settledSprites[settled];
+                SettledBounds& bounds = settledBounds[settled];
+                placeSettledSprite(sprite, bounds, transform);
+                // meshes seldom move in their array, so the last index is tried before a lookup
+                if (sprite.meshIndex >= meshes->size() || meshes->getEntity(sprite.meshIndex) != entity){
+                    sprite.meshIndex = meshes->getIndex(entity);
+                }
+                // the moved vertices give the box modelMatrix * mesh.aabb would
+                meshes->getComponentFromIndex(sprite.meshIndex).worldAABB.setExtents(
+                    bounds.lo[0], bounds.lo[1], bounds.lo[2], bounds.hi[0], bounds.hi[1], bounds.hi[2]);
+            }
+            transform.needUpdateChildVisibility = false;
+            transform.needUpdate = false;
+            continue;
+        }
+
         Signature signature = scene->getSignature(entity);
 
         if (signature.test(scene->getComponentId<MeshComponent>())){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
 
-            TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
+            TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
 
-            InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
+            InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
             if (instmesh){
                 const float cullNear = instanceCullNear(*instmesh);
                 if (instmesh->distanceFade || cullNear > 0.0f){
@@ -9555,7 +10367,7 @@ void RenderSystem::update(double dt){
 
             if (meshLodToggled && mesh.loadCalled && !mesh.needReload){
                 updateMeshLods(entity, mesh, true);
-            }else if (mesh.loaded && !mesh.needReload){
+            }else if (lastMeshLodEnabled && mesh.loaded && !mesh.needReload){
                 for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
                     if (isMeshLodPending(mesh.submeshes[s])){
                         updateMeshLods(entity, mesh, false);
@@ -9673,18 +10485,24 @@ void RenderSystem::update(double dt){
                 // too, but unions body-sized boxes over the skeleton. Local space so the editor
                 // draws the same box.
                 mesh.skinnedAABB.setNull();
-                if (!instmesh){
-                    const size_t boneBounds = std::min(mesh.bonesAABB.size(), mesh.bonesMatrix.size());
+                // the palette only moves submeshes drawn with skinning
+                SkinComponent* skin = findComponent<SkinComponent>(scene, entity, signature);
+                bool skinned = false;
+                for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                    skinned = skinned || mesh.submeshes[s].hasSkinning;
+                }
+                if (!instmesh && skin && skinned){
+                    const size_t boneBounds = std::min(skin->bonesAABB.size(), skin->bonesMatrix.size());
                     for (size_t b = 0; b < boneBounds; b++){
-                        if (!mesh.bonesAABB[b].isNull()){
-                            mesh.skinnedAABB.merge(mesh.bonesMatrix[b] * mesh.bonesAABB[b]);
+                        if (!skin->bonesAABB[b].isNull()){
+                            mesh.skinnedAABB.merge(skin->bonesMatrix[b] * skin->bonesAABB[b]);
                         }
                     }
 
                     if (mesh.skinnedAABB.isNull()){ // no per-bone bounds to pose
                         const Matrix4 identityMatrix;
-                        for (size_t b = 0; b < mesh.bonesMatrix.size(); b++){
-                            const Matrix4& bone = mesh.bonesMatrix[b];
+                        for (size_t b = 0; b < skin->bonesMatrix.size(); b++){
+                            const Matrix4& bone = skin->bonesMatrix[b];
                             if (bone != identityMatrix){
                                 mesh.skinnedAABB.merge(bone * mesh.aabb);
                             }
@@ -9706,6 +10524,8 @@ void RenderSystem::update(double dt){
                     }
                 }
             }
+
+            settleSprite(entity, signature, mesh, transform);
         }else if (signature.test(scene->getComponentId<UIComponent>())){
             UIComponent& ui = scene->getComponent<UIComponent>(entity);
 
@@ -9873,11 +10693,13 @@ void RenderSystem::update(double dt){
                     if (model && model->skinBindings.empty()) {
                         Matrix4 skinning = model->inverseDerivedTransform * transform.modelMatrix * bone.offsetMatrix;
 
-                        auto updateDrivenMesh = [&](MeshComponent* drivenMesh) {
-                            if (!drivenMesh || !drivenMesh->bonesMatrix.validIndex(bone.index))
+                        auto updateDrivenMesh = [&](Entity meshEntity) {
+                            MeshComponent* drivenMesh = scene->findComponent<MeshComponent>(meshEntity);
+                            SkinComponent* skin = scene->findComponent<SkinComponent>(meshEntity);
+                            if (!drivenMesh || !skin || !skin->bonesMatrix.validIndex(bone.index))
                                 return;
-                            drivenMesh->bonesMatrix[bone.index] = skinning;
-                            drivenMesh->needUpdateBones = true;
+                            skin->bonesMatrix[bone.index] = skinning;
+                            skin->needUpdateBones = true;
                             drivenMesh->needUpdateAABB = true;
                         };
 
@@ -9888,10 +10710,10 @@ void RenderSystem::update(double dt){
                         // A moved bone changes the skinned bounds, so flag the driven mesh(es)
                         // for a world-AABB rebuild. Bones are processed after their mesh in this
                         // loop, so this takes effect next frame with the fresh bonesMatrix.
-                        updateDrivenMesh(scene->findComponent<MeshComponent>(bone.model));
+                        updateDrivenMesh(bone.model);
 
                         for (auto const& meshNode : model->meshNodesMapping){
-                            updateDrivenMesh(scene->findComponent<MeshComponent>(meshNode.second));
+                            updateDrivenMesh(meshNode.second);
                         }
                     }
                 }
@@ -9937,6 +10759,7 @@ void RenderSystem::update(double dt){
 }
 
 void RenderSystem::draw(){
+    prepareSpriteBatchBuffers();
     std::priority_queue<TransparentRenderData, std::vector<TransparentRenderData>, TransparentRenderComparison> transparentRenders;
     // drawn before the water, which covers them
     decltype(transparentRenders) behindWaterRenders;
@@ -9955,6 +10778,7 @@ void RenderSystem::draw(){
         }
     }
     updateInstanceBuffers();
+    updateSkinBuffers();
 
     // free the fixed-resolution target when the setting is turned off (the blit
     // pipeline itself is kept; it is cheap and may be re-enabled)
@@ -9986,15 +10810,16 @@ void RenderSystem::draw(){
             for (int i = 0; i < meshes->size(); i++){
                 MeshComponent& mesh = meshes->getComponentFromIndex(i);
                 Entity entity = meshes->getEntity(i);
-                Transform* transform = scene->findComponent<Transform>(entity);
+                Signature signature = scene->getSignature(entity);
+                Transform* transform = findComponent<Transform>(scene, entity, signature);
 
                 if (!transform || !transform->visible){
                     continue;
                 }
 
-                InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
-                TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
-                TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
+                InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
+                TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
+                TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
                 if (numReceiverPlanes > 0 && !transform->billboard && cullsBatch(mesh, instmesh) &&
                         !isInsidePlanes(receiverPlanes, numReceiverPlanes, mesh.worldAABB)){
@@ -10183,6 +11008,7 @@ void RenderSystem::draw(){
     // frame. Static probes without an authored cubemap capture once; dynamic
     // probes follow their configured update policy.
     renderReflectionProbeCapture();
+    filterReflectionProbes();
 
     // assigns each rendering camera its own terrain CDLOD view slot this frame:
     // main camera = 0 (selected in update(), also used by the shadow pass), each
@@ -10496,16 +11322,19 @@ void RenderSystem::draw(){
                     continue;
                 }
 
-                InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
-                TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
+                InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
+                TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
                 if (terrain && terrainView != 0){
                     updateTerrain(*terrain, transform, camera, cameraTransform, terrainView);
                 }
-                TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
+                TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
                 if (!mesh.transparent){
+                    // culled before the sort
+                    if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera, mesh.worldAABB))
+                        continue;
                     const float distance = mesh.worldAABB.isNull() ? 0.0f : mesh.worldAABB.squaredDistance(cameraTransform.worldPosition);
-                    opaqueRenders.push_back({entity, &mesh, instmesh, terrain, tilemap, &transform, distance});
+                    opaqueRenders.push_back({entity, &mesh, instmesh, terrain, tilemap, &transform, distance, opaqueSortKey(mesh, distance, colorPip)});
                 }else if (distanceSort){
                     auto& renders = isBehindWater(passWaters, mesh.worldAABB) ? behindWaterRenders : transparentRenders;
                     renders.push({TransparentRenderType::MESH, entity, &mesh, nullptr, instmesh, terrain, tilemap, &transform, transform.distanceToCamera});
@@ -10514,6 +11343,8 @@ void RenderSystem::draw(){
 
             if (distanceSort){
                 std::sort(opaqueRenders.begin(), opaqueRenders.end(), [](const OpaqueRenderData& a, const OpaqueRenderData& b){
+                    if (a.sortKey != b.sortKey)
+                        return a.sortKey < b.sortKey;
                     return a.distanceToCamera < b.distanceToCamera;
                 });
             }
@@ -10551,15 +11382,42 @@ void RenderSystem::draw(){
             }
         }
 
+        spriteBatch.active = true;
+        spriteBatch.previous = nullptr;
+        spriteBatch.depthPrepass = depthPrepass;
+        spriteBatch.pipType = colorPip;
+        spriteBatch.camera = &camera;
+        spriteBatch.cameraTransform = &cameraTransform;
+        // settled sprites keep their culling while the passes have the same planes
+        if (spriteBatch.frustum == 0 || camera.farClip != spriteBatch.farClip ||
+                std::memcmp(camera.frustumPlanes, spriteBatch.frustumPlanes, sizeof(spriteBatch.frustumPlanes)) != 0){
+            std::copy(camera.frustumPlanes, camera.frustumPlanes + 6, spriteBatch.frustumPlanes);
+            spriteBatch.farClip = camera.farClip;
+            spriteBatch.frustum++;
+            updateAxisPlanes(camera);
+        }
+
         if (distanceSort){
             for (const OpaqueRenderData& opaque : opaqueRenders){
                 drawMesh(opaque.entity, *opaque.mesh, *opaque.transform, camera, cameraTransform, colorPip, opaque.instmesh, opaque.terrain, opaque.tilemap, terrainView, instanceView, lodView);
             }
         }
 
+        // in transform order, the order the batch keeps
+        const bool drawSettled = !distanceSort && !depthPrepass && passWaters.empty();
+
         for (int i = 0; i < transforms->size(); i++){
             Transform& transform = transforms->getComponentFromIndex(i);
             Entity entity = transforms->getEntity(i);
+
+            const int settled = drawSettled ? settledIndex(entity) : -1;
+            if (settled >= 0){
+                if (transform.visible){
+                    drawSettledSprite(settled, i);
+                }
+                continue;
+            }
+
             Signature signature = scene->getSignature(entity);
 
             if (signature.test(scene->getComponentId<CameraComponent>())){
@@ -10606,6 +11464,7 @@ void RenderSystem::draw(){
                         // empty rect would leak a pixel: skip the draw instead
                         clippedAway = true;
                     }else{
+                        flushSpriteBatch();
                         camera.render.applyScissor(parentScissor);
 
                         hasActiveScissor = true;
@@ -10639,20 +11498,20 @@ void RenderSystem::draw(){
                     // needUpdateBuffer and uploads the buffer again, which panics the
                     // validation layer when a render-to-texture camera is present. Every
                     // camera reuses the main camera's ordering computed in update().
-                    InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
+                    InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
 
                     // Per-view CDLOD: the main camera's selection (view 0) is done in
                     // update(); each render-to-texture camera (mirror/RTT) selects its
                     // own node cut here into its own buffer, so the reflection shows
                     // complete, correctly-tessellated terrain.
-                    TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
+                    TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
                     if (terrain && terrainView != 0){
                         updateTerrain(*terrain, transform, camera, cameraTransform, terrainView);
                     }
 
                     // chunk bounds are view-independent, so every camera reuses the
                     // ones refreshed in update()
-                    TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
+                    TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
                     // a transparency on the eye's side of a water waits for it
                     if (mesh.transparent && !passWaters.empty() && !isBehindWater(passWaters, mesh.worldAABB)){
@@ -10705,6 +11564,7 @@ void RenderSystem::draw(){
             }
 
             if (hasActiveScissor){
+                flushSpriteBatch();
                 // screen pixels would overflow an offscreen SSR / post-process attachment
                 camera.render.applyScissor(colorPassViewport);
                 hasActiveScissor = false;
@@ -10729,6 +11589,7 @@ void RenderSystem::draw(){
         // a plain copy keeps it
         CameraRender* passRender = &camera.render;
         if (copyScene){
+            flushSpriteBatch();
             // ended first: creating the copy framebuffer runs a clear pass, and passes can't nest
             camera.render.endRenderPass();
             const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
@@ -10792,6 +11653,8 @@ void RenderSystem::draw(){
             transparentRenders.pop();
         }
 
+        flushSpriteBatch();
+        spriteBatch.active = false;
         passRender->endRenderPass();
 
         // SSR: march the offscreen scene color and composite reflections into the
@@ -10864,6 +11727,7 @@ void RenderSystem::draw(){
 }
 
 void RenderSystem::onComponentAdded(Entity entity, ComponentId componentId) {
+    unsettleSprite(entity);
     if (componentId == scene->getComponentId<LightComponent>()) {
         needReloadMeshes();
     } else if (componentId == scene->getComponentId<Light2DComponent>()) {
@@ -10875,10 +11739,18 @@ void RenderSystem::onComponentAdded(Entity entity, ComponentId componentId) {
     } else if (componentId == scene->getComponentId<ReflectionProbeComponent>()) {
         hasReflectionProbes = true;
         needReloadMeshes();
+    } else if (componentId == scene->getComponentId<SkinComponent>()) {
+        // a loaded mesh binds the palette on reload, and its bounds take the pose
+        if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
+            if (mesh->loaded)
+                mesh->needReload = true;
+            mesh->needUpdateAABB = true;
+        }
     }
 }
 
 void RenderSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
+    unsettleSprite(entity);
     if (componentId == scene->getComponentId<LightComponent>()) {
         LightComponent& light = scene->getComponent<LightComponent>(entity);
         destroyLight(light);
@@ -10888,6 +11760,7 @@ void RenderSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
     } else if (componentId == scene->getComponentId<MeshComponent>()) {
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
         destroyMesh(entity, mesh);
+        settleWaits.erase(entity);
     } else if (componentId == scene->getComponentId<UIComponent>()) {
         UIComponent& ui = scene->getComponent<UIComponent>(entity);
         destroyUI(entity, ui);
@@ -10919,5 +11792,15 @@ void RenderSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         destroyWater(entity, water);
         // a mirror on the same entity recreates its camera next frame
         destroyMirrorCamera(entity);
+    } else if (componentId == scene->getComponentId<SkinComponent>()) {
+        SkinComponent& skin = scene->getComponent<SkinComponent>(entity);
+        skin.bonesBuffer.destroyBuffer();
+        skin.bonesTexture.destroyTexture();
+        // a loaded mesh still binds the destroyed palette, and its bounds drop the pose
+        if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
+            if (mesh->loaded)
+                mesh->needReload = true;
+            mesh->needUpdateAABB = true;
+        }
     }
 }

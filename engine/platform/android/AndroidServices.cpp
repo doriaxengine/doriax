@@ -44,7 +44,7 @@ namespace {
             if (code >= 0xD800 && code <= 0xDBFF && i + 1 < length && chars[i + 1] >= 0xDC00 && chars[i + 1] <= 0xDFFF){
                 code = 0x10000 + ((code - 0xD800) << 10) + (chars[++i] - 0xDC00);
             }
-            utf8 += StringUtils::toUTF8(static_cast<wchar_t>(code));
+            utf8 += StringUtils::toUTF8(code);
         }
         env->ReleaseStringChars(text, chars);
 

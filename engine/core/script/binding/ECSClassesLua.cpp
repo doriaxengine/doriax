@@ -20,7 +20,6 @@
 #include "subsystem/RenderSystem.h"
 #include "subsystem/UISystem.h"
 
-//TODO: Add all components and properties
 #include "component/ActionComponent.h"
 #include "component/TimedActionComponent.h"
 #include "component/UIComponent.h"
@@ -33,6 +32,42 @@
 #include "component/SpriteComponent.h"
 #include "component/FogComponent.h"
 #include "component/TilemapComponent.h"
+#include "component/Transform.h"
+#include "component/CameraComponent.h"
+#include "component/LightComponent.h"
+#include "component/Light2DComponent.h"
+#include "component/Occluder2DComponent.h"
+#include "component/SkyComponent.h"
+#include "component/MeshComponent.h"
+#include "component/InstancedMeshComponent.h"
+#include "component/ModelComponent.h"
+#include "component/BoneComponent.h"
+#include "component/MeshPolygonComponent.h"
+#include "component/PolygonComponent.h"
+#include "component/PointsComponent.h"
+#include "component/LinesComponent.h"
+#include "component/TerrainComponent.h"
+#include "component/WaterComponent.h"
+#include "component/WaterExclusionComponent.h"
+#include "component/MirrorComponent.h"
+#include "component/ReflectionProbeComponent.h"
+#include "component/ImageComponent.h"
+#include "component/TextComponent.h"
+#include "component/PositionActionComponent.h"
+#include "component/RotationActionComponent.h"
+#include "component/ScaleActionComponent.h"
+#include "component/ColorActionComponent.h"
+#include "component/AlphaActionComponent.h"
+#include "component/SpriteAnimationComponent.h"
+#include "component/KeyframeTracksComponent.h"
+#include "component/TranslateTracksComponent.h"
+#include "component/RotateTracksComponent.h"
+#include "component/ScaleTracksComponent.h"
+#include "component/MorphTracksComponent.h"
+#include "component/Body2DComponent.h"
+#include "component/Joint2DComponent.h"
+#include "component/Body3DComponent.h"
+#include "component/Joint3DComponent.h"
 
 using namespace doriax;
 
@@ -131,9 +166,13 @@ void LuaBinding::registerECSClasses(lua_State *L){
 
     luabridge::getGlobalNamespace(L)
         .deriveClass<ActionSystem, SubSystem>("ActionSystem")
-        .addFunction("actionStart", &ActionSystem::actionStart)
+        // keeps the default true when omitted, a nil bool reads as false
+        .addFunction("actionStart", [] (ActionSystem* self, Entity entity, std::optional<bool> newRun) { self->actionStart(entity, newRun.value_or(true)); })
         .addFunction("actionStop", &ActionSystem::actionStop)
         .addFunction("actionPause", &ActionSystem::actionPause)
+        .addFunction("particleActionReset", &ActionSystem::particleActionReset)
+        .addFunction("getDuration", luabridge::overload<Entity>(&ActionSystem::getDuration))
+        .addFunction("getFrameDuration", &ActionSystem::getFrameDuration)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -143,20 +182,30 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addStaticFunction("resumeAll", &AudioSystem::resumeAll)
         .addStaticFunction("checkActive", &AudioSystem::checkActive)
         .addStaticProperty("globalVolume", &AudioSystem::getGlobalVolume,  &AudioSystem::setGlobalVolume)
+        .addFunction("stopSceneSounds", &AudioSystem::stopSceneSounds)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
         .deriveClass<MeshSystem, SubSystem>("MeshSystem")
         .addFunction("createPlane", &MeshSystem::createPlane)
+        .addFunction("createWall", &MeshSystem::createWall)
         .addFunction("createBox", &MeshSystem::createBox)
         .addFunction("createSphere", &MeshSystem::createSphere)
         .addFunction("createCylinder", &MeshSystem::createCylinder)
         .addFunction("createCapsule", &MeshSystem::createCapsule)
         .addFunction("createTorus", &MeshSystem::createTorus)
-        .addFunction("loadGLTF", &MeshSystem::loadGLTF)
+        // keeps the default true when omitted, a nil bool reads as false
+        .addFunction("loadGLTF", [] (MeshSystem* self, Entity entity, const std::string& filename, bool asyncLoad, bool skipEntities, std::optional<bool> changeRootTransform) {
+            return self->loadGLTF(entity, filename, asyncLoad, skipEntities, changeRootTransform.value_or(true));
+        })
         .addFunction("loadOBJ", &MeshSystem::loadOBJ)
+        .addFunction("hasPendingAsyncModelLoads", &MeshSystem::hasPendingAsyncModelLoads)
+        .addFunction("isAsyncModelLoadPending", luabridge::overload<Entity, const std::string&>(&MeshSystem::isAsyncModelLoadPending))
+        .addFunction("cancelAsyncModelLoad", &MeshSystem::cancelAsyncModelLoad)
+        .addFunction("cancelAsyncModelLoads", &MeshSystem::cancelAsyncModelLoads)
         .addFunction("createInstancedMesh", &MeshSystem::createInstancedMesh)
         .addFunction("removeInstancedMesh", &MeshSystem::removeInstancedMesh)
+        .addFunction("hasInstancedMesh", &MeshSystem::hasInstancedMesh)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -175,6 +224,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
             luabridge::overload<Vector3>(&PhysicsSystem::setGravity3D),
             luabridge::overload<float, float, float>(&PhysicsSystem::setGravity3D))
         .addProperty("interpolation", &PhysicsSystem::isInterpolation, &PhysicsSystem::setInterpolation)
+        .addFunction("clearSubscriptions", &PhysicsSystem::clearSubscriptions)
+        .addFunction("removeSubscriptionsByTag", &PhysicsSystem::removeSubscriptionsByTag)
 #ifdef DORIAX_PHYSICS_2D
         .addProperty("pointsToMeterScale2D", &PhysicsSystem::getPointsToMeterScale2D,  &PhysicsSystem::setPointsToMeterScale2D)
         .addProperty("beginContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->beginContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->beginContact2D = L; })
@@ -243,6 +294,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
     luabridge::getGlobalNamespace(L)
         .deriveClass<RenderSystem, SubSystem>("RenderSystem")
         .addFunction("updateCameraSize", &RenderSystem::updateCameraSize)
+        .addFunction("isAllLoaded", &RenderSystem::isAllLoaded)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -252,7 +304,11 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("clearAnchorReferenceSize", &UISystem::clearAnchorReferenceSize)
         .addFunction("getAnchorReferenceWidth", &UISystem::getAnchorReferenceWidth)
         .addFunction("getAnchorReferenceHeight", &UISystem::getAnchorReferenceHeight)
+        .addFunction("parentToLayoutSpace", &UISystem::parentToLayoutSpace)
+        .addFunction("layoutToParentSpace", &UISystem::layoutToParentSpace)
         .addFunction("isTextEditFocused", &UISystem::isTextEditFocused)
+        .addFunction("hasPendingImages", &UISystem::hasPendingImages)
+        .addFunction("resetButtonStates", &UISystem::resetButtonStates)
         .addFunction("eventOnCharInput", &UISystem::eventOnCharInput)
         .addFunction("eventOnKeyDown", &UISystem::eventOnKeyDown)
         .addFunction("eventOnPointerDown", &UISystem::eventOnPointerDown)
@@ -764,6 +820,584 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("textureRect", &InstanceData::textureRect, &InstanceData::textureRect)
         .addProperty("visible", &InstanceData::visible, &InstanceData::visible)
         .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Transform>("Transform")
+        .addProperty("position", &Transform::position, &Transform::position)
+        .addProperty("rotation", &Transform::rotation, &Transform::rotation)
+        .addProperty("scale", &Transform::scale, &Transform::scale)
+        .addProperty("worldPosition", &Transform::worldPosition)
+        .addProperty("worldRotation", &Transform::worldRotation)
+        .addProperty("worldScale", &Transform::worldScale)
+        .addProperty("localMatrix", &Transform::localMatrix)
+        .addProperty("modelMatrix", &Transform::modelMatrix)
+        .addProperty("visible", &Transform::visible, &Transform::visible)
+        // reparent with addChild
+        .addProperty("parent", &Transform::parent)
+        .addProperty("distanceToCamera", &Transform::distanceToCamera)
+        .addProperty("billboardRotation", &Transform::billboardRotation, &Transform::billboardRotation)
+        .addProperty("billboard", &Transform::billboard, &Transform::billboard)
+        .addProperty("fakeBillboard", &Transform::fakeBillboard, &Transform::fakeBillboard)
+        .addProperty("cylindricalBillboard", &Transform::cylindricalBillboard, &Transform::cylindricalBillboard)
+        .addProperty("needUpdateChildVisibility", &Transform::needUpdateChildVisibility, &Transform::needUpdateChildVisibility)
+        .addProperty("needUpdate", &Transform::needUpdate, &Transform::needUpdate)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<CameraComponent>("CameraComponent")
+        .addProperty("type", &CameraComponent::type, &CameraComponent::type)
+        .addProperty("projectionMatrix", &CameraComponent::projectionMatrix)
+        .addProperty("viewMatrix", &CameraComponent::viewMatrix)
+        .addProperty("viewProjectionMatrix", &CameraComponent::viewProjectionMatrix)
+        .addProperty("target", &CameraComponent::target, &CameraComponent::target)
+        .addProperty("worldTarget", &CameraComponent::worldTarget)
+        .addProperty("up", &CameraComponent::up, &CameraComponent::up)
+        .addProperty("direction", &CameraComponent::direction)
+        .addProperty("right", &CameraComponent::right)
+        .addProperty("worldUp", &CameraComponent::worldUp)
+        .addProperty("worldDirection", &CameraComponent::worldDirection)
+        .addProperty("worldRight", &CameraComponent::worldRight)
+        .addProperty("leftClip", &CameraComponent::leftClip, &CameraComponent::leftClip)
+        .addProperty("rightClip", &CameraComponent::rightClip, &CameraComponent::rightClip)
+        .addProperty("bottomClip", &CameraComponent::bottomClip, &CameraComponent::bottomClip)
+        .addProperty("topClip", &CameraComponent::topClip, &CameraComponent::topClip)
+        .addProperty("yfov", &CameraComponent::yfov, &CameraComponent::yfov)
+        .addProperty("aspect", &CameraComponent::aspect, &CameraComponent::aspect)
+        .addProperty("nearClip", &CameraComponent::nearClip, &CameraComponent::nearClip)
+        .addProperty("farClip", &CameraComponent::farClip, &CameraComponent::farClip)
+        .addProperty("renderToTexture", &CameraComponent::renderToTexture, &CameraComponent::renderToTexture)
+        .addProperty("framebuffer", &CameraComponent::framebuffer)
+        .addProperty("framebufferWidth", &CameraComponent::framebufferWidth, &CameraComponent::framebufferWidth)
+        .addProperty("framebufferHeight", &CameraComponent::framebufferHeight, &CameraComponent::framebufferHeight)
+        .addProperty("framebufferFilter", &CameraComponent::framebufferFilter, &CameraComponent::framebufferFilter)
+        .addProperty("transparentSort", &CameraComponent::transparentSort, &CameraComponent::transparentSort)
+        .addProperty("depthTest", &CameraComponent::depthTest, &CameraComponent::depthTest)
+        .addProperty("useTarget", &CameraComponent::useTarget, &CameraComponent::useTarget)
+        .addProperty("autoResize", &CameraComponent::autoResize, &CameraComponent::autoResize)
+        .addProperty("hasCustomViewMatrix", &CameraComponent::hasCustomViewMatrix, &CameraComponent::hasCustomViewMatrix)
+        .addProperty("customViewMatrix", &CameraComponent::customViewMatrix, &CameraComponent::customViewMatrix)
+        .addProperty("invertCulling", &CameraComponent::invertCulling, &CameraComponent::invertCulling)
+        .addProperty("needUpdate", &CameraComponent::needUpdate, &CameraComponent::needUpdate)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<LightComponent>("LightComponent")
+        .addProperty("type", &LightComponent::type, &LightComponent::type)
+        .addProperty("direction", &LightComponent::direction, &LightComponent::direction)
+        .addProperty("worldDirection", &LightComponent::worldDirection)
+        // linear, unlike Light::setColor which converts from sRGB
+        .addProperty("color", &LightComponent::color, &LightComponent::color)
+        .addProperty("range", &LightComponent::range, &LightComponent::range)
+        .addProperty("intensity", &LightComponent::intensity, &LightComponent::intensity)
+        .addProperty("innerConeCos", &LightComponent::innerConeCos, &LightComponent::innerConeCos)
+        .addProperty("outerConeCos", &LightComponent::outerConeCos, &LightComponent::outerConeCos)
+        .addProperty("spotMask", &LightComponent::spotMask)
+        .addProperty("shadows", &LightComponent::shadows, &LightComponent::shadows)
+        .addProperty("automaticShadowCamera", &LightComponent::automaticShadowCamera, &LightComponent::automaticShadowCamera)
+        .addProperty("shadowBias", &LightComponent::shadowBias, &LightComponent::shadowBias)
+        .addProperty("shadowNormalBias", &LightComponent::shadowNormalBias, &LightComponent::shadowNormalBias)
+        .addProperty("mapResolution", &LightComponent::mapResolution, &LightComponent::mapResolution)
+        .addProperty("shadowCameraNearFar", &LightComponent::shadowCameraNearFar, &LightComponent::shadowCameraNearFar)
+        .addProperty("numShadowCascades", &LightComponent::numShadowCascades, &LightComponent::numShadowCascades)
+        .addProperty("needUpdateShadowCamera", &LightComponent::needUpdateShadowCamera, &LightComponent::needUpdateShadowCamera)
+        .addProperty("needUpdateShadowMap", &LightComponent::needUpdateShadowMap, &LightComponent::needUpdateShadowMap)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Light2DComponent>("Light2DComponent")
+        // linear, unlike Light2D::setColor which converts from sRGB
+        .addProperty("color", &Light2DComponent::color, &Light2DComponent::color)
+        .addProperty("intensity", &Light2DComponent::intensity, &Light2DComponent::intensity)
+        .addProperty("range", &Light2DComponent::range, &Light2DComponent::range)
+        .addProperty("falloff", &Light2DComponent::falloff, &Light2DComponent::falloff)
+        .addProperty("height", &Light2DComponent::height, &Light2DComponent::height)
+        .addProperty("shadows", &Light2DComponent::shadows, &Light2DComponent::shadows)
+        .addProperty("shadowBias", &Light2DComponent::shadowBias, &Light2DComponent::shadowBias)
+        .addProperty("shadowSoftness", &Light2DComponent::shadowSoftness, &Light2DComponent::shadowSoftness)
+        .addProperty("mapResolution", &Light2DComponent::mapResolution, &Light2DComponent::mapResolution)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Occluder2DComponent>("Occluder2DComponent")
+        .addProperty("shape", &Occluder2DComponent::shape, &Occluder2DComponent::shape)
+        .addProperty("points", &Occluder2DComponent::points, &Occluder2DComponent::points)
+        .addProperty("closed", &Occluder2DComponent::closed, &Occluder2DComponent::closed)
+        .addProperty("enabled", &Occluder2DComponent::enabled, &Occluder2DComponent::enabled)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<FogComponent>("FogComponent")
+        .addProperty("type", &FogComponent::type, &FogComponent::type)
+        // linear, unlike Fog::setColor which converts from sRGB
+        .addProperty("color", &FogComponent::color, &FogComponent::color)
+        .addProperty("density", &FogComponent::density, &FogComponent::density)
+        .addProperty("linearStart", &FogComponent::linearStart, &FogComponent::linearStart)
+        .addProperty("linearEnd", &FogComponent::linearEnd, &FogComponent::linearEnd)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<SkyComponent>("SkyComponent")
+        .addProperty("loaded", &SkyComponent::loaded)
+        .addProperty("customShader", &SkyComponent::customShader, &SkyComponent::customShader)
+        .addProperty("texture", &SkyComponent::texture, &SkyComponent::texture)
+        .addProperty("color", &SkyComponent::color, &SkyComponent::color)
+        .addProperty("rotation", &SkyComponent::rotation, &SkyComponent::rotation)
+        .addProperty("visible", &SkyComponent::visible, &SkyComponent::visible)
+        .addProperty("needUpdateEnvironment", &SkyComponent::needUpdateEnvironment, &SkyComponent::needUpdateEnvironment)
+        .addProperty("needUpdateTexture", &SkyComponent::needUpdateTexture, &SkyComponent::needUpdateTexture)
+        .addProperty("needUpdateSky", &SkyComponent::needUpdateSky, &SkyComponent::needUpdateSky)
+        .addProperty("needReload", &SkyComponent::needReload, &SkyComponent::needReload)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<MeshComponent>("MeshComponent")
+        .addProperty("loaded", &MeshComponent::loaded)
+        .addProperty("vertexCount", &MeshComponent::vertexCount)
+        .addProperty("numSubmeshes", &MeshComponent::numSubmeshes)
+        .addProperty("customShader", &MeshComponent::customShader, &MeshComponent::customShader)
+        .addProperty("customDepthShader", &MeshComponent::customDepthShader, &MeshComponent::customDepthShader)
+        .addProperty("aabb", &MeshComponent::aabb)
+        .addProperty("worldAABB", &MeshComponent::worldAABB)
+        .addProperty("receiveLights", &MeshComponent::receiveLights, &MeshComponent::receiveLights)
+        .addProperty("receiveIBL", &MeshComponent::receiveIBL, &MeshComponent::receiveIBL)
+        .addProperty("castShadows", &MeshComponent::castShadows, &MeshComponent::castShadows)
+        .addProperty("receiveShadows", &MeshComponent::receiveShadows, &MeshComponent::receiveShadows)
+        .addProperty("shadowsBillboard", &MeshComponent::shadowsBillboard, &MeshComponent::shadowsBillboard)
+        .addProperty("renderInReflectionProbes", &MeshComponent::renderInReflectionProbes, &MeshComponent::renderInReflectionProbes)
+        .addProperty("transparent", &MeshComponent::transparent, &MeshComponent::transparent)
+        .addProperty("autoTransparency", &MeshComponent::autoTransparency, &MeshComponent::autoTransparency)
+        .addProperty("lodEnabled", &MeshComponent::lodEnabled, &MeshComponent::lodEnabled)
+        .addProperty("lodBias", &MeshComponent::lodBias, &MeshComponent::lodBias)
+        .addProperty("cullingMode", &MeshComponent::cullingMode, &MeshComponent::cullingMode)
+        .addProperty("windingOrder", &MeshComponent::windingOrder, &MeshComponent::windingOrder)
+        .addProperty("needUpdateAABB", &MeshComponent::needUpdateAABB, &MeshComponent::needUpdateAABB)
+        .addProperty("needUpdateBuffer", &MeshComponent::needUpdateBuffer, &MeshComponent::needUpdateBuffer)
+        .addProperty("needReload", &MeshComponent::needReload, &MeshComponent::needReload)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<InstancedMeshComponent>("InstancedMeshComponent")
+        .addProperty("instances", &InstancedMeshComponent::instances, &InstancedMeshComponent::instances)
+        // buffer size, set with Mesh.maxInstances
+        .addProperty("maxInstances", &InstancedMeshComponent::maxInstances)
+        .addProperty("numVisible", &InstancedMeshComponent::numVisible)
+        .addProperty("cullInstances", &InstancedMeshComponent::cullInstances, &InstancedMeshComponent::cullInstances)
+        .addProperty("cullDistance", &InstancedMeshComponent::cullDistance, &InstancedMeshComponent::cullDistance)
+        .addProperty("distanceFade", &InstancedMeshComponent::distanceFade, &InstancedMeshComponent::distanceFade)
+        .addProperty("fadeStart", &InstancedMeshComponent::fadeStart, &InstancedMeshComponent::fadeStart)
+        .addProperty("fadeEnd", &InstancedMeshComponent::fadeEnd, &InstancedMeshComponent::fadeEnd)
+        .addProperty("instancedBillboard", &InstancedMeshComponent::instancedBillboard, &InstancedMeshComponent::instancedBillboard)
+        .addProperty("instancedCylindricalBillboard", &InstancedMeshComponent::instancedCylindricalBillboard, &InstancedMeshComponent::instancedCylindricalBillboard)
+        .addProperty("needUpdateBuffer", &InstancedMeshComponent::needUpdateBuffer, &InstancedMeshComponent::needUpdateBuffer)
+        .addProperty("needUpdateInstances", &InstancedMeshComponent::needUpdateInstances, &InstancedMeshComponent::needUpdateInstances)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ModelComponent>("ModelComponent")
+        .addProperty("skeleton", &ModelComponent::skeleton)
+        .addProperty("bonesNameMapping", &ModelComponent::bonesNameMapping)
+        .addProperty("morphNameMapping", &ModelComponent::morphNameMapping)
+        .addProperty("animations", &ModelComponent::animations)
+        .addProperty("filename", &ModelComponent::filename, &ModelComponent::filename)
+        .addProperty("mergeStaticMeshes", &ModelComponent::mergeStaticMeshes, &ModelComponent::mergeStaticMeshes)
+        .addProperty("needUpdateModel", &ModelComponent::needUpdateModel, &ModelComponent::needUpdateModel)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<BoneComponent>("BoneComponent")
+        .addProperty("model", &BoneComponent::model)
+        .addProperty("index", &BoneComponent::index)
+        .addProperty("bindPosition", &BoneComponent::bindPosition)
+        .addProperty("bindRotation", &BoneComponent::bindRotation)
+        .addProperty("bindScale", &BoneComponent::bindScale)
+        .addProperty("offsetMatrix", &BoneComponent::offsetMatrix)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<SpriteComponent>("SpriteComponent")
+        .addProperty("width", &SpriteComponent::width, &SpriteComponent::width)
+        .addProperty("height", &SpriteComponent::height, &SpriteComponent::height)
+        .addProperty("automaticFlipY", &SpriteComponent::automaticFlipY, &SpriteComponent::automaticFlipY)
+        .addProperty("flipY", &SpriteComponent::flipY, &SpriteComponent::flipY)
+        .addProperty("textureScaleFactor", &SpriteComponent::textureScaleFactor, &SpriteComponent::textureScaleFactor)
+        .addProperty("numFramesRect", &SpriteComponent::numFramesRect)
+        .addProperty("pivotPreset", &SpriteComponent::pivotPreset, &SpriteComponent::pivotPreset)
+        .addProperty("needUpdateSprite", &SpriteComponent::needUpdateSprite, &SpriteComponent::needUpdateSprite)
+        .addProperty("needUpdateBatch", &SpriteComponent::needUpdateBatch, &SpriteComponent::needUpdateBatch)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<PolygonPoint>("PolygonPoint")
+        .addConstructor<void (*) (void)>()
+        .addProperty("position", &PolygonPoint::position, &PolygonPoint::position)
+        .addProperty("color", &PolygonPoint::color, &PolygonPoint::color)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<MeshPolygonComponent>("MeshPolygonComponent")
+        .addProperty("width", &MeshPolygonComponent::width)
+        .addProperty("height", &MeshPolygonComponent::height)
+        .addProperty("automaticFlipY", &MeshPolygonComponent::automaticFlipY, &MeshPolygonComponent::automaticFlipY)
+        .addProperty("flipY", &MeshPolygonComponent::flipY, &MeshPolygonComponent::flipY)
+        .addProperty("points", &MeshPolygonComponent::points, &MeshPolygonComponent::points)
+        .addProperty("needUpdatePolygon", &MeshPolygonComponent::needUpdatePolygon, &MeshPolygonComponent::needUpdatePolygon)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<PolygonComponent>("PolygonComponent")
+        .addProperty("points", &PolygonComponent::points, &PolygonComponent::points)
+        .addProperty("needUpdatePolygon", &PolygonComponent::needUpdatePolygon, &PolygonComponent::needUpdatePolygon)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<PointsComponent>("PointsComponent")
+        .addProperty("loaded", &PointsComponent::loaded)
+        .addProperty("points", &PointsComponent::points, &PointsComponent::points)
+        .addProperty("numFramesRect", &PointsComponent::numFramesRect)
+        // buffer size, set with Points.maxPoints
+        .addProperty("maxPoints", &PointsComponent::maxPoints)
+        .addProperty("numVisible", &PointsComponent::numVisible)
+        .addProperty("aabb", &PointsComponent::aabb)
+        .addProperty("customShader", &PointsComponent::customShader, &PointsComponent::customShader)
+        .addProperty("texture", &PointsComponent::texture, &PointsComponent::texture)
+        .addProperty("transparent", &PointsComponent::transparent, &PointsComponent::transparent)
+        .addProperty("autoTransparency", &PointsComponent::autoTransparency, &PointsComponent::autoTransparency)
+        .addProperty("needUpdate", &PointsComponent::needUpdate, &PointsComponent::needUpdate)
+        .addProperty("needUpdateBuffer", &PointsComponent::needUpdateBuffer, &PointsComponent::needUpdateBuffer)
+        .addProperty("needUpdateTexture", &PointsComponent::needUpdateTexture, &PointsComponent::needUpdateTexture)
+        .addProperty("needReload", &PointsComponent::needReload, &PointsComponent::needReload)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<LinesComponent>("LinesComponent")
+        .addProperty("loaded", &LinesComponent::loaded)
+        .addProperty("lines", &LinesComponent::lines, &LinesComponent::lines)
+        // buffer size, set with Lines.maxLines
+        .addProperty("maxLines", &LinesComponent::maxLines)
+        .addProperty("customShader", &LinesComponent::customShader, &LinesComponent::customShader)
+        .addProperty("needUpdateBuffer", &LinesComponent::needUpdateBuffer, &LinesComponent::needUpdateBuffer)
+        .addProperty("needReload", &LinesComponent::needReload, &LinesComponent::needReload)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<TerrainFoliageLayer>("TerrainFoliageLayer")
+        .addConstructor<void (*) (void)>()
+        .addProperty("meshPath", &TerrainFoliageLayer::meshPath, &TerrainFoliageLayer::meshPath)
+        .addProperty("densityMap", &TerrainFoliageLayer::densityMap, &TerrainFoliageLayer::densityMap)
+        .addProperty("density", &TerrainFoliageLayer::density, &TerrainFoliageLayer::density)
+        .addProperty("minScale", &TerrainFoliageLayer::minScale, &TerrainFoliageLayer::minScale)
+        .addProperty("maxScale", &TerrainFoliageLayer::maxScale, &TerrainFoliageLayer::maxScale)
+        .addProperty("rotationJitter", &TerrainFoliageLayer::rotationJitter, &TerrainFoliageLayer::rotationJitter)
+        .addProperty("alignToNormal", &TerrainFoliageLayer::alignToNormal, &TerrainFoliageLayer::alignToNormal)
+        .addProperty("minSlope", &TerrainFoliageLayer::minSlope, &TerrainFoliageLayer::minSlope)
+        .addProperty("maxSlope", &TerrainFoliageLayer::maxSlope, &TerrainFoliageLayer::maxSlope)
+        .addProperty("minHeight", &TerrainFoliageLayer::minHeight, &TerrainFoliageLayer::minHeight)
+        .addProperty("maxHeight", &TerrainFoliageLayer::maxHeight, &TerrainFoliageLayer::maxHeight)
+        .addProperty("drawDistance", &TerrainFoliageLayer::drawDistance, &TerrainFoliageLayer::drawDistance)
+        .addProperty("minDrawDistance", &TerrainFoliageLayer::minDrawDistance, &TerrainFoliageLayer::minDrawDistance)
+        .addProperty("seed", &TerrainFoliageLayer::seed, &TerrainFoliageLayer::seed)
+        .addProperty("castShadows", &TerrainFoliageLayer::castShadows, &TerrainFoliageLayer::castShadows)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<TerrainComponent>("TerrainComponent")
+        .addProperty("heightMap", &TerrainComponent::heightMap, &TerrainComponent::heightMap)
+        .addProperty("blendMaps", &TerrainComponent::blendMaps, &TerrainComponent::blendMaps)
+        .addProperty("surfaceLayers", &TerrainComponent::surfaceLayers, &TerrainComponent::surfaceLayers)
+        .addProperty("foliageLayers", &TerrainComponent::foliageLayers, &TerrainComponent::foliageLayers)
+        .addProperty("foliageDistanceScale", &TerrainComponent::foliageDistanceScale, &TerrainComponent::foliageDistanceScale)
+        .addProperty("heightMapLoaded", &TerrainComponent::heightMapLoaded)
+        .addProperty("offset", &TerrainComponent::offset, &TerrainComponent::offset)
+        .addProperty("terrainSize", &TerrainComponent::terrainSize, &TerrainComponent::terrainSize)
+        .addProperty("maxHeight", &TerrainComponent::maxHeight, &TerrainComponent::maxHeight)
+        .addProperty("textureBaseTiles", &TerrainComponent::textureBaseTiles, &TerrainComponent::textureBaseTiles)
+        .addProperty("textureDetailTiles", &TerrainComponent::textureDetailTiles, &TerrainComponent::textureDetailTiles)
+        // read each frame, only validated on a rebuild
+        .addProperty("autoSetRanges", &TerrainComponent::autoSetRanges)
+        .addProperty("ranges", &TerrainComponent::ranges)
+        .addProperty("resolution", &TerrainComponent::resolution)
+        .addProperty("rootGridSize", &TerrainComponent::rootGridSize)
+        .addProperty("levels", &TerrainComponent::levels)
+        .addProperty("needUpdateTerrain", &TerrainComponent::needUpdateTerrain, &TerrainComponent::needUpdateTerrain)
+        .addProperty("needUpdateTexture", &TerrainComponent::needUpdateTexture, &TerrainComponent::needUpdateTexture)
+        .addProperty("needUpdateFoliage", &TerrainComponent::needUpdateFoliage, &TerrainComponent::needUpdateFoliage)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<WaterComponent>("WaterComponent")
+        .addProperty("loaded", &WaterComponent::loaded)
+        .addProperty("aabb", &WaterComponent::aabb)
+        .addProperty("worldAABB", &WaterComponent::worldAABB)
+        .addProperty("customShader", &WaterComponent::customShader, &WaterComponent::customShader)
+        .addProperty("customUnderwaterShader", &WaterComponent::customUnderwaterShader, &WaterComponent::customUnderwaterShader)
+        .addProperty("size", &WaterComponent::size, &WaterComponent::size)
+        .addProperty("subdivisions", &WaterComponent::subdivisions, &WaterComponent::subdivisions)
+        // linear, unlike the Water setters which convert from sRGB
+        .addProperty("shallowColor", &WaterComponent::shallowColor, &WaterComponent::shallowColor)
+        .addProperty("deepColor", &WaterComponent::deepColor, &WaterComponent::deepColor)
+        .addProperty("depthFade", &WaterComponent::depthFade, &WaterComponent::depthFade)
+        .addProperty("waveHeight", &WaterComponent::waveHeight, &WaterComponent::waveHeight)
+        .addProperty("waveLength", &WaterComponent::waveLength, &WaterComponent::waveLength)
+        .addProperty("waveSpeed", &WaterComponent::waveSpeed, &WaterComponent::waveSpeed)
+        .addProperty("waveDirection", &WaterComponent::waveDirection, &WaterComponent::waveDirection)
+        .addProperty("waveSteepness", &WaterComponent::waveSteepness, &WaterComponent::waveSteepness)
+        .addProperty("normalTexture", &WaterComponent::normalTexture, &WaterComponent::normalTexture)
+        .addProperty("normalScale", &WaterComponent::normalScale, &WaterComponent::normalScale)
+        .addProperty("normalStrength", &WaterComponent::normalStrength, &WaterComponent::normalStrength)
+        .addProperty("rippleSpeed", &WaterComponent::rippleSpeed, &WaterComponent::rippleSpeed)
+        .addProperty("reflectivity", &WaterComponent::reflectivity, &WaterComponent::reflectivity)
+        .addProperty("specularIntensity", &WaterComponent::specularIntensity, &WaterComponent::specularIntensity)
+        .addProperty("roughness", &WaterComponent::roughness, &WaterComponent::roughness)
+        .addProperty("foamColor", &WaterComponent::foamColor, &WaterComponent::foamColor)
+        .addProperty("shoreFoam", &WaterComponent::shoreFoam, &WaterComponent::shoreFoam)
+        .addProperty("crestFoam", &WaterComponent::crestFoam, &WaterComponent::crestFoam)
+        .addProperty("receiveShadows", &WaterComponent::receiveShadows, &WaterComponent::receiveShadows)
+        .addProperty("depthEffects", &WaterComponent::depthEffects, &WaterComponent::depthEffects)
+        .addProperty("planarReflection", &WaterComponent::planarReflection, &WaterComponent::planarReflection)
+        .addProperty("reflectionDistortion", &WaterComponent::reflectionDistortion, &WaterComponent::reflectionDistortion)
+        .addProperty("refraction", &WaterComponent::refraction, &WaterComponent::refraction)
+        .addProperty("refractionDistortion", &WaterComponent::refractionDistortion, &WaterComponent::refractionDistortion)
+        .addProperty("caustics", &WaterComponent::caustics, &WaterComponent::caustics)
+        .addProperty("causticsScale", &WaterComponent::causticsScale, &WaterComponent::causticsScale)
+        .addProperty("underwater", &WaterComponent::underwater, &WaterComponent::underwater)
+        .addProperty("buoyancy", &WaterComponent::buoyancy, &WaterComponent::buoyancy)
+        .addProperty("buoyancyDepth", &WaterComponent::buoyancyDepth, &WaterComponent::buoyancyDepth)
+        .addProperty("needUpdateTexture", &WaterComponent::needUpdateTexture, &WaterComponent::needUpdateTexture)
+        .addProperty("needReload", &WaterComponent::needReload, &WaterComponent::needReload)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<WaterExclusionComponent>("WaterExclusionComponent")
+        .addProperty("shape", &WaterExclusionComponent::shape, &WaterExclusionComponent::shape)
+        .addProperty("center", &WaterExclusionComponent::center, &WaterExclusionComponent::center)
+        .addProperty("size", &WaterExclusionComponent::size, &WaterExclusionComponent::size)
+        .addProperty("aabb", &WaterExclusionComponent::aabb)
+        .addProperty("worldAABB", &WaterExclusionComponent::worldAABB)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<MirrorComponent>("MirrorComponent")
+        .addProperty("normal", &MirrorComponent::normal, &MirrorComponent::normal)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ReflectionProbeComponent>("ReflectionProbeComponent")
+        .addProperty("mode", &ReflectionProbeComponent::mode, &ReflectionProbeComponent::mode)
+        .addProperty("updateMode", &ReflectionProbeComponent::updateMode, &ReflectionProbeComponent::updateMode)
+        .addProperty("boxOffset", &ReflectionProbeComponent::boxOffset, &ReflectionProbeComponent::boxOffset)
+        .addProperty("boxSize", &ReflectionProbeComponent::boxSize, &ReflectionProbeComponent::boxSize)
+        .addProperty("blendDistance", &ReflectionProbeComponent::blendDistance, &ReflectionProbeComponent::blendDistance)
+        .addProperty("intensity", &ReflectionProbeComponent::intensity, &ReflectionProbeComponent::intensity)
+        .addProperty("priority", &ReflectionProbeComponent::priority, &ReflectionProbeComponent::priority)
+        .addProperty("resolution", &ReflectionProbeComponent::resolution, &ReflectionProbeComponent::resolution)
+        .addProperty("nearClip", &ReflectionProbeComponent::nearClip, &ReflectionProbeComponent::nearClip)
+        .addProperty("farClip", &ReflectionProbeComponent::farClip, &ReflectionProbeComponent::farClip)
+        .addProperty("updateInterval", &ReflectionProbeComponent::updateInterval, &ReflectionProbeComponent::updateInterval)
+        .addProperty("includeSky", &ReflectionProbeComponent::includeSky, &ReflectionProbeComponent::includeSky)
+        .addProperty("texture", &ReflectionProbeComponent::texture)
+        .addProperty("needUpdate", &ReflectionProbeComponent::needUpdate, &ReflectionProbeComponent::needUpdate)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ImageComponent>("ImageComponent")
+        .addProperty("patchMarginLeft", &ImageComponent::patchMarginLeft, &ImageComponent::patchMarginLeft)
+        .addProperty("patchMarginRight", &ImageComponent::patchMarginRight, &ImageComponent::patchMarginRight)
+        .addProperty("patchMarginTop", &ImageComponent::patchMarginTop, &ImageComponent::patchMarginTop)
+        .addProperty("patchMarginBottom", &ImageComponent::patchMarginBottom, &ImageComponent::patchMarginBottom)
+        .addProperty("textureScaleFactor", &ImageComponent::textureScaleFactor, &ImageComponent::textureScaleFactor)
+        .addProperty("needUpdatePatches", &ImageComponent::needUpdatePatches, &ImageComponent::needUpdatePatches)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<TextComponent>("TextComponent")
+        .addProperty("loaded", &TextComponent::loaded)
+        .addProperty("font", &TextComponent::font, &TextComponent::font)
+        .addProperty("text", &TextComponent::text, &TextComponent::text)
+        .addProperty("fontSize", &TextComponent::fontSize, &TextComponent::fontSize)
+        .addProperty("multiline", &TextComponent::multiline, &TextComponent::multiline)
+        .addProperty("maxTextSize", &TextComponent::maxTextSize, &TextComponent::maxTextSize)
+        .addProperty("charPositions", &TextComponent::charPositions)
+        .addProperty("fixedWidth", &TextComponent::fixedWidth, &TextComponent::fixedWidth)
+        .addProperty("fixedHeight", &TextComponent::fixedHeight, &TextComponent::fixedHeight)
+        .addProperty("pivotBaseline", &TextComponent::pivotBaseline, &TextComponent::pivotBaseline)
+        .addProperty("pivotCentered", &TextComponent::pivotCentered, &TextComponent::pivotCentered)
+        .addProperty("needReloadAtlas", &TextComponent::needReloadAtlas, &TextComponent::needReloadAtlas)
+        .addProperty("needUpdateText", &TextComponent::needUpdateText, &TextComponent::needUpdateText)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<UIContainerComponent>("UIContainerComponent")
+        .addProperty("type", &UIContainerComponent::type, &UIContainerComponent::type)
+        .addProperty("useAllWrapSpace", &UIContainerComponent::useAllWrapSpace, &UIContainerComponent::useAllWrapSpace)
+        .addProperty("wrapCellWidth", &UIContainerComponent::wrapCellWidth, &UIContainerComponent::wrapCellWidth)
+        .addProperty("wrapCellHeight", &UIContainerComponent::wrapCellHeight, &UIContainerComponent::wrapCellHeight)
+        .addProperty("numBoxes", &UIContainerComponent::numBoxes)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<PositionActionComponent>("PositionActionComponent")
+        .addProperty("endPosition", &PositionActionComponent::endPosition, &PositionActionComponent::endPosition)
+        .addProperty("startPosition", &PositionActionComponent::startPosition, &PositionActionComponent::startPosition)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<RotationActionComponent>("RotationActionComponent")
+        .addProperty("endRotation", &RotationActionComponent::endRotation, &RotationActionComponent::endRotation)
+        .addProperty("startRotation", &RotationActionComponent::startRotation, &RotationActionComponent::startRotation)
+        .addProperty("shortestPath", &RotationActionComponent::shortestPath, &RotationActionComponent::shortestPath)
+        .addProperty("spin", &RotationActionComponent::spin, &RotationActionComponent::spin)
+        .addProperty("axis", &RotationActionComponent::axis, &RotationActionComponent::axis)
+        .addProperty("angle", &RotationActionComponent::angle, &RotationActionComponent::angle)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ScaleActionComponent>("ScaleActionComponent")
+        .addProperty("endScale", &ScaleActionComponent::endScale, &ScaleActionComponent::endScale)
+        .addProperty("startScale", &ScaleActionComponent::startScale, &ScaleActionComponent::startScale)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ColorActionComponent>("ColorActionComponent")
+        .addProperty("endColor", &ColorActionComponent::endColor, &ColorActionComponent::endColor)
+        .addProperty("startColor", &ColorActionComponent::startColor, &ColorActionComponent::startColor)
+        .addProperty("useSRGB", &ColorActionComponent::useSRGB, &ColorActionComponent::useSRGB)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<AlphaActionComponent>("AlphaActionComponent")
+        .addProperty("endAlpha", &AlphaActionComponent::endAlpha, &AlphaActionComponent::endAlpha)
+        .addProperty("startAlpha", &AlphaActionComponent::startAlpha, &AlphaActionComponent::startAlpha)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<SpriteAnimationComponent>("SpriteAnimationComponent")
+        .addProperty("loop", &SpriteAnimationComponent::loop, &SpriteAnimationComponent::loop)
+        .addProperty("framesSize", &SpriteAnimationComponent::framesSize)
+        .addProperty("framesTimeSize", &SpriteAnimationComponent::framesTimeSize)
+        .addProperty("frameIndex", &SpriteAnimationComponent::frameIndex)
+        .addProperty("frameTimeIndex", &SpriteAnimationComponent::frameTimeIndex)
+        .addProperty("spriteFrameCount", &SpriteAnimationComponent::spriteFrameCount)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<KeyframeTracksComponent>("KeyframeTracksComponent")
+        .addProperty("times", &KeyframeTracksComponent::times, &KeyframeTracksComponent::times)
+        .addProperty("easings", &KeyframeTracksComponent::easings, &KeyframeTracksComponent::easings)
+        .addProperty("loop", &KeyframeTracksComponent::loop, &KeyframeTracksComponent::loop)
+        .addProperty("relative", &KeyframeTracksComponent::relative, &KeyframeTracksComponent::relative)
+        .addProperty("index", &KeyframeTracksComponent::index)
+        .addProperty("interpolation", &KeyframeTracksComponent::interpolation)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<TranslateTracksComponent>("TranslateTracksComponent")
+        .addProperty("values", &TranslateTracksComponent::values, &TranslateTracksComponent::values)
+        .addProperty("inTangents", &TranslateTracksComponent::inTangents, &TranslateTracksComponent::inTangents)
+        .addProperty("outTangents", &TranslateTracksComponent::outTangents, &TranslateTracksComponent::outTangents)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<RotateTracksComponent>("RotateTracksComponent")
+        .addProperty("values", &RotateTracksComponent::values, &RotateTracksComponent::values)
+        .addProperty("inTangents", &RotateTracksComponent::inTangents, &RotateTracksComponent::inTangents)
+        .addProperty("outTangents", &RotateTracksComponent::outTangents, &RotateTracksComponent::outTangents)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<ScaleTracksComponent>("ScaleTracksComponent")
+        .addProperty("values", &ScaleTracksComponent::values, &ScaleTracksComponent::values)
+        .addProperty("inTangents", &ScaleTracksComponent::inTangents, &ScaleTracksComponent::inTangents)
+        .addProperty("outTangents", &ScaleTracksComponent::outTangents, &ScaleTracksComponent::outTangents)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<MorphTracksComponent>("MorphTracksComponent")
+        .addProperty("values", &MorphTracksComponent::values, &MorphTracksComponent::values)
+        .addProperty("inTangents", &MorphTracksComponent::inTangents, &MorphTracksComponent::inTangents)
+        .addProperty("outTangents", &MorphTracksComponent::outTangents, &MorphTracksComponent::outTangents)
+        .endClass();
+
+#ifdef DORIAX_PHYSICS_2D
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Body2DComponent>("Body2DComponent")
+        .addProperty("numShapes", &Body2DComponent::numShapes)
+        .addProperty("type", &Body2DComponent::type, &Body2DComponent::type)
+        .addProperty("needReloadBody", &Body2DComponent::needReloadBody, &Body2DComponent::needReloadBody)
+        .addProperty("needUpdateShapes", &Body2DComponent::needUpdateShapes, &Body2DComponent::needUpdateShapes)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Joint2DComponent>("Joint2DComponent")
+        .addProperty("type", &Joint2DComponent::type, &Joint2DComponent::type)
+        .addProperty("bodyA", &Joint2DComponent::bodyA, &Joint2DComponent::bodyA)
+        .addProperty("bodyB", &Joint2DComponent::bodyB, &Joint2DComponent::bodyB)
+        .addProperty("anchorA", &Joint2DComponent::anchorA, &Joint2DComponent::anchorA)
+        .addProperty("anchorB", &Joint2DComponent::anchorB, &Joint2DComponent::anchorB)
+        .addProperty("axis", &Joint2DComponent::axis, &Joint2DComponent::axis)
+        .addProperty("target", &Joint2DComponent::target, &Joint2DComponent::target)
+        .addProperty("autoAnchors", &Joint2DComponent::autoAnchors, &Joint2DComponent::autoAnchors)
+        .addProperty("rope", &Joint2DComponent::rope, &Joint2DComponent::rope)
+        .addProperty("needUpdateJoint", &Joint2DComponent::needUpdateJoint, &Joint2DComponent::needUpdateJoint)
+        .endClass();
+#endif
+
+#ifdef DORIAX_PHYSICS_3D
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Body3DComponent>("Body3DComponent")
+        .addProperty("numShapes", &Body3DComponent::numShapes)
+        .addProperty("overrideMassProperties", &Body3DComponent::overrideMassProperties, &Body3DComponent::overrideMassProperties)
+        .addProperty("solidBoxSize", &Body3DComponent::solidBoxSize, &Body3DComponent::solidBoxSize)
+        .addProperty("solidBoxDensity", &Body3DComponent::solidBoxDensity, &Body3DComponent::solidBoxDensity)
+        .addProperty("type", &Body3DComponent::type, &Body3DComponent::type)
+        .addProperty("motionQuality", &Body3DComponent::motionQuality, &Body3DComponent::motionQuality)
+        .addProperty("gravityFactor", &Body3DComponent::gravityFactor, &Body3DComponent::gravityFactor)
+        .addProperty("buoyancy", &Body3DComponent::buoyancy, &Body3DComponent::buoyancy)
+        .addProperty("waterDrag", &Body3DComponent::waterDrag, &Body3DComponent::waterDrag)
+        .addProperty("waterAngularDrag", &Body3DComponent::waterAngularDrag, &Body3DComponent::waterAngularDrag)
+        .addProperty("allowedDOFs", &Body3DComponent::allowedDOFs, &Body3DComponent::allowedDOFs)
+        .addProperty("sensor", &Body3DComponent::sensor, &Body3DComponent::sensor)
+        .addProperty("needReloadBody", &Body3DComponent::needReloadBody, &Body3DComponent::needReloadBody)
+        .addProperty("needUpdateShapes", &Body3DComponent::needUpdateShapes, &Body3DComponent::needUpdateShapes)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Joint3DComponent>("Joint3DComponent")
+        .addProperty("type", &Joint3DComponent::type, &Joint3DComponent::type)
+        .addProperty("bodyA", &Joint3DComponent::bodyA, &Joint3DComponent::bodyA)
+        .addProperty("bodyB", &Joint3DComponent::bodyB, &Joint3DComponent::bodyB)
+        .addProperty("anchorA", &Joint3DComponent::anchorA, &Joint3DComponent::anchorA)
+        .addProperty("anchorB", &Joint3DComponent::anchorB, &Joint3DComponent::anchorB)
+        .addProperty("anchor", &Joint3DComponent::anchor, &Joint3DComponent::anchor)
+        .addProperty("axis", &Joint3DComponent::axis, &Joint3DComponent::axis)
+        .addProperty("normal", &Joint3DComponent::normal, &Joint3DComponent::normal)
+        .addProperty("twistAxis", &Joint3DComponent::twistAxis, &Joint3DComponent::twistAxis)
+        .addProperty("planeAxis", &Joint3DComponent::planeAxis, &Joint3DComponent::planeAxis)
+        .addProperty("axisX", &Joint3DComponent::axisX, &Joint3DComponent::axisX)
+        .addProperty("axisY", &Joint3DComponent::axisY, &Joint3DComponent::axisY)
+        .addProperty("limitsMin", &Joint3DComponent::limitsMin, &Joint3DComponent::limitsMin)
+        .addProperty("limitsMax", &Joint3DComponent::limitsMax, &Joint3DComponent::limitsMax)
+        .addProperty("normalHalfConeAngle", &Joint3DComponent::normalHalfConeAngle, &Joint3DComponent::normalHalfConeAngle)
+        .addProperty("planeHalfConeAngle", &Joint3DComponent::planeHalfConeAngle, &Joint3DComponent::planeHalfConeAngle)
+        .addProperty("twistMinAngle", &Joint3DComponent::twistMinAngle, &Joint3DComponent::twistMinAngle)
+        .addProperty("twistMaxAngle", &Joint3DComponent::twistMaxAngle, &Joint3DComponent::twistMaxAngle)
+        .addProperty("fixedPointA", &Joint3DComponent::fixedPointA, &Joint3DComponent::fixedPointA)
+        .addProperty("fixedPointB", &Joint3DComponent::fixedPointB, &Joint3DComponent::fixedPointB)
+        .addProperty("hingeA", &Joint3DComponent::hingeA, &Joint3DComponent::hingeA)
+        .addProperty("hingeB", &Joint3DComponent::hingeB, &Joint3DComponent::hingeB)
+        .addProperty("hinge", &Joint3DComponent::hinge, &Joint3DComponent::hinge)
+        .addProperty("slider", &Joint3DComponent::slider, &Joint3DComponent::slider)
+        .addProperty("numTeethGearA", &Joint3DComponent::numTeethGearA, &Joint3DComponent::numTeethGearA)
+        .addProperty("numTeethGearB", &Joint3DComponent::numTeethGearB, &Joint3DComponent::numTeethGearB)
+        .addProperty("numTeethRack", &Joint3DComponent::numTeethRack, &Joint3DComponent::numTeethRack)
+        .addProperty("numTeethGear", &Joint3DComponent::numTeethGear, &Joint3DComponent::numTeethGear)
+        .addProperty("rackLength", &Joint3DComponent::rackLength, &Joint3DComponent::rackLength)
+        .addProperty("pathPoints", &Joint3DComponent::pathPoints, &Joint3DComponent::pathPoints)
+        .addProperty("pathPosition", &Joint3DComponent::pathPosition, &Joint3DComponent::pathPosition)
+        .addProperty("isLooping", &Joint3DComponent::isLooping, &Joint3DComponent::isLooping)
+        .addProperty("autoAnchors", &Joint3DComponent::autoAnchors, &Joint3DComponent::autoAnchors)
+        .addProperty("needUpdateJoint", &Joint3DComponent::needUpdateJoint, &Joint3DComponent::needUpdateJoint)
+        .endClass();
+#endif
 
 #endif //DISABLE_LUA_BINDINGS
 }

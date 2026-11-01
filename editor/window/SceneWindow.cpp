@@ -10,6 +10,7 @@
 #include "Backend.h"
 #include "util/Util.h"
 #include "util/EntityPayload.h"
+#include "util/TextEncoding.h"
 #include "command/CommandHandle.h"
 #include "command/type/MultiPropertyCmd.h"
 #include "command/type/LinkMaterialCmd.h"
@@ -102,6 +103,7 @@ void editor::SceneWindow::resetProjectState() {
     lookActive.clear();
     lookReturnPos.clear();
     focusCanvasOnNextFrame.clear();
+    fullscreenSceneId = NULL_PROJECT_SCENE;
     width.clear();
     height.clear();
     framebufferScale.clear();
@@ -128,6 +130,9 @@ void editor::SceneWindow::clearSceneState(uint32_t sceneId) {
     lookActive.erase(sceneId);
     lookReturnPos.erase(sceneId);
     focusCanvasOnNextFrame.erase(sceneId);
+    if (fullscreenSceneId == sceneId) {
+        fullscreenSceneId = NULL_PROJECT_SCENE;
+    }
     width.erase(sceneId);
     height.erase(sceneId);
     framebufferScale.erase(sceneId);
@@ -235,6 +240,33 @@ void editor::SceneWindow::requestPlayFocus(uint32_t sceneId) {
     project->setSelectedSceneId(sceneId);
     focusCanvasOnNextFrame[sceneId] = true;
     focusSceneWindow(*sceneProject);
+}
+
+void editor::SceneWindow::toggleFullscreen(uint32_t sceneId) {
+    if (fullscreenSceneId != NULL_PROJECT_SCENE) {
+        exitFullscreen();
+        return;
+    }
+
+    SceneProject* sceneProject = project->getScene(sceneId);
+    if (!sceneProject || !sceneProject->opened ||
+        (sceneProject->playState != ScenePlayState::PLAYING && sceneProject->playState != ScenePlayState::PAUSED)) {
+        return;
+    }
+
+    fullscreenSceneId = sceneId;
+    fullscreenStartTime = ImGui::GetTime();
+    focusCanvasOnNextFrame[sceneId] = true;
+}
+
+void editor::SceneWindow::exitFullscreen() {
+    const uint32_t sceneId = fullscreenSceneId;
+    fullscreenSceneId = NULL_PROJECT_SCENE;
+    requestPlayFocus(sceneId);
+}
+
+bool editor::SceneWindow::isFullscreen() const {
+    return fullscreenSceneId != NULL_PROJECT_SCENE;
 }
 
 bool editor::SceneWindow::viewThroughCamera(uint32_t sceneId, Entity cameraEntity) {
@@ -397,6 +429,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
     static bool draggingResourceFile = false;
     static Image* tempImage = nullptr;
     static MeshComponent* selMesh = nullptr;
+    static uint32_t selMeshSceneId = NULL_PROJECT_SCENE;
     static UIComponent* selUI = nullptr;
     static TextComponent* selText = nullptr;
     static std::vector<Material> originalMeshMaterials;
@@ -406,6 +439,13 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
     static Texture originalTex;
     static FontArray originalFont;
     static Entity lastSelEntity = NULL_ENTITY;
+
+    // fetched by id each frame: the pointer goes stale, and the scene can close during the drag
+    SceneProject* selMeshScene = nullptr;
+    if (selMesh) {
+        selMeshScene = project->getScene(selMeshSceneId);
+        selMesh = selMeshScene ? selMeshScene->scene->findComponent<MeshComponent>(lastSelEntity) : nullptr;
+    }
 
     if (ImGui::BeginDragDropTarget()) {
         const ImGuiPayload* peekPayload = ImGui::GetDragDropPayload();
@@ -441,6 +481,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                 selMesh->submeshes[s].needUpdateTexture = true;
                             }
                         }
+                        Catalog::updateSpriteBatch(selMeshScene->scene, lastSelEntity);
                         selMesh = nullptr;
                         originalMeshMaterials.clear();
                     }
@@ -537,6 +578,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                 if (MeshComponent* mesh = sceneProject->scene->findComponent<MeshComponent>(selEntity)) {
                                     if (!selMesh) {
                                         selMesh = mesh;
+                                        selMeshSceneId = sceneProject->id;
                                         originalMeshMaterials.clear();
                                         originalMeshNumSubmeshes = mesh->numSubmeshes;
                                         for (unsigned int s = 0; s < mesh->numSubmeshes; s++) {
@@ -544,6 +586,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                         }
                                         originalTex = mesh->submeshes[0].material.baseColorTexture;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, selEntity);
                                     const bool isSprite = sceneProject->scene->findComponent<SpriteComponent>(selEntity) != nullptr;
                                     Texture newTex = isSprite ? edgeClampedTexture(droppedAssetPath) : Texture(droppedAssetPath);
                                     if (mesh->submeshes[0].material.baseColorTexture != newTex) {
@@ -602,7 +645,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                                         // Cache the decoded material — only reload when the path changes
                                         if (cachedDragPath != droppedRelativePath) {
                                             fs::path materialPath = project->getProjectPath() / droppedRelativePath;
-                                            YAML::Node materialNode = YAML::LoadFile(materialPath.string());
+                                            YAML::Node materialNode = TextEncoding::loadYamlFile(materialPath);
                                             cachedDragMaterial = Stream::decodeMaterial(materialNode);
                                             cachedDragMaterial.name = fs::path(droppedRelativePath).lexically_normal().generic_string();
                                             cachedDragPath = droppedRelativePath;
@@ -610,12 +653,14 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
 
                                         if (!selMesh) {
                                             selMesh = mesh;
+                                            selMeshSceneId = sceneProject->id;
                                             originalMeshMaterials.clear();
                                             originalMeshNumSubmeshes = mesh->numSubmeshes;
                                             for (unsigned int s = 0; s < mesh->numSubmeshes; s++) {
                                                 originalMeshMaterials.push_back(mesh->submeshes[s].material);
                                             }
                                         }
+                                        Catalog::updateSpriteBatch(sceneProject->scene, selEntity);
 
                                         // Preview: apply to all submeshes
                                         for (unsigned int s = 0; s < mesh->numSubmeshes; s++) {
@@ -718,6 +763,7 @@ void editor::SceneWindow::handleResourceFileDragDrop(SceneProject* sceneProject)
                         selMesh->submeshes[s].needUpdateTexture = true;
                     }
                 }
+                Catalog::updateSpriteBatch(selMeshScene->scene, lastSelEntity);
                 selMesh = nullptr;
                 originalMeshMaterials.clear();
             }
@@ -917,9 +963,10 @@ void editor::SceneWindow::forwardPlayKeyboardInput(ImGuiIO& io, int mods){
 
     forwardKeyRange(ImGuiKey_0, D_KEY_0, 10);
     forwardKeyRange(ImGuiKey_A, D_KEY_A, 26);
-    // F8 detaches the camera, so the game never gets it (a reattach would forward its press)
+    // F8 and F11 stay with the editor (a reattach would forward the F8 press)
     forwardKeyRange(ImGuiKey_F1, D_KEY_F1, 7);
-    forwardKeyRange(ImGuiKey_F9, D_KEY_F9, 16);
+    forwardKeyRange(ImGuiKey_F9, D_KEY_F9, 2);
+    forwardKeyRange(ImGuiKey_F12, D_KEY_F12, 13);
     forwardKeyRange(ImGuiKey_Keypad0, D_KEY_KP_0, 10);
 
     forwardKey(ImGuiKey_KeypadDecimal, D_KEY_KP_DECIMAL);
@@ -1941,6 +1988,198 @@ bool editor::SceneWindow::handleViewportGizmoClick(SceneProject* sceneProject, f
     return true;
 }
 
+void editor::SceneWindow::showCanvas(SceneProject& sceneProject, bool& gameCursorInSceneRect) {
+    const bool isPlaying = (sceneProject.playState == ScenePlayState::PLAYING);
+    const bool isStopped = (sceneProject.playState == ScenePlayState::STOPPED);
+    const bool isCameraDetached = sceneProject.sceneRender->isCameraDetached();
+    const bool isCameraPreview = isStopped && sceneProject.sceneRender->isPreviewCameraActive();
+    const Entity previewCameraEntity = isCameraPreview ? sceneProject.sceneRender->getPreviewCameraEntity() : NULL_ENTITY;
+
+    ImGui::BeginChild(("Canvas" + std::to_string(sceneProject.id)).c_str());
+    {
+        if (focusCanvasOnNextFrame[sceneProject.id]) {
+            ImGui::SetWindowFocus();
+            focusCanvasOnNextFrame[sceneProject.id] = false;
+            windowFocused = true;
+            project->setSelectedSceneId(sceneProject.id);
+        }
+
+        int widthNew = ImGui::GetContentRegionAvail().x;
+        int heightNew = ImGui::GetContentRegionAvail().y;
+
+        ImGuiViewport* canvasViewport = ImGui::GetWindowViewport();
+        ImVec2 scale = (canvasViewport && canvasViewport->FramebufferScale.x > 0.0f && canvasViewport->FramebufferScale.y > 0.0f)
+            ? canvasViewport->FramebufferScale
+            : ImGui::GetIO().DisplayFramebufferScale;
+        if (scale.x <= 0.0f) scale.x = 1.0f;
+        if (scale.y <= 0.0f) scale.y = 1.0f;
+
+        float dpiScale = (canvasViewport && canvasViewport->DpiScale > 0.0f)
+            ? canvasViewport->DpiScale
+            : 1.0f;
+        if (dpiScale < 0.5f || dpiScale > 8.0f) {
+            dpiScale = 1.0f;
+        }
+
+        const ImVec2 prevScale = framebufferScale[sceneProject.id];
+        const float prevDpi = canvasDpiScale[sceneProject.id];
+        if (widthNew != width[sceneProject.id] || heightNew != height[sceneProject.id]
+            || prevScale.x != scale.x || prevScale.y != scale.y
+            || prevDpi != dpiScale) {
+            width[sceneProject.id] = widthNew;
+            height[sceneProject.id] = heightNew;
+            framebufferScale[sceneProject.id] = scale;
+            canvasDpiScale[sceneProject.id] = dpiScale;
+
+            sceneProject.needUpdateRender = true;
+        }
+
+        ImTextureID previewTex = Backend::getImGuiTexture(&sceneProject.sceneRender->getTexture());
+        ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
+
+        if (isCameraPreview) {
+            // Fixed-aspect cameras (autoResize == false) render distorted into the
+            // full viewport; display them at their true aspect (letterbox/pillarbox)
+            // so the preview matches the framing they'll actually render. autoResize
+            // cameras already fill the viewport correctly, so they stay full-size.
+            ImVec2 imageSize = canvasAvail;
+            if (CameraComponent* previewCam = sceneProject.scene->findComponent<CameraComponent>(previewCameraEntity)) {
+                if (!previewCam->autoResize && canvasAvail.x > 0 && canvasAvail.y > 0) {
+                    float camAspect;
+                    if (previewCam->type == CameraType::CAMERA_PERSPECTIVE) {
+                        camAspect = previewCam->aspect;
+                    } else {
+                        float clipW = previewCam->rightClip - previewCam->leftClip;
+                        float clipH = previewCam->topClip - previewCam->bottomClip;
+                        camAspect = (clipH != 0.0f) ? std::fabs(clipW / clipH) : 0.0f;
+                    }
+                    if (camAspect > 0.0f) {
+                        float viewAspect = canvasAvail.x / canvasAvail.y;
+                        if (camAspect > viewAspect) {
+                            imageSize = ImVec2(canvasAvail.x, canvasAvail.x / camAspect);
+                        } else {
+                            imageSize = ImVec2(canvasAvail.y * camAspect, canvasAvail.y);
+                        }
+                    }
+                }
+            }
+
+            ImVec2 canvasMin = ImGui::GetCursorScreenPos();
+            ImVec2 imageMin(canvasMin.x + (canvasAvail.x - imageSize.x) * 0.5f,
+                            canvasMin.y + (canvasAvail.y - imageSize.y) * 0.5f);
+            ImVec2 imageMax(imageMin.x + imageSize.x, imageMin.y + imageSize.y);
+
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            drawList->AddRectFilled(canvasMin, ImVec2(canvasMin.x + canvasAvail.x, canvasMin.y + canvasAvail.y), IM_COL32(0, 0, 0, 255));
+
+            ImGui::SetCursorScreenPos(imageMin);
+            Widgets::image(previewTex, imageSize);
+
+            // Yellow frame as a "viewing through camera" cue (inset 1px so it's not clipped at the edge).
+            // Matches the previewed camera's highlight color in the Structure tree.
+            const float frameInset = Theme::dpi(1.0f);
+            drawList->AddRect(ImVec2(imageMin.x + frameInset, imageMin.y + frameInset), ImVec2(imageMax.x - frameInset, imageMax.y - frameInset), IM_COL32(255, 219, 51, 235), 0.0f, 0, Theme::dpi(2.0f));
+        } else {
+            // Black until the first render creates the framebuffer.
+            Widgets::image(previewTex, canvasAvail, IM_COL32(0, 0, 0, 255));
+        }
+
+        if (sceneProject.playState == ScenePlayState::STOPPED && !isCameraPreview){
+            if (ImGui::IsWindowHovered()) {
+                CursorSelected cursorSelected = sceneProject.sceneRender->getCursorSelected();
+                if (cursorSelected == CursorSelected::HAND) {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+                } else {
+                    Gizmo2DSideSelected side = sceneProject.sceneRender->getToolsLayer()->getGizmo2DSideSelected();
+                    bool uiScene = sceneProject.sceneType == SceneType::SCENE_UI;
+                    if (side == Gizmo2DSideSelected::NX || side == Gizmo2DSideSelected::PX) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                    } else if (side == Gizmo2DSideSelected::NY || side == Gizmo2DSideSelected::PY) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                    } else if (side == Gizmo2DSideSelected::NX_NY || side == Gizmo2DSideSelected::PX_PY) {
+                        ImGui::SetMouseCursor(uiScene ? ImGuiMouseCursor_ResizeNWSE : ImGuiMouseCursor_ResizeNESW);
+                    } else if (side == Gizmo2DSideSelected::NX_PY || side == Gizmo2DSideSelected::PX_NY) {
+                        ImGui::SetMouseCursor(uiScene ? ImGuiMouseCursor_ResizeNESW : ImGuiMouseCursor_ResizeNWSE);
+                    }
+                }
+            }
+
+            handleResourceFileDragDrop(&sceneProject);
+            handleTileRectDragDrop(&sceneProject);
+        }
+
+        // Viewport gizmo click-to-snap (3D scenes only)
+        if (sceneProject.sceneType == SceneType::SCENE_3D && (isStopped || isCameraDetached) && !isCameraPreview) {
+            if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                ImVec2 windowPos = ImGui::GetWindowPos();
+                ImGuiIO& io = ImGui::GetIO();
+                float canvasX = io.MousePos.x - windowPos.x;
+                float canvasY = io.MousePos.y - windowPos.y;
+                toEditorCanvas(&sceneProject, canvasX, canvasY);
+                ImVec2 canvasSize = getEditorCanvasSize(&sceneProject);
+                suppressLeftMouseUntilRelease[sceneProject.id] = handleViewportGizmoClick(&sceneProject, canvasX, canvasY, (int)canvasSize.x, (int)canvasSize.y);
+            }
+        }
+
+        if (isPlaying && !isCameraDetached && ImGui::IsWindowHovered()) {
+            gameCursorInSceneRect = true;
+        }
+
+        sceneEventHandler(&sceneProject);
+    }
+    ImGui::EndChild();
+}
+
+void editor::SceneWindow::showFullscreenCanvas(SceneProject& sceneProject, bool& gameCursorInSceneRect) {
+    // Its docked tab can be hidden behind another one
+    sceneProject.isVisible = true;
+
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+    const ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoDecoration |
+        ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoDocking |
+        ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::Begin("##SceneFullscreen", nullptr, flags);
+    ImGui::PopStyleVar(3);
+
+    // Over the docked panels, under popups (alerts, crash report)
+    if (!ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
+        ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+    }
+
+    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
+        windowFocused = true;
+        project->setSelectedSceneId(sceneProject.id);
+    }
+
+    showCanvas(sceneProject, gameCursorInSceneRect);
+
+    // Escape belongs to the game
+    if (ImGui::GetTime() - fullscreenStartTime < 3.0) {
+        const char* hint = "Press F11 to exit full screen";
+        const ImVec2 textSize = ImGui::CalcTextSize(hint);
+        const ImVec2 padding(Theme::dpi(14.0f), Theme::dpi(8.0f));
+        const ImVec2 hintMin(viewport->Pos.x + (viewport->Size.x - textSize.x) * 0.5f - padding.x, viewport->Pos.y + Theme::dpi(24.0f));
+        const ImVec2 hintMax(hintMin.x + textSize.x + padding.x * 2.0f, hintMin.y + textSize.y + padding.y * 2.0f);
+
+        ImDrawList* drawList = ImGui::GetForegroundDrawList(viewport);
+        drawList->AddRectFilled(hintMin, hintMax, IM_COL32(0, 0, 0, 190), Theme::dpi(6.0f));
+        drawList->AddText(ImVec2(hintMin.x + padding.x, hintMin.y + padding.y), IM_COL32(255, 255, 255, 255), hint);
+    }
+
+    ImGui::End();
+}
+
 void editor::SceneWindow::show() {
     for (uint32_t sceneId: closeSceneQueue){
         project->closeScene(sceneId);
@@ -1965,6 +2204,10 @@ void editor::SceneWindow::show() {
 
         const bool isRuntimeActive = sceneProject.playState == ScenePlayState::PLAYING
             || sceneProject.playState == ScenePlayState::PAUSED;
+
+        if (sceneProject.id == fullscreenSceneId && !isRuntimeActive) {
+            exitFullscreen();
+        }
 
         if (hasNotification[sceneProject.id]) {
             App::pushTabNotificationStyle();
@@ -2047,6 +2290,15 @@ void editor::SceneWindow::show() {
             }
             if (isCameraDetached) ImGui::PopStyleColor();
             ImGui::SetItemTooltip("Detach camera (F8)");
+            ImGui::EndDisabled();
+
+            // Full screen - only while the scene runs
+            ImGui::BeginDisabled(!isPlaying && !isPaused);
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_MAXIMIZE)) {
+                toggleFullscreen(sceneProject.id);
+            }
+            ImGui::SetItemTooltip("Full screen (F11)");
             ImGui::EndDisabled();
 
             // Touch simulation toggle - disabled while any scene plays
@@ -2378,145 +2630,18 @@ void editor::SceneWindow::show() {
 
             drawParentSceneButton(sceneProject);
 
-            ImGui::SetCursorPosY(toolbarRowY + ImGui::GetTextLineHeightWithSpacing());
-
-            ImGui::BeginChild(("Canvas" + std::to_string(sceneProject.id)).c_str());
-            {
-                if (focusCanvasOnNextFrame[sceneProject.id]) {
-                    ImGui::SetWindowFocus();
-                    focusCanvasOnNextFrame[sceneProject.id] = false;
-                    windowFocused = true;
-                    project->setSelectedSceneId(sceneProject.id);
-                }
-
-                int widthNew = ImGui::GetContentRegionAvail().x;
-                int heightNew = ImGui::GetContentRegionAvail().y;
-
-                ImGuiViewport* canvasViewport = ImGui::GetWindowViewport();
-                ImVec2 scale = (canvasViewport && canvasViewport->FramebufferScale.x > 0.0f && canvasViewport->FramebufferScale.y > 0.0f)
-                    ? canvasViewport->FramebufferScale
-                    : ImGui::GetIO().DisplayFramebufferScale;
-                if (scale.x <= 0.0f) scale.x = 1.0f;
-                if (scale.y <= 0.0f) scale.y = 1.0f;
-
-                float dpiScale = (canvasViewport && canvasViewport->DpiScale > 0.0f)
-                    ? canvasViewport->DpiScale
-                    : 1.0f;
-                if (dpiScale < 0.5f || dpiScale > 8.0f) {
-                    dpiScale = 1.0f;
-                }
-
-                const ImVec2 prevScale = framebufferScale[sceneProject.id];
-                const float prevDpi = canvasDpiScale[sceneProject.id];
-                if (widthNew != width[sceneProject.id] || heightNew != height[sceneProject.id]
-                    || prevScale.x != scale.x || prevScale.y != scale.y
-                    || prevDpi != dpiScale) {
-                    width[sceneProject.id] = widthNew;
-                    height[sceneProject.id] = heightNew;
-                    framebufferScale[sceneProject.id] = scale;
-                    canvasDpiScale[sceneProject.id] = dpiScale;
-
-                    sceneProject.needUpdateRender = true;
-                }
-
-                ImTextureID previewTex = Backend::getImGuiTexture(&sceneProject.sceneRender->getTexture());
-                ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
-
-                if (isCameraPreview) {
-                    // Fixed-aspect cameras (autoResize == false) render distorted into the
-                    // full viewport; display them at their true aspect (letterbox/pillarbox)
-                    // so the preview matches the framing they'll actually render. autoResize
-                    // cameras already fill the viewport correctly, so they stay full-size.
-                    ImVec2 imageSize = canvasAvail;
-                    if (CameraComponent* previewCam = sceneProject.scene->findComponent<CameraComponent>(previewCameraEntity)) {
-                        if (!previewCam->autoResize && canvasAvail.x > 0 && canvasAvail.y > 0) {
-                            float camAspect;
-                            if (previewCam->type == CameraType::CAMERA_PERSPECTIVE) {
-                                camAspect = previewCam->aspect;
-                            } else {
-                                float clipW = previewCam->rightClip - previewCam->leftClip;
-                                float clipH = previewCam->topClip - previewCam->bottomClip;
-                                camAspect = (clipH != 0.0f) ? std::fabs(clipW / clipH) : 0.0f;
-                            }
-                            if (camAspect > 0.0f) {
-                                float viewAspect = canvasAvail.x / canvasAvail.y;
-                                if (camAspect > viewAspect) {
-                                    imageSize = ImVec2(canvasAvail.x, canvasAvail.x / camAspect);
-                                } else {
-                                    imageSize = ImVec2(canvasAvail.y * camAspect, canvasAvail.y);
-                                }
-                            }
-                        }
-                    }
-
-                    ImVec2 canvasMin = ImGui::GetCursorScreenPos();
-                    ImVec2 imageMin(canvasMin.x + (canvasAvail.x - imageSize.x) * 0.5f,
-                                    canvasMin.y + (canvasAvail.y - imageSize.y) * 0.5f);
-                    ImVec2 imageMax(imageMin.x + imageSize.x, imageMin.y + imageSize.y);
-
-                    ImDrawList* drawList = ImGui::GetWindowDrawList();
-                    drawList->AddRectFilled(canvasMin, ImVec2(canvasMin.x + canvasAvail.x, canvasMin.y + canvasAvail.y), IM_COL32(0, 0, 0, 255));
-
-                    ImGui::SetCursorScreenPos(imageMin);
-                    Widgets::image(previewTex, imageSize);
-
-                    // Yellow frame as a "viewing through camera" cue (inset 1px so it's not clipped at the edge).
-                    // Matches the previewed camera's highlight color in the Structure tree.
-                    const float frameInset = Theme::dpi(1.0f);
-                    drawList->AddRect(ImVec2(imageMin.x + frameInset, imageMin.y + frameInset), ImVec2(imageMax.x - frameInset, imageMax.y - frameInset), IM_COL32(255, 219, 51, 235), 0.0f, 0, Theme::dpi(2.0f));
-                } else {
-                    // Black until the first render creates the framebuffer.
-                    Widgets::image(previewTex, canvasAvail, IM_COL32(0, 0, 0, 255));
-                }
-
-                if (sceneProject.playState == ScenePlayState::STOPPED && !isCameraPreview){
-                    if (ImGui::IsWindowHovered()) {
-                        CursorSelected cursorSelected = sceneProject.sceneRender->getCursorSelected();
-                        if (cursorSelected == CursorSelected::HAND) {
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-                        } else {
-                            Gizmo2DSideSelected side = sceneProject.sceneRender->getToolsLayer()->getGizmo2DSideSelected();
-                            bool uiScene = sceneProject.sceneType == SceneType::SCENE_UI;
-                            if (side == Gizmo2DSideSelected::NX || side == Gizmo2DSideSelected::PX) {
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                            } else if (side == Gizmo2DSideSelected::NY || side == Gizmo2DSideSelected::PY) {
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                            } else if (side == Gizmo2DSideSelected::NX_NY || side == Gizmo2DSideSelected::PX_PY) {
-                                ImGui::SetMouseCursor(uiScene ? ImGuiMouseCursor_ResizeNWSE : ImGuiMouseCursor_ResizeNESW);
-                            } else if (side == Gizmo2DSideSelected::NX_PY || side == Gizmo2DSideSelected::PX_NY) {
-                                ImGui::SetMouseCursor(uiScene ? ImGuiMouseCursor_ResizeNESW : ImGuiMouseCursor_ResizeNWSE);
-                            }
-                        }
-                    }
-
-                    handleResourceFileDragDrop(&sceneProject);
-                    handleTileRectDragDrop(&sceneProject);
-                }
-
-                // Viewport gizmo click-to-snap (3D scenes only)
-                if (sceneProject.sceneType == SceneType::SCENE_3D && (isStopped || isCameraDetached) && !isCameraPreview) {
-                    if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                        ImVec2 windowPos = ImGui::GetWindowPos();
-                        ImGuiIO& io = ImGui::GetIO();
-                        float canvasX = io.MousePos.x - windowPos.x;
-                        float canvasY = io.MousePos.y - windowPos.y;
-                        toEditorCanvas(&sceneProject, canvasX, canvasY);
-                        ImVec2 canvasSize = getEditorCanvasSize(&sceneProject);
-                        suppressLeftMouseUntilRelease[sceneProject.id] = handleViewportGizmoClick(&sceneProject, canvasX, canvasY, (int)canvasSize.x, (int)canvasSize.y);
-                    }
-                }
-
-                if (isPlaying && !isCameraDetached && ImGui::IsWindowHovered()) {
-                    gameCursorInSceneRect = true;
-                }
-
-                sceneEventHandler(&sceneProject);
+            if (sceneProject.id != fullscreenSceneId) {
+                ImGui::SetCursorPosY(toolbarRowY + ImGui::GetTextLineHeightWithSpacing());
+                showCanvas(sceneProject, gameCursorInSceneRect);
             }
-            ImGui::EndChild();
         } else {
             sceneProject.isVisible = false;
         }
         ImGui::End();
+
+        if (sceneProject.id == fullscreenSceneId) {
+            showFullscreenCanvas(sceneProject, gameCursorInSceneRect);
+        }
 
         // Handle window closing
         if (!isOpen) {

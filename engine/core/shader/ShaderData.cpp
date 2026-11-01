@@ -231,6 +231,8 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_waterParams";
     }else if (type == UniformBlockType::UNDERWATER_FS_PARAMS){
         ustr = "u_fs_underwaterParams";
+    }else if (type == UniformBlockType::PROBE_FILTER_FS_PARAMS){
+        ustr = "u_fs_probeFilterParams";
     }
 
     if (ustr.empty()){
@@ -364,6 +366,8 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_refractionTexture";
     }else if (type == TextureShaderType::WATEREXCLUSION){
         texstr = "u_waterExclusionMaps";
+    }else if (type == TextureShaderType::PROBESOURCE){
+        texstr = "u_probeSourceTexture";
     }
 
     if (texstr.empty()){

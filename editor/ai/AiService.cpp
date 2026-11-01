@@ -125,8 +125,9 @@ void compactCompletedToolHistory(std::vector<ChatMessage>& messages) {
     for (size_t roundIndex = 0; roundIndex < compactCount; ++roundIndex) {
         const ToolRoundRange& round = completedRounds[roundIndex];
         ChatMessage& assistant = messages[round.assistant];
+        // OpenRouter's reasoning_details can carry signatures
         const bool hasSignedReasoning =
-            !assistant.thinkingBlocks.empty() ||
+            assistant.reasoningFields.contains("reasoning_details") ||
             std::any_of(
                 assistant.toolCalls.begin(), assistant.toolCalls.end(),
                 [](const ToolCall& call) {
@@ -750,7 +751,12 @@ ProviderRequest AiService::buildRequestSnapshotLocked() const {
     request.settings = settings;
     request.apiKey = SecretStore::getApiKey(accountKey(settings));
     request.messages = messages;
-    compactCompletedToolHistory(request.messages);
+    // Claude rejects its thinking blocks once an earlier message changes, also
+    // behind OpenRouter
+    if (settings.provider != ProviderId::Anthropic &&
+        lowercase(settings.model).find("claude") == std::string::npos) {
+        compactCompletedToolHistory(request.messages);
+    }
     for (const ToolDefinition& tool : EditorActionRegistry::tools()) {
         if (!tool.mcpOnly) request.tools.push_back(tool);
     }
@@ -923,9 +929,11 @@ void AiService::runProviderRequest(ProviderRequest request, int retryAttempt) {
         } else {
             ChatMessage assistant;
             assistant.role = ChatRole::Assistant;
+            assistant.model = request.settings.model;
             assistant.content = parsed.text;
             assistant.toolCalls = parsed.toolCalls;
-            assistant.thinkingBlocks = parsed.thinkingBlocks;
+            assistant.anthropicContent = parsed.anthropicContent;
+            assistant.reasoningFields = parsed.reasoningFields;
             messages.push_back(assistant);
             ++revision;
             for (const ToolCall& call : parsed.toolCalls) {

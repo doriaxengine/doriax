@@ -42,6 +42,10 @@ void CameraRender::startRenderPass(FramebufferRender* framebuffer, size_t face){
     backend.startRenderPass(framebuffer, face);
 }
 
+void CameraRender::startRenderPass(TextureRender* texture, size_t face, int mip){
+    backend.startRenderPass(texture, face, mip);
+}
+
 void CameraRender::startRenderPass(int width, int height){
     backend.startRenderPass(width, height);
 }

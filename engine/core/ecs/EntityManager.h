@@ -4,7 +4,8 @@
 #ifndef ENTITYMANAGER_H
 #define ENTITYMANAGER_H
 
-#include <map>
+#include <unordered_map>
+#include <set>
 #include <vector>
 #include <string>
 #include <limits>
@@ -26,7 +27,13 @@ namespace doriax{
         static constexpr Entity FIRST_USER_ENTITY   = LAST_SYSTEM_ENTITY + 1;
 
         Entity lastUserEntity = LAST_SYSTEM_ENTITY; // next user entity starts at 1001
-        std::map<Entity, EntityMetadata> metadata;
+        std::unordered_map<Entity, EntityMetadata> metadata;
+        std::set<Entity> entities; // the same ids in order, as getEntityList returns them
+
+        EntityMetadata& getMetadata(Entity entity){
+            entities.insert(entity);
+            return metadata[entity];
+        }
 
     public:
 
@@ -36,7 +43,7 @@ namespace doriax{
 
         bool recreateEntity(Entity entity) { // for internal editor use only
             if (!isCreated(entity)){
-                metadata[entity];
+                getMetadata(entity);
                 return true;
             }
             return false;
@@ -58,7 +65,7 @@ namespace doriax{
         Entity createSystemEntity() {
             for (Entity e = FIRST_SYSTEM_ENTITY; e <= LAST_SYSTEM_ENTITY; ++e){
                 if (metadata.count(e) == 0){
-                    metadata[e];
+                    getMetadata(e);
                     return e;
                 }
             }
@@ -91,7 +98,7 @@ namespace doriax{
             }
 
             lastUserEntity = candidate;
-            metadata[candidate];
+            getMetadata(candidate);
             return candidate;
         }
 
@@ -101,36 +108,34 @@ namespace doriax{
 
         void destroy(Entity entity) {
             metadata.erase(entity);
+            entities.erase(entity);
         }
 
         std::vector<Entity> getEntityList() const{
-            std::vector<Entity> list;
-            for (auto const& [key, val] : metadata){
-                list.push_back(key);
-            }
-            return list;
+            return std::vector<Entity>(entities.begin(), entities.end());
         }
 
         void setSignature(Entity entity, Signature signature) {
             if (metadata.count(entity)==0){
                 Log::error("Entity does not exist to set signature");
             }
-            metadata[entity].signature = signature;
+            getMetadata(entity).signature = signature;
         }
 
         Signature getSignature(Entity entity) const{
-            if (metadata.count(entity)==0){
+            auto it = metadata.find(entity);
+            if (it == metadata.end()){
                 Log::error("Entity does not exist to get signature");
                 return Signature();
             }
-            return metadata.at(entity).signature;
+            return it->second.signature;
         }
 
         void setName(Entity entity, const std::string& name) {
             if (metadata.count(entity)==0){
                 Log::error("Entity does not exist to set name");
             }
-            metadata[entity].name = name;
+            getMetadata(entity).name = name;
         }
 
         std::string getName(Entity entity) const{

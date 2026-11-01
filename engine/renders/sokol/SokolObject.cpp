@@ -9,18 +9,95 @@
 #include "SokolCmdQueue.h"
 #include "SokolShader.h"
 #include "Engine.h"
+#include "SokolResourceCache.h"
+#include <cstring>
+#include <vector>
 
 using namespace doriax;
 
 namespace {
+    using PipelineKey = std::vector<uint32_t>;
+
+    // what the current pass applied last
+    sg_pipeline appliedPipeline = {};
+    sg_bindings appliedBindings = {};
+    bool bindingsApplied = false;
+
+    bool isReady(sg_buffer buffer){
+        return buffer.id == SG_INVALID_ID || sg_query_buffer_state(buffer) == SG_RESOURCESTATE_VALID;
+    }
+
+    // what sokol checks before drawing: a resource still being created skips the draw
+    bool isReady(const sg_bindings& bind){
+        for (const sg_buffer& buffer : bind.vertex_buffers){
+            if (!isReady(buffer))
+                return false;
+        }
+        if (!isReady(bind.index_buffer))
+            return false;
+        for (const sg_view& view : bind.views){
+            if (view.id == SG_INVALID_ID)
+                continue;
+            const sg_image image = sg_query_view_image(view);
+            if (sg_query_view_state(view) != SG_RESOURCESTATE_VALID || !isReady(sg_query_view_buffer(view)) ||
+                    (image.id != SG_INVALID_ID && sg_query_image_state(image) != SG_RESOURCESTATE_VALID))
+                return false;
+        }
+        return true;
+    }
+
+    SokolResourceCache<PipelineKey, sg_pipeline>& getSharedPipelines(){
+        // never destroyed: objects can release their pipelines at exit
+        static auto* shared = new SokolResourceCache<PipelineKey, sg_pipeline>();
+        return *shared;
+    }
+
+    // a sokol update that changes the descriptor has to update the key below
+    static_assert(sizeof(void*) != 8 || sizeof(sg_pipeline_desc) == 808, "sg_pipeline_desc changed");
+
+    // every field sokol reads, without padding or label
+    PipelineKey getPipelineKey(const sg_pipeline_desc& desc){
+        PipelineKey key;
+        key.reserve(160);
+        auto add = [&](auto value){ key.push_back(static_cast<uint32_t>(value)); };
+        auto addFloat = [&](float value){ uint32_t bits; std::memcpy(&bits, &value, sizeof(bits)); key.push_back(bits); };
+        add(desc.compute);
+        add(desc.shader.id);
+        for (const auto& buffer : desc.layout.buffers){
+            add(buffer.stride); add(buffer.step_func); add(buffer.step_rate);
+        }
+        for (const auto& attr : desc.layout.attrs){
+            add(attr.buffer_index); add(attr.offset); add(attr.format);
+        }
+        add(desc.depth.pixel_format); add(desc.depth.compare); add(desc.depth.write_enabled);
+        addFloat(desc.depth.bias); addFloat(desc.depth.bias_slope_scale); addFloat(desc.depth.bias_clamp);
+        add(desc.stencil.enabled);
+        for (const auto& face : {desc.stencil.front, desc.stencil.back}){
+            add(face.compare); add(face.fail_op); add(face.depth_fail_op); add(face.pass_op);
+        }
+        add(desc.stencil.read_mask); add(desc.stencil.write_mask); add(desc.stencil.ref);
+        add(desc.color_count);
+        for (const auto& color : desc.colors){
+            add(color.pixel_format); add(color.write_mask); add(color.blend.enabled);
+            add(color.blend.src_factor_rgb); add(color.blend.dst_factor_rgb); add(color.blend.op_rgb);
+            add(color.blend.src_factor_alpha); add(color.blend.dst_factor_alpha); add(color.blend.op_alpha);
+        }
+        add(desc.primitive_type); add(desc.index_type); add(desc.cull_mode); add(desc.face_winding);
+        add(desc.sample_count);
+        addFloat(desc.blend_color.r); addFloat(desc.blend_color.g); addFloat(desc.blend_color.b); addFloat(desc.blend_color.a);
+        add(desc.alpha_to_coverage_enabled);
+        return key;
+    }
+
     sg_pipeline makePipeline(const sg_pipeline_desc& desc){
         if (Engine::isAsyncThread())
             return SokolCmdQueue::add_command_make_pipeline(desc);
-        return sg_make_pipeline(desc);
+        return getSharedPipelines().get(getPipelineKey(desc), [&](){ return sg_make_pipeline(desc); },
+            [](sg_pipeline pipeline){ return sg_query_pipeline_state(pipeline) == SG_RESOURCESTATE_VALID; });
     }
 
     void destroyPipeline(sg_pipeline pipeline){
-        if (pipeline.id == SG_INVALID_ID)
+        if (pipeline.id == SG_INVALID_ID || !getSharedPipelines().release(pipeline))
             return;
         if (Engine::isAsyncThread()){
             SokolCmdQueue::add_command_destroy_pipeline(pipeline);
@@ -28,6 +105,10 @@ namespace {
             sg_destroy_pipeline(pipeline);
         }
     }
+}
+
+void SokolObject::clearSharedPipelines(){
+    getSharedPipelines().clear();
 }
 
 SokolObject::SokolObject(){
@@ -40,12 +121,12 @@ SokolObject::SokolObject(){
     nodepth_pip.id = SG_INVALID_ID;
     rtt_nodepth_pip.id = SG_INVALID_ID;
     rtt_noblend_pip.id = SG_INVALID_ID;
+    rtt_coloronly_pip.id = SG_INVALID_ID;
     zprepass_pip.id = SG_INVALID_ID;
     zprepass_rtt_pip.id = SG_INVALID_ID;
     bind = {};
     loadIndexBuffer.id = SG_INVALID_ID;
     loadIndexOffset = 0;
-    pipeline_desc = {};
     bindSlotIndex = 0;
 }
 
@@ -62,9 +143,10 @@ SokolObject::SokolObject(const SokolObject& rhs) {
     nodepth_pip = rhs.nodepth_pip;
     rtt_nodepth_pip = rhs.rtt_nodepth_pip;
     rtt_noblend_pip = rhs.rtt_noblend_pip;
+    rtt_coloronly_pip = rhs.rtt_coloronly_pip;
     zprepass_pip = rhs.zprepass_pip;
     zprepass_rtt_pip = rhs.zprepass_rtt_pip;
-    pipeline_desc = rhs.pipeline_desc;
+    loadPipelineDesc.reset(rhs.loadPipelineDesc ? new sg_pipeline_desc(*rhs.loadPipelineDesc) : nullptr);
     bindSlotIndex = rhs.bindSlotIndex;
     bufferToBindSlot = rhs.bufferToBindSlot;
 }
@@ -82,9 +164,10 @@ SokolObject& SokolObject::operator=(const SokolObject& rhs) {
     nodepth_pip = rhs.nodepth_pip;
     rtt_nodepth_pip = rhs.rtt_nodepth_pip;
     rtt_noblend_pip = rhs.rtt_noblend_pip;
+    rtt_coloronly_pip = rhs.rtt_coloronly_pip;
     zprepass_pip = rhs.zprepass_pip;
     zprepass_rtt_pip = rhs.zprepass_rtt_pip;
-    pipeline_desc = rhs.pipeline_desc;
+    loadPipelineDesc.reset(rhs.loadPipelineDesc ? new sg_pipeline_desc(*rhs.loadPipelineDesc) : nullptr);
     bindSlotIndex = rhs.bindSlotIndex;
     bufferToBindSlot = rhs.bufferToBindSlot;
     
@@ -166,16 +249,23 @@ void SokolObject::beginLoad(PrimitiveType primitiveType){
     rtt_pip = {0};
     rtt_invert_pip = {0};
     gbuffer_pip = {0};
-    pipeline_desc = {0};
+    loadPipelineDesc = std::make_unique<sg_pipeline_desc>();
 
-    pipeline_desc.primitive_type = getPrimitiveType(primitiveType);
+    loadPipelineDesc->primitive_type = getPrimitiveType(primitiveType);
 
     bindSlotIndex = 0;
     bufferToBindSlot.clear();
 }
 
+// only kept from beginLoad to endLoad: every object would otherwise hold one for life
+sg_pipeline_desc& SokolObject::loadingDesc(){
+    if (!loadPipelineDesc)
+        loadPipelineDesc = std::make_unique<sg_pipeline_desc>();
+    return *loadPipelineDesc;
+}
+
 void SokolObject::setShader(ShaderRender* shader){
-    pipeline_desc.shader = shader->backend.get();
+    loadingDesc().shader = shader->backend.get();
 }
 
 void SokolObject::setIndex(BufferRender* buffer, AttributeDataType dataType, size_t offset){
@@ -186,11 +276,11 @@ void SokolObject::setIndex(BufferRender* buffer, AttributeDataType dataType, siz
     loadIndexOffset = offset;
 
     if (dataType == AttributeDataType::UNSIGNED_SHORT){
-        pipeline_desc.index_type = SG_INDEXTYPE_UINT16;
+        loadingDesc().index_type = SG_INDEXTYPE_UINT16;
     }else if (dataType == AttributeDataType::UNSIGNED_INT){
-        pipeline_desc.index_type = SG_INDEXTYPE_UINT32;
+        loadingDesc().index_type = SG_INDEXTYPE_UINT32;
     }else{
-        pipeline_desc.index_type = SG_INDEXTYPE_NONE;
+        loadingDesc().index_type = SG_INDEXTYPE_NONE;
     }
 }
 
@@ -212,25 +302,28 @@ void SokolObject::addAttribute(int slot, BufferRender* buffer, unsigned int elem
             attrOffset = 0;
         }
         
-        if (bufferToBindSlot.count({vbuf.id, bufferOffset}) == 0){
+        // shared immutable buffers can back attributes of different layouts
+        const BufferInfo info{vbuf.id, bufferOffset, stride, perInstance};
+        if (bufferToBindSlot.count(info) == 0){
             bind.vertex_buffers[bindSlotIndex] = vbuf;
             bind.vertex_buffer_offsets[bindSlotIndex] = bufferOffset;
-            bufferToBindSlot[{vbuf.id, bufferOffset}] = bindSlotIndex;
+            bufferToBindSlot[info] = bindSlotIndex;
 
-            pipeline_desc.layout.buffers[bindSlotIndex].stride = stride;
+            loadingDesc().layout.buffers[bindSlotIndex].stride = stride;
 
             if (perInstance){
-                pipeline_desc.layout.buffers[bindSlotIndex].step_func = SG_VERTEXSTEP_PER_INSTANCE;
+                loadingDesc().layout.buffers[bindSlotIndex].step_func = SG_VERTEXSTEP_PER_INSTANCE;
             }
 
             bindSlotIndex++;
         }
 
-        size_t indexBuf = bufferToBindSlot[{vbuf.id, bufferOffset}];
+        size_t indexBuf = bufferToBindSlot[info];
 
-        pipeline_desc.layout.attrs[slot].buffer_index = indexBuf;
-        pipeline_desc.layout.attrs[slot].offset = attrOffset;
-        pipeline_desc.layout.attrs[slot].format = getVertexFormat(elements, dataType, normalized);
+        sg_pipeline_desc& desc = loadingDesc();
+        desc.layout.attrs[slot].buffer_index = indexBuf;
+        desc.layout.attrs[slot].offset = attrOffset;
+        desc.layout.attrs[slot].format = getVertexFormat(elements, dataType, normalized);
     }
 }
 
@@ -245,9 +338,9 @@ void SokolObject::replaceVertexBuffer(uint32_t fromBufferId, sg_buffer toBuffer,
     }
 }
 
-void SokolObject::setIndexBuffer(sg_buffer buffer){
+void SokolObject::setIndexBuffer(sg_buffer buffer, size_t byteOffset){
     bind.index_buffer = buffer;
-    bind.index_buffer_offset = 0;
+    bind.index_buffer_offset = (int)byteOffset;
 }
 
 void SokolObject::resetIndexBuffer(){
@@ -282,6 +375,12 @@ void SokolObject::addTexture(std::pair<int, int> slot, ShaderStageType stage, Te
 }
 
 bool SokolObject::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling){
+    const bool loaded = makePipelines(loadingDesc(), pipelines, enableFaceCulling, enableDepthWrite, cullingMode, windingOrder, prepassFaceCulling);
+    loadPipelineDesc.reset();
+    return loaded;
+}
+
+bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling){
 
     if (pipelines & (int)PipelineType::PIP_DEPTH) {
         sg_pipeline_desc pip_depth_desc = pipeline_desc;
@@ -427,10 +526,11 @@ bool SokolObject::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enabl
         }
     }
 
-    // PIP_RTT (offscreen), PIP_RTT_INVERT (planar reflection), PIP_RTT_NODEPTH and PIP_RTT_NOBLEND
-    // share an identical pipeline except for winding, depth and blend state, so build the desc once.
+    // PIP_RTT (offscreen), PIP_RTT_INVERT (planar reflection) and the other PIP_RTT_* variants share
+    // an identical pipeline except for winding, depth and blend state, so build the desc once.
     if (pipelines & ((int)PipelineType::PIP_RTT | (int)PipelineType::PIP_RTT_INVERT |
-            (int)PipelineType::PIP_RTT_NODEPTH | (int)PipelineType::PIP_RTT_NOBLEND)){
+            (int)PipelineType::PIP_RTT_NODEPTH | (int)PipelineType::PIP_RTT_NOBLEND |
+            (int)PipelineType::PIP_RTT_COLORONLY)){
         sg_pipeline_desc pip_rtt_desc = pipeline_desc;
 
         pip_rtt_desc.sample_count = 1;
@@ -484,6 +584,19 @@ bool SokolObject::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enabl
             }
         }
 
+        if (pipelines & (int)PipelineType::PIP_RTT_COLORONLY){
+            sg_pipeline_desc pip_rtt_coloronly_desc = pip_rtt_desc;
+            pip_rtt_coloronly_desc.colors[0].blend.enabled = false;
+            pip_rtt_coloronly_desc.depth.pixel_format = SG_PIXELFORMAT_NONE;
+            pip_rtt_coloronly_desc.depth.compare = SG_COMPAREFUNC_ALWAYS;
+            pip_rtt_coloronly_desc.depth.write_enabled = false;
+
+            rtt_coloronly_pip = makePipeline(pip_rtt_coloronly_desc);
+            if (rtt_coloronly_pip.id == SG_INVALID_ID){
+                return false;
+            }
+        }
+
         if (pipelines & (int)PipelineType::PIP_RTT_INVERT){
             // planar reflection mirrors handedness, reversing winding once more
             WindingOrder invWinding = (rttWinding == WindingOrder::CCW) ? WindingOrder::CW : WindingOrder::CCW;
@@ -498,28 +611,68 @@ bool SokolObject::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enabl
     return true;
 }
 
+sg_pipeline SokolObject::getPipeline(PipelineType pipType) const{
+    switch (pipType){
+        case PipelineType::PIP_DEPTH: return depth_pip;
+        case PipelineType::PIP_ZPREPASS: return zprepass_pip;
+        case PipelineType::PIP_ZPREPASS_RTT: return zprepass_rtt_pip;
+        case PipelineType::PIP_SHADOW_DEPTH: return shadow_depth_pip;
+        case PipelineType::PIP_GBUFFER: return gbuffer_pip;
+        case PipelineType::PIP_RTT: return rtt_pip;
+        case PipelineType::PIP_RTT_INVERT: return rtt_invert_pip;
+        case PipelineType::PIP_DEFAULT_NODEPTH: return nodepth_pip;
+        case PipelineType::PIP_RTT_NODEPTH: return rtt_nodepth_pip;
+        case PipelineType::PIP_RTT_NOBLEND: return rtt_noblend_pip;
+        case PipelineType::PIP_RTT_COLORONLY: return rtt_coloronly_pip;
+        default: return pip;
+    }
+}
+
+// the vertex layout lives in the pipeline, or in the buffer offsets on D3D and Metal
+bool SokolObject::sharesState(const SokolObject& other, PipelineType pipType) const{
+    return getPipeline(pipType).id == other.getPipeline(pipType).id &&
+        std::memcmp(bind.views, other.bind.views, sizeof(bind.views)) == 0 &&
+        std::memcmp(bind.samplers, other.bind.samplers, sizeof(bind.samplers)) == 0 &&
+        std::memcmp(bind.vertex_buffer_offsets, other.bind.vertex_buffer_offsets, sizeof(bind.vertex_buffer_offsets)) == 0 &&
+        bind.index_buffer_offset == other.bind.index_buffer_offset;
+}
+
+bool SokolObject::sharesPipeline(const SokolObject& other, PipelineType pipType) const{
+    return getPipeline(pipType).id == other.getPipeline(pipType).id;
+}
+
+void SokolObject::getStateKey(std::vector<uint32_t>& key) const{
+    for (const sg_pipeline& pipeline : {pip, depth_pip, shadow_depth_pip, rtt_pip, rtt_invert_pip, gbuffer_pip,
+            nodepth_pip, rtt_nodepth_pip, rtt_noblend_pip, rtt_coloronly_pip, zprepass_pip, zprepass_rtt_pip}){
+        key.push_back(pipeline.id);
+    }
+    for (const sg_view& view : bind.views){
+        key.push_back(view.id);
+    }
+    for (const sg_sampler& sampler : bind.samplers){
+        key.push_back(sampler.id);
+    }
+    for (int offset : bind.vertex_buffer_offsets){
+        key.push_back((uint32_t)offset);
+    }
+    key.push_back((uint32_t)bind.index_buffer_offset);
+}
+
+uint64_t SokolObject::getSortKey(PipelineType pipType) const{
+    const uint32_t resources = bind.vertex_buffers[0].id ^ (bind.views[0].id << 16);
+    return ((uint64_t)getPipeline(pipType).id << 32) | resources;
+}
+
+void SokolObject::resetAppliedState(){
+    appliedPipeline = {};
+    bindingsApplied = false;
+}
+
 bool SokolObject::beginDraw(PipelineType pipType){
-    sg_pipeline selectedPipeline = pip;
-    if (pipType == PipelineType::PIP_DEPTH){
-        selectedPipeline = depth_pip;
-    }else if (pipType == PipelineType::PIP_ZPREPASS){
-        selectedPipeline = zprepass_pip;
-    }else if (pipType == PipelineType::PIP_ZPREPASS_RTT){
-        selectedPipeline = zprepass_rtt_pip;
-    }else if (pipType == PipelineType::PIP_SHADOW_DEPTH){
-        selectedPipeline = shadow_depth_pip;
-    }else if (pipType == PipelineType::PIP_GBUFFER){
-        selectedPipeline = gbuffer_pip;
-    }else if (pipType == PipelineType::PIP_RTT){
-        selectedPipeline = rtt_pip;
-    }else if (pipType == PipelineType::PIP_RTT_INVERT){
-        selectedPipeline = rtt_invert_pip;
-    }else if (pipType == PipelineType::PIP_DEFAULT_NODEPTH){
-        selectedPipeline = nodepth_pip;
-    }else if (pipType == PipelineType::PIP_RTT_NODEPTH){
-        selectedPipeline = rtt_nodepth_pip;
-    }else if (pipType == PipelineType::PIP_RTT_NOBLEND){
-        selectedPipeline = rtt_noblend_pip;
+    sg_pipeline selectedPipeline = getPipeline(pipType);
+
+    if (selectedPipeline.id != SG_INVALID_ID && selectedPipeline.id == appliedPipeline.id){
+        return true;
     }
 
     // Deferred resource creation can leave an allocated handle in FAILED state.
@@ -530,6 +683,9 @@ bool SokolObject::beginDraw(PipelineType pipType){
         return false;
     }
 
+    // set before the call, an error in it resets them from the logger
+    appliedPipeline = selectedPipeline;
+    bindingsApplied = false;
     sg_apply_pipeline(selectedPipeline);
     return true;
 }
@@ -542,7 +698,17 @@ void SokolObject::applyUniformBlock(int slot, unsigned int count, void* data){
 
 void SokolObject::draw(unsigned int baseElement, unsigned int vertexCount, unsigned int instanceCount){
     //SokolCmdQueue::add_command_apply_bindings(bind);
-    sg_apply_bindings(bind);
+    if (!bindingsApplied || std::memcmp(&appliedBindings, &bind, sizeof(sg_bindings)) != 0){
+        // set before the call, as in beginDraw; bindings not ready make sokol skip draws until
+        // the next sg_apply_pipeline
+        if (isReady(bind)){
+            appliedBindings = bind;
+            bindingsApplied = true;
+        }else{
+            resetAppliedState();
+        }
+        sg_apply_bindings(bind);
+    }
     //SokolCmdQueue::add_command_draw(0, vertexCount, 1);
     sg_draw(baseElement, vertexCount, instanceCount);
 }
@@ -558,6 +724,7 @@ void SokolObject::destroy(){
         destroyPipeline(nodepth_pip);
         destroyPipeline(rtt_nodepth_pip);
         destroyPipeline(rtt_noblend_pip);
+        destroyPipeline(rtt_coloronly_pip);
         destroyPipeline(zprepass_pip);
         destroyPipeline(zprepass_rtt_pip);
     }
@@ -571,9 +738,10 @@ void SokolObject::destroy(){
     nodepth_pip.id = SG_INVALID_ID;
     rtt_nodepth_pip.id = SG_INVALID_ID;
     rtt_noblend_pip.id = SG_INVALID_ID;
+    rtt_coloronly_pip.id = SG_INVALID_ID;
     zprepass_pip.id = SG_INVALID_ID;
     zprepass_rtt_pip.id = SG_INVALID_ID;
     bind = {};
-    pipeline_desc = {};
+    loadPipelineDesc.reset();
     bindSlotIndex = 0;
 }

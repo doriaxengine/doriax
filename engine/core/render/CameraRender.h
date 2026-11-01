@@ -28,6 +28,8 @@ namespace doriax{
         void setStoreDepth(bool storeDepth);
 
         void startRenderPass(FramebufferRender* framebuffer, size_t face = 0);
+        // into one face and mip level of a color attachment texture, with no depth
+        void startRenderPass(TextureRender* texture, size_t face, int mip);
         void startRenderPass(int width, int height);
         void startRenderPass();
 

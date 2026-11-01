@@ -9,6 +9,7 @@
 #include "util/Util.h"
 #include "util/UIUtils.h"
 #include "util/FileDialogs.h"
+#include "util/TextEncoding.h"
 #include "util/EntityPayload.h"
 #include "util/CameraTextureLink.h"
 #include "external/IconsFontAwesome6.h"
@@ -95,6 +96,7 @@ static void markTextureUpdate(Scene* scene, Entity entity, editor::ComponentType
         for (unsigned int i = 0; i < mesh.numSubmeshes; i++) {
             mesh.submeshes[i].needUpdateTexture = true;
         }
+        editor::Catalog::updateSpriteBatch(scene, entity);
     }
     if (componentType == editor::ComponentType::UIComponent) {
         scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1326,7 +1328,7 @@ void editor::Properties::drawFontSlot(ComponentType cpType, const std::string& i
             if (ec || relative.empty() || *relative.begin() == "..") {
                 ImGui::OpenPopup("File Import Error");
             }else{
-                setFontSlot(cpType, id, slot, relative.string(), sceneProject, entities, onValueChanged);
+                setFontSlot(cpType, id, slot, relative.generic_string(), sceneProject, entities, onValueChanged);
             }
         }
     }
@@ -1732,7 +1734,7 @@ void editor::Properties::drawCustomTextureSettingsPopup(const char* popupId, Tex
     ImGui::EndPopup();
 }
 
-void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities, ComponentType componentType){
+void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::string id, SceneProject* sceneProject, std::vector<Entity> entities){
     // Block DnD while playing for non-script components
     if (sceneProject && sceneProject->playState != ScenePlayState::STOPPED) {
         return;
@@ -1741,6 +1743,11 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
     if (ImGui::GetCurrentContext()->CurrentItemFlags & ImGuiItemFlags_Disabled) {
         return;
     }
+
+    // previews are not commands, so they apply the update flags here
+    auto markUpdate = [&](Entity entity){
+        Catalog::updateEntity(sceneProject->scene, entity, Catalog::findProperty(sceneProject->scene, entity, cpType, id).updateFlags);
+    };
 
     if (ImGui::BeginDragDropTarget()){
 
@@ -1758,19 +1765,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                             originalTex[id][entity] = Texture(*valueRef);
                             if (*valueRef != Texture(droppedRelativePath)){
                                 *valueRef = Texture(droppedRelativePath);
-                                if (componentType == ComponentType::MeshComponent){
-                                    unsigned int numSubmeshes = sceneProject->scene->getComponent<MeshComponent>(entity).numSubmeshes;
-                                    for (unsigned int i = 0; i < numSubmeshes; i++){
-                                        sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
-                                    }
-                                }
-                                if (componentType == ComponentType::UIComponent){
-                                    sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
-                                }
-                                if (componentType == ComponentType::WaterComponent){
-                                    sceneProject->scene->getComponent<WaterComponent>(entity).needUpdateTexture = true;
-                                }
-                                //printf("needUpdateTexture %s\n", name.c_str());
+                                markUpdate(entity);
                             }
                         }
                     }
@@ -1780,7 +1775,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                             Texture* valueRef = Catalog::getPropertyRef<Texture>(sceneProject->scene, entity, cpType, id);
                             *valueRef = originalTex[id][entity];
                             if (!insideAssets){
-                                markTextureUpdate(sceneProject->scene, entity, componentType);
+                                markUpdate(entity);
                                 continue;
                             }
                             cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture);
@@ -1819,19 +1814,7 @@ void editor::Properties::dragDropResourcesTexture(ComponentType cpType, std::str
                 Texture* valueRef = Catalog::getPropertyRef<Texture>(sceneProject->scene, entity, cpType, id);
                 if (*valueRef != originalTex[id][entity]){
                     *valueRef = originalTex[id][entity];
-                    if (componentType == ComponentType::MeshComponent){
-                        unsigned int numSubmeshes = sceneProject->scene->getComponent<MeshComponent>(entity).numSubmeshes;
-                        for (unsigned int i = 0; i < numSubmeshes; i++){
-                            sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
-                        }
-                    }
-                    if (componentType == ComponentType::UIComponent){
-                        sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
-                    }
-                    if (componentType == ComponentType::WaterComponent){
-                        sceneProject->scene->getComponent<WaterComponent>(entity).needUpdateTexture = true;
-                    }
-                    //printf("needUpdateTexture %s\n", id.c_str());
+                    markUpdate(entity);
                 }
             }
 
@@ -1873,6 +1856,7 @@ void editor::Properties::dragDropResourcesTextureCubeFace(ComponentType cpType, 
                                     for (unsigned int i = 0; i < numSubmeshes; i++){
                                         sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                 }
                                 if (componentType == ComponentType::UIComponent){
                                     sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1925,6 +1909,7 @@ void editor::Properties::dragDropResourcesTextureCubeFace(ComponentType cpType, 
                         for (unsigned int i = 0; i < numSubmeshes; i++){
                             sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                         }
+                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     }
                     if (componentType == ComponentType::UIComponent){
                         sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -1973,6 +1958,7 @@ void editor::Properties::dragDropResourcesTextureCubeSingleFile(ComponentType cp
                                     for (unsigned int i = 0; i < numSubmeshes; i++){
                                         sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                                     }
+                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                 }
                                 if (componentType == ComponentType::UIComponent){
                                     sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -2025,6 +2011,7 @@ void editor::Properties::dragDropResourcesTextureCubeSingleFile(ComponentType cp
                         for (unsigned int i = 0; i < numSubmeshes; i++){
                             sceneProject->scene->getComponent<MeshComponent>(entity).submeshes[i].needUpdateTexture = true;
                         }
+                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                     }
                     if (componentType == ComponentType::UIComponent){
                         sceneProject->scene->getComponent<UIComponent>(entity).needUpdateTexture = true;
@@ -3904,15 +3891,13 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         ImGui::BeginChild("textureframe", ImVec2(-texButtonsReserve, ImGui::GetFontSize() + ImGui::GetStyle().FramePadding.y * 2),
             false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        std::string texName = newValue.getId();
+        // the id can end in pool suffixes like "|alphaborder"
+        const std::string texSource = newValue.getPath().empty() ? newValue.getId() : newValue.getPath();
+        std::string texName = texSource;
         if (isCameraTexture) {
             texName = std::string(ICON_FA_VIDEO) + " " + CameraTextureLink::cameraName(sceneProject->scene, newValue);
-        } else {
-            // Never show the "?svgScale=" suffix in the slot; display the clean path/name.
-            texName = TextureData::parseSvgScalePath(texName);
-            if (std::filesystem::exists(texName)) {
-                texName = std::filesystem::path(texName).filename().string();
-            }
+        } else if (std::filesystem::exists(texName)) {
+            texName = std::filesystem::path(texName).filename().string();
         }
         if (texName.empty()) {
             texName = "< Not set >";
@@ -3929,8 +3914,8 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
             ImGui::PopStyleColor();
 
         ImGui::EndChild();
-        if (!newValue.getId().empty()){
-            ImGui::SetItemTooltip("%s", newValue.getId().c_str());
+        if (!texSource.empty()){
+            ImGui::SetItemTooltip("%s", texSource.c_str());
         }
         ImGui::PopStyleColor();
 
@@ -3951,7 +3936,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                 if (ec || relative.empty() || *relative.begin() == "..") {
                     ImGui::OpenPopup("File Import Error");
                 }else{
-                    Texture texture(relative.string());
+                    Texture texture(relative.generic_string());
                     for (Entity& entity : entities){
                         cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                         CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -4023,7 +4008,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         ImGui::PopID();
         ImGui::EndGroup();
 
-        dragDropResourcesTexture(cpType, id, sceneProject, entities, cpType);
+        dragDropResourcesTexture(cpType, id, sceneProject, entities);
 
     }else if (type == RowPropertyType::TextureCube){
         Texture* value = nullptr;
@@ -4166,7 +4151,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                         ImGui::OpenPopup("File Import Error##cube");
                     }else{
                         Texture texture = newValue;
-                        texture.setCubeMap(relative.string());
+                        texture.setCubeMap(relative.generic_string());
                         for (Entity& entity : entities){
                             cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                             CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -4281,7 +4266,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                             ImGui::OpenPopup("File Import Error##cube");
                         }else{
                             Texture texture = newValue;
-                            texture.setCubePath(faceIndex, relative.string());
+                            texture.setCubePath(faceIndex, relative.generic_string());
                             for (Entity& entity : entities){
                                 cmd = new PropertyCmd<Texture>(project, sceneProject->id, entity, cpType, id, texture, settings.onValueChanged);
                                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -4509,6 +4494,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                 unsigned int sIdx = std::stoul(matDropPropertyId.substr(p + 1, e - p - 1));
                                 if (sIdx < mesh->numSubmeshes) {
                                     mesh->submeshes[sIdx].needUpdateTexture = true;
+                                    Catalog::updateSpriteBatch(sceneProject->scene, ent);
                                 }
                             }
                         }
@@ -4543,7 +4529,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                             try {
                                 if (cachedMatDropPath != droppedRelativePath) {
                                     cachedMatDropPath = droppedRelativePath;
-                                    YAML::Node materialNode = YAML::LoadFile((project->getProjectPath() / relativePath).string());
+                                    YAML::Node materialNode = TextEncoding::loadYamlFile(project->getProjectPath() / relativePath);
                                     cachedMatDropMaterial = Stream::decodeMaterial(materialNode);
                                     cachedMatDropMaterial.name = droppedRelativePath;
                                 }
@@ -4572,6 +4558,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                                     unsigned int sIdx = std::stoul(id.substr(pos + 1, end - pos - 1));
                                                     if (sIdx < mesh->numSubmeshes) {
                                                         mesh->submeshes[sIdx].needUpdateTexture = true;
+                                                        Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                                     }
                                                 }
                                             }
@@ -4627,6 +4614,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
                                                 unsigned int sIdx = std::stoul(id.substr(pos + 1, end - pos - 1));
                                                 if (sIdx < mesh->numSubmeshes) {
                                                     mesh->submeshes[sIdx].needUpdateTexture = true;
+                                                    Catalog::updateSpriteBatch(sceneProject->scene, entity);
                                                 }
                                             }
                                         }
@@ -7376,7 +7364,7 @@ void editor::Properties::drawModelComponent(ComponentType cpType, SceneProject* 
                 if (ec || relative.empty() || *relative.begin() == "..") {
                     ImGui::OpenPopup("Model Import Error");
                 }else{
-                    CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new ModelLoadCmd(project, sceneProject->id, entity, relative.string()));
+                    CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new ModelLoadCmd(project, sceneProject->id, entity, relative.generic_string()));
                 }
             }
         }
@@ -7521,40 +7509,43 @@ void editor::Properties::drawModelComponent(ComponentType cpType, SceneProject* 
 }
 
 void editor::Properties::drawUIComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    // a button overwrites both with the ones of its state
+    const bool hasButton = std::any_of(entities.begin(), entities.end(), [sceneProject](Entity entity){
+        return sceneProject->scene->findComponent<ButtonComponent>(entity) != nullptr;
+    });
+
     beginTable(cpType, getLabelSize("Texture"));
+    ImGui::BeginDisabled(hasButton);
     propertyRow(RowPropertyType::Color4L, cpType, "color", "Color", sceneProject, entities);
     propertyRow(RowPropertyType::Texture, cpType, "texture", "Texture", sceneProject, entities);
+    ImGui::EndDisabled();
     endTable();
+
+    if (hasButton){
+        ImGui::TextDisabled("Set by the Button component");
+        ImGui::SameLine();
+        helpMarker("Buttons show the texture and color of their current state. Edit them in the Button component.");
+    }
 
     drawCustomShaderRow(cpType, ShaderType::UI, sceneProject, entities);
 }
 
 void editor::Properties::drawButtonComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
-    RowSettings settings;
-    settings.onValueChanged = [sceneProject, entities](){
-        for (const Entity& entity : entities){
-            if (ButtonComponent* button = sceneProject->scene->findComponent<ButtonComponent>(entity)){
-                button->needUpdateButton = true;
-            }
-        }
-    };
-
     RowSettings settingsScale;
     settingsScale.stepSize = 0.01f;
     settingsScale.secondColSize = 6 * ImGui::GetFontSize();
-    settingsScale.onValueChanged = settings.onValueChanged;
 
     beginTable(cpType, getLabelSize("Texture Disabled"));
-    propertyRow(RowPropertyType::LocalEntity, cpType, "label", "Label", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Bool, cpType, "disabled", "Disabled", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureNormal", "Texture Normal", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureHovered", "Texture Hovered", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "texturePressed", "Texture Pressed", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Texture, cpType, "textureDisabled", "Texture Disabled", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorNormal", "Color Normal", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorHovered", "Color Hovered", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorPressed", "Color Pressed", sceneProject, entities, settings);
-    propertyRow(RowPropertyType::Color4L, cpType, "colorDisabled", "Color Disabled", sceneProject, entities, settings);
+    propertyRow(RowPropertyType::LocalEntity, cpType, "label", "Label", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "disabled", "Disabled", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureNormal", "Texture Normal", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureHovered", "Texture Hovered", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "texturePressed", "Texture Pressed", sceneProject, entities);
+    propertyRow(RowPropertyType::Texture, cpType, "textureDisabled", "Texture Disabled", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorNormal", "Color Normal", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorHovered", "Color Hovered", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorPressed", "Color Pressed", sceneProject, entities);
+    propertyRow(RowPropertyType::Color4L, cpType, "colorDisabled", "Color Disabled", sceneProject, entities);
     propertyRow(RowPropertyType::Float, cpType, "scaleHovered", "Scale Hovered", sceneProject, entities, settingsScale);
     propertyRow(RowPropertyType::Float, cpType, "scalePressed", "Scale Pressed", sceneProject, entities, settingsScale);
     propertyRow(RowPropertyType::FloatPositive, cpType, "transitionTime", "Transition Time", sceneProject, entities, settingsScale);
@@ -10132,8 +10123,9 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
 
                 if (changed) {
                     std::string newName = nameBuffer;
-                    std::string newSource = srcPath.string();
-                    std::string newHeader = hdrPath.string();
+                    // '/' so scenes saved on Windows load elsewhere
+                    std::string newSource = srcPath.generic_string();
+                    std::string newHeader = hdrPath.generic_string();
 
                     // Empty class name falls back to header (or source) filename stem
                     if (newName.empty()) {
@@ -13998,6 +13990,13 @@ void editor::Properties::drawBoneComponent(ComponentType cpType, SceneProject* s
     endTable();
 }
 
+void editor::Properties::drawSkinComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    // the model fills the palette, nothing here is edited
+    beginTable(cpType, getLabelSize("Bones"));
+    propertyRow(RowPropertyType::Label, cpType, "numBones", "Bones", sceneProject, entities);
+    endTable();
+}
+
 void editor::Properties::drawKeyframeTracksComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     KeyframeTracksComponent& comp = sceneProject->scene->getComponent<KeyframeTracksComponent>(entities[0]);
 
@@ -14725,12 +14724,12 @@ void editor::Properties::show(){
                         entry.enabled = true;
 
                         if (type == ScriptType::CPP) {
-                            entry.headerPath = headerPath.string();
-                            entry.path = sourcePath.string();
+                            entry.headerPath = headerPath.generic_string();
+                            entry.path = sourcePath.generic_string();
                             entry.className = name;
                         } else if (type == ScriptType::LUA) {
                             entry.headerPath.clear();
-                            entry.path = sourcePath.string();
+                            entry.path = sourcePath.generic_string();
                             entry.className = name; // module (file base) name
                         }
 
@@ -14918,6 +14917,8 @@ void editor::Properties::show(){
                     drawBundleComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::BoneComponent){
                     drawBoneComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::SkinComponent){
+                    drawSkinComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::KeyframeTracksComponent){
                     drawKeyframeTracksComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::TranslateTracksComponent){

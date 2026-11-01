@@ -7,6 +7,7 @@
 #include "Factory.h"
 #include "Theme.h"
 #include "util/FileDialogs.h"
+#include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
 #include "util/ScriptParser.h"
 #include "util/UIUtils.h"
@@ -523,7 +524,7 @@ void ScriptCreateDialog::show() {
                     ImGui::SameLine(0, 0);
                     ImGui::TextColored(ImVec4(1.f, 0.8f, 0.f, 1.f), "%s", ICON_FA_FOLDER_OPEN);
                     ImGui::SameLine();
-                    ImGui::Text("%s", rootPath == m_projectPath ? "Project Root" : rootPath.filename().string().c_str());
+                    ImGui::Text("%s", rootPath == m_projectPath ? "Project Root" : FileUtils::pathToUtf8(rootPath.filename()).c_str());
                     if (ImGui::IsItemClicked() ||
                         (ImGui::IsMouseClicked(0) && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))) {
                         m_selectedPath = rootPath.string();
@@ -599,11 +600,11 @@ void ScriptCreateDialog::show() {
     } else {
         if (isCpp) {
             ImGui::TextWrapped("Will create:\n  %s\n  %s",
-                fs::relative(headerPath, m_projectPath).generic_string().c_str(),
-                fs::relative(sourcePath, m_projectPath).generic_string().c_str());
+                FileUtils::pathToGenericUtf8(fs::relative(headerPath, m_projectPath)).c_str(),
+                FileUtils::pathToGenericUtf8(fs::relative(sourcePath, m_projectPath)).c_str());
         } else {
             ImGui::TextWrapped("Will create:\n  %s",
-                fs::relative(sourcePath, rootPath).generic_string().c_str());
+                FileUtils::pathToGenericUtf8(fs::relative(sourcePath, rootPath)).c_str());
         }
 
         if (anyCreateFileExists) {

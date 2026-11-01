@@ -15,6 +15,7 @@
 #include "subsystem/MeshSystem.h"
 #include "util/CameraTextureLink.h"
 #include "util/ProjectUtils.h"
+#include "util/SHA1.h"
 #include "util/StringUtils.h"
 #include "render/SceneRender2D.h"
 #include "render/SceneRender3D.h"
@@ -30,33 +31,47 @@
 
 using namespace doriax;
 
-namespace {
-    // The customShaderId in a key is a session-local registry index, so a fork is
-    // named by its project-relative path instead, the way scenes name theirs.
-    // Both directions normalize, keeping a since-retired property bit out of the file.
-    YAML::Node encodeShaderKeys(const std::set<ShaderKey>& shaderKeys) {
-        YAML::Node node(YAML::NodeType::Sequence);
-        for (ShaderKey rawKey : shaderKeys) {
-            const ShaderKey key = ShaderPool::normalizeKey(rawKey);
-            const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
-            std::string customShader;
-            if (customId != 0) {
-                // Without a name there is nothing stable to write, and dropping only
-                // the id would turn the override into one for the built-in shader
-                customShader = ShaderPool::getCustomShaderName(customId);
-                if (customShader.empty()) continue;
-            }
-
-            const uint32_t properties = ShaderPool::getPropertiesFromKey(key);
-            YAML::Node entry(YAML::NodeType::Map);
-            entry["type"] = ShaderPool::getShaderTypeName(ShaderPool::getShaderTypeFromKey(key), true);
-            if (properties) entry["properties"] = properties;
-            if (!customShader.empty()) entry["customShader"] = customShader;
-            node.push_back(entry);
+// The customShaderId in a key is a session-local registry index, so a fork is
+// named by its project-relative path instead, the way scenes name theirs.
+// Both directions normalize, keeping a since-retired property bit out of the file.
+YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKeys) {
+    YAML::Node node(YAML::NodeType::Sequence);
+    for (ShaderKey rawKey : shaderKeys) {
+        const ShaderKey key = ShaderPool::normalizeKey(rawKey);
+        const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
+        std::string customShader;
+        if (customId != 0) {
+            // Without a name there is nothing stable to write, and dropping only
+            // the id would turn the override into one for the built-in shader
+            customShader = ShaderPool::getCustomShaderName(customId);
+            if (customShader.empty()) continue;
         }
-        return node;
-    }
 
+        const uint32_t properties = ShaderPool::getPropertiesFromKey(key);
+        YAML::Node entry(YAML::NodeType::Map);
+        entry["type"] = ShaderPool::getShaderTypeName(ShaderPool::getShaderTypeFromKey(key), true);
+        if (properties) entry["properties"] = properties;
+        if (!customShader.empty()) entry["customShader"] = customShader;
+        node.push_back(entry);
+    }
+    return node;
+}
+
+// Hashes the emitted nodes, not the file text, so a save and the next load agree
+std::string editor::Stream::hashSceneContent(const YAML::Node& node) {
+    YAML::Emitter out;
+    out << YAML::BeginMap;
+    for (const auto& entry : node) {
+        const std::string key = entry.first.as<std::string>();
+        if (key != "shaderKeys" && key != "shaderKeysHash") {
+            out << YAML::Key << key << YAML::Value << entry.second;
+        }
+    }
+    out << YAML::EndMap;
+    return SHA1::hash(out.c_str());
+}
+
+namespace {
     std::vector<ShaderKey> decodeShaderKeys(const YAML::Node& node) {
         std::vector<ShaderKey> shaderKeys;
         if (!node || !node.IsSequence()) {
@@ -1946,14 +1961,14 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         root["windowTitle"] = project->getWindowTitle();
     }
     if (!project->getWindowIcon().empty()) {
-        root["windowIcon"] = project->getWindowIcon().string();
+        root["windowIcon"] = project->getWindowIcon().generic_string();
     }
 
     if (!project->getAssetsDir().empty() && project->getAssetsDir() != ".") {
-        root["assetsDir"] = project->getAssetsDir().string();
+        root["assetsDir"] = project->getAssetsDir().generic_string();
     }
     if (!project->getLuaDir().empty()) {
-        root["luaDir"] = project->getLuaDir().string();
+        root["luaDir"] = project->getLuaDir().generic_string();
     }
     if (!project->getScriptDirs().empty()) {
         YAML::Node scriptDirsNode;
@@ -2095,13 +2110,13 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         if (android.versionCode != defaults.versionCode) androidNode["versionCode"] = android.versionCode;
         if (!android.versionName.empty()) androidNode["versionName"] = android.versionName;
         if (!android.launcherIcon.empty()) {
-            androidNode["launcherIcon"] = android.launcherIcon.string();
+            androidNode["launcherIcon"] = android.launcherIcon.generic_string();
         }
         if (!android.adaptiveIconForeground.empty()) {
-            androidNode["adaptiveIconForeground"] = android.adaptiveIconForeground.string();
+            androidNode["adaptiveIconForeground"] = android.adaptiveIconForeground.generic_string();
         }
         if (!android.adaptiveIconBackground.empty()) {
-            androidNode["adaptiveIconBackground"] = android.adaptiveIconBackground.string();
+            androidNode["adaptiveIconBackground"] = android.adaptiveIconBackground.generic_string();
         }
         if (android.minSdk != defaults.minSdk) androidNode["minSdk"] = android.minSdk;
         if (android.targetSdk != defaults.targetSdk) androidNode["targetSdk"] = android.targetSdk;
@@ -2500,11 +2515,17 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
             }
 
             const std::string relStr = sceneNode["filepath"].as<std::string>();
-            const size_t position = listPosition++;
             fs::path scenePath = relStr;
             if (scenePath.is_relative()) {
                 scenePath = project->getProjectPath() / scenePath;
             }
+
+            // Saving over another scene file could list it twice
+            if (project->findSceneByPath(scenePath) != NULL_PROJECT_SCENE) {
+                Out::warning("Scene file is listed twice in the project, loading it once: %s", relStr.c_str());
+                continue;
+            }
+            const size_t position = listPosition++;
 
             const bool opened = hasTabs ? openedScenePaths.count(relStr) > 0 : isFirstScene;
 
@@ -3682,6 +3703,11 @@ std::vector<Entity> editor::Stream::decodeEntity(const YAML::Node& entityNode, E
 
             for (ComponentType cpType : Catalog::findComponents(registry, entity)){
                 if (savedComponents && savedComponents[Catalog::getComponentName(cpType, true)]) continue;
+                if (cpType == ComponentType::SkinComponent){
+                    // skins of model and generated meshes are not encoded
+                    Signature signature = registry->getSignature(entity);
+                    if (isModelBackedMesh(entity, registry, signature) || isGeneratedMesh(registry, signature)) continue;
+                }
                 ProjectUtils::removeEntityComponent(registry, entity, cpType, sceneEntities);
             }
         }
@@ -3864,7 +3890,7 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         // a generated mesh rebuilds its buffers on load, but not its textures
         bool isGenerated = isModel || isGeneratedMesh(registry, signature);
         MeshComponent mesh = registry->getComponent<MeshComponent>(entity);
-        compNode[Catalog::getComponentName(ComponentType::MeshComponent, true)] = encodeMeshComponent(mesh, !isGenerated, !isModel, !isGenerated);
+        compNode[Catalog::getComponentName(ComponentType::MeshComponent, true)] = encodeMeshComponent(mesh, !isGenerated, !isModel);
     }
 
     if (signature.test(registry->getComponentId<UIComponent>())) {
@@ -4065,6 +4091,13 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
     if (signature.test(registry->getComponentId<BoneComponent>())) {
         BoneComponent bone = registry->getComponent<BoneComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::BoneComponent, true)] = encodeBoneComponent(bone);
+    }
+
+    // a model builds the skins of its meshes again when it loads
+    if (signature.test(registry->getComponentId<SkinComponent>()) && !isModelBackedMesh(entity, registry, signature) &&
+            !isGeneratedMesh(registry, signature)) {
+        const SkinComponent& skin = registry->getComponent<SkinComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::SkinComponent, true)] = encodeSkinComponent(skin);
     }
 
     if (signature.test(registry->getComponentId<KeyframeTracksComponent>())) {
@@ -4689,6 +4722,35 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         }
     }
 
+    compName = Catalog::getComponentName(ComponentType::SkinComponent, true);
+    // Backward compatibility: the MeshComponent kept the palette before, remove it in a future release.
+    // Meshes outside a model all saved one, so only a posed palette becomes a skin.
+    const std::string meshName = Catalog::getComponentName(ComponentType::MeshComponent, true);
+    bool legacySkin = false;
+    if (!compNode[compName] && compNode[meshName] && compNode[meshName]["bonesMatrix"]) {
+        for (const auto& bone : compNode[meshName]["bonesMatrix"]) {
+            if (!(decodeMatrix4(bone) == Matrix4())) {
+                legacySkin = true;
+                break;
+            }
+        }
+    }
+    if (compNode[compName] || legacySkin) {
+        SkinComponent* existing = registry->findComponent<SkinComponent>(entity);
+        SkinComponent skin = decodeSkinComponent(legacySkin ? compNode[meshName] : compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<SkinComponent>())){
+            registry->addComponent<SkinComponent>(entity, skin);
+        }else{
+            uint64_t flags = Catalog::getChangedUpdateFlags(ComponentType::SkinComponent, existing, &skin);
+            registry->getComponent<SkinComponent>(entity) = skin;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+        // the palette poses the mesh, so its bounds follow, as after an animation step
+        if (MeshComponent* mesh = registry->findComponent<MeshComponent>(entity)) {
+            mesh->needUpdateAABB = true;
+        }
+    }
+
     compName = Catalog::getComponentName(ComponentType::KeyframeTracksComponent, true);
     if (compNode[compName]) {
         KeyframeTracksComponent* existing = registry->findComponent<KeyframeTracksComponent>(entity);
@@ -4881,7 +4943,7 @@ Transform editor::Stream::decodeTransform(const YAML::Node& node, const Transfor
     return transform;
 }
 
-YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool encodeBuffers, bool embedTextureData, bool encodeBones) {
+YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool encodeBuffers, bool embedTextureData) {
     YAML::Node node;
 
     //node["loaded"] = mesh.loaded;
@@ -4908,14 +4970,6 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     }
     node["submeshes"] = submeshesNode;
     //node["numSubmeshes"] = mesh.numSubmeshes;
-
-    // Model-backed meshes regenerate these matrices from their skeleton on load.
-    if (encodeBones) {
-        YAML::Node bonesNode;
-        for (size_t i = 0; i < mesh.bonesMatrix.size(); i++)
-            bonesNode.push_back(encodeMatrix4(mesh.bonesMatrix[i]));
-        node["bonesMatrix"] = bonesNode;
-    }
 
     node["normAdjustJoint"] = mesh.normAdjustJoint;
     node["normAdjustWeight"] = mesh.normAdjustWeight;
@@ -5011,16 +5065,6 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
             mesh.submeshes[i] = decodeSubmesh(submeshesNode[i], &mesh.submeshes[i]);
         }
         mesh.numSubmeshes = submeshesNode.size();
-    }
-
-    // Decode bones matrix
-    if (node["bonesMatrix"]) {
-        auto bonesNode = node["bonesMatrix"];
-        mesh.bonesMatrix = HybridArray<Matrix4, MAX_BONES>();
-        for (size_t i = 0; i < bonesNode.size() &&
-                mesh.bonesMatrix.validIndex(static_cast<int>(i)); i++)
-            mesh.bonesMatrix[i] = decodeMatrix4(bonesNode[i]);
-        mesh.needUpdateBones = bonesNode.size() > 0;
     }
 
     if (node["normAdjustJoint"]) mesh.normAdjustJoint = node["normAdjustJoint"].as<float>();
@@ -7625,6 +7669,38 @@ BoneComponent editor::Stream::decodeBoneComponent(const YAML::Node& node, const 
     if (node["offsetMatrix"]) bone.offsetMatrix = decodeMatrix4(node["offsetMatrix"]);
 
     return bone;
+}
+
+YAML::Node editor::Stream::encodeSkinComponent(const SkinComponent& skin) {
+    YAML::Node node;
+
+    YAML::Node bonesNode;
+    for (size_t i = 0; i < skin.numBones && i < skin.bonesMatrix.size(); i++)
+        bonesNode.push_back(encodeMatrix4(skin.bonesMatrix[i]));
+    node["bonesMatrix"] = bonesNode;
+
+    return node;
+}
+
+SkinComponent editor::Stream::decodeSkinComponent(const YAML::Node& node, const SkinComponent* oldSkin) {
+    SkinComponent skin;
+
+    if (oldSkin) {
+        skin = *oldSkin;
+    }
+
+    if (node["bonesMatrix"]) {
+        auto bonesNode = node["bonesMatrix"];
+        skin.bonesMatrix = HybridArray<Matrix4, MAX_BONES>();
+        skin.numBones = 0;
+        for (size_t i = 0; i < bonesNode.size() && skin.bonesMatrix.validIndex(static_cast<int>(i)); i++){
+            skin.bonesMatrix[i] = decodeMatrix4(bonesNode[i]);
+            skin.numBones++;
+        }
+        skin.needUpdateBones = bonesNode.size() > 0;
+    }
+
+    return skin;
 }
 
 YAML::Node editor::Stream::encodeKeyframeTracksComponent(const KeyframeTracksComponent& tracks) {

@@ -88,19 +88,28 @@ std::mutex& MeshLodPool::getMutex(){
     return *mutex;
 }
 
-// FNV-1a over 8-byte words, cheap enough to run on every mesh load
+// 8-byte words through the splitmix64 finalizer, cheap enough to run on every mesh load.
+// Plain FNV over words let sign flips in pairs cancel, so a mirrored mesh collided.
 uint64_t MeshLodPool::hash(uint64_t seed, const void* data, size_t size){
+    auto mix = [](uint64_t z){
+        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ull;
+        z = (z ^ (z >> 27)) * 0x94d049bb133111ebull;
+        return z ^ (z >> 31);
+    };
     uint64_t h = seed ? seed : 14695981039346656037ull;
     const unsigned char* bytes = static_cast<const unsigned char*>(data);
     size_t i = 0;
     for (; i + 8 <= size; i += 8){
         uint64_t word;
         std::memcpy(&word, bytes + i, 8);
-        h = (h ^ word) * 1099511628211ull;
+        h = mix(h + 0x9e3779b97f4a7c15ull + word);
     }
-    for (; i < size; i++){
-        h = (h ^ bytes[i]) * 1099511628211ull;
+    if (i < size){
+        uint64_t word = 0;
+        std::memcpy(&word, bytes + i, size - i);
+        h = mix(h + 0x9e3779b97f4a7c15ull + word);
     }
+    h = mix(h ^ size);
     return h ? h : 1;
 }
 

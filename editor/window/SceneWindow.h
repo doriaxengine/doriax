@@ -43,6 +43,9 @@ namespace doriax::editor {
         std::map<uint32_t, ImVec2> lookReturnPos;
         std::map<uint32_t, bool> focusCanvasOnNextFrame;
 
+        uint32_t fullscreenSceneId = NULL_PROJECT_SCENE;
+        double fullscreenStartTime = 0.0;
+
         // Engine keys sent down during play but not yet released, and the
         // scene the play session belongs to. Engine Input state is static,
         // so a missed key-up would stay pressed into the next play session.
@@ -70,6 +73,9 @@ namespace doriax::editor {
 
         void handleCloseScene(uint32_t sceneId);
         void closeSceneInternal(uint32_t sceneId);
+        void showCanvas(SceneProject& sceneProject, bool& gameCursorInSceneRect);
+        void showFullscreenCanvas(SceneProject& sceneProject, bool& gameCursorInSceneRect);
+        void exitFullscreen();
         void sceneEventHandler(SceneProject* sceneProject);
         void forwardPlayKeyboardInput(ImGuiIO& io, int mods);
         void releasePlayKeys(int mods);
@@ -102,6 +108,8 @@ namespace doriax::editor {
         void resetProjectState();
         void clearSceneState(uint32_t sceneId);
         void requestPlayFocus(uint32_t sceneId);
+        void toggleFullscreen(uint32_t sceneId);
+        bool isFullscreen() const;
         void beginStructureVisibilityUpdate(uint32_t sceneId);
         void setStructureSelectionParent(uint32_t sceneId, Entity entity, Entity selectionParent);
 

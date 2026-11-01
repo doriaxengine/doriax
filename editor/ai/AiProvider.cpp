@@ -6,6 +6,7 @@
 #include "HttpClient.h"
 
 #include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <limits>
@@ -85,6 +86,15 @@ bool needsChatCompletionsToolReasoningWorkaround(const ProviderRequest& request)
     }
 
     return major > 5 || (major == 5 && minor >= 6);
+}
+
+// Also matches gateway ids such as "deepseek/deepseek-v4-pro".
+bool modelContains(const ProviderRequest& request, const char* name) {
+    std::string model = request.settings.model;
+    std::transform(model.begin(), model.end(), model.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return model.find(name) != std::string::npos;
 }
 
 std::string attachmentText(const ChatAttachment& attachment) {
@@ -416,6 +426,12 @@ Json buildChatCompletionsPayload(const ProviderRequest& request) {
         root["max_tokens"] = request.settings.maxOutputTokens;
     }
 
+    // DeepSeek rejects an assistant turn without reasoning_content once tools are
+    // sent, also when reached through OpenRouter or another compatible endpoint
+    const bool needsReasoning = request.settings.provider == ProviderId::DeepSeek ||
+                                modelContains(request, "deepseek");
+    const bool gemini = modelContains(request, "gemini");
+
     Json messages = Json::array();
     messages.push_back({{"role", "system"}, {"content", request.systemPrompt}});
 
@@ -431,6 +447,9 @@ Json buildChatCompletionsPayload(const ProviderRequest& request) {
                 });
                 break;
             case ChatRole::Assistant: {
+                // Reasoning only goes back to the model that wrote it; other
+                // endpoints may reject the unknown fields
+                const bool ownReasoning = message.model == request.settings.model;
                 Json item;
                 item["role"] = "assistant";
                 if (message.toolCalls.empty()) {
@@ -439,17 +458,37 @@ Json buildChatCompletionsPayload(const ProviderRequest& request) {
                     // content may be empty when the turn is purely tool calls.
                     item["content"] = message.content.empty() ? Json(nullptr) : Json(message.content);
                     Json toolCalls = Json::array();
+                    bool firstCall = true;
                     for (const auto& call : message.toolCalls) {
-                        toolCalls.push_back({
+                        Json toolCall = {
                             {"id", call.id},
                             {"type", "function"},
                             {"function", {
                                 {"name", call.name},
                                 {"arguments", argumentsToString(call.arguments)}
                             }}
-                        });
+                        };
+                        std::string signature = ownReasoning ? call.thoughtSignature : "";
+                        // Gemini 3 wants a signature on each step's first call; Google
+                        // documents this bypass for steps another model made
+                        if (!ownReasoning && gemini && firstCall) {
+                            signature = "skip_thought_signature_validator";
+                        }
+                        if (!signature.empty()) {
+                            toolCall["extra_content"] = {
+                                {"google", {{"thought_signature", signature}}}
+                            };
+                        }
+                        toolCalls.push_back(toolCall);
+                        firstCall = false;
                     }
                     item["tool_calls"] = toolCalls;
+                }
+                if (ownReasoning) item.update(message.reasoningFields);
+                // Stands in for turns without reasoning, like editor notes
+                if (needsReasoning && !item.contains("reasoning_content") &&
+                    !item.contains("reasoning_details")) {
+                    item["reasoning_content"] = ".";
                 }
                 messages.push_back(item);
                 break;
@@ -500,6 +539,11 @@ ProviderResponse parseChatCompletionsBody(const std::string& body) {
     if (message.contains("content") && message["content"].is_string()) {
         result.text = message["content"].get<std::string>();
     }
+    // DeepSeek and OpenRouter reasoning models want these back on later requests
+    for (const char* key : {"reasoning_content", "reasoning_details"}) {
+        const auto it = message.find(key);
+        if (it != message.end() && !it->empty() && *it != "") result.reasoningFields[key] = *it;
+    }
 
     if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
         for (const auto& item : message["tool_calls"]) {
@@ -508,6 +552,7 @@ ProviderResponse parseChatCompletionsBody(const std::string& body) {
             call.id = item.value("id", "");
             call.name = fn.value("name", "");
             call.arguments = parseArgumentObject(fn.value("arguments", Json::object()));
+            call.thoughtSignature = item.value("/extra_content/google/thought_signature"_json_pointer, "");
             if (!call.name.empty()) result.toolCalls.push_back(call);
         }
     }
@@ -571,15 +616,11 @@ Json buildAnthropicPayload(const ProviderRequest& request) {
                 content.push_back({{"type", "text"}, {"text", "(empty message)"}});
             }
             messages.push_back({{"role", "user"}, {"content", content}});
+        } else if (message.role == ChatRole::Assistant && !message.anthropicContent.empty()) {
+            // Rebuilding the turn would break its thinking signatures
+            messages.push_back({{"role", "assistant"}, {"content", message.anthropicContent}});
         } else if (message.role == ChatRole::Assistant) {
             Json content = Json::array();
-            // Thinking blocks must precede text/tool_use and be echoed verbatim
-            // (including signature) when adaptive/extended thinking is active.
-            for (const auto& block : message.thinkingBlocks) {
-                if (block.is_object()) {
-                    content.push_back(block);
-                }
-            }
             if (!message.content.empty()) {
                 content.push_back({{"type", "text"}, {"text", message.content}});
             }
@@ -627,12 +668,12 @@ ProviderResponse parseAnthropicBody(const std::string& body) {
     }
     for (const auto& part : root["content"]) {
         const std::string type = part.value("type", "");
-        if (type == "thinking" || type == "redacted_thinking") {
-            // Keep the full block (signature included) for tool-use round-trips.
-            result.thinkingBlocks.push_back(part);
-        } else if (type == "text" && part.contains("text") && part["text"].is_string()) {
+        if (type == "text" && part.contains("text") && part["text"].is_string()) {
+            const std::string text = part["text"].get<std::string>();
+            // Blank text blocks are rejected when sent back
+            if (text.find_first_not_of(" \t\r\n") == std::string::npos) continue;
             if (!result.text.empty()) result.text += "\n";
-            result.text += part["text"].get<std::string>();
+            result.text += text;
         } else if (type == "tool_use") {
             ToolCall call;
             call.id = part.value("id", "");
@@ -640,6 +681,7 @@ ProviderResponse parseAnthropicBody(const std::string& body) {
             call.arguments = parseArgumentObject(part.value("input", Json::object()));
             if (!call.name.empty()) result.toolCalls.push_back(call);
         }
+        result.anthropicContent.push_back(part);
     }
     return result;
 }

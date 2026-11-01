@@ -59,13 +59,16 @@ namespace doriax::editor{
         // water grid size or subdivisions
         UpdateFlags_Water               = (uint64_t)1 << 37,
         UpdateFlags_Water_Texture       = (uint64_t)1 << 38,
+        // button visuals, applied to its UI component
+        UpdateFlags_Button              = (uint64_t)1 << 39,
 
-        UpdateFlags_Mesh_Custom_Textures   = (uint64_t)1 << 39,
-        UpdateFlags_Water_Custom_Textures  = (uint64_t)1 << 40,
-        UpdateFlags_UI_Custom_Textures     = (uint64_t)1 << 41,
-        UpdateFlags_Sky_Custom_Textures    = (uint64_t)1 << 42,
-        UpdateFlags_Points_Custom_Textures = (uint64_t)1 << 43,
-        UpdateFlags_Lines_Custom_Textures  = (uint64_t)1 << 44,
+        UpdateFlags_Mesh_Custom_Textures   = (uint64_t)1 << 40,
+        UpdateFlags_Water_Custom_Textures  = (uint64_t)1 << 41,
+        UpdateFlags_UI_Custom_Textures     = (uint64_t)1 << 42,
+        UpdateFlags_Sky_Custom_Textures    = (uint64_t)1 << 43,
+        UpdateFlags_Points_Custom_Textures = (uint64_t)1 << 44,
+        UpdateFlags_Lines_Custom_Textures  = (uint64_t)1 << 45,
+  
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };
@@ -127,7 +130,8 @@ namespace doriax::editor{
         // position in EntityBundle's in-memory component override mask.
         ReflectionProbeComponent,
         WaterComponent,
-        WaterExclusionComponent
+        WaterExclusionComponent,
+        SkinComponent
     };
 
     enum class PropertyType{
@@ -183,6 +187,8 @@ namespace doriax::editor{
         static uint64_t getComponentStructuralUpdateFlags(ComponentType compType);
 
         static void updateEntity(EntityRegistry* registry, Entity entity, uint64_t updateFlags);
+        static void updateSpriteBatch(EntityRegistry* registry, Entity entity);
+        static void updateSpriteBatches(EntityRegistry* registry);
 
         static void copyComponent(EntityRegistry* sourceRegistry, Entity sourceEntity,
                                 EntityRegistry* targetRegistry, Entity targetEntity,

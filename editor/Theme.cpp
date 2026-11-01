@@ -29,6 +29,17 @@ ImVec4 doriax::editor::Theme::Colors::NestedHeaderHovered;
 ImVec4 doriax::editor::Theme::Colors::NestedHeaderActive;
 ImVec4 doriax::editor::Theme::Colors::DisabledGreenText;
 ImVec4 doriax::editor::Theme::Colors::ChildSceneText;
+ImVec4 doriax::editor::Theme::Colors::RuntimeEntityText;
+ImVec4 doriax::editor::Theme::Colors::CameraPreviewText;
+ImVec4 doriax::editor::Theme::Colors::SearchMatchText;
+ImVec4 doriax::editor::Theme::Colors::LockedBundleText;
+ImVec4 doriax::editor::Theme::Colors::BundleRootText;
+ImVec4 doriax::editor::Theme::Colors::NestedBundleRootText;
+ImVec4 doriax::editor::Theme::Colors::BundleChildText;
+ImVec4 doriax::editor::Theme::Colors::TreeMarkText;
+ImVec4 doriax::editor::Theme::Colors::ChildSceneUnloadedText;
+ImVec4 doriax::editor::Theme::Colors::ChildSceneEyeHovered;
+ImVec4 doriax::editor::Theme::Colors::ChildSceneEyeActive;
 ImVec4 doriax::editor::Theme::Colors::SubSelectionText;
 ImVec4 doriax::editor::Theme::Colors::WarningText;
 
@@ -113,6 +124,17 @@ void doriax::editor::Theme::apply() {
                                        ImVec4(0.38f, 0.72f, 0.46f, 1.00f),
                                        0.58f);
     Colors::ChildSceneText = ImVec4(0.55f, 0.80f, 0.85f, 1.0f); // Soft teal for child scenes
+    Colors::RuntimeEntityText = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);
+    Colors::CameraPreviewText = ImVec4(1.0f, 0.86f, 0.2f, 1.0f);
+    Colors::SearchMatchText = ImVec4(1.0f, 1.0f, 0.5f, 1.0f);
+    Colors::LockedBundleText = ImVec4(0.67f, 0.74f, 0.85f, 0.95f);
+    Colors::BundleRootText = ImVec4(1.0f, 0.9f, 0.8f, 1.0f);
+    Colors::NestedBundleRootText = ImVec4(0.4f, 0.7f, 1.0f, 1.0f);
+    Colors::BundleChildText = ImVec4(0.62f, 0.82f, 1.0f, 0.82f);
+    Colors::TreeMarkText = ImVec4(0.70f, 0.70f, 0.70f, 1.0f);
+    Colors::ChildSceneUnloadedText = ImVec4(0.5f, 0.5f, 0.5f, 0.5f);
+    Colors::ChildSceneEyeHovered = ImVec4(1.0f, 1.0f, 1.0f, 0.1f);
+    Colors::ChildSceneEyeActive = ImVec4(1.0f, 1.0f, 1.0f, 0.2f);
     Colors::SubSelectionText = ImVec4(1.00f, 0.60f, 0.00f, 1.00f);
     Colors::WarningText = ImVec4(1.00f, 0.85f, 0.40f, 1.00f);
 

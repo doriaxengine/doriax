@@ -4,6 +4,7 @@
 #include "AppSettings.h"
 #include "Out.h"
 #include "ai/SecretStore.h"
+#include "util/TextEncoding.h"
 #include <fstream>
 #include <algorithm>
 #include <cmath>
@@ -149,7 +150,7 @@ bool AppSettings::loadSettings() {
             return false;
         }
         
-        settingsData = YAML::LoadFile(configFilePath.string());
+        settingsData = TextEncoding::loadYamlFile(configFilePath);
         
         // Load last project path
         if (settingsData["last_project_path"]) {
@@ -706,7 +707,7 @@ YAML::Node loadLocalSettings(const std::filesystem::path& projectFile) {
         return YAML::Node();
     }
     try {
-        YAML::Node node = YAML::LoadFile(file.string());
+        YAML::Node node = TextEncoding::loadYamlFile(file);
         return node.IsMap() ? node : YAML::Node();
     } catch (const std::exception& e) {
         Out::warning("Ignoring unreadable local build settings \"%s\": %s", file.string().c_str(), e.what());

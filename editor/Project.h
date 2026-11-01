@@ -114,6 +114,11 @@ namespace doriax::editor{
         std::set<Entity> playStateEntities;
         SceneMaxValues maxValues;
         std::set<ShaderKey> shaderKeys;
+        // Keys may miss variants: file changed outside the editor, or saved before all of it loaded
+        bool shaderKeysStale = false;
+        // Content hash of the bundle version its instances hold, by bundle path: the scene
+        // stores only their roots, and the file can change while it is open
+        std::map<std::string, std::string> bundleHashes;
         std::vector<ChildSceneRef> childScenes;
         std::vector<SceneScriptSource> cppScripts;
         std::vector<BundleSceneInfo> bundles;
@@ -509,7 +514,8 @@ namespace doriax::editor{
         static SceneResources collectResourcesInRegistry(EntityRegistry* registry);
         // Same for Lua script entries; C++ ones are build inputs kept project-relative.
         static bool visitLuaPathsInRegistry(EntityRegistry* registry, const std::function<bool(std::string&)>& transform);
-        bool visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform);
+        // Unwritten files go in failed
+        bool visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed = nullptr);
         // Runs an asset transform over every scene, entity bundle and material file,
         // marking what changed.
         void applyAssetPathChange(const std::function<bool(std::string&)>& transform);
@@ -523,13 +529,14 @@ namespace doriax::editor{
 
         void destroyPlayCreatedEntities(SceneProject* sceneProject);
         void finalizeStart(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene>& runtimeScenes);
-        void finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& retiredShaderKeys);
+        void finalizeStop(SceneProject* mainSceneProject, std::vector<PlayRuntimeScene> runtimeScenes, const std::map<uint32_t, std::set<ShaderKey>>& playShaderKeys);
         void runPlayStartup(const std::shared_ptr<PlaySession>& session, uint32_t sceneId, const LocalBuildSettings& buildSettings);
         void failPlayStartup(const std::shared_ptr<PlaySession>& session, uint32_t sceneId, const std::string& message,
                      const std::string& alertTitle = "", const std::string& alertMessage = "");
         bool saveSceneFile(SceneProject* sceneProject, const std::filesystem::path& path, bool stopTransientPreviews = true);
         bool saveSceneForPlayStartup(SceneProject* sceneProject);
         bool saveLoadedSceneOnStop(SceneProject* loadedSceneProject, SceneProject* editorScene, bool keepModified);
+        bool saveSceneShaderKeys(const SceneProject* sceneProject);
         bool writeSceneToPath(uint32_t sceneId, const std::filesystem::path& path, bool stopTransientPreviews = true);
         void writeSceneSource(const SceneProject* sceneProject);
         bool hasMissingSceneSources() const;
@@ -586,7 +593,9 @@ namespace doriax::editor{
 
         // Live-derive the shader keys a scene needs from its current components
         // (used at scene save and by the Export window's pre-populated list).
-        void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys) const;
+        void collectSceneShaderKeys(const SceneProject* sceneProject, std::set<ShaderKey>& shaderKeys, bool includeRuntimeEntities = false) const;
+        std::string hashShaderKeySources(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
+        bool hasStaleShaderKeys(const SceneProject* sceneProject, const YAML::Node& sceneNode) const;
 
         std::string getName() const;
         void setName(std::string name);
@@ -660,8 +669,8 @@ namespace doriax::editor{
         std::filesystem::path normalizeToLuaRelative(const std::filesystem::path& path) const;
 
         // Applies new roots: referenced files outside them are moved in keeping their
-        // layout, then every stored reference is rewritten and saved.
-        void changeAssetRoots(const std::filesystem::path& newAssetsDir, const std::filesystem::path& newLuaDir);
+        // layout, then every stored reference is rewritten and saved. False with error on failure.
+        bool changeAssetRoots(const std::filesystem::path& newAssetsDir, const std::filesystem::path& newLuaDir, std::string* error = nullptr);
 
         void setPackNativeResources(bool enabled);
         bool shouldPackNativeResources() const;
@@ -802,6 +811,8 @@ namespace doriax::editor{
 
         std::vector<std::filesystem::path> findSceneFiles() const;
         uint32_t findSceneByPath(const std::filesystem::path& filepath) const;
+        // Another scene saved at filepath, or nullptr
+        const SceneProject* findOtherSceneUsingFile(const std::filesystem::path& filepath, uint32_t sceneId) const;
 
         bool loadChildSceneInline(uint32_t childSceneId);
         void unloadChildSceneInline(uint32_t childSceneId);

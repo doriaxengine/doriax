@@ -5,6 +5,7 @@
 #include "SceneSaveDialog.h"
 #include "external/IconsFontAwesome6.h"
 #include "Backend.h"
+#include "util/FileUtils.h"
 #include "util/Util.h"
 #include <algorithm>
 #include <utility>
@@ -15,7 +16,8 @@ namespace editor {
 
 void SceneSaveDialog::open(const fs::path& projectPath, const fs::path& initialDirectory, const std::string& defaultName,
         std::function<void(const fs::path&)> onSave,
-        std::function<void()> onCancel) {
+        std::function<void()> onCancel,
+        std::function<std::string(const fs::path&)> fileOwner) {
     m_isOpen = true;
     m_projectPath = projectPath;
 
@@ -38,6 +40,7 @@ void SceneSaveDialog::open(const fs::path& projectPath, const fs::path& initialD
     m_selectedPath = selectedPath.lexically_normal();
     m_onSave = onSave;
     m_onCancel = onCancel;
+    m_fileOwner = fileOwner;
 
     // Set default filename
     strncpy(m_fileNameBuffer, defaultName.c_str(), sizeof(m_fileNameBuffer) - 1);
@@ -116,7 +119,7 @@ void SceneSaveDialog::show() {
         ImGui::InputText("##fileName", m_fileNameBuffer, sizeof(m_fileNameBuffer));
 
         // Show current selected directory path
-        ImGui::TextWrapped("Save to: %s", fs::relative(m_selectedPath, m_projectPath).string().c_str());
+        ImGui::TextWrapped("Save to: %s", FileUtils::pathToUtf8(fs::relative(m_selectedPath, m_projectPath)).c_str());
 
         // Get filename as string for validation and processing
         std::string fileName = m_fileNameBuffer;
@@ -130,15 +133,21 @@ void SceneSaveDialog::show() {
         }
 
         // Validation
-        fs::path fullPath = m_selectedPath / fileName;
+        fs::path fullPath = m_selectedPath / FileUtils::pathFromUtf8(fileName);
         // ".." or an absolute path in the name would leave the folders listed above
         bool insideProject = Util::isInsidePath(fullPath, m_projectPath);
-        bool canSave = !fileName.empty() && insideProject;
+        bool validName = FileUtils::isNarrowPath(fullPath);
+        std::string owner = (m_fileOwner && insideProject && validName) ? m_fileOwner(fullPath) : std::string();
+        bool canSave = !fileName.empty() && insideProject && validName && owner.empty();
         std::error_code ec;
         bool fileExists = insideProject && fs::exists(fullPath, ec);
 
         if (!fileName.empty() && !insideProject) {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Scene files must be inside the project folder.");
+        } else if (!validName) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "The name has characters the editor cannot save on this system.");
+        } else if (!owner.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "This file belongs to scene '%s'. Choose another name.", owner.c_str());
         } else if (fileExists) {
             ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: File already exists and will be overwritten!");
         }
@@ -155,6 +164,7 @@ void SceneSaveDialog::show() {
         if (ImGui::Button("Save", ImVec2(120, 0))) {
             auto onSave = std::exchange(m_onSave, nullptr);
             m_onCancel = nullptr;
+            m_fileOwner = nullptr;
             if (onSave) {
                 onSave(fullPath);
             }
@@ -195,6 +205,7 @@ void SceneSaveDialog::cancel() {
 
     auto onCancel = std::exchange(m_onCancel, nullptr);
     m_onSave = nullptr;
+    m_fileOwner = nullptr;
     if (onCancel) {
         onCancel();
     }
@@ -206,7 +217,7 @@ void SceneSaveDialog::displayDirectoryTree(const fs::path& rootPath, const fs::p
 
         // Collect directories first to sort them
         for (const auto& entry : fs::directory_iterator(currentPath)) {
-            if (entry.is_directory()) {
+            if (entry.is_directory() && FileUtils::isNarrowPath(entry.path())) {
                 subDirs.push_back(entry.path());
             }
         }
@@ -252,7 +263,7 @@ void SceneSaveDialog::displayDirectoryTree(const fs::path& rootPath, const fs::p
             }
 
             // Get directory name relative to project path for display
-            std::string displayName = dirPath.filename().string();
+            std::string displayName = FileUtils::pathToUtf8(dirPath.filename());
 
             // Create node label with empty name - we'll draw icon and text separately
             bool nodeOpen = ImGui::TreeNodeEx("##dir", nodeFlags);

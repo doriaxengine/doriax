@@ -37,7 +37,7 @@ namespace doriax {
         bool createFramebufferTexture(
                 TextureType type, bool depth, bool shadowMap, int width, int height,
                 TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV,
-                ColorFormat colorFormat = ColorFormat::RGBA);
+                ColorFormat colorFormat = ColorFormat::RGBA, int numMipmaps = 1);
 
         bool createDynamicTexture(const std::string& label, int width, int height);
         void updateTexture(const void* data, size_t size);
@@ -54,6 +54,13 @@ namespace doriax {
         static bool isViewValid(uint32_t viewId);
 
         bool isCreated();
+
+        // of the data it was created from, which can be released by now
+        void setTransparent(bool transparent);
+        bool isTransparent() const;
+
+    private:
+        bool transparent = false;
     };
 }
 

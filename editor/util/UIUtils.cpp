@@ -3,6 +3,7 @@
 
 #include "UIUtils.h"
 #include "App.h"
+#include "FileUtils.h"
 #include "external/IconsFontAwesome6.h"
 #include "window/widget/InputTextContextMenu.h"
 #include "imgui_internal.h"
@@ -14,6 +15,7 @@ namespace doriax::editor {
 
 // Symlinks are skipped so browsing cannot leave the tree it started in.
 static bool isBrowsableDir(const std::filesystem::directory_entry& entry) {
+    if (!FileUtils::isNarrowPath(entry.path())) return false;
     std::string name = entry.path().filename().string();
     return !name.empty() && name[0] != '.' && entry.is_directory() && !entry.is_symlink();
 }
@@ -29,7 +31,7 @@ void UIUtils::directoryTreeBrowser(const std::filesystem::path& currentPath,
         std::sort(subDirs.begin(), subDirs.end());
 
         for (const auto& dirPath : subDirs) {
-            std::string name = dirPath.filename().string();
+            std::string name = FileUtils::pathToUtf8(dirPath.filename());
 
             ImGui::PushID(dirPath.string().c_str());
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |

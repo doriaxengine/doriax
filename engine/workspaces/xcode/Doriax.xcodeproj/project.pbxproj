@@ -31,6 +31,7 @@
 		175DCCB8300FA1F2008C19EC /* ReflectionProbe.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 175DCCB5300FA1F2008C19EC /* ReflectionProbe.cpp */; };
 		17C4A1B1310A0001008C19EC /* WaterComponent.h in Headers */ = {isa = PBXBuildFile; fileRef = 17C4A1B0310A0001008C19EC /* WaterComponent.h */; };
 		17C4A1B8310A0001008C19EC /* WaterExclusionComponent.h in Headers */ = {isa = PBXBuildFile; fileRef = 17C4A1B7310A0001008C19EC /* WaterExclusionComponent.h */; };
+		17D2B5A2310A0001008C19EC /* SkinComponent.h in Headers */ = {isa = PBXBuildFile; fileRef = 17D2B5A1310A0001008C19EC /* SkinComponent.h */; };
 		17C4A1B4310A0001008C19EC /* Water.h in Headers */ = {isa = PBXBuildFile; fileRef = 17C4A1B2310A0001008C19EC /* Water.h */; };
 		17C4A1B5310A0001008C19EC /* Water.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 17C4A1B3310A0001008C19EC /* Water.cpp */; };
 		17C4A1B6310A0001008C19EC /* Water.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 17C4A1B3310A0001008C19EC /* Water.cpp */; };
@@ -1467,6 +1468,7 @@
 		17C4A1B2310A0001008C19EC /* Water.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Water.h; sourceTree = "<group>"; };
 		17C4A1B3310A0001008C19EC /* Water.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = Water.cpp; sourceTree = "<group>"; };
 		17C4A1B7310A0001008C19EC /* WaterExclusionComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WaterExclusionComponent.h; sourceTree = "<group>"; };
+		17D2B5A1310A0001008C19EC /* SkinComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SkinComponent.h; sourceTree = "<group>"; };
 		17C4A1B9310A0001008C19EC /* WaterExclusion.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WaterExclusion.h; sourceTree = "<group>"; };
 		17C4A1BA310A0001008C19EC /* WaterExclusion.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = WaterExclusion.cpp; sourceTree = "<group>"; };
 		175DCCB9300FA22F008C19EC /* Export.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Export.h; sourceTree = "<group>"; };
@@ -2134,6 +2136,7 @@
 		7162FC8C25962A0E0075B97D /* SokolShader.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SokolShader.cpp; sourceTree = "<group>"; };
 		7162FC8D25962A0E0075B97D /* SokolTexture.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SokolTexture.h; sourceTree = "<group>"; };
 		7162FC8E25962A0E0075B97D /* SokolBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SokolBuffer.h; sourceTree = "<group>"; };
+		71D5C0A1B2C3D4E5F6A7B8C9 /* SokolResourceCache.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SokolResourceCache.h; sourceTree = "<group>"; };
 		7162FC8F25962A0E0075B97D /* SokolTexture.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SokolTexture.cpp; sourceTree = "<group>"; };
 		7162FC9025962A0E0075B97D /* SokolShader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SokolShader.h; sourceTree = "<group>"; };
 		7162FC9125962A0E0075B97D /* SokolCamera.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SokolCamera.h; sourceTree = "<group>"; };
@@ -4185,6 +4188,7 @@
 				71E5450E284D5BDF00C68FAB /* ScaleTracksComponent.h */,
 				711BFE392E6E5AE500677D11 /* ScriptComponent.h */,
 				71033D652BD1A7D200D81FB5 /* ScrollbarComponent.h */,
+				17D2B5A1310A0001008C19EC /* SkinComponent.h */,
 				71CC839126B8C49B00EEBB93 /* SkyComponent.h */,
 				17C4A1B0310A0001008C19EC /* WaterComponent.h */,
 				17C4A1B7310A0001008C19EC /* WaterExclusionComponent.h */,
@@ -4353,6 +4357,7 @@
 				71CC83A826B8D54800EEBB93 /* SokolFramebuffer.h */,
 				7162FC8925962A0E0075B97D /* SokolObject.cpp */,
 				7162FC8A25962A0E0075B97D /* SokolObject.h */,
+				71D5C0A1B2C3D4E5F6A7B8C9 /* SokolResourceCache.h */,
 				7162FC9525962A0E0075B97D /* SokolCamera.cpp */,
 				7162FC9125962A0E0075B97D /* SokolCamera.h */,
 				7162FC8C25962A0E0075B97D /* SokolShader.cpp */,
@@ -5768,6 +5773,7 @@
 				175DCCB3300FA1C2008C19EC /* ReflectionProbeComponent.h in Headers */,
 				17C4A1B1310A0001008C19EC /* WaterComponent.h in Headers */,
 				17C4A1B8310A0001008C19EC /* WaterExclusionComponent.h in Headers */,
+				17D2B5A2310A0001008C19EC /* SkinComponent.h in Headers */,
 				17A4DD6D2F5E4F8800C1BFC6 /* HybridArray.h in Headers */,
 				713E581527BA9D1300376680 /* PolygonComponent.h in Headers */,
 				7157764E2B050C230049C970 /* FontPool.h in Headers */,

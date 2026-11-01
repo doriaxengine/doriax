@@ -9,10 +9,11 @@ using namespace doriax;
 TextureRender::TextureRender(){
  }
 
-TextureRender::TextureRender(const TextureRender& rhs) : backend(rhs.backend) { }
+TextureRender::TextureRender(const TextureRender& rhs) : backend(rhs.backend), transparent(rhs.transparent) { }
 
 TextureRender& TextureRender::operator=(const TextureRender& rhs) { 
     backend = rhs.backend;
+    transparent = rhs.transparent;
     return *this; 
 }
 
@@ -43,9 +44,9 @@ bool TextureRender::createTextureCubeWithMips(
 bool TextureRender::createFramebufferTexture(
                 TextureType type, bool depth, bool shadowMap, int width, int height,
                 TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV,
-                ColorFormat colorFormat){
+                ColorFormat colorFormat, int numMipmaps){
     if (Engine::isViewLoaded() && !isCreated())
-        return backend.createFramebufferTexture(type, depth, shadowMap, width, height, minFilter, magFilter, wrapU, wrapV, colorFormat);
+        return backend.createFramebufferTexture(type, depth, shadowMap, width, height, minFilter, magFilter, wrapU, wrapV, colorFormat, numMipmaps);
     else
         return false;
 }
@@ -93,4 +94,12 @@ bool TextureRender::isViewValid(uint32_t viewId){
 
 bool TextureRender::isCreated(){
     return backend.isCreated();
+}
+
+void TextureRender::setTransparent(bool transparent){
+    this->transparent = transparent;
+}
+
+bool TextureRender::isTransparent() const{
+    return transparent;
 }

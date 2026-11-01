@@ -4,6 +4,7 @@
 #include "ShaderForkDialog.h"
 
 #include "external/IconsFontAwesome6.h"
+#include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
 #include "util/UIUtils.h"
 #include "util/Util.h"
@@ -75,7 +76,7 @@ const ShaderForkDialog::ForkPreview& ShaderForkDialog::refreshPreview(const std:
 
     auto relative = [this](const std::filesystem::path& absolute) {
         std::error_code ec;
-        return std::filesystem::relative(absolute, m_projectPath, ec).generic_string();
+        return FileUtils::pathToGenericUtf8(std::filesystem::relative(absolute, m_projectPath, ec));
     };
 
     m_preview = {};

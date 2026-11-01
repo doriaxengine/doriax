@@ -60,7 +60,7 @@ enum class ApprovalMode {
 
 struct Settings {
     ProviderId provider = ProviderId::OpenAI;
-    std::string model = "gpt-4.1";
+    std::string model = "gpt-5.6-terra";
     // Which custom endpoint is selected when provider == OpenAICompatible.
     std::string endpointId;
     std::vector<CustomEndpoint> customEndpoints;
@@ -88,9 +88,10 @@ struct ToolCall {
     std::string id;
     std::string name;
     Json arguments = Json::object();
-    // Opaque Gemini thought signature (REST: thoughtSignature). Required on the
-    // first functionCall part of each model step for Gemini 3 / thinking models;
-    // must be echoed verbatim on the next request.
+    // Opaque Gemini thought signature (REST: thoughtSignature, OpenAI-compatible:
+    // extra_content.google.thought_signature). Required on the first functionCall
+    // part of each model step for Gemini 3 / thinking models; must be echoed
+    // verbatim on the next request.
     std::string thoughtSignature;
 };
 
@@ -124,8 +125,8 @@ struct ChatMessage {
     ChatRole role = ChatRole::User;
     std::string content;
 
-    // Model id active when a user message was sent; the transcript uses it to
-    // show a divider when the model changes mid-conversation.
+    // Model id active when a user message was sent, or that wrote an assistant
+    // message. The transcript shows a divider when it changes between user messages.
     std::string model;
 
     // Inline user-provided files. Kept in history so multimodal context remains
@@ -136,10 +137,12 @@ struct ChatMessage {
     // history so follow-up requests can present a well-formed tool round-trip.
     std::vector<ToolCall> toolCalls;
 
-    // Anthropic thinking / redacted_thinking content blocks (with signature).
-    // Claude Sonnet 5+ enables adaptive thinking by default; these must be echoed
-    // verbatim ahead of tool_use when continuing a tool-use turn.
-    std::vector<Json> thinkingBlocks;
+    // Anthropic content blocks as returned, sent back unchanged.
+    std::vector<Json> anthropicContent;
+
+    // Chat Completions reasoning_content / reasoning_details, sent back to the
+    // model that wrote them.
+    Json reasoningFields = Json::object();
 
     // Set on tool-result messages (role == Tool).
     std::string toolCallId;
@@ -169,8 +172,10 @@ struct ProviderRequest {
 struct ProviderResponse {
     std::string text;
     std::vector<ToolCall> toolCalls;
-    // Anthropic thinking / redacted_thinking blocks from the model turn.
-    std::vector<Json> thinkingBlocks;
+    // Anthropic content blocks from the model turn.
+    std::vector<Json> anthropicContent;
+    // Chat Completions reasoning fields from the model turn.
+    Json reasoningFields = Json::object();
     std::string error;
     // Provider error metadata (for example OpenAI's "insufficient_quota" or
     // Gemini's numeric code plus "RESOURCE_EXHAUSTED" status). Keeping these

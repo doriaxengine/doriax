@@ -56,7 +56,8 @@ namespace doriax{
         // keep appending: the ShaderKey stores this enum and validates cached .sdat
         POSTPROCESS, // fullscreen user post-process pass
         WATER,      // water surface displaced by Gerstner waves
-        UNDERWATER  // fullscreen fade of the scene seen from inside a water
+        UNDERWATER, // fullscreen fade of the scene seen from inside a water
+        PROBE_FILTER // reflection probe capture prefiltered into roughness mip levels
     };
 
     enum class AttributeType{
@@ -150,7 +151,8 @@ namespace doriax{
         BLIT_FS_PARAMS,
         WATER_VS_PARAMS,
         WATER_FS_PARAMS,
-        UNDERWATER_FS_PARAMS
+        UNDERWATER_FS_PARAMS,
+        PROBE_FILTER_FS_PARAMS
     };
 
     enum class StorageBufferType{
@@ -190,7 +192,8 @@ namespace doriax{
         WATERNORMAL,         // water ripple normal map
         WATERREFLECTION,     // water planar reflection camera target
         WATERREFRACTION,     // copy of the scene drawn before the water
-        WATEREXCLUSION       // hull maps of the volumes keeping the water out
+        WATEREXCLUSION,      // hull maps of the volumes keeping the water out
+        PROBESOURCE          // reflection probe capture read by the prefilter
     };
 
     enum class TextureType {
@@ -253,7 +256,8 @@ namespace doriax{
         PIP_RTT_NODEPTH = 1 << 7,
         PIP_ZPREPASS    = 1 << 8, // depth only, into the swapchain color pass ahead of its opaque draws
         PIP_ZPREPASS_RTT = 1 << 9, // same into an offscreen color pass
-        PIP_RTT_NOBLEND = 1 << 10 // offscreen, replaces the color without blending
+        PIP_RTT_NOBLEND = 1 << 10, // offscreen, replaces the color without blending
+        PIP_RTT_COLORONLY = 1 << 11 // same into a pass with no depth attachment
     };
 
     //-------Start shader definition--------

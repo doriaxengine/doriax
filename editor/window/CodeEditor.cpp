@@ -5,6 +5,7 @@
 
 #include "Backend.h"
 #include "AppSettings.h"
+#include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
 #include "util/ScriptParser.h"
 #include "util/Util.h"
@@ -462,6 +463,9 @@ void collectProjectSources(const fs::path& projectPath, const std::unordered_set
     for (fs::recursive_directory_iterator it(projectPath, fs::directory_options::skip_permission_denied, ec), end;
          it != end && !ec; it.increment(ec)) {
         const fs::directory_entry& entry = *it;
+        if (!editor::FileUtils::isNarrowPath(entry.path())) {
+            continue;
+        }
 
         // '.doriax' holds the engine copy and the generated resources, 'build' the artifacts
         const std::string filename = entry.path().filename().string();

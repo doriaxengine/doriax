@@ -391,6 +391,7 @@ void Engine::setCanvasSize(int canvasWidth, int canvasHeight){
 
     if (viewLoaded){
         calculateCanvas();
+        updateCameraSizes();
     }else{
         // Scenes and scripts can start before the view exists; the screen refines this once it loads
         Engine::canvasWidth = canvasWidth;
@@ -415,6 +416,7 @@ void Engine::setScalingMode(Scaling scalingMode){
 
     if (viewLoaded){
         calculateCanvas();
+        updateCameraSizes();
     }
 }
 
@@ -1087,11 +1089,15 @@ void Engine::systemViewChanged(){
         }
     }
 
+    updateCameraSizes();
+
+    onViewChanged.call();
+}
+
+void Engine::updateCameraSizes(){
     for (Scene* scene : getScenesSnapshot()){
         scene->updateCameraSize();
     }
-
-    onViewChanged.call();
 }
 
 void Engine::systemDraw(){

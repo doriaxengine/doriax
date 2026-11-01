@@ -130,8 +130,8 @@ Json propertyValueFields(std::initializer_list<std::pair<const char*, Json>> ext
         {"vector2_value", vector2Schema("Vector2 property value")},
         {"vector3_value", vector3Schema("Vector3 or Color3 property value")},
         {"vector4_value", vector4Schema("Vector4 or Color4 property value")},
-        {"quat_value", quaternionSchema("Quaternion property value")},
-        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
+        {"quat_value", quaternionSchema("Quaternion property value, not Euler angles")},
+        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'assets/ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
         {"entity_value", integerSchema("Entity id for Entity or EntityReference properties")},
         {"entity_scene_id", integerSchema("Scene id for EntityReference properties, only for an entity in another scene. Omit for the same scene")},
         {"bursts_value", {
@@ -167,6 +167,13 @@ Json propertyValueFields(std::initializer_list<std::pair<const char*, Json>> ext
 
 const std::vector<ToolDefinition>& cachedTools() {
     static const std::vector<ToolDefinition> definitions = {
+        {
+            "get_editor_guidance",
+            "Return the editor's complete working rules: the server instructions in full, plus the rules for physics, Lua and C++ scripts, shaders and project builds. Call it once before your first change in a session, since some clients show only the start of the server instructions, or none of them.",
+            objectSchema({}),
+            true,
+            true
+        },
         {
             "get_project_summary",
             "Read a compact summary of the current project, selected scene, selected entities, resource roots, and cxx_standard (" + cxxStandardList() + ").",
@@ -249,7 +256,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"entity_id", integerSchema("Entity id")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
                 {"position", vector3Schema("Optional local position")},
-                {"rotation", quaternionSchema("Optional local rotation quaternion")},
+                {"rotation", quaternionSchema("Optional local rotation quaternion, not Euler angles")},
                 {"scale", vector3Schema("Optional local scale")}
             }),
             false
@@ -365,7 +372,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"shape_type", stringSchema("Collision shape: box, sphere, capsule, tapered_capsule, cylinder, convex_hull, or mesh. convex_hull and mesh take their geometry from the entity's mesh and ignore all size arguments; convex_hull is exact and cheap for boxy level geometry, mesh suits static concave geometry")},
                 {"fit_to_mesh", boolSchema("Size the shape from the entity mesh's local bounds and centre it on them. Defaults to true; any explicit size argument overrides the fitted value for that axis. Set false to keep the shape defaults")},
                 {"position", vector3Schema("Optional shape local position in entity-local units. Overrides the centre chosen by fit_to_mesh")},
-                {"rotation", quaternionSchema("Optional shape local rotation")},
+                {"rotation", quaternionSchema("Optional shape local rotation quaternion, not Euler angles")},
                 {"width", numberSchema("Box width in mesh-local units, i.e. before the entity's transform scale, which the engine applies itself; defaults to 1")},
                 {"height", numberSchema("Box height in mesh-local units; defaults to 1")},
                 {"depth", numberSchema("Box depth in mesh-local units; defaults to 1")},
@@ -502,7 +509,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "add_child_scene",
-            "Add a child scene reference through AddChildSceneCmd.",
+            "Add a child scene reference through AddChildSceneCmd. The child draws on top of the parent with its own camera, which is where a HUD or an overlay menu belongs.",
             objectSchema({
                 {"scene_id", integerSchema("Parent scene id. Omit to use selected scene")},
                 {"child_scene_id", integerSchema("Child scene id")},
@@ -607,7 +614,7 @@ const std::vector<ToolDefinition>& cachedTools() {
             "Copy an existing local file into the project through CopyFileCmd. No shell is used.",
             objectSchema({
                 {"source_path", stringSchema("Absolute local file path to import")},
-                {"target_dir", stringSchema("Safe project-relative destination directory")}
+                {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
             }, {"source_path", "target_dir"}),
             false
         },
@@ -642,7 +649,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"entity_id", integerSchema("Mesh entity id")},
                 {"entity_name", stringSchema("Mesh entity name, used only when entity_id is omitted")},
                 {"submesh_index", integerSchema("Submesh index. Defaults to 0")},
-                {"target_dir", stringSchema("Safe project-relative directory for the material file")}
+                {"target_dir", stringSchema("Safe project-relative directory for the material file, or . for the project root")}
             }, {"target_dir"}),
             false
         },
@@ -735,8 +742,14 @@ const std::vector<ToolDefinition>& cachedTools() {
             false
         },
         {
+            "check_cpp_build_tools",
+            "Check whether this machine has what C++ scripts need to build: CMake and a C++ compiler this editor can load, from the choice in Editor Settings > Desktop. It only finds the tools; the first play after writing a C++ script proves they compile.",
+            objectSchema({}),
+            true
+        },
+        {
             "create_script",
-            "Create a Lua or C++ script file from a minimal template, attach it to an entity, and update ScriptComponent. Lua scripts are returned tables with init(), self.scene, and self.entity. C++ scripts use flat headers (\"Mesh.h\", \"ScriptBase.h\"); for mesh/cube behavior prefer cpp_subclass extending Mesh and unregister engine events in destructors.",
+            "Create a Lua or C++ script file from a minimal template, attach it to an entity, and update ScriptComponent. Keep the language a project's scripts already use; in one with none yet, prefer C++ once check_cpp_build_tools finds the tools. Lua scripts are returned tables with init(), self.scene, and self.entity. C++ scripts use flat headers (\"Mesh.h\", \"ScriptBase.h\"); for mesh/cube behavior prefer cpp_subclass extending Mesh and unregister engine events in destructors.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id")},
@@ -823,11 +836,20 @@ const std::vector<ToolDefinition>& cachedTools() {
             false
         },
         {
+            "set_project_asset_dirs",
+            "Change the project's assets and Lua directories (Project Settings > Directories); a field left out keeps its value. Asset paths in scenes are relative to the assets directory and require() names to the Lua directory, and an export ships what is inside them. The editor moves every file the project references into the new directory, keeping its layout, and rewrites the references in all scenes, bundles and materials, saving them. Files nothing references, such as ones scripts load by path or Lua modules loaded with require, stay where they are. Read the current values from get_project_summary (assets_dir, lua_dir).",
+            objectSchema({
+                {"assets_dir", stringSchema("Project-relative assets directory, e.g. assets, or . for the project root. Created when missing")},
+                {"lua_dir", stringSchema("Project-relative Lua directory, e.g. scripts, or . for the project root. Created when missing")}
+            }),
+            false
+        },
+        {
             "set_project_cxx_standard",
             "Set the project's C++ language standard (" + cxxStandardList() + "). The next play or export builds with it, and an export compiles the engine with it too. Read the current value from get_project_summary (cxx_standard). Do not edit CMAKE_CXX_STANDARD in the generated CMakeLists.txt.",
             objectSchema({
-                {"cxx_standard", {{"type", "integer"}, {"enum", cxxStandards},
-                    {"description", "C++ standard year: " + cxxStandardList()}}}
+                // Gemini rejects integer enums.
+                {"cxx_standard", integerSchema("C++ standard year: " + cxxStandardList())}
             }, {"cxx_standard"}),
             false
         },
@@ -842,7 +864,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "create_bundle_from_entity",
-            "Create a .bundle from an entity hierarchy through CreateEntityBundleCmd.",
+            "Create a .bundle from an entity hierarchy through CreateEntityBundleCmd. The hierarchy becomes the bundle's first instance; place more copies, in this scene or others, with import_bundle_instance.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Root entity id")},
@@ -925,7 +947,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_export_shaders",
-            "Edit the shader variants every export adds to or leaves out of what the saved scenes use (project.yaml export.shaderAdditions/shaderExclusions, the overrides the Export window lists), and return both lists. An export ships only the shaders of each scene's saved state, so a variant that appears only at runtime, such as a script toggling Scene.ssaoEnabled or ssrEnabled, must be added here or its meshes fail to load in the exported game. A spec is type or type:properties with a decimal or 0x property mask, as scene files and the shaders command write them: mesh:4184, ssao, gbuffer:12. A forked shader adds its project-relative base path after @: mesh:4184@shaders/myMesh. A built-in lit mesh variant (property bit 3) ships with its bit 28 twin, so every field applies to both. Call with no arguments to read the lists.",
+            "Edit the shader variants every export adds to or leaves out of what the saved scenes use (project.yaml export.shaderAdditions/shaderExclusions, the overrides the Export window lists), and return both lists. An export ships only the shaders of each scene's saved state, so a variant that appears only at runtime, such as a script toggling Scene.ssaoEnabled or ssrEnabled, must be added here or its meshes fail to load in the exported game. A spec is type or type:properties with a decimal or 0x property mask or property names, as scene files and the shaders command write them: mesh:4184, mesh:Uv1,Nor, ssao, gbuffer:12. A forked shader adds its project-relative base path after @: mesh:4184@shaders/myMesh. A built-in lit mesh variant (property bit 3) ships with its bit 28 twin, so every field applies to both. Call with no arguments to read the lists.",
             objectSchema({
                 {"add", {{"type", "array"}, {"description", "Specs to add to the additions (taken out of the exclusions)"}, {"items", {{"type", "string"}}}}},
                 {"remove", {{"type", "array"}, {"description", "Specs to take out of the additions"}, {"items", {{"type", "string"}}}}},
@@ -1148,7 +1170,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "create_project",
-            "Create a new project in an empty or new directory and open it in place of the current one, which must have no unsaved changes. It starts with an unsaved 3D scene named New Scene. Later calls wait until it has loaded.",
+            "Create a new project in an empty or new directory and open it in place of the current one, which must have no unsaved changes. It starts with an unsaved 3D scene named New Scene, and with its assets and Lua directories at the project root: give them their own folders with set_project_asset_dirs before adding files, so exports ship only the game's files. Later calls wait until it has loaded.",
             objectSchema({
                 {"path", stringSchema("Absolute directory for the project; it must be empty or not exist yet")},
                 {"name", stringSchema("Project name. Defaults to the directory name")}
@@ -1170,7 +1192,7 @@ const std::vector<ToolDefinition>& cachedTools() {
             "Copy a project file or directory to another project directory through CopyFileCmd.",
             objectSchema({
                 {"source_path", stringSchema("Safe project-relative source file or directory path")},
-                {"target_dir", stringSchema("Safe project-relative destination directory")}
+                {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
             }, {"source_path", "target_dir"}),
             false
         },
@@ -1446,17 +1468,28 @@ std::vector<ToolDefinition> EditorActionRegistry::tools() {
     return cachedTools();
 }
 
+// McpServer sends its opening lines plus this as the instructions, which Claude Code cuts at 4096 characters
+std::string EditorActionRegistry::essentialGuidance() {
+    std::ostringstream text;
+    text
+        << "Assemble the game in the editor, not in scripts: a scene opened in the editor should already show every entity it uses, in place and with its real properties. Build scenes with the editor tools and leave scripts to drive what is already there, reaching it through entity properties (a C++ DPROPERTY pointer member such as doriax::Text*, or a Lua property of type \"entity\" or a wrapper name such as \"Text\") set with set_component_property on ScriptComponent (scripts[i].<name>, entity_value). Place what only appears later, such as a door or a reward, with Transform visible off on it and on every child placed under it (the saved flag does not cascade), and show it from the script (hiding leaves its physics body active). Create entities from a script only when their number or timing cannot be known in advance, such as projectiles, enemy waves or drops, and then spawn a bundle with BundleManager::createBundle instead of assembling entities and components in code.\n"
+        << "Share entities between scenes through bundles: when the same entity or group (the player, an enemy, a pickup, a door, a recurring prop) appears in more than one scene, or more than once in a scene, build it once, turn it into a .bundle with create_bundle_from_entity and place every other copy with import_bundle_instance instead of rebuilding or duplicating it. Instances read their shared components from the .bundle, so one edit updates every instance in every scene; give one instance its own value with make_bundle_component_unique and share it again with revert_bundle_component.\n"
+        << "UI entities (text, image, button, ...) are laid out in their scene's camera space: the canvas in a 2D or UI scene, but the world in a 3D scene. A HUD (score, health, timers, on-screen controls) therefore always goes in its own UI scene, in 2D and 3D games alike: make it with create_scene type ui and attach it with add_child_scene to every gameplay scene that shows it, never as UI entities inside a gameplay scene, where they move with its camera and each level needs its own copy. A script in the HUD scene reaches its texts and images through entity properties and reads gameplay values from state the scenes share (static members of a C++ class, or a Lua module both scripts require). An overlay shown on demand, such as a pause menu, is a child scene too, attached with start_active false and shown or hidden with SceneManager::addChildScene/removeChildScene.\n"
+        << "Animate with the native animation system, never with animation code in scripts. Motion that can be authored ahead of time (spinning, bobbing, patrols, opening doors, fades, flashes, UI transitions, sprite frame cycles) belongs in animation and action entities, which show in the Properties panel and the Animation window and preview in the editor. A script only starts, stops or restarts them when the game calls for it; it never tweens a transform, color or alpha per frame, or steps sprite frames on a timer, to play such motion. Per-frame script movement is for what follows live input, physics or game state, such as a player controller or a camera following its target.\n";
+    return text.str();
+}
+
 std::string EditorActionRegistry::guidance() {
     std::ostringstream text;
     text
+        << essentialGuidance()
         << "Prefer project-relative paths.\n"
         << "Use read_resource_file before editing existing scripts or materials. Use inspect_scene for scene-level settings.\n"
+        << "Create an animation with create_entity animation and add its frames with add_animation_action; each frame points at an action entity: position/rotation/scale/color/alpha_action, or translate/rotate/scale_tracks keyed with set_keyframe_track, whose target is create_entity's parent_id. Frame-by-frame sprite animation is a sprite_animation entity whose parent_id is the sprite: frames[i] are indices into the sprite's SpriteComponent framesRect and framesTime[i] are milliseconds. Each list's entries exist only up to its size (framesSize, framesTimeSize, the sprite's numFramesRect), so set the sizes in one call and the entries in the next. An imported model's own clips play with Model::playAnimation(name, fadeTime) (model:playAnimation in Lua). A single action also runs on its own: TimedActionComponent.loop, TimedActionComponent.pingPong (there and back, so a bob is one position_action), KeyframeTracksComponent.loop, and RotationActionComponent.spin with axis and angle in degrees for full turns. Track values are the target's absolute local values unless KeyframeTracksComponent.relative is set: then they are offsets from the target's pose when the track starts, so one animation works wherever the target is placed and moves anchored UI by its layout offset. ActionComponent.state 0 (Running) starts an action or animation with the scene (Play on start in Properties), ActionComponent.randomStart or startOffset keep copies out of sync, and AnimationComponent.loop repeats an animation. Scripts reach one through a doriax::Animation* property; restart() replays it. A kinematic body moved by an animation carries and pushes other bodies.\n"
         << "2D scenes have a dedicated lighting model: create_entity light_2d adds a Light2DComponent (radius/falloff point light) and occluder_2d adds an Occluder2DComponent (shadow caster). Light2D adds on top of the scene's 2D ambient (set_scene_property ambient_light_2d_color/ambient_light_2d_intensity), so dim the ambient to make 2D lights visible. Occluder2D shape AUTO_QUAD derives its outline from a sibling mesh; POLYGON uses its own points. Enable a Light2D's shadows property to cast from occluders. Shadow edge smoothness is per scene: shadows_quality (3D) and shadows_2d_quality (2D) take int_value 0=none/1=low/2=medium/3=high. These are separate from the 3D Light/global_illumination path.\n"
         << "For requested 3D physics or collisions on an existing visible model/mesh, inspect the entity and use add_body3d_shape. It adds Body3DComponent and its collision Shape3D to that SAME entity atomically; never create a separate body entity unless the user explicitly asks for one. A Body3DComponent without at least one shape does not collide. Use dynamic for player/rigid-body actors and static for floors, terrain, and level geometry; a dynamic character needs a static collision shape under it. Shape dimensions and local position are in mesh-local units and the engine multiplies them by the entity's transform scale on its own, so NEVER pre-divide or pre-multiply a size by the scale to compensate. Never guess a collider size: omit the size arguments so the shape is fitted to the mesh's measured bounds, or read mesh_bounds.local_size from inspect_entity and pass that. If the user says a collider is too big or too small, do not nudge numbers by feel; re-read mesh_bounds and set the shape to the measured local size. Growing a shape's height expands it equally up and down about its centre, so shift the shape position by half the added height to keep the bottom in place. For physics-based jumping, add the body and collision shape before editing the controller, use confirmed Body3D physics APIs, and never describe manually changing an entity transform as physics.\n"
         << "For requested 2D physics or collisions on an existing sprite, tilemap, or 2D mesh, inspect the entity and use add_body2d_shape. It adds Body2DComponent and its Shape2D to that SAME entity atomically; never create a separate body entity unless explicitly requested. A Body2DComponent without a shape does not collide. Use dynamic for actors and static for ground/platforms, and use the requested primitive or polygon/chain points in entity-local 2D units. As in 3D these are mesh-local and the engine multiplies them by the entity scale, so never pre-divide a size to compensate; read mesh_bounds.local_size from inspect_entity instead of guessing. Do not confuse Body2D with Body3D or claim transform-only movement is physics.\n"
         << "Box2D reports begin/end contacts (PhysicsSystem beginContact2D/endContact2D) only for pairs where at least one shape has contactEvents on, and it is off by default: set shapes[i].contactEvents with set_component_property first.\n"
-        << "UI entities (text, image, button, ...) are laid out in their scene's camera space: the canvas in a 2D or UI scene, but the world in a 3D scene. A 3D game's HUD therefore goes in a UI scene attached with add_child_scene.\n"
-        << "Prefer native animations to per-frame script code for repeated motion such as spinning, bobbing, patrols and fades, so they show in the Properties panel and the Animation window. Create one with create_entity animation and add its frames with add_animation_action; each frame points at an action entity: position/rotation/scale/color/alpha_action, or translate/rotate/scale_tracks keyed with set_keyframe_track, whose target is create_entity's parent_id. A single action also runs on its own: TimedActionComponent.loop, TimedActionComponent.pingPong (there and back, so a bob is one position_action), KeyframeTracksComponent.loop, and RotationActionComponent.spin with axis and angle in degrees for full turns. Track values are the target's absolute local values unless KeyframeTracksComponent.relative is set: then they are offsets from the target's pose when the track starts, so one animation works wherever the target is placed and moves anchored UI by its layout offset. ActionComponent.state 0 (Running) starts an action or animation with the scene (Play on start in Properties), ActionComponent.randomStart or startOffset keep copies out of sync, and AnimationComponent.loop repeats an animation. Scripts reach one through a doriax::Animation* property; restart() replays it. A kinematic body moved by an animation carries and pushes other bodies.\n"
         << "For external assets, use curated sources only and preserve license/author/source attribution.\n"
         << "For scripts and engine API code, the Doriax engine source under the editor's engine/ directory (read it with search_engine_source and read_engine_source) is the ONLY source of truth. Use ONLY classes, methods, properties, enums, macros, and constructor overloads you have confirmed exist in that source; if a symbol is not present there it does not exist in Doriax, so do not use it. Never invent APIs or carry over names, macros, or patterns from other engines or frameworks (e.g. Godot GDCLASS, Unreal GENERATED_BODY/UPROPERTY, Qt Q_OBJECT). search_engine_api is only a quick index into that same source; when a symbol is unfamiliar or you are unsure of its exact spelling or overloads, confirm it in the source before writing it (e.g. key codes are Input.KEY_* in Lua but D_KEY_* macros in C++, and Quaternion's axis-angle constructor takes the angle first: Quaternion(angle, axis)).\n"
         << "A C++ method existing on a class does NOT mean Lua can call it. LuaBridge binds many accessors as properties instead of methods, and calling the accessor from Lua fails at runtime with \"attempt to call a nil value (method 'x')\". search_engine_api marks this: kind 'Method' with a ':' in the detail (Body2D:getMass()) is Lua-callable, while kind 'CppMethod' with '::' in the detail (Object::getPosition(), Body3D::setLinearVelocity()) is C++ only and carries lua_callable=false plus a lua_note naming the property to use (object.position, body.linearVelocity). In Lua, read and assign those properties (self.sphere.position = p, body.linearVelocity = Vector3(0,0,0)); never translate a CppMethod into obj:getX()/obj:setX(). If a class has no bound property for what you need either, check the LuaBridge binding source under engine/core/script/binding/ before writing the call.\n"
@@ -1464,13 +1497,15 @@ std::string EditorActionRegistry::guidance() {
         << "A bundle is only built and registered when a scene instantiates it or when it is listed as standalone, so a bundle that exists only to be spawned from a script with BundleManager needs set_standalone_bundle before createBundle can find it by name. Every createBundle call creates its own instance root and returns it, so the same bundle can be spawned repeatedly; the optional third argument is only the entity the new root is parented to (a name resolved in that scene, an entity id of that scene, or an object carrying its own scene), never the root itself. destroyBundle(scene, root) removes what that spawn created and anything parented under it since, bundles spawned there included, and leaves the parent alone.\n"
         << "When you create a script for requested behavior, write the complete script with update_script_file instead of asking the user to edit it manually.\n"
         << "A ScriptComponent holds a list of script entries; inspect_component on ScriptComponent lists them with index, class name, and file paths. attach_script adds an entry, so use it only for a script the entity does not have yet: to rename or repoint an entry it already has use update_script_entry, and to detach one use remove_script_entry. rename_resource already repoints the attached entries at the renamed file, so after renaming a script only its class name is left to fix with update_script_entry.\n"
+        << "Choose a project's script language once. If it already has scripts (search_resources with type script, or ScriptComponents in its scenes), keep their language. In a project with none yet, prefer C++ (cpp_script_class or cpp_subclass) unless the user asks for Lua, but first make sure this machine can build it: call check_cpp_build_tools, and after writing the first C++ script start the scene with control_play_mode and read_output_log. If the tools are missing, or the build fails for reasons outside your code (CMake cannot configure, the compiler or linker does not run, the editor's compatibility check fails), switch to Lua at once. If it fails on your code, fix it, but when it still does not compile after two fixes, switch to Lua as well, even though check_cpp_build_tools found the tools. To switch, detach the C++ scripts with remove_script_entry, delete their files with delete_resource, write the Lua versions, and tell the user why so they can switch back later.\n"
         << "A project can declare C++ script directories: get_project_summary reports them as script_dirs and set_project_script_dirs changes them. Each root is an include directory and every source under it is compiled without any ScriptComponent referencing it, so shared helper, utility, and library classes belong there. Create one with create_source_file, which writes a source or header without attaching it to an entity; create_script is only for a script an entity actually runs. A .cpp that is neither under a root nor included by an attached script is not compiled at all, so add the root instead of assuming it builds. The editor also only runs a C++ build when an enabled C++ script is attached to an entity somewhere in the project: Lua scripts never trigger one, so in a Lua-only project the helper sources are compiled first by an export, and a clean startup log is no proof they built.\n"
+        << "An export ships what is inside the project's assets and Lua directories (get_project_summary reports assets_dir and lua_dir). A new project keeps both at the project root (.), where the export also picks up the scenes, project.yaml, notes and source art, and every .json or .txt file for the Lua side. So when a project still has either at the root, give it its own folder with set_project_asset_dirs, such as assets and scripts, before adding files: asset paths are then relative to assets and require() names to scripts. Leave directories the user already chose alone. If the project already has content at the root, ask the user first, since files move: only the files the project references move and get rewritten, so check scripts for asset paths and require() names written against the old root, and move those files too (copy_resource, then delete_resource).\n"
         << "The project C++ language standard is get_project_summary's cxx_standard (" << cxxStandardList() << ") and set_project_cxx_standard changes it. The next play or export builds with it, and an export compiles the engine with it too. Do not edit CMAKE_CXX_STANDARD in the generated CMakeLists.txt.\n"
         << "The project CMakeLists.txt is generated on every build and any edit to it is lost, so never edit it or ask the user to. Custom build settings -- extra include directories, linked libraries, compile definitions -- go in ProjectBuild.cmake at the project root: read the current one with read_resource_file and rewrite it whole with update_project_build_file. Attach settings to ${DORIAX_TARGET} rather than a literal target name (it differs between the editor and exported builds) and use ${DORIAX_SCRIPTS_DIR} as the root of script paths, e.g. target_include_directories(${DORIAX_TARGET} PRIVATE ${DORIAX_SCRIPTS_DIR}/Source/Public) and target_link_libraries(${DORIAX_TARGET} PRIVATE mylib).\n"
         << "After creating or editing ANY script (C++ or Lua), verify it before telling the user it is ready: start the scene with control_play_mode (action=start), then call read_output_log to inspect the editor output. A C++ compile error appears as a build failure with compiler messages; a Lua or C++ runtime error appears as a 'Script crash in scene ...' entry. If the scene is still building, read_output_log again. If you find errors, stop play with control_play_mode (action=stop), fix the script with update_script_file, and verify again -- repeat until the log is clean, then stop play. Do not claim the script works without reading the log.\n"
         << "Doriax Lua scripts are plain returned module tables: local Name = { properties = {} }; function Name:init() ... end; return Name.\n"
         << "Editor-exposed Lua properties go in the properties array as { name = \"speed\", displayName = \"Speed\", type = \"float\", default = 5.0 } and are read at runtime as self.speed.\n"
-        << "Choose Lua update events by timing domain. Variable-frame logic such as UI, cameras, animation, and direct non-physics transform movement uses RegisterEngineEvent(self, \"onUpdate\") with Name:onUpdate(); scale continuous non-physics movement by Engine.deltatime. Physics-step logic uses RegisterEngineEvent(self, \"onFixedUpdate\") with Name:onFixedUpdate(). Any continuously applied body force or torque MUST run in onFixedUpdate, never onUpdate: each physics world accumulates force calls until its next fixed step, so calling them from onUpdate makes the effective force depend on render FPS. The two body types spell these differently and are not interchangeable: Body3D has applyForce(force) for a centre force plus applyForce(force, point) and applyTorque(torque), and has NO applyForceToCenter; Body2D has applyForceToCenter(force, wake) plus applyForce(force, point, wake) (no single-argument overload exists) and applyTorque(torque, wake). Prefer onFixedUpdate for velocity control and held-input polling that drives physics too. Do not multiply forces or torques by Engine.deltatime; the physics engine integrates them over the fixed step. Never move a physics body by writing its entity transform from onFixedUpdate (object.position, object:setPosition): the body is synced from the transform before the step and written back after it, so the write is silently discarded. Teleport with body.position / body.rotation (Body3D) or body.position / body.angle (Body2D), which write the simulation directly; entities with no body have no such restriction. One-shot impulses must be emitted once, not every held-input update. No manual Lua unregister is needed.\n"
+        << "Choose Lua update events by timing domain. Variable-frame logic such as UI, cameras, and direct non-physics transform movement uses RegisterEngineEvent(self, \"onUpdate\") with Name:onUpdate(); scale continuous non-physics movement by Engine.deltatime. Physics-step logic uses RegisterEngineEvent(self, \"onFixedUpdate\") with Name:onFixedUpdate(). Any continuously applied body force or torque MUST run in onFixedUpdate, never onUpdate: each physics world accumulates force calls until its next fixed step, so calling them from onUpdate makes the effective force depend on render FPS. The two body types spell these differently and are not interchangeable: Body3D has applyForce(force) for a centre force plus applyForce(force, point) and applyTorque(torque), and has NO applyForceToCenter; Body2D has applyForceToCenter(force, wake) plus applyForce(force, point, wake) (no single-argument overload exists) and applyTorque(torque, wake). Prefer onFixedUpdate for velocity control and held-input polling that drives physics too. Do not multiply forces or torques by Engine.deltatime; the physics engine integrates them over the fixed step. Never move a physics body by writing its entity transform from onFixedUpdate (object.position, object:setPosition): the body is synced from the transform before the step and written back after it, so the write is silently discarded. Teleport with body.position / body.rotation (Body3D) or body.position / body.angle (Body2D), which write the simulation directly; entities with no body have no such restriction. One-shot impulses must be emitted once, not every held-input update. No manual Lua unregister is needed.\n"
         << "For component/UI events in Lua use the global RegisterEvent(self, eventObject, \"method\"), e.g. RegisterEvent(self, Button(self.scene, self.entity):getButtonComponent().onPress, \"onPress\"). RegisterEngineEvent/RegisterEvent are Lua globals (not bindings); find them with search_engine_api.\n"
         << "Lua script instances receive self.scene and self.entity; self.entity is a numeric Entity id, not an object. Never call self.entity:... or self.entity....\n"
         << "They do not use Dori.Script, on_start, get_entity, get_component/getComponent, or set_property/setProperty.\n"
@@ -1726,6 +1761,13 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
         }
         return ok();
     }
+    if (name == "set_project_asset_dirs") {
+        if (isWrongTypedString(arguments, "assets_dir") || isWrongTypedString(arguments, "lua_dir")) {
+            return fail("assets_dir and lua_dir must be strings.");
+        }
+        return hasString(arguments, "assets_dir") || hasString(arguments, "lua_dir")
+            ? ok() : fail("set_project_asset_dirs requires assets_dir or lua_dir.");
+    }
     if (name == "set_project_cxx_standard") {
         if (!arguments.contains("cxx_standard") || !arguments["cxx_standard"].is_number_integer()) {
             return fail("set_project_cxx_standard requires cxx_standard (" + cxxStandardList() + ").");
@@ -1965,6 +2007,9 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
 
 std::string EditorActionRegistry::describe(const std::string& name, const Json& arguments) {
     std::ostringstream out;
+    if (name == "get_editor_guidance") {
+        return "Read editor guidance";
+    }
     if (name == "get_project_summary") {
         return "Read project summary";
     }
@@ -2163,6 +2208,12 @@ std::string EditorActionRegistry::describe(const std::string& name, const Json& 
         }
         return list.empty() ? "Set project script directories"
                             : "Set project script directories: " + list;
+    }
+    if (name == "set_project_asset_dirs") {
+        return "Set project asset directories";
+    }
+    if (name == "check_cpp_build_tools") {
+        return "Check C++ build tools";
     }
     if (name == "set_project_cxx_standard") {
         if (arguments.contains("cxx_standard") && arguments["cxx_standard"].is_number_integer()) {

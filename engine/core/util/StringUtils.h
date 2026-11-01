@@ -12,7 +12,7 @@
 namespace doriax{
     class DORIAX_API StringUtils{
     public:
-        static std::string toUTF8(wchar_t codepoint);
+        static std::string toUTF8(uint32_t codepoint);
 
         // Decodes UTF-8 into Unicode codepoints. Invalid sequences are replaced with U+FFFD and hadInvalid is set.
         static std::vector<uint32_t> decodeUtf8ToCodepoints(const std::string& text, bool& hadInvalid);

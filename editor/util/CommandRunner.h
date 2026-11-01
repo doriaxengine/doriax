@@ -49,6 +49,7 @@ namespace doriax::editor {
         static std::string vsInstallationPath();
         static bool hasVSWithCppTools();
         static std::string findVcvarsall();
+        static std::string findNinja();
 #endif
 
     private:

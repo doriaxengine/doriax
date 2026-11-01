@@ -20,6 +20,8 @@
 #include "util/Angle.h"
 #include "util/Color.h"
 #include "util/FileDialogs.h"
+#include "util/TextEncoding.h"
+#include "util/FileUtils.h"
 #include "util/TerrainMapFileWriter.h"
 #include "util/TerrainMapUtils.h"
 #include "util/TerrainErosion.h"
@@ -479,15 +481,16 @@ static bool collectTerrainMapDiskReferences(const fs::path& projectPath, std::un
     while (it != endIt){
         const fs::directory_entry& entry = *it;
 
+        // Names as UTF-8, which never fails: a file left out could lose a map it uses
         if (entry.is_directory(ec)){
             // Dot-directories hold caches and VCS data (.doriax export copies, .git);
             // nothing in them defines a live reference.
-            if (entry.path().filename().string().rfind(".", 0) == 0){
+            if (FileUtils::pathToUtf8(entry.path().filename()).rfind(".", 0) == 0){
                 it.disable_recursion_pending();
             }
         }else if (entry.is_regular_file(ec)){
-            const std::string entryPath = entry.path().string();
-            if (Util::isSceneFile(entryPath) || Util::isMaterialFile(entryPath) || Util::isBundleFile(entryPath)){
+            const std::string extension = FileUtils::pathToUtf8(entry.path().extension());
+            if (Util::isSceneFile(extension) || Util::isMaterialFile(extension) || Util::isBundleFile(extension)){
                 std::ifstream file(entry.path(), std::ios::binary);
                 if (!file){
                     return false;
@@ -564,7 +567,7 @@ bool editor::TerrainEditWindow::cleanUnusedTerrainMaps(Project* project){
     // Candidate orphans: editable maps on disk that no loaded scene references.
     std::vector<fs::path> candidates;
     for (const auto& entry : fs::directory_iterator(absoluteBaseDir, ec)){
-        if (entry.is_regular_file(ec)){
+        if (entry.is_regular_file(ec) && FileUtils::isNarrowPath(entry.path())){
             const std::string filename = entry.path().filename().string();
             if (filename.rfind("terrain_edit_", 0) == 0 && activeFiles.find(filename) == activeFiles.end()){
                 candidates.push_back(entry.path());
@@ -2543,7 +2546,7 @@ void editor::TerrainEditWindow::applyLayerMaterial(TerrainComponent& terrain, in
 
     Material material;
     try{
-        material = Stream::decodeMaterial(YAML::LoadFile((project->getProjectPath() / materialPath).string()));
+        material = Stream::decodeMaterial(TextEncoding::loadYamlFile(project->getProjectPath() / materialPath));
     }catch (const std::exception& e){
         Out::error("Failed to read material '%s': %s", materialPath.c_str(), e.what());
         return;

@@ -1722,7 +1722,10 @@ bool ProjectSettingsWindow::applySettings() {
     application.build = static_cast<unsigned int>(std::max(1, m_applicationBuild));
 
     // Moves the referenced files in and rewrites every reference to the new roots
-    m_project->changeAssetRoots(m_assetsDir, m_luaDir);
+    std::string rootsError;
+    if (!m_project->changeAssetRoots(m_assetsDir, m_luaDir, &rootsError)){
+        Backend::getApp().registerAlert("Error", rootsError);
+    }
     m_project->setScriptDirs(m_scriptDirs);
     if (m_cxxStandardIndex < 0 || m_cxxStandardIndex >= cxxStandardCount) {
         m_cxxStandardIndex = 0;

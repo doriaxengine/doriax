@@ -563,6 +563,8 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/util/ShellEnv.cpp
     ${EDITOR_DIR}/util/GitMonitor.cpp
     ${EDITOR_DIR}/util/LineDiff.cpp
+    ${EDITOR_DIR}/util/SystemFonts.cpp
+    ${EDITOR_DIR}/util/TextEncoding.cpp
 
     ${EDITOR_DIR}/shader/ShaderBuilder.cpp
 
@@ -815,19 +817,23 @@ if(APPLE)
     endif()
 endif()
 
+# Not engine/, which next to the editor in a build tree is the engine's binary directory.
 # In the bundle this has to be Resources, not MacOS: codesign treats everything in
 # Contents/MacOS as code. FileUtils::getEngineDir() looks in both places.
 if(APPLE)
-    set(DORIAX_EDITOR_ENGINE_DIR $<TARGET_BUNDLE_CONTENT_DIR:doriax-editor>/Resources/engine)
-    # Build trees from before the move still hold a copy in MacOS, which codesign rejects.
-    set(DORIAX_CLEAN_STALE_ENGINE COMMAND ${CMAKE_COMMAND} -E rm -rf $<TARGET_FILE_DIR:doriax-editor>/engine)
+    set(DORIAX_EDITOR_ENGINE_DIR $<TARGET_BUNDLE_CONTENT_DIR:doriax-editor>/Resources/engine-sdk)
+    # Older build trees still hold a copy in MacOS, which codesign rejects, or in Resources/engine.
+    set(DORIAX_CLEAN_STALE_ENGINE COMMAND ${CMAKE_COMMAND} -E rm -rf
+        $<TARGET_FILE_DIR:doriax-editor>/engine $<TARGET_BUNDLE_CONTENT_DIR:doriax-editor>/Resources/engine)
 else()
-    set(DORIAX_EDITOR_ENGINE_DIR $<TARGET_FILE_DIR:doriax-editor>/engine)
+    set(DORIAX_EDITOR_ENGINE_DIR $<TARGET_FILE_DIR:doriax-editor>/engine-sdk)
     set(DORIAX_CLEAN_STALE_ENGINE)
 endif()
 
+# From scratch, so files removed from engine/ go too
 add_custom_target(copy_doriax_editor_engine
     ${DORIAX_CLEAN_STALE_ENGINE}
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${DORIAX_EDITOR_ENGINE_DIR}
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/engine
         ${DORIAX_EDITOR_ENGINE_DIR}
@@ -872,7 +878,7 @@ if(WIN32)
     list(APPEND DORIAX_EDITOR_INSTALL_TARGETS doriax-editor-cmd)
 endif()
 
-# The bundle already holds the dylib and engine/.
+# The bundle already holds the dylib and engine-sdk/.
 if(APPLE)
     install(TARGETS doriax-editor
             CONFIGURATIONS Release MinSizeRel
@@ -893,8 +899,8 @@ else()
         )
     endif()
 
-    install(DIRECTORY ${CMAKE_SOURCE_DIR}/engine
-            DESTINATION bin
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/engine/
+            DESTINATION bin/engine-sdk
             CONFIGURATIONS Release MinSizeRel
     )
 endif()

@@ -74,6 +74,7 @@
 #include "component/ScriptComponent.h"
 #include "component/ScrollbarComponent.h"
 #include "component/ProgressbarComponent.h"
+#include "component/SkinComponent.h"
 #include "component/SkyComponent.h"
 #include "component/WaterComponent.h"
 #include "component/WaterExclusionComponent.h"

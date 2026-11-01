@@ -226,19 +226,19 @@ namespace {
     };
 
     static const FastPropertyDescriptor kButtonProperties[] = {
-        makeFastProperty<ButtonComponent, Entity, &ButtonComponent::label>("label", PropertyType::Entity, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureNormal>("textureNormal", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureHovered>("textureHovered", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::texturePressed>("texturePressed", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureDisabled>("textureDisabled", PropertyType::Texture, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorNormal>("colorNormal", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorHovered>("colorHovered", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorPressed>("colorPressed", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorDisabled>("colorDisabled", PropertyType::Vector4, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::scaleHovered>("scaleHovered", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::scalePressed>("scalePressed", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, float, &ButtonComponent::transitionTime>("transitionTime", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<ButtonComponent, bool, &ButtonComponent::disabled>("disabled", PropertyType::Bool, UpdateFlags_None),
+        makeFastProperty<ButtonComponent, Entity, &ButtonComponent::label>("label", PropertyType::Entity, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureNormal>("textureNormal", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureHovered>("textureHovered", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::texturePressed>("texturePressed", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Texture, &ButtonComponent::textureDisabled>("textureDisabled", PropertyType::Texture, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorNormal>("colorNormal", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorHovered>("colorHovered", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorPressed>("colorPressed", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, Vector4, &ButtonComponent::colorDisabled>("colorDisabled", PropertyType::Vector4, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::scaleHovered>("scaleHovered", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::scalePressed>("scalePressed", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, float, &ButtonComponent::transitionTime>("transitionTime", PropertyType::Float, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, bool, &ButtonComponent::disabled>("disabled", PropertyType::Bool, UpdateFlags_Button),
     };
 
     static const FastPropertyDescriptor kScrollbarProperties[] = {
@@ -389,6 +389,12 @@ namespace {
         makeFastProperty<BoneComponent, Vector3, &BoneComponent::bindPosition>("bindPosition", PropertyType::Vector3, UpdateFlags_None),
         makeFastProperty<BoneComponent, Quaternion, &BoneComponent::bindRotation>("bindRotation", PropertyType::Quat, UpdateFlags_None),
         makeFastProperty<BoneComponent, Vector3, &BoneComponent::bindScale>("bindScale", PropertyType::Vector3, UpdateFlags_None),
+    };
+
+    // the palette itself is rewritten by the animation every frame; another bone count needs its
+    // GPU buffer made again, which the mesh reload does
+    static const FastPropertyDescriptor kSkinProperties[] = {
+        makeFastPropertyNoDefault<SkinComponent, unsigned int, &SkinComponent::numBones>("numBones", PropertyType::UInt, UpdateFlags_Mesh_Reload),
     };
 
     static const FastPropertyDescriptor kKeyframeTracksProperties[] = {
@@ -2130,6 +2136,10 @@ namespace {
         return resolveDirectProperties(static_cast<BoneComponent*>(comp), propertyName, kBoneProperties);
     }
 
+    PropertyData resolveSkinPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<SkinComponent*>(comp), propertyName, kSkinProperties);
+    }
+
     PropertyData resolveKeyframeTracksPropertyFast(void* comp, const std::string& propertyName) {
         KeyframeTracksComponent* trackComp = static_cast<KeyframeTracksComponent*>(comp);
         if (!trackComp) return PropertyData();
@@ -2383,6 +2393,10 @@ namespace {
 
     void enumerateBoneProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kBoneProperties);
+    }
+
+    void enumerateSkinProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kSkinProperties);
     }
 
     void enumerateKeyframeTracksProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
@@ -3533,6 +3547,7 @@ namespace {
         {ComponentType::ModelComponent, &findComponentPtr<ModelComponent>, &resolveModelPropertyFast, &enumerateModelProperties},
         {ComponentType::BundleComponent, &findComponentPtr<BundleComponent>, &resolveBundlePropertyFast, &enumerateBundleProperties},
         {ComponentType::BoneComponent, &findComponentPtr<BoneComponent>, &resolveBonePropertyFast, &enumerateBoneProperties},
+        {ComponentType::SkinComponent, &findComponentPtr<SkinComponent>, &resolveSkinPropertyFast, &enumerateSkinProperties},
         {ComponentType::KeyframeTracksComponent, &findComponentPtr<KeyframeTracksComponent>, &resolveKeyframeTracksPropertyFast, &enumerateKeyframeTracksProperties},
         {ComponentType::TranslateTracksComponent, &findComponentPtr<TranslateTracksComponent>, &resolveTranslateTracksPropertyFast, &enumerateTranslateTracksProperties},
         {ComponentType::RotateTracksComponent, &findComponentPtr<RotateTracksComponent>, &resolveRotateTracksPropertyFast, &enumerateRotateTracksProperties},
@@ -3618,6 +3633,8 @@ std::string editor::Catalog::getComponentName(ComponentType component, bool remo
         name = "Body3DComponent";
     }else if(component == ComponentType::BoneComponent){
         name = "BoneComponent";
+    }else if(component == ComponentType::SkinComponent){
+        name = "SkinComponent";
     }else if(component == ComponentType::BundleComponent){
         name = "BundleComponent";
     }else if(component == ComponentType::ButtonComponent){
@@ -3749,6 +3766,8 @@ ComponentId editor::Catalog::getComponentId(const EntityRegistry* registry, Comp
             return registry->getComponentId<Body3DComponent>();
         case ComponentType::BoneComponent:
             return registry->getComponentId<BoneComponent>();
+        case ComponentType::SkinComponent:
+            return registry->getComponentId<SkinComponent>();
         case ComponentType::BundleComponent:
             return registry->getComponentId<BundleComponent>();
         case ComponentType::ButtonComponent:
@@ -3857,6 +3876,8 @@ editor::ComponentType editor::Catalog::getComponentType(const std::string& compo
         return ComponentType::Body3DComponent;
     }else if(normalizedName == "bone"){
         return ComponentType::BoneComponent;
+    }else if(normalizedName == "skin"){
+        return ComponentType::SkinComponent;
     }else if(normalizedName == "bundle"){
         return ComponentType::BundleComponent;
     }else if(normalizedName == "button"){
@@ -4122,6 +4143,9 @@ std::vector<editor::ComponentType> editor::Catalog::findComponents(EntityRegistr
     }
     if (registry->findComponent<ScrollbarComponent>(entity)){
         ret.push_back(ComponentType::ScrollbarComponent);
+    }
+    if (registry->findComponent<SkinComponent>(entity)){
+        ret.push_back(ComponentType::SkinComponent);
     }
     if (registry->findComponent<SkyComponent>(entity)){
         ret.push_back(ComponentType::SkyComponent);
@@ -4475,7 +4499,22 @@ bool editor::Catalog::getDefaultShaderUniformsType(const std::string& propertyNa
     return false;
 }
 
+void editor::Catalog::updateSpriteBatch(EntityRegistry* registry, Entity entity){
+    if (SpriteComponent* sprite = registry->findComponent<SpriteComponent>(entity)){
+        sprite->needUpdateBatch = true;
+    }
+}
+
+void editor::Catalog::updateSpriteBatches(EntityRegistry* registry){
+    auto sprites = registry->getComponentArray<SpriteComponent>();
+    for (int i = 0; i < sprites->size(); i++){
+        sprites->getComponentFromIndex(i).needUpdateBatch = true;
+    }
+}
+
 void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint64_t updateFlags){
+    // any edit may change a sprite's mesh
+    updateSpriteBatch(registry, entity);
     if (updateFlags & UpdateFlags_Transform){
         if (Transform* transform = registry->findComponent<Transform>(entity)){
             transform->needUpdate = true;
@@ -4492,6 +4531,7 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
             mesh.needReload = true;
         }
+        updateSpriteBatches(registry);
     }
     if (updateFlags & (UpdateFlags_Mesh_Reload | UpdateFlags_Mesh_Texture)){
         if (MeshComponent* mesh = registry->findComponent<MeshComponent>(entity)){
@@ -4531,6 +4571,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
     if (updateFlags & UpdateFlags_Image_Patches){
         if (ImageComponent* image = registry->findComponent<ImageComponent>(entity)){
             image->needUpdatePatches = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Button){
+        if (ButtonComponent* button = registry->findComponent<ButtonComponent>(entity)){
+            button->needUpdateButton = true;
         }
     }
     if (updateFlags & (UpdateFlags_Layout_Sizes | UpdateFlags_Layout_Anchors)){
@@ -4755,7 +4800,7 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
             bool model = Stream::isModelBackedMesh(sourceEntity, sourceRegistry, signature);
             bool generated = model || Stream::isGeneratedMesh(sourceRegistry, signature);
             decodeOverTarget(targetRegistry, targetEntity, compType, &Stream::decodeMeshComponent,
-                Stream::encodeMeshComponent(sourceRegistry->getComponent<MeshComponent>(sourceEntity), !generated, !model, !generated), UpdateFlags_Mesh_Reload);
+                Stream::encodeMeshComponent(sourceRegistry->getComponent<MeshComponent>(sourceEntity), !generated, !model), UpdateFlags_Mesh_Reload);
             // The model builds its submeshes again, with the overrides just copied
             ModelComponent* targetModel = targetRegistry->findComponent<ModelComponent>(targetEntity);
             if (model && targetModel) {
@@ -4949,6 +4994,15 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
             targetRegistry->getComponent<BoneComponent>(targetEntity) = Stream::decodeBoneComponent(encoded);
             break;
         }
+
+        case ComponentType::SkinComponent:
+            // over the target, which keeps its palette buffer and texture; the new pose moves its bounds
+            decodeOverTarget(targetRegistry, targetEntity, compType, &Stream::decodeSkinComponent,
+                Stream::encodeSkinComponent(sourceRegistry->getComponent<SkinComponent>(sourceEntity)));
+            if (MeshComponent* mesh = targetRegistry->findComponent<MeshComponent>(targetEntity)) {
+                mesh->needUpdateAABB = true;
+            }
+            break;
 
         case ComponentType::KeyframeTracksComponent: {
             YAML::Node encoded = Stream::encodeKeyframeTracksComponent(sourceRegistry->getComponent<KeyframeTracksComponent>(sourceEntity));

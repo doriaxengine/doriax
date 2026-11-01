@@ -39,6 +39,7 @@ UISystem::UISystem(Scene* scene): SubSystem(scene){
     anchorReferenceHeight = 0;
 
     pendingImages = false;
+    pendingHighSurrogate = 0;
 }
 
 UISystem::~UISystem(){
@@ -356,9 +357,11 @@ void UISystem::createText(TextComponent& text, UIComponent& ui, UILayoutComponen
 
         Log::warn("Text is bigger than maxTextSize: %i. Increasing it to: %i", text.maxTextSize, newSize);
         text.maxTextSize = newSize;
-        if (ui.loaded){
-            ui.needReload = true;
-        }
+    }
+
+    // GPU buffers keep the size they were loaded with
+    if (ui.loaded && text.maxTextSize * 4 > ui.minBufferCount){
+        ui.needReload = true;
     }
 
     ui.minBufferCount = text.maxTextSize * 4;
@@ -612,20 +615,22 @@ void UISystem::createTextEditObjects(Entity entity, TextEditComponent& textedit)
     }
 }
 
-void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition){
-    Texture targetTexture = button.textureNormal;
+static bool hasButtonTexture(const Texture& texture){
+    return !texture.empty() && (!texture.getId().empty() || texture.isFramebuffer());
+}
 
+void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition){
+    const Texture* stateTexture = nullptr;
     if (button.disabled){
-        targetTexture = button.textureDisabled;
+        stateTexture = &button.textureDisabled;
     }else if (button.pressed){
-        targetTexture = button.texturePressed;
+        stateTexture = &button.texturePressed;
     }else if (button.hovered){
-        bool hasHoveredTexture = !button.textureHovered.empty() &&
-            (!button.textureHovered.getId().empty() || button.textureHovered.isFramebuffer());
-        if (hasHoveredTexture){
-            targetTexture = button.textureHovered;
-        }
+        stateTexture = &button.textureHovered;
     }
+
+    // a state without its own texture keeps the normal one
+    Texture targetTexture = (stateTexture && hasButtonTexture(*stateTexture)) ? *stateTexture : button.textureNormal;
 
     if (ui.texture != targetTexture){
         ui.texture = targetTexture;
@@ -1241,7 +1246,7 @@ void UISystem::setTextEditCursorFromLocalX(TextEditComponent& textedit, TextComp
     textedit.needUpdateTextEdit = true;
 }
 
-bool UISystem::handleTextEditCharInput(TextEditComponent& textedit, TextComponent& text, UIComponent& ui, wchar_t codepoint){
+bool UISystem::handleTextEditCharInput(TextEditComponent& textedit, TextComponent& text, UIComponent& ui, uint32_t codepoint){
     if (textedit.disabled){
         return false;
     }
@@ -2666,7 +2671,18 @@ void UISystem::resetButtonStates() {
     }
 }
 
-bool UISystem::eventOnCharInput(wchar_t codepoint){
+bool UISystem::eventOnCharInput(wchar_t input){
+    // Windows, macOS and iOS send a character past U+FFFF as two UTF-16 halves
+    uint32_t codepoint = static_cast<uint32_t>(input);
+    if (codepoint >= 0xD800 && codepoint <= 0xDBFF){
+        pendingHighSurrogate = codepoint;
+        return false;
+    }
+    if (codepoint >= 0xDC00 && codepoint <= 0xDFFF && pendingHighSurrogate != 0){
+        codepoint = 0x10000 + ((pendingHighSurrogate - 0xD800) << 10) + (codepoint - 0xDC00);
+    }
+    pendingHighSurrogate = 0;
+
     auto layouts = scene->getComponentArray<UILayoutComponent>();
     for (int i = 0; i < layouts->size(); i++){
         Entity entity = layouts->getEntity(i);

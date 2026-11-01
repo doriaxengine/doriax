@@ -3,12 +3,16 @@
   Settles DPI awareness before any code runs, so no window is created unaware
   and then bitmap-stretched. WindowWin::enableDpiAwareness() asks for the same
   thing at runtime. dpiAware is the Windows 8.1 spelling of dpiAwareness.
+
+  activeCodePage makes narrow strings UTF-8, so any file name works as on the
+  other platforms. Windows before 10 1903 ignores it.
 -->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <application xmlns="urn:schemas-microsoft-com:asm.v3">
     <windowsSettings>
       <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>
       <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+      <activeCodePage xmlns="http://schemas.microsoft.com/SMI/2019/WindowsSettings">UTF-8</activeCodePage>
     </windowsSettings>
   </application>
 </assembly>

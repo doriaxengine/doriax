@@ -6,6 +6,8 @@
 #include "System.h"
 #include "sokol_gfx.h"
 #include "SokolCmdQueue.h"
+#include "SokolObject.h"
+#include "SokolBuffer.h"
 #include "Engine.h"
 #include "Log.h"
 
@@ -46,6 +48,10 @@ void sokol_log(const char* tag,                // e.g. 'sg'
         Log::debug("%s\n", message_or_null);
         return;
     }
+    // a draw call that failed can leave sokol skipping draws until the next sg_apply_pipeline
+    if (log_level <= 1 && !Engine::isAsyncThread()){
+        SokolObject::resetAppliedState();
+    }
     if (log_level == 0){
         Log::print("(PANIC): %s\n", message_or_null);
     }else if (log_level == 1){
@@ -61,11 +67,11 @@ void sokol_log(const char* tag,                // e.g. 'sg'
 void SokolSystem::setup(){
     /* setup sokol_gfx */
     sg_desc desc = {0};
-    desc.buffer_pool_size = 8192; //default: 128
+    desc.buffer_pool_size = 32768; //default: 128 (each sprite has its own vertex buffer)
     desc.image_pool_size = 2048; //default: 128
     desc.sampler_pool_size = 2048; //default: 64
     desc.view_pool_size = 4096; //default: 256 (texture, storage-buffer and attachment views)
-    desc.pipeline_pool_size = 8192; //default: 64
+    desc.pipeline_pool_size = 16384; //default: 64 (up to 12 per object, and each foliage chunk is an object)
     desc.shader_pool_size = 1024; //default: 64 (one per ShaderType+properties variant)
     desc.environment = System::instance().getSokolEnvironment();
     desc.logger.func = sokol_log;
@@ -91,6 +97,8 @@ void SokolSystem::shutdown(){
     SokolCmdQueue::flush_commands();
     SokolCmdQueue::wait_for_flush();
     SokolCmdQueue::finish();
+    SokolObject::clearSharedPipelines();
+    SokolBuffer::clearSharedBuffers();
     sg_shutdown();
 }
 

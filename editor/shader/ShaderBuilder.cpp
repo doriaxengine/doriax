@@ -26,6 +26,14 @@
 #include <sstream>
 #include <unordered_set>
 
+#ifdef _WIN32
+    #ifndef NOMINMAX
+        #define NOMINMAX
+    #endif
+    #include <windows.h>
+    #include <d3dcompiler.h>
+#endif
+
 //#include <thread>
 //#include <chrono>
 
@@ -700,6 +708,9 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     }else if (shaderType == ShaderType::UNDERWATER){
         args.vert_file = "fullscreen.vert";
         args.frag_file = "underwater.frag";
+    }else if (shaderType == ShaderType::PROBE_FILTER){
+        args.vert_file = "fullscreen.vert";
+        args.frag_file = "probe_filter.frag";
     }else{
         return false;
     }
@@ -708,7 +719,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
         args.defines.push_back({"MAX_TERRAIN_LAYERS", std::to_string(MAX_TERRAIN_LAYERS)});
     }
     if (shaderType == ShaderType::MESH || shaderType == ShaderType::WATER){
-        args.defines.push_back({"MAX_LIGHTS", "6"});
+        args.defines.push_back({"MAX_LIGHTS", std::to_string(MAX_LIGHTS)});
         args.defines.push_back({"MAX_SHADOW_ATLAS_SLOTS", std::to_string(MAX_SHADOW_ATLAS_SLOTS)});
         args.defines.push_back({"MAX_POINT_SHADOW_ATLAS_SLOTS", std::to_string(MAX_POINT_SHADOW_ATLAS_SLOTS)});
         args.defines.push_back({"MAX_SHADOWCASCADES", std::to_string(MAX_SHADOWCASCADES)});
@@ -1074,4 +1085,37 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
         ShaderPool::getShaderLangStr(backend).c_str());
 
     return shaderData;
+}
+
+void editor::ShaderBuilder::compileHlslBytecode(ShaderData& shaderData) {
+#ifdef _WIN32
+    static const pD3DCompile d3dCompile = []() -> pD3DCompile {
+        HMODULE dll = LoadLibraryA("d3dcompiler_47.dll");
+        return dll ? reinterpret_cast<pD3DCompile>(GetProcAddress(dll, "D3DCompile")) : nullptr;
+    }();
+    if (!d3dCompile) {
+        return;
+    }
+
+    for (ShaderStage& stage : shaderData.stages) {
+        // Target and flags of sokol_gfx compiling the source
+        const char* target = (stage.type == ShaderStageType::VERTEX) ? "vs_5_0" : "ps_5_0";
+        ID3DBlob* code = nullptr;
+        ID3DBlob* messages = nullptr;
+        HRESULT hr = d3dCompile(stage.source.c_str(), stage.source.size(), nullptr, nullptr, nullptr, "main", target,
+            D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &code, &messages);
+        std::string error = (FAILED(hr) && messages) ? static_cast<const char*>(messages->GetBufferPointer()) : "";
+        if (messages) messages->Release();
+        if (FAILED(hr)) {
+            if (code) code->Release();
+            throw std::runtime_error("Error compiling HLSL: " + error);
+        }
+
+        stage.bytecode.size = static_cast<uint32_t>(code->GetBufferSize());
+        stage.bytecode.data = new unsigned char[stage.bytecode.size];
+        memcpy(stage.bytecode.data, code->GetBufferPointer(), stage.bytecode.size);
+        stage.source.clear();
+        code->Release();
+    }
+#endif
 }

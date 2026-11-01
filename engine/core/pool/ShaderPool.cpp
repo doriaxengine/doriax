@@ -14,6 +14,7 @@
 #include <mutex>
 #include <cctype>
 #include <set>
+#include <bitset>
 
 #ifdef SOKOL_GLCORE
 #include "glsl410.h"
@@ -112,6 +113,10 @@ bool ShaderPool::parseShaderTypeToken(const std::string& typeToken, ShaderType& 
     }
     if (typeToken == "underwater") {
         shaderType = ShaderType::UNDERWATER;
+        return true;
+    }
+    if (typeToken == "probefilter") {
+        shaderType = ShaderType::PROBE_FILTER;
         return true;
     }
 
@@ -413,6 +418,7 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
         case ShaderType::POSTPROCESS: return lowerCase ? "postprocess" : "Post-process";
         case ShaderType::WATER:  return lowerCase ? "water"  : "Water";
         case ShaderType::UNDERWATER: return lowerCase ? "underwater" : "Underwater";
+        case ShaderType::PROBE_FILTER: return lowerCase ? "probefilter" : "Probe Filter";
         default:                 return lowerCase ? "unknown": "Unknown";
     }
 }
@@ -527,6 +533,26 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
     return shortName ? "?" : "Unknown";
 }
 
+int ShaderPool::getShaderPropertyBit(ShaderType shaderType, const std::string& name){
+    auto token = [](const std::string& value){
+        std::string result;
+        for (char c : value) {
+            if (std::isalnum((unsigned char)c))
+                result += std::tolower((unsigned char)c);
+        }
+        return result;
+    };
+    const std::string wanted = token(name);
+    for (int bit = 0; bit < getShaderPropertyCount(shaderType); bit++) {
+        const std::string shortName = getShaderPropertyName(shaderType, bit, true);
+        if (shortName == "?") // retired
+            continue;
+        if (wanted == token(shortName) || wanted == token(getShaderPropertyName(shaderType, bit, false)))
+            return bit;
+    }
+    return -1;
+}
+
 std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties, uint16_t customId){
 
     std::string str = getShaderTypeName(shaderType, true);
@@ -557,6 +583,61 @@ std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties,
 
 ShaderKey ShaderPool::getShaderKey(ShaderType shaderType, uint32_t properties, uint16_t customId) {
     return ((uint64_t)customId << 48) | (((uint64_t)shaderType & 0xFFFF) << 32) | (properties & 0xFFFFFFFF);
+}
+
+bool ShaderPool::loadPrecompiled(ShaderType shaderType, uint32_t properties, uint16_t customId, ShaderData& shaderData){
+    std::string shaderStr = getShaderStr(shaderType, properties, customId);
+    std::string base64Shd = getBase64Shader(getShaderName(shaderStr));
+
+    // Validate against the storage key (customId stripped): the unique shaderStr
+    // already selected the forked source; the embedded key only checks type+props.
+    ShaderKey storageKey = getStorageKey(getShaderKey(shaderType, properties, customId));
+
+    if (!base64Shd.empty() && ShaderDataSerializer::readFromBytes(Base64::decode(base64Shd), storageKey, shaderData)){
+        return true;
+    }
+    return ShaderDataSerializer::readFromFile("shader://"+getShaderFile(shaderStr, ".sdat"), storageKey, shaderData);
+}
+
+uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t properties, uint16_t customId){
+    // optional features, in the order they are given up
+    std::vector<int> optionalBits;
+    if (shaderType == ShaderType::MESH){
+        optionalBits = {28, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
+    }else if (shaderType == ShaderType::DEPTH){
+        optionalBits = {7, 0}; // Ams Tex
+    }else if (shaderType == ShaderType::GBUFFER){
+        optionalBits = {8, 0}; // Mrt Bct
+    }
+
+    std::vector<uint32_t> present;
+    for (int bit : optionalBits){
+        if (properties & (1u << bit)){
+            present.push_back(1u << bit);
+        }
+    }
+
+    // fewest features dropped first
+    const uint32_t combinations = 1u << present.size();
+    for (size_t dropped = 1; dropped <= present.size(); dropped++){
+        for (uint32_t combination = 1; combination < combinations; combination++){
+            if (std::bitset<32>(combination).count() != dropped){
+                continue;
+            }
+            uint32_t candidate = properties;
+            for (size_t i = 0; i < present.size(); i++){
+                if (combination & (1u << i)){
+                    candidate &= ~present[i];
+                }
+            }
+            ShaderData shaderData;
+            if (loadPrecompiled(shaderType, candidate, customId, shaderData)){
+                return candidate;
+            }
+        }
+    }
+
+    return properties;
 }
 
 void ShaderPool::addMissingShader(const std::string& shaderStr) {
@@ -608,25 +689,17 @@ std::shared_ptr<ShaderRender> ShaderPool::get(ShaderType shaderType, uint32_t pr
         } else {
             ShaderData tempShaderData;
 
-            std::string shaderStr = getShaderStr(shaderType, properties, customId);
-            std::string base64Shd = getBase64Shader(getShaderName(shaderStr));
-
-            // Validate against the storage key (customId stripped): the unique shaderStr
-            // already selected the forked source; the embedded key only checks type+props.
-            ShaderKey storageKey = getStorageKey(shaderKey);
-
-            if (!base64Shd.empty() && ShaderDataSerializer::readFromBytes(Base64::decode(base64Shd), storageKey, tempShaderData)){
-                shared->createShader(tempShaderData);
-            } else if (ShaderDataSerializer::readFromFile("shader://"+getShaderFile(shaderStr, ".sdat"), storageKey, tempShaderData)){
+            if (loadPrecompiled(shaderType, properties, customId, tempShaderData)){
                 shared->createShader(tempShaderData);
             } else {
-                // a shader set without the 'Dlo' variant still has the general one
-                if (shaderType == ShaderType::MESH && customId == 0 && (properties & (1u << 28))){
-                    auto fallback = get(shaderType, properties & ~(1u << 28), customId);
-                    if (fallback && fallback->isCreated()){
-                        getMap().erase(shaderKey);
-                        return fallback;
-                    }
+                // A set exported from stale scene keys can lack this variant
+                std::string shaderStr = getShaderStr(shaderType, properties, customId);
+                uint32_t fallbackProperties = getFallbackProperties(shaderType, properties, customId);
+                if (fallbackProperties != properties){
+                    Log::warn("Shader %s is missing, using %s", shaderStr.c_str(), getShaderStr(shaderType, fallbackProperties, customId).c_str());
+                    // kept under the missing key too, so the search runs once
+                    shared = get(shaderType, fallbackProperties, customId);
+                    return shared;
                 }
                 addMissingShader(shaderStr);
             }
@@ -709,6 +782,10 @@ ShaderKey ShaderPool::normalizeKey(ShaderKey key) {
     ShaderType type = getShaderTypeFromKey(key);
     uint16_t customId = getCustomIdFromKey(key);
     uint32_t properties = getPropertiesFromKey(key) & getValidPropertyMask(type);
+    // Ult with L2d used to take Tan without Nmp
+    if (type == ShaderType::MESH && (properties & 1u) && (properties & (1u << 22)) && !(properties & (1u << 7))){
+        properties &= ~(1u << 8);
+    }
     return getShaderKey(type, properties, customId);
 }
 

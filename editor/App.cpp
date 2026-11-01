@@ -19,6 +19,7 @@
 #include "util/FileDialogs.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
+#include "util/SystemFonts.h"
 #include "util/Util.h"
 
 #include "EditorVersion.h"
@@ -137,6 +138,8 @@ void editor::App::saveFunc(){
         if (!codeEditor->saveLastFocused()) {
             registerAlert("Save Failed", "The script could not be saved. Check its file permissions and try again.");
         }
+    }else if (project.isPlaySessionActive()) {
+        registerAlert("Scene Running", "A scene is currently running or stopping. Stop it before saving.");
     }else if (!project.isAnyScenePlaying()) {
         project.saveLastSelectedScene();
     }
@@ -144,6 +147,9 @@ void editor::App::saveFunc(){
 
 void editor::App::saveAllFunc(std::function<void(bool)> callback){
     if (project.isAnyScenePlaying() || saveDialogInProgress) {
+        if (project.isPlaySessionActive()) {
+            registerAlert("Scene Running", "A scene is currently running or stopping. Stop it before saving.");
+        }
         if (callback) callback(false);
         return;
     }
@@ -255,6 +261,7 @@ enum class AppMenuCommand : uint32_t {
     ResumeScene,
     StopScene,
     DetachCamera,
+    Fullscreen,
     RemoveScene,
     About,
     Documentation,
@@ -448,6 +455,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
 
     PlatformMenuItem detachCameraItem = menuShortcut(AppMenuCommand::DetachCamera, "Detach Camera", "F8", canDetachCamera);
     detachCameraItem.checked = canDetachCamera && selectedScene->sceneRender && selectedScene->sceneRender->isCameraDetached();
+    PlatformMenuItem fullscreenItem = menuShortcut(AppMenuCommand::Fullscreen, "Full Screen", "F11", isPlaying || isPaused);
+    fullscreenItem.checked = sceneWindow->isFullscreen();
 
     menu.menus.push_back(menuSubmenu("Scene", {
         menuSubmenu("New Scene", {
@@ -461,6 +470,7 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuShortcut(AppMenuCommand::ResumeScene, "Resume", "F5", canResume),
         menuShortcut(AppMenuCommand::StopScene, "Stop", "F7", canStop),
         detachCameraItem,
+        fullscreenItem,
         menuSeparator(),
         menuCommand(AppMenuCommand::RemoveScene, "Remove Scene from Project", canRemove)
     }));
@@ -673,6 +683,9 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
         case AppMenuCommand::DetachCamera:
             project.toggleCameraDetached(project.getSelectedSceneId());
             break;
+        case AppMenuCommand::Fullscreen:
+            sceneWindow->toggleFullscreen(project.getSelectedSceneId());
+            break;
         case AppMenuCommand::RemoveScene: {
             const uint32_t sceneId = project.getSelectedSceneId();
             if (project.getSelectedScene() && !project.isAnyScenePlaying() &&
@@ -717,7 +730,8 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 "F5    Run current scene / Resume\n"
                 "F6    Pause\n"
                 "F7    Stop\n"
-                "F8    Detach / attach camera\n\n"
+                "F8    Detach / attach camera\n"
+                "F11    Full screen\n\n"
                 "SCENE VIEW\n"
                 "W / E / R    Move / Rotate / Scale\n"
                 "T    Toggle local / global transforms\n"
@@ -1565,6 +1579,18 @@ void editor::App::setup() {
     configArabic.RasterizerMultiply = 1.5f;
     io.Fonts->AddFontFromMemoryTTF(noto_sans_arabic_ttf, noto_sans_arabic_ttf_len, 16.0f, &configArabic);
 
+    // CJK from the system fonts, too large to ship
+    auto mergeCjkFonts = [&io](const ImFontConfig& rasterizer) {
+        for (const SystemFonts::Font& cjk : SystemFonts::cjkFonts()) {
+            ImFontConfig configCjk = rasterizer;
+            configCjk.MergeMode = true;
+            configCjk.FontDataOwnedByAtlas = false;
+            configCjk.FontNo = cjk.faceIndex;
+            io.Fonts->AddFontFromMemoryTTF(cjk.data, cjk.size, 16.0f, &configCjk);
+        }
+    };
+    mergeCjkFonts(configArabic);
+
     ImFontConfig config3;
     strcpy(config3.Name, "jetbrains-mono-regular");
     config3.FontDataOwnedByAtlas = false;
@@ -1579,6 +1605,7 @@ void editor::App::setup() {
     configCodeArabic.OversampleH = 2;
     configCodeArabic.OversampleV = 2;
     io.Fonts->AddFontFromMemoryTTF(noto_sans_arabic_ttf, noto_sans_arabic_ttf_len, 16.0f, &configCodeArabic);
+    mergeCjkFonts(configCodeArabic);
 
     io.FontDefault = font1;
 
@@ -1799,6 +1826,9 @@ void editor::App::show(){
             }
             if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
                 project.toggleCameraDetached(selectedSceneId);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
+                sceneWindow->toggleFullscreen(selectedSceneId);
             }
         }
         if (ImGui::IsKeyPressed(ImGuiKey_F1)) executeMenuCommand({static_cast<uint32_t>(AppMenuCommand::Documentation), {}});
@@ -2309,11 +2339,13 @@ void editor::App::engineRender(){
                     sceneChanged = false;
                 }
 
-                // Update child scene render systems so their entities display correctly
+                // Update child scene render systems so their entities display correctly.
+                // Only once loaded as a layer: one loaded inline during Play (or before the
+                // reactivation after Stop) has no camera from Scene::load() yet.
                 for (const ChildSceneRef& childSceneRef : sceneProject.childScenes) {
                     uint32_t childId = childSceneRef.id;
                     SceneProject* childScene = project.getScene(childId);
-                    if (childScene && childScene->expandedInline && childScene->scene) {
+                    if (childScene && childScene->expandedInline && childScene->scene && Engine::isSceneRunning(childScene->scene)) {
                         if (childScene->sceneRender) {
                             childScene->sceneRender->hideAllGizmos();
                         }
@@ -2629,6 +2661,11 @@ void editor::App::clearSceneWindowState(uint32_t sceneId) {
 }
 
 void editor::App::prepareForProjectSwitch() {
+    // Queued saves are for the old project; each cancel opens the next dialog
+    while (sceneSaveDialog.isOpen() || projectSaveDialog.isOpen()) {
+        sceneSaveDialog.close();
+        projectSaveDialog.close();
+    }
     imageViewerWindow->closeAll();
     resourcesWindow->cancelThumbnailWork();
     // Thumbnail cancellation prevents new preview loads from being queued;
@@ -2918,7 +2955,11 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v33: pbr.glsl reads u_fs_texCoordSets.set1 in every UV-set variant.
     // v34: shadow projection in the fragment shader, directional-only variant.
     // v35: the directional-only variant declares no point or spot bindings.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v35";
+    // v36: probe_filter prefilters runtime reflection probe captures into roughness mips.
+    // v37: probe_filter downsamples each level from the one above.
+    // v38: ssr fades out rough surfaces (SSR_MAX_ROUGHNESS).
+    // v39: point shadow atlas sampled at an explicit LOD.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v39";
 }
 
 void editor::App::pushTabNotificationStyle(){
@@ -3043,9 +3084,6 @@ void editor::App::processNextSaveDialog() {
                         saveDialogInProgress = false;
                         popSaveDialogQueueItem();
 
-                        if (!success) {
-                            Backend::getApp().registerAlert("Error", "Scene could not be saved. See Output for details.");
-                        }
                         if (completionCallback) {
                             completionCallback(success);
                         }
@@ -3075,6 +3113,10 @@ void editor::App::processNextSaveDialog() {
 
                 // Process the next item if available
                 processNextSaveDialog();
+            },
+            [this, sceneId](const fs::path& fullPath) {
+                const SceneProject* owner = project.findOtherSceneUsingFile(fullPath, sceneId);
+                return owner ? owner->name : std::string();
             }
         );
     }

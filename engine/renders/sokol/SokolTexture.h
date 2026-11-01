@@ -48,7 +48,7 @@ namespace doriax{
         bool createFramebufferTexture(
                     TextureType type, bool depth, bool shadowMap, int width, int height,
                     TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV,
-                    ColorFormat colorFormat = ColorFormat::RGBA);
+                    ColorFormat colorFormat = ColorFormat::RGBA, int numMipmaps = 1);
 
         bool createDynamicTexture(const std::string& label, int width, int height);
         void updateTexture(const void* data, size_t size);

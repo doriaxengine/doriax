@@ -1,5 +1,6 @@
-# Embeds the DPI awareness manifest into a Windows executable. Included by the
-# editor build and by the standalone game build, which are separate top levels.
+# Embeds doriax.manifest (DPI awareness, UTF-8 code page) into a Windows
+# executable. Included by the editor build and by the standalone game build,
+# which are separate top levels.
 
 set(DORIAX_WINDOWS_MANIFEST "${CMAKE_CURRENT_LIST_DIR}/doriax.manifest")
 

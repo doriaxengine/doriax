@@ -133,19 +133,13 @@ Matrix4& Matrix4::operator*=(float scalar) {
 }
 
 Vector3 Matrix4::operator*(const Vector3 &v) const{
-    float prod[4] = { 0,0,0,0 };
+    const float x = v.x * matrix[0][0] + v.y * matrix[1][0] + v.z * matrix[2][0] + matrix[3][0];
+    const float y = v.x * matrix[0][1] + v.y * matrix[1][1] + v.z * matrix[2][1] + matrix[3][1];
+    const float z = v.x * matrix[0][2] + v.y * matrix[1][2] + v.z * matrix[2][2] + matrix[3][2];
+    const float w = v.x * matrix[0][3] + v.y * matrix[1][3] + v.z * matrix[2][3] + matrix[3][3];
+    const float div = 1.0 / w;
 
-    for (int r=0;r<4;r++)
-    {
-        for (int c=0;c<3;c++)
-            prod[r] += v[c]*get(c,r);
-
-        prod[r] += get(3,r);
-    }
-
-    float div = 1.0 / prod[3];
-
-    return Vector3(prod[0]*div,prod[1]*div,prod[2]*div);
+    return Vector3(x * div, y * div, z * div);
 }
 
 Vector4 Matrix4::operator*(const Vector4 &v) const{

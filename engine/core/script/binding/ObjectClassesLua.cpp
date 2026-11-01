@@ -175,6 +175,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("linearStart", &Fog::getLinearStart, &Fog::setLinearStart)
         .addProperty("linearEnd", &Fog::getLinearEnd, &Fog::setLinearEnd)
         .addFunction("setLinearStartEnd", &Fog::setLinearStartEnd)
+        .addFunction("getFogComponent", &Fog::getComponent<FogComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -204,6 +205,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&SkyBox::setShaderUniform))
         .addFunction("getShaderUniform", &SkyBox::getShaderUniform)
         .addFunction("removeShaderUniform", &SkyBox::removeShaderUniform)
+        .addFunction("getSkyComponent", &SkyBox::getComponent<SkyComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -252,6 +254,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("removeBody3D", &Object::removeBody3D)
 #endif
         .addFunction("getRay", &Object::getRay)
+        .addFunction("getTransform", &Object::getComponent<Transform>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -305,6 +308,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("screenToRay", &Camera::screenToRay)
         .addFunction("getDistanceFromTarget", &Camera::getDistanceFromTarget)
         .addFunction("updateCamera", &Camera::updateCamera)
+        .addFunction("getCameraComponent", &Camera::getComponent<CameraComponent>)
         .endClass();
 
 
@@ -341,6 +345,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("automaticShadowCamera", &Light::isAutomaticShadowCamera, &Light::setAutomaticShadowCamera)
         .addProperty("numCascades", &Light::getNumCascades, &Light::setNumCascades)
         .addFunction("setNumCascades", &Light::setNumCascades)
+        .addFunction("getLightComponent", &Light::getComponent<LightComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -361,6 +366,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("shadowBias", &Light2D::getShadowBias, &Light2D::setShadowBias)
         .addProperty("shadowSoftness", &Light2D::getShadowSoftness, &Light2D::setShadowSoftness)
         .addProperty("mapResolution", &Light2D::getMapResolution, &Light2D::setMapResolution)
+        .addFunction("getLight2DComponent", &Light2D::getComponent<Light2DComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -378,6 +384,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getVertexCount", &Occluder2D::getVertexCount)
         .addProperty("closed", &Occluder2D::isClosed, &Occluder2D::setClosed)
         .addProperty("enabled", &Occluder2D::isEnabled, &Occluder2D::setEnabled)
+        .addFunction("getOccluder2DComponent", &Occluder2D::getComponent<Occluder2DComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -415,6 +422,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setTextures", &ReflectionProbe::setTextures)
         .addFunction("setTexture", &ReflectionProbe::setTexture)
         .addFunction("refresh", &ReflectionProbe::refresh)
+        .addFunction("getReflectionProbeComponent", &ReflectionProbe::getComponent<ReflectionProbeComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -467,6 +475,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("removeShaderUniform", &Water::removeShaderUniform)
         .addFunction("getHeight", &Water::getHeight)
         .addFunction("getNormal", &Water::getNormal)
+        .addFunction("getWaterComponent", &Water::getComponent<WaterComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -485,6 +494,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("size", &WaterExclusion::getSize, (void(WaterExclusion::*)(Vector3))&WaterExclusion::setSize)
         .addFunction("setSize", (void(WaterExclusion::*)(const float, const float, const float))&WaterExclusion::setSize)
         .addFunction("contains", &WaterExclusion::contains)
+        .addFunction("getWaterExclusionComponent", &WaterExclusion::getComponent<WaterExclusionComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -592,6 +602,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("updateInstances", &Mesh::updateInstances)
         .addFunction("getNumInstances", &Mesh::getNumInstances)
         .addFunction("clearInstances", &Mesh::clearInstances)
+        .addFunction("getMeshComponent", &Mesh::getComponent<MeshComponent>)
+        // nil until the mesh is instanced
+        .addFunction("getInstancedMeshComponent", [] (Mesh* self) -> InstancedMeshComponent* { return self->getScene()->findComponent<InstancedMeshComponent>(self->getEntity()); })
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -629,6 +642,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addConstructor <void (*) (Scene*), void (*) (Scene*, Entity)> ()
         .addProperty("normal", &Mirror::getNormal, (void(Mirror::*)(Vector3))&Mirror::setNormal)
         .addFunction("setNormal", (void(Mirror::*)(const float, const float, const float))&Mirror::setNormal)
+        .addFunction("getMirrorComponent", &Mirror::getComponent<MirrorComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -673,11 +687,13 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("textureDetailTiles", &Terrain::getTextureDetailTiles, &Terrain::setTextureDetailTiles)
         .addProperty("rootGridSize", &Terrain::getRootGridSize, &Terrain::setRootGridSize)
         .addProperty("levels", &Terrain::getLevels, &Terrain::setLevels)
+        .addFunction("getTerrainComponent", &Terrain::getComponent<TerrainComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
         .deriveClass<Bone, Object>("Bone")
         .addConstructor <void (*) (Scene*, Entity)> ()
+        .addFunction("getBoneComponent", &Bone::getComponent<BoneComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -717,6 +733,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getWidth", &Tilemap::getWidth)
         .addFunction("getHeight", &Tilemap::getHeight)
         .addFunction("clearAll", &Tilemap::clearAll)
+        .addFunction("getTilemapComponent", &Tilemap::getComponent<TilemapComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -743,6 +760,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<int, float>(&Model::setMorphWeight),
             luabridge::overload<const std::string&, float>(&Model::setMorphWeight))
         .addFunction("resetToBindPose", &Model::resetToBindPose)
+        .addFunction("getModelComponent", &Model::getComponent<ModelComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -754,6 +772,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("width", [] (MeshPolygon* self) -> int { return self->getWidth(); })
         .addProperty("height", [] (MeshPolygon* self) -> int { return self->getHeight(); })
         .addProperty("flipY", &MeshPolygon::isFlipY, &MeshPolygon::setFlipY)
+        .addFunction("getMeshPolygonComponent", &MeshPolygon::getComponent<MeshPolygonComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -805,6 +824,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Points::setShaderUniform))
         .addFunction("getShaderUniform", &Points::getShaderUniform)
         .addFunction("removeShaderUniform", &Points::removeShaderUniform)
+        .addFunction("getPointsComponent", &Points::getComponent<PointsComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -837,6 +857,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Lines::setShaderUniform))
         .addFunction("getShaderUniform", &Lines::getShaderUniform)
         .addFunction("removeShaderUniform", &Lines::removeShaderUniform)
+        .addFunction("getLinesComponent", &Lines::getComponent<LinesComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -869,6 +890,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, int, bool>(&Sprite::startAnimation))
         .addFunction("pauseAnimation", &Sprite::pauseAnimation)
         .addFunction("stopAnimation", &Sprite::stopAnimation)
+        .addFunction("getSpriteComponent", &Sprite::getComponent<SpriteComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -912,6 +934,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<size_t, bool>(&Container::setBoxExpand),
             luabridge::overload<bool>(&Container::setBoxExpand))
         .addFunction("isBoxExpand", &Container::isBoxExpand)
+        .addFunction("getUIContainerComponent", &Container::getComponent<UIContainerComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -940,6 +963,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Polygon::setShaderUniform))
         .addFunction("getShaderUniform", &Polygon::getShaderUniform)
         .addFunction("removeShaderUniform", &Polygon::removeShaderUniform)
+        .addFunction("getPolygonComponent", &Polygon::getComponent<PolygonComponent>)
+        .addFunction("getUIComponent", &Polygon::getComponent<UIComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -984,6 +1009,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("pivotCentered", &Text::isPivotCentered, &Text::setPivotCentered)
         .addFunction("getAABB", &Text::getAABB)
         .addFunction("getWorldAABB", &Text::getWorldAABB)
+        .addFunction("getTextComponent", &Text::getComponent<TextComponent>)
+        .addFunction("getUIComponent", &Text::getComponent<UIComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1018,6 +1045,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Image::setShaderUniform))
         .addFunction("getShaderUniform", &Image::getShaderUniform)
         .addFunction("removeShaderUniform", &Image::removeShaderUniform)
+        .addFunction("getImageComponent", &Image::getComponent<ImageComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1330,6 +1358,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("applyLinearImpulse", &Body2D::applyLinearImpulse)
         .addFunction("applyLinearImpulseToCenter", &Body2D::applyLinearImpulseToCenter)
         .addFunction("applyAngularImpulse", &Body2D::applyAngularImpulse)
+        .addFunction("getBody2DComponent", &Body2D::getComponent<Body2DComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1347,6 +1376,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setWeldJoint", &Joint2D::setWeldJoint)
         .addFunction("setMotorJoint", &Joint2D::setMotorJoint)
         .addFunction("getType", &Joint2D::getType)
+        .addFunction("getJoint2DComponent", [] (Joint2D* self) -> Joint2DComponent& { return self->getComponent<Joint2DComponent>(); })
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1460,6 +1490,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("applyAngularImpulse", &Body3D::applyAngularImpulse)
         .addFunction("applyBuoyancyImpulse", &Body3D::applyBuoyancyImpulse)
         .addFunction("getCenterOfMassPosition", &Body3D::getCenterOfMassPosition)
+        .addFunction("getBody3DComponent", &Body3D::getComponent<Body3DComponent>)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1480,6 +1511,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setRackAndPinionJoint", &Joint3D::setRackAndPinionJoint)
         .addFunction("setPulleyJoint", &Joint3D::setPulleyJoint)
         .addFunction("getType", &Joint3D::getType)
+        .addFunction("getJoint3DComponent", [] (Joint3D* self) -> Joint3DComponent& { return self->getComponent<Joint3DComponent>(); })
         .endClass();
 
     luabridge::getGlobalNamespace(L)

@@ -47,6 +47,8 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         message(FATAL_ERROR "Can't find project root directory: ${PROJECT_ROOT}")
     endif()
     file(TO_CMAKE_PATH ${PROJECT_ROOT} PROJECT_ROOT)
+    # Escape glob wildcards in the path
+    string(REGEX REPLACE "([][*?])" "[\\1]" PROJECT_ROOT_GLOB "${PROJECT_ROOT}")
 
     # Project-wide runtime settings are injected here by the editor Exporter.
     # Standalone engine builds keep the defaults declared by each platform.
@@ -219,11 +221,18 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/emscripten)
 
         set(EM_PRELOAD_FILES)
-        if(EXISTS "${PROJECT_ROOT}/assets")
-            set(EM_PRELOAD_FILES "${EM_PRELOAD_FILES} --preload-file ${PROJECT_ROOT}/assets@/")
-        endif()
-        if(EXISTS "${PROJECT_ROOT}/lua")
-            set(EM_PRELOAD_FILES "${EM_PRELOAD_FILES} --preload-file ${PROJECT_ROOT}/lua@/")
+        # emcc splits src@dst at a single @
+        string(REPLACE "@" "@@" EM_PRELOAD_ROOT "${PROJECT_ROOT}")
+        foreach(PROJECT_CONTENT assets lua)
+            # emcc fails when there is nothing to preload
+            file(GLOB_RECURSE EM_CONTENT_FILES CONFIGURE_DEPENDS "${PROJECT_ROOT_GLOB}/${PROJECT_CONTENT}/*")
+            if(EM_CONTENT_FILES)
+                set(EM_PRELOAD_FILES "${EM_PRELOAD_FILES} --preload-file \"${EM_PRELOAD_ROOT}/${PROJECT_CONTENT}@/\"")
+            endif()
+        endforeach()
+        if(NOT EM_PRELOAD_FILES)
+            # emcc leaves the old bundle behind
+            file(REMOVE "${CMAKE_BINARY_DIR}/${APP_NAME}.data")
         endif()
 
         list(APPEND PLATFORM_SOURCE
@@ -718,6 +727,10 @@ endif()
 if(WIN32)
     if(MSVC)
         add_compile_options(/bigobj)
+        # Without it MSBuild compiles the files of a target one at a time
+        if(CMAKE_GENERATOR MATCHES "Visual Studio")
+            add_compile_options(/MP)
+        endif()
         if(DORIAX_SHARED)
             set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
         else()
@@ -1071,7 +1084,7 @@ endif()
 # =============================================================
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
-    file(GLOB_RECURSE PROJECT_SOURCE ${PROJECT_ROOT}/*.cpp)
+    file(GLOB_RECURSE PROJECT_SOURCE ${PROJECT_ROOT_GLOB}/*.cpp)
 
     # Embed the exported icon into the Windows executable (Explorer, taskbar
     # and window icon). Other platforms set the window icon at runtime instead.

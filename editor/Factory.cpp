@@ -2191,6 +2191,35 @@ std::string editor::Factory::createBoneComponent(int indentSpaces, EntityRegistr
     return code.str();
 }
 
+std::string editor::Factory::createSkinComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting) {
+    if (!scene->findComponent<SkinComponent>(entity)) return "";
+    // a model builds the skins of its meshes again when it loads
+    if (Stream::isModelBackedMesh(entity, scene, scene->getSignature(entity))) return "";
+    SkinComponent& skin = scene->getComponent<SkinComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    const std::string skinValue = beginHeapComponentCode(code, ind, "SkinComponent", "skin");
+    code << ind << "skin.numBones = " << skin.numBones << ";\n";
+    // the other entries are identity, as in a new component
+    for (unsigned int b = 0; b < skin.numBones && b < skin.bonesMatrix.size(); b++) {
+        const Matrix4& matrix = skin.bonesMatrix[b];
+        if (matrix == Matrix4()) continue;
+        code << ind << "skin.bonesMatrix[" << b << "] = Matrix4(\n";
+        for (int row = 0; row < 4; row++) {
+            code << ind << "    ";
+            for (int col = 0; col < 4; col++) {
+                code << formatFloat(matrix[col][row]);
+                if (row < 3 || col < 3) code << ", ";
+            }
+            code << "\n";
+        }
+        code << ind << ");\n";
+    }
+    code << ind << "skin.needUpdateBones = true;\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "SkinComponent", skinValue, assignExisting);
+    return code.str();
+}
+
 // Emit "<target> = { v0, v1, ... };" for a component list member; empty lists
 // emit nothing (component default). Shared by the keyframe track components.
 template<typename T, typename FormatFn>
@@ -2345,6 +2374,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::AnimationComponent: return createAnimationComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ModelComponent: return createModelComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::BoneComponent: return createBoneComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::SkinComponent: return createSkinComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting);
         case ComponentType::KeyframeTracksComponent: return createKeyframeTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::TranslateTracksComponent: return createTranslateTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::RotateTracksComponent: return createRotateTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

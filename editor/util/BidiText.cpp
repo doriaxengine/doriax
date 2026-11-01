@@ -298,7 +298,7 @@ std::string BidiText::toVisual(const std::string& text) {
     std::string out;
     out.reserve(text.size());
     for (uint32_t codepoint : visual) {
-        out += StringUtils::toUTF8((wchar_t)codepoint);
+        out += StringUtils::toUTF8(codepoint);
     }
 
     return out;

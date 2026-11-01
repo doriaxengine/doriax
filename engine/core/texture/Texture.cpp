@@ -397,8 +397,8 @@ std::string Texture::buildCubeTextureId(const std::string paths[6]) {
 // to the plain path too, so ids stay identical to the pre-svgScale-field format.
 std::string Texture::buildPathTextureId() const {
     std::string pathId = TextureData::hasSvgExtension(paths[0].c_str()) ? TextureData::buildSvgScalePath(paths[0], svgScale) : paths[0];
-    // a file loaded with and without the fix is two pool entries
-    if (isAlphaBorderFixed()) {
+    // a file loaded with and without the fix is two pool entries, and no path is no file
+    if (isAlphaBorderFixed() && !pathId.empty()) {
         pathId += "|alphaborder";
     }
     return pathId;
@@ -606,7 +606,8 @@ unsigned int Texture::getHeight() const{
 
 bool Texture::isTransparent() const{
     if (!data){
-        return false;
+        // a copy that took its render from the pool has no data
+        return render && render->isTransparent();
     }
     return getData().isTransparent();
 }

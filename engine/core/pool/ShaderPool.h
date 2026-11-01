@@ -27,6 +27,8 @@ namespace doriax{
         static std::string getShaderFile(const std::string& shaderStr, const std::string& extension);
         static std::string getShaderName(const std::string& shaderStr);
 
+        static bool loadPrecompiled(ShaderType shaderType, uint32_t properties, uint16_t customId, ShaderData& shaderData);
+        static uint32_t getFallbackProperties(ShaderType shaderType, uint32_t properties, uint16_t customId);
         static void addMissingShader(const std::string& shaderStr);
 
     public:
@@ -50,6 +52,8 @@ namespace doriax{
         static bool parseShaderTypeToken(const std::string& typeToken, ShaderType& shaderType);
         static int getShaderPropertyCount(ShaderType shaderType);
         static std::string getShaderPropertyName(ShaderType shaderType, int bit, bool shortName = true);
+        // by short or long name, -1 when unknown
+        static int getShaderPropertyBit(ShaderType shaderType, const std::string& name);
         static ShaderType getShaderTypeFromKey(ShaderKey key);
         static uint32_t getPropertiesFromKey(ShaderKey key);
         static uint16_t getCustomIdFromKey(ShaderKey key);

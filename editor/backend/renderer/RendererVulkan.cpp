@@ -211,6 +211,13 @@ bool Renderer::State::createVulkanDevice(){
     VkPhysicalDeviceFeatures2 supported{};
     supported.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     vkGetPhysicalDeviceFeatures2(physicalDevice, &supported);
+    VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptorProps{};
+    descriptorProps.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+    VkPhysicalDeviceProperties2 properties{};
+    properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    properties.pNext = &descriptorProps;
+    vkGetPhysicalDeviceProperties2(physicalDevice, &properties);
 
     VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBuffer{};
     descriptorBuffer.sType =
@@ -235,6 +242,12 @@ bool Renderer::State::createVulkanDevice(){
     requiredFeatures.pNext = &vulkan13;
     requiredFeatures.features.samplerAnisotropy = VK_TRUE;
     requiredFeatures.features.dualSrcBlend = VK_TRUE;
+    // out-of-range buffer reads return zeros instead of hanging the GPU (seen on Intel),
+    // only where the robust descriptor sizes match the plain ones sokol writes
+    requiredFeatures.features.robustBufferAccess =
+        supported.features.robustBufferAccess &&
+        descriptorProps.robustUniformBufferDescriptorSize == descriptorProps.uniformBufferDescriptorSize &&
+        descriptorProps.robustStorageBufferDescriptorSize == descriptorProps.storageBufferDescriptorSize;
     requiredFeatures.features.textureCompressionBC =
         supported.features.textureCompressionBC;
     requiredFeatures.features.textureCompressionETC2 =

@@ -1934,6 +1934,9 @@ void ActionSystem::processRunningAction(double dt, Entity entity, ActionComponen
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
                 colorActionMeshUpdate(dt, action, timedaction, coloraction, mesh);
+                if (targetSignature.test(scene->getComponentId<SpriteComponent>())){
+                    scene->getComponent<SpriteComponent>(action.target).needUpdateBatch = true;
+                }
             }
             if (targetSignature.test(scene->getComponentId<UIComponent>())){
                 UIComponent& ui = scene->getComponent<UIComponent>(action.target);
@@ -1950,6 +1953,9 @@ void ActionSystem::processRunningAction(double dt, Entity entity, ActionComponen
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
                 alphaActionMeshUpdate(dt, action, timedaction, alphaaction, mesh);
+                if (targetSignature.test(scene->getComponentId<SpriteComponent>())){
+                    scene->getComponent<SpriteComponent>(action.target).needUpdateBatch = true;
+                }
             }
             if (targetSignature.test(scene->getComponentId<UIComponent>())){
                 UIComponent& ui = scene->getComponent<UIComponent>(action.target);

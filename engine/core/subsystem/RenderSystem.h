@@ -72,6 +72,11 @@ namespace doriax{
 		Vector4 boxMax_lod;       // xyz = influence AABB max, w = max available mip LOD
 	} fs_reflection_probe_t;
 
+	typedef struct fs_probe_filter_t {
+		Vector4 params; // x = roughness, y = cube face, z = samples (taps per side when downsampling), w = 1 to downsample
+		Vector4 source; // x = destination level size, y = source base size, z = source mip count
+	} fs_probe_filter_t;
+
 	typedef struct vs_shadow2d_t {
 		Vector4 lightPos_range; // xy = light world pos, w = range
 		Vector4 offset;         // x = NDC x offset for the polar seam duplication (-2, 0, +2)
@@ -231,6 +236,7 @@ namespace doriax{
 			TilemapComponent* tilemap;
 			Transform* transform;
 			float distanceToCamera;
+			uint64_t sortKey;
 		};
 
 		// water a camera pass draws
@@ -362,9 +368,24 @@ namespace doriax{
 			unsigned int observedCaptureRevision = 0;
 			Vector3 capturePosition;
 			Vector3 capturedPosition;
+			// the capture prefiltered into one roughness per mip level
+			TextureRender filteredMap;
+			bool needFilter = false;
 		};
 
 		std::unordered_map<Entity, std::unique_ptr<ReflectionProbeRuntime>> reflectionProbeRuntimes;
+
+		// prefilter of the finished captures (probe_filter.frag)
+		bool probeFilterLoaded;
+		TextureRender probeSourceMap; // box-filtered mip chain of the capture
+		TextureRender probeReduceMap; // scratch target while building the source chain
+		int probeSourceSize;
+		CameraRender probeFilterPassRender;
+		ObjectRender probeFilterRender;
+		std::shared_ptr<ShaderRender> probeFilterShader;
+		fs_probe_filter_t fs_probe_filter;
+		int probeFilterSlotParams;
+
 		// Each mirror's reflection camera. Kept here so the authored component stays copiable.
 		std::unordered_map<Entity, Entity> mirrorCameras;
 		// Main camera position for the instance distance fade: the colour and depth passes must
@@ -382,6 +403,117 @@ namespace doriax{
 		};
 		InstanceView instanceViews[1 + MAX_SHADOW_ATLAS_SLOTS];
 		bool instanceViewsDirty;
+
+		// Consecutive sprites of a color pass that share pipeline and textures are drawn
+		// as one: their vertices go to world space and the first sprite's render draws them.
+		struct SpriteBatchItem{
+			Entity entity;
+			MeshComponent* mesh;
+			Transform* transform;
+		};
+		// where a sprite's interleaved vertices keep each attribute
+		struct SpriteLayout{
+			unsigned int stride = 0;
+			size_t positionOffset = 0;
+			size_t colorOffset = 0;
+			int texcoordOffset = -1;
+		};
+		// a frustum plane along one axis
+		struct AxisPlane{
+			int axis;
+			float normal;
+			float d;
+		};
+		struct SpriteBatch{
+			bool active = false;
+			bool depthPrepass = false;
+			PipelineType pipType = PIP_DEFAULT;
+			CameraComponent* camera = nullptr;
+			Transform* cameraTransform = nullptr;
+			std::vector<SpriteBatchItem> items;
+			Submesh* previous = nullptr; // the sprite seen before, to tell when a run starts
+			SpriteLayout layout; // of the first sprite, shared by the others
+			std::vector<unsigned char> vertices;
+			std::vector<uint16_t> indices;
+			BufferRender vertexBuffer;
+			BufferRender indexBuffer;
+			// bytes of the GPU buffers and bytes this frame asked for
+			size_t vertexCapacity = 0;
+			size_t indexCapacity = 0;
+			size_t vertexDemand = 0;
+			size_t indexDemand = 0;
+			// planes of this pass, numbered so settled sprites know when their culling still holds
+			Plane frustumPlanes[6];
+			float farClip = 0;
+			uint64_t frustum = 0;
+			bool hasAxisPlanes = false; // 2D cameras
+			AxisPlane axisPlanes[6] = {};
+		};
+		SpriteBatch spriteBatch;
+
+		// batch data of a sprite whose mesh did not change, so frames draw it without reading the mesh
+		struct SettledSprite{
+			Entity entity = NULL_ENTITY;
+			uint32_t state = 0;
+			unsigned int vertexCount = 0;
+			unsigned int indexCount = 0;
+			uint32_t settledAt = 0; // in spriteUpdates
+			size_t meshIndex = 0; // where its MeshComponent was last found
+			float positions[4][3] = {}; // local
+			uint16_t indices[6] = {};
+			unsigned char vertices[4 * 64]; // world positions, texture rect and color applied
+		};
+		// equal pipelines, bindings and vertex layout, so its sprites draw as one
+		struct SpriteState{
+			std::vector<uint32_t> key;
+			SpriteLayout layout;
+			unsigned int sprites = 0;
+		};
+		struct SpriteRun{
+			Entity entity; // its render object draws the run
+			uint32_t state;
+			size_t vertexStart;
+			size_t indexStart;
+			unsigned int indexCount;
+		};
+		// settled sprites drawn since the last other draw, uploaded together
+		struct SpriteSegment{
+			std::vector<unsigned char> vertices;
+			std::vector<uint16_t> indices;
+			std::vector<SpriteRun> runs;
+			// drawn from their meshes when the buffers are still too small
+			std::vector<std::pair<size_t, Entity>> sprites;
+		};
+		std::vector<SettledSprite> settledSprites;
+		// culling data of settledSprites (same index), apart so a moving camera reads only these
+		struct SettledBounds{
+			float lo[3] = {};
+			float hi[3] = {};
+			uint64_t cullFrustum = 0; // the frustum inside was found for, 0 for none
+			bool culls = false;
+			bool inside = false;
+		};
+		std::vector<SettledBounds> settledBounds;
+		// the settled sprite of each entity, -1 when none, in pages freed once none of theirs is
+		// settled: entity ids only grow, so a plain array would grow with every sprite ever spawned
+		struct SettledPage{
+			int index[1024];
+			unsigned int count = 0;
+		};
+		std::vector<std::unique_ptr<SettledPage>> settledPages;
+		std::vector<SpriteState> spriteStates;
+		std::vector<uint32_t> freeSpriteStates;
+		std::map<std::vector<uint32_t>, uint32_t> spriteStateOf;
+		SpriteSegment spriteSegment;
+		Signature spriteLoopComponents; // ones the frame loops act on, which keep a sprite unsettled
+		uint32_t spriteUpdates = 0;
+		bool settledSkippedMVP = false; // the last update left the MVP of settled sprites as it was
+		// by entity: how long a sprite written again soon after it settled waits to settle again
+		struct SettleWait{
+			uint32_t until = 0; // in spriteUpdates
+			uint32_t length = 0;
+		};
+		std::unordered_map<Entity, SettleWait> settleWaits;
 
 		// error a view hides at a distance: threshold * (perUnit * distance + constant)
 		struct LodView{
@@ -630,6 +762,9 @@ namespace doriax{
 		void updateSkyEnvironment(SkyComponent& sky);
 		void updateReflectionProbes(double dt);
 		void renderReflectionProbeCapture();
+		void loadProbeFilter();
+		void destroyProbeFilter();
+		void filterReflectionProbes();
 		void releaseReflectionProbeMaps(ReflectionProbeRuntime& runtime);
 		void destroyReflectionProbe(Entity entity, ReflectionProbeComponent& probe);
 		bool selectReflectionProbe(const Vector3& worldPosition, fs_reflection_probe_t& params, TextureRender*& texture);
@@ -678,6 +813,29 @@ namespace doriax{
 		bool updateTerrainRenderTextures(Entity entity, TerrainComponent& terrain, MeshComponent& mesh);
 		void updateAllTerrainRenderTextures();
 		void updateInstanceBuffers();
+		void updateSkinBuffers();
+		bool canBatchSprite(const MeshComponent& mesh) const;
+		bool batchSprite(Entity entity, MeshComponent& mesh, Transform& transform, CameraComponent& camera, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap);
+		bool getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const;
+		void bakeSpriteVertices(unsigned char* vertices, unsigned int count, const SpriteLayout& layout, const Submesh& submesh) const;
+		void appendSpriteGeometry(const SpriteBatchItem& item);
+		void applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh);
+		bool drawSpriteBatch();
+		void flushSpriteItems();
+		void flushSpriteBatch();
+		void prepareSpriteBatchBuffers();
+		void settleSprite(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform);
+		void unsettleSprite(Entity entity);
+		void unsettleSprites();
+		int settledIndex(Entity entity) const{
+			const size_t page = entity >> 10;
+			return (page < settledPages.size() && settledPages[page]) ? settledPages[page]->index[entity & 1023] : -1;
+		}
+		void setSettledIndex(Entity entity, int index);
+		void placeSettledSprite(SettledSprite& sprite, SettledBounds& bounds, const Transform& transform);
+		void updateAxisPlanes(const CameraComponent& camera);
+		void drawSettledSprite(int settled, size_t index);
+		void flushSpriteSegment();
 		Rect getScissorRect(UILayoutComponent& layout, ImageComponent& img, Transform& transform, const Rect& passViewport);
 
 		// mesh LOD
@@ -881,6 +1039,11 @@ namespace doriax{
 		void needReloadPoints();
 		void needReloadLines();
 		void needReloadMeshes();
+		// true while the sprite draws from data the render system kept, see settleSprite
+		bool isSpriteSettled(Entity entity) const{
+			return settledIndex(entity) >= 0;
+		}
+		void updateSpriteBatch(Entity entity);
 		void needReloadPostProcess();
 		void needUpdatePostProcessUniforms();
 		// components inheriting the default shader of this type rewrite their custom blocks

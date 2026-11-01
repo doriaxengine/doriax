@@ -16,6 +16,7 @@ namespace doriax{
     private:
         ModelComponent* findPartsModel() const;
         AABB getPartsAABB(const ModelComponent& model, AABB MeshComponent::*bounds) const;
+        void updateSpriteBatch();
 
     protected:
         // A model with its geometry on node children uses their meshes: the setters change all of

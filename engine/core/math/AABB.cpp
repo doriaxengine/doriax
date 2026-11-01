@@ -6,6 +6,7 @@
 #include "Plane.h"
 #include "Log.h"
 #include "OBB.h"
+#include <algorithm>
 
 using namespace doriax;
 
@@ -265,6 +266,25 @@ AABB& AABB::merge( const Vector3& point ) {
 AABB& AABB::transform( const Matrix4& matrix ) {
     if( mBoxType != BOXTYPE_FINITE )
         return *this;
+
+    // an affine matrix maps each axis interval on its own; projective ones divide per corner below
+    const float* m = matrix; // column major
+    if (m[3] == 0 && m[7] == 0 && m[11] == 0 && m[15] == 1){
+        const float oldMin[3] = {mMinimum.x, mMinimum.y, mMinimum.z};
+        const float oldMax[3] = {mMaximum.x, mMaximum.y, mMaximum.z};
+        float newMin[3] = {m[12], m[13], m[14]};
+        float newMax[3] = {m[12], m[13], m[14]};
+        for (int col = 0; col < 3; col++){
+            for (int row = 0; row < 3; row++){
+                const float a = m[col * 4 + row] * oldMin[col];
+                const float b = m[col * 4 + row] * oldMax[col];
+                newMin[row] += std::min(a, b);
+                newMax[row] += std::max(a, b);
+            }
+        }
+        setExtents(newMin[0], newMin[1], newMin[2], newMax[0], newMax[1], newMax[2]);
+        return *this;
+    }
 
     Vector3 oldMin, oldMax, currentCorner;
 
