@@ -40,6 +40,8 @@ namespace doriax {
                 ColorFormat colorFormat = ColorFormat::RGBA, int numMipmaps = 1);
 
         bool createDynamicTexture(const std::string& label, int width, int height);
+        bool createDynamicTexture(const std::string& label, int width, int height, ColorFormat colorFormat,
+                TextureFilter filter, TextureWrap wrap);
         void updateTexture(const void* data, size_t size);
 
         void destroyTexture();

@@ -23,6 +23,7 @@ namespace doriax{
 
         sg_image generateMipmaps(const sg_image_desc* desc_);
         void createTextureView(const char* label);
+        bool createStreamTexture(const std::string& label, int width, int height, sg_pixel_format pixelFormat, sg_filter filter, sg_wrap wrap);
 
         static const void* getVulkanView(sg_view view);
         static const void* getVulkanImage(sg_image image);
@@ -51,6 +52,8 @@ namespace doriax{
                     ColorFormat colorFormat = ColorFormat::RGBA, int numMipmaps = 1);
 
         bool createDynamicTexture(const std::string& label, int width, int height);
+        bool createDynamicTexture(const std::string& label, int width, int height, ColorFormat colorFormat,
+                    TextureFilter filter, TextureWrap wrap);
         void updateTexture(const void* data, size_t size);
 
         void destroyTexture();

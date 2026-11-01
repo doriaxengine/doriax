@@ -373,19 +373,19 @@ bool SokolTexture::createTexture(
     return false;
 }
 
-bool SokolTexture::createDynamicTexture(const std::string& label, int width, int height){
+bool SokolTexture::createStreamTexture(const std::string& label, int width, int height, sg_pixel_format pixelFormat, sg_filter filter, sg_wrap wrap){
     sg_image_desc imageDesc = {};
     imageDesc.usage.stream_update = true;
     imageDesc.width = width;
     imageDesc.height = height;
-    imageDesc.pixel_format = SG_PIXELFORMAT_RGBA32F;
+    imageDesc.pixel_format = pixelFormat;
     imageDesc.label = label.c_str();
 
     sg_sampler_desc samplerDesc = {};
-    samplerDesc.min_filter = SG_FILTER_NEAREST;
-    samplerDesc.mag_filter = SG_FILTER_NEAREST;
-    samplerDesc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
-    samplerDesc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
+    samplerDesc.min_filter = filter;
+    samplerDesc.mag_filter = filter;
+    samplerDesc.wrap_u = wrap;
+    samplerDesc.wrap_v = wrap;
 
     if (Engine::isAsyncThread()){
         image = SokolCmdQueue::add_command_make_image(imageDesc);
@@ -396,6 +396,25 @@ bool SokolTexture::createDynamicTexture(const std::string& label, int width, int
     }
     createTextureView(label.c_str());
     return image.id != SG_INVALID_ID && sampler.id != SG_INVALID_ID && view.id != SG_INVALID_ID;
+}
+
+bool SokolTexture::createDynamicTexture(const std::string& label, int width, int height){
+    return createStreamTexture(label, width, height, SG_PIXELFORMAT_RGBA32F, SG_FILTER_NEAREST, SG_WRAP_CLAMP_TO_EDGE);
+}
+
+bool SokolTexture::createDynamicTexture(const std::string& label, int width, int height, ColorFormat colorFormat,
+            TextureFilter filter, TextureWrap wrap){
+    sg_pixel_format pixelFormat;
+    if (colorFormat == ColorFormat::RGBA){
+        pixelFormat = SG_PIXELFORMAT_RGBA8;
+    }else if (colorFormat == ColorFormat::RED){
+        pixelFormat = SG_PIXELFORMAT_R8;
+    }else{
+        Log::error("Dynamic textures only support 8bpp and 32bpp formats");
+        return false;
+    }
+
+    return createStreamTexture(label, width, height, pixelFormat, getFilter(filter), getWrap(wrap));
 }
 
 void SokolTexture::updateTexture(const void* data, size_t size){
