@@ -1627,7 +1627,7 @@ Rect UISystem::getAnchorReferenceRect(const UILayoutComponent& layout, const Tra
     Rect boxRect = Rect(0, 0, parentlayout->width, parentlayout->height);
 
     UIContainerComponent* parentcontainer = scene->findComponent<UIContainerComponent>(layoutParent);
-    if (parentcontainer){
+    if (parentcontainer && layout.containerBoxIndex >= 0){
         boxRect = parentcontainer->boxes[layout.containerBoxIndex].rect;
     }
 
@@ -2080,6 +2080,8 @@ void UISystem::update(double dt){
 
         if (signature.test(scene->getComponentId<Transform>())){
             Transform& transform = scene->getComponent<Transform>(entity);
+            // a hidden child gets no box, and its index from an earlier update may be a sibling's now
+            layout.containerBoxIndex = -1;
             Entity layoutParentEntity = findNearestLayoutParent(transform.parent);
             if (layoutParentEntity != NULL_ENTITY){
                 UILayoutComponent* parentlayout = scene->findComponent<UILayoutComponent>(layoutParentEntity);
