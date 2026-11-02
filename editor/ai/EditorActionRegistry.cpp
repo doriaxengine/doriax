@@ -306,7 +306,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "move_entity_order",
-            "Move an entity relative to another entity in hierarchy order.",
+            "Move an entity relative to another entity in hierarchy order. Both must have a Transform, or neither.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id to move")},

@@ -27,6 +27,14 @@ bool editor::MoveEntityOrderCmd::execute(){
         return false;
     }
 
+    // Entities without a Transform are listed apart, as Structure shows them
+    bool sourceHasTransform = sceneProject->scene->findComponent<Transform>(source) != nullptr;
+    bool targetHasTransform = sceneProject->scene->findComponent<Transform>(target) != nullptr;
+    if (sourceHasTransform != targetHasTransform){
+        editor::Out::warning("Cannot move entity '%u': only one of the two entities has a Transform", source);
+        return false;
+    }
+
     if (project->isEntityInBundle(sceneId, source)){
 
         fs::path sourceBundlePath = project->findEntityBundlePathFor(sceneId, source);
