@@ -54,8 +54,6 @@ namespace doriax{
         bool isVisible() const;
         // as of the last render update
         bool isVisibleInHierarchy() const;
-        // same as setVisible
-        void setVisibleOnly(bool visible);
 
         void setBillboard(bool billboard, bool fake, bool cylindrical);
 

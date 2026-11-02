@@ -109,10 +109,6 @@ bool Object::isVisibleInHierarchy() const{
     return transform.visibleInHierarchy;
 }
 
-void Object::setVisibleOnly(bool visible){
-    setVisible(visible);
-}
-
 void Object::setBillboard(bool billboard, bool fake, bool cylindrical){
     Transform& transform = getComponent<Transform>();
 

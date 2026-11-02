@@ -235,7 +235,6 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getWorldScale", &Object::getWorldScale)
         .addProperty("visible", &Object::isVisible, &Object::setVisible)
         .addProperty("visibleInHierarchy", &Object::isVisibleInHierarchy)
-        .addFunction("setVisibleOnly", &Object::setVisibleOnly)
         .addFunction("setBillboard", (void(Object::*)(bool, bool, bool))&Object::setBillboard)
         .addProperty("billboard", &Object::isBillboard, (void(Object::*)(bool))&Object::setBillboard)
         .addProperty("billboardRotation", &Object::getBillboardRotation, (void(Object::*)(Quaternion))&Object::setBillboardRotation)
