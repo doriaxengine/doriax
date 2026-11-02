@@ -335,6 +335,8 @@ void editor::ModelLoadCmd::finalizeLoad(){
             sceneProject->entities.push_back(e);
         }
     }
+    // Nodes come in file order, which often lists children before their parents
+    ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     for (Entity reused : reusedEntities) {
         if (!isMappedMeshNode(newModel, reused)) {

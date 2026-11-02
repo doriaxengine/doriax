@@ -114,6 +114,7 @@ bool editor::ImportEntityBundleCmd::execute(){
         rootEntity = NULL_ENTITY;
         return false;
     }
+    ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     // Applied after the import so nothing the bundle brings in overwrites it.
     if (hasPlacement){

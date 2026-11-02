@@ -684,6 +684,7 @@ bool editor::CreateEntityCmd::execute(){
         Catalog::updateEntity(scene, child.entity, updateFlags);
         sceneProject->entities.push_back(child.entity);
     }
+    ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     if (!quiet){
         lastSelected = project->getSelectedEntities(sceneId);

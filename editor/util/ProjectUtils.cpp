@@ -756,9 +756,10 @@ void editor::ProjectUtils::sortEntitiesByTransformOrder(EntityRegistry* registry
     std::unordered_map<Entity, size_t> transformOrder;
     for (size_t i = 0; i < transforms->size(); ++i) {
         Entity ent = transforms->getEntity(i);
-        transformOrder[ent] = i;
+        transformOrder[ent] = i + 1;
     }
-    std::sort(entities.begin(), entities.end(),
+    // Entities without a Transform go first and keep their order, as Structure lists them
+    std::stable_sort(entities.begin(), entities.end(),
         [&transformOrder](const Entity& a, const Entity& b) {
             return transformOrder[a] < transformOrder[b];
         }

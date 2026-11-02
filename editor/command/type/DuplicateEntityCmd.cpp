@@ -141,6 +141,7 @@ bool editor::DuplicateEntityCmd::execute(){
         scene->setEntityName(duplicated, newName);
         project->addSelectedEntity(sceneId, duplicated);
     }
+    ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     // Update all created entities (exclude scene-wide flags which reload ALL meshes and recapture ALL probes)
     for (Entity entity : createdEntities) {
