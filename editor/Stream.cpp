@@ -2567,8 +2567,9 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
 
 namespace {
 
-// Older files hid the children of a hidden entity too, and showing it showed them
-void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<Entity>& entities) {
+// Older files hid the children of a hidden entity too, and showing it showed them.
+// Entities in keep took their flag from another file and are left as they are
+void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<Entity>& entities, const std::unordered_set<Entity>& keep = {}) {
     std::unordered_set<Entity> hidden;
     for (Entity entity : entities) {
         const Transform* transform = registry->findComponent<Transform>(entity);
@@ -2579,6 +2580,7 @@ void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<En
     if (hidden.empty()) return;
 
     for (Entity entity : entities) {
+        if (keep.count(entity)) continue;
         Transform* transform = registry->findComponent<Transform>(entity);
         Entity ancestor = transform ? transform->parent : NULL_ENTITY;
         while (ancestor != NULL_ENTITY && !hidden.count(ancestor)) {
@@ -2876,7 +2878,21 @@ void editor::Stream::decodeSceneProjectEntities(Project* project, SceneProject* 
     }
 
     if (!node["visibilityInherited"]) {
-        showChildrenOfHiddenEntities(sceneProject->scene, sceneProject->entities);
+        // a bundle member's Transform comes from its bundle file, already migrated by its own
+        // marker, unless this scene overrides it
+        std::unordered_set<Entity> bundleMembers;
+        const uint64_t transformBit = 1ULL << static_cast<int>(ComponentType::Transform);
+        for (const auto& [path, bundle] : project->getEntityBundles(sceneProject->id)) {
+            for (const auto& instance : bundle->instances.at(sceneProject->id)) {
+                for (const auto& member : instance.members) {
+                    auto overrideIt = instance.overrides.find(member.localEntity);
+                    if (overrideIt == instance.overrides.end() || !(overrideIt->second & transformBit)) {
+                        bundleMembers.insert(member.localEntity);
+                    }
+                }
+            }
+        }
+        showChildrenOfHiddenEntities(sceneProject->scene, sceneProject->entities, bundleMembers);
     }
 
     CameraTextureLink::resolve(sceneProject->scene);
