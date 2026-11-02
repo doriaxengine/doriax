@@ -2084,7 +2084,7 @@ void UISystem::update(double dt){
             if (layoutParentEntity != NULL_ENTITY){
                 UILayoutComponent* parentlayout = scene->findComponent<UILayoutComponent>(layoutParentEntity);
                 UIContainerComponent* parentcontainer = scene->findComponent<UIContainerComponent>(layoutParentEntity);
-                if (parentcontainer && transform.visible){
+                if (parentcontainer && isVisibleInHierarchy(transform)){
                     if (parentcontainer->numBoxes < MAX_CONTAINER_BOXES){
                         layout.containerBoxIndex = parentcontainer->numBoxes;
                         if (!layout.usingAnchors){
