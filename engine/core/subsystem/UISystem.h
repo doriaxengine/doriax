@@ -104,6 +104,8 @@ namespace doriax{
         // True when the entity is alive and still usable as a UI event target
         bool isLiveUIEntity(Entity entity) const;
         bool isLiveUIEntity(Entity entity, Signature signature) const;
+        // Reads the current flags, visibleInHierarchy is only refreshed by RenderSystem::update
+        bool isVisibleInHierarchy(const Transform& transform) const;
 
         void pointerDownOnUI(Entity entity, float x, float y);
         void pointerMoveOnUI(Entity entity, float x, float y, Vector2 pointerDiff, CursorType& cursor);

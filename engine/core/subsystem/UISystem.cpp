@@ -2737,6 +2737,16 @@ bool UISystem::isLiveUIEntity(Entity entity, Signature signature) const {
         && signature.test(scene->getComponentId<UIComponent>());
 }
 
+bool UISystem::isVisibleInHierarchy(const Transform& transform) const {
+    const Transform* current = &transform;
+    while (current){
+        if (!current->visible)
+            return false;
+        current = (current->parent != NULL_ENTITY) ? scene->findComponent<Transform>(current->parent) : nullptr;
+    }
+    return true;
+}
+
 // Entity must be a live UI entity. Every user callback here can create or destroy
 // entities, which invalidates the component references
 void UISystem::pointerDownOnUI(Entity entity, float x, float y){
@@ -2923,7 +2933,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
         if (signature.test(scene->getComponentId<Transform>())){
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            if (transform.visibleInHierarchy){
+            if (isVisibleInHierarchy(transform)){
                 if (signature.test(scene->getComponentId<ImageComponent>())){
                     Rect uirect(transform.worldPosition.x, transform.worldPosition.y, layout->width * transform.worldScale.x, layout->height * transform.worldScale.y);
 
@@ -3009,7 +3019,7 @@ bool UISystem::eventOnPointerUp(float x, float y){
         Transform* transform = scene->findComponent<Transform>(entity);
         UIComponent* ui = scene->findComponent<UIComponent>(entity);
 
-        if (transform->visibleInHierarchy && signature.test(scene->getComponentId<ImageComponent>())){
+        if (isVisibleInHierarchy(*transform) && signature.test(scene->getComponentId<ImageComponent>())){
             Rect uirect(transform->worldPosition.x, transform->worldPosition.y, layout->width * transform->worldScale.x, layout->height * transform->worldScale.y);
 
             if (layout->panel != NULL_ENTITY){
@@ -3287,7 +3297,7 @@ bool UISystem::eventOnPointerMove(float x, float y){
         if (signature.test(scene->getComponentId<Transform>())){
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            if (transform.visibleInHierarchy){
+            if (isVisibleInHierarchy(transform)){
                 if (signature.test(scene->getComponentId<ImageComponent>())){
                     Rect uirect(transform.worldPosition.x, transform.worldPosition.y, layout.width * transform.worldScale.x, layout.height * transform.worldScale.y);
 
