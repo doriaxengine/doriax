@@ -8955,15 +8955,9 @@ editor::NodeRecovery editor::Project::removeEntityFromBundle(uint32_t sceneId, E
 
     YAML::Node regData = Stream::encodeEntity(registryEntity, bundle->registry.get(), nullptr, nullptr);
 
-    size_t transformIndex;
+    size_t transformIndex = ProjectUtils::getEntityOrderIndex(bundle->registry.get(), bundle->registryEntities, registryEntity);
     NodeRecovery recovery;
 
-    if (bundle->registry->findComponent<Transform>(registryEntity)) {
-        transformIndex = ProjectUtils::getTransformIndex(bundle->registry.get(), registryEntity);
-    } else {
-        auto regIt = std::find(bundle->registryEntities.begin(), bundle->registryEntities.end(), registryEntity);
-        transformIndex = (regIt != bundle->registryEntities.end()) ? std::distance(bundle->registryEntities.begin(), regIt) : 0;
-    }
     std::string recoveryDefKey = std::to_string(NULL_PROJECT_SCENE);
     recovery[recoveryDefKey] = {YAML::Clone(regData), transformIndex};
 
@@ -9039,12 +9033,7 @@ editor::NodeRecovery editor::Project::removeEntityFromBundle(uint32_t sceneId, E
                 }
             }
 
-            if (otherScene->scene->findComponent<Transform>(otherEntity)) {
-                transformIndex = ProjectUtils::getTransformIndex(otherScene->scene, otherEntity);
-            } else {
-                auto entityIt = std::find(otherScene->entities.begin(), otherScene->entities.end(), otherEntity);
-                transformIndex = (entityIt != otherScene->entities.end()) ? std::distance(otherScene->entities.begin(), entityIt) : 0;
-            }
+            transformIndex = ProjectUtils::getEntityOrderIndex(otherScene->scene, otherScene->entities, otherEntity);
 
             std::string recoveryKey = std::to_string(otherSceneId) + "_" + std::to_string(instance.rootEntity);
             NodeRecoveryEntry& recoveryEntry = recovery[recoveryKey];

@@ -751,6 +751,21 @@ size_t editor::ProjectUtils::getTransformIndex(EntityRegistry* registry, Entity 
     return 0;
 }
 
+// The index moveEntityOrderByIndex takes. Entities without a Transform count only among
+// themselves, an order the sort by Transform keeps.
+size_t editor::ProjectUtils::getEntityOrderIndex(EntityRegistry* registry, const std::vector<Entity>& entities, Entity entity){
+    if (registry->findComponent<Transform>(entity)) {
+        return getTransformIndex(registry, entity);
+    }
+
+    size_t index = 0;
+    for (Entity other : entities) {
+        if (other == entity) break;
+        if (!registry->findComponent<Transform>(other)) index++;
+    }
+    return index;
+}
+
 void editor::ProjectUtils::sortEntitiesByTransformOrder(EntityRegistry* registry, std::vector<Entity>& entities) {
     auto transforms = registry->getComponentArray<Transform>();
     std::unordered_map<Entity, size_t> transformOrder;
@@ -811,7 +826,7 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
             return false;
         }
 
-        oldIndex = std::distance(entities.begin(), itSource);
+        oldIndex = getEntityOrderIndex(registry, entities, source);
 
         Entity tempSource = *itSource;
         size_t sourceIndex = std::distance(entities.begin(), itSource);
@@ -860,12 +875,16 @@ void editor::ProjectUtils::moveEntityOrderByIndex(EntityRegistry* registry, std:
         Entity tempSource = *itSource;
         entities.erase(itSource);
 
-        // Clamp index for safety
-        if (index > entities.size()) {
-            entities.push_back(tempSource);
-        } else {
-            entities.insert(entities.begin() + index, tempSource);
+        // Counted among the entities without a Transform, as getEntityOrderIndex gives it
+        auto insertAt = entities.begin();
+        size_t count = 0;
+        for (auto it = entities.begin(); it != entities.end() && count < index; ++it) {
+            if (!registry->findComponent<Transform>(*it)) {
+                insertAt = it + 1;
+                count++;
+            }
         }
+        entities.insert(insertAt, tempSource);
 
     }
 }

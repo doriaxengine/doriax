@@ -80,15 +80,9 @@ bool editor::DeleteEntityCmd::appendEntityData(Entity entity){
     Signature signature = scene->getSignature(entity);
     if (signature.test(scene->getComponentId<Transform>())) {
         entityData.hasTransform = true;
-        Transform& transform = scene->getComponent<Transform>(entity);
-        entityData.entityIndex = scene->getComponentArray<Transform>()->getIndex(entity);
-        entityData.parent = transform.parent;
-    } else {
-        auto it = std::find(sceneProject->entities.begin(), sceneProject->entities.end(), entity);
-        if (it != sceneProject->entities.end()) {
-            entityData.entityIndex = std::distance(sceneProject->entities.begin(), it);
-        }
+        entityData.parent = scene->getComponent<Transform>(entity).parent;
     }
+    entityData.entityIndex = ProjectUtils::getEntityOrderIndex(scene, sceneProject->entities, entity);
 
     entities.push_back(std::move(entityData));
     return true;
