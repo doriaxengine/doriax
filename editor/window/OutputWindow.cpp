@@ -606,42 +606,32 @@ bool OutputWindow::passTextFilter(const char* text) const {
     if (!searchMatchCase)
         return filter.PassFilter(text);
 
-    // Case-sensitive path:
-    // Use built tokens (filter.Build() must be called when InputBuf changes)
-    const char* text_begin = text;
-    const char* text_end   = text + std::strlen(text);
+    // Case-sensitive path, same rules as PassFilter() over the built items
+    const char* textEnd = text + std::strlen(text);
+    const ImVector<ImGuiTextFilterItem>& items = filter._Items;
+    auto contains = [&](const ImGuiTextFilterItem& item) {
+        return std::search(text, textEnd, item.Begin, item.Begin + item.Len) != textEnd;
+    };
 
-    int include_count = 0;
-    bool include_matched = false;
-
-    for (int i = 0; i < filter.Filters.Size; ++i) {
-        const ImGuiTextFilter::ImGuiTextRange& r = filter.Filters[i];
-        if (r.empty()) continue;
-
-        const char* f_begin = r.b;
-        const char* f_end   = r.e;
-
-        bool is_exclude = (*f_begin == '-');
-        if (is_exclude) {
-            f_begin++;
-            if (f_begin >= f_end) continue; // empty exclude
-        } else {
-            include_count++;
-        }
-
-        // Case-sensitive substring search
-        const char* found = std::search(text_begin, text_end, f_begin, f_end);
-        if (is_exclude) {
-            if (found != text_end) return false; // excluded token present
-        } else {
-            if (found != text_end) include_matched = true;
-        }
+    // Excluded words come first
+    for (int i = 0; i < filter._CountExclude; i++) {
+        if (contains(items[i]))
+            return false;
     }
+    if (filter._CountExclude == items.Size)
+        return true;
 
-    if (include_count > 0)
-        return include_matched; // require at least one include to match
-
-    return true; // only excludes were specified and none matched
+    // Space separated words must all match, comma separated groups are alternatives
+    for (int i = filter._CountExclude; i < items.Size;) {
+        const int end = i + std::max(1, (int)items[i].CountInclude);
+        bool matched = true;
+        for (int j = i; j < end && matched; j++)
+            matched = contains(items[j]);
+        if (matched)
+            return true;
+        i = end;
+    }
+    return false;
 }
 
 void OutputWindow::show() {

@@ -5,7 +5,7 @@
 //  [X] Renderer: User texture binding. Use 'ID3D11ShaderResourceView*' as texture identifier. Read the FAQ about ImTextureID/ImTextureRef!
 //  [X] Renderer: Large meshes support (64k+ vertices) even with 16-bit indices (ImGuiBackendFlags_RendererHasVtxOffset).
 //  [X] Renderer: Texture updates support for dynamic font atlas (ImGuiBackendFlags_RendererHasTextures).
-//  [X] Renderer: Expose selected render state for draw callbacks to use. Access in '(ImGui_ImplXXXX_RenderState*)GetPlatformIO().Renderer_RenderState'.
+//  [X] Renderer: Expose selected render state for draw callbacks to use. Access with ImGui_ImplDX11_GetRenderState().
 //  [X] Renderer: Multi-viewport support (multiple windows). Enable with 'io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable'.
 
 // You can use unmodified imgui_impl_* files in your project. See examples/ folder for examples of using this.
@@ -107,6 +107,11 @@ static ImGui_ImplDX11_Data* ImGui_ImplDX11_GetBackendData()
     return ImGui::GetCurrentContext() ? (ImGui_ImplDX11_Data*)ImGui::GetIO().BackendRendererUserData : nullptr;
 }
 
+ImGui_ImplDX11_RenderState* ImGui_ImplDX11_GetRenderState()
+{
+    return (ImGui_ImplDX11_RenderState*)ImGui::GetPlatformIO().Renderer_RenderState;
+}
+
 // Forward Declarations
 static void ImGui_ImplDX11_InitMultiViewportSupport();
 static void ImGui_ImplDX11_ShutdownMultiViewportSupport();
@@ -118,8 +123,8 @@ static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11D
 
     // Setup viewport
     D3D11_VIEWPORT vp = {};
-    vp.Width = draw_data->DisplaySize.x * draw_data->FramebufferScale.x;
-    vp.Height = draw_data->DisplaySize.y * draw_data->FramebufferScale.y;
+    vp.Width = (float)(int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x + 0.5f);
+    vp.Height = (float)(int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y + 0.5f);
     vp.MinDepth = 0.0f;
     vp.MaxDepth = 1.0f;
     vp.TopLeftX = vp.TopLeftY = 0;
@@ -163,7 +168,7 @@ static void ImGui_ImplDX11_SetupRenderState(const ImDrawData* draw_data, ID3D11D
     device_ctx->CSSetShader(nullptr, nullptr, 0); // In theory we should backup and restore this as well.. very infrequently used..
 
     // Setup render state
-    const float blend_factor[4] = { 0.f, 0.f, 0.f, 0.f };
+    const float blend_factor[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     device_ctx->OMSetBlendState(bd->pBlendState, blend_factor, 0xffffffff);
     device_ctx->OMSetDepthStencilState(bd->pDepthStencilState, 0);
     device_ctx->RSSetState(bd->pRasterizerState);
@@ -470,7 +475,7 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
             PS_INPUT main(VS_INPUT input)\
             {\
               PS_INPUT output;\
-              output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));\
+              output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.0f, 1.0f));\
               output.col = input.col;\
               output.uv  = input.uv;\
               return output;\
@@ -582,7 +587,6 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
     }
 
     // Create texture sampler
-    // (Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling)
     {
         D3D11_SAMPLER_DESC desc;
         ZeroMemory(&desc, sizeof(desc));
@@ -590,10 +594,10 @@ bool    ImGui_ImplDX11_CreateDeviceObjects()
         desc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
         desc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
         desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-        desc.MipLODBias = 0.f;
+        desc.MipLODBias = 0.0f;
         desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
-        desc.MinLOD = 0.f;
-        desc.MaxLOD = 0.f;
+        desc.MinLOD = 0.0f;
+        desc.MaxLOD = 0.0f;
         bd->pd3dDevice->CreateSamplerState(&desc, &bd->pTexSamplerLinear);
         desc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
         bd->pd3dDevice->CreateSamplerState(&desc, &bd->pTexSamplerNearest);
@@ -803,6 +807,8 @@ static void ImGui_ImplDX11_RenderWindow(ImGuiViewport* viewport, void*)
 {
     ImGui_ImplDX11_Data* bd = ImGui_ImplDX11_GetBackendData();
     ImGui_ImplDX11_ViewportData* vd = (ImGui_ImplDX11_ViewportData*)viewport->RendererUserData;
+    if (vd->RTView == nullptr) // Swap chain creation or resize failed (e.g. device removed)
+        return;
     ImVec4 clear_color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
     bd->pd3dDeviceContext->OMSetRenderTargets(1, &vd->RTView, nullptr);
     if (!(viewport->Flags & ImGuiViewportFlags_NoRendererClear))

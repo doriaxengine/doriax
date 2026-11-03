@@ -9,6 +9,8 @@ imgui*.ini
 
 ## General build artifacts
 *.o
+*.so*
+*.a
 *.obj
 *.exe
 examples/*/Debug/*
@@ -57,9 +59,15 @@ examples/example_sdl3_wgpu/web/*
 .idea
 cmake-build-*
 
+## QNX artifacts
+*.pinfo
+*.dep
+*.gcno
+
 ## Unix executables from our example Makefiles
 examples/example_apple_metal/example_apple_metal
 examples/example_apple_opengl2/example_apple_opengl2
+examples/example_apple_opengl3/example_apple_opengl3
 examples/example_glfw_metal/example_glfw_metal
 examples/example_glfw_opengl2/example_glfw_opengl2
 examples/example_glfw_opengl3/example_glfw_opengl3
@@ -72,6 +80,7 @@ examples/example_sdl2_opengl3/example_sdl2_opengl3
 examples/example_sdl2_sdlrenderer2/example_sdl2_sdlrenderer2
 examples/example_sdl2_vulkan/example_sdl2_vulkan
 examples/example_sdl3_metal/example_sdl3_metal
+examples/example_sdl3_metal4/example_sdl3_metal4
 examples/example_sdl3_opengl3/example_sdl3_opengl3
 examples/example_sdl3_sdlgpu3/example_sdl3_sdlgpu3
 examples/example_sdl3_sdlrenderer3/example_sdl3_sdlrenderer3

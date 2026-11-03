@@ -28,6 +28,9 @@
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
 //  2026-XX-XX: Platform: Added support for multiple windows via the ImGuiPlatformIO interface.
+//  2026-09-17: OpenGL: Added support for platform_io.DrawCallback_SetSamplerFromTex. (#9378)
+//  2026-09-07: OpenGL: Round framebuffer dimensions to the nearest integer instead of truncating them. (#9538, 9515, #8628)
+//  2026-07-15: OpenGL: Backup and restore GL_UNPACK_ROW_LENGTH and GL_UNPACK_ALIGNMENT in UpdateTexture() to avoid corrupting caller GL state. (#8802, #9473)
 //  2026-04-23: OpenGL: Added support for standard draw callbacks (in platform_io): DrawCallback_ResetRenderState, DrawCallback_SetSamplerLinear, DrawCallback_SetSamplerNearest. (#9378)
 //  2026-03-12: OpenGL: Fixed invalid assert in ImGui_ImplOpenGL3_UpdateTexture() if ImTextureID_Invalid is defined to be != 0, which became the default since 2026-03-12. (#9295)
 //  2025-09-18: Call platform_io.ClearRendererHandlers() on shutdown.
@@ -136,6 +139,8 @@ static void ImGui_ImplOpenGL2_SetupRenderState(ImDrawData* draw_data, int fb_wid
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     glShadeModel(GL_SMOOTH);
     glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+
+    bd->UseTexParameterToSetSampler = false;
     bd->NextSampler = GL_LINEAR;
 
     // If you are using this code with non-legacy OpenGL header/contexts (which you should not, prefer using imgui_impl_opengl3.cpp!!),
@@ -162,9 +167,13 @@ static void ImGui_ImplOpenGL2_SetupRenderState(ImDrawData* draw_data, int fb_wid
 }
 
 // Draw callbacks
-static void ImGui_ImplOpenGL2_DrawCallback_ResetRenderState(const ImDrawList*, const ImDrawCmd*)    {} // Intentionally empty. Used as an identifier for rendering loop to call its code. Simpler to implement this way.
-static void ImGui_ImplOpenGL2_DrawCallback_SetSamplerLinear(const ImDrawList*, const ImDrawCmd*)    { ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData(); bd->UseTexParameterToSetSampler = true; bd->NextSampler = GL_LINEAR; }
-static void ImGui_ImplOpenGL2_DrawCallback_SetSamplerNearest(const ImDrawList*, const ImDrawCmd*)   { ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData(); bd->UseTexParameterToSetSampler = true; bd->NextSampler = GL_NEAREST; }
+// - IMPORTANT: Using DrawCallback_SetSamplerLinear/DrawCallback_SetSamplerNearest will trash glTexParameteri() values for the texture!!
+//   We cannot decently backup/restore that state because glGetTexParameteriv() is slow on many setups.
+// - Using DrawCallback_SetSamplerFromTex will basically instruct the backend to use existing glTexParameteri() values without modifying anything, which is the initial state.
+static void ImGui_ImplOpenGL2_DrawCallback_ResetRenderState(const ImDrawList*, const ImDrawCmd*)  {} // Intentionally empty. Used as an identifier for rendering loop to call its code. Simpler to implement this way.
+static void ImGui_ImplOpenGL2_DrawCallback_SetSamplerLinear(const ImDrawList*, const ImDrawCmd*)  { ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData(); bd->UseTexParameterToSetSampler = true; bd->NextSampler = GL_LINEAR; }
+static void ImGui_ImplOpenGL2_DrawCallback_SetSamplerNearest(const ImDrawList*, const ImDrawCmd*) { ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData(); bd->UseTexParameterToSetSampler = true; bd->NextSampler = GL_NEAREST; }
+static void ImGui_ImplOpenGL2_DrawCallback_SetSamplerFromTex(const ImDrawList*, const ImDrawCmd*) { ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData(); bd->UseTexParameterToSetSampler = false; }
 
 // OpenGL2 Render function.
 // Note that this implementation is little overcomplicated because we are saving/setting up/restoring every OpenGL state explicitly.
@@ -173,8 +182,8 @@ void ImGui_ImplOpenGL2_RenderDrawData(ImDrawData* draw_data)
 {
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
     ImGui_ImplOpenGL2_Data* bd = ImGui_ImplOpenGL2_GetBackendData();
-    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x + 0.5f);
+    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y + 0.5f);
     if (fb_width == 0 || fb_height == 0)
         return;
 
@@ -268,6 +277,10 @@ void ImGui_ImplOpenGL2_RenderDrawData(ImDrawData* draw_data)
 
 void ImGui_ImplOpenGL2_UpdateTexture(ImTextureData* tex)
 {
+    // Backup GL_UNPACK state that we modify, restore on exit.
+    GLint last_unpack_row_length = 0; GL_CALL(glGetIntegerv(GL_UNPACK_ROW_LENGTH, &last_unpack_row_length));
+    GLint last_unpack_alignment = 0; GL_CALL(glGetIntegerv(GL_UNPACK_ALIGNMENT, &last_unpack_alignment));
+
     if (tex->Status == ImTextureStatus_WantCreate)
     {
         // Create and upload new texture to graphics system
@@ -277,8 +290,7 @@ void ImGui_ImplOpenGL2_UpdateTexture(ImTextureData* tex)
         const void* pixels = tex->GetPixels();
         GLuint gl_texture_id = 0;
 
-        // Upload texture to graphics system
-        // (Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling)
+        // Upload texture to graphics system (bilinear sampling is required).
         GLint last_texture;
         GL_CALL(glGetIntegerv(GL_TEXTURE_BINDING_2D, &last_texture));
         GL_CALL(glGenTextures(1, &gl_texture_id));
@@ -324,6 +336,10 @@ void ImGui_ImplOpenGL2_UpdateTexture(ImTextureData* tex)
         tex->SetTexID(ImTextureID_Invalid);
         tex->SetStatus(ImTextureStatus_Destroyed);
     }
+
+    // Restore GL_UNPACK state
+    GL_CALL(glPixelStorei(GL_UNPACK_ROW_LENGTH, last_unpack_row_length));
+    GL_CALL(glPixelStorei(GL_UNPACK_ALIGNMENT, last_unpack_alignment));
 }
 
 bool    ImGui_ImplOpenGL2_CreateDeviceObjects()
@@ -360,6 +376,7 @@ bool    ImGui_ImplOpenGL2_Init()
     platform_io.DrawCallback_ResetRenderState = ImGui_ImplOpenGL2_DrawCallback_ResetRenderState;
     platform_io.DrawCallback_SetSamplerLinear = ImGui_ImplOpenGL2_DrawCallback_SetSamplerLinear;
     platform_io.DrawCallback_SetSamplerNearest = ImGui_ImplOpenGL2_DrawCallback_SetSamplerNearest;
+    platform_io.DrawCallback_SetSamplerFromTex = ImGui_ImplOpenGL2_DrawCallback_SetSamplerFromTex;
 
     return true;
 }

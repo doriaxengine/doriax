@@ -14,7 +14,7 @@
 #   * build/example_sdl3_wgpu[.exe] or build/Debug/example_sdl3_wgpu[.exe]
 
 # Building for desktop with WGVK (MUCH EASIER)
-#  1. git clone https://github.com/manuel5975p/WGVK dawn
+#  1. git clone https://github.com/manuel5975p/WGVK wgvk
 #  2. cmake -B build -DIMGUI_WGVK_DIR=wgvk
 #  3. cmake --build build
 # The resulting binary will be found at one of the following locations:
@@ -29,7 +29,7 @@
 #  5. emrun build/index.html
 
 cmake_minimum_required(VERSION 3.22) # Dawn requires CMake >= 3.22
-project(imgui_example_sdl3_wgpu C CXX)
+project(example_sdl3_wgpu C CXX)
 
 set(IMGUI_EXECUTABLE example_sdl3_wgpu)
 
@@ -37,7 +37,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "" FORCE)
 endif()
 
-set(CMAKE_CXX_STANDARD 17) # Dawn requires C++17
+set(CMAKE_CXX_STANDARD 20) # Dawn requires C++20
 
 # Dear ImGui
 set(IMGUI_DIR ../../)
@@ -162,7 +162,7 @@ else() # Native/Desktop build
             endif()
             list(APPEND WGVK_PLATFORM_LIBS m dl pthread)
         endif()
-        set(LIBRARIES glfw Vulkan::Vulkan ${WGVK_PLATFORM_LIBS})
+        set(LIBRARIES Vulkan::Vulkan ${WGVK_PLATFORM_LIBS})
     endif()
 endif()
 

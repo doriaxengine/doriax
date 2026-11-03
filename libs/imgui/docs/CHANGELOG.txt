@@ -36,6 +36,669 @@ HOW TO UPDATE?
 - Please report any issue!
 
 -----------------------------------------------------------------------
+ VERSION 1.93.0 (Released 2026-10-14)
+-----------------------------------------------------------------------
+
+Decorated log and release notes: https://github.com/ocornut/imgui/releases/tag/v1.93.0
+
+In 1.93.0, the `ImDrawList` rendering API has been improved to be more robust and
+more consistent over the whole range of shapes. The rendering now matches much closer
+to common vector drawing APIs, like html canvas. Improvements, like anti-aliased line
+endings and stroke position were added. The coordinates passed to the API are now
+consistently describing shape outlines.
+
+For code using custom rendering: some details are now rendered slightly differently
+(even if generally more consistent). The difference in rendering is in the range of
+half a pixel, but that can lead to issues like some lines now look blurrier or more
+transparent. All Dear ImGui widgets should appear identical or better.
+
+The rendering of common shapes was optimized when the shapes fall on integer coordinates
+(which is most of the UI). This includes skipping anti-aliasing when not needed, or
+using textures instead of tessellated geometry to draw round corners.
+The varying code-paths are designed to look indistinguishable from each others.
+
+New rendering code fixes some inconsistencies between graphics APIs
+(e.g. DirectX vs OpenGL) which are using different diamond exits rules.
+New code should work precisely the same regardless of which graphics API is used
+(note that using _StrokeLegacy mode can lead to the same old inconsistencies).
+
+New rendering code also deals better with animating thickness and rounding
+(integer values are recommended).
+
+While the current version doesn't make lots of visible use of the new features and
+facilities, they are among the pillars that will make it easier to create prettier
+contents, both for custom rendering and future versions of the library.
+
+Use `ImDrawFlags_StrokeLegacy` mode to emulate old rendering:
+- Per-primitive:      draw_list->AddLine(..., ..., ImDrawFlags_StrokeLegacy);
+- For a given scope:  draw_list->PushDrawFlag(ImDrawFlags_StrokeLegacy, true); draw_list->AddLine(...); draw_list->PopDrawFlag();
+- Globally:           ImGui::Checkbox("DefaultsToStrokeLegacy", &io.ConfigDebugDrawListDefaultsToStrokeLegacy);  // Map to a checkbox
+- Globally:           io.ConfigDebugDrawListDefaultsToStrokeLegacy = io.KeyShift;                                // Map on Shift
+
+Don't panic!
+Many applications will not notice any difference! You will more likely see
+differences if you used lots of direct `ImDrawList` calls for custom rendering.
+
+Credits for ImDrawList changes in 1.93.0:
+- main work courtesy of @memononen.
+- additional work/reviewing/guidance by @ocornut.
+- with legacy bits from @thedmd, @potocpav.
+Other credits marked below, or @ocornut when omitted.
+
+Refer to our guides:
+- ImDrawList Vector Rendering Reference
+    https://github.com/ocornut/imgui/wiki/Draw-List
+    (includes a precise list of differences between 1.92.9 and 1.93.0).
+- ImDrawList 1.92.9 vs 1.93.0 Interactive Testbed
+    https://www.dearimgui.com/docs/drawlist_v193
+    (interactively compare differences between 1.92.9 and 1.93.0 + commentary)
+    (downloadable HTML file, may be used offline)
+- Pixel Perfect Anti-aliased Rendering
+    https://github.com/ocornut/imgui/wiki/Pixel-Perfect-Rendering
+- How Anti-aliased Polyline Rendering is Implemented
+    https://github.com/ocornut/imgui/wiki/Polyline-Rendering
+- Discussion topic:
+    https://github.com/ocornut/imgui/issues/9504
+    (if you have a problem to discuss, please open a new issue)
+
+Breaking Changes:
+
+- ImDrawList:
+  - AddLine(): removed the (+0.5f,+0.5f) offset that was sneakily added to input coordinates. (#9504)
+    - This fixes inconsistencies in the API and matches the PathXXX API.
+    - By default, stroke thickness extends on both side of the given segment.
+      e.g for a "pixel-perfect" looking line with thickness=1.0f, coords should be passed as center of each ends of the line.
+    - Use `ImDrawFlags_StrokeLegacy` to use old offset if required. Or you can apply the offset manually!
+    - Generally better, simple and faster to use `AddLineH()`, `AddLineV()` functions added in 1.92.8.
+    READ IF YOU ARE MINDFUL OF PIXEL-PERFECTNESS IN YOUR CUSTOM RENDERING/WIDGETS:
+    - TRANSITION GUIDE FOR AXIS-ALIGNED LINES:
+      - When switching from legacy `AddLine()` values to `AddLineV()`, `AddLineH()` you can keep same inputs coordinates as before:
+        - Old `AddLine({x, y1}, {x, y2}, col)` --> `AddLineV(x, y1, y2, col);` // Vertical line.
+        - Old `AddLine({x1, y}, {x2, y}, col)` --> `AddLineH(x1, x2, y, col);` // Horizontal line.
+        - This will be equivalent and faster for thickness=1.0f lines.
+      - Since `AddLine()` use default stroke pos Center and `AddLineV()`, `AddLineH()` use Inside, thickness>1.0f strokes will differ.
+        Using `ImDrawFlags_StrokeCenter` will match old result more closely (aka look centered),
+        but is more likely to look blurry as it already did before.
+      - Read table below about StrokePos and the "Pixel-Perfect Rendering" guide if you care about pixel-perfect lines.
+    - TRANSITION GUIDE FOR DIAGONAL LINES:
+      - Your lines will appear offset by -0.5f pixels on each axis.
+        Being anti-aliased diagonal lines, they won't look particularly better or worse, just slightly offset.
+        It'll likely only be noticeable if you carefully combined them with other primitives for a pixel-perfect result.
+      - Old `AddLine({x1, y1}, {x2, y2}, col)` --> `AddLine({x1 + 0.5f, y1 + 0.5f}, {x2+ 0.5f, y2 + 0.5f}, col);`           // Same
+        or use `ImDrawFlags_StrokeLegacy`      --> `AddLine({x1, y1}, {x2, y2}, col, thickness, ImDrawFlags_StrokeLegacy);` // Offset by +0.5f + disable AA ends.
+        This reapplies the old offset, and should get you exactly the same result you previously
+        got for thickness=1.0f lines. But said result were previously sometimes ambiguous and
+        renderer-dependent. (#3116, #3258, #2441)
+      - Old code did not support anti-aliased ends, which could create gaps when rendering shapes out
+        of multiple contiguous lines instead of using `AddPolyline()`. There is a possibility that you
+        legacy code added fudge offsets here and there; which may not be necessary anymore if you use
+        `_AALineEnds`, or if you combine rendering of contiguous lines using `AddPolyline()`.
+  - AddRect(), AddCircle(), AddNgon(), AddEllipse(), AddTriangle(), AddQuad(): defaulting to "inside" stroke.
+    - All closed shapes with thickness=1.0f will appear identical.
+    - The difference for thickness>1.0f shapes may be minimal since very large strokes
+      were not well supported for widgets, but stroke will default inside widgets.
+  - AddCircle(), AddNgon(): removed -0.5f offset added to radius.
+    - This fixes inconsistencies in the API.
+    - Use `ImDrawFlags_StrokeLegacy` to use old method if required. Or you can apply the offset manually!
+  - AddRectFilled(): non-integer coordinates will now display anti-aliased edges.
+    Previously, non-integer coordinates rendered with aliased edges snapped by the
+    rasterizer. (#6971)
+  - AddRect(), AddRectFilled(): rectangles with inverted coordinates won't be visible
+    unless using `ImDrawFlags_StrokeLegacy` mode. With inverted coordinates (min > max):
+      - Legacy `AddRect()` rounding off       -> visible but incorrect outer size.
+      - Legacy `AddRect()` rounding on        -> visible but very glitchy.
+      - Legacy `AddRectFilled()` rounding off -> visible and correct.
+      - Legacy `AddRectFilled()` rounding on  -> visible but very glitchy.
+      - Use `ImDrawFlags_StrokeLegacy` to use old rendering for cases without rounding, or fix coordinates.
+  - Merged `ImDrawListFlags` into `ImDrawFlags`. `ImDrawListFlags` was rarely used directly
+    and generally setup by the ImGui context. 
+      - `ImDrawListFlags_AntiAliasedLines`    -> `ImDrawFlags_AALines`
+      - `ImDrawListFlags_AntiAliasedFill`     -> `ImDrawFlags_AAFill`
+      - `ImDrawListFlags_AllowVtxOffset`      -> `ImDrawFlags_UseVtxOffset`
+      - `ImDrawListFlags_TextNoPixelSnap`     -> `ImDrawFlags_TextNoPixelSnap`
+    Unifying them allows easily using them for both per-primitives and scope alterations.
+    Kept redirection enums (will obsolete).
+  - Renamed all `ImDrawFlags_RoundCornersXXX` flags to `ImDrawFlags_RoundXXX`.
+      - `ImDrawFlags_RoundCornersAll`         -> `ImDrawFlags_RoundAll`
+      - `ImDrawFlags_RoundCornersNone`        -> `ImDrawFlags_RoundNone`
+      - `ImDrawFlags_RoundCornersTopLeft`     -> `ImDrawFlags_RoundTopLeft`
+      - `ImDrawFlags_RoundCornersTopRight`    -> `ImDrawFlags_RoundTopRight`
+      - `ImDrawFlags_RoundCornersBottomLeft`  -> `ImDrawFlags_RoundBottomLeft`
+      - `ImDrawFlags_RoundCornersBottomRight` -> `ImDrawFlags_RoundBottomRight`
+      - `ImDrawFlags_RoundCornersTop`         -> `ImDrawFlags_RoundTop`
+      - `ImDrawFlags_RoundCornersBottom`      -> `ImDrawFlags_RoundBottom`
+      - `ImDrawFlags_RoundCornersLeft`        -> `ImDrawFlags_RoundLeft`
+      - `ImDrawFlags_RoundCornersRight`       -> `ImDrawFlags_RoundRight`
+    Kept redirection enums (will obsolete).
+  - Marked `ImDrawListFlags_AntiAliasedLinesUseTex` and `style.AntiAliasedLinesUseTex` as
+    obsolete, as the new line rendering code always uses textures.
+  - Enabling `ImFontAtlasFlags_NoBakedLines` in the font atlas will now disable support for
+    anti-aliased lines by clearing `style.AntiAliasedLines`/`style.AntiAliasedLineEnds`.
+- Style: obsoleted `style.CurveTessellationTol` (default 1.25) which was in Pixels² unit in
+  favor of `style.CurveTessellationMaxError` (default 1.12) which is in Pixels unit. It is
+  easier to tweak + this allows us to easily scale error threshold on high density screens.
+  - style.CurveTessellationMaxError == sqrtf(style.CurveTessellationTol).
+- ImGuiTextFilter: removed `float width` parameter of `Draw(const char* filter, float width)`:
+  prefer using `SetNextItemWidth(float)` which is standard. Kept inline redirection function.
+- Fonts: renamed `AddRemapChar()` to `AddRemapCodepoint()` (rarely used, marked internal).
+  (#609, #5748, #9559)
+- Backends:
+  - DirectX12: Removed support for legacy `ImGui_ImplDX12_Init()` signature, which was
+    obsoleted in 1.91.6 (December 2014), because it needed to forcefully disable support
+    for `ImGuiBackendFlags_RendererHasTextures`. Use the new signature! (#9487)
+  - OpenGL3: Does not attempt to read `GL_CLIP_ORIGIN` by default as the detection is
+    sub-optimal and not reliable on some setup. Use `ImGui_ImplOpenGL3_SetClipOrigin(0)`
+    to enable auto-detection, or e.g. `ImGui_ImplOpenGL3_SetClipOrigin(GL_UPPER_LEFT)`.
+
+Other Changes:
+
+- Style:
+  - StyleColorsDark(): minor refresh of the default style to look more modern:
+    - Changed WindowBg to use a slightly greyer value and removed opacity.
+    - Changed FrameBg values to use a dark black to make frames stand out better.
+    - Tweak TextDisabled, TableHeaderBg, TableBorders to match altered WindowBg.
+  - StyleColorsLight(): inverted `ImGuiCol_TitleBgXXX` colors so that the selected
+    window title bar appears brighter.
+- ImDrawList:
+  - Added flags to specify stroke position in all `ImDrawList` stroking functions: (#9504) [@memononen]
+    - `ImDrawFlags_StrokeInside` (default for Rect, Circle/Ellipse, Triangle, Quad, Ngon + AddLineH, AddLineV)
+    - `ImDrawFlags_StrokeCenter` (default for Line, Polyline, Beziers, Paths function)
+    - `ImDrawFlags_StrokeCenterBiased` (center w/ bias for pixel perfect alignment)
+    - `ImDrawFlags_StrokeOutside`
+    - `ImDrawFlags_StrokeLegacy` (match old behavior)
+    - Legacy mode may be set as default for a given scope using `PushDrawFlag(ImDrawFlags_StrokeLegacy, true)`.
+    - Legacy code was generally applying +0.50f offsets which meant that,
+      - with thickness=1.0f: the stroke would appear inside.
+      - with thickness>1.0f: the stroke would start expanding on both sides but starting from that small initial offset.
+      - with thickness>1.0f for even integer values, the stroke would look blurry.
+      - TL;DR; the logic didn't make much sense for thickness>1.0f.
+    - Defaulting to Inside for closed shapes ensure that rectangles and lines are
+      never blurry, regardless of thickness, as long as input coordinates/sizes
+      are integers. (#9359) Recap:
+      ------------------------------------------------------------------------
+       Thickness   Legacy     Inside    Outside    Center   CenterBiased
+      ------------------------------------------------------------------------
+       1.0f        sharp      sharp     sharp      blurry   sharp
+       2.0f        blurry     sharp     sharp      sharp    sharp
+       3.0f        sharp      sharp     sharp      blurry   sharp
+      ------------------------------------------------------------------------
+    - Read our Wiki guides for more details!
+        https://github.com/ocornut/imgui/wiki/Draw-List
+    - And interactive 1.92.9 vs 1.93.0 comparing testbed:
+        https://www.dearimgui.com/docs/drawlist_v193
+  - AddPolyline(), PathStroke(), AddTriangle(): the algorithm to render lines got overhauled.
+    (#9504, #2183, #2964, #7972 + #9360, #6331, #4250, #4091) [@memononen]
+    - Generally fixed rendering of thick strokes/paths.
+    - The new stroke expansion now uses corner miter calculation, which keeps thickness along
+      the line segments consistent. If the corner becomes too sharp, it will be beveled to
+      avoid long spikes at corners.
+    - There are also some robustness measures for the case where the line thickness is larger
+      than the features being drawn.
+    - Rendering artifacts are still possible when the path features are smaller than line thickness,
+      but the artifacts should be more localized. The new implementation attempted to favor simple
+      implementation and robustness over the corner case accuracy.
+  - All functions: new rendering code fixes some inconsistencies between graphics APIs
+    (e.g. DirectX vs OpenGL) which are using different diamond exits rules. New code should
+    work precisely the same regardless of graphics API. (#3116, #3258, #2441) [@memononen]
+  - Debug: added `io.ConfigDebugDrawListDefaultsToStrokeLegacy` to facilitate comparing old/new
+    behaviors. This is equivalent to calling `PushDrawFlag(ImDrawFlags_StrokeLegacy, true)`
+    on every drawlists.
+    Suggested uses, e.g.
+      - `io.ConfigDebugDrawListDefaultsToStrokeLegacy = io.KeyShift; // Map on holding Shift`
+      - `ImGui::Checkbox("DefaultsToStrokeLegacy", &io.ConfigDebugDrawListDefaultsToStrokeLegacy);`
+  - Added `ImDrawFlags_AALineEnds` flag to enable anti-aliased line ends.
+    - Most noticeable for thick lines.
+    - Also helps fill minor gaps if combining multiple individual lines. For best looking
+      continuous lines you should use AddPolyline(), it creates joins between line segments
+      to avoid any gaps.
+    - Added `style.AntiAliasedLineEnds` in ImGui to set default state.
+    - This is disabled by default! Enabling AA Ends by default would be more "correct",
+      but since it is very slightly slower and increases vertex/index data we decided
+      to not enable it by default.
+      This keeps situations such as "throw tens of thousands of lines at ImDrawList"
+      optimal. You can opt-in for a given shape or in a scope using `PushDrawFlag()`.
+  - Added `ImDrawFlags_JoinMiter` flag to disable using beveled corner.
+    - Closer to legacy rendering and slightly faster, but corners sharper than
+      90 degrees may expand far out.
+    - Automatically used by AddRect(), AddCircle(), AddNgon(), AddEllipse() functions
+      since we know that the input path does not contain sharper corners.
+  - Added `ImDrawFlags_CapSquare` flag to extend lines ends using square caps. (#9360)
+  - AddConvexPolyFilled()/PathFillConvex(): improved to handle input geometry more robustly.
+    The rendering of sharp corners was improved. Earlier there were issues with sharp corners
+    either creating long spikes, or messing up the adjacent edge's anti-aliasing. Now the
+    anti-aliasing fringe calculation is more consistent, and sharp corners get beveled to
+    avoid spikes. There might still be issues when the smallest extent of a long thin polygon
+    is less than a pixel. Also supports `ImDrawFlags_JoinMiter`, to facilitate matching
+    a stroke using the same flag.
+  - `AddRect()`, `AddRectFilled()`: various optimizations for rounded rectangles. (#1962, #9504)
+    - Integer-aligned coordinates and thicknesses will automatically use baked textures,
+      saving on both CPU and vertex/index data.
+    - Enabled by default. Use `ImFontAtlasFlags_NoBakedRoundCorners` to disable baking
+      round corners in font atlas.
+    - Added `ImDrawFlags_UseTexForRoundCorners` flag to enable in scope or per-shape.
+      Added for consistency and debugging, not really needed in practice.
+  - `AddCircle()`, `AddCircleFilled()`: fixed large circles being under-tessellated
+    (when above ~140 with default CircleTessellationMaxError).
+  - Improved debug-build performance in various locations.
+  - Improved minor mismatches when overlapping strokes and filled shapes.
+    For example, when using inside strokes,
+    - `AddRect()` and `AddRectFilled()` with rounding now overlap better. (#3656)
+    - `AddCircle()` and `AddCircleFilled()` now overlap better.
+  - Added `ImDrawList::PushDrawFlag()`/`PopDrawFlag()` to alter certain flags for a
+    scope and a given `ImDrawList`. (#9489)
+    - e.g. `PushDrawFlag(ImDrawFlags_StrokeLegacy, true);` enforce legacy tweaks.
+  - About `ImDrawFlags_StrokeLegacy`:
+    - This is designed to emulate old behavior:
+      - Most shapes use `ImDrawFlags_StrokeCenter`.
+      - AddLine() add +0.5f,+0.5f offset to position.
+      - AddRect() and AddRectFilled() allow inverted positions.
+      - AddRectFilled() has no AA when passed non-integer coordinates.
+      - AddCircle(), AddNgon() add a -0.5f offset to radius.
+      - Closed shapes use miter corners.
+      - Lines don't have anti-aliased ends.
+    - But there are known difference between legacy code and ImDrawFlags_StrokeLegacy:
+      - Thick shapes with acute angles will now preserve thickness better,
+        which may make them appear as protruding a little more.
+  - About disabling anti-aliasing:
+    - Disabling anti-aliasing is now emulated by applying different UV coordinates.
+      - It does not result in a performance increase or vertex/index data decrease any more
+        (however the tendency is that the new code behaves better than old code).
+      - But may be a useful stylistic choice in some circumstances.
+    - Many thick shapes had broken corners with old no-AA code, and the old no-AA code
+      was wildly different from the AA code. Not the case any more. (#288)
+  - Per-viewport FramebufferScale for Apple/Retina screen is applied to draw lists:
+    - AA Fringe is scaled accordingly. (#9577)
+    - Circle and Curves tessellation error are scaled accordingly.
+  - Reworked assert in `PushTexture()` to allow convenience grace period of using a
+    texture that was queue for destroy during the frame. Make it safe to stick to
+    an existing texture during the frame. (#9528, #8465)
+  - Added optional `platform_io.DrawCallback_SetSamplerFromTex` standard backend-agnostic
+    draw callback for requesting to use the sampler associated already associated to a texture.
+    Currently only supported by the OpenGL2/3 and SDLRenderer3 backend. (#9378)
+  - Fixed dangling `ImDrawList::_OwnerName` when using animated label. (#9552) [@ubi-dcastonguay]
+- Mixed Values:
+  - Added `ImGuiItemFlags_MixedValue` flag for representing mixed/indeterminate values.
+    Supported by: Checkbox(), RadioButton(), DragXXX(), SliderXXX(), InputXXX(), ColorXXX()
+    and Combo() functions.
+    The scoped flag is designed for usage by advanced property editors. (#5518, #5677, #6865)
+- Drags, Sliders:
+  - Ongoing drags may be cancelled using Right-Click, Escape or Gamepad Triangle.
+    Cancelling reverts to the initial value. (#8564, #9534)
+  - Fixed an overflow using `ImGuiSliderFlags_Logarithmic` with S32/S64 types which
+    leads to clamped interactions. (#9526, #3361, #1823, #1316, #642) [@lailoken]
+- TreeNode:
+  - Fixed issues/asserts with 32+ deep trees when using ImGuiTreeNodeFlags_DrawLinesXXX
+    features or other features requiring stack storage. (#9509) [@lasrod]
+- TabBar:
+  - Improved scroll target when clicking a Tab that is larger than the scrolling
+    section width.
+  - Using <> scrolling buttons while the selected Tab is at either end of the
+    section mid-section but not fully visible always makes it fully visible
+    (before eventually selecting a Tab in the leading/trailing section).
+- Tables:
+  - Fixed a bug restoring correct .ini columns order when table use is Sortable
+    but had no user changes. (regression from 1.92.9). (#9519, #9108)
+  - Fixed a bug tracking topology changes (insert new columns in the middle)
+    when the table is not _Reorderable: new columns would be ordered incorrectly.
+    (#9570, #9108, #9572) [@lailoken]
+- InputText:
+  - Fixed a crash in some cases when using Home key in a WordWrap+ReadOnly field. (#9561)
+- Selectable:
+  - Fixed `ImGuiSelectableFlags_SelectOnNav` triggering during NavInit.
+- Fonts:
+  - Reworked `AddFontDefault()` to use `io.DisplayFrameBufferScale` as part of the heuristic
+    to select `AddFontDefaultVector()` by default, effectively using ProggyForever instead of
+    ProggyClean on most Apple/Retina setups by default.
+  - Added `ImFont::AddRemapCodepointToGlyphIndex()` allowing to access glyphs that are not
+    mapped to codepoints. (#9559, #5647, #609, #5748, #8466)
+  - imgui_freetype: Fixed blurriness  rendering `AddFontDefaultVector()`. Caused by a
+    non-pixel aligned offset caused by `ExtraSizeScale`. (#9348, #9233) [@redpartizan, @RDMCz]
+  - (Internal) ImFontLoader: reworked `FontSrcContainsGlyph`, `FontBakedLoadGlyph` signatures
+    to take raw glyph index instead of codepoint. Added `FontSrcGetGlyphIndexFromCodepoint`.
+    (#9559, #5647, #9540, #8466, #8465)
+  - Added `IMGUI_DISABLE_STB_TRUETYPE` to completely omit the stb_truetype loader
+    code + stb_truetype.h code. (#9573)
+- ColorEdit:
+  - ColorButton, ColorEdit, ColorPicker: cancel-out alpha caused by `BeginDisabled()` so
+    disabled color buttons have the same color as non-disabled oness. (#9511)
+  - ColorButton: fixed issues/inconsistencies with checkerboard rendering when combining
+    color alpha and global style alpha. (#9511) [@enjmiah, @ocornut]
+- Popups:
+  - Amended context menu right-click opening code to check that the right-click
+    hasn't been owned by another items. This is more correct and also necessary
+    to avoid Drags/Sliders cancelling also triggering a cancel menu. (#8564, #9534)
+  - Reworked `GetMousePosOnOpeningCurrentPopup()` to be legal to call within the
+    BeginPopup/EndPopup scope of a popup which was just closed. (#9551) [@jkunstwald]
+- ImGuiTextFilter:
+  - Added support for space as an "and" filter, which is the standard. (#2435, #30)
+     e.g. w/ filter 'hello world' (without quotes) both words needs to be in input data.
+  - Added support for double-quoted "xxx" blocks to e.g. match words sequences. (#2435)
+     e.g. w/ filter "hello world" the exact sequence needs to be in input data.
+  - Fixed filtering when mixing "include" and "-exclude" keyword so that an "-exclude"
+    match always filters out. (#2435) [@kudaba, @ocornut]
+  - Added `DrawWithHint()` function. (#6206, #6395, #6447)
+  - Added a "incl -excl" hint by default when the search field is empty. (#6206, #6395, #6447)
+- Widgets:
+  - Checkbox, Menus: check marks use anti-aliased ends.
+  - Tweaked rendering in various locations to avoid blurriness:
+    - Windows: title-bar and menu-bar border (when thickness>1.0f).
+    - SeparatorText: border (when thickness>1.0f).
+    - Tree: hierarchy lines (when thickness>1.0f).
+    - InputText: input caret (when thickness>1.0f).
+    - TabBar: selected overline border (when thickness>1.0f).
+- Misc:
+  - Fixed `GetBackgroundDrawList()`/`GetForegroundDrawList()` not being properly reset
+    every frame when accumulated  session time is very large (e.g. a few days). [@lailoken]
+  - Added `IM_NODEBUGSTEP` helper to tag functions with `__declspec(non_user_code)` (MSVC)
+    or `[[gnu::artificial]]` (Clang/GCC) in order to provide a hint to debuggers to skip
+    trivial functions when stepping into.
+  - Tagged various trivial functions using `IM_NODEBUGSTEP`: `ImVec2()`, `ImVec4()` etc.
+    and various operators.
+  - Fixed strict aliasing violation in `ImHashData()` affecting Clang 23 + SSE 4.2 + -flto.
+    Could manifest as `ImFontAtlasBakedGetId()` computation omitting font size from
+    the hashed data. (#9557, #9560) [@sthalik]
+  - IO: restore default clipboard/ime/shell platform handlers on `ClearPlatformHandlers()`, fixing
+    issues switching backends mid-session to one relying on default. (#9537, #8945, #2769) [@lstalmir]
+- Demo:
+  - Added `Widgets->Mixed Values` section. (#5518, #5677, #6865)
+  - Custom Rendering section: exposed new flags; showcasing overlapping strokes
+    and filled shapes; added an option to animate thickness; added new shapes
+    to showcase new rendering features that previously hit limitations.
+  - Style Editor: fixed style/colors combo box applying style when opening Combo.
+- Backends:
+  - QNX: added QNX Screen backend. (#9492) [@mgorchak-blackberry]
+  - Metal, Metal4: added support for rendering inside a render pass with multiple color
+    attachments (e.g. when merged with other passes): we render to the first color attachment
+    and leave the other ones untouched. (#9574) [@tqjxlm]
+  - OpenGL2, OpenGL3: added support for `platform_io.DrawCallback_SetSamplerFromTex` draw
+    callback to request using the sampler associated already associated to a texture. (#9378)
+  - OpenGL2, OpenGL3: fixed `DrawCallback_ResetRenderState` handler not resetting all states
+    in the glTexParameter() path. (#9378)
+  - OpenGL3: added `ImGui_ImplOpenGL3_SetClipOrigin()` to specify origin between
+    `GL_LOWER_LEFT` (new default), `GL_UPPER_LEFT` and `0` (autodetect, old default).
+  - OpenGL3: avoid querying `glGetIntegerv(GL_CLIP_ORIGIN)` multiple times when using
+    when using default and using `DrawCallback_ResetRenderState`, at it appear to stall
+    some drivers. (#2186, #3998, #3146, #3143, #8640)
+  - SDL2: fixed querying framebuffer scale/density when using Metal without
+    going through a SDL_Renderer. (#5592) [@lailoken]
+  - SDLRenderer3: restore any temporarily modified texture scale modes at the of `RenderDrawData()`. (#9378)
+  - SDLRenderer3: expose CurrentScaleMode in ImGui_ImplSDLRenderer3_RenderState. (#9543, #9378) [@Clownacy]
+  - SDLRenderer3: added support for `platform_io.DrawCallback_SetSamplerFromTex` draw callback to request
+    using the sampler associated already associated to a texture via `SDL_SetTextureScaleMode()`. (#9378)
+    It is equivalent to setting `render_state->CurrentScaleMode = SDL_SCALEMODE_INVALID`.
+    Note: this  callback is only supported by selected rendering backends: most other graphics API
+    don't have the equivalent of `SDL_SetTextureScaleMode()` and the callback won't work with them.
+  - Vulkan: added for support for multiple Vulkan contexts with custom loaders. (#6616) [@lstalmir]
+  - Vulkan: added support for rendering inside a render pass with multiple color attachments
+    (e.g. when merged with other passes): we render to the first color attachment and leave the
+    other ones untouched. (#9574) [@tqjxlm]
+  - WebGPU: fixed passing non-integer sizes to `wgpuRenderPassEncoderSetViewport()`
+    when `FramebufferScale` is >1.0f. (#9515, #8628) [@WayU]
+  - WebGPU: update to build with wgpu-native 29.0+. (#9377, #9532, #9530) [@lucascompython, @ivan-enzhaev]
+- Examples:
+  - All: all examples now default to use a little bit of rounding (`FrameRounding` and `GrabRounding`).
+  - MSVC: disabled /JMC in Visual Studio projects (unnecessary overhead).
+  - GLFW/SDL2/SDL3+WebGPU: fixed running with wgpu-native missing `wgpuInstanceWaitAny()`. (#9377)
+  - GLFW/SDL2/SDL3+WebGPU: better select surface format. (#9576) [@ypujante]
+  - GLFW+Metal: fixed mistakenly calling `ImGui_ImplGlfw_InitForOpenGL()`, which
+    broke multi-viewport support. (#9564) [@ypujante]
+  - SDL2+Metal: create Metal context without using a `SDL_Renderer`.
+  - QNX+OpenGL3, QNX+Vulkan: added QNX Screen examples. (#9492) [@mgorchak-blackberry]
+  - OSX+OpenGL3: added example_apple_opengl3/ (OSX/Cocoa + OpenGL 3.2 Core profile).
+
+Docking+Viewports Branch:
+
+- Style:
+  - Changed `ImGuiCol_DockingEmptyBg` value in dark/light styles.
+- Backends:
+  - DX10, DX11, DX12: fixed crash when CreateSwapChain() or CreateRenderTargetView()
+    calls are failing. (#9546) [@lailoken]
+  - GLFW: fixed applying mouse cursor shapes to secondary viewports, broken in 1.92.6
+    when introducing a cache. (#9545) [@JamesWrigley]
+  - Metal: fixed resizing windows losing framebuffer scale. (#6828, #8856) [@laikoken]
+- Examples:
+  - SDL3+Metal, GLFW+Metal: fix multi-viewport support.
+
+
+-----------------------------------------------------------------------
+ VERSION 1.92.9b (Released 2026-07-31)
+-----------------------------------------------------------------------
+
+Decorated log and release notes: https://github.com/ocornut/imgui/releases/tag/v1.92.9b
+
+Changes:
+
+- DragXXX, SliderXXX: fixed a regression in 1.92.9 where clicking a previously
+  Ctrl+Clicked field would flick it to text edit mode for a frame. (#9476, #701)
+- Tables:
+  - Fixed Y2 position of lower horizontal border (ImGuiTableFlags_BordersOuterH)
+    being off by one pixel when vertical ones are not also enabled. [@thedmd]
+  - Fixed X position of angled borders being off by half a pixel. [@thedmd]
+- ImDrawData: fixed a regression in 1.92.9 where legacy `ImDrawData::CmdListsCount` was always 0.
+  Prefer using `ImDrawData::CmdList.Size` anyway.
+
+
+-----------------------------------------------------------------------
+ VERSION 1.92.9 (Released 2026-07-25)
+-----------------------------------------------------------------------
+
+Decorated log and release notes: https://github.com/ocornut/imgui/releases/tag/v1.92.9
+
+Breaking Changes:
+
+- DragXXX, SliderXXX, InputScalar: with `ImGuiItemFlags_LiveEditOnInputScalar` now
+  defaulting to being disabled: inputting a value with the keyboard doesn't write
+  intermediate values to the backing variable. (#9476)
+    Before: DragFloat() with user typing "123" --> write back 1, then 12, then 123.
+    After:  DragFloat() with user typing "123" --> write back 123 when validated/unfocused.
+  You can enable the flag back for a given scope if needed by specific widget/behavior.
+  Read below for details.
+- TreeNode: commented out legacy name `ImGuiTreeNodeFlags_SpanTextWidth` which
+  was obsoleted in 1.90.7 (May 2024). Use `ImGuiTreeNodeFlags_SpanLabelWidth`.
+- ColorEdit: obsoleted SetColorEditOptions() function added in 1.51 (June 2017) in favor
+  of directly poking to io.ConfigColorEditFlags. More consistent and easier to discover.
+- Drag and Drop: commented out legacy name `ImGuiDragDropFlags_SourceAutoExpirePayload`
+  which obsoleted in 1.90.9 (July 2024). Use `ImGuiDragDropFlags_PayloadAutoExpire`.
+- ImDrawData: marked `CmdListsCount` as obsolete (technically was obsoleted in 1.89.8).
+    Before: `draw_data->CmdListsCount`, After: `draw_data->CmdLists.Size`.
+
+Other Changes:
+
+- LiveEdit on/off: added `ImGuiItemFlags_LiveEditOnInputText` and `ImGuiItemFlags_LiveEditOnInputScalar`
+  flags to configure the timing of applying edits of backing variables when typing
+  values using a keyboard.
+  (#9476, #701, #3936, #3946, #5904, #6284, #8149, #8065, #8665, #9117, #9299, #700, #1351,
+   #1875, #2060, #2215, #2380, #2550, #3083, #3338, #3556, #4373, #4714, #4885, #5184,
+   #5777, #6707, #6766, #8004, #8303, #8915, #9308)
+  - ImGuiItemFlags_LiveEditOnInputText is enabled by default (same as before):
+    - The expectation is that for strings/text, enabling LiveEdit is a better default.
+  - ImGuiItemFlags_LiveEditOnInputScalar is disabled by default (new behavior):
+    - The expectation is that for numeric/scalars values, disabling LiveEdit is a better default.
+  - Until now:
+    - Edits where always applied immediately to backing variable, which is equivalent
+      to the `ImGuiItemFlags_LiveEditXXX` flags being enabled.
+    - Typing '123' in an integer field would output successively 1, 12 then 123.
+    - Most uses of `IsItemDeactivatedAfterEdit()` or `ImGuiInputTextFlags_EnterReturnsTrue`
+      were actually workarounds for this issue. Advanced applications would typically
+      use `IsItemDeactivatedAfterEdit()` to distinguish transactions.
+      Workarounds often required a backing store for scalar values, and there were
+      also a few niggles related to `IsItemDeactivatedAfterEdit()` when using +/-
+      buttons of an `InputInt()` widgets.
+    - Many of those situations can now be naturally simplified when disabling
+      `ImGuiItemFlags_LiveEditOnInputScalar` is disabled.
+  - The new flags allows disabling this behavior selectively for strings fields
+    such as `InputText()` vs scalar fields: `SliderInt()`, `InputFloat()`, etc.
+    - When LiveEdit is disabled, edits are applied when pressing enter, tabbing out,
+      clearing a field or deactivating due to a focus loss.
+    - The flag may be altered programmatically, e.g. for the entire frame scope:
+        NewFrame();
+        PushItemFlag(ImGuiItemFlags_LiveEditOnInputScalar, true); // Enable for scalars for the whole frame
+        ....
+        PopItemFlag();
+        EndFrame();
+      Or for a specific widget:
+        PushItemFlag(ImGuiItemFlags_LiveEditOnInput, true);       // Enable for one widget
+        SliderInt(...);
+        PopItemFlag();
+  - We intentionally are not adding `io.ConfigLiveEditXXX` fields to dictate the
+    default value of each `ImGuiItemFlags_LiveEditXXX`, because this is not expected
+    to be a user preference but a programmer/widget preferences.
+    And we strive to make the toolkit consistent.
+- Windows:
+  - Clicking on a window's empty-space to move/focus a window checks
+    for lack of mouse button ownership. This gives an additional opportunity
+    for user code to bypass it without using a clickable item. (#9382)
+  - Clicking on a window's empty-space to move/focus a window checks
+    for lack of queued focus request. (#9382)
+  - Fixed double-click collapse toggle not owning the mouse button. If a
+    `SetNextWindowPos()` with pivot was queued in the same frame, the second
+    click could trigger another item in the same window. (#9439) [@Cleroth]
+- Popups:
+  - Added bool return value to `OpenPopup()`, `OpenPopupOnItemClick()` functions
+    to notify when the popup was just opened. (#9429)
+- InputText:
+  - Added `style.InputTextCursorSize` to configure cursor/caret thickness. (#7031, #9409)
+    It is automatically scaled by `style.ScaleAllSizes()`.
+  - Reworked `io.ConfigInputTextEnterKeepActive` mode so that pressing
+    Ctrl+Enter or Shift+Enter still allows to deactivate. (#9239)
+- Tables:
+  - Redesigned/rewrote code to reconcile columns and settings on topology changes. (#9108)
+    - When a column label is passed to TableSetupColumn(), the underlying identifier
+      is used to match live columns data and .ini settings data when changing.
+      This makes it possible to add/remove columns from a table without losing
+      neither live data neither .ini settings data.
+    - PS: Note that this is distinct from toggling column visibility or reordering
+      columns, which was always possible. The new matching makes it easier to create
+      tables that are entirely customized by user or code, without losing state.
+    - Columns without identifiers or with duplicate identifiers are matched
+      sequentially, matching old behavior.
+    - Column ID are stored in .ini file.
+    - Code is being tested both for live topology changes and for loading .ini
+      data with mismatched topology.
+  - Context Menu: added a "Reset" sub-menu with a "Reset Visibility" option.
+    (which is greyed out when using default settings)
+  - Headers: fixed label being clipped early to reserve space for a sort marker
+    even when no sort marker is displayed. Auto-fitting a column still accounts
+    for the possible marker, so that sorting after an auto-fit doesn't clip the label.
+- Multi-Select:
+  - Reworked `ImGuiMultiSelectFlags_NoAutoSelect` as it carried side-effects that
+    were hardcoded/designed to use multi-selection on checkboxes. (#9391)
+    Specifically removed those undocumented behaviors from `_NoAutoSelect`:
+    - Clicking a selected/checked item always unselect/uncheck.
+    - Shift+Click inverts targets value and copy to range.
+    - Shift+Keyboard copy selection source value to range.
+    Those behaviors are still happening on checkboxes used within multi-selection.
+- Fonts:
+  - Added `IMGUI_DISABLE_DEFAULT_FONT_BITMAP`/`IMGUI_DISABLE_DEFAULT_FONT_VECTOR` to
+    disable embedding either fonts separately. (#9407)
+  - Tweak `CalcTextSize()` awkward width rounding/ceiling code to reduce floating-point
+    precision issues altering the result by 1 even at relatively small width. (#791)
+  - Better document the fact that `ImFontAtlas::Clear()`/`ClearFonts()` functions are
+    unlikely to be useful nowadays. Better recover to an edge case of mistakenly
+    calling `ClearFonts()` during rendering.
+  - Fixed an issue where passing a manually created ImFontAtlas to CreateContext() would
+    incorrectly destroy it in `DestroyContext()` when ref-count gets back to zero. (#9426)
+  - Destroying an ImGui context using a `ImFontAtlas` checks that the later has no references.
+- Nav:
+  - Fixed context menu activation with gamepad erroneously testing for _NavEnableKeyboard
+    instead of _NavEnableGamepad. (#9454, #8803, #9270) [@Clownacy]
+- TreeNode:
+  - Fixed nav cursor rendering with rounding even though tree nodes don't have it. (#7589)
+- Inputs:
+  - Added `GetItemClickedCountWithSingleClickDelay()` helper for easy disambiguation
+    between single-click and double-click for actions that needs single-click to do
+    something other than selection. (#8337)
+    - Returns 1 on single-click but delayed by io.MouseSingleClickDelay.
+    - Returns 2 on double-click, and 2+ on subsequent repeated clicks.
+  - Added `io.MouseSingleClickDelay` to configure default delayed single click delay when
+    using `GetItemClickedCountWithSingleClickDelay()` or `IsMouseReleasedWithDelay()`. (#8337)
+    Note that `io.MouseSingleClickDelay` is always `> io.MouseDoubleClickTime`.
+- ColorEdit:
+  - Added `io.ConfigColorEditFlags` to read/modify current color edit/picker settings.
+  - ColorPicker: added `ImGuiColorEditFlags_PickerNoRotate` to disable rotation of the
+    S/V triangle when in `ImGuiColorEditFlags_PickerHueWheel` mode. (#9337) [@SeanTheBuilder1]
+    Likely best passed to `style.ColorEditFlags` to setup globally and once.
+  - ColorButton: small rendering tweak/optimization for the alpha checkerboard.
+- Style:
+  - Added style.MenuItemRounding, ImGuiStyleVar_MenuItemRounding. (#7589, #9375, #9453)
+  - Added style.SelectableRounding, ImGuiStyleVar_SelectableRounding. (#7589, #9375, #9453)
+    The use of this is discouraged because it can easily create problems rendering e.g.
+    contiguous selection.
+  - Scale the NavCursor border thickness when using large values with `ScallAllSizes()`.
+- Settings:
+  - Windows/Tables settings entries can now record the last used date in YYYYMMDD format,
+    allowing tools to run to e.g. delete entries that haven't been used in X months. (#9460)
+  - Added `bool io.ConfigIniSettingsSaveLastUsedDate` to disable saving that info. (#9460)
+  - Added `int io.ConfigIniSettingsAutoDiscardMonths` to enable a mode where unused settings
+    are automatically discard after xx months. (#9460)
+  - Added a trimming tool under Metrics->Settings, along with a yet-unexposed function.
+  - The current system date is fed through `ImGuiPlatformIO::Platform_SessionDate`,
+    which is automatically set by a call to time() done during context creation. (#9460)
+  - Added `IMGUI_DISABLE_TIME_FUNCTIONS` to disable setting platform_io.Platform_SessionDate.
+    A custom backend may still set it manually. (#9460)
+- DrawList:
+  - Minor optimization to `AddLine()`, `AddLineH()`, `AddLineV()` functions. (#4091)
+  - Added `ImDrawListFlags_TextNoPixelSnap` to disable snapping of AddText()
+    coordinates for a given scope. (#3437, #9417, #2291)
+- Demo:
+  - Extract 'Widgets->Tree Nodes->Selectable Nodes' out of the 'Advanced'
+    demo for clarity (manual reimplementation of basic selection).
+- Debug Tools:
+  - Added `IM_DEBUG_BREAK()` handler for GCC+AArch64/ARM64. [@tom-seddon]
+- Backends:
+  - Android:
+    - Clear mouse position on touch release (`AMOTION_EVENT_ACTION_UP`) to prevent
+      items from staying in hovered state. (#6627, #9474) [@Turtle-PB]
+  - Metal4:
+    - Added new Metal 4 backend (forked from Metal 3 backend). (#9458, #9451) [@AmelieHeinrich]
+    - Added Metal-cpp support enabled with `IMGUI_IMPL_METAL_CPP` define. (#9461) [@MERL10N]
+  - OpenGL2:
+    - Backup and restore `GL_UNPACK_ROW_LENGTH` and `GL_UNPACK_ALIGNMENT` when updating texture
+      to avoid altering caller GL state. (#8802, #9473) [@Turtle-PB]
+  - OpenGL3:
+    - GLSL version detection assume GLSL 410 when GL context is 4.1.
+      Fixes an issue running on macOS with Wine. [#9427, #6577) [@perminovVS]
+    - Expose selected render state in `ImGui_ImplOpenGL3_RenderState`, allowing to
+      dynamically select between use of `glBindSampler()` and `glTexParameter()`. (#9378)
+    - Backup and restore `GL_UNPACK_ROW_LENGTH` and `GL_UNPACK_ALIGNMENT` when updating texture
+      to avoid altering caller GL state. (#8802, #9473) [@Turtle-PB]
+  - SDL2:
+    - Restore SDL_StartTextInput()/SDL_StopTextInput() in IME handler for on-screen keyboard
+      support on Android. (#7636, #9474) [@Turtle-PB]
+  - SDLRenderer3:
+    - Fixed sampler change which didn't work on all graphics backends. (#7616, #9470, #9378)
+    - Fixed default sampler not being Linear. Regression in 1.92.8. (#7616, #9470, #9378) [@ShiroKSH]
+  - Win32:
+    - Uses `SetProcessDpiAwarenessContext()` instead of `SetThreadDpiAwarenessContext()`
+      when available, fixing OpenGL DPI scaling issues as e.g. NVIDIA drivers tends
+      to spawn multiple-thread to manage OpenGL. (#9403)
+- Examples:
+  - Android: update to AGP 9.2.0 to support Gradle 9.6.0.
+  - Apple+Metal4: added new example. (#9465, #9451) [@hoffstadt]
+  - OpenGL3+GLFW/SDL2/SDL3: allow Wine compatibility by passing empty GLSL version
+    string to ImGui_ImplOpenGL3_Init() to let backend decide of a GLSL version based
+    on actual GL version obtained. (#9427, #6577) [@perminovVS]
+  - OpenGL3+Win32: rework context creation to allow Wine compatibility. (#9427, #6577) [@perminovVS]
+  - SDL2/SDL3: use `SDL_GetWindowSizeInPixels()` to create frame-buffers. Fixes issues
+    with non-fractional framebuffer size on Wayland. (#8761, #9124) [@billtran1632001]
+  - SDL3+Metal4: added new example. (#9458, #9451) [@AmelieHeinrich]
+
+Docking+Viewports Branch:
+
+- Viewports:
+  - Fixed an issue where the implicit "Debug" window while hidden would erroneously
+    interfere with merging secondary viewports into the main viewport.
+- Docking:
+  - Fixed behavior change/regression in 1.92.8 where a window using the
+    ImGuiWindowFlags_AlwaysAutoResize flag would have ItemWidth default
+    change when docked. (#9355, #9443) [@reybits]
+- Backends:
+  - Metal4: added multi-viewport support. (#9465, #9451) [@hoffstadt]
+  - Vulkan: fixed use after-free when using multi-viewports with dynamic rendering.
+    (#9390, #9468) [@vikhik, @Turtle-PB]
+
+
+-----------------------------------------------------------------------
  VERSION 1.92.8 (Released 2026-05-12)
 -----------------------------------------------------------------------
 
@@ -64,9 +727,13 @@ Breaking Changes:
      The new order is also more convenient as `flags` are less frequently used than `thickness` in real code.
    - As a general policy in Dear ImGui, all our flags default to 0 so ImDrawFlags_None was likely written 0 in some call sites.
    - Consider adding `#define IMGUI_DISABLE_OBSOLETE_FUNCTIONS` in your imconfig.h, even temporarily, to clean up legacy code.
+   - Reminder: you do NOT need to specify `ImDrawFlags_RoundCornersAll` for rounding, it is already the default!
 - DrawList: obsoleted `ImDrawCallback_ResetRenderState` in favor of using `ImGui::GetPlatformIO().DrawCallback_ResetRenderState`,
     which is part of our new standard draw callbacks. (#9378)
     Redirecting the earlier value into the later one when set, so both old and new code should work.
+- DrawList: changed value of `ImDrawFlags_Closed`. It was previously advertised as "always == 1" when introduced
+  in 1.82 (2021/02), in order to facilitate backward compatibility with the legacy `bool closed` flag. This
+  guarantee has been removed. The bit is reserved, and `AddPolyline()`, `PathStroke()` will assert when it is used.
 - Backends:
   - Vulkan: redesigned to use separate ImageView + Sampler instead of Combined Image Sampler. (#914)
     This change allows us to facilitate changing samplers, in line with other backends. [@yaz0r, @ocornut]
@@ -81,6 +748,8 @@ Breaking Changes:
   - DirectX10, DirectX11, SDLGPU3, Vulkan: removed samplers from `ImGui_ImplXXXX_RenderState`.
     Prefer to use backend-agnostic DrawCallback_SetSamplerLinear which works everywhere! (#9378)
     If there is a legit need/request for them or any render state we can always add them back.
+  - OpenGL3: the new sampler support system prioritize using glBindSampler() when available,
+    which would override glTexParameter() settings you may have set on custom textures. (#9378)
 
 Other Changes:
 
@@ -97,6 +766,15 @@ Other Changes:
     #5999, #6452, #5156, #7342, #7592, #7511)
   - Made `AddCallback()` user data default to Null for convenience.
   - Added `AddLineH()`, `AddLineV()` helpers to draw horizontal and vertical lines. [@memononen]
+    The new functions are more optimal and will be part of a larger effort in 1.93 to fix
+    inconsistencies and improve the DrawList API. In the current API, `AddLine()` adds a "magic" +0.5f
+    offset and then center the line, whereas AddLineH()/AddLineV() use the right side of the line to expand.
+    For thickness=1.0f lines this is equivalent:
+      `AddLine({10,3}, {20,3}, ...)` --> `AddLineH(x1=10, x2=20, y=3, ...)`.
+      `AddLine({3,10}, {3,20}, ...)` --> `AddLineV(x=3, y1=10, y2=20, ...)`.
+    For larger integer thickness, AddLine() will center but may be blurry, AddLineH()/AddLineV()
+    will expand "inside" (to the right side) and will always be sharp.
+    A subsequent release will expand on those concepts and add new options.
 - InputText:
   - InputTextMultiline: fixed an issue processing deactivation logic when an active
     multi-line edit is clipped due to being out of view.
@@ -403,7 +1081,7 @@ Docking+Viewports Branch:
 - Viewports:
   - Fixed an issue where the implicit "Debug" window would erroneously be targetted for
     mouse inputs while hidden if (1) the implicit "Debug" window was used in a previous
-    session  and moved to a secondary viewport and (2) the Platform Backend does not
+    session and moved to a secondary viewport and (2) the Platform Backend does not
     support the `ImGuiBackendFlags_HasMouseHoveredViewport` feature. (#9254)
   - Backends: SDL2, SDL3: fixed an issue dated 2025/04/09 (1.92 WIP) where a refactor
     and a merge caused `ImGuiBackendFlags_HasMouseHoveredViewport` to never be set, causing
@@ -679,7 +1357,7 @@ Docking+Viewports Branch:
 - Backends:
   - GLFW: dynamically load X11 functions to avoid `-lx11` linking requirement introduced
     in 1.92.3. (#9116, #9109) [@ramenguy99]
-  - GLFW: improve workarounds for cases where GLFW is unable to provide reliable monitor 
+  - GLFW: improve workarounds for cases where GLFW is unable to provide reliable monitor
     info. Preserve existing monitor list when none of the new one is valid. (#9195, #7902, #5683)
   - SDL2, SDL3: adjust IME offset to match other backends and master branch. (#6071, #1953)
   - Win32: viewports created by backend forcefully direct messages to
@@ -837,7 +1515,7 @@ Docking+Viewports Branch:
 
 - Docking, Style: fixed per-window ImGuiCol_UnsavedMarker changes not being latched
   by docked windows. (#8983, #9064)
-- Docking: fixed crash loading certain form of invalid .ini settings (e.g. nodes 
+- Docking: fixed crash loading certain form of invalid .ini settings (e.g. nodes
   referring to a missing parent, duplicate nodes id). (#9070)
 - Docking: added io.ConfigDockingNoDockingOver helper config flag to prevent
   merging windows into a same tab-bar.
@@ -961,7 +1639,7 @@ Other Changes:
     not available. (#5924, #5562)
   - SDL3+DirectX11: Added SDL3+DirectX11 example. (#8956, #8957) [@tomaz82]
   - Win32+DirectX12: Rework synchronization logic. (#8961) [@RT2Code]
-  - Made examples's main.cpp consistent with returning 1 on error.
+  - Made examples' main.cpp consistent with returning 1 on error.
 
 Docking+Viewports Branch:
 
@@ -1561,7 +2239,7 @@ Non-breaking Fonts/Textures related changes:
 - Fonts: ImFontAtlas::AddFontXXX() can fail more gracefully if error handling is configured
   to not assert (this will be better exposed via future font flags).
 - Fonts: added style.FontScaleBase scaling factor (previously called io.FontGlobalScale).
-- Fonts: added style.FontScaleDpi scaling factor. This is designed to be be changed on
+- Fonts: added style.FontScaleDpi scaling factor. This is designed to be changed on
   per-monitor/per-viewport basis, which `io.ConfigDpiScaleFonts` does automatically.
   (which is why it is separate from FontScaleBase).
 - Fonts: added optional font_size parameter to ImGui::PushFont() function.
@@ -2833,7 +3511,7 @@ Other changes:
 - Backends: Vulkan: Remove Volk/ from volk.h #include directives. (#7722, #6582, #4854)
   [@martin-ejdestig]
 - Examples: SDL3: Remove use of SDL_HINT_IME_NATIVE_UI since new SDL_HINT_IME_IMPLEMENTED_UI
-  values has a more suitable default for our case case.
+  values has a more suitable default for our case.
 - Examples: GLFW+Vulkan, SDL+Vulkan: handle swap chain resize even without Vulkan
   returning VK_SUBOPTIMAL_KHR, which doesn't seem to happen on Wayland. (#7671)
   [@AndreiNego, @ocornut]
@@ -3708,8 +4386,10 @@ Breaking changes:
   input queue. This is automatically cleared by io.ClearInputKeys(). (#4921)
 - ImDrawData: CmdLists[] array is now owned, changed from 'ImDrawList**' to
   'ImVector<ImDrawList*>'. Majority of users shouldn't be affected, but you
-  cannot compare to NULL nor reassign manually anymore.
-  Instead use AddDrawList(). Allocation count are identical. (#6406, #4879, #1878)
+  cannot compare to NULL nor reassign manually anymore. (#6406, #4879, #1878)
+  - Allocation count are identical.
+  - Use `draw_data->CmdLists.Size` instead of `draw_list->CmdListsCount`!
+  - Use `AddDrawList()` to add to a `ImDrawData`.
 
 Other changes:
 
@@ -5039,7 +5719,7 @@ Other Changes:
 - ColorPicker4: Fixed picker being unable to select exact 1.0f color when dragging toward the edges
   of the SV square (previously picked 0.999989986f). (#3517) [@rokups]
 - Menus: Fixed vertical alignments of MenuItem() calls within a menu bar (broken in 1.84). (#4538)
-- Menus: Improve closing logic when moving diagonally in empty between between parent and child menus to
+- Menus: Improve closing logic when moving diagonally in empty space between parent and child menus to
   accommodate for varying font size and dpi.
 - Menus: Fixed crash when navigating left inside a child window inside a sub-menu. (#4510).
 - Menus: Fixed an assertion happening in some situations when closing nested menus (broken in 1.83). (#4640)

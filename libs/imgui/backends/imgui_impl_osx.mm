@@ -939,7 +939,13 @@ static void ImGui_ImplOSX_CreateWindow(ImGuiViewport* viewport)
 
     KeyEventResponder* view = [[KeyEventResponder alloc] initWithFrame:rect];
     if (floor(NSAppKitVersionNumber) > NSAppKitVersionNumber10_6 && ceil(NSAppKitVersionNumber) < NSAppKitVersionNumber10_15)
+    {
+        // Benefits OpenGL renderers on macOS 10.7-10.14: deprecated in 10.14, on by default since 10.15.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
         [view setWantsBestResolutionOpenGLSurface:YES];
+#pragma clang diagnostic pop
+    }
 
     window.contentView = view;
 
@@ -1079,14 +1085,6 @@ static void ImGui_ImplOSX_SetWindowAlpha(ImGuiViewport* viewport, float alpha)
     vd->Window.alphaValue = alpha;
 }
 
-static float ImGui_ImplOSX_GetWindowDpiScale(ImGuiViewport* viewport)
-{
-    ImGui_ImplOSX_ViewportData* vd = (ImGui_ImplOSX_ViewportData*)viewport->PlatformUserData;
-    IM_ASSERT(vd->Window != 0);
-
-    return vd->Window.backingScaleFactor;
-}
-
 static void ImGui_ImplOSX_UpdateMonitors()
 {
     ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
@@ -1107,7 +1105,7 @@ static void ImGui_ImplOSX_UpdateMonitors()
         imgui_monitor.MainSize = ImVec2(frame.size.width, frame.size.height);
         imgui_monitor.WorkPos = ImVec2(visibleFrame.origin.x, visibleFrame.origin.y);
         imgui_monitor.WorkSize = ImVec2(visibleFrame.size.width, visibleFrame.size.height);
-        imgui_monitor.DpiScale = screen.backingScaleFactor;
+        imgui_monitor.DpiScale = 1.0f;
         imgui_monitor.PlatformHandle = (__bridge_retained void*)screen;
 
         platform_io.Monitors.push_back(imgui_monitor);
@@ -1133,7 +1131,6 @@ static void ImGui_ImplOSX_InitMultiViewportSupport()
     platform_io.Platform_GetWindowMinimized = ImGui_ImplOSX_GetWindowMinimized;
     platform_io.Platform_SetWindowTitle = ImGui_ImplOSX_SetWindowTitle;
     platform_io.Platform_SetWindowAlpha = ImGui_ImplOSX_SetWindowAlpha;
-    platform_io.Platform_GetWindowDpiScale = ImGui_ImplOSX_GetWindowDpiScale; // FIXME-DPI
 
     // Register main window handle (which is owned by the main application, not by us)
     ImGuiViewport* main_viewport = ImGui::GetMainViewport();

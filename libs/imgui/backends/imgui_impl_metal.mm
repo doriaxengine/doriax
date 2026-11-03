@@ -18,6 +18,9 @@
 // CHANGELOG
 // (minor and older changes stripped away, please see git history for details)
 //  2026-XX-XX: Metal: Added support for multiple windows via the ImGuiPlatformIO interface.
+//  2026-10-06: Added support for render passes with multiple color attachments: we render to the first one and leave the others untouched. (#9574)
+//  2026-09-07: Round framebuffer dimensions to the nearest integer instead of truncating them. (#9538, 9515, #8628)
+//  2026-08-06: Metal: fixed resizing windows losing framebuffer scale. (#6828, #8856)
 //  2026-04-28: Added support for standard draw callbacks (in platform_io): DrawCallback_SetSamplerLinear and DrawCallback_SetSamplerNearest. (#9378, #9381)
 //  2026-04-23: Added support for standard draw callbacks (in platform_io): DrawCallback_ResetRenderState (others are not yet supported). (#9378)
 //  2026-04-14: Metal: use a dedicated bufferCacheLock to avoid crashing when bufferCache is replaced by a new object while being used for @synchronize(). (#9367)
@@ -65,14 +68,16 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows();
 - (instancetype)initWithBuffer:(id<MTLBuffer>)buffer;
 @end
 
+#define IMGUI_IMPL_METAL_MAX_COLOR_ATTACHMENTS  8   // Metal's limit (see Metal Feature Set Tables). Not configurable.
+
 // An object that encapsulates the data necessary to uniquely identify a
 // render pipeline state. These are used as cache keys.
 @interface FramebufferDescriptor : NSObject<NSCopying>
 @property (nonatomic, assign) unsigned long  sampleCount;
-@property (nonatomic, assign) MTLPixelFormat colorPixelFormat;
 @property (nonatomic, assign) MTLPixelFormat depthPixelFormat;
 @property (nonatomic, assign) MTLPixelFormat stencilPixelFormat;
 - (instancetype)initWithRenderPassDescriptor:(MTLRenderPassDescriptor*)renderPassDescriptor;
+- (MTLPixelFormat)colorPixelFormatAtIndex:(NSUInteger)index;
 @end
 
 @interface MetalTexture : NSObject
@@ -131,7 +136,6 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data,
     ImGui_ImplMetal_RenderDrawData(draw_data,
                                    (__bridge id<MTLCommandBuffer>)(commandBuffer),
                                    (__bridge id<MTLRenderCommandEncoder>)(commandEncoder));
-
 }
 
 bool ImGui_ImplMetal_CreateDeviceObjects(MTL::Device* device)
@@ -172,8 +176,8 @@ static void ImGui_ImplMetal_SetupRenderState(ImDrawData* draw_data, id<MTLComman
     {
         .originX = 0.0,
         .originY = 0.0,
-        .width = (double)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x),
-        .height = (double)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y),
+        .width = (double)(int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x + 0.5f),
+        .height = (double)(int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y + 0.5f),
         .znear = 0.0,
         .zfar = 1.0
     };
@@ -212,8 +216,8 @@ void ImGui_ImplMetal_RenderDrawData(ImDrawData* draw_data, id<MTLCommandBuffer> 
     MetalContext* ctx = bd->SharedMetalContext;
 
     // Avoid rendering when minimized, scale coordinates for retina displays (screen coordinates != framebuffer coordinates)
-    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x);
-    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y);
+    int fb_width = (int)(draw_data->DisplaySize.x * draw_data->FramebufferScale.x + 0.5f);
+    int fb_height = (int)(draw_data->DisplaySize.y * draw_data->FramebufferScale.y + 0.5f);
     if (fb_width <= 0 || fb_height <= 0 || draw_data->CmdLists.Size == 0)
         return;
 
@@ -513,7 +517,7 @@ static void ImGui_ImplMetal_CreateWindow(ImGuiViewport* viewport)
     CAMetalLayer* layer = [CAMetalLayer layer];
     layer.device = device;
     layer.framebufferOnly = YES;
-    layer.pixelFormat = bd->SharedMetalContext.framebufferDescriptor.colorPixelFormat;
+    layer.pixelFormat = [bd->SharedMetalContext.framebufferDescriptor colorPixelFormatAtIndex:0];
 #if TARGET_OS_OSX
     NSWindow* window = (__bridge NSWindow*)handle;
     NSView* view = window.contentView;
@@ -542,7 +546,15 @@ inline static CGSize MakeScaledSize(CGSize size, CGFloat scale)
 static void ImGui_ImplMetal_SetWindowSize(ImGuiViewport* viewport, ImVec2 size)
 {
     ImGuiViewportDataMetal* data = (ImGuiViewportDataMetal*)viewport->RendererUserData;
-    data->MetalLayer.drawableSize = MakeScaledSize(CGSizeMake(size.x, size.y), viewport->DpiScale);
+#if 0 && TARGET_OS_OSX
+    void* handle = viewport->PlatformHandleRaw ? viewport->PlatformHandleRaw : viewport->PlatformHandle;
+    NSWindow* window = (__bridge NSWindow*)handle;
+    CGFloat scale = window.backingScaleFactor;
+    data->MetalLayer.contentsScale = scale;
+    data->MetalLayer.drawableSize = MakeScaledSize(CGSizeMake(size.x, size.y), scale);
+#else
+    data->MetalLayer.drawableSize = MakeScaledSize(CGSizeMake(size.x, size.y), data->MetalLayer.contentsScale);
+#endif
 }
 
 static void ImGui_ImplMetal_RenderWindow(ImGuiViewport* viewport, void*)
@@ -562,12 +574,12 @@ static void ImGui_ImplMetal_RenderWindow(ImGuiViewport* viewport, void*)
     }
     data->FirstFrame = false;
 
-    float fb_scale = (float)window.backingScaleFactor;
-    if (data->MetalLayer.contentsScale != fb_scale)
-    {
-        data->MetalLayer.contentsScale = fb_scale;
-        data->MetalLayer.drawableSize = MakeScaledSize(window.frame.size, fb_scale);
-    }
+    // The layer is installed on the window's contentView; window.frame additionally includes the title bar.
+    CGFloat fb_scale = window.backingScaleFactor;
+    data->MetalLayer.contentsScale = fb_scale;
+    CGSize want_size = MakeScaledSize(window.contentView.bounds.size, fb_scale);
+    if (!CGSizeEqualToSize(data->MetalLayer.drawableSize, want_size))
+        data->MetalLayer.drawableSize = want_size;
 #endif
 
     id <CAMetalDrawable> drawable = [data->MetalLayer nextDrawable];
@@ -636,23 +648,33 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
 #pragma mark - FramebufferDescriptor implementation
 
 @implementation FramebufferDescriptor
+{
+    MTLPixelFormat _colorPixelFormats[IMGUI_IMPL_METAL_MAX_COLOR_ATTACHMENTS];
+}
+
 - (instancetype)initWithRenderPassDescriptor:(MTLRenderPassDescriptor*)renderPassDescriptor
 {
     if ((self = [super init]))
     {
         _sampleCount = renderPassDescriptor.colorAttachments[0].texture.sampleCount;
-        _colorPixelFormat = renderPassDescriptor.colorAttachments[0].texture.pixelFormat;
+        for (NSUInteger n = 0; n < IMGUI_IMPL_METAL_MAX_COLOR_ATTACHMENTS; n++)
+            _colorPixelFormats[n] = renderPassDescriptor.colorAttachments[n].texture.pixelFormat;
         _depthPixelFormat = renderPassDescriptor.depthAttachment.texture.pixelFormat;
         _stencilPixelFormat = renderPassDescriptor.stencilAttachment.texture.pixelFormat;
     }
     return self;
 }
 
+- (MTLPixelFormat)colorPixelFormatAtIndex:(NSUInteger)index
+{
+    return _colorPixelFormats[index];
+}
+
 - (nonnull id)copyWithZone:(nullable NSZone*)zone
 {
     FramebufferDescriptor* copy = [[FramebufferDescriptor allocWithZone:zone] init];
     copy.sampleCount = self.sampleCount;
-    copy.colorPixelFormat = self.colorPixelFormat;
+    memcpy(copy->_colorPixelFormats, _colorPixelFormats, sizeof(_colorPixelFormats));
     copy.depthPixelFormat = self.depthPixelFormat;
     copy.stencilPixelFormat = self.stencilPixelFormat;
     return copy;
@@ -661,10 +683,12 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
 - (NSUInteger)hash
 {
     NSUInteger sc = _sampleCount & 0x3;
-    NSUInteger cf = _colorPixelFormat & 0x3FF;
+    NSUInteger cf = _colorPixelFormats[0] & 0x3FF;
     NSUInteger df = _depthPixelFormat & 0x3FF;
     NSUInteger sf = _stencilPixelFormat & 0x3FF;
     NSUInteger hash = (sf << 22) | (df << 12) | (cf << 2) | sc;
+    for (NSUInteger n = 1; n < IMGUI_IMPL_METAL_MAX_COLOR_ATTACHMENTS; n++)
+        hash = hash * 31 + _colorPixelFormats[n];
     return hash;
 }
 
@@ -674,7 +698,7 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     if (![other isKindOfClass:[FramebufferDescriptor class]])
         return NO;
     return other.sampleCount == self.sampleCount      &&
-    other.colorPixelFormat   == self.colorPixelFormat &&
+    memcmp(other->_colorPixelFormats, _colorPixelFormats, sizeof(_colorPixelFormats)) == 0 &&
     other.depthPixelFormat   == self.depthPixelFormat &&
     other.stencilPixelFormat == self.stencilPixelFormat;
 }
@@ -744,7 +768,7 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     return [[MetalBuffer alloc] initWithBuffer:backing];
 }
 
-// Bilinear sampling is required by default. Set 'io.Fonts->Flags |= ImFontAtlasFlags_NoBakedLines' or 'style.AntiAliasedLinesUseTex = false' to allow point/nearest sampling.
+// Bilinear sampling is required.
 - (id<MTLRenderPipelineState>)renderPipelineStateForFramebufferDescriptor:(FramebufferDescriptor*)descriptor device:(id<MTLDevice>)device
 {
     NSError* error = nil;
@@ -820,7 +844,7 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     pipelineDescriptor.fragmentFunction = fragmentFunction;
     pipelineDescriptor.vertexDescriptor = vertexDescriptor;
     pipelineDescriptor.rasterSampleCount = self.framebufferDescriptor.sampleCount;
-    pipelineDescriptor.colorAttachments[0].pixelFormat = self.framebufferDescriptor.colorPixelFormat;
+    pipelineDescriptor.colorAttachments[0].pixelFormat = [self.framebufferDescriptor colorPixelFormatAtIndex:0];
     pipelineDescriptor.colorAttachments[0].blendingEnabled = YES;
     pipelineDescriptor.colorAttachments[0].rgbBlendOperation = MTLBlendOperationAdd;
     pipelineDescriptor.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
@@ -828,6 +852,11 @@ static void ImGui_ImplMetal_InvalidateDeviceObjectsForPlatformWindows()
     pipelineDescriptor.colorAttachments[0].alphaBlendOperation = MTLBlendOperationAdd;
     pipelineDescriptor.colorAttachments[0].sourceAlphaBlendFactor = MTLBlendFactorOne;
     pipelineDescriptor.colorAttachments[0].destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    for (NSUInteger n = 1; n < IMGUI_IMPL_METAL_MAX_COLOR_ATTACHMENTS; n++) // Don't write to other color attachments, if any.
+    {
+        pipelineDescriptor.colorAttachments[n].pixelFormat = [self.framebufferDescriptor colorPixelFormatAtIndex:n];
+        pipelineDescriptor.colorAttachments[n].writeMask = MTLColorWriteMaskNone;
+    }
     pipelineDescriptor.depthAttachmentPixelFormat = self.framebufferDescriptor.depthPixelFormat;
     pipelineDescriptor.stencilAttachmentPixelFormat = self.framebufferDescriptor.stencilPixelFormat;
 

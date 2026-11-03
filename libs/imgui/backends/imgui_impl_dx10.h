@@ -5,6 +5,7 @@
 //  [X] Renderer: User texture binding. Use 'ID3D10ShaderResourceView*' as texture identifier. Read the FAQ about ImTextureID/ImTextureRef!
 //  [X] Renderer: Large meshes support (64k+ vertices) even with 16-bit indices (ImGuiBackendFlags_RendererHasVtxOffset).
 //  [X] Renderer: Texture updates support for dynamic font atlas (ImGuiBackendFlags_RendererHasTextures).
+//  [X] Renderer: Expose selected render state for draw callbacks to use. Access with ImGui_ImplDX10_GetRenderState().
 //  [X] Renderer: Multi-viewport support (multiple windows). Enable with 'io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable'.
 
 // You can use unmodified imgui_impl_* files in your project. See examples/ folder for examples of using this.
@@ -46,5 +47,6 @@ struct ImGui_ImplDX10_RenderState
     //ID3D10SamplerState*   SamplerLinear;          // Use ImDrawList::AddCallback(ImGui::GetPlatform().DrawCallback_SetSamplerLinear)
     //ID3D10SamplerState*   SamplerNearest;         // Use ImDrawList::AddCallback(ImGui::GetPlatform().DrawCallback_SetSamplerNearest)
 };
+IMGUI_IMPL_API ImGui_ImplDX10_RenderState* ImGui_ImplDX10_GetRenderState();
 
 #endif // #ifndef IMGUI_DISABLE

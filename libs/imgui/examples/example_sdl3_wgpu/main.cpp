@@ -81,11 +81,14 @@ int main(int, char**)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
     // Setup Dear ImGui style
+    ImGuiStyle& style = ImGui::GetStyle();
     ImGui::StyleColorsDark();
     //ImGui::StyleColorsLight();
+    //style.FontSizeBase = 16.0f;           // Default to 13.0f when unspecified, which allows crisp legacy font for non-4K screens.
+    style.FrameRounding = 3.0f;
+    style.GrabRounding = 3.0f;
 
     // Setup scaling
-    ImGuiStyle& style = ImGui::GetStyle();
     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     style.FontScaleDpi = main_scale;        // Set initial font scale. (in docking branch: using io.ConfigDpiScaleFonts=true automatically overrides this for every window depending on the current monitor)
 
@@ -101,14 +104,13 @@ int main(int, char**)
 
     // Load Fonts
     // - If fonts are not explicitly loaded, Dear ImGui will select an embedded font: either AddFontDefaultVector() or AddFontDefaultBitmap().
-    //   This selection is based on (style.FontSizeBase * style.FontScaleMain * style.FontScaleDpi) reaching a small threshold.
+    //   This selection is based on (style.FontSizeBase * style.FontScaleMain * style.FontScaleDpi) reaching a threshold.
     // - You can load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
     // - If a file cannot be loaded, AddFont functions will return a nullptr. Please handle those errors in your code (e.g. use an assertion, display an error and quit).
     // - Read 'docs/FONTS.md' for more instructions and details.
     // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use FreeType for higher quality font rendering.
     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
     // - Our Emscripten build process allows embedding fonts to be accessible at runtime from the "fonts/" folder. See Makefile.emscripten for details.
-    //style.FontSizeBase = 20.0f;
     //io.Fonts->AddFontDefaultVector();
     //io.Fonts->AddFontDefaultBitmap();
 #ifndef IMGUI_DISABLE_FILE_FUNCTIONS
@@ -155,7 +157,7 @@ int main(int, char**)
         // [If using SDL_MAIN_USE_CALLBACKS: all code below would likely be your SDL_AppIterate() function]
         // React to changes in screen size
         int width, height;
-        SDL_GetWindowSize(window, &width, &height);
+        SDL_GetWindowSizeInPixels(window, &width, &height);
         if (width != wgpu_surface_width || height != wgpu_surface_height)
             ResizeSurface(width, height);
 
@@ -287,6 +289,16 @@ int main(int, char**)
     return 0;
 }
 
+static WGPUTextureFormat SelectSurfaceFormat(const WGPUSurfaceCapabilities& capabilities)
+{
+    const WGPUTextureFormat preferredFormats[] = { WGPUTextureFormat_BGRA8Unorm, WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_BGRA8UnormSrgb, WGPUTextureFormat_RGBA8UnormSrgb };
+    for (WGPUTextureFormat preferredFormat : preferredFormats)
+        for (size_t n = 0; n < capabilities.formatCount; n++)
+            if (capabilities.formats[n] == preferredFormat)
+                return preferredFormat;
+    return capabilities.formatCount > 0 ? capabilities.formats[0] : WGPUTextureFormat_Undefined;
+}
+
 #if defined(IMGUI_IMPL_WEBGPU_BACKEND_DAWN)
 static WGPUAdapter RequestAdapter(wgpu::Instance& instance)
 {
@@ -341,29 +353,25 @@ static WGPUDevice RequestDevice(wgpu::Instance& instance, wgpu::Adapter& adapter
 static void handle_request_adapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringView message, void* userdata1, void* userdata2)
 {
     IM_UNUSED(userdata2);
-    if (status == WGPURequestAdapterStatus_Success)
-    {
-        WGPUAdapter* extAdapter = (WGPUAdapter*)userdata1;
-        *extAdapter = adapter;
-    }
-    else
+    if (status != WGPURequestAdapterStatus_Success)
     {
         printf("Request_adapter status=%#.8x message=%.*s\n", status, (int)message.length, message.data);
+        return;
     }
+    WGPUAdapter* extAdapter = (WGPUAdapter*)userdata1;
+    *extAdapter = adapter;
 }
 
 static void handle_request_device(WGPURequestDeviceStatus status, WGPUDevice device, WGPUStringView message, void* userdata1, void* userdata2)
 {
     IM_UNUSED(userdata2);
-    if (status == WGPURequestDeviceStatus_Success)
-    {
-        WGPUDevice* extDevice = (WGPUDevice*)userdata1;
-        *extDevice = device;
-    }
-    else
+    if (status != WGPURequestDeviceStatus_Success)
     {
         printf("Request_device status=%#.8x message=%.*s\n", status, (int)message.length, message.data);
+        return;
     }
+    WGPUDevice* extDevice = (WGPUDevice*)userdata1;
+    *extDevice = device;
 }
 
 static WGPUAdapter RequestAdapter(WGPUInstance& instance)
@@ -377,8 +385,10 @@ static WGPUAdapter RequestAdapter(WGPUInstance& instance)
     adapterCallbackInfo.userdata1 = &local_adapter;
 
     WGPUFuture future = wgpuInstanceRequestAdapter(instance, &adapter_options, adapterCallbackInfo);
+#if !defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
     WGPUFutureWaitInfo waitInfo = { future, false };
     wgpuInstanceWaitAny(instance, 1, &waitInfo, ~0ull);
+#endif
     IM_ASSERT(local_adapter && "Error on Adapter request");
     return local_adapter;
 }
@@ -390,9 +400,14 @@ static WGPUDevice RequestDevice(WGPUInstance& instance, WGPUAdapter& adapter)
     deviceCallbackInfo.mode = WGPUCallbackMode_WaitAnyOnly;
     deviceCallbackInfo.callback = handle_request_device;
     deviceCallbackInfo.userdata1 = &local_device;
+
     WGPUFuture future = wgpuAdapterRequestDevice(adapter, nullptr, deviceCallbackInfo);
+#if !defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
     WGPUFutureWaitInfo waitInfo = { future, false };
     wgpuInstanceWaitAny(instance, 1, &waitInfo, ~0ull);
+#else
+    IM_UNUSED(instance);
+#endif
     IM_ASSERT(local_device && "Error on Device request");
     return local_device;
 }
@@ -435,8 +450,7 @@ static bool InitWGPU(SDL_Window* window)
 
     WGPUSurfaceCapabilities surface_capabilities = {};
     wgpuSurfaceGetCapabilities(wgpu_surface, adapter.Get(), &surface_capabilities);
-
-    preferred_fmt = surface_capabilities.formats[0];
+    preferred_fmt = SelectSurfaceFormat(surface_capabilities);
 
     // WGPU backend: Adapter and Device acquisition, Surface creation
 #elif defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU) || defined(IMGUI_IMPL_WEBGPU_BACKEND_WGVK)
@@ -448,7 +462,7 @@ static bool InitWGPU(SDL_Window* window)
 
 #if defined(IMGUI_IMPL_WEBGPU_BACKEND_WGPU)
     wgpuSetLogCallback(
-        [](WGPULogLevel level, WGPUStringView msg, void* userdata) { fprintf(stderr, "%s: %.*s\n", ImGui_ImplWGPU_GetLogLevelName(level), (int)msg.length, msg.data); }, nullptr
+        [](WGPULogLevel level, WGPUStringView msg, void*) { fprintf(stderr, "%s: %.*s\n", ImGui_ImplWGPU_GetLogLevelName(level), (int)msg.length, msg.data); }, nullptr
     );
     wgpuSetLogLevel(WGPULogLevel_Warn);
 #endif
@@ -465,8 +479,7 @@ static bool InitWGPU(SDL_Window* window)
 
     WGPUSurfaceCapabilities surface_capabilities = {};
     wgpuSurfaceGetCapabilities(wgpu_surface, adapter, &surface_capabilities);
-
-    preferred_fmt = surface_capabilities.formats[0];
+    preferred_fmt = SelectSurfaceFormat(surface_capabilities);
 #endif // IMGUI_IMPL_WEBGPU_BACKEND_WGPU
 
     wgpu_surface_configuration.presentMode = WGPUPresentMode_Fifo;
@@ -505,29 +518,29 @@ WGPUSurface CreateWGPUSurface(const WGPUInstance& instance, SDL_Window* window)
 #if defined(SDL_PLATFORM_MACOS)
     {
         create_info.System = "cocoa";
-        create_info.RawWindow = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, NULL);
+        create_info.RawWindow = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
         return ImGui_ImplWGPU_CreateWGPUSurfaceHelper(&create_info);
     }
 #elif defined(SDL_PLATFORM_LINUX)
     if (SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0)
     {
         create_info.System = "wayland";
-        create_info.RawDisplay = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, NULL);
-        create_info.RawSurface = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, NULL);
+        create_info.RawDisplay = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+        create_info.RawSurface = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
         return ImGui_ImplWGPU_CreateWGPUSurfaceHelper(&create_info);
     }
     else if (!SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11"))
     {
         create_info.System = "x11";
         create_info.RawWindow = (void*)SDL_GetNumberProperty(propertiesID, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
-        create_info.RawDisplay = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, NULL);
+        create_info.RawDisplay = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
         return ImGui_ImplWGPU_CreateWGPUSurfaceHelper(&create_info);
     }
 #elif defined(SDL_PLATFORM_WIN32)
     {
         create_info.System = "win32";
-        create_info.RawWindow = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
-        create_info.RawInstance = (void*)::GetModuleHandle(NULL);
+        create_info.RawWindow = (void*)SDL_GetPointerProperty(propertiesID, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+        create_info.RawInstance = (void*)::GetModuleHandle(nullptr);
         return ImGui_ImplWGPU_CreateWGPUSurfaceHelper(&create_info);
     }
 #else
