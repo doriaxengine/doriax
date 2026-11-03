@@ -3656,10 +3656,14 @@ ActionResult EditorActionExecutor::importResourceFile(const Json& arguments) {
     fs::create_directories(targetFull, ec);
     if (ec) return failResult("Failed to create destination directory: " + ec.message());
 
-    project->getProjectCommandHistory()->addCommandNoMerge(
-        new CopyFileCmd(project, std::vector<std::string>{source.string()}, targetFull.string(), true));
+    CopyFileCmd* cmd = new CopyFileCmd(project, std::vector<std::string>{source.string()}, targetFull.string(), true);
+    if (!project->getProjectCommandHistory()->addCommandNoMerge(cmd)) {
+        return failResult("Failed to import the file.");
+    }
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
-    return okResult("Imported resource file through the project command history.");
+    const fs::path landed = project->normalizeToProjectRelative(cmd->getTargetPaths().front());
+    return okResult("Imported resource file through the project command history.",
+                    Json{{"path", FileUtils::pathToGenericUtf8(landed)}});
 }
 
 ActionResult EditorActionExecutor::linkMaterial(const Json& arguments) {
@@ -6349,12 +6353,16 @@ ActionResult EditorActionExecutor::copyResource(const Json& arguments) {
     fs::create_directories(targetFull, ec);
     if (ec) return failResult("Failed to create target_dir: " + ec.message());
 
-    project->getProjectCommandHistory()->addCommandNoMerge(
-        new CopyFileCmd(project, std::vector<std::string>{sourceFull.string()}, targetFull.string(), true));
+    CopyFileCmd* cmd = new CopyFileCmd(project, std::vector<std::string>{sourceFull.string()}, targetFull.string(), true);
+    if (!project->getProjectCommandHistory()->addCommandNoMerge(cmd)) {
+        return failResult("Failed to copy the resource.");
+    }
     if (resourcesWindow) resourcesWindow->refreshCurrentDirectory();
+    const fs::path landed = project->normalizeToProjectRelative(cmd->getTargetPaths().front());
     return okResult("Copied resource through the project command history.",
                     Json{{"source_path", FileUtils::pathToGenericUtf8(sourceRel)},
-                         {"target_dir", FileUtils::pathToGenericUtf8(targetRel)}});
+                         {"target_dir", FileUtils::pathToGenericUtf8(targetRel)},
+                         {"path", FileUtils::pathToGenericUtf8(landed)}});
 }
 
 ActionResult EditorActionExecutor::updateMaterialFile(const Json& arguments) {

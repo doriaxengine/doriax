@@ -611,7 +611,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "import_resource_file",
-            "Copy an existing local file into the project through CopyFileCmd. No shell is used.",
+            "Copy an existing local file into the project through CopyFileCmd. No shell is used. A taken name gets a numbered copy (name_2.ext); the result's path field says where it went.",
             objectSchema({
                 {"source_path", stringSchema("Absolute local file path to import")},
                 {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
@@ -1189,7 +1189,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "copy_resource",
-            "Copy a project file or directory to another project directory through CopyFileCmd.",
+            "Copy a project file or directory to another project directory through CopyFileCmd. A taken name gets a numbered copy (name_2.ext); the result's path field says where it went.",
             objectSchema({
                 {"source_path", stringSchema("Safe project-relative source file or directory path")},
                 {"target_dir", stringSchema("Safe project-relative destination directory, or . for the project root")}
