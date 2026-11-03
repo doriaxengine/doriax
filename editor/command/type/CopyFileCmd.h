@@ -7,6 +7,7 @@
 #include "Project.h"
 #include <vector>
 #include <string>
+#include <map>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -27,8 +28,10 @@ namespace doriax::editor{
         Project* project;
         std::vector<FileCopyData> files;
         bool copy;
+        std::map<fs::path, uint32_t> sceneIds;
 
         void remapPaths(const fs::path& from, const fs::path& to, bool isDir, const std::string& extension);
+        void assignNewSceneIds(const fs::path& sourcePath, const fs::path& copyPath, bool isDir);
 
     public:
         CopyFileCmd(Project* project, std::vector<std::string> sourceFiles, std::string currentDirectory, std::string targetDirectory, bool copy);

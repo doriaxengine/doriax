@@ -6,6 +6,7 @@
 #include "Out.h"
 #include "util/Util.h"
 #include "util/FileUtils.h"
+#include "util/TextEncoding.h"
 
 using namespace doriax;
 
@@ -81,6 +82,51 @@ void editor::CopyFileCmd::remapPaths(const fs::path& from, const fs::path& to, b
     if (isDir || Util::isShaderFile(extension)) project->remapShaderFilePath(from, to);
 }
 
+// Two files sharing a scene id make the loader give one a new id on every load
+void editor::CopyFileCmd::assignNewSceneIds(const fs::path& sourcePath, const fs::path& copyPath, bool isDir){
+    if (!project) return;
+
+    // A copy made inside the project leaves its original there with the same id
+    bool imported = !Util::isInsidePath(sourcePath, project->getProjectPath());
+
+    std::vector<fs::path> scenePaths;
+    if (isDir) {
+        for (const auto& entry : fs::recursive_directory_iterator(copyPath)) {
+            if (Util::isSceneFile(entry.path().extension().string())) {
+                scenePaths.push_back(entry.path());
+            }
+        }
+    } else if (Util::isSceneFile(copyPath.extension().string())) {
+        scenePaths.push_back(copyPath);
+    }
+
+    for (const auto& scenePath : scenePaths) {
+        YAML::Node root;
+        try {
+            root = TextEncoding::loadYamlFile(scenePath);
+        } catch (const std::exception&) {
+            continue; // not a scene the editor reads, so no id to clash
+        }
+        if (!root.IsMap() || !root["id"]) continue;
+        uint32_t fileId = root["id"].as<uint32_t>(NULL_PROJECT_SCENE);
+
+        // Chosen once, so redo gives the copy the same id even after it joined the project.
+        // Imports keep an id no project scene uses, so links between imported scenes hold.
+        auto it = sceneIds.find(scenePath);
+        if (it == sceneIds.end()) {
+            bool keepId = imported && !project->getScene(fileId);
+            it = sceneIds.emplace(scenePath, keepId ? fileId : project->allocateSceneId()).first;
+        }
+        if (it->second == fileId) continue;
+        root["id"] = it->second;
+
+        std::error_code ec;
+        if (!FileUtils::writeFileReplacing(scenePath, YAML::Dump(root) + "\n", ec)) {
+            throw fs::filesystem_error("cannot write scene id", scenePath, ec);
+        }
+    }
+}
+
 bool editor::CopyFileCmd::execute(){
     bool touchedShaderSource = false;
     bool changed = false;
@@ -129,6 +175,7 @@ bool editor::CopyFileCmd::execute(){
                     }
                     fdata.targetFilename = targetName;
                 }
+                assignNewSceneIds(sourceFs, destFs, isDir);
             } else {
                 fs::rename(sourceFs, destFs);
                 fdata.targetFilename = targetName;
