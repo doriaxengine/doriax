@@ -891,6 +891,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
             if (!showDirectories && file.isDirectory) continue;
 
             bool deferredDirectoryChange = false;
+            bool deferredDuplicate = false;
             fs::path dropTarget;
             fs::path pasteTarget;
 
@@ -1293,11 +1294,12 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                     ImGui::Separator();
                 }
 
-                if (ImGui::MenuItem(ICON_FA_COPY " Copy")) copySelectedFiles(false);
-                if (ImGui::MenuItem(ICON_FA_SCISSORS " Cut")) copySelectedFiles(true);
-                if (ImGui::MenuItem(ICON_FA_PASTE " Paste", nullptr, false, !clipboardFiles.empty())){
+                if (ImGui::MenuItem(ICON_FA_COPY " Copy", "Ctrl+C")) copySelectedFiles(false);
+                if (ImGui::MenuItem(ICON_FA_SCISSORS " Cut", "Ctrl+X")) copySelectedFiles(true);
+                if (ImGui::MenuItem(ICON_FA_PASTE " Paste", "Ctrl+V", false, !clipboardFiles.empty())){
                     pasteTarget = file.isDirectory ? currentPath / file.name : currentPath;
                 }
+                if (ImGui::MenuItem(ICON_FA_CLONE " Duplicate", "Ctrl+D")) deferredDuplicate = true;
 
                 ImGui::Separator();
 
@@ -1333,6 +1335,10 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 pasteFiles(pasteTarget);
                 break;
             }
+            if (deferredDuplicate){
+                duplicateSelectedFiles();
+                break;
+            }
         }
 
         ImGui::EndTable();
@@ -1358,7 +1364,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
 
         renderNewItemMenu(currentPath);
 
-        if (ImGui::MenuItem(ICON_FA_PASTE " Paste", nullptr, false, !clipboardFiles.empty())){
+        if (ImGui::MenuItem(ICON_FA_PASTE " Paste", "Ctrl+V", false, !clipboardFiles.empty())){
             pasteFiles(currentPath);
         }
 
@@ -2093,14 +2099,35 @@ void editor::ResourcesWindow::copySelectedFiles(bool cut) {
 }
 
 void editor::ResourcesWindow::pasteFiles(const fs::path& targetDirectory) {
-    project->getProjectCommandHistory()->addCommand(new CopyFileCmd(project, clipboardFiles, targetDirectory.string(), !clipboardCut));
-
-    // Clear clipboard if it was a cut operation
-    if (clipboardCut) {
+    if (copyFilesTo(clipboardFiles, targetDirectory, !clipboardCut) && clipboardCut) {
         clipboardFiles.clear();
+    }
+}
+
+void editor::ResourcesWindow::duplicateSelectedFiles() {
+    std::vector<std::string> paths;
+    for (const auto& fileName : selectedFiles) {
+        paths.push_back((currentPath / fileName).string());
+    }
+    copyFilesTo(paths, currentPath, true);
+}
+
+bool editor::ResourcesWindow::copyFilesTo(const std::vector<std::string>& sourcePaths, const fs::path& targetDirectory, bool copy) {
+    CopyFileCmd* cmd = new CopyFileCmd(project, sourcePaths, targetDirectory.string(), copy);
+    bool done = project->getProjectCommandHistory()->addCommand(cmd);
+    if (done) {
+        // Selects the new files when they land in this folder
+        selectedFiles.clear();
+        if (targetDirectory == currentPath) {
+            for (const auto& path : cmd->getTargetPaths()) {
+                lastSelectedFile = path.filename().string();
+                selectedFiles.insert(lastSelectedFile);
+            }
+        }
     }
 
     scanDirectory(currentPath);
+    return done;
 }
 
 void editor::ResourcesWindow::importExternalPaths(const std::vector<std::string>& sourcePaths) {
@@ -2858,10 +2885,12 @@ void editor::ResourcesWindow::show() {
             }
             if (!target.empty()) startRename(target);
         }
-        if (ctrlPressed) {
+        if (ctrlPressed && !ImGui::GetIO().WantTextInput) {
             if (ImGui::IsKeyPressed(ImGuiKey_C)) copySelectedFiles(false);
             else if (ImGui::IsKeyPressed(ImGuiKey_X)) copySelectedFiles(true);
-            else if (ImGui::IsKeyPressed(ImGuiKey_V) && !clipboardFiles.empty()) pasteFiles(currentPath);
+            // Once per press, or a held key keeps making copies
+            else if (ImGui::IsKeyPressed(ImGuiKey_V, false) && !clipboardFiles.empty()) pasteFiles(currentPath);
+            else if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !selectedFiles.empty()) duplicateSelectedFiles();
             else if (ImGui::IsKeyPressed(ImGuiKey_A)) {
                 // Directories are only selectable when the listing shows them
                 bool listingShowsDirectories = (effectiveLayout != LayoutType::SPLIT_FILES_ONLY);
