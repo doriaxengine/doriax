@@ -6324,6 +6324,9 @@ ActionResult EditorActionExecutor::openProject(const Json& arguments) {
     if (!path.is_absolute() || !fs::exists(path / "project.yaml")) {
         return failResult("path must be an absolute project directory holding project.yaml.");
     }
+    if (project->isOpenInAnotherEditor(path)) {
+        return failResult("That project is already open in another Doriax editor.");
+    }
 
     Project* target = project;
     if (!getEditorHost().requestProjectChange([target, path]() { target->loadProject(path); })) {

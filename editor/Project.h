@@ -16,6 +16,7 @@
 #include "util/ScriptParser.h"
 #include "util/ScopedDefaultEntityPool.h"
 #include "util/CxxStandards.h"
+#include "util/ProjectLock.h"
 
 #include "yaml-cpp/yaml.h"
 
@@ -425,6 +426,7 @@ namespace doriax::editor{
         };
 
         std::filesystem::path projectPath;
+        ProjectLock projectLock;
         // isTempProject() cache
         mutable std::filesystem::path tempCheckPath;
         mutable bool tempCheckResult = false;
@@ -564,6 +566,8 @@ namespace doriax::editor{
         void purgeReferencesToScene(uint32_t sceneId);
         std::vector<std::filesystem::path> findProjectFiles(const std::function<bool(const std::string&)>& matches) const;
         void openSceneInternal(fs::path filepath, uint32_t sceneToClose);
+        // false when another editor holds the folder
+        bool lockFolder(const std::filesystem::path& path, ProjectLock& lock) const;
 
         // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
         // and cannot compile, so a variant the editor never draws with is missing there.
@@ -746,6 +750,7 @@ namespace doriax::editor{
         bool saveWorkspaceFile();
 
         bool loadProject(const std::filesystem::path path, bool updateLastOpened = true);
+        bool isOpenInAnotherEditor(const std::filesystem::path& path) const;
 
         void refreshLinkedMaterials(bool force = false);
         // Reimports changed FBX files of the scenes' models and reloads them

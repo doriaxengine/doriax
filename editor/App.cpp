@@ -2732,6 +2732,10 @@ bool editor::App::recordsRecentProjects() const {
     return true;
 }
 
+bool editor::App::locksProjects() const {
+    return !benchmarkEnabled;
+}
+
 void editor::App::updateResourcesPath(){
     std::filesystem::path currentProjectPath = project.getProjectPath().lexically_normal();
     bool projectPathChanged = lastResourcesProjectPath != currentProjectPath;

@@ -5449,6 +5449,32 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
     }
 }
 
+// Lock files are never deleted, or two editors could lock different files at one path.
+// Symlinked folders are left alone, as their targets are outside the project.
+static void removeAllExcept(const fs::path& dir, const fs::path& kept) {
+    if (fs::is_symlink(dir)) {
+        return;
+    }
+    for (const auto& entry : fs::directory_iterator(dir)) {
+        if (!editor::Util::isInsidePath(kept, entry.path())) {
+            fs::remove_all(entry.path());
+        } else if (entry.path() != kept) {
+            removeAllExcept(entry.path(), kept);
+        }
+    }
+}
+
+bool editor::Project::lockFolder(const std::filesystem::path& path, ProjectLock& lock) const {
+    if (!editor::getEditorHost().locksProjects() || projectLock.isHeldFor(path)) {
+        return true;
+    }
+    ProjectLock::Status status = lock.acquire(path);
+    if (status == ProjectLock::Status::Unavailable) {
+        Out::warning("Could not lock project folder: \"%s\"", path.string().c_str());
+    }
+    return status != ProjectLock::Status::HeldElsewhere;
+}
+
 bool editor::Project::createTempProject(std::string projectName, bool deleteIfExists) {
     if (isAnyScenePlaying()) {
         Out::warning("Cannot create a new project while a scene is running or stopping.");
@@ -5469,7 +5495,17 @@ bool editor::Project::createTempProject(std::string projectName, bool deleteIfEx
         // Clear the last project path in settings when creating a new temp project
         AppSettings::setLastProjectPath(std::filesystem::path());
 
-        projectPath = std::filesystem::temp_directory_path() / projectName;
+        // Skips temp folders other editors are using, and symlinks, which a reset leaves as they are
+        fs::path tempPath = std::filesystem::temp_directory_path() / projectName;
+        ProjectLock lock;
+        for (int i = 2; fs::is_symlink(tempPath) || !lockFolder(tempPath, lock); i++) {
+            tempPath = std::filesystem::temp_directory_path() / (projectName + std::to_string(i));
+        }
+        if (!projectLock.isHeldFor(tempPath)) {
+            projectLock = std::move(lock);
+        }
+
+        projectPath = tempPath;
         fs::path projectFile = projectPath / "project.yaml";
 
         // Set the project name so libName (used for the generated CMake target
@@ -5478,7 +5514,7 @@ bool editor::Project::createTempProject(std::string projectName, bool deleteIfEx
         setName(projectName);
 
         if (deleteIfExists && fs::exists(projectPath)) {
-            fs::remove_all(projectPath);
+            removeAllExcept(projectPath, ProjectLock::getLockFile(projectPath));
         }
 
         if (!std::filesystem::exists(projectFile)) {
@@ -5751,6 +5787,12 @@ bool editor::Project::saveProjectToPath(const std::filesystem::path& path) {
         }
     }
 
+    ProjectLock lock;
+    if (!lockFolder(path, lock)) {
+        Out::error("Project is already open in another Doriax editor: \"%s\"", path.string().c_str());
+        return false;
+    }
+
     // Check if we're moving from temp location
     bool wasTemp = isTempProject();
     std::filesystem::path oldPath = projectPath;
@@ -5773,16 +5815,14 @@ bool editor::Project::saveProjectToPath(const std::filesystem::path& path) {
             // Copy all project files from temp dir to the new location
             for (const auto& entry : std::filesystem::directory_iterator(oldPath)) {
                 std::filesystem::path destPath = path / entry.path().filename();
-                std::filesystem::copy(entry.path(), destPath, 
-                                     std::filesystem::copy_options::recursive);
+                // skip_existing keeps the lock file taken above
+                std::filesystem::copy(entry.path(), destPath,
+                                     std::filesystem::copy_options::recursive | std::filesystem::copy_options::skip_existing);
             }
 
             // Scene filepaths are stored as relative paths within the project,
             // and the directory structure is preserved by the copy, so they
             // remain valid without modification.
-
-            // Delete the temp directory after moving all files
-            std::filesystem::remove_all(oldPath);
 
             // Build settings and the workspace live under .doriax, which the copy
             // above carried across, so nothing has to be re-keyed
@@ -5790,8 +5830,20 @@ bool editor::Project::saveProjectToPath(const std::filesystem::path& path) {
         } catch (const std::exception& e) {
             Out::error("Failed to move project files: %s", e.what());
             editor::getEditorHost().registerAlert("Error", "Failed to move project files to the new location!");
+            projectPath = oldPath;
             return false;
         }
+
+        // Delete the temp directory after moving all files
+        try {
+            removeAllExcept(oldPath, ProjectLock::getLockFile(oldPath));
+        } catch (const std::exception& e) {
+            Out::warning("Failed to delete temp project files: %s", e.what());
+        }
+    }
+
+    if (!projectLock.isHeldFor(path)) {
+        projectLock = std::move(lock);
     }
 
     if (!saveProjectFile()) {
@@ -5824,6 +5876,13 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
             return false;
         }
 
+        ProjectLock lock;
+        if (!lockFolder(path, lock)) {
+            Out::error("Project is already open in another Doriax editor: \"%s\"", path.string().c_str());
+            editor::getEditorHost().registerAlert("Project Already Open", "\"" + FileUtils::pathToUtf8(path) + "\" is already open in another Doriax editor.");
+            return false;
+        }
+
         // Load and parse project file
         editor::getEditorHost().reportLoadingProgress("Loading project...");
         YAML::Node projectNode = TextEncoding::loadYamlFile(projectFile);
@@ -5838,6 +5897,9 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
 
         resetConfigs();
         projectPath = path;
+        if (!projectLock.isHeldFor(path)) {
+            projectLock = std::move(lock);
+        }
 
         // Per-user state comes from .doriax/user/, falling back to the copy an older
         // editor left in project.yaml
@@ -5906,6 +5968,11 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
         editor::getEditorHost().updateResourcesPath();
         return false;
     }
+}
+
+bool editor::Project::isOpenInAnotherEditor(const std::filesystem::path& path) const {
+    ProjectLock probe;
+    return !lockFolder(path, probe);
 }
 
 bool editor::Project::saveLoadedSceneOnStop(SceneProject* loadedSceneProject, SceneProject* editorScene, bool keepModified) {

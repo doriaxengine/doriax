@@ -290,6 +290,7 @@ namespace doriax::editor{
         void resetLastActivatedScene() override;
         bool shouldSyncEngineApi() const override;
         bool recordsRecentProjects() const override;
+        bool locksProjects() const override;
         void updateResourcesPath() override;
         void requestDockspaceRebuild();
         void updateWindowTitle(const std::string& projectName) override;

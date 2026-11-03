@@ -40,6 +40,10 @@ bool EditorHost::recordsRecentProjects() const {
     return false;
 }
 
+bool EditorHost::locksProjects() const {
+    return false;
+}
+
 void EditorHost::updateResourcesPath() {
 }
 

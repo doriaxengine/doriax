@@ -28,6 +28,8 @@ namespace doriax::editor {
         virtual bool shouldSyncEngineApi() const;
         // false on the command line, so an export doesn't change the editor's recent projects
         virtual bool recordsRecentProjects() const;
+        // false on the command line and in benchmarks, which may run on a project the editor has open
+        virtual bool locksProjects() const;
         virtual void updateResourcesPath();
         virtual void updateWindowTitle(const std::string& projectName);
         virtual void stopTransientPreviews();
