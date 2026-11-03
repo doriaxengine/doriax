@@ -9,6 +9,7 @@
 #include "Stream.h"
 #include "App.h"
 #include "Theme.h"
+#include "util/UIUtils.h"
 #include "command/CommandHandle.h"
 #include "command/type/PropertyCmd.h"
 #include "command/type/MultiPropertyCmd.h"
@@ -1568,7 +1569,7 @@ void editor::AnimationWindow::drawToolbar(float width, AnimationComponent& anim,
     // transition preview), so its range must come from that clip too.
     ImGui::SetNextItemWidth(60);
     float maxTime = sceneIsStopped ? std::max(kAuthoringMaxTime, clipDuration) : clipDuration;
-    if (ImGui::DragFloat("##anim_time", &currentTime, 0.01f, 0.0f, maxTime, "%.2fs")) {
+    if (UIUtils::dragFloat("##anim_time", &currentTime, 0.01f, 0.0f, maxTime, "%.2fs")) {
         if (sceneIsStopped && canPreview) {
             seekPreview(scene, sceneProject, currentTime);
         } else {
@@ -1579,7 +1580,7 @@ void editor::AnimationWindow::drawToolbar(float width, AnimationComponent& anim,
 
     // Speed
     ImGui::SetNextItemWidth(50);
-    ImGui::DragFloat("##anim_speed", &playbackSpeed, 0.01f, 0.01f, 10.0f, "%.1fx");
+    UIUtils::dragFloat("##anim_speed", &playbackSpeed, 0.01f, 0.01f, 10.0f, "%.1fx");
     ImGui::SameLine();
 
     ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
@@ -1651,7 +1652,7 @@ void editor::AnimationWindow::drawToolbar(float width, AnimationComponent& anim,
     ImGui::Text("Zoom:");
     ImGui::SameLine();
     ImGui::SetNextItemWidth(80);
-    ImGui::SliderFloat("##anim_zoom", &pixelsPerSecond, minPixelsPerSecond, maxPixelsPerSecond, "%.0f");
+    UIUtils::sliderFloat("##anim_zoom", &pixelsPerSecond, minPixelsPerSecond, maxPixelsPerSecond, "%.0f");
     ImGui::SameLine();
 
     // Snap
@@ -1659,7 +1660,7 @@ void editor::AnimationWindow::drawToolbar(float width, AnimationComponent& anim,
     ImGui::SameLine();
     if (snapToGrid) {
         ImGui::SetNextItemWidth(50);
-        ImGui::DragFloat("##snap_int", &snapInterval, 0.01f, 0.01f, 1.0f, "%.2f");
+        UIUtils::dragFloat("##snap_int", &snapInterval, 0.01f, 0.01f, 1.0f, "%.2f");
     }
 
     if (selectedFrameIndex >= 0 && selectedFrameIndex < (int)anim.actions.size()) {

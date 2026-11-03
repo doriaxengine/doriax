@@ -9,6 +9,7 @@
 #include "util/ProjectUtils.h"
 #include "util/ScriptParser.h"
 #include "util/Util.h"
+#include "util/UIUtils.h"
 #include "widget/SemanticSuggestions.h"
 #include "command/type/PropertyCmd.h"
 #include "Out.h"
@@ -923,7 +924,7 @@ void editor::CodeEditor::showSettingsButton() {
 
             ImGui::TableNextColumn();
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::DragFloat("##CodeFontSize", &fontSize, 0.2f, AppSettings::minCodeEditorFontSize, AppSettings::maxCodeEditorFontSize, "%.0f", ImGuiSliderFlags_AlwaysClamp)) {
+            if (UIUtils::dragFloat("##CodeFontSize", &fontSize, 0.2f, AppSettings::minCodeEditorFontSize, AppSettings::maxCodeEditorFontSize, "%.0f", ImGuiSliderFlags_AlwaysClamp)) {
                 AppSettings::setCodeEditorFontSize(fontSize);
             }
             if (ImGui::IsItemDeactivatedAfterEdit()) {

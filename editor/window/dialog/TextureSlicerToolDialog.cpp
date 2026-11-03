@@ -5,6 +5,7 @@
 #include "Backend.h"
 #include "Theme.h"
 #include "window/Widgets.h"
+#include "util/UIUtils.h"
 #include "external/IconsFontAwesome6.h"
 #include <cstring>
 #include <algorithm>
@@ -262,11 +263,11 @@ void TextureSlicerToolDialog::show() {
         ImGui::SeparatorText("Grid");
         if (beginInputTable("SlicerGridTable")) {
             beginInputRow("Columns", 6.0f * ImGui::GetFontSize());
-            if (ImGui::DragInt("##Columns", &m_columns, 0.1f, 1, 64)) {
+            if (UIUtils::dragInt("##Columns", &m_columns, 0.1f, 1, 64)) {
                 m_previewDirty = true;
             }
             beginInputRow("Rows", 6.0f * ImGui::GetFontSize());
-            if (ImGui::DragInt("##Rows", &m_rows, 0.1f, 1, 64)) {
+            if (UIUtils::dragInt("##Rows", &m_rows, 0.1f, 1, 64)) {
                 m_previewDirty = true;
             }
             ImGui::EndTable();
@@ -275,11 +276,11 @@ void TextureSlicerToolDialog::show() {
         ImGui::SeparatorText("Cell Size");
         if (beginInputTable("SlicerCellSizeTable")) {
             beginInputRow("Cell Width", 6.0f * ImGui::GetFontSize());
-            if (ImGui::DragInt("##CellWidth", &m_cellWidth, 1.0f, 1, m_sheetWidth > 0 ? m_sheetWidth : 4096)) {
+            if (UIUtils::dragInt("##CellWidth", &m_cellWidth, 1.0f, 1, m_sheetWidth > 0 ? m_sheetWidth : 4096)) {
                 m_previewDirty = true;
             }
             beginInputRow("Cell Height", 6.0f * ImGui::GetFontSize());
-            if (ImGui::DragInt("##CellHeight", &m_cellHeight, 1.0f, 1, m_sheetHeight > 0 ? m_sheetHeight : 4096)) {
+            if (UIUtils::dragInt("##CellHeight", &m_cellHeight, 1.0f, 1, m_sheetHeight > 0 ? m_sheetHeight : 4096)) {
                 m_previewDirty = true;
             }
             ImGui::EndTable();
@@ -290,19 +291,19 @@ void TextureSlicerToolDialog::show() {
     ImGui::SeparatorText("Offset & Padding");
     if (beginInputTable("SlicerOffsetPaddingTable")) {
         beginInputRow("Offset X", 6.0f * ImGui::GetFontSize());
-        if (ImGui::DragInt("##OffsetX", &m_offsetX, 1.0f, 0, INT_MAX)) {
+        if (UIUtils::dragInt("##OffsetX", &m_offsetX, 1.0f, 0, INT_MAX)) {
             m_previewDirty = true;
         }
         beginInputRow("Offset Y", 6.0f * ImGui::GetFontSize());
-        if (ImGui::DragInt("##OffsetY", &m_offsetY, 1.0f, 0, INT_MAX)) {
+        if (UIUtils::dragInt("##OffsetY", &m_offsetY, 1.0f, 0, INT_MAX)) {
             m_previewDirty = true;
         }
         beginInputRow("Padding X", 6.0f * ImGui::GetFontSize());
-        if (ImGui::DragInt("##PaddingX", &m_paddingX, 1.0f, 0, INT_MAX)) {
+        if (UIUtils::dragInt("##PaddingX", &m_paddingX, 1.0f, 0, INT_MAX)) {
             m_previewDirty = true;
         }
         beginInputRow("Padding Y", 6.0f * ImGui::GetFontSize());
-        if (ImGui::DragInt("##PaddingY", &m_paddingY, 1.0f, 0, INT_MAX)) {
+        if (UIUtils::dragInt("##PaddingY", &m_paddingY, 1.0f, 0, INT_MAX)) {
             m_previewDirty = true;
         }
         ImGui::EndTable();

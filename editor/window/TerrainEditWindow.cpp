@@ -2301,7 +2301,7 @@ void editor::TerrainEditWindow::drawMapSettings(const TerrainMapRef& ref, const 
     }else{
         resolution = std::clamp(resolution, 2, 8192);
         ImGui::SetNextItemWidth(valueWidth);
-        ImGui::DragInt("##resolution", &resolution, 1.0f, 2, 8192, "%d px", ImGuiSliderFlags_AlwaysClamp);
+        UIUtils::dragInt("##resolution", &resolution, 1.0f, 2, 8192, "%d px", ImGuiSliderFlags_AlwaysClamp);
         showTooltip("New map resolution (width and height)");
     }
     if (heightMap){
@@ -2638,7 +2638,7 @@ void editor::TerrainEditWindow::drawLayerSurface(TerrainComponent& terrain, int 
         terrainPropertyRow(label, tooltip, true);
         ImGui::PushID(label);
         float value = layer.*factor;
-        if (ImGui::SliderFloat("##factor", &value, 0.0f, maxValue, "%.2f", ImGuiSliderFlags_AlwaysClamp)){
+        if (UIUtils::sliderFloat("##factor", &value, 0.0f, maxValue, "%.2f", ImGuiSliderFlags_AlwaysClamp)){
             edit([&](TerrainSurfaceLayer& target){ target.*factor = value; }, true);
         }
         ImGui::PopID();
@@ -2685,13 +2685,13 @@ void editor::TerrainEditWindow::drawLayerSurface(TerrainComponent& terrain, int 
 
     terrainPropertyRow("UV Scale", "Multiplies the shared detail tiling for this layer alone", true);
     Vector2 uvScale = layer.uvScale;
-    if (ImGui::DragFloat2("##uv_scale", &uvScale.x, 0.01f, 0.0f, 0.0f, "%.2f")){
+    if (UIUtils::dragFloat2("##uv_scale", &uvScale.x, 0.01f, 0.0f, 0.0f, "%.2f")){
         edit([&](TerrainSurfaceLayer& target){ target.uvScale = uvScale; }, true);
     }
 
     terrainPropertyRow("UV Offset", "Shifts this layer inside its tile", true);
     Vector2 uvOffset = layer.uvOffset;
-    if (ImGui::DragFloat2("##uv_offset", &uvOffset.x, 0.01f, 0.0f, 0.0f, "%.2f")){
+    if (UIUtils::dragFloat2("##uv_offset", &uvOffset.x, 0.01f, 0.0f, 0.0f, "%.2f")){
         edit([&](TerrainSurfaceLayer& target){ target.uvOffset = uvOffset; }, true);
     }
 }
@@ -3127,12 +3127,12 @@ void editor::TerrainEditWindow::show(){
             ImGui::EndDisabled();
 
             terrainPropertyRow("Density", "Instances per square world unit at full painted density.");
-            if (ImGui::DragFloat("##foliage_density", &layer.density, 0.05f, 0.0f, 20.0f, "%.2f")){
+            if (UIUtils::dragFloat("##foliage_density", &layer.density, 0.05f, 0.0f, 20.0f, "%.2f")){
                 setFoliageLayerProperty("density", std::max(0.0f, layer.density));
             }
             const TerrainFoliageLayer& currentLayer = terrain.foliageLayers[selectedFoliageLayer];
             terrainPropertyRow("Scale range", "Minimum and maximum random scale per instance.");
-            if (ImGui::DragFloatRange2("##foliage_scale", &layer.minScale, &layer.maxScale, 0.01f, 0.01f, 20.0f, "%.2f", "%.2f")){
+            if (UIUtils::dragFloatRange2("##foliage_scale", &layer.minScale, &layer.maxScale, 0.01f, 0.01f, 20.0f, "%.2f", "%.2f")){
                 layer.minScale = std::max(0.01f, layer.minScale);
                 layer.maxScale = std::max(layer.minScale, layer.maxScale);
                 if (layer.minScale != currentLayer.minScale){
@@ -3143,7 +3143,7 @@ void editor::TerrainEditWindow::show(){
                 }
             }
             terrainPropertyRow("Slope range", "Allowed ground slope in degrees, from flat (0) to vertical (90).");
-            if (ImGui::DragFloatRange2("##foliage_slope", &layer.minSlope, &layer.maxSlope, 0.5f, 0.0f, 90.0f, "%.0f deg", "%.0f deg", ImGuiSliderFlags_AlwaysClamp)){
+            if (UIUtils::dragFloatRange2("##foliage_slope", &layer.minSlope, &layer.maxSlope, 0.5f, 0.0f, 90.0f, "%.0f deg", "%.0f deg", ImGuiSliderFlags_AlwaysClamp)){
                 if (layer.minSlope != currentLayer.minSlope){
                     setFoliageLayerProperty("minSlope", layer.minSlope);
                 }
@@ -3152,7 +3152,7 @@ void editor::TerrainEditWindow::show(){
                 }
             }
             terrainPropertyRow("Height range", "Allowed ground height, from the terrain base (0) to its max height (1).");
-            if (ImGui::DragFloatRange2("##foliage_height", &layer.minHeight, &layer.maxHeight, 0.01f, 0.0f, 1.0f, "%.2f", "%.2f", ImGuiSliderFlags_AlwaysClamp)){
+            if (UIUtils::dragFloatRange2("##foliage_height", &layer.minHeight, &layer.maxHeight, 0.01f, 0.0f, 1.0f, "%.2f", "%.2f", ImGuiSliderFlags_AlwaysClamp)){
                 if (layer.minHeight != currentLayer.minHeight){
                     setFoliageLayerProperty("minHeight", layer.minHeight);
                 }
@@ -3162,20 +3162,20 @@ void editor::TerrainEditWindow::show(){
             }
             terrainPropertyRow("Rotation", "Random yaw as a share of a full turn.");
             float rotation = layer.rotationJitter * 100.0f;
-            if (ImGui::SliderFloat("##foliage_rotation", &rotation, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+            if (UIUtils::sliderFloat("##foliage_rotation", &rotation, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
                 setFoliageLayerProperty("rotationJitter", rotation / 100.0f);
             }
             terrainPropertyRow("Normal alignment", "Blend from upright (0%) to aligned with the terrain normal (100%).");
             float alignment = layer.alignToNormal * 100.0f;
-            if (ImGui::SliderFloat("##foliage_align", &alignment, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+            if (UIUtils::sliderFloat("##foliage_align", &alignment, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
                 setFoliageLayerProperty("alignToNormal", alignment / 100.0f);
             }
             terrainPropertyRow("Draw distance", "Foliage visibility distance in world units. Ignored while editing terrain; restored when editing ends or play starts.");
-            if (ImGui::DragFloat("##foliage_distance", &layer.drawDistance, 1.0f, 1.0f, 500.0f, "%.0f")){
+            if (UIUtils::dragFloat("##foliage_distance", &layer.drawDistance, 1.0f, 1.0f, 500.0f, "%.0f")){
                 setFoliageLayerProperty("drawDistance", std::max(1.0f, layer.drawDistance));
             }
             terrainPropertyRow("Min distance", "Instances nearer than this are skipped, so a copy of the layer with a simpler mesh can take over past this one's draw distance.");
-            if (ImGui::DragFloat("##foliage_min_distance", &layer.minDrawDistance, 1.0f, 0.0f, 500.0f, "%.0f")){
+            if (UIUtils::dragFloat("##foliage_min_distance", &layer.minDrawDistance, 1.0f, 0.0f, 500.0f, "%.0f")){
                 setFoliageLayerProperty("minDrawDistance", std::max(0.0f, layer.minDrawDistance));
             }
             terrainPropertyRow("Cast shadows", "Turn off for grass-scale scatter so it skips the shadow cascades.");
@@ -3183,7 +3183,7 @@ void editor::TerrainEditWindow::show(){
                 setFoliageLayerProperty("castShadows", layer.castShadows);
             }
             terrainPropertyRow("Seed", "Change the seed to reshuffle instance positions.");
-            if (ImGui::InputScalar("##foliage_seed", ImGuiDataType_U32, &layer.seed)){
+            if (UIUtils::inputScalar("##foliage_seed", ImGuiDataType_U32, &layer.seed)){
                 setFoliageLayerProperty("seed", layer.seed);
             }
         }
@@ -3204,22 +3204,22 @@ void editor::TerrainEditWindow::show(){
         ImGui::Checkbox("##place_instanced", &placeInstanced);
         ImGui::EndDisabled();
         terrainPropertyRow("Spacing", "Closest two placed objects are allowed to get, in world units.");
-        if (ImGui::DragFloat("##place_spacing", &placeSpacing, 0.05f, MIN_PLACE_SPACING, 100.0f, "%.2f")){
+        if (UIUtils::dragFloat("##place_spacing", &placeSpacing, 0.05f, MIN_PLACE_SPACING, 100.0f, "%.2f")){
             placeSpacing = std::clamp(placeSpacing, MIN_PLACE_SPACING, 100.0f);
         }
         terrainPropertyRow("Scale range", "Random scale per object. Left at 1, a model keeps the scale its file authored.");
-        if (ImGui::DragFloatRange2("##place_scale", &placeMinScale, &placeMaxScale, 0.01f, 0.01f, 20.0f, "%.2f", "%.2f")){
+        if (UIUtils::dragFloatRange2("##place_scale", &placeMinScale, &placeMaxScale, 0.01f, 0.01f, 20.0f, "%.2f", "%.2f")){
             placeMinScale = std::max(0.01f, placeMinScale);
             placeMaxScale = std::max(placeMinScale, placeMaxScale);
         }
         terrainPropertyRow("Rotation", "Random yaw as a share of a full turn.");
         float placeRotation = placeRotationJitter * 100.0f;
-        if (ImGui::SliderFloat("##place_rotation", &placeRotation, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+        if (UIUtils::sliderFloat("##place_rotation", &placeRotation, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
             placeRotationJitter = placeRotation / 100.0f;
         }
         terrainPropertyRow("Normal alignment", "Blend from upright (0%) to aligned with the terrain normal (100%).");
         float placeAlignment = placeAlignToNormal * 100.0f;
-        if (ImGui::SliderFloat("##place_align", &placeAlignment, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
+        if (UIUtils::sliderFloat("##place_align", &placeAlignment, 0.0f, 100.0f, "%.0f%%", ImGuiSliderFlags_AlwaysClamp)){
             placeAlignToNormal = placeAlignment / 100.0f;
         }
         ImGui::EndTable();
@@ -3267,9 +3267,9 @@ void editor::TerrainEditWindow::show(){
             ImGui::Checkbox("##paint_mask", &paintUseMask);
             ImGui::BeginDisabled(!paintUseMask);
             terrainPropertyRow("Slope range", "Allowed ground slope in degrees, from flat (0) to vertical (90).");
-            ImGui::DragFloatRange2("##paint_slope", &paintMinSlope, &paintMaxSlope, 0.5f, 0.0f, 90.0f, "%.0f deg", "%.0f deg", ImGuiSliderFlags_AlwaysClamp);
+            UIUtils::dragFloatRange2("##paint_slope", &paintMinSlope, &paintMaxSlope, 0.5f, 0.0f, 90.0f, "%.0f deg", "%.0f deg", ImGuiSliderFlags_AlwaysClamp);
             terrainPropertyRow("Height range", "Allowed ground height, from the terrain base (0) to its max height (1).");
-            ImGui::DragFloatRange2("##paint_height", &paintMinHeight, &paintMaxHeight, 0.01f, 0.0f, 1.0f, "%.2f", "%.2f", ImGuiSliderFlags_AlwaysClamp);
+            UIUtils::dragFloatRange2("##paint_height", &paintMinHeight, &paintMaxHeight, 0.01f, 0.0f, 1.0f, "%.2f", "%.2f", ImGuiSliderFlags_AlwaysClamp);
             ImGui::EndDisabled();
         }
         if (!placementBrush){
@@ -3285,7 +3285,7 @@ void editor::TerrainEditWindow::show(){
         }
         if (brushMode == TerrainBrushMode::Terrace){
             terrainPropertyRow("Terrace steps", "How many flat levels the height range is cut into.");
-            ImGui::SliderInt("##terrace_steps", &terraceSteps, MIN_TERRACE_STEPS, MAX_TERRACE_STEPS);
+            UIUtils::sliderInt("##terrace_steps", &terraceSteps, MIN_TERRACE_STEPS, MAX_TERRACE_STEPS);
         }
         if (brushMode == TerrainBrushMode::Flatten){
             terrainPropertyRow("Sample height", "Pick the flatten height from the terrain at the start of each stroke.");

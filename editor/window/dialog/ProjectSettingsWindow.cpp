@@ -3,6 +3,7 @@
 
 #include "ProjectSettingsWindow.h"
 #include "util/FileDialogs.h"
+#include "util/UIUtils.h"
 #include "Backend.h"
 #include "window/Widgets.h"
 #include "Theme.h"
@@ -472,7 +473,7 @@ static void drawIntSetting(const char* label, const char* id, int& value, int de
         value = defaultValue;
     }
     ImGui::SetNextItemWidth(tooltip ? -helpMarkerWidth() : -1.0f);
-    ImGui::InputInt(id, &value);
+    UIUtils::inputInt(id, &value);
     value = std::max(value, minValue);
     endSettingsRow(tooltip);
 }
@@ -482,7 +483,7 @@ static void drawSecondsSetting(const char* label, const char* id, float& value, 
         value = defaultValue;
     }
     ImGui::SetNextItemWidth(tooltip ? -helpMarkerWidth() : -1.0f);
-    ImGui::InputFloat(id, &value, 0.1f, 1.0f, "%.2f s");
+    UIUtils::inputFloat(id, &value, 0.1f, 1.0f, "%.2f s");
     value = std::isfinite(value) ? std::max(value, 0.0f) : defaultValue;
     endSettingsRow(tooltip);
 }

@@ -11,6 +11,7 @@
 #include "command/type/ScenePropertyCmd.h"
 #include "command/type/PropertyCmd.h"
 #include "render/gizmo/ViewportGizmo.h"
+#include "util/UIUtils.h"
 #include <unordered_map>
 #include <set>
 
@@ -141,17 +142,17 @@ namespace doriax::editor {
                     break;
                 case ScenePropertyType::DRAG_FLOAT:
                     if constexpr (std::is_same_v<T, float>) {
-                        changed = ImGui::DragFloat(("##" + propertyName).c_str(), &value, 0.01f);
+                        changed = UIUtils::dragFloat(("##" + propertyName).c_str(), &value, 0.01f);
                     } else if constexpr (std::is_same_v<T, Vector3>) {
-                        changed = ImGui::DragFloat3(("##" + propertyName).c_str(), (float*)&value.x);
+                        changed = UIUtils::dragFloat3(("##" + propertyName).c_str(), (float*)&value.x);
                     } else if constexpr (std::is_same_v<T, Vector4>) {
-                        changed = ImGui::DragFloat4(("##" + propertyName).c_str(), (float*)&value.x);
+                        changed = UIUtils::dragFloat4(("##" + propertyName).c_str(), (float*)&value.x);
                     }
                     break;
                 case ScenePropertyType::SLIDER_FLOAT:
                     if constexpr (std::is_same_v<T, float>) {
                         ImGui::SetNextItemWidth(-1);
-                        changed = ImGui::SliderFloat(("##" + propertyName).c_str(), &value, minValue, maxValue);
+                        changed = UIUtils::sliderFloat(("##" + propertyName).c_str(), &value, minValue, maxValue);
                     }
                     break;
                 case ScenePropertyType::COLOR_RGB:

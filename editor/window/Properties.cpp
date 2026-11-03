@@ -611,18 +611,18 @@ void editor::Properties::drawScenePropertyRow(SceneProject* sceneProject, const 
             break;
         case ScenePropertyInputType::DragFloat:
             if constexpr (std::is_same_v<T, float>) {
-                changed = ImGui::DragFloat(("##" + propertyName).c_str(), &value, 0.01f);
+                changed = UIUtils::dragFloat(("##" + propertyName).c_str(), &value, 0.01f);
             } else if constexpr (std::is_same_v<T, Vector2>) {
-                changed = ImGui::DragFloat2(("##" + propertyName).c_str(), (float*)&value.x);
+                changed = UIUtils::dragFloat2(("##" + propertyName).c_str(), (float*)&value.x);
             } else if constexpr (std::is_same_v<T, Vector3>) {
-                changed = ImGui::DragFloat3(("##" + propertyName).c_str(), (float*)&value.x);
+                changed = UIUtils::dragFloat3(("##" + propertyName).c_str(), (float*)&value.x);
             } else if constexpr (std::is_same_v<T, Vector4>) {
-                changed = ImGui::DragFloat4(("##" + propertyName).c_str(), (float*)&value.x);
+                changed = UIUtils::dragFloat4(("##" + propertyName).c_str(), (float*)&value.x);
             }
             break;
         case ScenePropertyInputType::DragInt:
             if constexpr (std::is_same_v<T, int>) {
-                changed = ImGui::DragInt(("##" + propertyName).c_str(), &value, 1.0f, (int)minValue, (int)maxValue);
+                changed = UIUtils::dragInt(("##" + propertyName).c_str(), &value, 1.0f, (int)minValue, (int)maxValue);
             }
             break;
         case ScenePropertyInputType::SliderFloat:
@@ -1571,7 +1571,7 @@ void editor::Properties::drawTextureSettingsPopup(const char* popupId, Component
         float svgDefaultScale = defaults.getSvgScale();
 
         bool resetScale = propertyHeader("SVG Scale", 6 * ImGui::GetFontSize(), std::fabs(svgCurrentScale - svgDefaultScale) > 1e-4f, false);
-        if (ImGui::DragFloat("##texset_svgscale", &editScale, 0.05f, 0.1f, 16.0f, "%.2fx")) {
+        if (UIUtils::dragFloat("##texset_svgscale", &editScale, 0.05f, 0.1f, 16.0f, "%.2fx")) {
             svgScaleEditing[editKey] = editScale;
         }
         if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -2434,7 +2434,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosX = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 Vector2 nextValue(newValue.x, eValue[entity].y);
                 if (clampNonNegativeTilePosition){
@@ -2470,7 +2470,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosY = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 Vector2 nextValue(eValue[entity].x, newValue.y);
                 if (clampNonNegativeTilePosition){
@@ -2605,7 +2605,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosX = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, min, max, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(newValue.x, eValue[entity].y, eValue[entity].z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2636,7 +2636,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosY = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, min, max, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(eValue[entity].x, newValue.y, eValue[entity].z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2667,7 +2667,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosZ = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, min, max, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(eValue[entity].x, eValue[entity].y, newValue.z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2754,7 +2754,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosX = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector4>(project, sceneProject->id, entity, cpType, id, Vector4(newValue.x, eValue[entity].y, eValue[entity].z, eValue[entity].w), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2785,7 +2785,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosY = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector4>(project, sceneProject->id, entity, cpType, id, Vector4(eValue[entity].x, newValue.y, eValue[entity].z, eValue[entity].w), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2816,7 +2816,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosZ = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector4>(project, sceneProject->id, entity, cpType, id, Vector4(eValue[entity].x, eValue[entity].y, newValue.z, eValue[entity].w), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2847,7 +2847,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosW = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_w_"+id).c_str(), &(newValue.w), settings.stepSize, 0.0f, 0.0f, settings.format)){
+        if (UIUtils::dragFloat(("##input_w_"+id).c_str(), &(newValue.w), settings.stepSize, 0.0f, 0.0f, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector4>(project, sceneProject->id, entity, cpType, id, Vector4(eValue[entity].x, eValue[entity].y, eValue[entity].z, newValue.w), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2934,7 +2934,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosX = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, (std::string(settings.format) + "°").c_str())){
+        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, 0.0f, 0.0f, (std::string(settings.format) + "°").c_str())){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Quaternion>(project, sceneProject->id, entity, cpType, id, Quaternion(newValue.x, eValue[entity].y, eValue[entity].z, order), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2965,7 +2965,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosY = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, "%.2f°")){
+        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, 0.0f, 0.0f, "%.2f°")){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Quaternion>(project, sceneProject->id, entity, cpType, id, Quaternion(eValue[entity].x, newValue.y, eValue[entity].z, order), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2996,7 +2996,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosZ = ImGui::GetCursorScreenPos();
 
-        if (ImGui::DragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, 0.0f, 0.0f, "%.2f°")){
+        if (UIUtils::dragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, 0.0f, 0.0f, "%.2f°")){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Quaternion>(project, sceneProject->id, entity, cpType, id, Quaternion(eValue[entity].x, eValue[entity].y, newValue.z, order), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3177,7 +3177,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::DragFloat(("##input_float_"+id).c_str(), &newValue, settings.stepSize, v_min, v_max, newFormat.c_str())){
+        if (UIUtils::dragFloat(("##input_float_"+id).c_str(), &newValue, settings.stepSize, v_min, v_max, newFormat.c_str())){
             for (Entity& entity : entities){
                 if (type == RowPropertyType::HalfCone){
                     cmd = new PropertyCmd<float>(project, sceneProject->id, entity, cpType, id, cos(Angle::defaultToRad(newValue / 2)), settings.onValueChanged);
@@ -3236,7 +3236,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::DragScalar(("##input_double_"+id).c_str(), ImGuiDataType_Double, &newValue, settings.stepSize, minPtr, maxPtr, settings.format)){
+        if (UIUtils::dragScalar(("##input_double_"+id).c_str(), ImGuiDataType_Double, &newValue, settings.stepSize, minPtr, maxPtr, settings.format)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<double>(project, sceneProject->id, entity, cpType, id, newValue, settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3281,7 +3281,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::DragInt(("##input_uint_"+id).c_str(), (int*)&newValue, static_cast<int>(ceil(settings.stepSize)), 0.0f, INT_MAX)){
+        if (UIUtils::dragInt(("##input_uint_"+id).c_str(), (int*)&newValue, static_cast<int>(ceil(settings.stepSize)), 0.0f, INT_MAX)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<unsigned int>(project, sceneProject->id, entity, cpType, id, newValue, settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3326,7 +3326,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Clamp (drag and typed) only when a real range is configured; otherwise stay
         // unbounded as before (ImGui treats min == max as "no limit").
         const bool clampInt = settings.intMax > settings.intMin;
-        if (ImGui::DragInt(("##input_int_"+id).c_str(), &newValue, static_cast<int>(ceil(settings.stepSize)),
+        if (UIUtils::dragInt(("##input_int_"+id).c_str(), &newValue, static_cast<int>(ceil(settings.stepSize)),
                            clampInt ? settings.intMin : 0, clampInt ? settings.intMax : 0, "%d",
                            clampInt ? ImGuiSliderFlags_AlwaysClamp : 0)){
             for (Entity& entity : entities){
@@ -3484,7 +3484,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         char formatStr[32];
         snprintf(formatStr, sizeof(formatStr), "%d", (*sliderValues)[currentIndex]);
 
-        if (ImGui::SliderInt(("##intslider_"+id).c_str(), &currentIndex, 0, static_cast<int>(sliderValues->size() - 1), formatStr)) {
+        if (UIUtils::sliderInt(("##intslider_"+id).c_str(), &currentIndex, 0, static_cast<int>(sliderValues->size() - 1), formatStr)) {
             int newSliderValue = (*sliderValues)[currentIndex];
             for (Entity& entity : entities){
                 if (type == RowPropertyType::IntSlider) {
@@ -5026,7 +5026,7 @@ void editor::Properties::drawParticleFrameList(ComponentType cpType, const std::
         float deleteButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x + ImGui::GetStyle().FramePadding.x * 2.0f;
         ImGui::SetNextItemWidth(frameInputWidth);
         int newValue = (*frames)[i];
-        if (ImGui::InputInt(("##particle_frame_value_" + tableId).c_str(), &newValue)) {
+        if (UIUtils::inputInt(("##particle_frame_value_" + tableId).c_str(), &newValue)) {
             std::vector<int> newFrames = *frames;
             newFrames[i] = newValue;
             setParticleFrames(cpType, propertyId, sceneProject, entity, newFrames);
@@ -5348,11 +5348,11 @@ editor::Properties::ShaderUniformEdit editor::Properties::drawShaderUniformRow(c
     ImGui::SetNextItemWidth(-1);
     if (isInt){
         int intFields[4] = {(int)fields[0], (int)fields[1], (int)fields[2], (int)fields[3]};
-        changed = ImGui::DragScalarN(uniformId.c_str(), ImGuiDataType_S32, intFields, components, 1.0f);
+        changed = UIUtils::dragScalarN(uniformId.c_str(), ImGuiDataType_S32, intFields, components, 1.0f);
         for (int c = 0; c < 4; c++)
             fields[c] = (float)intFields[c];
     }else{
-        changed = ImGui::DragScalarN(uniformId.c_str(), ImGuiDataType_Float, fields, components, 0.01f);
+        changed = UIUtils::dragScalarN(uniformId.c_str(), ImGuiDataType_Float, fields, components, 0.01f);
     }
 
     if (reset)
@@ -6024,149 +6024,149 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
         switch (shapeParams.geometryType) {
             case 0: // Plane
                 propertyHeader("Width", secondColSize);
-                if (ImGui::DragFloat("##plane_width", &shapeParams.planeWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##plane_width", &shapeParams.planeWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Depth", secondColSize);
-                if (ImGui::DragFloat("##plane_depth", &shapeParams.planeDepth, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##plane_depth", &shapeParams.planeDepth, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Tiles", secondColSize);
-                if (ImGui::DragInt("##plane_tiles", (int*)&shapeParams.planeTiles, 1, 1, 100)) {
+                if (UIUtils::dragInt("##plane_tiles", (int*)&shapeParams.planeTiles, 1, 1, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 1: // Box
                 propertyHeader("Width", secondColSize);
-                if (ImGui::DragFloat("##box_width", &shapeParams.boxWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##box_width", &shapeParams.boxWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Height", secondColSize);
-                if (ImGui::DragFloat("##box_height", &shapeParams.boxHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##box_height", &shapeParams.boxHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Depth", secondColSize);
-                if (ImGui::DragFloat("##box_depth", &shapeParams.boxDepth, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##box_depth", &shapeParams.boxDepth, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Tiles", secondColSize);
-                if (ImGui::DragInt("##box_tiles", (int*)&shapeParams.boxTiles, 1, 1, 100)) {
+                if (UIUtils::dragInt("##box_tiles", (int*)&shapeParams.boxTiles, 1, 1, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 2: // Sphere
                 propertyHeader("Radius", secondColSize);
-                if (ImGui::DragFloat("##sphere_radius", &shapeParams.sphereRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##sphere_radius", &shapeParams.sphereRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Slices", secondColSize);
-                if (ImGui::DragInt("##sphere_slices", (int*)&shapeParams.sphereSlices, 1, 3, 100)) {
+                if (UIUtils::dragInt("##sphere_slices", (int*)&shapeParams.sphereSlices, 1, 3, 100)) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Stacks", secondColSize);
-                if (ImGui::DragInt("##sphere_stacks", (int*)&shapeParams.sphereStacks, 1, 3, 100)) {
+                if (UIUtils::dragInt("##sphere_stacks", (int*)&shapeParams.sphereStacks, 1, 3, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 3: // Cylinder
                 propertyHeader("Base Radius", secondColSize);
-                if (ImGui::DragFloat("##cylinder_base_radius", &shapeParams.cylinderBaseRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##cylinder_base_radius", &shapeParams.cylinderBaseRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Top Radius", secondColSize);
-                if (ImGui::DragFloat("##cylinder_top_radius", &shapeParams.cylinderTopRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##cylinder_top_radius", &shapeParams.cylinderTopRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Height", secondColSize);
-                if (ImGui::DragFloat("##cylinder_height", &shapeParams.cylinderHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##cylinder_height", &shapeParams.cylinderHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Slices", secondColSize);
-                if (ImGui::DragInt("##cylinder_slices", (int*)&shapeParams.cylinderSlices, 1, 3, 100)) {
+                if (UIUtils::dragInt("##cylinder_slices", (int*)&shapeParams.cylinderSlices, 1, 3, 100)) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Stacks", secondColSize);
-                if (ImGui::DragInt("##cylinder_stacks", (int*)&shapeParams.cylinderStacks, 1, 1, 100)) {
+                if (UIUtils::dragInt("##cylinder_stacks", (int*)&shapeParams.cylinderStacks, 1, 1, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 4: // Capsule
                 propertyHeader("Base Radius", secondColSize);
-                if (ImGui::DragFloat("##capsule_base_radius", &shapeParams.capsuleBaseRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##capsule_base_radius", &shapeParams.capsuleBaseRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Top Radius", secondColSize);
-                if (ImGui::DragFloat("##capsule_top_radius", &shapeParams.capsuleTopRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##capsule_top_radius", &shapeParams.capsuleTopRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Height", secondColSize);
-                if (ImGui::DragFloat("##capsule_height", &shapeParams.capsuleHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##capsule_height", &shapeParams.capsuleHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Slices", secondColSize);
-                if (ImGui::DragInt("##capsule_slices", (int*)&shapeParams.capsuleSlices, 1, 3, 100)) {
+                if (UIUtils::dragInt("##capsule_slices", (int*)&shapeParams.capsuleSlices, 1, 3, 100)) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Stacks", secondColSize);
-                if (ImGui::DragInt("##capsule_stacks", (int*)&shapeParams.capsuleStacks, 1, 1, 100)) {
+                if (UIUtils::dragInt("##capsule_stacks", (int*)&shapeParams.capsuleStacks, 1, 1, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 5: // Torus
                 propertyHeader("Radius", secondColSize);
-                if (ImGui::DragFloat("##torus_radius", &shapeParams.torusRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##torus_radius", &shapeParams.torusRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Ring Radius", secondColSize);
-                if (ImGui::DragFloat("##torus_ring_radius", &shapeParams.torusRingRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##torus_ring_radius", &shapeParams.torusRingRadius, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Sides", secondColSize);
-                if (ImGui::DragInt("##torus_sides", (int*)&shapeParams.torusSides, 1, 3, 100)) {
+                if (UIUtils::dragInt("##torus_sides", (int*)&shapeParams.torusSides, 1, 3, 100)) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Rings", secondColSize);
-                if (ImGui::DragInt("##torus_rings", (int*)&shapeParams.torusRings, 1, 3, 100)) {
+                if (UIUtils::dragInt("##torus_rings", (int*)&shapeParams.torusRings, 1, 3, 100)) {
                     updatedPreview = true;
                 }
                 break;
 
             case 6: // Wall
                 propertyHeader("Width", secondColSize);
-                if (ImGui::DragFloat("##wall_width", &shapeParams.wallWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##wall_width", &shapeParams.wallWidth, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Height", secondColSize);
-                if (ImGui::DragFloat("##wall_height", &shapeParams.wallHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
+                if (UIUtils::dragFloat("##wall_height", &shapeParams.wallHeight, 0.1f, 0.1f, 100.0f, "%.2f")) {
                     updatedPreview = true;
                 }
 
                 propertyHeader("Tiles", secondColSize);
-                if (ImGui::DragInt("##wall_tiles", (int*)&shapeParams.wallTiles, 1, 1, 100)) {
+                if (UIUtils::dragInt("##wall_tiles", (int*)&shapeParams.wallTiles, 1, 1, 100)) {
                     updatedPreview = true;
                 }
                 break;
@@ -8516,7 +8516,7 @@ void editor::Properties::drawOccluder2DComponent(ComponentType cpType, SceneProj
             float deleteButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x + ImGui::GetStyle().FramePadding.x * 2.0f;
             float value[2] = {occluder.points[i].x, occluder.points[i].y};
             ImGui::SetNextItemWidth(std::max(0.0f, ImGui::GetContentRegionAvail().x - deleteButtonWidth - ImGui::GetStyle().ItemSpacing.x));
-            if (ImGui::DragFloat2("##occluder2d_point", value, 1.0f, 0.0f, 0.0f, "%.2f")){
+            if (UIUtils::dragFloat2("##occluder2d_point", value, 1.0f, 0.0f, 0.0f, "%.2f")){
                 std::vector<Vector2> newPoints = occluder.points;
                 newPoints[i] = Vector2(value[0], value[1]);
                 setPoints(newPoints, true);
@@ -9667,7 +9667,7 @@ void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProje
 
                     propertyHeader("Time " + std::to_string(i), -1, false, false);
                     ImGui::SetNextItemWidth(settingsFloat.secondColSize);
-                    if (ImGui::DragFloat("##particle_burst_time", &burst.time, settingsFloat.stepSize, 0.0f, 0.0f, settingsFloat.format)) {
+                    if (UIUtils::dragFloat("##particle_burst_time", &burst.time, settingsFloat.stepSize, 0.0f, 0.0f, settingsFloat.format)) {
                         std::vector<ParticleBurst> newBursts = *bursts;
                         newBursts[i] = burst;
                         setParticleBursts(cpType, sceneProject, entity, newBursts);
@@ -9683,7 +9683,7 @@ void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProje
 
                     propertyHeader("Min Count", -1, false, false);
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::InputInt("##particle_burst_min", &burst.minCount)) {
+                    if (UIUtils::inputInt("##particle_burst_min", &burst.minCount)) {
                         std::vector<ParticleBurst> newBursts = *bursts;
                         newBursts[i] = burst;
                         setParticleBursts(cpType, sceneProject, entity, newBursts);
@@ -9691,7 +9691,7 @@ void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProje
 
                     propertyHeader("Max Count", -1, false, false);
                     ImGui::SetNextItemWidth(-FLT_MIN);
-                    if (ImGui::InputInt("##particle_burst_max", &burst.maxCount)) {
+                    if (UIUtils::inputInt("##particle_burst_max", &burst.maxCount)) {
                         std::vector<ParticleBurst> newBursts = *bursts;
                         newBursts[i] = burst;
                         setParticleBursts(cpType, sceneProject, entity, newBursts);
@@ -9898,7 +9898,7 @@ void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProje
                         propertyHeader("Time " + std::to_string(i), -1, false, false);
                         float deleteButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x + ImGui::GetStyle().FramePadding.x * 2.0f;
                         ImGui::SetNextItemWidth(-deleteButtonWidth - ImGui::GetStyle().ItemSpacing.x);
-                        if (ImGui::SliderFloat("##particle_grad_time", &stop.time, 0.0f, 1.0f)) {
+                        if (UIUtils::sliderFloat("##particle_grad_time", &stop.time, 0.0f, 1.0f)) {
                             ParticleColorGradient newGrad = *gradient;
                             newGrad.stops[i] = stop;
                             setParticleColorGradient(cpType, sceneProject, entity, newGrad);
@@ -11521,7 +11521,7 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
                     std::string triId = "##mesh_tri_" + std::to_string(s) + "_" + std::to_string(t);
 
                     ImGui::SetNextItemWidth(inputVerSize.x);
-                    if (ImGui::InputInt3(triId.c_str(), triIndices)){
+                    if (UIUtils::inputInt3(triId.c_str(), triIndices)){
                         for (int k = 0; k < 3; k++){
                             triIndices[k] = std::max(0, std::min(triIndices[k], (int)shape.numVertices - 1));
                         }
@@ -13055,7 +13055,7 @@ void editor::Properties::drawAnimationComponent(ComponentType cpType, SceneProje
                 ImGui::SetNextItemWidth(-1);
                 if (durDif)
                     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-                if (ImGui::DragFloat("##input_duration", &newDurValue, 0.01f, 0.0f, 0.0f, "%.2f")){
+                if (UIUtils::dragFloat("##input_duration", &newDurValue, 0.01f, 0.0f, 0.0f, "%.2f")){
                     for (Entity& entity : entities){
                         cmd = new PropertyCmd<float>(project, sceneProject->id, entity, cpType, durationId, newDurValue,
                             [sceneProject]() { sceneProject->isModified = true; });
@@ -13622,7 +13622,7 @@ void editor::Properties::drawMorphTracksComponent(ComponentType cpType, ScenePro
                 float val = comp.values[i][j];
                 std::string weightId = "##morph_w_" + std::to_string(i) + "_" + std::to_string(j);
                 ImGui::SetNextItemWidth(-FLT_MIN);
-                if (ImGui::DragFloat(weightId.c_str(), &val, 0.01f, 0.0f, 0.0f, "%.4f")){
+                if (UIUtils::dragFloat(weightId.c_str(), &val, 0.01f, 0.0f, 0.0f, "%.4f")){
                     MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
                     for (Entity entity : entities){
                         if (MorphTracksComponent* trackComp = sceneProject->scene->findComponent<MorphTracksComponent>(entity)){

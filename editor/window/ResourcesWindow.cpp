@@ -3,6 +3,7 @@
 
 #include "ResourcesWindow.h"
 #include "util/BidiText.h"
+#include "util/UIUtils.h"
 
 #include "ImageViewerWindow.h"
 
@@ -636,7 +637,7 @@ void editor::ResourcesWindow::renderHeader() {
             ImGui::Text("Icon size");
             ImGui::TableSetColumnIndex(1);
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::SliderInt("##IconSize", &iconSize, 16.0f, THUMBNAIL_SIZE)) {
+            if (UIUtils::sliderInt("##IconSize", &iconSize, 16.0f, THUMBNAIL_SIZE)) {
                 AppSettings::setResourcesIconSize(iconSize);
                 AppSettings::saveSettings();
             }

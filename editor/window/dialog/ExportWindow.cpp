@@ -3,6 +3,7 @@
 
 #include "ExportWindow.h"
 #include "util/FileDialogs.h"
+#include "util/UIUtils.h"
 #include "AppSettings.h"
 #include "Backend.h"
 #include "Generator.h"
@@ -606,7 +607,7 @@ void ExportWindow::drawDesktopKitRows() {
     beginSettingsRow("Build Jobs");
     ImGui::SetNextItemWidth(-1);
     const int previousJobs = m_desktopBuildJobs;
-    if (ImGui::InputInt("##DesktopBuildJobs", &m_desktopBuildJobs, 1, 8)) {
+    if (UIUtils::inputInt("##DesktopBuildJobs", &m_desktopBuildJobs, 1, 8)) {
         m_desktopBuildJobs = std::clamp(m_desktopBuildJobs, 1, static_cast<int>(Generator::MAX_SUPPORTED_PARALLEL_BUILD_JOBS));
         if (m_desktopBuildJobs != previousJobs) {
             saveCurrentSettingsToProject();

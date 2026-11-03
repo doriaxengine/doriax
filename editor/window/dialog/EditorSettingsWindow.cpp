@@ -12,6 +12,7 @@
 #include "ai/SecretStore.h"
 #include "external/IconsFontAwesome6.h"
 #include "util/FileDialogs.h"
+#include "util/UIUtils.h"
 #include "window/Widgets.h"
 
 #include <algorithm>
@@ -642,7 +643,7 @@ void EditorSettingsWindow::drawAiChatSettings() {
             m_aiSettings.requestTimeoutSeconds = defaults.requestTimeoutSeconds;
         }
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputInt("##AiRequestTimeout", &m_aiSettings.requestTimeoutSeconds, 30, 60);
+        UIUtils::inputInt("##AiRequestTimeout", &m_aiSettings.requestTimeoutSeconds, 30, 60);
         m_aiSettings.requestTimeoutSeconds = std::clamp(m_aiSettings.requestTimeoutSeconds, 1, 3600);
 
         if (beginSettingsRow("Max Output Tokens", nullptr,
@@ -650,7 +651,7 @@ void EditorSettingsWindow::drawAiChatSettings() {
             m_aiSettings.maxOutputTokens = defaults.maxOutputTokens;
         }
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputInt("##AiMaxOutput", &m_aiSettings.maxOutputTokens, 256, 1024);
+        UIUtils::inputInt("##AiMaxOutput", &m_aiSettings.maxOutputTokens, 256, 1024);
         m_aiSettings.maxOutputTokens = std::clamp(m_aiSettings.maxOutputTokens, 256, 16000);
 
         if (beginSettingsRow("Max Tool Steps",
@@ -660,7 +661,7 @@ void EditorSettingsWindow::drawAiChatSettings() {
             m_aiSettings.maxToolRounds = defaults.maxToolRounds;
         }
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputInt("##AiMaxToolRounds", &m_aiSettings.maxToolRounds, 1, 4);
+        UIUtils::inputInt("##AiMaxToolRounds", &m_aiSettings.maxToolRounds, 1, 4);
         m_aiSettings.maxToolRounds = std::clamp(m_aiSettings.maxToolRounds, 1, 100);
 
         ImGui::EndTable();
@@ -823,7 +824,7 @@ void EditorSettingsWindow::drawMcpSettings() {
             m_mcpSettings.port = defaults.port;
         }
         ImGui::SetNextItemWidth(-1);
-        ImGui::InputInt("##McpPort", &m_mcpSettings.port, 0, 0);
+        UIUtils::inputInt("##McpPort", &m_mcpSettings.port, 0, 0);
         m_mcpSettings.port = std::clamp(m_mcpSettings.port, 1024, 65535);
 
         if (beginSettingsRow("Allow Changes", "Off: agents only get the read-only tools, which inspect and search the project.",

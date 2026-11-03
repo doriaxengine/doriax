@@ -2491,7 +2491,7 @@ void editor::SceneWindow::show() {
                             ImGui::Text("%s", ICON_FA_TABLE_CELLS " Grid spacing");
                             ImGui::TableSetColumnIndex(1);
                             ImGui::SetNextItemWidth(-1);
-                            if (ImGui::DragFloat("##GridSpacing3D", &sceneProject.displaySettings.gridSpacing3D, 0.1f, 0.1f, 1000.0f, "%.1f")) {
+                            if (UIUtils::dragFloat("##GridSpacing3D", &sceneProject.displaySettings.gridSpacing3D, 0.1f, 0.1f, 1000.0f, "%.1f")) {
                                 sceneProject.needUpdateRender = true;
                             }
                             if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -2505,7 +2505,7 @@ void editor::SceneWindow::show() {
                                 ImGui::Text("%s", ICON_FA_TABLE_CELLS " Grid spacing");
                                 ImGui::TableSetColumnIndex(1);
                                 ImGui::SetNextItemWidth(-1);
-                                if (ImGui::DragFloat("##GridSpacing2D", &sceneProject.displaySettings.gridSpacing2D, 1.0f, 1.0f, 10000.0f, "%.0f")) {
+                                if (UIUtils::dragFloat("##GridSpacing2D", &sceneProject.displaySettings.gridSpacing2D, 1.0f, 1.0f, 10000.0f, "%.0f")) {
                                     sceneProject.needUpdateRender = true;
                                 }
                                 if (ImGui::IsItemDeactivatedAfterEdit()) {
@@ -2527,7 +2527,7 @@ void editor::SceneWindow::show() {
                         ImGui::TableSetColumnIndex(1);
                         if (!sceneProject.displaySettings.snapRotation) ImGui::BeginDisabled();
                         ImGui::SetNextItemWidth(-1);
-                        ImGui::DragFloat("##RotationSnapDegrees", &sceneProject.displaySettings.rotationSnapDegrees, 1.0f, 0.1f, 180.0f, "%.1f");
+                        UIUtils::dragFloat("##RotationSnapDegrees", &sceneProject.displaySettings.rotationSnapDegrees, 1.0f, 0.1f, 180.0f, "%.1f");
                         if (ImGui::IsItemDeactivatedAfterEdit()) {
                             project->saveWorkspaceFile();
                         }
@@ -2564,7 +2564,7 @@ void editor::SceneWindow::show() {
                             ImGui::TableSetColumnIndex(1);
                             ImGui::SetNextItemWidth(-1);
                             float editedValue = value;
-                            if (ImGui::DragFloat((std::string("##") + id).c_str(), &editedValue, dragSpeed, minValue, maxValue, format)) {
+                            if (UIUtils::dragFloat((std::string("##") + id).c_str(), &editedValue, dragSpeed, minValue, maxValue, format)) {
                                 apply(editedValue);
                                 validate();
                                 sceneProject.needUpdateRender = true;
