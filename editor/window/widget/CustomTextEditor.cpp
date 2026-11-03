@@ -122,8 +122,8 @@ void drawHatchedBar(ImDrawList* drawList, const ImVec2& min, const ImVec2& max, 
     const float thickness = width * 0.5f;
 
     // Antialiasing would blur stripes this thin into a flat tint
-    const ImDrawListFlags flags = drawList->Flags;
-    drawList->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+    const ImDrawFlags flags = drawList->Flags;
+    drawList->Flags &= ~ImDrawFlags_AAFill;
     drawList->PushClipRect(ImVec2(min.x, top), ImVec2(max.x, bottom), true);
 
     // Anchored to the block, so they scroll with the text

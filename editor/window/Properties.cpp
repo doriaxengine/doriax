@@ -1151,10 +1151,10 @@ void editor::Properties::drawImageWithBorderAndRounding(Texture* texture, const 
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
 
     // Draw the cropped image with rounding
-    Widgets::addImageRounded(draw_list, tex_id, p_min, p_max, uv0, uv1, IM_COL32_WHITE, rounding, ImDrawFlags_RoundCornersAll);
+    Widgets::addImageRounded(draw_list, tex_id, p_min, p_max, uv0, uv1, IM_COL32_WHITE, rounding, ImDrawFlags_RoundAll);
 
     // Draw the border
-    draw_list->AddRect(p_min, p_max, border_col, rounding, ImDrawFlags_RoundCornersAll, border_thickness);
+    draw_list->AddRect(p_min, p_max, border_col, rounding, border_thickness, ImDrawFlags_RoundAll);
 
     // Reserve space for interaction
     ImGui::InvisibleButton("##image", size);
@@ -2035,9 +2035,9 @@ bool editor::Properties::drawSpriteFramePreview(Texture* texture, const Rect& re
     float rounding = ImGui::GetStyle().FrameRounding;
     ImU32 borderColor = ImGui::ColorConvertFloat4ToU32(ImGui::GetStyle().Colors[ImGuiCol_FrameBg]);
 
-    drawList->AddRectFilled(p_min, p_max, ImGui::GetColorU32(Theme::Colors::filenameLabel), rounding, ImDrawFlags_RoundCornersAll);
-    Widgets::addImageRounded(drawList, Backend::getImGuiTexture(texture->getRender()), imageMin, imageMax, uv0, uv1, IM_COL32_WHITE, rounding, ImDrawFlags_RoundCornersAll);
-    drawList->AddRect(p_min, p_max, borderColor, rounding, ImDrawFlags_RoundCornersAll, Theme::dpi(1.0f));
+    drawList->AddRectFilled(p_min, p_max, ImGui::GetColorU32(Theme::Colors::filenameLabel), rounding, ImDrawFlags_RoundAll);
+    Widgets::addImageRounded(drawList, Backend::getImGuiTexture(texture->getRender()), imageMin, imageMax, uv0, uv1, IM_COL32_WHITE, rounding, ImDrawFlags_RoundAll);
+    drawList->AddRect(p_min, p_max, borderColor, rounding, Theme::dpi(1.0f), ImDrawFlags_RoundAll);
 
     ImGui::InvisibleButton(itemId, size);
     return true;

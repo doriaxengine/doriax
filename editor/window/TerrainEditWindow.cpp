@@ -2344,13 +2344,13 @@ float editor::TerrainEditWindow::drawAssetThumbnail(const std::string& path, con
     if (thumbnail && width > 0 && height > 0){
         const float fit = thumbSize / std::max(width, height);
         const ImVec2 min(p.x + (thumbSize - width * fit) * 0.5f, p.y + (thumbSize - height * fit) * 0.5f);
-        Widgets::addImageRounded(drawList, thumbnail, min, ImVec2(min.x + width * fit, min.y + height * fit), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, rounding, ImDrawFlags_RoundCornersAll);
+        Widgets::addImageRounded(drawList, thumbnail, min, ImVec2(min.x + width * fit, min.y + height * fit), ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, rounding, ImDrawFlags_RoundAll);
     }else{
         const ImVec2 size = ImGui::CalcTextSize(ICON_FA_CUBE);
         drawList->AddText(ImVec2(p.x + (thumbSize - size.x) * 0.5f, p.y + (thumbSize - size.y) * 0.5f), ImGui::GetColorU32(ImGuiCol_TextDisabled), ICON_FA_CUBE);
     }
     if (selected){
-        drawList->AddRect(p, ImVec2(p.x + thumbSize, p.y + thumbSize), ImGui::GetColorU32(ImGuiCol_NavHighlight), rounding, 0, 2.0f);
+        drawList->AddRect(p, ImVec2(p.x + thumbSize, p.y + thumbSize), ImGui::GetColorU32(ImGuiCol_NavHighlight), rounding, 2.0f);
     }
     ImGui::InvisibleButton(id, ImVec2(thumbSize, thumbSize));
     if (ImGui::IsItemHovered() && thumbnail){
