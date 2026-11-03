@@ -892,6 +892,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
 
             bool deferredDirectoryChange = false;
             fs::path dropTarget;
+            fs::path pasteTarget;
 
             ImGui::TableNextColumn();
             ImGui::PushID(file.name.c_str());
@@ -1295,7 +1296,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 if (ImGui::MenuItem(ICON_FA_COPY " Copy")) copySelectedFiles(false);
                 if (ImGui::MenuItem(ICON_FA_SCISSORS " Cut")) copySelectedFiles(true);
                 if (ImGui::MenuItem(ICON_FA_PASTE " Paste", nullptr, false, !clipboardFiles.empty())){
-                    pasteFiles(currentPath / lastSelectedFile);
+                    pasteTarget = file.isDirectory ? currentPath / file.name : currentPath;
                 }
 
                 ImGui::Separator();
@@ -1323,9 +1324,13 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 break;
             }
 
-            // Rebuilds files, so the entry this iteration holds is gone from here on
+            // These rebuild files, so the entry this iteration holds is gone from here on
             if (!dropTarget.empty()){
                 handleInternalDragAndDrop(dropTarget);
+                break;
+            }
+            if (!pasteTarget.empty()){
+                pasteFiles(pasteTarget);
                 break;
             }
         }
