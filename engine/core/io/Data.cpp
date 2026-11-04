@@ -27,22 +27,29 @@ Data::Data(const char *aFilename): Data(){
     open(aFilename);
 }
 
-Data::Data(const Data& d){
-    this->dataLength = d.dataLength;
-    this->offset = d.offset;
-    this->dataOwned = d.dataOwned;
-
-    this->dataPtr = new unsigned char[this->dataLength];
-    memcpy(this->dataPtr, d.dataPtr, this->dataLength);
+Data::Data(const Data& d): Data(){
+    *this = d;
 }
 
 Data& Data::operator = (const Data& d){
-    this->dataLength = d.dataLength;
-    this->offset = d.offset;
-    this->dataOwned = d.dataOwned;
+    if (this == &d)
+        return *this;
 
-    this->dataPtr = new unsigned char[this->dataLength];
-    memcpy(this->dataPtr, d.dataPtr, this->dataLength);
+    // freed after the copy, d can be a view of this buffer
+    unsigned char* oldPtr = dataOwned ? dataPtr : NULL;
+
+    dataLength = d.dataLength;
+    offset = d.offset;
+    dataPtr = NULL;
+
+    // a copy always owns its buffer
+    dataOwned = d.dataPtr != NULL;
+    if (dataOwned) {
+        dataPtr = new unsigned char[dataLength];
+        memcpy(dataPtr, d.dataPtr, dataLength);
+    }
+
+    delete[] oldPtr;
 
     return *this;
 }
