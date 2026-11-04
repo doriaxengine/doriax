@@ -41,7 +41,8 @@ void LuaBinding::registerIOClasses(lua_State *L){
         .addFunction("read8", &FileData::read8)
         .addFunction("read16", &FileData::read16)
         .addFunction("read32", &FileData::read32)
-        .addFunction("eof", &FileData::eof)
+        // a number would always be true in Lua, even 0
+        .addFunction("eof", [] (FileData& self) -> bool { return self.eof() != 0; })
         //.addFunction("read", &FileData::read) //TODO: read and write data in Lua
         //.addFunction("write", &FileData::write)
         .addFunction("length", &FileData::length)
