@@ -307,6 +307,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("parentToLayoutSpace", &UISystem::parentToLayoutSpace)
         .addFunction("layoutToParentSpace", &UISystem::layoutToParentSpace)
         .addFunction("isTextEditFocused", &UISystem::isTextEditFocused)
+        .addFunction("isTextEditTyping", &UISystem::isTextEditTyping)
         .addFunction("hasPendingImages", &UISystem::hasPendingImages)
         .addFunction("resetButtonStates", &UISystem::resetButtonStates)
         .addFunction("setFocus", &UISystem::setFocus)

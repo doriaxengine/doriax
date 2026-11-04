@@ -114,7 +114,6 @@ namespace doriax{
         // Reads the current flags, visibleInHierarchy is only refreshed by RenderSystem::update
         bool isVisibleInHierarchy(const Transform& transform) const;
 
-        bool isTextEditTyping();
         void setNavigating(bool navigating);
         void changeFocus(Entity entity, bool focused);
         Rect getImageClipRect(Entity image, const ImageComponent& img);
@@ -161,6 +160,8 @@ namespace doriax{
         int getAnchorReferenceHeight() const;
 
         bool isTextEditFocused();
+        // focused and still visible and enabled, so it keeps the arrows and the submit keys
+        bool isTextEditTyping();
 
         // an image is still waiting for its texture to build its geometry
         bool hasPendingImages() const;

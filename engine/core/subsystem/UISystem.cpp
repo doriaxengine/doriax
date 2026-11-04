@@ -2705,7 +2705,6 @@ void UISystem::resetButtonStates() {
     }
 }
 
-// a focused text edit that can still take the keys
 bool UISystem::isTextEditTyping(){
     auto textedits = scene->getComponentArray<TextEditComponent>();
     for (int i = 0; i < textedits->size(); i++){

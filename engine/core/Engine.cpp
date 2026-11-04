@@ -1598,9 +1598,18 @@ static NavigationDirection getDpadNavigation(int button){
     }
 }
 
+// a text edit being typed in, in any scene, keeps the arrows and the submit keys
+bool Engine::isTypingInUI(){
+    for (Scene* scene : getScenesSnapshot()){
+        if (canSendUIEvents(scene) && scene->getSystem<UISystem>()->isTextEditTyping())
+            return true;
+    }
+    return false;
+}
+
 // the topmost scene with a focusable button takes it
 bool Engine::navigateUI(NavigationDirection direction){
-    if (direction == NavigationDirection::NONE)
+    if (direction == NavigationDirection::NONE || isTypingInUI())
         return false;
 
     std::vector<Scene*> snapshot = getScenesSnapshot();
@@ -1683,7 +1692,7 @@ bool Engine::pressSubmit(int gamepad, int button, bool repeat){
     // the UI keeps the submit keys while a button is held down
     if (submitSource.held)
         return true;
-    if (repeat)
+    if (repeat || isTypingInUI())
         return false;
 
     std::vector<Scene*> snapshot = getScenesSnapshot();
