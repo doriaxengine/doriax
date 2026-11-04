@@ -34,7 +34,15 @@ File::~File() {
 int File::eof() {
     if (!fileHandle)
         return 1;
-    return feof(fileHandle);
+    long pos = ftell(fileHandle);
+    // a stream without a position only knows after a failed read
+    if (pos < 0)
+        return feof(fileHandle);
+    // peeks a byte, the seeks also make this valid right after a write
+    fseek(fileHandle, pos, SEEK_SET);
+    int c = fgetc(fileHandle);
+    fseek(fileHandle, pos, SEEK_SET);
+    return c == EOF;
 }
 
 unsigned int File::read(unsigned char *aDst, unsigned int aBytes) {
@@ -54,22 +62,28 @@ unsigned int File::write(unsigned char *aSrc, unsigned int aBytes){
 unsigned int File::length() {
     if (!fileHandle)
         return 0;
-    int pos = ftell(fileHandle);
+    long pos = ftell(fileHandle);
+    if (pos < 0)
+        return 0;
     fseek(fileHandle, 0, SEEK_END);
-    int len = ftell(fileHandle);
+    long len = ftell(fileHandle);
     fseek(fileHandle, pos, SEEK_SET);
-    return len;
+    return len < 0 ? 0 : (unsigned int)len;
 }
 
 void File::seek(int aOffset) {
-    if (fileHandle)
-        fseek(fileHandle, aOffset, SEEK_SET);
+    if (!fileHandle)
+        return;
+    // a negative offset counts back from the end and stops at the start
+    if (aOffset >= 0 || fseek(fileHandle, aOffset, SEEK_END) != 0)
+        fseek(fileHandle, aOffset >= 0 ? aOffset : 0, SEEK_SET);
 }
 
 unsigned int File::pos() {
     if (!fileHandle)
         return 0;
-    return ftell(fileHandle);
+    long pos = ftell(fileHandle);
+    return pos < 0 ? 0 : (unsigned int)pos;
 }
 
 FILE *File::getFilePtr() {
