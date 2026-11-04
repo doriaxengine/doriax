@@ -158,6 +158,9 @@ unsigned int Data::open(const char *aFilename) {
 }
 
 unsigned int Data::open(File *aFile) {
+    if (!aFile || !aFile->getFilePtr())
+        return FileErrors::INVALID_PARAMETER;
+
     if (dataOwned)
         delete[] dataPtr;
     dataPtr = 0;
