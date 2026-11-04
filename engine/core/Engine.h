@@ -321,6 +321,7 @@ namespace doriax {
         static bool holdNavigation(NavigationDirection direction);
         static bool isNavigationHeld(NavigationDirection direction);
         static bool updateStickNavigation(int gamepad);
+        static void releaseStick(int gamepad);
         static void repeatNavigation(double dt);
         static bool pressSubmit(int gamepad, int button, bool repeat);
         static bool releaseSubmit(int gamepad, int button, bool click);

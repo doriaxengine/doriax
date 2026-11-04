@@ -1649,26 +1649,37 @@ bool Engine::isNavigationHeld(NavigationDirection direction){
     return false;
 }
 
-// the left stick works as a d-pad, and once it moves the focus its axes are the UI's until it centers
+// the left stick works as a d-pad, and its axes are the UI's while it moves the focus
 bool Engine::updateStickNavigation(int gamepad){
     StickNavigation stick = stickNavigation[gamepad];
     NavigationDirection direction = getStickNavigation(gamepad, stick.direction);
     if (direction == stick.direction)
         return stick.captured;
 
-    bool wasCaptured = stick.captured;
-    stick.direction = direction;
-    stick.captured = (direction != NavigationDirection::NONE) && (holdNavigation(direction) || wasCaptured);
-    stickNavigation[gamepad] = stick;
+    bool captured = (direction != NavigationDirection::NONE) && holdNavigation(direction);
+    stickNavigation[gamepad] = {direction, captured};
 
-    // gameplay won't see this stick again until it centers, so it gets let go now
-    if (stick.captured && !wasCaptured && ignoreEventsHandledByUI){
+    if (captured && !stick.captured && ignoreEventsHandledByUI){
+        // gameplay sees it let go while the UI has it
         Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_X, 0.0f);
         Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_Y, 0.0f);
+    }else if (!captured && stick.captured && direction != NavigationDirection::NONE){
+        // no menu takes it anymore
+        releaseStick(gamepad);
     }
 
-    // the centering event is still the UI's
-    return wasCaptured || stick.captured;
+    // the centering event is still the UI's, and a released stick was just sent
+    return captured || stick.captured;
+}
+
+// gameplay gets the stick back as it is now
+void Engine::releaseStick(int gamepad){
+    stickNavigation[gamepad].captured = false;
+
+    if (ignoreEventsHandledByUI){
+        Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_X, Input::getGamepadAxis(gamepad, D_GAMEPAD_AXIS_LEFT_X));
+        Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_Y, Input::getGamepadAxis(gamepad, D_GAMEPAD_AXIS_LEFT_Y));
+    }
 }
 
 void Engine::repeatNavigation(double dt){
@@ -1683,8 +1694,18 @@ void Engine::repeatNavigation(double dt){
     navigationRepeatTime -= dt;
     if (navigationRepeatTime <= 0){
         navigationRepeatTime = UI_NAVIGATION_RATE;
-        if (!navigateUI(heldNavigation))
+        if (!navigateUI(heldNavigation)){
             heldNavigation = NavigationDirection::NONE;
+
+            // the menu is gone, so a stick held on it goes back to gameplay
+            std::vector<int> captured;
+            for (const auto& entry : stickNavigation){
+                if (entry.second.captured)
+                    captured.push_back(entry.first);
+            }
+            for (int gamepad : captured)
+                releaseStick(gamepad);
+        }
     }
 }
 
