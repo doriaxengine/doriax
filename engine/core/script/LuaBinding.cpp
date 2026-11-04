@@ -462,16 +462,10 @@ void LuaBinding::init(){
     }
 
     //int luaL_dofile (lua_State *L, const char *filename);
-    if (luaL_loadbuffer(L,(const char*)filedata.getMemPtr(),filedata.length(), luafile.c_str()) == 0){
-        if(pcallWithTraceback(L, 0, LUA_MULTRET) != 0){
-            Log::error("Lua Error: %s", getLuaStackErrorString(L, -1).c_str());
-            lua_pop(L, 1);
-            lua_close(L);
-        }
-    }else{
+    if (luaL_loadbuffer(L,(const char*)filedata.getMemPtr(),filedata.length(), luafile.c_str()) != 0 ||
+        pcallWithTraceback(L, 0, LUA_MULTRET) != 0){
         Log::error("Lua Error: %s", getLuaStackErrorString(L, -1).c_str());
         lua_pop(L, 1);
-        lua_close(L);
     }
 
 }
