@@ -6,6 +6,7 @@
 
 #include "SubSystem.h"
 #include "System.h"
+#include "Engine.h"
 
 #include <vector>
 
@@ -42,6 +43,10 @@ namespace doriax{
         bool pointerInternalGesture; // gesture captured by a built-in widget (panel move/resize, scrollbar)
         double lastClickTime; // monotonic wall-clock seconds (Engine::getSystemTime)
 
+        bool navigating; // focus moved by keys or a gamepad, drawn until the pointer moves
+        Entity submitButton; // held down by the submit key or gamepad button
+        unsigned int focusRequest; // counts setFocus calls, so a nested one stops the outer
+
         int anchorReferenceWidth;
         int anchorReferenceHeight;
 
@@ -65,7 +70,9 @@ namespace doriax{
         void createText(TextComponent& text, UIComponent& ui, UILayoutComponent& layout);
 
         //Button
+        bool isButtonHighlighted(const ButtonComponent& button, const UIComponent& ui) const;
         void applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition);
+        void refreshButtonVisual(Entity entity);
         void updateButtonTransition(double dt, Entity entity, ButtonComponent& button, UIComponent& ui);
         void updateButton(Entity entity, ButtonComponent& button, ImageComponent& img, UIComponent& ui, UILayoutComponent& layout);
 
@@ -106,6 +113,14 @@ namespace doriax{
         bool isLiveUIEntity(Entity entity, Signature signature) const;
         // Reads the current flags, visibleInHierarchy is only refreshed by RenderSystem::update
         bool isVisibleInHierarchy(const Transform& transform) const;
+
+        bool isTextEditTyping();
+        void setNavigating(bool navigating);
+        void changeFocus(Entity entity, bool focused);
+        Rect getImageClipRect(Entity image, const ImageComponent& img);
+        Rect getButtonVisibleRect(Entity entity);
+        std::vector<std::pair<Entity, Vector2>> getNavigationTargets();
+        bool releaseSubmit(bool click);
 
         void pointerDownOnUI(Entity entity, float x, float y);
         void pointerMoveOnUI(Entity entity, float x, float y, Vector2 pointerDiff, CursorType& cursor);
@@ -154,11 +169,19 @@ namespace doriax{
 
         void resetButtonStates();
 
+        // the focus that keys and gamepads move, NULL_ENTITY clears it
+        void setFocus(Entity entity);
+
         bool eventOnCharInput(wchar_t input);
         bool eventOnKeyDown(int key, bool repeat, int mods);
         bool eventOnPointerDown(float x, float y);
         bool eventOnPointerUp(float x, float y);
         bool eventOnPointerMove(float x, float y);
+        bool eventOnNavigate(NavigationDirection direction);
+        bool eventOnSubmitDown();
+        bool eventOnSubmitUp();
+        // lets go of the button without a click
+        bool eventOnSubmitCancel();
 
         // basic UIs
         bool createOrUpdatePolygon(PolygonComponent& polygon, UIComponent& ui, UILayoutComponent& layout);

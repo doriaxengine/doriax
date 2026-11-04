@@ -309,11 +309,16 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("isTextEditFocused", &UISystem::isTextEditFocused)
         .addFunction("hasPendingImages", &UISystem::hasPendingImages)
         .addFunction("resetButtonStates", &UISystem::resetButtonStates)
+        .addFunction("setFocus", &UISystem::setFocus)
         .addFunction("eventOnCharInput", &UISystem::eventOnCharInput)
         .addFunction("eventOnKeyDown", &UISystem::eventOnKeyDown)
         .addFunction("eventOnPointerDown", &UISystem::eventOnPointerDown)
         .addFunction("eventOnPointerUp", &UISystem::eventOnPointerUp)
         .addFunction("eventOnPointerMove", &UISystem::eventOnPointerMove)
+        .addFunction("eventOnNavigate", &UISystem::eventOnNavigate)
+        .addFunction("eventOnSubmitDown", &UISystem::eventOnSubmitDown)
+        .addFunction("eventOnSubmitUp", &UISystem::eventOnSubmitUp)
+        .addFunction("eventOnSubmitCancel", &UISystem::eventOnSubmitCancel)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -458,6 +463,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("pressed", &ButtonComponent::pressed)
         .addProperty("hovered", &ButtonComponent::hovered)
         .addProperty("disabled", &ButtonComponent::disabled, &ButtonComponent::disabled)
+        .addProperty("focusable", &ButtonComponent::focusable, &ButtonComponent::focusable)
         .addProperty("needUpdateButton", &ButtonComponent::needUpdateButton, &ButtonComponent::needUpdateButton)
         .endClass();
 

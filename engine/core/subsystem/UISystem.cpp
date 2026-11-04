@@ -20,6 +20,17 @@ using namespace doriax;
 static constexpr float UI_DRAG_START_DISTANCE = 4.0f;
 static constexpr double UI_DOUBLE_CLICK_TIME = 0.3;
 
+// screen space, y grows down
+static Vector2 getNavigationAxis(NavigationDirection direction){
+    switch (direction){
+        case NavigationDirection::UP: return Vector2(0, -1);
+        case NavigationDirection::DOWN: return Vector2(0, 1);
+        case NavigationDirection::LEFT: return Vector2(-1, 0);
+        case NavigationDirection::RIGHT: return Vector2(1, 0);
+        default: return Vector2(0, 0);
+    }
+}
+
 UISystem::UISystem(Scene* scene): SubSystem(scene){
     signature.set(scene->getComponentId<UILayoutComponent>());
 
@@ -34,6 +45,10 @@ UISystem::UISystem(Scene* scene): SubSystem(scene){
     pointerDragging = false;
     pointerInternalGesture = false;
     lastClickTime = -1.0;
+
+    navigating = false;
+    submitButton = NULL_ENTITY;
+    focusRequest = 0;
 
     anchorReferenceWidth = 0;
     anchorReferenceHeight = 0;
@@ -619,13 +634,18 @@ static bool hasButtonTexture(const Texture& texture){
     return !texture.empty() && (!texture.getId().empty() || texture.isFramebuffer());
 }
 
+// keyboard and gamepad focus looks like a hover
+bool UISystem::isButtonHighlighted(const ButtonComponent& button, const UIComponent& ui) const{
+    return navigating ? (ui.focused && button.focusable) : button.hovered;
+}
+
 void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UIComponent& ui, bool transition){
     const Texture* stateTexture = nullptr;
     if (button.disabled){
         stateTexture = &button.textureDisabled;
     }else if (button.pressed){
         stateTexture = &button.texturePressed;
-    }else if (button.hovered){
+    }else if (isButtonHighlighted(button, ui)){
         stateTexture = &button.textureHovered;
     }
 
@@ -642,6 +662,15 @@ void UISystem::applyButtonVisual(Entity entity, ButtonComponent& button, UICompo
     updateButtonTransition(0, entity, button, ui);
 }
 
+// a button still waiting for updateButton gets its look there
+void UISystem::refreshButtonVisual(Entity entity){
+    ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
+    UIComponent* ui = scene->findComponent<UIComponent>(entity);
+    if (button && ui && !button->needUpdateButton){
+        applyButtonVisual(entity, *button, *ui, true);
+    }
+}
+
 void UISystem::updateButtonTransition(double dt, Entity entity, ButtonComponent& button, UIComponent& ui){
     Vector4 targetColor = button.colorNormal;
     float targetScale = 1.0f;
@@ -651,7 +680,7 @@ void UISystem::updateButtonTransition(double dt, Entity entity, ButtonComponent&
     }else if (button.pressed){
         targetColor = button.colorPressed;
         targetScale = button.scalePressed;
-    }else if (button.hovered){
+    }else if (isButtonHighlighted(button, ui)){
         targetColor = button.colorHovered;
         targetScale = button.scaleHovered;
     }
@@ -2657,7 +2686,10 @@ bool UISystem::isTextEditFocused(){
     return false;
 }
 
+// presses only, a focus set before the scene runs stays
 void UISystem::resetButtonStates() {
+    submitButton = NULL_ENTITY;
+
     auto buttons = scene->getComponentArray<ButtonComponent>();
     for (int i = 0; i < buttons->size(); i++) {
         ButtonComponent& button = buttons->getComponentFromIndex(i);
@@ -2671,6 +2703,158 @@ void UISystem::resetButtonStates() {
             applyButtonVisual(entity, button, ui, false);
         }
     }
+}
+
+// a focused text edit that can still take the keys
+bool UISystem::isTextEditTyping(){
+    auto textedits = scene->getComponentArray<TextEditComponent>();
+    for (int i = 0; i < textedits->size(); i++){
+        Entity entity = textedits->getEntity(i);
+        UIComponent* ui = scene->findComponent<UIComponent>(entity);
+        Transform* transform = scene->findComponent<Transform>(entity);
+        if (ui && ui->focused && transform && isVisibleInHierarchy(*transform) && !textedits->getComponentFromIndex(i).disabled){
+            return true;
+        }
+    }
+    return false;
+}
+
+void UISystem::setNavigating(bool navigating){
+    if (this->navigating == navigating)
+        return;
+
+    this->navigating = navigating;
+
+    // the focused and the hovered buttons swap looks
+    auto buttons = scene->getComponentArray<ButtonComponent>();
+    for (int i = 0; i < buttons->size(); i++){
+        Entity entity = buttons->getEntity(i);
+        UIComponent* ui = scene->findComponent<UIComponent>(entity);
+        if (ui && (ui->focused || buttons->getComponentFromIndex(i).hovered)){
+            refreshButtonVisual(entity);
+        }
+    }
+}
+
+// runs user callbacks, which can invalidate component references
+void UISystem::changeFocus(Entity entity, bool focused){
+    UIComponent* ui = scene->findComponent<UIComponent>(entity);
+    if (!ui || ui->focused == focused)
+        return;
+
+    ui->focused = focused;
+    refreshButtonVisual(entity);
+    if (TextEditComponent* textedit = scene->findComponent<TextEditComponent>(entity)){
+        textedit->needUpdateTextEdit = true;
+    }
+
+    if (focused){
+        ui->onGetFocus.call();
+    }else{
+        ui->onLostFocus.call();
+    }
+}
+
+void UISystem::setFocus(Entity entity){
+    unsigned int request = ++focusRequest;
+
+    std::vector<Entity> focusedEntities;
+    auto uis = scene->getComponentArray<UIComponent>();
+    for (int i = 0; i < uis->size(); i++){
+        Entity other = uis->getEntity(i);
+        if (other != entity && uis->getComponentFromIndex(i).focused){
+            focusedEntities.push_back(other);
+        }
+    }
+
+    // a focus callback that moves the focus itself wins
+    for (Entity other : focusedEntities){
+        changeFocus(other, false);
+        if (request != focusRequest)
+            return;
+    }
+
+    if (isLiveUIEntity(entity)){
+        changeFocus(entity, true);
+        if (request != focusRequest)
+            return;
+    }
+
+    setNavigating(entity != NULL_ENTITY);
+}
+
+// an image clips its children inside its patch margins, to the bounds RenderSystem's scissor gets
+Rect UISystem::getImageClipRect(Entity image, const ImageComponent& img){
+    const UILayoutComponent& layout = scene->getComponent<UILayoutComponent>(image);
+    float width = std::max(0.0f, (float)layout.width - img.patchMarginLeft - img.patchMarginRight);
+    float height = std::max(0.0f, (float)layout.height - img.patchMarginTop - img.patchMarginBottom);
+
+    Rect inner(img.patchMarginLeft, img.patchMarginTop, width, height);
+    return transformRectToWorldAxisAligned(inner, scene->getComponent<Transform>(image).modelMatrix);
+}
+
+// the part of an enabled, visible button its parents don't clip, empty when none
+Rect UISystem::getButtonVisibleRect(Entity entity){
+    ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
+    UILayoutComponent* layout = scene->findComponent<UILayoutComponent>(entity);
+    if (!button || !layout || button->disabled || layout->ignoreEvents || !isLiveUIEntity(entity))
+        return Rect(0, 0, 0, 0);
+
+    Transform& transform = scene->getComponent<Transform>(entity);
+    if (!isVisibleInHierarchy(transform))
+        return Rect(0, 0, 0, 0);
+
+    // bounds of the drawn corners, so rotation and pivot count as in RenderSystem
+    Rect bounds = transformRectToWorldAxisAligned(Rect(0, 0, layout->width, layout->height), transform.modelMatrix);
+    float left = bounds.getX();
+    float top = bounds.getY();
+    float right = left + bounds.getWidth();
+    float bottom = top + bounds.getHeight();
+
+    // the scissor RenderSystem gives it: every image above it clips, up to an ignoreScissor
+    Entity current = entity;
+    while (!scene->getComponent<UILayoutComponent>(current).ignoreScissor){
+        Entity parent = scene->getComponent<Transform>(current).parent;
+        if (!scene->findComponent<UILayoutComponent>(parent) || !scene->findComponent<Transform>(parent))
+            break;
+
+        ImageComponent* img = scene->findComponent<ImageComponent>(parent);
+        if (img && !scene->findComponent<ButtonComponent>(parent)){
+            Rect clip = getImageClipRect(parent, *img);
+            left = std::max(left, clip.getX());
+            top = std::max(top, clip.getY());
+            right = std::min(right, clip.getX() + clip.getWidth());
+            bottom = std::min(bottom, clip.getY() + clip.getHeight());
+        }
+
+        current = parent;
+    }
+
+    if (right <= left || bottom <= top)
+        return Rect(0, 0, 0, 0);
+
+    return Rect(left, top, right - left, bottom - top);
+}
+
+// focusable buttons by the centers of their visible parts, in reading order
+std::vector<std::pair<Entity, Vector2>> UISystem::getNavigationTargets(){
+    std::vector<std::pair<Entity, Vector2>> targets;
+
+    auto buttons = scene->getComponentArray<ButtonComponent>();
+    for (int i = 0; i < buttons->size(); i++){
+        Entity entity = buttons->getEntity(i);
+        Rect rect = getButtonVisibleRect(entity);
+
+        if (buttons->getComponentFromIndex(i).focusable && rect.getWidth() > 0){
+            targets.push_back({entity, Vector2(rect.getX() + rect.getWidth() / 2, rect.getY() + rect.getHeight() / 2)});
+        }
+    }
+
+    std::sort(targets.begin(), targets.end(), [](const auto& a, const auto& b){
+        return (a.second.y != b.second.y) ? (a.second.y < b.second.y) : (a.second.x < b.second.x);
+    });
+
+    return targets;
 }
 
 bool UISystem::eventOnCharInput(wchar_t input){
@@ -2724,6 +2908,108 @@ bool UISystem::eventOnKeyDown(int key, bool repeat, int mods){
     }
 
     return false;
+}
+
+bool UISystem::eventOnNavigate(NavigationDirection direction){
+    if (isTextEditTyping())
+        return false;
+
+    std::vector<std::pair<Entity, Vector2>> targets = getNavigationTargets();
+    if (targets.empty())
+        return false;
+
+    auto current = std::find_if(targets.begin(), targets.end(), [this](const auto& target){
+        return scene->getComponent<UIComponent>(target.first).focused;
+    });
+
+    // the first press only shows where the focus is
+    if (!navigating || current == targets.end()){
+        setFocus((current != targets.end()) ? current->first : targets.front().first);
+        return true;
+    }
+
+    Entity next = NULL_ENTITY;
+    if (direction == NavigationDirection::NEXT || direction == NavigationDirection::PREVIOUS){
+        size_t index = current - targets.begin();
+        size_t step = (direction == NavigationDirection::NEXT) ? 1 : targets.size() - 1;
+        next = targets[(index + step) % targets.size()].first;
+    }else{
+        // closer and better aligned buttons score higher
+        Vector2 axis = getNavigationAxis(direction);
+        float bestScore = 0;
+        for (const auto& target : targets){
+            Vector2 offset = target.second - current->second;
+            float along = offset.dotProduct(axis);
+            float score = (along > 0) ? along / offset.squaredLength() : 0;
+            if (score > bestScore){
+                bestScore = score;
+                next = target.first;
+            }
+        }
+    }
+
+    if (next != NULL_ENTITY){
+        setFocus(next);
+    }
+
+    return true;
+}
+
+bool UISystem::eventOnSubmitDown(){
+    // a press whose release never got here, like one held through a scene switch
+    releaseSubmit(false);
+
+    if (!navigating || isTextEditTyping())
+        return false;
+
+    for (const auto& target : getNavigationTargets()){
+        Entity entity = target.first;
+        UIComponent& ui = scene->getComponent<UIComponent>(entity);
+        if (ui.focused){
+            ButtonComponent& button = scene->getComponent<ButtonComponent>(entity);
+            submitButton = entity;
+            button.pressed = true;
+            applyButtonVisual(entity, button, ui, true);
+            button.onPress.call();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool UISystem::eventOnSubmitUp(){
+    return releaseSubmit(true);
+}
+
+bool UISystem::eventOnSubmitCancel(){
+    return releaseSubmit(false);
+}
+
+bool UISystem::releaseSubmit(bool click){
+    Entity entity = submitButton;
+    if (entity == NULL_ENTITY)
+        return false;
+
+    submitButton = NULL_ENTITY;
+
+    ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
+    UIComponent* ui = scene->findComponent<UIComponent>(entity);
+    if (!button || !ui || !button->pressed)
+        return true;
+
+    button->pressed = false;
+    applyButtonVisual(entity, *button, *ui, true);
+    button->onRelease.call();
+
+    // it may be hidden, disabled or gone by now, onRelease included
+    ui = scene->findComponent<UIComponent>(entity);
+    UILayoutComponent* layout = scene->findComponent<UILayoutComponent>(entity);
+    if (click && ui && layout && getButtonVisibleRect(entity).getWidth() > 0){
+        ui->onClick.call(layout->width / 2.0f, layout->height / 2.0f);
+    }
+
+    return true;
 }
 
 bool UISystem::isLiveUIEntity(Entity entity) const {
@@ -2910,6 +3196,8 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y){
 }
 
 bool UISystem::eventOnPointerDown(float x, float y){
+    setNavigating(false);
+
     lastUIFromPointer = NULL_ENTITY;
     lastPanelFromPointer = NULL_ENTITY;
     lastPointerDownPos = Vector2(x, y);
@@ -3286,6 +3574,11 @@ void UISystem::pointerMoveOnUI(Entity entity, float x, float y, Vector2 pointerD
 }
 
 bool UISystem::eventOnPointerMove(float x, float y){
+    // a still pointer can keep sending its position
+    if (Vector2(x, y) != lastPointerPos){
+        setNavigating(false);
+    }
+
     auto layouts = scene->getComponentArray<UILayoutComponent>();
 
     CursorType cursor = CursorType::ARROW;
@@ -3444,6 +3737,9 @@ void UISystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         if (entity == lastUIFromClick) {
             lastUIFromClick = NULL_ENTITY;
             lastClickTime = -1.0;
+        }
+        if (entity == submitButton) {
+            submitButton = NULL_ENTITY;
         }
     }
 

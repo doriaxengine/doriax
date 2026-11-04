@@ -92,6 +92,7 @@ namespace luabridge
     template<> struct Stack<SubscriptionReplacementMode> : EnumWrapper<SubscriptionReplacementMode>{};
     template<> struct Stack<CursorType> : EnumWrapper<CursorType>{};
     template<> struct Stack<MouseMode> : EnumWrapper<MouseMode>{};
+    template<> struct Stack<NavigationDirection> : EnumWrapper<NavigationDirection>{};
     template<> struct Stack<ResourceLoadState> : EnumWrapper<ResourceLoadState>{};
     template<> struct Stack<LightState> : EnumWrapper<LightState>{};
     template<> struct Stack<UIEventState> : EnumWrapper<UIEventState>{};

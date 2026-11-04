@@ -69,6 +69,12 @@ namespace doriax{
 
         void setDisabled(bool disabled);
         bool getDisabled() const;
+
+        void setFocusable(bool focusable);
+        bool isFocusable() const;
+
+        void setFocus();
+        bool isFocused() const;
     };
 }
 

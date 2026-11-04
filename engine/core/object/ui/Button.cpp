@@ -276,3 +276,23 @@ bool Button::getDisabled() const{
     ButtonComponent& btcomp = getComponent<ButtonComponent>();
     return btcomp.disabled;
 }
+
+void Button::setFocusable(bool focusable){
+    ButtonComponent& btcomp = getComponent<ButtonComponent>();
+    btcomp.focusable = focusable;
+    btcomp.needUpdateButton = true;
+}
+
+bool Button::isFocusable() const{
+    ButtonComponent& btcomp = getComponent<ButtonComponent>();
+    return btcomp.focusable;
+}
+
+void Button::setFocus(){
+    scene->getSystem<UISystem>()->setFocus(getEntity());
+}
+
+bool Button::isFocused() const{
+    UIComponent& ui = getComponent<UIComponent>();
+    return ui.focused;
+}

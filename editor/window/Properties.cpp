@@ -6639,6 +6639,7 @@ void editor::Properties::drawButtonComponent(ComponentType cpType, SceneProject*
     beginTable(cpType, getLabelSize("Texture Disabled"));
     propertyRow(RowPropertyType::LocalEntity, cpType, "label", "Label", sceneProject, entities);
     propertyRow(RowPropertyType::Bool, cpType, "disabled", "Disabled", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "focusable", "Focusable", sceneProject, entities);
     propertyRow(RowPropertyType::Texture, cpType, "textureNormal", "Texture Normal", sceneProject, entities);
     propertyRow(RowPropertyType::Texture, cpType, "textureHovered", "Texture Hovered", sceneProject, entities);
     propertyRow(RowPropertyType::Texture, cpType, "texturePressed", "Texture Pressed", sceneProject, entities);

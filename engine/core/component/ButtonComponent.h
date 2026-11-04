@@ -33,6 +33,7 @@ namespace doriax{
         bool pressed = false;
         bool hovered = false;
         bool disabled = false;
+        bool focusable = true; // keys and gamepads can move the focus to it
 
         bool needUpdateButton = true;
 

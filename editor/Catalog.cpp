@@ -238,6 +238,7 @@ namespace {
         makeFastProperty<ButtonComponent, float, &ButtonComponent::scalePressed>("scalePressed", PropertyType::Float, UpdateFlags_Button),
         makeFastProperty<ButtonComponent, float, &ButtonComponent::transitionTime>("transitionTime", PropertyType::Float, UpdateFlags_Button),
         makeFastProperty<ButtonComponent, bool, &ButtonComponent::disabled>("disabled", PropertyType::Bool, UpdateFlags_Button),
+        makeFastProperty<ButtonComponent, bool, &ButtonComponent::focusable>("focusable", PropertyType::Bool, UpdateFlags_Button),
     };
 
     static const FastPropertyDescriptor kScrollbarProperties[] = {

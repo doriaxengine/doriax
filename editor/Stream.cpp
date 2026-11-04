@@ -5200,6 +5200,7 @@ YAML::Node editor::Stream::encodeButtonComponent(const ButtonComponent& button) 
     node["scalePressed"] = button.scalePressed;
     node["transitionTime"] = button.transitionTime;
     node["disabled"] = button.disabled;
+    node["focusable"] = button.focusable;
     return node;
 }
 
@@ -5227,6 +5228,7 @@ ButtonComponent editor::Stream::decodeButtonComponent(const YAML::Node& node, co
     if (node["scalePressed"]) button.scalePressed = node["scalePressed"].as<float>();
     if (node["transitionTime"]) button.transitionTime = node["transitionTime"].as<float>();
     if (node["disabled"]) button.disabled = node["disabled"].as<bool>();
+    if (node["focusable"]) button.focusable = node["focusable"].as<bool>();
 
     return button;
 }

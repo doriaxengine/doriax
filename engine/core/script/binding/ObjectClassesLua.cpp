@@ -1084,6 +1084,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("scalePressed", &Button::getScalePressed, &Button::setScalePressed)
         .addProperty("transitionTime", &Button::getTransitionTime, &Button::setTransitionTime)
         .addProperty("disabled", &Button::getDisabled, &Button::setDisabled)
+        .addProperty("focusable", &Button::isFocusable, &Button::setFocusable)
+        .addFunction("setFocus", &Button::setFocus)
+        .addFunction("isFocused", &Button::isFocused)
         .addFunction("getButtonComponent", &Button::getComponent<ButtonComponent>)
         .endClass();
 

@@ -1010,6 +1010,7 @@ std::string editor::Factory::createButtonComponent(int indentSpaces, EntityRegis
     code << ind << "button.scalePressed = " << formatFloat(button.scalePressed) << ";\n";
     code << ind << "button.transitionTime = " << formatFloat(button.transitionTime) << ";\n";
     code << ind << "button.disabled = " << formatBool(button.disabled) << ";\n";
+    code << ind << "button.focusable = " << formatBool(button.focusable) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "ButtonComponent", "button", assignExisting);
     return code.str();
 }

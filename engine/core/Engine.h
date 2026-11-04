@@ -137,6 +137,7 @@
 #include "texture/Framebuffer.h"
 #include <atomic>
 #include <mutex>
+#include <unordered_map>
 #include <unordered_set>
 
 #define DORIAX_INIT \
@@ -203,6 +204,17 @@ namespace doriax {
         Failed
     };
 
+    // UI focus moves from keys and gamepads
+    enum class NavigationDirection{
+        NONE,
+        UP,
+        DOWN,
+        LEFT,
+        RIGHT,
+        NEXT,
+        PREVIOUS
+    };
+
     class DORIAX_API Engine {
     public:
         // draw calls, instances and triangles submitted by the last systemDraw
@@ -239,6 +251,25 @@ namespace doriax {
         static bool ignoreEventsHandledByUI;
 
         static bool uiEventReceived;
+
+        // a d-pad or stick direction repeats while held
+        static NavigationDirection heldNavigation;
+        static double navigationRepeatTime;
+
+        // where each gamepad's left stick points, and whether it moves the UI focus
+        struct StickNavigation{
+            NavigationDirection direction;
+            bool captured;
+        };
+        static std::unordered_map<int, StickNavigation> stickNavigation;
+
+        // the key, or the gamepad button, holding a UI button down
+        struct SubmitSource{
+            bool held;
+            int gamepad; // -1 for the keyboard
+            int button;
+        };
+        static SubmitSource submitSource;
 
         static uint64_t lastTime;
         static double updateTimeCount;
@@ -284,7 +315,15 @@ namespace doriax {
         static void beginCompositeFramebuffer();
         static void endCompositeFramebuffer();
         static void runFrame(bool draw);
-        
+
+        static bool navigateUI(NavigationDirection direction);
+        static bool holdNavigation(NavigationDirection direction);
+        static bool isNavigationHeld(NavigationDirection direction);
+        static bool updateStickNavigation(int gamepad);
+        static void repeatNavigation(double dt);
+        static bool pressSubmit(int gamepad, int button, bool repeat);
+        static bool releaseSubmit(int gamepad, int button, bool click);
+
     public:
         class AsyncThreadScope {
         public:

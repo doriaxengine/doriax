@@ -36,8 +36,13 @@
 #include "sokol_time.h"
 
 #include <algorithm>
+#include <cmath>
 
 using namespace doriax;
+
+static constexpr double UI_NAVIGATION_DELAY = 0.4;
+static constexpr double UI_NAVIGATION_RATE = 0.1;
+static constexpr int UI_KEYBOARD = -1; // submit source that isn't a gamepad
 
 // thread_local cannot be a data member of a DLL-exported class (MSVC C2492).
 // Keep the TLS counter as file-local storage and expose it via a plain function.
@@ -71,6 +76,11 @@ bool Engine::allowEventsOutCanvas = false;
 bool Engine::ignoreEventsHandledByUI = true;
 
 bool Engine::uiEventReceived = false;
+
+NavigationDirection Engine::heldNavigation = NavigationDirection::NONE;
+double Engine::navigationRepeatTime = 0;
+std::unordered_map<int, Engine::StickNavigation> Engine::stickNavigation;
+Engine::SubmitSource Engine::submitSource = {false, UI_KEYBOARD, 0};
 
 uint64_t Engine::lastTime = 0;
 double Engine::updateTimeCount = 0;
@@ -371,6 +381,9 @@ void Engine::pauseGameEvents(bool pause) {
 }
 
 void Engine::includeScene(size_t index, Scene* scene){
+    // a scene that ran before may still hold a button its release never reached
+    scene->getSystem<UISystem>()->resetButtonStates();
+
     if (viewLoaded){
         scene->load();
         scene->updateCameraSize();
@@ -1194,6 +1207,7 @@ void Engine::runFrame(bool draw){
 
         // 2) Variable-timestep phase. Runs exactly once per frame with the real frame delta.
         //    Used for animation, input, UI, and any subsystem overriding update().
+        repeatNavigation(frameDelta);
         Engine::onUpdate.call();
         for (int i = 0; i < scenes.size(); i++) {
             scenes[i]->update(frameDelta);
@@ -1544,12 +1558,173 @@ void Engine::systemMouseLeave(){
     //-----------------
 }
 
+static bool isSubmitKey(int key){
+    return key == D_KEY_ENTER || key == D_KEY_KP_ENTER || key == D_KEY_SPACE;
+}
+
+static NavigationDirection getKeyNavigation(int key, int mods){
+    switch (key){
+        case D_KEY_UP: return NavigationDirection::UP;
+        case D_KEY_DOWN: return NavigationDirection::DOWN;
+        case D_KEY_LEFT: return NavigationDirection::LEFT;
+        case D_KEY_RIGHT: return NavigationDirection::RIGHT;
+        case D_KEY_TAB: return (mods & D_MODIFIER_SHIFT) ? NavigationDirection::PREVIOUS : NavigationDirection::NEXT;
+        default: return NavigationDirection::NONE;
+    }
+}
+
+// past 0.5 to start and 0.3 to keep the same way, so it doesn't flicker
+static NavigationDirection getStickNavigation(int gamepad, NavigationDirection current){
+    float x = Input::getGamepadAxis(gamepad, D_GAMEPAD_AXIS_LEFT_X);
+    float y = Input::getGamepadAxis(gamepad, D_GAMEPAD_AXIS_LEFT_Y);
+
+    NavigationDirection direction;
+    if (std::abs(x) > std::abs(y))
+        direction = (x > 0) ? NavigationDirection::RIGHT : NavigationDirection::LEFT;
+    else
+        direction = (y > 0) ? NavigationDirection::DOWN : NavigationDirection::UP;
+
+    float threshold = (direction == current) ? 0.3f : 0.5f;
+    return (std::max(std::abs(x), std::abs(y)) > threshold) ? direction : NavigationDirection::NONE;
+}
+
+static NavigationDirection getDpadNavigation(int button){
+    switch (button){
+        case D_GAMEPAD_BUTTON_DPAD_UP: return NavigationDirection::UP;
+        case D_GAMEPAD_BUTTON_DPAD_DOWN: return NavigationDirection::DOWN;
+        case D_GAMEPAD_BUTTON_DPAD_LEFT: return NavigationDirection::LEFT;
+        case D_GAMEPAD_BUTTON_DPAD_RIGHT: return NavigationDirection::RIGHT;
+        default: return NavigationDirection::NONE;
+    }
+}
+
+// the topmost scene with a focusable button takes it
+bool Engine::navigateUI(NavigationDirection direction){
+    if (direction == NavigationDirection::NONE)
+        return false;
+
+    std::vector<Scene*> snapshot = getScenesSnapshot();
+    for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it){
+        if (canSendUIEvents(*it) && (*it)->getSystem<UISystem>()->eventOnNavigate(direction))
+            return true;
+    }
+    return false;
+}
+
+bool Engine::holdNavigation(NavigationDirection direction){
+    if (!navigateUI(direction))
+        return false;
+
+    heldNavigation = direction;
+    navigationRepeatTime = UI_NAVIGATION_DELAY;
+    return true;
+}
+
+// a d-pad or a captured left stick of any gamepad still points that way
+bool Engine::isNavigationHeld(NavigationDirection direction){
+    for (size_t i = 0; i < Input::numGamepads(); i++){
+        int gamepad = Input::getGamepadId(i);
+        const StickNavigation& stick = stickNavigation[gamepad];
+        if (stick.captured && stick.direction == direction)
+            return true;
+
+        for (int button = D_GAMEPAD_BUTTON_DPAD_UP; button <= D_GAMEPAD_BUTTON_DPAD_LEFT; button++){
+            if (getDpadNavigation(button) == direction && Input::isGamepadButtonPressed(gamepad, button))
+                return true;
+        }
+    }
+    return false;
+}
+
+// the left stick works as a d-pad, and once it moves the focus its axes are the UI's until it centers
+bool Engine::updateStickNavigation(int gamepad){
+    StickNavigation stick = stickNavigation[gamepad];
+    NavigationDirection direction = getStickNavigation(gamepad, stick.direction);
+    if (direction == stick.direction)
+        return stick.captured;
+
+    bool wasCaptured = stick.captured;
+    stick.direction = direction;
+    stick.captured = (direction != NavigationDirection::NONE) && (holdNavigation(direction) || wasCaptured);
+    stickNavigation[gamepad] = stick;
+
+    // gameplay won't see this stick again until it centers, so it gets let go now
+    if (stick.captured && !wasCaptured && ignoreEventsHandledByUI){
+        Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_X, 0.0f);
+        Engine::onGamepadAxisMove.call(gamepad, D_GAMEPAD_AXIS_LEFT_Y, 0.0f);
+    }
+
+    // the centering event is still the UI's
+    return wasCaptured || stick.captured;
+}
+
+void Engine::repeatNavigation(double dt){
+    if (heldNavigation == NavigationDirection::NONE)
+        return;
+
+    if (!isNavigationHeld(heldNavigation)){
+        heldNavigation = NavigationDirection::NONE;
+        return;
+    }
+
+    navigationRepeatTime -= dt;
+    if (navigationRepeatTime <= 0){
+        navigationRepeatTime = UI_NAVIGATION_RATE;
+        if (!navigateUI(heldNavigation))
+            heldNavigation = NavigationDirection::NONE;
+    }
+}
+
+bool Engine::pressSubmit(int gamepad, int button, bool repeat){
+    // a new press from the one holding it means its release got lost
+    if (!repeat && submitSource.held && submitSource.gamepad == gamepad && submitSource.button == button)
+        releaseSubmit(gamepad, button, false);
+
+    // the UI keeps the submit keys while a button is held down
+    if (submitSource.held)
+        return true;
+    if (repeat)
+        return false;
+
+    std::vector<Scene*> snapshot = getScenesSnapshot();
+    for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it){
+        if (canSendUIEvents(*it) && (*it)->getSystem<UISystem>()->eventOnSubmitDown()){
+            submitSource = {true, gamepad, button};
+            return true;
+        }
+    }
+    return false;
+}
+
+// a scene that stopped taking input lets go without a click
+bool Engine::releaseSubmit(int gamepad, int button, bool click){
+    if (!submitSource.held || submitSource.gamepad != gamepad || submitSource.button != button)
+        return false;
+
+    submitSource.held = false;
+    for (Scene* scene : getScenesSnapshot()){
+        std::shared_ptr<UISystem> uisystem = scene->getSystem<UISystem>();
+        bool released = (click && canSendUIEvents(scene)) ? uisystem->eventOnSubmitUp() : uisystem->eventOnSubmitCancel();
+        if (released)
+            break;
+    }
+    return true;
+}
+
 void Engine::systemKeyDown(int key, bool repeat, int mods){
     //-----------------
     Input::addKeyPressed(key);
     if (mods != 0)
         Input::setModifiers(mods);
-    Engine::onKeyDown.call(key, repeat, mods);
+
+    if (isSubmitKey(key))
+        uiEventReceived = pressSubmit(UI_KEYBOARD, key, repeat);
+    else
+        uiEventReceived = navigateUI(getKeyNavigation(key, mods));
+
+    if (!ignoreEventsHandledByUI || !uiEventReceived)
+        Engine::onKeyDown.call(key, repeat, mods);
+    uiEventReceived = false;
 
     for (Scene* scene : getScenesSnapshot()){
         if (canSendUIEvents(scene))
@@ -1562,7 +1737,11 @@ void Engine::systemKeyUp(int key, bool repeat, int mods){
     //-----------------
     Input::releaseKeyPressed(key);
     Input::setModifiers(mods); // Now it can be 0
-    Engine::onKeyUp.call(key, repeat, mods);
+
+    uiEventReceived = isSubmitKey(key) && releaseSubmit(UI_KEYBOARD, key, true);
+    if (!ignoreEventsHandledByUI || !uiEventReceived)
+        Engine::onKeyUp.call(key, repeat, mods);
+    uiEventReceived = false;
     //-----------------
 }
 
@@ -1585,6 +1764,8 @@ void Engine::systemGamepadConnect(int gamepad, const std::string& name){
 void Engine::systemGamepadDisconnect(int gamepad){
     //-----------------
     Input::removeGamepad(gamepad);
+    stickNavigation.erase(gamepad);
+    releaseSubmit(gamepad, D_GAMEPAD_BUTTON_A, false);
     Engine::onGamepadDisconnect.call(gamepad);
     //-----------------
 }
@@ -1592,20 +1773,36 @@ void Engine::systemGamepadDisconnect(int gamepad){
 void Engine::systemGamepadButtonDown(int gamepad, int button){
     //-----------------
     Input::addGamepadButtonPressed(gamepad, button);
-    Engine::onGamepadButtonDown.call(gamepad, button);
+
+    if (button == D_GAMEPAD_BUTTON_A)
+        uiEventReceived = pressSubmit(gamepad, button, false);
+    else
+        uiEventReceived = holdNavigation(getDpadNavigation(button));
+
+    if (!ignoreEventsHandledByUI || !uiEventReceived)
+        Engine::onGamepadButtonDown.call(gamepad, button);
+    uiEventReceived = false;
     //-----------------
 }
 
 void Engine::systemGamepadButtonUp(int gamepad, int button){
     //-----------------
     Input::releaseGamepadButtonPressed(gamepad, button);
-    Engine::onGamepadButtonUp.call(gamepad, button);
+
+    uiEventReceived = (button == D_GAMEPAD_BUTTON_A) && releaseSubmit(gamepad, button, true);
+    if (!ignoreEventsHandledByUI || !uiEventReceived)
+        Engine::onGamepadButtonUp.call(gamepad, button);
+    uiEventReceived = false;
     //-----------------
 }
 
 void Engine::systemGamepadAxisMove(int gamepad, int axis, float value){
     //-----------------
     Input::setGamepadAxisValue(gamepad, axis, value);
-    Engine::onGamepadAxisMove.call(gamepad, axis, value);
+
+    uiEventReceived = (axis == D_GAMEPAD_AXIS_LEFT_X || axis == D_GAMEPAD_AXIS_LEFT_Y) && updateStickNavigation(gamepad);
+    if (!ignoreEventsHandledByUI || !uiEventReceived)
+        Engine::onGamepadAxisMove.call(gamepad, axis, value);
+    uiEventReceived = false;
     //-----------------
 }

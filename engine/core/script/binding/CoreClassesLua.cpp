@@ -315,6 +315,17 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .endNamespace();
 
     luabridge::getGlobalNamespace(L)
+        .beginNamespace("NavigationDirection")
+        .addVariable("NONE", NavigationDirection::NONE)
+        .addVariable("UP", NavigationDirection::UP)
+        .addVariable("DOWN", NavigationDirection::DOWN)
+        .addVariable("LEFT", NavigationDirection::LEFT)
+        .addVariable("RIGHT", NavigationDirection::RIGHT)
+        .addVariable("NEXT", NavigationDirection::NEXT)
+        .addVariable("PREVIOUS", NavigationDirection::PREVIOUS)
+        .endNamespace();
+
+    luabridge::getGlobalNamespace(L)
         .beginNamespace("ResourceLoadState")
         .addVariable("NotStarted", ResourceLoadState::NotStarted)
         .addVariable("Loading", ResourceLoadState::Loading)
