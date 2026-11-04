@@ -13,6 +13,8 @@
 #include "io/FileData.h"
 #include "io/UserSettings.h"
 
+#include <memory>
+
 using namespace doriax;
 
 void LuaBinding::registerIOClasses(lua_State *L){
@@ -29,8 +31,10 @@ void LuaBinding::registerIOClasses(lua_State *L){
     luabridge::getGlobalNamespace(L)
         .beginClass<FileData>("FileData")
         .addStaticFunction("newFile", 
-            luabridge::overload<bool>(&FileData::newFile),
-            luabridge::overload<const char*, bool>(&FileData::newFile))
+            [] () { return std::shared_ptr<FileData>(FileData::newFile()); },
+            [] (bool useHandle) { return std::shared_ptr<FileData>(FileData::newFile(useHandle)); },
+            [] (const char* aFilename) { return std::shared_ptr<FileData>(FileData::newFile(aFilename)); },
+            [] (const char* aFilename, bool useHandle) { return std::shared_ptr<FileData>(FileData::newFile(aFilename, useHandle)); })
         .addStaticFunction("getBaseDir", &FileData::getBaseDir)
         .addStaticFunction("getFilePathExtension", &FileData::getFilePathExtension)
         .addStaticFunction("getSystemPath", &FileData::getSystemPath)
