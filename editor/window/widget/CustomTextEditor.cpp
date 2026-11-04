@@ -305,8 +305,8 @@ void CustomTextEditor::initializeLanguage() {
         case SyntaxLanguage::Lua:
             languageDef.keywords = {
                 "and", "break", "do", "else", "elseif", "end", "false", "for",
-                "function", "goto", "if", "in", "local", "nil", "not", "or",
-                "repeat", "return", "then", "true", "until", "while"
+                "function", "global", "goto", "if", "in", "local", "nil", "not",
+                "or", "repeat", "return", "then", "true", "until", "while"
             };
             languageDef.types = {
                 "string", "number", "boolean", "table", "function", "thread",
