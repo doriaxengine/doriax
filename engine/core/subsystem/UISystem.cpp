@@ -2782,6 +2782,10 @@ void UISystem::setFocus(Entity entity){
     setNavigating(entity != NULL_ENTITY);
 }
 
+void UISystem::hideFocus(){
+    setNavigating(false);
+}
+
 // an image clips its children inside its patch margins, to the bounds RenderSystem's scissor gets
 Rect UISystem::getImageClipRect(Entity image, const ImageComponent& img){
     const UILayoutComponent& layout = scene->getComponent<UILayoutComponent>(image);

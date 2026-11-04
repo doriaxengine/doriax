@@ -311,6 +311,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("hasPendingImages", &UISystem::hasPendingImages)
         .addFunction("resetButtonStates", &UISystem::resetButtonStates)
         .addFunction("setFocus", &UISystem::setFocus)
+        .addFunction("hideFocus", &UISystem::hideFocus)
         .addFunction("eventOnCharInput", &UISystem::eventOnCharInput)
         .addFunction("eventOnKeyDown", &UISystem::eventOnKeyDown)
         .addFunction("eventOnPointerDown", &UISystem::eventOnPointerDown)

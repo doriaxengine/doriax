@@ -270,8 +270,12 @@ void Engine::removeScene(Scene* scene){
         }
     }
 
-    if (unlinked)
-        scene->getSystem<UISystem>()->resetButtonStates();
+    if (unlinked){
+        std::shared_ptr<UISystem> uisystem = scene->getSystem<UISystem>();
+        uisystem->resetButtonStates();
+        // shown again by the next key or gamepad press, or a setFocus before it comes back
+        uisystem->hideFocus();
+    }
 
     if (Engine::isAsyncThread())
         drawSemaphore.release();

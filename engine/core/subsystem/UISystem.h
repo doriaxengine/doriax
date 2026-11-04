@@ -172,6 +172,8 @@ namespace doriax{
 
         // the focus that keys and gamepads move, NULL_ENTITY clears it
         void setFocus(Entity entity);
+        // until the next key or gamepad press, like a mouse move
+        void hideFocus();
 
         bool eventOnCharInput(wchar_t input);
         bool eventOnKeyDown(int key, bool repeat, int mods);
