@@ -28,15 +28,15 @@
 
 using namespace doriax;
 
-LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(vm) {
+LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(LuaBinding::getLuaState()) {
     // get the function
-    lua_getglobal(m_vm, func.c_str());
+    lua_getglobal(vm, func.c_str());
 
-    store_function();
+    store_function(vm);
 }
 
-LuaFunctionBase::LuaFunctionBase(lua_State *vm): m_vm(vm) {
-    store_function();
+LuaFunctionBase::LuaFunctionBase(lua_State *vm): m_vm(LuaBinding::getLuaState()) {
+    store_function(vm);
 }
 
 LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other): m_vm(other.m_vm), m_generation(other.m_generation) {
@@ -61,23 +61,22 @@ LuaFunctionBase& LuaFunctionBase::operator=(const LuaFunctionBase &other){
 }
 
 void LuaFunctionBase::release(){
-    // the main state, m_vm can be a coroutine already collected
     lua_State* L = LuaBinding::getLuaState();
     if (L && LuaBinding::getLuaStateGeneration() == m_generation) {
         luaL_unref(L, LUA_REGISTRYINDEX, m_func);
     }
 }
 
-void LuaFunctionBase::store_function(){
+void LuaFunctionBase::store_function(lua_State *vm){
     // ensure it's a function
-    if (!lua_isfunction(m_vm, -1)) {
+    if (!lua_isfunction(vm, -1)) {
         // throw an exception; you'd use your own exception class here
         // of course, but for sake of simplicity i use runtime_error
-        lua_pop(m_vm, 1);
+        lua_pop(vm, 1);
         throw std::runtime_error("not a valid function");
     }
     // store it in registry for later use
-    m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+    m_func = luaL_ref(vm, LUA_REGISTRYINDEX);
     m_generation = LuaBinding::getLuaStateGeneration();
 }
 

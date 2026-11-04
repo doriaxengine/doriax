@@ -30,11 +30,11 @@ namespace doriax{
 
     private:
 
-        void store_function();
+        void store_function(lua_State *vm);
         void release();
 
     protected:
-        // the virtual machine and the registry reference to the function
+        // the main state (a coroutine can be collected) and the function registry reference
         lua_State *m_vm;
         int m_func;
         // of the state holding the reference, it can be closed and created again
