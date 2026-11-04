@@ -16,9 +16,10 @@ using namespace doriax;
 
 File::File(){
     fileHandle = NULL;
+    modified = false;
 }
 
-File::File(FILE *fp) {
+File::File(FILE *fp): File() {
     this->fileHandle = fp;
 }
 
@@ -55,6 +56,7 @@ unsigned int File::write(unsigned char *aSrc, unsigned int aBytes){
     if (!fileHandle)
         return 0;
     unsigned int r = (unsigned int)fwrite(aSrc, 1, aBytes, fileHandle);
+    modified = true;
     System::instance().syncFileSystem();
     return r;
 }
@@ -102,17 +104,30 @@ unsigned int File::open(const char *aFilename, bool write){
     }
     if (!fileHandle)
         return FileErrors::FILE_NOT_FOUND;
+    // "w+b" already truncated it
+    modified = write;
     return FileErrors::FILEDATA_OK;
 }
 
 void File::flush(){
-    if (fileHandle)
+    if (fileHandle) {
         fflush(fileHandle);
+        syncWritten();
+    }
 }
 
 void File::close(){
     if (fileHandle) {
         fclose(fileHandle);
         fileHandle = NULL;
+        syncWritten();
+    }
+}
+
+void File::syncWritten(){
+    // buffered bytes only reach the filesystem on flush or close
+    if (modified) {
+        modified = false;
+        System::instance().syncFileSystem();
     }
 }

@@ -17,6 +17,9 @@ namespace doriax {
     class DORIAX_API File: public FileData {
     protected:
         FILE *fileHandle;
+        bool modified;
+
+        void syncWritten();
 
     public:
 
