@@ -263,7 +263,9 @@ bool LuaFunctionBase::get_value<bool>(lua_State* vm){
 
 template <>
 std::string LuaFunctionBase::get_value<std::string>(lua_State* vm){
-    std::string val = lua_tostring(vm, -1);
+    // nil after a script error, or any value without a string form
+    const char* str = lua_tostring(vm, -1);
+    std::string val = str ? str : "";
     lua_pop(vm, 1);
     return val;
 }
