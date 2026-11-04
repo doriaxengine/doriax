@@ -279,6 +279,7 @@ int LuaBinding::luaRegisterEventImpl(lua_State* L, int eventIndex, int selfIndex
     lua_pushcclosure(L,
         [](lua_State* Linner) -> int {
             int nargs = lua_gettop(Linner);
+            luaL_checkstack(Linner, nargs + 3, "too many event arguments");
 
             lua_pushvalue(Linner, lua_upvalueindex(1)); // method
             lua_pushvalue(Linner, lua_upvalueindex(2)); // self

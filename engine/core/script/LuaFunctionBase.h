@@ -30,7 +30,9 @@ namespace doriax{
 
     private:
 
+        bool is_alive() const;
         void store_function(lua_State *vm);
+        void copy_function(const LuaFunctionBase &other);
         void release();
 
     protected:
@@ -39,6 +41,9 @@ namespace doriax{
         int m_func;
         // of the state holding the reference, it can be closed and created again
         unsigned int m_generation;
+
+        // false when that state is closed or its stack can't grow, calling then does nothing
+        bool can_call(int args);
 
         // push the function from the registry
         void push_function(lua_State *vm, int func);

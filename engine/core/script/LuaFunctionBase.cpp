@@ -28,6 +28,17 @@
 
 using namespace doriax;
 
+static void reportError(const std::string& error){
+    #ifdef DORIAX_CRASH_GUARD
+    auto& crashHandler = FunctionSubscribeGlobal::getCrashHandler();
+    if (crashHandler) {
+        crashHandler("Lua Script Error", error);
+        return;
+    }
+    #endif
+    Log::error("Lua Error: %s", error.c_str());
+}
+
 LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(LuaBinding::getLuaState()) {
     // get the function
     lua_getglobal(vm, func.c_str());
@@ -39,10 +50,8 @@ LuaFunctionBase::LuaFunctionBase(lua_State *vm): m_vm(LuaBinding::getLuaState())
     store_function(vm);
 }
 
-LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other): m_vm(other.m_vm), m_generation(other.m_generation) {
-    // copy the registry reference
-    lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_func);
-    m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other) {
+    copy_function(other);
 }
 
 LuaFunctionBase::~LuaFunctionBase(){
@@ -52,18 +61,41 @@ LuaFunctionBase::~LuaFunctionBase(){
 LuaFunctionBase& LuaFunctionBase::operator=(const LuaFunctionBase &other){
     if (this != &other) {
         release();
-        m_vm = other.m_vm;
-        m_generation = other.m_generation;
-        lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_func);
-        m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+        copy_function(other);
     }
     return *this;
 }
 
+bool LuaFunctionBase::is_alive() const{
+    return LuaBinding::getLuaState() && LuaBinding::getLuaStateGeneration() == m_generation;
+}
+
+bool LuaFunctionBase::can_call(int args){
+    if (!is_alive())
+        return false;
+
+    // the arguments are pushed unchecked, LUA_MINSTACK is for the call and its errors
+    if (!lua_checkstack(m_vm, args + LUA_MINSTACK)) {
+        reportError("stack overflow calling a function");
+        return false;
+    }
+
+    return true;
+}
+
+void LuaFunctionBase::copy_function(const LuaFunctionBase &other){
+    m_vm = other.m_vm;
+    m_generation = other.m_generation;
+    if (is_alive()) {
+        // copy the registry reference
+        lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_func);
+        m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+    }
+}
+
 void LuaFunctionBase::release(){
-    lua_State* L = LuaBinding::getLuaState();
-    if (L && LuaBinding::getLuaStateGeneration() == m_generation) {
-        luaL_unref(L, LUA_REGISTRYINDEX, m_func);
+    if (is_alive()) {
+        luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
     }
 }
 
@@ -90,16 +122,7 @@ void LuaFunctionBase::call(int args, int results) {
         std::string error = LuaBinding::getLuaStackErrorString(m_vm, -1);
         lua_pop(m_vm, 1);
 
-        #ifdef DORIAX_CRASH_GUARD
-        auto& crashHandler = FunctionSubscribeGlobal::getCrashHandler();
-        if (crashHandler) {
-            crashHandler("Lua Script Error", error);
-        } else {
-            Log::error("Lua Error: %s", error.c_str());
-        }
-        #else
-        Log::error("Lua Error: %s", error.c_str());
-        #endif
+        reportError(error);
 
         // Push nil values to satisfy the expected results count
         for (int i = 0; i < results; i++) {
