@@ -24,8 +24,9 @@ namespace doriax {
         File(FILE *fp);
         File(const char *aFilename, bool write = false);
 
-        File(const File& f);
-        File& operator = ( const File& f );
+        // owns the handle
+        File(const File& f) = delete;
+        File& operator = ( const File& f ) = delete;
 
         virtual ~File();
 
