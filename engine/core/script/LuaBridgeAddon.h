@@ -12,6 +12,7 @@
 #include "FileData.h"
 #include "thread/ResourceProgress.h"
 #include "texture/Material.h"
+#include "texture/Framebuffer.h"
 
 using namespace doriax;
 
@@ -209,6 +210,16 @@ namespace luabridge
         static bool isInstance (lua_State* L, int index)
         {
             return lua_type(L, index) == LUA_TSTRING;
+        }
+    };
+
+    // overloads check isInstance first, which refuses nil, but nil clears a framebuffer texture
+    template <>
+    struct Stack <Framebuffer*> : detail::StackOpSelector<Framebuffer*, true>
+    {
+        static bool isInstance (lua_State* L, int index)
+        {
+            return lua_isnil(L, index) || detail::StackOpSelector<Framebuffer*, true>::isInstance(L, index);
         }
     };
 }
