@@ -172,7 +172,7 @@ std::string FileData::readString(){
 
 std::string FileData::readString(unsigned int stringlen){
     std::string s( stringlen, '\0' );
-    read((unsigned char*)&s[0], stringlen);
+    s.resize(read((unsigned char*)&s[0], stringlen));
     return s;
 }
 
