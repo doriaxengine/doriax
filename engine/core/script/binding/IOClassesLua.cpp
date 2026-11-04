@@ -56,7 +56,7 @@ void LuaBinding::registerIOClasses(lua_State *L){
 
     luabridge::getGlobalNamespace(L)
         .deriveClass<File, FileData>("File")
-        .addConstructor<void(), void(const char*, bool)> ()
+        .addConstructor<void(), void(const char*), void(const char*, bool)> ()
         .addFunction("open", &File::open)
         .addFunction("flush", &File::flush)
         .addFunction("close", &File::close)
