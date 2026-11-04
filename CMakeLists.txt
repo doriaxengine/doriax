@@ -1,4 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
+
+# Must come before project(), or the build machine's macOS becomes the minimum
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Minimum macOS version" FORCE)
+endif()
+
 project(doriax-editor)
 
 # Same as CI (.github/workflows/cmake.yml): git describe --tags --always --dirty.
@@ -765,11 +771,7 @@ if(APPLE)
     string(REPLACE "," "." DORIAX_BUNDLE_VERSION "${DORIAX_VERSION_NUMERIC}")
     string(REGEX REPLACE "^([0-9]+\\.[0-9]+\\.[0-9]+).*$" "\\1" DORIAX_BUNDLE_VERSION "${DORIAX_BUNDLE_VERSION}")
 
-    # engine/CMakeLists.txt sets this in its own scope, which does not reach here.
     set(DORIAX_BUNDLE_MIN_OS "${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    if(NOT DORIAX_BUNDLE_MIN_OS)
-        set(DORIAX_BUNDLE_MIN_OS "12.0")
-    endif()
 
     set(DORIAX_ICON_PNG "${CMAKE_CURRENT_SOURCE_DIR}/${EDITOR_DIR}/resources/icons/doriax-editor.png")
     set(DORIAX_ICONSET "${CMAKE_CURRENT_BINARY_DIR}/resources/doriax.iconset")
