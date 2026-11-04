@@ -67,8 +67,11 @@ unsigned int Data::write(unsigned char *aSrc, unsigned int aBytes) {
     if (dataLength > 0 || offset > 0)
         return 0;
 
+    if (dataOwned)
+        delete[] dataPtr;
     dataLength = aBytes;
-    dataPtr = (unsigned char*)malloc(aBytes);
+    dataPtr = new unsigned char[aBytes];
+    dataOwned = true;
     memcpy(dataPtr + offset, aSrc, aBytes);
     offset += aBytes;
 
@@ -149,13 +152,7 @@ unsigned int Data::open(const char *aFilename) {
     if (res != 0)
         return res;
 
-    dataLength = df.length();
-    dataPtr = new unsigned char[dataLength];
-    if (dataPtr == NULL)
-        return FileErrors::OUT_OF_MEMORY;
-    df.read(dataPtr, dataLength);
-    dataOwned = true;
-    return FileErrors::FILEDATA_OK;
+    return open(&df);
 }
 
 unsigned int Data::open(File *aFile) {
