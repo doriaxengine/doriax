@@ -19,6 +19,7 @@ using namespace doriax;
 File::File(){
     fileHandle = NULL;
     modified = false;
+    writing = false;
 }
 
 File::File(FILE *fp): File() {
@@ -37,26 +38,28 @@ File::~File() {
 int File::eof() {
     if (!fileHandle)
         return 1;
-    long pos = ftell(fileHandle);
-    // a stream without a position only knows after a failed read
-    if (pos < 0)
-        return feof(fileHandle);
-    // peeks a byte, the seeks also make this valid right after a write
-    fseek(fileHandle, pos, SEEK_SET);
+    setWriting(false);
+    // peeks a byte, a failed peek can't leave its flags on the stream
     int c = fgetc(fileHandle);
-    fseek(fileHandle, pos, SEEK_SET);
-    return c == EOF;
+    if (c == EOF) {
+        clearerr(fileHandle);
+        return 1;
+    }
+    ungetc(c, fileHandle);
+    return 0;
 }
 
 unsigned int File::read(unsigned char *aDst, unsigned int aBytes) {
     if (!fileHandle)
         return 0;
+    setWriting(false);
     return (unsigned int)fread(aDst, 1, aBytes, fileHandle);
 }
 
 unsigned int File::write(unsigned char *aSrc, unsigned int aBytes){
     if (!fileHandle)
         return 0;
+    setWriting(true);
     unsigned int r = (unsigned int)fwrite(aSrc, 1, aBytes, fileHandle);
     modified = true;
     System::instance().syncFileSystem();
@@ -125,7 +128,16 @@ void File::close(){
     if (fileHandle) {
         fclose(fileHandle);
         fileHandle = NULL;
+        writing = false;
         syncWritten();
+    }
+}
+
+void File::setWriting(bool value){
+    // C needs a seek between reading and writing
+    if (writing != value) {
+        fseek(fileHandle, 0, SEEK_CUR);
+        writing = value;
     }
 }
 

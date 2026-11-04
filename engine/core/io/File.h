@@ -18,8 +18,10 @@ namespace doriax {
     protected:
         FILE *fileHandle;
         bool modified;
+        bool writing;
 
         void syncWritten();
+        void setWriting(bool value);
 
     public:
 
