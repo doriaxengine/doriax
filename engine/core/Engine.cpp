@@ -1687,8 +1687,15 @@ void Engine::repeatNavigation(double dt){
         return;
 
     if (!isNavigationHeld(heldNavigation)){
+        // a stick still held on the menu takes over from a released d-pad
         heldNavigation = NavigationDirection::NONE;
-        return;
+        navigationRepeatTime = UI_NAVIGATION_DELAY;
+        for (const auto& entry : stickNavigation){
+            if (entry.second.captured)
+                heldNavigation = entry.second.direction;
+        }
+        if (heldNavigation == NavigationDirection::NONE)
+            return;
     }
 
     navigationRepeatTime -= dt;
