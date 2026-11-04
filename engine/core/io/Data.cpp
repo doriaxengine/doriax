@@ -53,10 +53,11 @@ Data::~Data() {
 }
 
 unsigned int Data::read(unsigned char *aDst, unsigned int aBytes) {
-    if (offset + aBytes >= dataLength)
+    if (aBytes > dataLength - offset)
         aBytes = dataLength - offset;
 
-    memcpy(aDst, dataPtr + offset, aBytes);
+    if (aBytes > 0)
+        memcpy(aDst, dataPtr + offset, aBytes);
     offset += aBytes;
 
     return aBytes;
@@ -83,8 +84,8 @@ void Data::seek(int aOffset) {
         offset = aOffset;
     else
         offset = dataLength + aOffset;
-    if (offset > dataLength-1)
-        offset = dataLength-1;
+    if (offset > dataLength)
+        offset = aOffset >= 0 ? dataLength : 0;
 }
 
 unsigned int Data::pos() {
@@ -170,7 +171,7 @@ unsigned int Data::open(File *aFile) {
     dataPtr = new unsigned char[dataLength];
     if (dataPtr == NULL)
         return FileErrors::OUT_OF_MEMORY;
-    aFile->read(dataPtr, dataLength);
+    dataLength = aFile->read(dataPtr, dataLength);
     dataOwned = true;
     return FileErrors::FILEDATA_OK;
 }
