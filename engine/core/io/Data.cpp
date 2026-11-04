@@ -10,6 +10,7 @@
 #include "Data.h"
 #include "ResourcePack.h"
 
+#include <new>
 #include <string.h>
 #include <vector>
 
@@ -17,6 +18,14 @@ using namespace doriax;
 
 Data::Data(): dataPtr(NULL), dataLength(0), offset(0), dataOwned(false) {
 
+}
+
+// the data stays empty when there is no memory
+bool Data::allocate(unsigned int aLength) {
+    dataPtr = new (std::nothrow) unsigned char[aLength];
+    dataOwned = dataPtr != NULL;
+    dataLength = dataOwned ? aLength : 0;
+    return dataOwned;
 }
 
 Data::Data(unsigned char *aData, unsigned int aDataLength, bool aCopy, bool aTakeOwnership): Data(){
@@ -37,16 +46,15 @@ Data& Data::operator = (const Data& d){
 
     // freed after the copy, d can be a view of this buffer
     unsigned char* oldPtr = dataOwned ? dataPtr : NULL;
-
-    dataLength = d.dataLength;
-    offset = d.offset;
     dataPtr = NULL;
+    dataLength = 0;
+    dataOwned = false;
+    offset = 0;
 
     // a copy always owns its buffer
-    dataOwned = d.dataPtr != NULL;
-    if (dataOwned) {
-        dataPtr = new unsigned char[dataLength];
+    if (d.dataPtr && allocate(d.dataLength)) {
         memcpy(dataPtr, d.dataPtr, dataLength);
+        offset = d.offset;
     }
 
     delete[] oldPtr;
@@ -76,9 +84,8 @@ unsigned int Data::write(unsigned char *aSrc, unsigned int aBytes) {
 
     if (dataOwned)
         delete[] dataPtr;
-    dataLength = aBytes;
-    dataPtr = new unsigned char[aBytes];
-    dataOwned = true;
+    if (!allocate(aBytes))
+        return 0;
     memcpy(dataPtr + offset, aSrc, aBytes);
     offset += aBytes;
 
@@ -115,18 +122,15 @@ unsigned int Data::open(unsigned char *aData, unsigned int aDataLength, bool aCo
     dataPtr = 0;
     offset = 0;
 
-    dataLength = aDataLength;
-
     if (aCopy)
     {
-        dataOwned = true;
-        dataPtr = new unsigned char[aDataLength];
-        if (dataPtr == NULL)
+        if (!allocate(aDataLength))
             return FileErrors::OUT_OF_MEMORY;
         memcpy(dataPtr, aData, aDataLength);
         return FileErrors::FILEDATA_OK;
     }
 
+    dataLength = aDataLength;
     dataPtr = aData;
     dataOwned = aTakeOwnership;
     return FileErrors::FILEDATA_OK;
@@ -144,13 +148,10 @@ unsigned int Data::open(const char *aFilename) {
 
     std::vector<unsigned char> packedData;
     if (ResourcePack::read(aFilename, packedData)) {
-        dataLength = static_cast<unsigned int>(packedData.size());
-        dataPtr = new unsigned char[dataLength];
-        if (dataPtr == NULL)
+        if (!allocate(static_cast<unsigned int>(packedData.size())))
             return FileErrors::OUT_OF_MEMORY;
         if (dataLength > 0)
             memcpy(dataPtr, packedData.data(), dataLength);
-        dataOwned = true;
         return FileErrors::FILEDATA_OK;
     }
 
@@ -171,12 +172,9 @@ unsigned int Data::open(File *aFile) {
     dataPtr = 0;
     offset = 0;
 
-    dataLength = aFile->length();
-    dataPtr = new unsigned char[dataLength];
-    if (dataPtr == NULL)
+    if (!allocate(aFile->length()))
         return FileErrors::OUT_OF_MEMORY;
     dataLength = aFile->read(dataPtr, dataLength);
-    dataOwned = true;
     return FileErrors::FILEDATA_OK;
 }
 

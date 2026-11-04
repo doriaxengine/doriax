@@ -24,6 +24,8 @@ namespace doriax {
         unsigned int offset;
         bool dataOwned;
 
+        bool allocate(unsigned int aLength);
+
     public:
         Data();
         Data(unsigned char *aData, unsigned int aDataLength, bool aCopy=false, bool aTakeOwnership=true);
