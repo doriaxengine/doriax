@@ -12,6 +12,8 @@
 #include "System.h"
 #include "Log.h"
 
+#include <climits>
+
 using namespace doriax;
 
 File::File(){
@@ -70,7 +72,10 @@ unsigned int File::length() {
     fseek(fileHandle, 0, SEEK_END);
     long len = ftell(fileHandle);
     fseek(fileHandle, pos, SEEK_SET);
-    return len < 0 ? 0 : (unsigned int)len;
+    // also a directory, which can report the largest long
+    if (len < 0 || len == LONG_MAX || (unsigned long)len > UINT_MAX)
+        return 0;
+    return (unsigned int)len;
 }
 
 void File::seek(int aOffset) {
@@ -125,7 +130,7 @@ void File::close(){
 }
 
 void File::syncWritten(){
-    // buffered bytes only reach the filesystem on flush or close
+    // a write can leave bytes buffered until flush or close
     if (modified) {
         modified = false;
         System::instance().syncFileSystem();
