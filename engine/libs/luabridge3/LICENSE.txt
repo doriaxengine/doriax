@@ -20,7 +20,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-*   Copyright 2020, Lucio Asnaghi
+*   Copyright 2020, kunitoki
 *   Copyright 2019, Dmitry Tarakanov
 *   Copyright 2012, Vinnie Falco
 *   Copyright 2008, Nigel Atkinson
