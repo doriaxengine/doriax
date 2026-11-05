@@ -2007,17 +2007,18 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
     std::set<Entity> currentReflectionProbes;
     std::set<Entity> currentWaterExclusions;
 
+    // each block creates its lines first, a new lines entity can move the components
     for (Entity& entity: entities){
         Signature signature = scene->getSignature(entity);
 
         if (signature.test(scene->getComponentId<LightComponent>()) && signature.test(scene->getComponentId<Transform>())) {
             LightComponent& light = scene->getComponent<LightComponent>(entity);
-            Transform& transform = scene->getComponent<Transform>(entity);
 
             bool isSelected = std::find(selEntities.begin(), selEntities.end(), entity) != selEntities.end();
 
             currentIconLights.insert(entity);
             bool newLight = instanciateLightObject(entity) || lightObjects[entity].type != light.type;
+            Transform& transform = scene->getComponent<Transform>(entity);
             if (light.type == LightType::DIRECTIONAL){
                 createOrUpdateLightIcon(entity, transform, LightType::DIRECTIONAL, newLight);
                 createDirectionalLightArrow(entity, transform, light, isSelected);
@@ -2036,11 +2037,11 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
 
         if (signature.test(scene->getComponentId<CameraComponent>()) && signature.test(scene->getComponentId<Transform>())) {
             if (entity != camera->getEntity()) {
+                currentIconCameras.insert(entity);
+                bool newCamera = instanciateCameraObject(entity);
                 Transform& transform = scene->getComponent<Transform>(entity);
                 CameraComponent& cameraComp = scene->getComponent<CameraComponent>(entity);
 
-                currentIconCameras.insert(entity);
-                bool newCamera = instanciateCameraObject(entity);
                 createOrUpdateCameraIcon(entity, transform, newCamera);
                 createCameraFrustum(entity, transform, cameraComp, !displaySettings.showFullFrustum, mainCamera == entity);
 
@@ -2052,10 +2053,10 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<SoundComponent>()) && signature.test(scene->getComponentId<Transform>())) {
-            Transform& transform = scene->getComponent<Transform>(entity);
-
             currentIconSounds.insert(entity);
             bool newSound = instanciateSoundObject(entity);
+            Transform& transform = scene->getComponent<Transform>(entity);
+
             createOrUpdateSoundIcon(entity, transform, newSound);
 
             if (displaySettings.hideSoundIcons && soundObjects.find(entity) != soundObjects.end()) {
@@ -2064,11 +2065,11 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<Body3DComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            currentBodyObjects.insert(entity);
+            instanciateBodyObject(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
             Body3DComponent& body = scene->getComponent<Body3DComponent>(entity);
 
-            currentBodyObjects.insert(entity);
-            instanciateBodyObject(entity);
             bool highlighted = isDescendantSelected(entity);
             bool isVisible = displaySettings.showAllBodies || highlighted;
 
@@ -2076,31 +2077,31 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            currentLinePoints.insert(entity);
+            instanciateLinePointLines(entity);
             LinesComponent& linesComp = scene->getComponent<LinesComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentLinePoints.insert(entity);
-            instanciateLinePointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdateLinePointLines(entity, transform, linesComp, highlighted);
         }
 
         if (signature.test(scene->getComponentId<PolygonComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            currentPolygonPoints.insert(entity);
+            instanciatePolygonPointLines(entity);
             PolygonComponent& polygon = scene->getComponent<PolygonComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentPolygonPoints.insert(entity);
-            instanciatePolygonPointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdatePolygonPointLines(entity, transform, polygon.points, false, highlighted);
         }else if (signature.test(scene->getComponentId<MeshPolygonComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            currentPolygonPoints.insert(entity);
+            instanciatePolygonPointLines(entity);
             MeshPolygonComponent& polygon = scene->getComponent<MeshPolygonComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentPolygonPoints.insert(entity);
-            instanciatePolygonPointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdatePolygonPointLines(entity, transform, polygon.points, true, highlighted);
@@ -2118,16 +2119,15 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<ReflectionProbeComponent>()) && signature.test(scene->getComponentId<Transform>())) {
-            ReflectionProbeComponent& probe = scene->getComponent<ReflectionProbeComponent>(entity);
-            Transform& transform = scene->getComponent<Transform>(entity);
             currentReflectionProbes.insert(entity);
             instanciateReflectionProbeLines(entity);
+            ReflectionProbeComponent& probe = scene->getComponent<ReflectionProbeComponent>(entity);
+            Transform& transform = scene->getComponent<Transform>(entity);
             createOrUpdateReflectionProbeLines(entity, transform, probe, selectedEntities.find(entity) != selectedEntities.end());
         }
 
         if (signature.test(scene->getComponentId<WaterExclusionComponent>()) && signature.test(scene->getComponentId<Transform>())) {
             currentWaterExclusions.insert(entity);
-            // before taking the components, which a new lines entity can move
             instanciateWaterExclusionLines(entity);
             WaterExclusionComponent& exclusion = scene->getComponent<WaterExclusionComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);

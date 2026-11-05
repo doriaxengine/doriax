@@ -952,6 +952,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
     std::set<Entity> currentTrackLines;
     std::set<Entity> currentCameras;
     std::set<Entity> currentSounds;
+    // each block creates its lines first, a new lines entity can move the components
     for (Entity& entity: entities){
         Signature signature = scene->getSignature(entity);
         if (signature.test(scene->getComponentId<UIContainerComponent>()) && 
@@ -1013,11 +1014,11 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<Body2DComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentBodies.insert(entity);
+            instanciateBodyLines(entity);
             Body2DComponent& body = scene->getComponent<Body2DComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentBodies.insert(entity);
-            instanciateBodyLines(entity);
             bool highlighted = isDescendantSelected(entity);
             bool isVisible = displaySettings.showAllBodies || highlighted;
 
@@ -1025,11 +1026,11 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<Light2DComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentLights2D.insert(entity);
+            instanciateLight2DLines(entity);
             Light2DComponent& light2d = scene->getComponent<Light2DComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentLights2D.insert(entity);
-            instanciateLight2DLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdateLight2DLines(entity, transform, light2d, highlighted, highlighted);
@@ -1052,42 +1053,42 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
         }
 
         if (signature.test(scene->getComponentId<Occluder2DComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentOccluders2D.insert(entity);
+            instanciateOccluder2DLines(entity);
             Occluder2DComponent& occluder2d = scene->getComponent<Occluder2DComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentOccluders2D.insert(entity);
-            instanciateOccluder2DLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdateOccluder2DLines(entity, transform, occluder2d, highlighted, highlighted);
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentLinePoints.insert(entity);
+            instanciateLinePointLines(entity);
             LinesComponent& linesComp = scene->getComponent<LinesComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentLinePoints.insert(entity);
-            instanciateLinePointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdateLinePointLines(entity, transform, linesComp, highlighted);
         }
 
         if (signature.test(scene->getComponentId<PolygonComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentPolygonPoints.insert(entity);
+            instanciatePolygonPointLines(entity);
             PolygonComponent& polygon = scene->getComponent<PolygonComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentPolygonPoints.insert(entity);
-            instanciatePolygonPointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdatePolygonPointLines(entity, transform, polygon.points, false, highlighted);
         }else if (signature.test(scene->getComponentId<MeshPolygonComponent>()) && signature.test(scene->getComponentId<Transform>())){
+            currentPolygonPoints.insert(entity);
+            instanciatePolygonPointLines(entity);
             MeshPolygonComponent& polygon = scene->getComponent<MeshPolygonComponent>(entity);
             Transform& transform = scene->getComponent<Transform>(entity);
 
-            currentPolygonPoints.insert(entity);
-            instanciatePolygonPointLines(entity);
             bool highlighted = isDescendantSelected(entity);
 
             createOrUpdatePolygonPointLines(entity, transform, polygon.points, true, highlighted);
