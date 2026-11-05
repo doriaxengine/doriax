@@ -77,8 +77,13 @@ Body2D& Body2D::operator=(const Body2D& rhs){
 
 void Body2D::checkBody(const Body2DComponent& body) const{
     if (!b2Body_IsValid(body.body)){
-        Log::error("Body2D is not loaded");
-        throw std::runtime_error("Body2D is not loaded");
+        // a script's init runs before the scene's first load
+        scene->getSystem<PhysicsSystem>()->loadAndPlaceBody2D(entity);
+
+        if (!b2Body_IsValid(body.body)){
+            Log::error("Body2D is not loaded");
+            throw std::runtime_error("Body2D is not loaded");
+        }
     }
 }
 

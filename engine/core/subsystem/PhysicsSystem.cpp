@@ -1772,6 +1772,14 @@ bool PhysicsSystem::loadBody2D(Entity entity){
     return true;
 }
 
+void PhysicsSystem::loadAndPlaceBody2D(Entity entity){
+    Body2DComponent& body = scene->getComponent<Body2DComponent>(entity);
+
+    if (loadBody2D(entity) && b2Body_IsValid(body.body)){
+        updateBody2DPosition(scene->getSignature(entity), entity, body);
+    }
+}
+
 void PhysicsSystem::destroyBody2D(Body2DComponent& body){
     // When a world leaves scope or is deleted by calling delete on a pointer
     // all the memory reserved for bodies, fixtures, and joints is freed
@@ -1809,6 +1817,14 @@ bool PhysicsSystem::loadBody3D(Entity entity){
     }
 
     return true;
+}
+
+void PhysicsSystem::loadAndPlaceBody3D(Entity entity){
+    Body3DComponent& body = scene->getComponent<Body3DComponent>(entity);
+
+    if (loadBody3D(entity) && !body.body.IsInvalid()){
+        updateBody3DPosition(scene->getSignature(entity), entity, body);
+    }
 }
 
 void PhysicsSystem::destroyBody3D(Body3DComponent& body){
@@ -2968,12 +2984,7 @@ void PhysicsSystem::load(){
 #ifdef DORIAX_PHYSICS_2D
     auto bodies2d = scene->getComponentArray<Body2DComponent>();
     for (size_t i = 0; i < bodies2d->size(); i++){
-        Body2DComponent& body = bodies2d->getComponentFromIndex(i);
-        Entity entity = bodies2d->getEntity(i);
-
-        if (loadBody2D(entity) && b2Body_IsValid(body.body)){
-            updateBody2DPosition(scene->getSignature(entity), entity, body);
-        }
+        loadAndPlaceBody2D(bodies2d->getEntity(i));
     }
 
     auto joints2d = scene->getComponentArray<Joint2DComponent>();
@@ -2989,12 +3000,7 @@ void PhysicsSystem::load(){
 #ifdef DORIAX_PHYSICS_3D
     auto bodies3d = scene->getComponentArray<Body3DComponent>();
     for (size_t i = 0; i < bodies3d->size(); i++){
-        Body3DComponent& body = bodies3d->getComponentFromIndex(i);
-        Entity entity = bodies3d->getEntity(i);
-
-        if (loadBody3D(entity) && !body.body.IsInvalid()){
-            updateBody3DPosition(scene->getSignature(entity), entity, body);
-        }
+        loadAndPlaceBody3D(bodies3d->getEntity(i));
     }
 
     auto joints3d = scene->getComponentArray<Joint3DComponent>();

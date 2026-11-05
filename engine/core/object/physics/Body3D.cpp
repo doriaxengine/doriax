@@ -68,8 +68,13 @@ Body3D& Body3D::operator=(const Body3D& rhs){
 
 void Body3D::checkBody(const Body3DComponent& body) const{
     if (body.body.IsInvalid()){
-        Log::error("Body3D is not loaded");
-        throw std::runtime_error("Body3D is not loaded");
+        // a script's init runs before the scene's first load
+        scene->getSystem<PhysicsSystem>()->loadAndPlaceBody3D(entity);
+
+        if (body.body.IsInvalid()){
+            Log::error("Body3D is not loaded");
+            throw std::runtime_error("Body3D is not loaded");
+        }
     }
 }
 

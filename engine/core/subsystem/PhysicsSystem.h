@@ -191,12 +191,14 @@ namespace doriax{
 		b2BodyId getBody(Entity entity);
 
 		bool loadBody2D(Entity entity);
+		void loadAndPlaceBody2D(Entity entity);
 		void destroyBody2D(Body2DComponent& body);
 #endif
 
 #ifdef DORIAX_PHYSICS_3D
 		JPH::PhysicsSystem* getWorld3D();
 		bool loadBody3D(Entity entity);
+		void loadAndPlaceBody3D(Entity entity);
 		void destroyBody3D(Body3DComponent& body);
 #endif
 
