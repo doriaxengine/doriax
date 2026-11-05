@@ -53,6 +53,11 @@ Scene::~Scene(){
     // and a Lua wrapper collected after this would destroy its entity in it
     EntityHandle::forgetScene(this);
     destroy();
+    // destroy() also runs on view recreation, which keeps the framebuffers
+    auto cameras = getComponentArray<CameraComponent>();
+    for (size_t i = 0; i < cameras->size(); i++) {
+        delete cameras->getComponentFromIndex(i).framebuffer;
+    }
 }
 
 template<typename Component, typename Callback>
