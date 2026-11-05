@@ -13,6 +13,9 @@
 #include "Log.h"
 
 #include <climits>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 using namespace doriax;
 
@@ -74,14 +77,19 @@ unsigned int File::write(unsigned char *aSrc, unsigned int aBytes){
 unsigned int File::length() {
     if (!fileHandle)
         return 0;
+    #ifndef _WIN32
+    // seeking a directory reports a made-up size, Windows can't open one
+    struct stat info;
+    if (fstat(fileno(fileHandle), &info) == 0 && S_ISDIR(info.st_mode))
+        return 0;
+    #endif
     long pos = ftell(fileHandle);
     if (pos < 0)
         return 0;
     fseek(fileHandle, 0, SEEK_END);
     long len = ftell(fileHandle);
     fseek(fileHandle, pos, SEEK_SET);
-    // also a directory, which can report the largest long
-    if (len < 0 || len == LONG_MAX || (unsigned long)len > UINT_MAX)
+    if (len < 0 || (unsigned long)len > UINT_MAX)
         return 0;
     return (unsigned int)len;
 }
