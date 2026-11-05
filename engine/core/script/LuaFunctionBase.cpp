@@ -189,7 +189,7 @@ void LuaFunctionBase::push_value(lua_State *vm, bool b){
 }
 
 void LuaFunctionBase::push_value(lua_State *vm, const std::string &s){
-    lua_pushstring(vm, s.c_str());
+    lua_pushlstring(vm, s.data(), s.size());
 }
 
 void LuaFunctionBase::push_value(lua_State *vm, wchar_t s){
@@ -264,8 +264,9 @@ bool LuaFunctionBase::get_value<bool>(lua_State* vm){
 template <>
 std::string LuaFunctionBase::get_value<std::string>(lua_State* vm){
     // nil after a script error, or any value without a string form
-    const char* str = lua_tostring(vm, -1);
-    std::string val = str ? str : "";
+    size_t len = 0;
+    const char* str = lua_tolstring(vm, -1, &len);
+    std::string val(str ? str : "", len);
     lua_pop(vm, 1);
     return val;
 }
