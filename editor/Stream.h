@@ -153,9 +153,6 @@ namespace doriax::editor {
         static YAML::Node encodeIndexBuffer(const IndexBuffer& buffer);
         static void decodeIndexBuffer(IndexBuffer& buffer, const YAML::Node& node);
 
-        static YAML::Node encodeExternalBuffer(const ExternalBuffer& buffer);
-        static void decodeExternalBuffer(ExternalBuffer& buffer, const YAML::Node& node);
-
         static YAML::Node encodeSubmesh(const Submesh& submesh, bool embedTextureData = true);
         static Submesh decodeSubmesh(const YAML::Node& node, const Submesh* oldSubmesh = nullptr);
 

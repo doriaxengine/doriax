@@ -1618,17 +1618,6 @@ void editor::Stream::decodeIndexBuffer(IndexBuffer& buffer, const YAML::Node& no
     decodeBuffer(buffer, node);
 }
 
-YAML::Node editor::Stream::encodeExternalBuffer(const ExternalBuffer& buffer) {
-    YAML::Node node = encodeBuffer(buffer); // Use base Buffer encoding
-    node["name"] = buffer.getName(); // Add ExternalBuffer specific property
-    return node;
-}
-
-void editor::Stream::decodeExternalBuffer(ExternalBuffer& buffer, const YAML::Node& node) {
-    decodeBuffer(buffer, node); // Use base Buffer decoding
-    buffer.setName(node["name"].as<std::string>()); // Set ExternalBuffer specific property
-}
-
 YAML::Node editor::Stream::encodeSubmesh(const Submesh& submesh, bool embedTextureData) {
     YAML::Node node;
 
@@ -4941,13 +4930,7 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     if (encodeBuffers){
         node["buffer"] = encodeInterleavedBuffer(mesh.buffer);
         node["indices"] = encodeIndexBuffer(mesh.indices);
-
-        // Encode external buffers
-        YAML::Node eBuffersNode;
-        for (unsigned int i = 0; i < mesh.numExternalBuffers; i++) {
-            eBuffersNode.push_back(encodeExternalBuffer(mesh.eBuffers[i]));
-        }
-        node["eBuffers"] = eBuffersNode;
+        // eBuffers are not saved: they point into model data that the model reloads
     }
 
     //node["vertexCount"] = mesh.vertexCount;
@@ -5028,15 +5011,6 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
 
     if (node["indices"]) {
         decodeIndexBuffer(mesh.indices, node["indices"]);
-    }
-
-    // Decode external buffers
-    if (node["eBuffers"]) {
-        auto eBuffersNode = node["eBuffers"];
-        for (unsigned int i = 0; i < eBuffersNode.size() && mesh.eBuffers.validIndex(static_cast<int>(i)); i++) {
-            decodeExternalBuffer(mesh.eBuffers[i], eBuffersNode[i]);
-        }
-        mesh.numExternalBuffers = eBuffersNode.size();
     }
 
     //mesh.vertexCount = node["vertexCount"].as<uint32_t>();

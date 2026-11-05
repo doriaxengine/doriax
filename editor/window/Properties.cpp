@@ -5989,9 +5989,22 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
     // Static variables for shape parameters
     static ShapeParameters shapeParams;
 
+    // a model mesh is rebuilt from its file on load, so shape and submesh edits would be lost
+    bool modelGeometry = false;
+    for (const Entity& entity : entities) {
+        if (Stream::isModelBackedMesh(entity, sceneProject->scene, sceneProject->scene->getSignature(entity))) {
+            modelGeometry = true;
+            break;
+        }
+    }
+
     // Add New Geometry property row
     propertyHeader("Geometry");
-    if (ImGui::Button("Create Shape")){
+    if (modelGeometry){
+        ImGui::TextDisabled("From model file");
+        ImGui::SameLine();
+        helpMarker("Geometry and submeshes come from the model file.");
+    }else if (ImGui::Button("Create Shape")){
         ImGui::OpenPopup("menusettings_shape_geometry");
 
         updateShapePreview(shapeParams);
@@ -6246,7 +6259,7 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
         if (hasGeneratedSubmeshes) break;
     }
 
-    if (!hasGeneratedSubmeshes && ImGui::Button(ICON_FA_PLUS " Add Submesh", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+    if (!hasGeneratedSubmeshes && !modelGeometry && ImGui::Button(ICON_FA_PLUS " Add Submesh", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
         for (Entity& entity : entities) {
             MeshComponent meshComp = sceneProject->scene->getComponent<MeshComponent>(entity);
             const unsigned int newSubmeshIndex = meshComp.numSubmeshes;
@@ -6276,7 +6289,7 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
         ImVec2 separatorMax = ImGui::GetItemRectMax();
         ImVec2 cursorAfterSeparator = ImGui::GetCursorPos();
 
-        {
+        if (!modelGeometry) {
             float clearButtonFramePadding = ImGui::GetStyle().FramePadding.x / 4.0f;
             float clearButtonWidth = ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x;
             ImVec2 deleteButtonSize = ImVec2(clearButtonWidth + clearButtonFramePadding * 2, 0);
