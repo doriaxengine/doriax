@@ -13,7 +13,7 @@
 
 using namespace doriax;
 
-std::unordered_map<std::string, std::future<std::array<TextureData,6>>> TextureDataPool::pendingBuilds;
+std::unordered_map<std::string, std::future<std::shared_ptr<std::array<TextureData,6>>>> TextureDataPool::pendingBuilds;
 std::mutex TextureDataPool::cacheMutex;
 std::atomic<bool> TextureDataPool::shutdownRequested{false};
 
@@ -121,8 +121,7 @@ TextureLoadResult TextureDataPool::loadFromFile(const std::string& id, const std
             if (future.valid() && future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 // Build finished, move to cache
                 try {
-                    std::array<TextureData,6> data = future.get();
-                    shared = std::make_shared<std::array<TextureData,6>>(data);
+                    shared = future.get();
                     pendingBuilds.erase(it);
 
                     result.state = ResourceLoadState::Finished;
@@ -168,8 +167,7 @@ TextureLoadResult TextureDataPool::loadFromFile(const std::string& id, const std
     } else {
         // Synchronous loading remains the same
         try {
-            std::array<TextureData,6> data = loadTextureInternal(id, paths, numFaces, fixAlphaBorder, false);
-            shared = std::make_shared<std::array<TextureData,6>>(data);
+            shared = loadTextureInternal(id, paths, numFaces, fixAlphaBorder, false);
 
             result.state = ResourceLoadState::Finished;
             result.data = shared;
@@ -185,7 +183,7 @@ TextureLoadResult TextureDataPool::loadFromFile(const std::string& id, const std
     return result;
 }
 
-std::array<TextureData,6> TextureDataPool::loadTextureInternal(const std::string& id, const std::array<std::string, 6>& paths, size_t numFaces, bool fixAlphaBorder, bool trackProgress) {
+std::shared_ptr<std::array<TextureData,6>> TextureDataPool::loadTextureInternal(const std::string& id, const std::array<std::string, 6>& paths, size_t numFaces, bool fixAlphaBorder, bool trackProgress) {
     uint64_t buildId = std::hash<std::string>{}(id);
 
     if (trackProgress) {
@@ -199,7 +197,12 @@ std::array<TextureData,6> TextureDataPool::loadTextureInternal(const std::string
         ResourceProgress::updateProgress(buildId, startProgress);
     }
 
-    std::array<TextureData,6> data;
+    auto shared = std::make_shared<std::array<TextureData,6>>();
+    std::array<TextureData,6>& data = *shared;
+    // frees the pixels even if the load fails or is never used
+    for (TextureData& face : data) {
+        face.setDataOwned(true);
+    }
 
     bool isSingleFileCube = (!paths[0].empty());
     for (int f = 1; f < 6 && isSingleFileCube; f++){
@@ -233,7 +236,7 @@ std::array<TextureData,6> TextureDataPool::loadTextureInternal(const std::string
             ResourceProgress::completeBuild(buildId);
         }
 
-        return data;
+        return shared;
     }
 
     for (size_t f = 0; f < numFaces; f++) {
@@ -313,7 +316,7 @@ std::array<TextureData,6> TextureDataPool::loadTextureInternal(const std::string
         ResourceProgress::completeBuild(std::hash<std::string>{}(id));
     }
 
-    return data;
+    return shared;
 }
 
 std::string TextureDataPool::getTextureDisplayName(const std::string& path) {

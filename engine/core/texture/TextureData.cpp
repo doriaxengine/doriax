@@ -368,6 +368,7 @@ bool TextureData::loadTextureFromMemory(unsigned char* data, unsigned int dataLe
 
 bool TextureData::loadCubeMapFromSingleFile(const char* filename, std::array<TextureData, 6>& data){
     TextureData texture;
+    texture.setDataOwned(true);
     if (!texture.loadTextureFromFile(filename))
         return false;
 
@@ -444,29 +445,22 @@ bool TextureData::loadCubeMapFromSingleFile(const char* filename, std::array<Tex
         }
 
         data[faceIndex] = TextureData(tileW, tileH, (unsigned int)bufsize, srcFormat, srcChannels, faceData);
+        data[faceIndex].setDataOwned(true);
     };
 
-    try {
-        // Using DORIAX convention:
-        // Right (+X)
-        extractFace(0, right[0], right[1]);
-        // Left (-X)
-        extractFace(1, left[0], left[1]);
-        // Top (+Y)
-        extractFace(2, top[0], top[1]);
-        // Bottom (-Y)
-        extractFace(3, bottom[0], bottom[1]);
-        // Front (+Z)
-        extractFace(4, front[0], front[1]);
-        // Back (-Z)
-        extractFace(5, back[0], back[1]);
-    } catch (...) {
-        texture.releaseImageData();
-        throw;
-    }
-
-    // Release temporary source image data (it is not stored in the returned faces)
-    texture.releaseImageData();
+    // Using DORIAX convention:
+    // Right (+X)
+    extractFace(0, right[0], right[1]);
+    // Left (-X)
+    extractFace(1, left[0], left[1]);
+    // Top (+Y)
+    extractFace(2, top[0], top[1]);
+    // Bottom (-Y)
+    extractFace(3, bottom[0], bottom[1]);
+    // Front (+Z)
+    extractFace(4, front[0], front[1]);
+    // Back (-Z)
+    extractFace(5, back[0], back[1]);
 
     return true;
 }
@@ -480,7 +474,8 @@ void TextureData::copy ( const TextureData& v ){
     this->color_format = v.color_format;
     this->channels = v.channels;
 
-    this->dataOwned = v.dataOwned;
+    // a copy shares the pixels, only the original frees them
+    this->dataOwned = false;
 
     this->transparent = v.transparent;
 
