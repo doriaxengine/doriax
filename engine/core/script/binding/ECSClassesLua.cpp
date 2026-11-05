@@ -778,6 +778,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("name", &TileRectData::name, &TileRectData::name)
         .addProperty("submeshId", &TileRectData::submeshId, &TileRectData::submeshId)
         .addProperty("rect", &TileRectData::rect, &TileRectData::rect)
+        .addProperty("collision", &TileRectData::collision, &TileRectData::collision)
         .endClass();
 
     luabridge::getGlobalNamespace(L)

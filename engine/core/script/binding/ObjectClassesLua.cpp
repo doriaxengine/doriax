@@ -1258,6 +1258,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("createCapsuleShape", &Body2D::createCapsuleShape)
         .addFunction("createSegmentShape", &Body2D::createSegmentShape)
         .addFunction("createChainShape", &Body2D::createChainShape)
+        .addFunction("createTilemapShape", &Body2D::createTilemapShape)
         .addFunction("removeAllShapes", &Body2D::removeAllShapes)
         .addFunction("getBodyContacts", &Body2D::getBodyContacts)
         .addFunction("getShapeContacts", &Body2D::getShapeContacts)

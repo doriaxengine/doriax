@@ -494,7 +494,14 @@ void editor::SceneRender2D::createOrUpdateBodyLines(Entity entity, const Transfo
             }
         };
 
-        if (shape.type == Shape2DType::POLYGON){
+        if (shape.type == Shape2DType::POLYGON && shape.source == Shape2DSource::ENTITY_TILEMAP){
+            if (TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity)){
+                for (const Rect& rect : PhysicsSystem::getTilemapCollisionRects(*tilemap)){
+                    addRoundedRect(scaledPoint(Vector2(rect.getX(), rect.getY())),
+                                   scaledPoint(Vector2(rect.getX() + rect.getWidth(), rect.getY() + rect.getHeight())), 0.0f);
+                }
+            }
+        }else if (shape.type == Shape2DType::POLYGON){
             if (shape.numVertices >= 3){
                 if (shape.radius > 0.0f && shape.numVertices == 4){
                     Vector2 minPt = scaledPoint(shape.vertices[0]);

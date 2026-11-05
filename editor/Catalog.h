@@ -61,6 +61,8 @@ namespace doriax::editor{
         UpdateFlags_Water_Texture       = (uint64_t)1 << 38,
         // button visuals, applied to its UI component
         UpdateFlags_Button              = (uint64_t)1 << 39,
+        // rebuilds a 2D body's shapes only, keeping its velocity and other live state
+        UpdateFlags_Body2D_Shapes       = (uint64_t)1 << 40,
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };

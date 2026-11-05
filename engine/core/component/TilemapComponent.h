@@ -27,6 +27,7 @@ namespace doriax{
         std::string name;
         int submeshId = -1;
         Rect rect;
+        bool collision = true; // solid in a Body2D shape with a tilemap source
     };
     
     struct TileData{

@@ -663,7 +663,7 @@ bool readNonNegativeFloat(const Json& arguments, const char* field, float& targe
 
 bool parseShape2DType(const std::string& value, Shape2DType& out) {
     const std::string token = lower(value);
-    if (token == "box" || token == "polygon") {
+    if (token == "box" || token == "polygon" || token == "tilemap") {
         out = Shape2DType::POLYGON;
         return true;
     }
@@ -3095,7 +3095,7 @@ ActionResult EditorActionExecutor::addBody2DShape(const Json& arguments) {
     const std::string shapeName = lower(arguments.value("shape_type", ""));
     Shape2D shape;
     if (!parseShape2DType(shapeName, shape.type)) {
-        return failResult("Unsupported shape_type. Use box, circle, capsule, segment, polygon, or chain.");
+        return failResult("Unsupported shape_type. Use box, circle, capsule, segment, polygon, chain, or tilemap.");
     }
 
     std::string error;
@@ -3146,6 +3146,11 @@ ActionResult EditorActionExecutor::addBody2DShape(const Json& arguments) {
             return failResult("segment requires point_a and point_b.");
         }
         if (shape.pointA == shape.pointB) return failResult("segment point_a and point_b must differ.");
+    } else if (shapeName == "tilemap") {
+        if (!sceneProject->scene->findComponent<TilemapComponent>(entity)) {
+            return failResult("tilemap requires an entity with a Tilemap component.");
+        }
+        shape.source = Shape2DSource::ENTITY_TILEMAP;
     } else {
         if (!arguments.contains("points") || !parseVector2Array(arguments["points"], shape.vertices, shape.numVertices, error)) {
             return failResult(arguments.contains("points") ? error : shapeName + " requires points.");

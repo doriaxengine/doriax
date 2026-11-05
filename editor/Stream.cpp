@@ -1726,6 +1726,7 @@ YAML::Node editor::Stream::encodeTileRectData(const TileRectData& tileRect) {
     node["name"] = tileRect.name;
     node["submeshId"] = tileRect.submeshId;
     node["rect"] = encodeRect(tileRect.rect);
+    node["collision"] = tileRect.collision;
     return node;
 }
 
@@ -1734,6 +1735,7 @@ TileRectData editor::Stream::decodeTileRectData(const YAML::Node& node) {
     if (node["name"]) tileRect.name = node["name"].as<std::string>();
     if (node["submeshId"]) tileRect.submeshId = node["submeshId"].as<int>();
     if (node["rect"]) tileRect.rect = decodeRect(node["rect"]);
+    if (node["collision"]) tileRect.collision = node["collision"].as<bool>();
     return tileRect;
 }
 
@@ -6842,6 +6844,7 @@ YAML::Node editor::Stream::encodeBody2DComponent(const Body2DComponent& body) {
     for (size_t i = 0; i < body.numShapes; i++) {
         YAML::Node shapeNode;
         shapeNode["type"] = shape2DTypeToString(body.shapes[i].type);
+        shapeNode["source"] = (body.shapes[i].source == Shape2DSource::ENTITY_TILEMAP) ? "entity_tilemap" : "none";
         shapeNode["pointA"] = encodeVector2(body.shapes[i].pointA);
         shapeNode["pointB"] = encodeVector2(body.shapes[i].pointB);
         shapeNode["radius"] = body.shapes[i].radius;
@@ -6887,6 +6890,10 @@ Body2DComponent editor::Stream::decodeBody2DComponent(const YAML::Node& node, co
         for (size_t i = 0; i < count; i++) {
             if (node["shapes"][i]["type"]) {
                 body.shapes[i].type = stringToShape2DType(node["shapes"][i]["type"].as<std::string>());
+            }
+            if (node["shapes"][i]["source"]) {
+                std::string source = node["shapes"][i]["source"].as<std::string>();
+                body.shapes[i].source = (source == "entity_tilemap") ? Shape2DSource::ENTITY_TILEMAP : Shape2DSource::NONE;
             }
             if (node["shapes"][i]["pointA"]) {
                 body.shapes[i].pointA = decodeVector2(node["shapes"][i]["pointA"]);

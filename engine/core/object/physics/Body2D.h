@@ -51,6 +51,8 @@ namespace doriax{
         int createSegmentShape(Vector2 point1, Vector2 point2);
         // one-sided: counter-clockwise collides outside, clockwise inside
         int createChainShape(std::vector<Vector2> vertices, bool loop);
+        // boxes over the entity's tiles; set needUpdateShapes after changing tiles
+        int createTilemapShape();
 
         void removeAllShapes();
 

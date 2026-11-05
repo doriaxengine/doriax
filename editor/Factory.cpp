@@ -1273,6 +1273,7 @@ std::string editor::Factory::createTilemapComponent(int indentSpaces, EntityRegi
         }
         code << ind << "tilemap.tilesRect[" << i << "].submeshId = " << tilemap.tilesRect[i].submeshId << ";\n";
         code << ind << "tilemap.tilesRect[" << i << "].rect = " << formatRect(tilemap.tilesRect[i].rect) << ";\n";
+        code << ind << "tilemap.tilesRect[" << i << "].collision = " << formatBool(tilemap.tilesRect[i].collision) << ";\n";
     }
     if (tilemap.numTilesRect > 0) {
         code << ind << "tilemap.numTilesRect = " << tilemap.numTilesRect << ";\n";
@@ -1708,6 +1709,13 @@ std::string editor::Factory::formatShape2DType(Shape2DType type) {
     }
 }
 
+std::string editor::Factory::formatShape2DSource(Shape2DSource source) {
+    switch (source) {
+        case Shape2DSource::ENTITY_TILEMAP: return "Shape2DSource::ENTITY_TILEMAP";
+        default: return "Shape2DSource::NONE";
+    }
+}
+
 std::string editor::Factory::formatBody3DMotionQuality(Body3DMotionQuality motionQuality) {
     switch (motionQuality) {
         case Body3DMotionQuality::LINEAR_CAST: return "Body3DMotionQuality::LINEAR_CAST";
@@ -1796,6 +1804,7 @@ std::string editor::Factory::createBody2DComponent(int indentSpaces, EntityRegis
     for (size_t i = 0; i < body.numShapes; i++) {
         const std::string idx = std::to_string(i);
         code << ind << "body2d.shapes[" << idx << "].type = " << formatShape2DType(body.shapes[i].type) << ";\n";
+        code << ind << "body2d.shapes[" << idx << "].source = " << formatShape2DSource(body.shapes[i].source) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].pointA = " << formatVector2(body.shapes[i].pointA) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].pointB = " << formatVector2(body.shapes[i].pointB) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].radius = " << formatFloat(body.shapes[i].radius) << ";\n";

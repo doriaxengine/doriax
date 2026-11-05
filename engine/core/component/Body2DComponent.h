@@ -9,6 +9,7 @@
 #include "math/Vector3.h"
 #include "math/Quaternion.h"
 #include "util/HybridArray.h"
+#include <vector>
 #ifdef DORIAX_PHYSICS_2D
 #include "box2d/box2d.h"
 #endif
@@ -23,13 +24,21 @@ namespace doriax{
         CHAIN // chain is a different type in Box2D 3.x
     };
 
+    enum class Shape2DSource{
+        NONE,
+        ENTITY_TILEMAP // polygon boxes over the entity's tiles whose rect has collision
+    };
+
     struct DORIAX_API Shape2D{
 #ifdef DORIAX_PHYSICS_2D
         b2ShapeId shape = b2_nullShapeId;
         b2ChainId chain = b2_nullChainId;
+        // one Box2D polygon per box of a tilemap source
+        std::vector<b2ShapeId> tileShapes;
 #endif
 
         Shape2DType type = Shape2DType::POLYGON;
+        Shape2DSource source = Shape2DSource::NONE;
 
         Vector2 pointA = Vector2::ZERO;
         Vector2 pointB = Vector2::ZERO;

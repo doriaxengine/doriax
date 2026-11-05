@@ -9,6 +9,8 @@
 #include "math/Vector3.h"
 #include "math/Vector4.h"
 #include "math/Quaternion.h"
+#include "math/Rect.h"
+#include "component/TilemapComponent.h"
 #ifdef DORIAX_PHYSICS_2D
 #include "component/Body2DComponent.h"
 #include "component/Joint2DComponent.h"
@@ -229,6 +231,8 @@ namespace doriax{
 		static uint64_t getMeshSignature(Scene* scene, Entity entity);
 		// in the entity's local space: planes xyz = outward normal and w = distance; needs 3D physics
 		static bool getMeshConvexHull(Scene* scene, Entity entity, std::vector<Vector4>& planes, std::vector<Vector3>& points);
+		// boxes of a tilemap shape source in local space, tiles that touch are merged
+		static std::vector<Rect> getTilemapCollisionRects(const TilemapComponent& tilemap);
 
 #ifdef DORIAX_PHYSICS_3D
 		JPH::Quat toValidatedJoltRotation(const Quaternion& rotation, Entity entity, int shapeIndex);

@@ -970,6 +970,9 @@ namespace {
         if (propertyName.compare(fieldPos, 4, "type") == 0 && fieldPos + 4 == propertyName.size()) {
             return {PropertyType::Enum, UpdateFlags_Body2D, (void*)&defaultShape.type, (void*)&shape.type};
         }
+        if (propertyName.compare(fieldPos, 6, "source") == 0 && fieldPos + 6 == propertyName.size()) {
+            return {PropertyType::Enum, UpdateFlags_Body2D, (void*)&defaultShape.source, (void*)&shape.source};
+        }
         if (propertyName.compare(fieldPos, 6, "pointA") == 0 && fieldPos + 6 == propertyName.size()) {
             return {PropertyType::Vector2, UpdateFlags_Body2D, (void*)&defaultShape.pointA, (void*)&shape.pointA};
         }
@@ -1266,12 +1269,12 @@ namespace {
 
         // numTilesRect
         if (propertyName == "numTilesRect") {
-            return {PropertyType::UInt, UpdateFlags_Tilemap, (void*)&def.numTilesRect, (void*)&comp->numTilesRect};
+            return {PropertyType::UInt, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&def.numTilesRect, (void*)&comp->numTilesRect};
         }
 
         // numTiles
         if (propertyName == "numTiles") {
-            return {PropertyType::UInt, UpdateFlags_Tilemap, (void*)&def.numTiles, (void*)&comp->numTiles};
+            return {PropertyType::UInt, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&def.numTiles, (void*)&comp->numTiles};
         }
 
         // tilesRect[N].field
@@ -1287,7 +1290,7 @@ namespace {
 
             pos++;
             if (pos == propertyName.size()) {
-                return {PropertyType::Custom, UpdateFlags_Tilemap, (void*)&defTileRect, (void*)&tileRect};
+                return {PropertyType::Custom, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTileRect, (void*)&tileRect};
             }
             if (propertyName[pos] != '.') {
                 return PropertyData();
@@ -1303,6 +1306,9 @@ namespace {
             }
             if (propertyName.compare(fieldPos, 4, "rect") == 0 && fieldPos + 4 == propertyName.size()) {
                 return {PropertyType::Vector4, UpdateFlags_Tilemap, (void*)&defTileRect.rect, (void*)&tileRect.rect};
+            }
+            if (propertyName.compare(fieldPos, 9, "collision") == 0 && fieldPos + 9 == propertyName.size()) {
+                return {PropertyType::Bool, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTileRect.collision, (void*)&tileRect.collision};
             }
 
             return PropertyData();
@@ -1321,7 +1327,7 @@ namespace {
 
             pos++;
             if (pos == propertyName.size()) {
-                return {PropertyType::Custom, UpdateFlags_Tilemap, (void*)&defTile, (void*)&tile};
+                return {PropertyType::Custom, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile, (void*)&tile};
             }
             if (propertyName[pos] != '.') {
                 return PropertyData();
@@ -1333,16 +1339,16 @@ namespace {
                 return {PropertyType::String, UpdateFlags_Tilemap, (void*)&defTile.name, (void*)&tile.name};
             }
             if (propertyName.compare(fieldPos, 6, "rectId") == 0 && fieldPos + 6 == propertyName.size()) {
-                return {PropertyType::Int, UpdateFlags_Tilemap, (void*)&defTile.rectId, (void*)&tile.rectId};
+                return {PropertyType::Int, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.rectId, (void*)&tile.rectId};
             }
             if (propertyName.compare(fieldPos, 8, "position") == 0 && fieldPos + 8 == propertyName.size()) {
-                return {PropertyType::Vector2, UpdateFlags_Tilemap, (void*)&defTile.position, (void*)&tile.position};
+                return {PropertyType::Vector2, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.position, (void*)&tile.position};
             }
             if (propertyName.compare(fieldPos, 5, "width") == 0 && fieldPos + 5 == propertyName.size()) {
-                return {PropertyType::Float, UpdateFlags_Tilemap, (void*)&defTile.width, (void*)&tile.width};
+                return {PropertyType::Float, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.width, (void*)&tile.width};
             }
             if (propertyName.compare(fieldPos, 6, "height") == 0 && fieldPos + 6 == propertyName.size()) {
-                return {PropertyType::Float, UpdateFlags_Tilemap, (void*)&defTile.height, (void*)&tile.height};
+                return {PropertyType::Float, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.height, (void*)&tile.height};
             }
 
             return PropertyData();
@@ -2382,8 +2388,8 @@ namespace {
 
         enumerateFromDescriptors(compRef, ps, kTilemapTopProperties);
 
-        ps["numTilesRect"] = {PropertyType::UInt, UpdateFlags_Tilemap, (void*)&def.numTilesRect, compRef ? (void*)&comp->numTilesRect : nullptr};
-        ps["numTiles"] = {PropertyType::UInt, UpdateFlags_Tilemap, (void*)&def.numTiles, compRef ? (void*)&comp->numTiles : nullptr};
+        ps["numTilesRect"] = {PropertyType::UInt, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&def.numTilesRect, compRef ? (void*)&comp->numTilesRect : nullptr};
+        ps["numTiles"] = {PropertyType::UInt, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&def.numTiles, compRef ? (void*)&comp->numTiles : nullptr};
 
         for (unsigned int i = 0; i < (compRef ? comp->numTilesRect : 0); i++) {
             std::string idx = std::to_string(i);
@@ -2394,6 +2400,7 @@ namespace {
             ps["tilesRect[" + idx + "].name"] = {PropertyType::String, UpdateFlags_Tilemap, (void*)&defTileRect.name, (void*)&tileRect.name};
             ps["tilesRect[" + idx + "].submeshId"] = {PropertyType::Int, UpdateFlags_Tilemap, (void*)&defTileRect.submeshId, (void*)&tileRect.submeshId};
             ps["tilesRect[" + idx + "].rect"] = {PropertyType::Vector4, UpdateFlags_Tilemap, (void*)&defTileRect.rect, (void*)&tileRect.rect};
+            ps["tilesRect[" + idx + "].collision"] = {PropertyType::Bool, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTileRect.collision, (void*)&tileRect.collision};
         }
 
         for (unsigned int i = 0; i < (compRef ? comp->numTiles : 0); i++) {
@@ -2403,10 +2410,10 @@ namespace {
             TileData& defTile = def.tiles[0];
 
             ps["tiles[" + idx + "].name"] = {PropertyType::String, UpdateFlags_Tilemap, (void*)&defTile.name, (void*)&tile.name};
-            ps["tiles[" + idx + "].rectId"] = {PropertyType::Int, UpdateFlags_Tilemap, (void*)&defTile.rectId, (void*)&tile.rectId};
-            ps["tiles[" + idx + "].position"] = {PropertyType::Vector2, UpdateFlags_Tilemap, (void*)&defTile.position, (void*)&tile.position};
-            ps["tiles[" + idx + "].width"] = {PropertyType::Float, UpdateFlags_Tilemap, (void*)&defTile.width, (void*)&tile.width};
-            ps["tiles[" + idx + "].height"] = {PropertyType::Float, UpdateFlags_Tilemap, (void*)&defTile.height, (void*)&tile.height};
+            ps["tiles[" + idx + "].rectId"] = {PropertyType::Int, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.rectId, (void*)&tile.rectId};
+            ps["tiles[" + idx + "].position"] = {PropertyType::Vector2, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.position, (void*)&tile.position};
+            ps["tiles[" + idx + "].width"] = {PropertyType::Float, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.width, (void*)&tile.width};
+            ps["tiles[" + idx + "].height"] = {PropertyType::Float, UpdateFlags_Tilemap | UpdateFlags_Body2D_Shapes, (void*)&defTile.height, (void*)&tile.height};
         }
     }
 
@@ -2564,6 +2571,7 @@ namespace {
 
             ps["shapes[" + idx + "]"] = {PropertyType::Custom, UpdateFlags_Body2D, (void*)&defShape, compRef ? (void*)&shape : nullptr};
             ps["shapes[" + idx + "].type"] = {PropertyType::Enum, UpdateFlags_Body2D, (void*)&defShape.type, compRef ? (void*)&shape.type : nullptr};
+            ps["shapes[" + idx + "].source"] = {PropertyType::Enum, UpdateFlags_Body2D, (void*)&defShape.source, compRef ? (void*)&shape.source : nullptr};
             ps["shapes[" + idx + "].pointA"] = {PropertyType::Vector2, UpdateFlags_Body2D, (void*)&defShape.pointA, compRef ? (void*)&shape.pointA : nullptr};
             ps["shapes[" + idx + "].pointB"] = {PropertyType::Vector2, UpdateFlags_Body2D, (void*)&defShape.pointB, compRef ? (void*)&shape.pointB : nullptr};
             ps["shapes[" + idx + "].radius"] = {PropertyType::Float, UpdateFlags_Body2D, (void*)&defShape.radius, compRef ? (void*)&shape.radius : nullptr};
@@ -4295,6 +4303,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
     if (updateFlags & UpdateFlags_Body2D){
         if (Body2DComponent* body = registry->findComponent<Body2DComponent>(entity)){
             body->needReloadBody = true;
+            body->needUpdateShapes = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Body2D_Shapes){
+        if (Body2DComponent* body = registry->findComponent<Body2DComponent>(entity)){
             body->needUpdateShapes = true;
         }
     }

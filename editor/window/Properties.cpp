@@ -347,6 +347,11 @@ static std::vector<editor::EnumEntry> entriesShape2DType = {
     { (int)Shape2DType::CHAIN, "Chain" }
 };
 
+static std::vector<editor::EnumEntry> entriesShape2DSource = {
+    { (int)Shape2DSource::NONE, "None" },
+    { (int)Shape2DSource::ENTITY_TILEMAP, "Entity Tilemap" }
+};
+
 static std::vector<editor::EnumEntry> entriesShape3DType = {
     { (int)Shape3DType::BOX, "Box" },
     { (int)Shape3DType::SPHERE, "Sphere" },
@@ -7800,6 +7805,7 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                         std::string name;
                         int submeshId;
                         Vector4 rect;
+                        bool collision;
                     };
                     std::vector<KeptRect> kept;
                     for (unsigned int i = 0; i < tilemap.numTilesRect; i++) {
@@ -7809,6 +7815,7 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                             kr.submeshId = tilemap.tilesRect[i].submeshId;
                             kr.rect = Vector4(tilemap.tilesRect[i].rect.getX(), tilemap.tilesRect[i].rect.getY(),
                                               tilemap.tilesRect[i].rect.getWidth(), tilemap.tilesRect[i].rect.getHeight());
+                            kr.collision = tilemap.tilesRect[i].collision;
                             kept.push_back(kr);
                         }
                     }
@@ -7825,6 +7832,8 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                             prefix + ".submeshId", kept[i].submeshId);
                         multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
                             prefix + ".rect", kept[i].rect);
+                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
+                            prefix + ".collision", kept[i].collision);
                     }
 
                     // Write new rects from slicer result
@@ -7837,6 +7846,8 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                         multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
                             prefix + ".rect", Vector4(result.rects[i].rect.getX(), result.rects[i].rect.getY(),
                                 result.rects[i].rect.getWidth(), result.rects[i].rect.getHeight()));
+                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
+                            prefix + ".collision", true);
                     }
 
                     // Clear leftover slots beyond new total
@@ -7848,6 +7859,8 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                             prefix + ".submeshId", -1);
                         multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
                             prefix + ".rect", Vector4(0, 0, 0, 0));
+                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
+                            prefix + ".collision", true);
                     }
 
                     // Update numTilesRect
@@ -7924,6 +7937,7 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
 
                     float trailingWidth = arrowButtonSize.x
                             + ImGui::GetStyle().ItemSpacing.x + arrowButtonSize.x
+                            + ImGui::GetStyle().ItemSpacing.x + arrowButtonSize.x
                             + ImGui::GetStyle().ItemSpacing.x + deleteButtonSize.x;
                     if (hasFramePreview) {
                         trailingWidth += previewSize + ImGui::GetStyle().ItemSpacing.x;
@@ -7955,6 +7969,26 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                         }
                         ImGui::SameLine();
                     }
+
+                    // dimmed when the rect's tiles are left out of tilemap colliders
+                    bool rectCollision = tilemap.tilesRect[i].collision;
+                    if (!rectCollision) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+                    }
+                    if (ImGui::Button(ICON_FA_WEIGHT_HANGING "##rect_collision", arrowButtonSize)) {
+                        editor::PropertyCmd<bool>* propCmd = new editor::PropertyCmd<bool>(
+                            project, sceneProject->id, entities[0], cpType,
+                            prefix + ".collision", !rectCollision);
+                        propCmd->setNoMerge();
+                        CommandHandle::get(project->getSelectedSceneId())->addCommand(propCmd);
+                    }
+                    if (!rectCollision) {
+                        ImGui::PopStyleColor();
+                    }
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip(rectCollision ? "Collision on: these tiles are solid in an Entity Tilemap shape" : "Collision off: these tiles are left out of Entity Tilemap shapes");
+                    }
+                    ImGui::SameLine();
 
                     if (ImGui::ArrowButton("##toggle_rect", tilemapRectsButtonGroups[groupStr] ? ImGuiDir_Up : ImGuiDir_Down)) {
                         tilemapRectsButtonGroups[groupStr] = !tilemapRectsButtonGroups[groupStr];
@@ -8006,6 +8040,8 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                             multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
                                 dstPrefix + ".rect", Vector4(tilemap.tilesRect[j + 1].rect.getX(), tilemap.tilesRect[j + 1].rect.getY(),
                                     tilemap.tilesRect[j + 1].rect.getWidth(), tilemap.tilesRect[j + 1].rect.getHeight()));
+                            multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
+                                dstPrefix + ".collision", tilemap.tilesRect[j + 1].collision);
                         }
                         // Clear last slot
                         unsigned int lastIdx = tilemap.numTilesRect - 1;
@@ -8016,6 +8052,8 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                             lastPrefix + ".submeshId", -1);
                         multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
                             lastPrefix + ".rect", Vector4(0, 0, 0, 0));
+                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
+                            lastPrefix + ".collision", true);
                         for (unsigned int j = 0; j < tilemap.numTiles; j++) {
                             int rectId = tilemap.tiles[j].rectId;
                             if (rectId == (int)i) {
@@ -10570,6 +10608,13 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
             if (layoutComp->height > 0){
                 height = (float)layoutComp->height;
             }
+        }else if (TilemapComponent* tilemapComp = sceneProject->scene->findComponent<TilemapComponent>(entity)){
+            if (tilemapComp->width > 0){
+                width = (float)tilemapComp->width;
+            }
+            if (tilemapComp->height > 0){
+                height = (float)tilemapComp->height;
+            }
         }
 
         return Vector2(width, height);
@@ -10679,6 +10724,47 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
         CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
     }
 
+    if (sceneProject->scene->findComponent<TilemapComponent>(entities[0])){
+        if (ImGui::Button("Fit to Tiles##body2d")){
+            MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+
+            for (Entity entity : entities){
+                Body2DComponent* bodyComp = sceneProject->scene->findComponent<Body2DComponent>(entity);
+                TilemapComponent* tilemapComp = sceneProject->scene->findComponent<TilemapComponent>(entity);
+                if (!bodyComp || !tilemapComp){
+                    continue;
+                }
+
+                std::vector<Rect> boxes = PhysicsSystem::getTilemapCollisionRects(*tilemapComp);
+                for (size_t b = 0; b < boxes.size(); b++){
+                    const Vector2 minPt(boxes[b].getX(), boxes[b].getY());
+                    const Vector2 maxPt(minPt.x + boxes[b].getWidth(), minPt.y + boxes[b].getHeight());
+
+                    Shape2D shape;
+                    shape.numVertices = 4;
+                    shape.pointA = minPt;
+                    shape.pointB = maxPt;
+                    shape.vertices[0] = minPt;
+                    shape.vertices[1] = Vector2(maxPt.x, minPt.y);
+                    shape.vertices[2] = maxPt;
+                    shape.vertices[3] = Vector2(minPt.x, maxPt.y);
+
+                    multiCmd->addPropertyCmd<Shape2D>(project, sceneProject->id, entity, cpType, "shapes[" + std::to_string(b) + "]", shape);
+                }
+                for (size_t b = boxes.size(); b < bodyComp->numShapes; b++){
+                    multiCmd->addPropertyCmd<Shape2D>(project, sceneProject->id, entity, cpType, "shapes[" + std::to_string(b) + "]", Shape2D());
+                }
+                multiCmd->addPropertyCmd<size_t>(project, sceneProject->id, entity, cpType, "numShapes", boxes.size());
+            }
+
+            multiCmd->setNoMerge();
+            CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
+        }
+        if (ImGui::IsItemHovered()){
+            ImGui::SetTooltip("Replace the shapes with editable boxes over the tiles whose rect has Collision on");
+        }
+    }
+
     size_t numShapes = body.numShapes;
     for (Entity entity : entities){
         numShapes = std::min(numShapes, sceneProject->scene->getComponent<Body2DComponent>(entity).numShapes);
@@ -10686,6 +10772,10 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
 
     RowSettings settingsShapeType;
     settingsShapeType.enumEntries = &entriesShape2DType;
+
+    RowSettings settingsShapeSource;
+    settingsShapeSource.enumEntries = &entriesShape2DSource;
+    settingsShapeSource.help = "Entity Tilemap builds the polygon from the entity's tiles whose rect has Collision on";
 
     RowSettings settingsShapeValue;
 
@@ -10730,6 +10820,17 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
         settingsFloat.secondColSize = 6 * ImGui::GetFontSize();
 
         if (shape.type == Shape2DType::POLYGON){
+            propertyRow(RowPropertyType::Enum, cpType, shapeKey + ".source", "Source", sceneProject, entities, settingsShapeSource);
+        }
+
+        if (shape.type == Shape2DType::POLYGON && shape.source == Shape2DSource::ENTITY_TILEMAP){
+            propertyHeader("Boxes");
+            if (TilemapComponent* tilemapComp = sceneProject->scene->findComponent<TilemapComponent>(entities[0])){
+                ImGui::Text("%zu", PhysicsSystem::getTilemapCollisionRects(*tilemapComp).size());
+            }else{
+                ImGui::TextDisabled("No Tilemap on this entity");
+            }
+        }else if (shape.type == Shape2DType::POLYGON){
             propertyHeader("Vertices");
             ImGui::Text("%d", shape.numVertices);
             ImGui::SameLine();
@@ -10950,7 +11051,7 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
                 propertyRow(RowPropertyType::Bool, cpType, shapeKey + ".sensorEvents", "Sensor Events", sceneProject, entities);
             }
         }
-        if (shape.type == Shape2DType::POLYGON){
+        if (shape.type == Shape2DType::POLYGON && shape.source == Shape2DSource::NONE){
             ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::SubtleText);
             propertyHeader("Reset shape");
             ImGui::PopStyleColor();

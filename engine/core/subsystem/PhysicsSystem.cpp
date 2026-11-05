@@ -264,6 +264,30 @@ namespace {
     }
 #endif
 
+    // joins rects in a line along the axis (0 = x, 1 = y) that share the other axis span
+    std::vector<Rect> mergeRectsAlong(std::vector<Rect> rects, int axis){
+        const int other = 1 - axis;
+        // Rect [0..3] is x, y, width, height
+        std::sort(rects.begin(), rects.end(), [&](const Rect& a, const Rect& b){
+            return std::make_tuple(a[other], a[other + 2], a[axis]) < std::make_tuple(b[other], b[other + 2], b[axis]);
+        });
+
+        std::vector<Rect> merged;
+        for (const Rect& rect : rects){
+            if (!merged.empty()){
+                Rect& last = merged.back();
+                const float lastEnd = last[axis] + last[axis + 2];
+                if (last[other] == rect[other] && last[other + 2] == rect[other + 2] && rect[axis] <= lastEnd){
+                    last[axis + 2] = std::max(lastEnd, rect[axis] + rect[axis + 2]) - last[axis];
+                    continue;
+                }
+            }
+            merged.push_back(rect);
+        }
+
+        return merged;
+    }
+
 }
 
 uint64_t PhysicsSystem::getMeshSignature(Scene* scene, Entity entity){
@@ -360,6 +384,20 @@ bool PhysicsSystem::getMeshConvexHull(Scene* scene, Entity entity, std::vector<V
     Log::warn("Cannot build a convex hull for entity %u without 3D physics", entity);
     return false;
 #endif
+}
+
+std::vector<Rect> PhysicsSystem::getTilemapCollisionRects(const TilemapComponent& tilemap){
+    std::vector<Rect> rects;
+    for (unsigned int i = 0; i < tilemap.numTiles; i++){
+        const TileData& tile = tilemap.tiles[i];
+        if (tile.rectId < 0 || (unsigned int)tile.rectId >= tilemap.numTilesRect || !tilemap.tilesRect[tile.rectId].collision)
+            continue;
+        if (tile.width > 0 && tile.height > 0)
+            rects.push_back(Rect(tile.position.x, tile.position.y, tile.width, tile.height));
+    }
+
+    // rows first, then rows of the same span on top of each other
+    return mergeRectsAlong(mergeRectsAlong(rects, 0), 1);
 }
 
 #ifdef DORIAX_PHYSICS_3D
@@ -1135,7 +1173,33 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
         shapeData.shape = b2_nullShapeId;
         shapeData.chain = b2_nullChainId;
 
-        if (shapeData.type == Shape2DType::POLYGON){
+        if (shapeData.type == Shape2DType::POLYGON && shapeData.source == Shape2DSource::ENTITY_TILEMAP){
+            TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
+            if (!tilemap){
+                Log::error("Cannot create polygon shape %zu: its source is a tilemap and the entity has none", i);
+                continue;
+            }
+
+            for (const Rect& rect : getTilemapCollisionRects(*tilemap)){
+                const Vector2 minPt(rect.getX(), rect.getY());
+                const Vector2 maxPt(rect.getX() + rect.getWidth(), rect.getY() + rect.getHeight());
+                b2Vec2 corners[4] = {
+                    toBox2DPoint(scaledPoint(minPt)),
+                    toBox2DPoint(scaledPoint(Vector2(maxPt.x, minPt.y))),
+                    toBox2DPoint(scaledPoint(maxPt)),
+                    toBox2DPoint(scaledPoint(Vector2(minPt.x, maxPt.y)))
+                };
+
+                // a zero scale or a tile smaller than Box2D's slop has no area
+                b2Hull hull = b2ComputeHull(corners, 4);
+                if (!b2ValidateHull(&hull)){
+                    continue;
+                }
+
+                b2Polygon box = b2MakePolygon(&hull, 0.0f);
+                shapeData.tileShapes.push_back(b2CreatePolygonShape(body.body, &shapeDef, &box));
+            }
+        }else if (shapeData.type == Shape2DType::POLYGON){
             std::vector<b2Vec2> b2vertices;
 
             if (shapeData.numVertices >= 3){
@@ -1933,6 +1997,12 @@ void PhysicsSystem::destroyShape2D(Body2DComponent& body, size_t index){
 
         body.shapes[index].chain = b2_nullChainId;
     }
+    for (b2ShapeId tileShape : body.shapes[index].tileShapes){
+        if (b2Shape_IsValid(tileShape)){
+            b2DestroyShape(tileShape, true);
+        }
+    }
+    body.shapes[index].tileShapes.clear();
 }
 #endif
 
@@ -3347,6 +3417,11 @@ void PhysicsSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
 	} else if (componentId == scene->getComponentId<Joint2DComponent>()) {
 		Joint2DComponent& joint2d = scene->getComponent<Joint2DComponent>(entity);
 		destroyJoint2D(joint2d);
+	} else if (componentId == scene->getComponentId<TilemapComponent>()) {
+		// boxes built from these tiles go with them
+		if (Body2DComponent* body2d = scene->findComponent<Body2DComponent>(entity)) {
+			body2d->needUpdateShapes = true;
+		}
 	}
 #endif
 #ifdef DORIAX_PHYSICS_3D
