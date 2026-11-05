@@ -9,6 +9,7 @@
 
 #include "Data.h"
 #include "ResourcePack.h"
+#include "Log.h"
 
 #include <new>
 #include <string.h>
@@ -33,7 +34,8 @@ Data::Data(unsigned char *aData, unsigned int aDataLength, bool aCopy, bool aTak
 }
 
 Data::Data(const char *aFilename): Data(){
-    open(aFilename);
+    if (open(aFilename) != FileErrors::FILEDATA_OK)
+        Log::error("Can't open file: %s", aFilename ? aFilename : "(nil)");
 }
 
 Data::Data(const Data& d): Data(){
