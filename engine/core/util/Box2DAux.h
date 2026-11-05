@@ -7,6 +7,7 @@
 
 #include "box2d/box2d.h"
 #include "subsystem/PhysicsSystem.h"
+#include "Log.h"
 
 namespace doriax{
 
@@ -26,6 +27,21 @@ namespace doriax{
 
 
     class Box2DAux{
+    private:
+
+        // an exception passing through Box2D's C code would leave the world locked
+        template<typename Filter>
+        static bool runFilter(Filter filter){
+            try{
+                return filter();
+            }catch (const std::exception& e){
+                Log::error("Exception in a 2D physics filter: %s", e.what());
+            }catch (...){
+                Log::error("Unknown exception in a 2D physics filter");
+            }
+            return true;
+        }
+
     public:
 
         static bool CollisionFilter(b2ShapeId shapeIdA, b2ShapeId shapeIdB, void* context){
@@ -40,7 +56,9 @@ namespace doriax{
             Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
             Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
 
-            return scene->getSystem<PhysicsSystem>()->shouldCollide2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, true);
+            return runFilter([&](){
+                return scene->getSystem<PhysicsSystem>()->shouldCollide2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, true);
+            });
         }
 
         static bool PreSolve(b2ShapeId shapeIdA, b2ShapeId shapeIdB, b2Manifold* manifold, void* context){
@@ -55,7 +73,9 @@ namespace doriax{
             Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
             Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
 
-            return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold), true);
+            return runFilter([&](){
+                return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold), true);
+            });
         }
 
         // A shape destroyed since the step (a body removed or recreated, or by an earlier

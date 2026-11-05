@@ -21,6 +21,8 @@ namespace doriax{
     class DORIAX_API Body2D: public EntityHandle{
     protected:
         void checkBody(const Body2DComponent& body) const;
+        bool refuseBodyChange() const;
+        bool deferShapeChange(Body2DComponent& body) const;
 
     public:
         Body2D(Scene* scene, Entity entity);

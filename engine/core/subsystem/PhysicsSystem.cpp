@@ -526,6 +526,23 @@ void PhysicsSystem::ensureWorld2D(){
     // TODO: could there be a performance issue by checking this often?
     b2World_SetCustomFilterCallback(world2D, Box2DAux::CollisionFilter, scene);
 }
+
+bool PhysicsSystem::isSteppingWorld2D() const{
+    return steppingWorld2D;
+}
+
+void PhysicsSystem::flushPendingDestroys2D(){
+    // joints first, a destroyed body takes its joints along
+    for (const b2JointId& jointId : pendingJointDestroy2D){
+        b2DestroyJoint(jointId);
+    }
+    pendingJointDestroy2D.clear();
+
+    for (const b2BodyId& bodyId : pendingBodyDestroy2D){
+        b2DestroyBody(bodyId);
+    }
+    pendingBodyDestroy2D.clear();
+}
 #endif
 
 PhysicsSystem::~PhysicsSystem(){
@@ -1725,6 +1742,12 @@ b2BodyId PhysicsSystem::getBody(Entity entity){
 }
 
 bool PhysicsSystem::loadBody2D(Entity entity){
+    // The step locks the world; the update loop retries any body without a handle.
+    if (steppingWorld2D){
+        Log::error("Cannot load a 2D body while the physics world is stepping, retrying next update");
+        return false;
+    }
+
     ensureWorld2D();
     if (!b2World_IsValid(world2D)){
         return false;
@@ -1784,12 +1807,17 @@ void PhysicsSystem::destroyBody2D(Body2DComponent& body){
     // When a world leaves scope or is deleted by calling delete on a pointer
     // all the memory reserved for bodies, fixtures, and joints is freed
     if (b2Body_IsValid(body.body)){
-        for (int i = 0; i < body.numShapes; i++){
-            destroyShape2D(body, i);
+        // The step locks the world, so park the body for the flush. Its shapes go with it.
+        if (steppingWorld2D){
+            pendingBodyDestroy2D.push_back(body.body);
+        }else{
+            for (int i = 0; i < body.numShapes; i++){
+                destroyShape2D(body, i);
+            }
+
+            b2DestroyBody(body.body);
         }
         body.numShapes = 0;
-
-        b2DestroyBody(body.body);
 
         body.body = b2_nullBodyId;
     }
@@ -1852,6 +1880,11 @@ void PhysicsSystem::destroyBody3D(Body3DComponent& body){
 
 #ifdef DORIAX_PHYSICS_2D
 int PhysicsSystem::loadShape2D(Body2DComponent& body, void* shape, Shape2DType type){
+    if (steppingWorld2D){
+        Log::error("Cannot create a 2D shape while the physics world is stepping");
+        return -1;
+    }
+
     if (!b2Shape_IsValid(body.shapes[body.numShapes].shape)){
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.userData = reinterpret_cast<void*>(body.numShapes);
@@ -1885,6 +1918,11 @@ int PhysicsSystem::loadShape2D(Body2DComponent& body, void* shape, Shape2DType t
 }
 
 void PhysicsSystem::destroyShape2D(Body2DComponent& body, size_t index){
+    if (steppingWorld2D){
+        Log::error("Cannot destroy a 2D shape while the physics world is stepping");
+        return;
+    }
+
     if (b2Shape_IsValid(body.shapes[index].shape)){
         b2DestroyShape(body.shapes[index].shape, true);
 
@@ -2205,7 +2243,11 @@ bool PhysicsSystem::loadMotorJoint2D(Entity entity, Joint2DComponent& joint, Ent
 
 void PhysicsSystem::destroyJoint2D(Joint2DComponent& joint){
     if (b2Joint_IsValid(joint.joint)){
-        b2DestroyJoint(joint.joint);
+        if (steppingWorld2D){
+            pendingJointDestroy2D.push_back(joint.joint);
+        }else{
+            b2DestroyJoint(joint.joint);
+        }
         joint.joint = b2_nullJointId;
     }
 }
@@ -3065,21 +3107,24 @@ void PhysicsSystem::fixedUpdate(double dt){
     if (b2World_IsValid(world2D)){
         if (bodies2d->size() > 0){
             int32_t subSteps = 4;
+            steppingWorld2D = true;
             b2World_Step(world2D, fixedStep, subSteps);
+            steppingWorld2D = false;
+            flushPendingDestroys2D();
         }
 
         b2BodyEvents events = b2World_GetBodyEvents(world2D);
         for (int i = 0; i < events.moveCount; ++i){
             const b2BodyMoveEvent* event = events.moveEvents + i;
 
+            // the step's events can name an entity destroyed during it
             Entity entity = reinterpret_cast<uintptr_t>(event->userData);
-            Signature signature = scene->getSignature(entity);
 
             // a following body is on its way to the Transform, the last step of the frame puts it there
             Body2DComponent* body = scene->findComponent<Body2DComponent>(entity);
             if (body && body->followingTransform){
                 if (Engine::getFixedStepsLeft() == 1){
-                    updateBody2DPosition(signature, entity, *body);
+                    updateBody2DPosition(scene->getSignature(entity), entity, *body);
                 }
                 continue;
             }

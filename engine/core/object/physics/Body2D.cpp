@@ -87,6 +87,24 @@ void Body2D::checkBody(const Body2DComponent& body) const{
     }
 }
 
+// Box2D locks the world during a step, so a body in it can only be read
+bool Body2D::refuseBodyChange() const{
+    if (scene->getSystem<PhysicsSystem>()->isSteppingWorld2D()){
+        Log::error("Cannot change a 2D body while the physics world is stepping");
+        return true;
+    }
+    return false;
+}
+
+// The component already has the new value, the shapes' reload after the step applies it
+bool Body2D::deferShapeChange(Body2DComponent& body) const{
+    if (scene->getSystem<PhysicsSystem>()->isSteppingWorld2D()){
+        body.needUpdateShapes = true;
+        return true;
+    }
+    return false;
+}
+
 b2BodyId Body2D::getBox2DBody() const{
     Body2DComponent& body = getComponent<Body2DComponent>();
 
@@ -300,6 +318,11 @@ std::vector<Contact2D> Body2D::getBodyContacts(){
 
     std::vector<Contact2D> contacts;
 
+    if (scene->getSystem<PhysicsSystem>()->isSteppingWorld2D()){
+        Log::error("Cannot read 2D contacts while the physics world is stepping");
+        return contacts;
+    }
+
     int bodyContactCapacity = b2Body_GetContactCapacity(body.body);
     if (bodyContactCapacity == 0) return contacts;
     std::vector<b2ContactData> contactData(bodyContactCapacity);
@@ -315,7 +338,14 @@ std::vector<Contact2D> Body2D::getBodyContacts(){
 std::vector<Contact2D> Body2D::getShapeContacts(size_t index){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
+    checkBody(body);
+
     std::vector<Contact2D> contacts;
+
+    if (scene->getSystem<PhysicsSystem>()->isSteppingWorld2D()){
+        Log::error("Cannot read 2D contacts while the physics world is stepping");
+        return contacts;
+    }
 
     if (index >= 0 && index < body.numShapes && body.shapes[index].type != Shape2DType::CHAIN){
         int shapeContactCapacity = b2Shape_GetContactCapacity(body.shapes[index].shape);
@@ -367,6 +397,8 @@ void Body2D::setShapeDensity(size_t index, float density){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].density = density;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set density of chain shape %i", index);
         }else if (b2Shape_IsValid(body.shapes[index].shape)){
@@ -382,6 +414,8 @@ void Body2D::setShapeFriction(size_t index, float friction){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].friction = friction;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type != Shape2DType::CHAIN && b2Shape_IsValid(body.shapes[index].shape)){
             b2Shape_SetFriction(body.shapes[index].shape, friction);
         }else if (b2Chain_IsValid(body.shapes[index].chain)){
@@ -397,6 +431,8 @@ void Body2D::setShapeRestitution(size_t index, float restitution){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].restitution = restitution;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type != Shape2DType::CHAIN && b2Shape_IsValid(body.shapes[index].shape)){
             b2Shape_SetRestitution(body.shapes[index].shape, restitution);
         }else if (b2Chain_IsValid(body.shapes[index].chain)){
@@ -464,6 +500,8 @@ void Body2D::setShapeEnableHitEvents(size_t index, bool hitEvents){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].enableHitEvents = hitEvents;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set hit events of chain shape %i", index);
         }else if (b2Shape_IsValid(body.shapes[index].shape)){
@@ -479,6 +517,8 @@ void Body2D::setShapeContactEvents(size_t index, bool contactEvents){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].contactEvents = contactEvents;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set shape contact events of chain shape %i", index);
         }else if (b2Shape_IsValid(body.shapes[index].shape)){
@@ -494,6 +534,8 @@ void Body2D::setShapePreSolveEvents(size_t index, bool preSolveEvent){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].preSolveEvents = preSolveEvent;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set presolve events of chain shape %i", index);
         }else if (b2Shape_IsValid(body.shapes[index].shape)){
@@ -509,6 +551,8 @@ void Body2D::setShapeSensorEvents(size_t index, bool sensorEvents){
 
     if (index >= 0 && index < body.numShapes){
         body.shapes[index].sensorEvents = sensorEvents;
+        if (deferShapeChange(body)) return;
+
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set sensor events of chain shape %i", index);
         }else if (b2Shape_IsValid(body.shapes[index].shape)){
@@ -644,6 +688,8 @@ Vector2 Body2D::getPosition() const{
 }
 
 void Body2D::setPosition(Vector2 position){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
     float pointsToMeterScale = getPointsToMeterScale();
 
@@ -665,6 +711,8 @@ float Body2D::getAngle() const{
 }
 
 void Body2D::setAngle(float angle){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -677,6 +725,8 @@ void Body2D::setAngle(float angle){
 }
 
 void Body2D::setLinearVelocity(Vector2 linearVelocity){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
     float pointsToMeterScale = getPointsToMeterScale();
 
@@ -686,6 +736,8 @@ void Body2D::setLinearVelocity(Vector2 linearVelocity){
 }
 
 void Body2D::setAngularVelocity(float angularVelocity){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -693,6 +745,8 @@ void Body2D::setAngularVelocity(float angularVelocity){
 }
 
 void Body2D::setLinearDamping(float linearDamping){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -700,6 +754,8 @@ void Body2D::setLinearDamping(float linearDamping){
 }
 
 void Body2D::setAngularDamping(float angularDamping){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -707,6 +763,8 @@ void Body2D::setAngularDamping(float angularDamping){
 }
 
 void Body2D::setEnableSleep(bool enableSleep){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -714,6 +772,8 @@ void Body2D::setEnableSleep(bool enableSleep){
 }
 
 void Body2D::setAwake(bool awake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -721,6 +781,8 @@ void Body2D::setAwake(bool awake){
 }
 
 void Body2D::setFixedRotation(bool fixedRotation){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -728,6 +790,8 @@ void Body2D::setFixedRotation(bool fixedRotation){
 }
 
 void Body2D::setBullet(bool bullet){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -738,12 +802,16 @@ void Body2D::setType(BodyType type){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     if (b2Body_IsValid(body.body)){
+        if (refuseBodyChange()) return;
+
         b2Body_SetType(body.body, getBodyTypeToB2(type));
     }
     body.type = type;
 }
 
 void Body2D::setEnabled(bool enabled){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -755,6 +823,8 @@ void Body2D::setEnabled(bool enabled){
 }
 
 void Body2D::setGravityScale(float gravityScale){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -853,6 +923,7 @@ void Body2D::setBitsFilter(size_t shapeIndex, uint16_t categoryBits, uint16_t ma
     if (body.shapes.validIndex(shapeIndex)){
         body.shapes[shapeIndex].categoryBits = categoryBits;
         body.shapes[shapeIndex].maskBits = maskBits;
+        if (deferShapeChange(body)) return;
 
         if (b2Shape_IsValid(body.shapes[shapeIndex].shape)){
             b2Filter filter = b2Shape_GetFilter(body.shapes[shapeIndex].shape);
@@ -883,6 +954,8 @@ void Body2D::setCategoryBitsFilter(size_t shapeIndex, uint16_t categoryBits){
 
     if (body.shapes.validIndex(shapeIndex)){
         body.shapes[shapeIndex].categoryBits = categoryBits;
+        if (deferShapeChange(body)) return;
+
         if (b2Shape_IsValid(body.shapes[shapeIndex].shape)){
             b2Filter filter = b2Shape_GetFilter(body.shapes[shapeIndex].shape);
 
@@ -900,6 +973,8 @@ void Body2D::setMaskBitsFilter(size_t shapeIndex, uint16_t maskBits){
     
     if (body.shapes.validIndex(shapeIndex)){
         body.shapes[shapeIndex].maskBits = maskBits;
+        if (deferShapeChange(body)) return;
+
         if (b2Shape_IsValid(body.shapes[shapeIndex].shape)){
             b2Filter filter = b2Shape_GetFilter(body.shapes[shapeIndex].shape);
 
@@ -917,6 +992,8 @@ void Body2D::setGroupIndexFilter(size_t shapeIndex, int16_t groupIndex){
     
     if (body.shapes.validIndex(shapeIndex)){
         body.shapes[shapeIndex].groupIndex = groupIndex;
+        if (deferShapeChange(body)) return;
+
         if (b2Shape_IsValid(body.shapes[shapeIndex].shape)){
             b2Filter filter = b2Shape_GetFilter(body.shapes[shapeIndex].shape);
 
@@ -992,6 +1069,8 @@ float Body2D::getRotationalInertia() const{
 }
 
 void Body2D::applyMassFromShapes(){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -999,6 +1078,8 @@ void Body2D::applyMassFromShapes(){
 }
 
 void Body2D::applyForce(const Vector2& force, const Vector2& point, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
     float pointsToMeterScale = getPointsToMeterScale();
 
@@ -1007,6 +1088,8 @@ void Body2D::applyForce(const Vector2& force, const Vector2& point, bool wake){
 }
 
 void Body2D::applyForceToCenter(const Vector2& force, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -1014,6 +1097,8 @@ void Body2D::applyForceToCenter(const Vector2& force, bool wake){
 }
 
 void Body2D::applyTorque(float torque, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -1021,6 +1106,8 @@ void Body2D::applyTorque(float torque, bool wake){
 }
 
 void Body2D::applyLinearImpulse(const Vector2& impulse, const Vector2& point, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
     float pointsToMeterScale = getPointsToMeterScale();
 
@@ -1029,6 +1116,8 @@ void Body2D::applyLinearImpulse(const Vector2& impulse, const Vector2& point, bo
 }
 
 void Body2D::applyLinearImpulseToCenter(const Vector2& impulse, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
@@ -1036,6 +1125,8 @@ void Body2D::applyLinearImpulseToCenter(const Vector2& impulse, bool wake){
 }
 
 void Body2D::applyAngularImpulse(float impulse, bool wake){
+    if (refuseBodyChange()) return;
+
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);

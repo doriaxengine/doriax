@@ -52,6 +52,13 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_2D
 		b2WorldId world2D;
 		float pointsToMeterScale2D;
+		bool steppingWorld2D = false;
+
+		// Handles a teardown could not release while stepping.
+		std::vector<b2BodyId> pendingBodyDestroy2D;
+		std::vector<b2JointId> pendingJointDestroy2D;
+
+		void flushPendingDestroys2D();
 #endif
 #ifdef DORIAX_PHYSICS_3D
 		bool lock3DBodies;
@@ -134,6 +141,10 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_2D
 		float getPointsToMeterScale2D() const;
 		void setPointsToMeterScale2D(float pointsToMeterScale2D);
+
+		// True inside preSolve2D and shouldCollide2D. Box2D locks the world for the whole
+		// step, so a body can only be read then. Other changes are refused or wait for it.
+		bool isSteppingWorld2D() const;
 #endif
 
 #ifdef DORIAX_PHYSICS_3D

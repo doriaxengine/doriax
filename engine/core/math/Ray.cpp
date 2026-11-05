@@ -514,6 +514,12 @@ RayReturn Ray::intersects(Scene* scene, RayFilter raytest, bool onlyStatic, uint
             return {false, 0, Vector3(0,0,0), Vector3(0,0,0), NULL_ENTITY, 0};
         }
 
+        // Box2D locks the world during a step
+        if (scene->getSystem<PhysicsSystem>()->isSteppingWorld2D()){
+            Log::error("Cannot cast a 2D ray while the physics world is stepping");
+            return {false, 0, Vector3(0,0,0), Vector3(0,0,0), NULL_ENTITY, 0};
+        }
+
         float ptmScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
 
         Vector3 end = origin + direction;

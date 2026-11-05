@@ -228,6 +228,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addFunction("removeSubscriptionsByTag", &PhysicsSystem::removeSubscriptionsByTag)
 #ifdef DORIAX_PHYSICS_2D
         .addProperty("pointsToMeterScale2D", &PhysicsSystem::getPointsToMeterScale2D,  &PhysicsSystem::setPointsToMeterScale2D)
+        // True inside preSolve2D and shouldCollide2D, where a body can only be read
+        .addProperty("steppingWorld2D", &PhysicsSystem::isSteppingWorld2D)
         .addProperty("beginContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->beginContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->beginContact2D = L; })
         .addProperty("endContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->endContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->endContact2D = L; })
         .addProperty("beginSensorContact2D", [] (PhysicsSystem* self, lua_State* L) { return &self->beginSensorContact2D; }, [] (PhysicsSystem* self, lua_State* L) { self->beginSensorContact2D = L; })
