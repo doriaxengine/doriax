@@ -1964,11 +1964,27 @@ void PhysicsSystem::destroyShape3D(Body3DComponent& body, size_t index){
 #endif
 
 #ifdef DORIAX_PHYSICS_2D
+// A joint that stops here keeps needUpdateJoint, so the update loop retries it
+bool PhysicsSystem::prepareJoint2D(Joint2DComponent& joint, Entity bodyA, Entity bodyB){
+    if (!loadBody2D(bodyA) || !loadBody2D(bodyB)){
+        Log::error("Cannot create 2D joint, bodyA or bodyB could not be loaded");
+        return false;
+    }
+
+    destroyJoint2D(joint);
+
+    return true;
+}
+
 bool PhysicsSystem::loadDistanceJoint2D(Entity entity, Joint2DComponent& joint, Entity bodyA, Entity bodyB, Vector2 anchorA, Vector2 anchorB, bool autoAnchors, bool rope){
     Signature signatureA = scene->getSignature(bodyA);
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
+
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
@@ -1994,7 +2010,8 @@ bool PhysicsSystem::loadDistanceJoint2D(Entity entity, Joint2DComponent& joint, 
         jointDef.bodyIdB = myBodyB.body;
         jointDef.localAnchorA = b2Body_GetLocalPoint(myBodyA.body, worldPivotA);
         jointDef.localAnchorB = b2Body_GetLocalPoint(myBodyB.body, worldPivotB);
-        jointDef.length = b2Distance(worldPivotA, worldPivotB);
+        // Box2D asserts on zero and takes this as its smallest length anyway
+        jointDef.length = std::max(b2Distance(worldPivotA, worldPivotB), 0.005f);
         if (rope){
             // a zero-hertz spring frees the length, the limit caps it
             jointDef.enableSpring = true;
@@ -2020,6 +2037,10 @@ bool PhysicsSystem::loadRevoluteJoint2D(Entity entity, Joint2DComponent& joint, 
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
+
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
@@ -2052,6 +2073,10 @@ bool PhysicsSystem::loadPrismaticJoint2D(Entity entity, Joint2DComponent& joint,
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
+
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
@@ -2092,8 +2117,7 @@ bool PhysicsSystem::loadMouseJoint2D(Entity entity, Joint2DComponent& joint, Ent
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
 
-        if (!loadBody2D(bodyA) || !loadBody2D(bodyB)){
-            Log::error("Cannot create mouse 2D joint, bodyA or bodyB could not be loaded");
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
             return false;
         }
 
@@ -2148,6 +2172,10 @@ bool PhysicsSystem::loadWheelJoint2D(Entity entity, Joint2DComponent& joint, Ent
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
 
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
 
@@ -2187,6 +2215,10 @@ bool PhysicsSystem::loadWeldJoint2D(Entity entity, Joint2DComponent& joint, Enti
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
 
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
 
@@ -2218,6 +2250,10 @@ bool PhysicsSystem::loadMotorJoint2D(Entity entity, Joint2DComponent& joint, Ent
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body2DComponent>()) && signatureB.test(scene->getComponentId<Body2DComponent>())){
+
+        if (!prepareJoint2D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body2DComponent myBodyA = scene->getComponent<Body2DComponent>(bodyA);
         Body2DComponent myBodyB = scene->getComponent<Body2DComponent>(bodyB);
@@ -2254,11 +2290,27 @@ void PhysicsSystem::destroyJoint2D(Joint2DComponent& joint){
 #endif
 
 #ifdef DORIAX_PHYSICS_3D
+// A joint that stops here keeps needUpdateJoint, so the update loop retries it
+bool PhysicsSystem::prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB){
+    if (!loadBody3D(bodyA) || !loadBody3D(bodyB)){
+        Log::error("Cannot create 3D joint, bodyA or bodyB could not be loaded");
+        return false;
+    }
+
+    destroyJoint3D(joint);
+
+    return true;
+}
+
 bool PhysicsSystem::loadFixedJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB){
     Signature signatureA = scene->getSignature(bodyA);
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2298,6 +2350,10 @@ bool PhysicsSystem::loadDistanceJoint3D(Joint3DComponent& joint, Entity bodyA, E
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2351,6 +2407,10 @@ bool PhysicsSystem::loadPointJoint3D(Joint3DComponent& joint, Entity bodyA, Enti
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
 
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
 
@@ -2389,6 +2449,10 @@ bool PhysicsSystem::loadHingeJoint3D(Joint3DComponent& joint, Entity bodyA, Enti
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2462,6 +2526,10 @@ bool PhysicsSystem::loadConeJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
 
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
 
@@ -2510,6 +2578,10 @@ bool PhysicsSystem::loadPrismaticJoint3D(Joint3DComponent& joint, Entity bodyA, 
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2585,6 +2657,10 @@ bool PhysicsSystem::loadSwingTwistJoint3D(Joint3DComponent& joint, Entity bodyA,
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2675,6 +2751,10 @@ bool PhysicsSystem::loadSixDOFJoint3D(Joint3DComponent& joint, Entity bodyA, Ent
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
 
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
 
@@ -2752,6 +2832,10 @@ bool PhysicsSystem::loadPathJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
 
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
 
@@ -2805,6 +2889,10 @@ bool PhysicsSystem::loadGearJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
     Signature signatureHingeB = scene->getSignature(hingeB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
@@ -2879,6 +2967,10 @@ bool PhysicsSystem::loadRackAndPinionJoint3D(Joint3DComponent& joint, Entity bod
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
 
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
+
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);
 
@@ -2950,6 +3042,10 @@ bool PhysicsSystem::loadPulleyJoint3D(Joint3DComponent& joint, Entity bodyA, Ent
     Signature signatureB = scene->getSignature(bodyB);
 
     if (signatureA.test(scene->getComponentId<Body3DComponent>()) && signatureB.test(scene->getComponentId<Body3DComponent>())){
+
+        if (!prepareJoint3D(joint, bodyA, bodyB)){
+            return false;
+        }
 
         Body3DComponent myBodyA = scene->getComponent<Body3DComponent>(bodyA);
         Body3DComponent myBodyB = scene->getComponent<Body3DComponent>(bodyB);

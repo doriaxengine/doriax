@@ -59,12 +59,14 @@ namespace doriax{
 		std::vector<b2JointId> pendingJointDestroy2D;
 
 		void flushPendingDestroys2D();
+		bool prepareJoint2D(Joint2DComponent& joint, Entity bodyA, Entity bodyB);
 #endif
 #ifdef DORIAX_PHYSICS_3D
 		bool lock3DBodies;
 		bool steppingWorld3D = false;
 
 		void flushPendingDestroys3D();
+		bool prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB);
 		bool useLockedInterfaces3D() const;
 
 		JoltActivationListener* activationListener3D;
