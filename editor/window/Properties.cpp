@@ -2184,6 +2184,11 @@ void editor::Properties::syncSubSelection(SceneProject* sceneProject, Entity ent
 
     sceneProject->sceneRender->clearTileSelection();
     sceneProject->sceneRender->clearInstanceSelection();
+    sceneProject->sceneRender->clearOccluderPointSelection();
+    sceneProject->sceneRender->clearLinePointSelection();
+    sceneProject->sceneRender->clearPolygonPointSelection();
+    sceneProject->sceneRender->clearTrackPointSelection();
+    sceneProject->sceneRender->clearBody2DPointSelection();
 
     if (tileIndex >= 0) {
         sceneProject->sceneRender->selectTile(entity, tileIndex);

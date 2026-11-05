@@ -25,6 +25,12 @@ extern unsigned int bulb_icon_png_len;
 
 using namespace doriax;
 
+// how PhysicsSystem places a Box2D shape: world scale, rotation and position, without hierarchy shear
+static Matrix4 body2DMatrix(const Transform& transform){
+    return Matrix4::translateMatrix(transform.worldPosition) * transform.worldRotation.getRotationMatrix()
+        * Matrix4::scaleMatrix(Vector3(transform.worldScale.x, transform.worldScale.y, 1.0f));
+}
+
 editor::SceneRender::SceneRender(Scene* scene, bool use2DGizmos, bool enable3DOverlays, float gizmoScale, float selectionOffset): toolslayer(use2DGizmos), uilayer(enable3DOverlays){
     ScopedDefaultEntityPool sys(*scene, EntityPool::System);
 
@@ -816,6 +822,9 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
             if (selectedTrackPointIndex >= 0 && selEntities[0] == selectedTrackPointEntity){
                 showCross = true;
             }
+            if (selectedBody2DPointIndex >= 0 && selEntities[0] == selectedBody2DPointEntity){
+                showCross = true;
+            }
 
             showRects = canResize2D && !isCamera && !isInstancedMesh && !showCross;
         }
@@ -913,6 +922,19 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
             }else{
                 // vertex removed: drop the stale sub-selection
                 clearPolygonPointSelection();
+            }
+        }
+
+        // Override gizmo for selected Body2D vertex
+        if (selectedBody2DPointIndex >= 0 && selEntities.size() == 1 && selEntities[0] == selectedBody2DPointEntity
+            && toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D){
+            OBB pointOBB = getBody2DPointOBB(selectedBody2DPointEntity, selectedBody2DPointShape, selectedBody2DPointIndex);
+            if (!pointOBB.isNull()){
+                Vector3 pointCenter = pointOBB.getCenter();
+                toolslayer.updateGizmo(camera, pointCenter, gizmoRotation, computeGizmoScale(pointCenter), pointOBB, mouseRay, mouseClicked, anchorData, anchorArea);
+            }else{
+                // vertex or shape removed: drop the stale sub-selection
+                clearBody2DPointSelection();
             }
         }
 
@@ -1097,6 +1119,16 @@ void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> 
         // Override gizmo start position to the selected polygon vertex
         if (selectedPolygonPointIndex >= 0 && selEntities.size() == 1 && selEntities[0] == selectedPolygonPointEntity){
             OBB pointOBB = getPolygonPointOBB(selectedPolygonPointEntity, selectedPolygonPointIsMesh, selectedPolygonPointIndex);
+            if (!pointOBB.isNull()){
+                gizmoStartPosition = pointOBB.getCenter();
+                cursorStartOffset = gizmoStartPosition - rretrun.point;
+            }
+        }
+
+        // Override gizmo start position to the selected Body2D vertex (only the 2D gizmo moves it)
+        if (selectedBody2DPointIndex >= 0 && selEntities.size() == 1 && selEntities[0] == selectedBody2DPointEntity
+            && toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D){
+            OBB pointOBB = getBody2DPointOBB(selectedBody2DPointEntity, selectedBody2DPointShape, selectedBody2DPointIndex);
             if (!pointOBB.isNull()){
                 gizmoStartPosition = pointOBB.getCenter();
                 cursorStartOffset = gizmoStartPosition - rretrun.point;
@@ -1559,6 +1591,30 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
                             lastCommand = new PropertyCmd<Vector3>(project, sceneProject->id, entity,
                                 selectedPolygonPointIsMesh ? ComponentType::MeshPolygonComponent : ComponentType::PolygonComponent,
                                 pointProp, newLocalPos);
+                        }
+                    }else
+                    // Handle Body2D vertex sub-selection drag
+                    if (selectedBody2DPointIndex >= 0 && entity == selectedBody2DPointEntity){
+                        Transform* bodyTransform = scene->findComponent<Transform>(entity);
+                        Vector3 worldOld;
+                        bool hasPoint = getBody2DPointWorld(entity, selectedBody2DPointShape, selectedBody2DPointIndex, worldOld);
+                        if (bodyTransform && hasPoint && toolslayer.getGizmo2DSideSelected() == Gizmo2DSideSelected::CENTER){
+                            // new world position of the vertex, following the cursor
+                            Vector3 newWorldPos = rretrun.point + cursorStartOffset;
+
+                            if (displaySettings.snapToGrid) {
+                                float spacing = displaySettings.gridSpacing2D;
+                                if (spacing > 0.0f) {
+                                    newWorldPos.x = std::round(newWorldPos.x / spacing) * spacing;
+                                    newWorldPos.y = std::round(newWorldPos.y / spacing) * spacing;
+                                }
+                            }
+
+                            Vector3 newLocalPos = body2DMatrix(*bodyTransform).inverse() * newWorldPos;
+
+                            std::string pointProp = "shapes[" + std::to_string(selectedBody2DPointShape) + "].vertices[" + std::to_string(selectedBody2DPointIndex) + "]";
+                            lastCommand = new PropertyCmd<Vector2>(project, sceneProject->id, entity,
+                                ComponentType::Body2DComponent, pointProp, Vector2(newLocalPos.x, newLocalPos.y));
                         }
                     }else
                     // Handle tile sub-selection drag
@@ -2333,6 +2389,70 @@ int editor::SceneRender::hitTestTrackPoint(Entity entity, float x, float y){
 OBB editor::SceneRender::getTrackPointOBB(Entity entity, int pointIndex){
     Vector3 worldPoint;
     if (!getTrackPointWorld(entity, pointIndex, worldPoint)) return OBB();
+
+    float halfSize = getPointHandleHalfSize(worldPoint);
+    AABB aabb(worldPoint - Vector3(halfSize), worldPoint + Vector3(halfSize));
+    return aabb.getOBB();
+}
+
+void editor::SceneRender::selectBody2DPoint(Entity entity, int shapeIndex, int pointIndex){
+    selectedBody2DPointEntity = entity;
+    selectedBody2DPointShape = shapeIndex;
+    selectedBody2DPointIndex = pointIndex;
+}
+
+void editor::SceneRender::clearBody2DPointSelection(){
+    selectedBody2DPointEntity = 0;
+    selectedBody2DPointShape = -1;
+    selectedBody2DPointIndex = -1;
+}
+
+bool editor::SceneRender::getBody2DPointWorld(Entity entity, int shapeIndex, int pointIndex, Vector3& worldPoint){
+    Body2DComponent* body = scene->findComponent<Body2DComponent>(entity);
+    Transform* transform = scene->findComponent<Transform>(entity);
+    if (!body || !transform) return false;
+    if (shapeIndex < 0 || shapeIndex >= (int)body->numShapes) return false;
+
+    const Shape2D& shape = body->shapes[shapeIndex];
+    bool hasVertices = shape.type == Shape2DType::CHAIN
+        || (shape.type == Shape2DType::POLYGON && shape.source == Shape2DSource::NONE && shape.numVertices >= 3);
+    if (!hasVertices || pointIndex < 0 || pointIndex >= (int)shape.numVertices) return false;
+
+    worldPoint = body2DMatrix(*transform) * Vector3(shape.vertices[pointIndex].x, shape.vertices[pointIndex].y, 0.0f);
+    return true;
+}
+
+// Returns the vertex under the mouse (-1 when none) and its shape in shapeIndex
+int editor::SceneRender::hitTestBody2DPoint(Entity entity, float x, float y, int& shapeIndex){
+    Body2DComponent* body = scene->findComponent<Body2DComponent>(entity);
+    if (!body) return -1;
+
+    Ray ray = camera->screenToRay(x, y);
+
+    int bestIndex = -1;
+    float bestDistance = FLT_MAX;
+    for (int s = 0; s < (int)body->numShapes; s++){
+        for (int i = 0; i < (int)body->shapes[s].numVertices; i++){
+            Vector3 worldPoint;
+            if (!getBody2DPointWorld(entity, s, i, worldPoint)) break;
+            float halfSize = getPointHandleHalfSize(worldPoint);
+            AABB handleAABB(worldPoint - Vector3(halfSize), worldPoint + Vector3(halfSize));
+
+            RayReturn rr = ray.intersects(handleAABB);
+            if (rr && rr.distance < bestDistance){
+                bestDistance = rr.distance;
+                bestIndex = i;
+                shapeIndex = s;
+            }
+        }
+    }
+
+    return bestIndex;
+}
+
+OBB editor::SceneRender::getBody2DPointOBB(Entity entity, int shapeIndex, int pointIndex){
+    Vector3 worldPoint;
+    if (!getBody2DPointWorld(entity, shapeIndex, pointIndex, worldPoint)) return OBB();
 
     float halfSize = getPointHandleHalfSize(worldPoint);
     AABB aabb(worldPoint - Vector3(halfSize), worldPoint + Vector3(halfSize));

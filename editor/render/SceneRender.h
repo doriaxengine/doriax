@@ -127,6 +127,11 @@ namespace doriax::editor{
         Entity selectedTrackPointEntity = 0;  // NULL_ENTITY
         int selectedTrackPointIndex = -1;
 
+        // Body2D polygon and chain vertex sub-selection
+        Entity selectedBody2DPointEntity = 0;  // NULL_ENTITY
+        int selectedBody2DPointShape = -1;
+        int selectedBody2DPointIndex = -1;
+
         // editor camera copy in a scene SceneManager loaded during Play
         Scene* runtimeViewScene = nullptr;
         Entity runtimeViewCamera = NULL_ENTITY;
@@ -308,6 +313,17 @@ namespace doriax::editor{
         // matrix mapping TranslateTracks values[] to world space: the action
         // target's parent modelMatrix (identity when there is no target/parent)
         Matrix4 getTrackPointsWorldMatrix(Entity entity);
+
+        // Body2D polygon and chain vertex sub-selection
+        int getSelectedBody2DPointIndex() const { return selectedBody2DPointIndex; }
+        int getSelectedBody2DPointShape() const { return selectedBody2DPointShape; }
+        Entity getSelectedBody2DPointEntity() const { return selectedBody2DPointEntity; }
+        void selectBody2DPoint(Entity entity, int shapeIndex, int pointIndex);
+        void clearBody2DPointSelection();
+        int hitTestBody2DPoint(Entity entity, float x, float y, int& shapeIndex);
+        OBB getBody2DPointOBB(Entity entity, int shapeIndex, int pointIndex);
+        // false for shapes without editable vertices (not polygon or chain, or a tilemap source)
+        bool getBody2DPointWorld(Entity entity, int shapeIndex, int pointIndex, Vector3& worldPoint);
     };
 
 }

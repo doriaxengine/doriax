@@ -599,6 +599,25 @@ void editor::SceneRender2D::createOrUpdateBodyLines(Entity entity, const Transfo
             }
         }
     }
+
+    // vertex handles; the sub-selected one is drawn bigger and in the selection color
+    if (highlighted){
+        const Vector4 handleColor(1.0f, 1.0f, 1.0f, alpha);
+        const Vector4 selectedHandleColor(1.0f, 0.6f, 0.0f, 1.0f);
+        bool hasPointSelection = (getSelectedBody2DPointEntity() == entity);
+
+        for (size_t i = 0; i < body.numShapes; i++){
+            for (size_t j = 0; j < body.shapes[i].numVertices; j++){
+                Vector3 worldPoint;
+                if (!getBody2DPointWorld(entity, (int)i, (int)j, worldPoint)) break;
+
+                bool pointSelected = hasPointSelection && (int)i == getSelectedBody2DPointShape() && (int)j == getSelectedBody2DPointIndex();
+                addPointHandle(bodyLinesObj, worldPoint,
+                               overlayPx(pointSelected ? 6.0f : 4.0f) * zoom,
+                               pointSelected ? selectedHandleColor : handleColor);
+            }
+        }
+    }
 }
 
 void editor::SceneRender2D::createOrUpdateJointLines(Entity entity, const Joint2DComponent& joint, bool visible, bool highlighted){

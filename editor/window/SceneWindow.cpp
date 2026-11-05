@@ -1214,6 +1214,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                         sceneProject->sceneRender->clearLinePointSelection();
                         sceneProject->sceneRender->clearPolygonPointSelection();
                         sceneProject->sceneRender->clearTrackPointSelection();
+                        sceneProject->sceneRender->clearBody2DPointSelection();
                         bool changed = selectObjectByRay(sceneId, x, y, io.KeyShift);
                         if (changed) {
                             sceneProject->sceneRender->update(project->getSelectedEntities(sceneId), project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
@@ -1352,11 +1353,46 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 }
             }
 
+            // Body2D vertex sub-selection, before tiles so a vertex over a tile wins
+            if (gizmoSelected == GizmoSelected::OBJECT2D) {
+                std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
+                if (selEntities.size() == 1 && !io.KeyShift) {
+                    Entity selEntity = selEntities[0];
+                    Gizmo2DSideSelected gizmo2DSide = sceneProject->sceneRender->getToolsLayer()->getGizmo2DSideSelected();
+                    if (subSelectionClickConsumesRelease[sceneId]) {
+                        // an occluder or polygon point of this entity took the click
+                        sceneProject->sceneRender->clearBody2DPointSelection();
+                    } else if (gizmo2DSide == Gizmo2DSideSelected::NONE || gizmo2DSide == Gizmo2DSideSelected::CENTER) {
+                        int shapeHit = -1;
+                        int pointHit = sceneProject->sceneRender->hitTestBody2DPoint(selEntity, x, y, shapeHit);
+                        if (pointHit >= 0) {
+                            // one sub-selection at a time, the drag would move only the first
+                            sceneProject->sceneRender->clearTileSelection();
+                            sceneProject->sceneRender->clearOccluderPointSelection();
+                            sceneProject->sceneRender->clearLinePointSelection();
+                            sceneProject->sceneRender->clearPolygonPointSelection();
+                            sceneProject->sceneRender->selectBody2DPoint(selEntity, shapeHit, pointHit);
+                            subSelectionClickConsumesRelease[sceneId] = true;
+                            // Re-update so the gizmo cross jumps to the vertex
+                            sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                            sceneProject->sceneRender->mouseHoverEvent(x, y);
+                        } else if (sceneProject->sceneRender->getSelectedBody2DPointIndex() >= 0 && gizmo2DSide == Gizmo2DSideSelected::NONE) {
+                            Entity bodyHit = findSelectableObjectByRay(sceneId, x, y);
+                            if (bodyHit == selEntity) {
+                                sceneProject->sceneRender->clearBody2DPointSelection();
+                                sceneProject->sceneRender->update(selEntities, project->getEntities(sceneId), sceneProject->mainCamera, sceneProject->displaySettings);
+                                sceneProject->sceneRender->mouseHoverEvent(x, y);
+                            }
+                        }
+                    }
+                }
+            }
+
             // Tile sub-selection within a selected tilemap (outside disableSelection guard
             // so clicking a tile works even when the tilemap gizmo body is hovered)
             if (gizmoSelected == GizmoSelected::OBJECT2D) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
-                if (selEntities.size() == 1 && !io.KeyShift) {
+                if (selEntities.size() == 1 && !io.KeyShift && sceneProject->sceneRender->getSelectedBody2DPointEntity() != selEntities[0]) {
                     Entity selEntity = selEntities[0];
                     Gizmo2DSideSelected gizmo2DSide = sceneProject->sceneRender->getToolsLayer()->getGizmo2DSideSelected();
                     if (gizmo2DSide == Gizmo2DSideSelected::NONE || gizmo2DSide == Gizmo2DSideSelected::CENTER) {
@@ -1505,6 +1541,8 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 Entity prevPolygonPointEntity = sceneProject->sceneRender->getSelectedPolygonPointEntity();
                 int prevTrackPointIndex = sceneProject->sceneRender->getSelectedTrackPointIndex();
                 Entity prevTrackPointEntity = sceneProject->sceneRender->getSelectedTrackPointEntity();
+                int prevBody2DPointIndex = sceneProject->sceneRender->getSelectedBody2DPointIndex();
+                Entity prevBody2DPointEntity = sceneProject->sceneRender->getSelectedBody2DPointEntity();
 
                 selectObjectByRay(sceneId, x, y, io.KeyShift);
 
@@ -1530,6 +1568,9 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 }
                 if (prevTrackPointIndex >= 0 && !(soleHost && selAfter[0] == prevTrackPointEntity)){
                     sceneProject->sceneRender->clearTrackPointSelection();
+                }
+                if (prevBody2DPointIndex >= 0 && !(soleHost && selAfter[0] == prevBody2DPointEntity)){
+                    sceneProject->sceneRender->clearBody2DPointSelection();
                 }
             }
             subSelectionClickConsumesRelease[sceneId] = false;
@@ -1565,6 +1606,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 sceneProject->sceneRender->clearLinePointSelection();
                 sceneProject->sceneRender->clearPolygonPointSelection();
                 sceneProject->sceneRender->clearTrackPointSelection();
+                sceneProject->sceneRender->clearBody2DPointSelection();
                 project->selectObjectsByRect(sceneId, clickStartPos, clickEndPos);
             }
 

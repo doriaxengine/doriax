@@ -312,6 +312,9 @@ void editor::Structure::clearSubSelectionForEntity(uint32_t sceneId, Entity enti
     if (sceneProject->sceneRender->getSelectedPolygonPointEntity() == entity) {
         sceneProject->sceneRender->clearPolygonPointSelection();
     }
+    if (sceneProject->sceneRender->getSelectedBody2DPointEntity() == entity) {
+        sceneProject->sceneRender->clearBody2DPointSelection();
+    }
 }
 
 void editor::Structure::resetEntitySelectionAnchor() {
