@@ -149,7 +149,7 @@ TextureData::TextureData(unsigned char* data, unsigned int dataLength) : Texture
     loadTextureFromMemory(data, dataLength);
 }
 
-TextureData::TextureData(const TextureData& v){
+TextureData::TextureData(const TextureData& v) : TextureData(){
     this->copy(v);
 }
 
@@ -416,12 +416,8 @@ bool TextureData::loadCubeMapFromSingleFile(const char* filename, std::array<Tex
     // 0=+X (Right), 1=-X (Left), 2=+Y (Top), 3=-Y (Bottom), 4=+Z, 5=-Z.
     // This loader uses OpenGL-style naming: Front = +Z (4), Back = -Z (5).
 
-    // IMPORTANT:
-    // Do not assign/copy 'texture' into each face and then call crop(), because TextureData::copy()
-    // is shallow and would make all faces share the same underlying pixel pointer. The first crop()
-    // frees that buffer, and subsequent crops crash.
-    //
-    // Instead, extract each face into its own buffer.
+    // Extract each face into its own buffer: copying 'texture' per face and cropping
+    // would duplicate the whole image six times.
 
     auto extractFace = [&](int faceIndex, int xTile, int yTile){
         const int xOffset = xTile * tileW;
@@ -466,6 +462,12 @@ bool TextureData::loadCubeMapFromSingleFile(const char* filename, std::array<Tex
 }
 
 void TextureData::copy ( const TextureData& v ){
+    if (this == &v)
+        return;
+
+    if (dataOwned && data != v.data)
+        releaseImageData();
+
     this->width = v.width;
     this->height = v.height;
     this->originalWidth = v.originalWidth;
@@ -474,14 +476,20 @@ void TextureData::copy ( const TextureData& v ){
     this->color_format = v.color_format;
     this->channels = v.channels;
 
-    // a copy shares the pixels, only the original frees them
-    this->dataOwned = false;
+    this->dataOwned = v.dataOwned;
 
     this->transparent = v.transparent;
 
     this->svgScale = v.svgScale;
 
     this->data = v.data;
+
+    // an owner's pixels can die with it, so its copy gets its own
+    if (v.dataOwned && v.data){
+        this->data = malloc(v.size);
+        if (this->data)
+            memcpy(this->data, v.data, v.size);
+    }
 }
 
 TextureData::~TextureData() {

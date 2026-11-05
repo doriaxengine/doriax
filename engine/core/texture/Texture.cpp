@@ -12,11 +12,14 @@ namespace {
     struct TextureFaceCleanup{
         std::shared_ptr<std::array<TextureData,6>> data;
         size_t face;
+        bool release;
     };
 
     void cleanupTextureFace(void* cleanupData){
         TextureFaceCleanup* cleanup = static_cast<TextureFaceCleanup*>(cleanupData);
-        TextureData::cleanupTexture(&cleanup->data->at(cleanup->face));
+        if (cleanup->release){
+            TextureData::cleanupTexture(&cleanup->data->at(cleanup->face));
+        }
         delete cleanup;
     }
 }
@@ -531,9 +534,10 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
         render = TexturePool::get(getRenderId(), type, data, minFilter, magFilter, wrapU, wrapV);
     }
 
-    if (render && releaseDataAfterLoad && data){
+    // a queued upload reads the pixels later, so hold them even if they aren't released
+    if (render && data){
         for (int f = 0; f < numFaces; f++){
-            SystemRender::scheduleCleanup(cleanupTextureFace, new TextureFaceCleanup{data, (size_t)f});
+            SystemRender::scheduleCleanup(cleanupTextureFace, new TextureFaceCleanup{data, (size_t)f, releaseDataAfterLoad});
         }
     }
 
