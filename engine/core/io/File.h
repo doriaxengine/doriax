@@ -19,6 +19,7 @@ namespace doriax {
         FILE *fileHandle;
         bool modified;
         bool writing;
+        bool seekable;
 
         void syncWritten();
         void setWriting(bool value);

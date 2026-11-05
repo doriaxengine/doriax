@@ -20,10 +20,12 @@ File::File(){
     fileHandle = NULL;
     modified = false;
     writing = false;
+    seekable = false;
 }
 
 File::File(FILE *fp): File() {
     this->fileHandle = fp;
+    seekable = fp && ftell(fp) >= 0;
 }
 
 File::File(const char *aFilename, bool write): File(){
@@ -39,6 +41,9 @@ int File::eof() {
     if (!fileHandle)
         return 1;
     setWriting(false);
+    // peeking a pipe could block, it only knows after a failed read
+    if (!seekable)
+        return feof(fileHandle);
     // peeks a byte, a failed peek can't leave its flags on the stream
     int c = fgetc(fileHandle);
     if (c == EOF) {
@@ -112,6 +117,7 @@ unsigned int File::open(const char *aFilename, bool write){
     }
     if (!fileHandle)
         return FileErrors::FILE_NOT_FOUND;
+    seekable = ftell(fileHandle) >= 0;
     // "w+b" already truncated it
     modified = write;
     return FileErrors::FILEDATA_OK;
