@@ -2092,7 +2092,7 @@ void UISystem::update(double dt){
     }
 
     // shown again by the next key or gamepad press, like in a removed scene
-    if (navigating && !hasNavigationFocus()){
+    if (navigating && !canHoldNavigationFocus(navigationFocus)){
         setNavigating(false);
     }
 
@@ -2871,10 +2871,10 @@ bool UISystem::hasNavigationTargets(){
     return !getNavigationTargets().empty();
 }
 
-// on a button that shows, even if disabled or clipped for now
-bool UISystem::hasNavigationFocus() const {
-    const ButtonComponent* button = scene->findComponent<ButtonComponent>(navigationFocus);
-    const Transform* transform = scene->findComponent<Transform>(navigationFocus);
+// a button that shows, even if disabled or clipped for now
+bool UISystem::canHoldNavigationFocus(Entity entity) const {
+    const ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
+    const Transform* transform = scene->findComponent<Transform>(entity);
     return button && button->focusable && transform && isVisibleInHierarchy(*transform);
 }
 
@@ -2936,7 +2936,7 @@ bool UISystem::eventOnNavigate(NavigationDirection direction){
         return false;
 
     // the input stays with gameplay without a focus
-    if (!hasNavigationFocus())
+    if (!canHoldNavigationFocus(navigationFocus))
         return false;
 
     std::vector<std::pair<Entity, Vector2>> targets = getNavigationTargets();
@@ -2944,7 +2944,7 @@ bool UISystem::eventOnNavigate(NavigationDirection direction){
         return false;
 
     auto current = std::find_if(targets.begin(), targets.end(), [this](const auto& target){
-        return scene->getComponent<UIComponent>(target.first).focused;
+        return target.first == navigationFocus;
     });
 
     // the first press only shows where the focus is
@@ -3218,6 +3218,10 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y){
 
     if (scene->findComponent<TextEditComponent>(entity))
         scene->getComponent<TextEditComponent>(entity).needUpdateTextEdit = true;
+
+    // a click moves the focus but doesn't start it
+    if (canHoldNavigationFocus(navigationFocus) && canHoldNavigationFocus(entity))
+        navigationFocus = entity;
 }
 
 bool UISystem::eventOnPointerDown(float x, float y){
