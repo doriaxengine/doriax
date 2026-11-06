@@ -2952,6 +2952,11 @@ bool PhysicsSystem::loadPathJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
     return true;
 }
 
+// A gear or rack reads these constraints, so it waits for them without it being an error
+static bool isJoint3DReady(const Joint3DComponent& joint){
+    return joint.joint && !joint.needUpdateJoint;
+}
+
 bool PhysicsSystem::loadGearJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB, Entity hingeA, Entity hingeB, int numTeethGearA, int numTeethGearB){
     Signature signatureA = scene->getSignature(bodyA);
     Signature signatureB = scene->getSignature(bodyB);
@@ -2980,6 +2985,10 @@ bool PhysicsSystem::loadGearJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
                 return false;
             }
 
+            if (!isJoint3DReady(myHingeA) || !isJoint3DReady(myHingeB)){
+                return false;
+            }
+
             const JPH::BodyLockInterface& bodyLockInterface = getBodyLockInterface3D();
             JPH::BodyID bodies[2] = {myBodyA.body, myBodyB.body};
             JPH::BodyLockMultiWrite lock(bodyLockInterface, bodies, 2);
@@ -2997,8 +3006,11 @@ bool PhysicsSystem::loadGearJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
             lockBodyA->SetCollisionGroup(JPH::CollisionGroup(group_filter, 0, 0));
             lockBodyB->SetCollisionGroup(JPH::CollisionGroup(group_filter, 0, 1));
 
-            JPH::HingeConstraintSettings* hingeSetA = (JPH::HingeConstraintSettings*)((JPH::HingeConstraint*)myHingeA.joint)->GetConstraintSettings().GetPtr();
-            JPH::HingeConstraintSettings* hingeSetB = (JPH::HingeConstraintSettings*)((JPH::HingeConstraint*)myHingeB.joint)->GetConstraintSettings().GetPtr();
+            // each call builds a new object, the Ref keeps it alive
+            JPH::Ref<JPH::ConstraintSettings> hingeRefA = myHingeA.joint->GetConstraintSettings();
+            JPH::Ref<JPH::ConstraintSettings> hingeRefB = myHingeB.joint->GetConstraintSettings();
+            JPH::HingeConstraintSettings* hingeSetA = (JPH::HingeConstraintSettings*)hingeRefA.GetPtr();
+            JPH::HingeConstraintSettings* hingeSetB = (JPH::HingeConstraintSettings*)hingeRefB.GetPtr();
 
             if (numTeethGearA <= 0 || numTeethGearB <= 0){
                 Log::warn("Gear 3D joint received non-positive teeth count. Clamping to at least 1.");
@@ -3007,8 +3019,9 @@ bool PhysicsSystem::loadGearJoint3D(Joint3DComponent& joint, Entity bodyA, Entit
             }
 
             JPH::GearConstraintSettings settings;
-            settings.mHingeAxis1 = hingeSetA->mHingeAxis1;
-            settings.mHingeAxis2 = hingeSetB->mHingeAxis1;
+            // those axes are local to each hinge's first body, these settings take world ones
+            settings.mHingeAxis1 = myHingeA.joint->GetBody1()->GetRotation() * hingeSetA->mHingeAxis1;
+            settings.mHingeAxis2 = myHingeB.joint->GetBody1()->GetRotation() * hingeSetB->mHingeAxis1;
             settings.SetRatio(numTeethGearA, numTeethGearB);
 
             joint.joint = settings.Create(*lockBodyA, *lockBodyB);
@@ -3057,6 +3070,10 @@ bool PhysicsSystem::loadRackAndPinionJoint3D(Joint3DComponent& joint, Entity bod
                 return false;
             }
 
+            if (!isJoint3DReady(myHinge) || !isJoint3DReady(mySlider)){
+                return false;
+            }
+
             const JPH::BodyLockInterface& bodyLockInterface = getBodyLockInterface3D();
             JPH::BodyID bodies[2] = {myBodyA.body, myBodyB.body};
             JPH::BodyLockMultiWrite lock(bodyLockInterface, bodies, 2);
@@ -3074,8 +3091,11 @@ bool PhysicsSystem::loadRackAndPinionJoint3D(Joint3DComponent& joint, Entity bod
             lockBodyA->SetCollisionGroup(JPH::CollisionGroup(group_filter, 0, 0));
             lockBodyB->SetCollisionGroup(JPH::CollisionGroup(group_filter, 0, 1));
 
-            JPH::HingeConstraintSettings* hingeSetA = (JPH::HingeConstraintSettings*)((JPH::HingeConstraint*)myHinge.joint)->GetConstraintSettings().GetPtr();
-            JPH::SliderConstraintSettings* sliderSetB = (JPH::SliderConstraintSettings*)((JPH::SliderConstraint*)mySlider.joint)->GetConstraintSettings().GetPtr();
+            // each call builds a new object, the Ref keeps it alive
+            JPH::Ref<JPH::ConstraintSettings> hingeRef = myHinge.joint->GetConstraintSettings();
+            JPH::Ref<JPH::ConstraintSettings> sliderRef = mySlider.joint->GetConstraintSettings();
+            JPH::HingeConstraintSettings* hingeSetA = (JPH::HingeConstraintSettings*)hingeRef.GetPtr();
+            JPH::SliderConstraintSettings* sliderSetB = (JPH::SliderConstraintSettings*)sliderRef.GetPtr();
 
             if (numTeethRack <= 0 || numTeethGear <= 0 || rackLength <= 0){
                 Log::warn("RackAndPinion 3D joint received non-positive ratio inputs. Clamping to at least 1.");
@@ -3085,13 +3105,14 @@ bool PhysicsSystem::loadRackAndPinionJoint3D(Joint3DComponent& joint, Entity bod
             }
 
             JPH::RackAndPinionConstraintSettings settings;
-            settings.mHingeAxis = hingeSetA->mHingeAxis1;
-            settings.mSliderAxis = sliderSetB->mSliderAxis2;
+            // those axes are local to each joint's first body, these settings take world ones
+            settings.mHingeAxis = myHinge.joint->GetBody1()->GetRotation() * hingeSetA->mHingeAxis1;
+            settings.mSliderAxis = mySlider.joint->GetBody1()->GetRotation() * sliderSetB->mSliderAxis1;
             settings.SetRatio(numTeethRack, rackLength, numTeethGear);
 
             joint.joint = settings.Create(*lockBodyA, *lockBodyB);
 
-            ((JPH::GearConstraint *)joint.joint)->SetConstraints(myHinge.joint, mySlider.joint);
+            ((JPH::RackAndPinionConstraint *)joint.joint)->SetConstraints(myHinge.joint, mySlider.joint);
             world3D.AddConstraint(joint.joint);
             joint.type = Joint3DType::RACKANDPINON;
         }else{
