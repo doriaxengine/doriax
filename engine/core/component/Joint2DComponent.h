@@ -42,6 +42,7 @@ namespace doriax{
         bool autoAnchors = true;
         bool rope = false;
         bool needUpdateJoint = true;
+        bool loggedWait = false; // the update loop retries it, a wait only logs once
     };
 
 }
