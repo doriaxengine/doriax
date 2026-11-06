@@ -1924,6 +1924,15 @@ void PhysicsSystem::destroyBody3D(Body3DComponent& body){
         return;
     }
 
+    // A constraint keeps raw pointers to its bodies. The update loop rebuilds these joints.
+    auto joints = scene->getComponentArray<Joint3DComponent>();
+    for (size_t i = 0; i < joints->size(); i++){
+        Joint3DComponent& joint = joints->getComponentFromIndex(i);
+        if (joint.joint && (joint.joint->GetBody1()->GetID() == body.body || joint.joint->GetBody2()->GetID() == body.body)){
+            destroyJoint3D(joint);
+        }
+    }
+
     // Refusing would strand the body with user data pointing at an entity the caller is
     // about to drop, so park it for the flush. Shapes are refcounts, released either way.
     if (steppingWorld3D){
@@ -3174,6 +3183,16 @@ bool PhysicsSystem::loadPulleyJoint3D(Joint3DComponent& joint, Entity bodyA, Ent
     return true;
 }
 
+static bool usesJoint3D(Scene* scene, const Joint3DComponent& other, const Joint3DComponent& joint){
+    if (other.type == Joint3DType::GEAR){
+        return scene->findComponent<Joint3DComponent>(other.hingeA) == &joint || scene->findComponent<Joint3DComponent>(other.hingeB) == &joint;
+    }
+    if (other.type == Joint3DType::RACKANDPINON){
+        return scene->findComponent<Joint3DComponent>(other.hinge) == &joint || scene->findComponent<Joint3DComponent>(other.slider) == &joint;
+    }
+    return false;
+}
+
 void PhysicsSystem::destroyJoint3D(Joint3DComponent& joint){
     if (joint.joint){
         // Parked like a body, the Ref keeping the constraint alive until the flush.
@@ -3184,6 +3203,15 @@ void PhysicsSystem::destroyJoint3D(Joint3DComponent& joint){
         }
 
         joint.joint = NULL;
+
+        // A gear or rack keeps reading this constraint, even after its bodies are gone
+        auto joints = scene->getComponentArray<Joint3DComponent>();
+        for (size_t i = 0; i < joints->size(); i++){
+            Joint3DComponent& other = joints->getComponentFromIndex(i);
+            if (other.joint && usesJoint3D(scene, other, joint)){
+                destroyJoint3D(other);
+            }
+        }
     }
 }
 
