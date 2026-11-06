@@ -44,7 +44,7 @@ namespace doriax{
         double lastClickTime; // monotonic wall-clock seconds (Engine::getSystemTime)
 
         bool navigating; // focus moved by keys or a gamepad, drawn until the pointer moves
-        Entity navigationFocus; // the button keys and gamepads move from, if any
+        Entity navigationFocus; // from setFocus, the UI takes keys and gamepads while it shows
         Entity submitButton; // held down by the submit key or gamepad button
         unsigned int focusRequest; // counts setFocus calls, so a nested one stops the outer
 

@@ -2944,7 +2944,7 @@ bool UISystem::eventOnNavigate(NavigationDirection direction){
         return false;
 
     auto current = std::find_if(targets.begin(), targets.end(), [this](const auto& target){
-        return target.first == navigationFocus;
+        return scene->getComponent<UIComponent>(target.first).focused;
     });
 
     // the first press only shows where the focus is
