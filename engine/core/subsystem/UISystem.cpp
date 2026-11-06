@@ -2092,7 +2092,7 @@ void UISystem::update(double dt){
     }
 
     // shown again by the next key or gamepad press, like in a removed scene
-    if (navigating && !canHoldNavigationFocus(navigationFocus)){
+    if (navigating && !hasNavigationFocus()){
         setNavigating(false);
     }
 
@@ -2762,7 +2762,11 @@ void UISystem::changeFocus(Entity entity, bool focused){
 
 void UISystem::setFocus(Entity entity){
     unsigned int request = ++focusRequest;
-    navigationFocus = isLiveUIEntity(entity) ? entity : NULL_ENTITY;
+
+    // keys and gamepads come back from a TextEdit to the button they left
+    if (!scene->findComponent<TextEditComponent>(entity)){
+        navigationFocus = isLiveUIEntity(entity) ? entity : NULL_ENTITY;
+    }
 
     std::vector<Entity> focusedEntities;
     auto uis = scene->getComponentArray<UIComponent>();
@@ -2786,7 +2790,7 @@ void UISystem::setFocus(Entity entity){
             return;
     }
 
-    setNavigating(entity != NULL_ENTITY);
+    setNavigating(navigationFocus != NULL_ENTITY && navigationFocus == entity);
 }
 
 void UISystem::hideFocus(){
@@ -2846,6 +2850,11 @@ Rect UISystem::getButtonVisibleRect(Entity entity){
     return Rect(left, top, right - left, bottom - top);
 }
 
+bool UISystem::isNavigationTarget(Entity entity){
+    ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
+    return button && button->focusable && getButtonVisibleRect(entity).getWidth() > 0;
+}
+
 // focusable buttons by the centers of their visible parts, in reading order
 std::vector<std::pair<Entity, Vector2>> UISystem::getNavigationTargets(){
     std::vector<std::pair<Entity, Vector2>> targets;
@@ -2868,13 +2877,18 @@ std::vector<std::pair<Entity, Vector2>> UISystem::getNavigationTargets(){
 }
 
 bool UISystem::hasNavigationTargets(){
-    return !getNavigationTargets().empty();
+    auto buttons = scene->getComponentArray<ButtonComponent>();
+    for (int i = 0; i < buttons->size(); i++){
+        if (isNavigationTarget(buttons->getEntity(i)))
+            return true;
+    }
+    return false;
 }
 
-// a button that shows, even if disabled or clipped for now
-bool UISystem::canHoldNavigationFocus(Entity entity) const {
-    const ButtonComponent* button = scene->findComponent<ButtonComponent>(entity);
-    const Transform* transform = scene->findComponent<Transform>(entity);
+// on a button that shows, even if disabled or clipped for now
+bool UISystem::hasNavigationFocus() const {
+    const ButtonComponent* button = scene->findComponent<ButtonComponent>(navigationFocus);
+    const Transform* transform = scene->findComponent<Transform>(navigationFocus);
     return button && button->focusable && transform && isVisibleInHierarchy(*transform);
 }
 
@@ -2936,7 +2950,7 @@ bool UISystem::eventOnNavigate(NavigationDirection direction){
         return false;
 
     // the input stays with gameplay without a focus
-    if (!canHoldNavigationFocus(navigationFocus))
+    if (!hasNavigationFocus())
         return false;
 
     std::vector<std::pair<Entity, Vector2>> targets = getNavigationTargets();
@@ -2984,23 +2998,16 @@ bool UISystem::eventOnSubmitDown(){
     // a press whose release never got here, like one held through a scene switch
     releaseSubmit(false);
 
-    if (!navigating || isTextEditTyping())
+    if (!navigating || isTextEditTyping() || !isNavigationTarget(navigationFocus))
         return false;
 
-    for (const auto& target : getNavigationTargets()){
-        Entity entity = target.first;
-        UIComponent& ui = scene->getComponent<UIComponent>(entity);
-        if (ui.focused){
-            ButtonComponent& button = scene->getComponent<ButtonComponent>(entity);
-            submitButton = entity;
-            button.pressed = true;
-            applyButtonVisual(entity, button, ui, true);
-            button.onPress.call();
-            return true;
-        }
-    }
-
-    return false;
+    ButtonComponent& button = scene->getComponent<ButtonComponent>(navigationFocus);
+    UIComponent& ui = scene->getComponent<UIComponent>(navigationFocus);
+    submitButton = navigationFocus;
+    button.pressed = true;
+    applyButtonVisual(navigationFocus, button, ui, true);
+    button.onPress.call();
+    return true;
 }
 
 bool UISystem::eventOnSubmitUp(){
@@ -3233,7 +3240,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
     setNavigating(false);
 
     // a click moves the focus but doesn't start it, decided before any callback runs
-    bool movesFocus = canHoldNavigationFocus(navigationFocus);
+    bool movesFocus = hasNavigationFocus();
     unsigned int request = focusRequest;
 
     lastUIFromPointer = NULL_ENTITY;
@@ -3303,7 +3310,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
         Entity entity = lastUIFromPointer;
         pointerDownOnUI(entity, x, y, request);
 
-        if (movesFocus && request == focusRequest && canHoldNavigationFocus(entity)){
+        if (movesFocus && request == focusRequest && isNavigationTarget(entity)){
             navigationFocus = entity;
         }
     }else{

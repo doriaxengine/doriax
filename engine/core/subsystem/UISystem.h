@@ -120,7 +120,8 @@ namespace doriax{
         Rect getImageClipRect(Entity image, const ImageComponent& img);
         Rect getButtonVisibleRect(Entity entity);
         std::vector<std::pair<Entity, Vector2>> getNavigationTargets();
-        bool canHoldNavigationFocus(Entity entity) const;
+        bool isNavigationTarget(Entity entity);
+        bool hasNavigationFocus() const;
         bool releaseSubmit(bool click);
 
         void pointerDownOnUI(Entity entity, float x, float y, unsigned int request);
