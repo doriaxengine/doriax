@@ -316,9 +316,10 @@ bool SokolTexture::createTexture(
     sampler_desc.wrap_u = getWrap(wrapU);
     sampler_desc.wrap_v = getWrap(wrapV);
 
-    // all faces of a mip level must be in one contiguous memory block
+    // all faces of a mip level must be in one contiguous memory block, and a
+    // queued upload reads it later, when the source can be gone
     unsigned char* combined = NULL;
-    if (numFaces > 1){
+    if (numFaces > 1 || Engine::isAsyncThread()){
         size_t total_size = 0;
         for (int f = 0; f < numFaces; f++){
             total_size += size[f];

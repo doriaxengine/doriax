@@ -8,17 +8,16 @@
 using namespace doriax;
 
 namespace {
-    // owns the face data, a project switch frees the Texture before the render queue runs
+    // weak so the pool can still replace the data, and dropped data already freed its pixels
     struct TextureFaceCleanup{
-        std::shared_ptr<std::array<TextureData,6>> data;
+        std::weak_ptr<std::array<TextureData,6>> data;
         size_t face;
-        bool release;
     };
 
     void cleanupTextureFace(void* cleanupData){
         TextureFaceCleanup* cleanup = static_cast<TextureFaceCleanup*>(cleanupData);
-        if (cleanup->release){
-            TextureData::cleanupTexture(&cleanup->data->at(cleanup->face));
+        if (auto data = cleanup->data.lock()){
+            TextureData::cleanupTexture(&data->at(cleanup->face));
         }
         delete cleanup;
     }
@@ -534,10 +533,9 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
         render = TexturePool::get(getRenderId(), type, data, minFilter, magFilter, wrapU, wrapV);
     }
 
-    // a queued upload reads the pixels later, so hold them even if they aren't released
-    if (render && data){
+    if (render && releaseDataAfterLoad && data){
         for (int f = 0; f < numFaces; f++){
-            SystemRender::scheduleCleanup(cleanupTextureFace, new TextureFaceCleanup{data, (size_t)f, releaseDataAfterLoad});
+            SystemRender::scheduleCleanup(cleanupTextureFace, new TextureFaceCleanup{data, (size_t)f});
         }
     }
 
