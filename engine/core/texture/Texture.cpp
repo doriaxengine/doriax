@@ -535,6 +535,8 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
 
     if (render && releaseDataAfterLoad && data){
         for (int f = 0; f < numFaces; f++){
+            // freed here either way, and by the data if it goes before the cleanup
+            data->at(f).setDataOwned(true);
             SystemRender::scheduleCleanup(cleanupTextureFace, new TextureFaceCleanup{data, (size_t)f});
         }
     }
