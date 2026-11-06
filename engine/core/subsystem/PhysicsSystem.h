@@ -51,6 +51,11 @@ namespace doriax{
 
 		bool interpolation = true;
 
+		// Joints the update loop retries, whose reason to wait was already logged
+		std::unordered_set<Entity> loggedJointWaits;
+
+		void logJointWait(Entity entity, const char* message);
+
 #ifdef DORIAX_PHYSICS_2D
 		b2WorldId world2D;
 		float pointsToMeterScale2D;

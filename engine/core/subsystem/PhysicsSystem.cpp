@@ -966,6 +966,13 @@ void PhysicsSystem::applyBuoyancy3D(float dt){
 }
 #endif
 
+// The update loop retries a joint every step, so each wait only logs once
+void PhysicsSystem::logJointWait(Entity entity, const char* message){
+    if (loggedJointWaits.insert(entity).second){
+        Log::error("%s", message);
+    }
+}
+
 #ifdef DORIAX_PHYSICS_2D
 bool PhysicsSystem::loadJoint2D(Entity entity, Joint2DComponent& joint){
     ensureWorld2D();
@@ -977,31 +984,32 @@ bool PhysicsSystem::loadJoint2D(Entity entity, Joint2DComponent& joint){
         destroyJoint2D(joint);
     }
 
-    if (joint.bodyA == NULL_ENTITY){
+    if (joint.bodyA == NULL_ENTITY || joint.bodyB == NULL_ENTITY){
         return false;
     }
 
+    // a body that's gone can come back, and the joint with it
+    if (!scene->findComponent<Body2DComponent>(joint.bodyA) || !scene->findComponent<Body2DComponent>(joint.bodyB)){
+        logJointWait(entity, "Cannot create joint, error in bodyA or bodyB");
+        return false;
+    }
+
+    loggedJointWaits.erase(entity);
+
     switch (joint.type){
         case Joint2DType::DISTANCE:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadDistanceJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.anchorA, joint.anchorB, joint.autoAnchors, joint.rope);
         case Joint2DType::REVOLUTE:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadRevoluteJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.anchorA);
         case Joint2DType::PRISMATIC:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadPrismaticJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.anchorA, joint.axis);
         case Joint2DType::MOUSE:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadMouseJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.target);
         case Joint2DType::WHEEL:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadWheelJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.anchorA, joint.axis);
         case Joint2DType::WELD:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadWeldJoint2D(entity, joint, joint.bodyA, joint.bodyB, joint.anchorA);
         case Joint2DType::MOTOR:
-            if (joint.bodyB == NULL_ENTITY) return false;
             return loadMotorJoint2D(entity, joint, joint.bodyA, joint.bodyB);
         default:
             return false;
@@ -1010,6 +1018,19 @@ bool PhysicsSystem::loadJoint2D(Entity entity, Joint2DComponent& joint){
 #endif
 
 #ifdef DORIAX_PHYSICS_3D
+static bool hasJointTargets3D(Scene* scene, const Joint3DComponent& joint){
+    if (!scene->findComponent<Body3DComponent>(joint.bodyA) || !scene->findComponent<Body3DComponent>(joint.bodyB)){
+        return false;
+    }
+    if (joint.type == Joint3DType::GEAR){
+        return scene->findComponent<Joint3DComponent>(joint.hingeA) && scene->findComponent<Joint3DComponent>(joint.hingeB);
+    }
+    if (joint.type == Joint3DType::RACKANDPINON){
+        return scene->findComponent<Joint3DComponent>(joint.hinge) && scene->findComponent<Joint3DComponent>(joint.slider);
+    }
+    return true;
+}
+
 bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
     // The step holds the constraint list; the update loop retries any joint without one.
     if (steppingWorld3D){
@@ -1025,16 +1046,14 @@ bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
         return false;
     }
 
-    Signature signatureA = scene->getSignature(joint.bodyA);
-    Signature signatureB = scene->getSignature(joint.bodyB);
-
-    if (!signatureA.test(scene->getComponentId<Body3DComponent>()) || !signatureB.test(scene->getComponentId<Body3DComponent>())){
-        Log::error("Cannot create joint, error in bodyA or bodyB");
+    // what's gone can come back, and the joint with it
+    if (!hasJointTargets3D(scene, joint)){
+        logJointWait(entity, "Cannot create joint, a body or joint it needs is missing");
         return false;
     }
 
     if (!loadBody3D(joint.bodyA) || !loadBody3D(joint.bodyB)){
-        Log::error("Cannot create 3D joint, bodyA or bodyB has no valid physics shape/body");
+        logJointWait(entity, "Cannot create 3D joint, bodyA or bodyB has no valid physics shape/body");
         return false;
     }
 
@@ -1042,9 +1061,11 @@ bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
     Body3DComponent& bodyBComp = scene->getComponent<Body3DComponent>(joint.bodyB);
 
     if (bodyAComp.body.IsInvalid() || bodyBComp.body.IsInvalid()){
-        Log::error("Cannot create 3D joint, bodyA or bodyB body id is invalid");
+        logJointWait(entity, "Cannot create 3D joint, bodyA or bodyB body id is invalid");
         return false;
     }
+
+    loggedJointWaits.erase(entity);
 
     switch (joint.type){
         case Joint3DType::FIXED:
@@ -1115,10 +1136,8 @@ bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
             return loadPathJoint3D(joint, joint.bodyA, joint.bodyB, joint.pathPoints, tangents, normals, joint.pathPosition, joint.isLooping);
         }
         case Joint3DType::GEAR:
-            if (joint.hingeA == NULL_ENTITY || joint.hingeB == NULL_ENTITY) return false;
             return loadGearJoint3D(joint, joint.bodyA, joint.bodyB, joint.hingeA, joint.hingeB, joint.numTeethGearA, joint.numTeethGearB);
         case Joint3DType::RACKANDPINON:
-            if (joint.hinge == NULL_ENTITY || joint.slider == NULL_ENTITY) return false;
             return loadRackAndPinionJoint3D(joint, joint.bodyA, joint.bodyB, joint.hinge, joint.slider, joint.numTeethRack, joint.numTeethGear, joint.rackLength);
         case Joint3DType::PULLEY:
             return loadPulleyJoint3D(joint, joint.bodyA, joint.bodyB, joint.anchorA, joint.anchorB, joint.fixedPointA, joint.fixedPointB);
@@ -3466,6 +3485,7 @@ void PhysicsSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
 	} else if (componentId == scene->getComponentId<Joint2DComponent>()) {
 		Joint2DComponent& joint2d = scene->getComponent<Joint2DComponent>(entity);
 		destroyJoint2D(joint2d);
+		loggedJointWaits.erase(entity);
 	} else if (componentId == scene->getComponentId<TilemapComponent>()) {
 		// boxes built from these tiles go with them
 		if (Body2DComponent* body2d = scene->findComponent<Body2DComponent>(entity)) {
@@ -3482,6 +3502,7 @@ void PhysicsSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
 	} else if (componentId == scene->getComponentId<Joint3DComponent>()) {
 		Joint3DComponent& joint3d = scene->getComponent<Joint3DComponent>(entity);
 		destroyJoint3D(joint3d);
+		loggedJointWaits.erase(entity);
 	}
 #endif
 }
