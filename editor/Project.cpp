@@ -5396,6 +5396,9 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             sceneProject->playStateEntities.clear();
         }
 
+        // Drop the focus left during play
+        sceneProject->scene->getSystem<UISystem>()->setFocus(NULL_ENTITY);
+
         sceneProject->playState = ScenePlayState::STOPPED;
 
         Entity cameraEntity = sceneProject->scene->getCamera();

@@ -1612,16 +1612,21 @@ bool Engine::isTypingInUI(){
 }
 
 // the topmost scene with a focusable button takes it
+Scene* Engine::getNavigationScene(){
+    std::vector<Scene*> snapshot = getScenesSnapshot();
+    for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it){
+        if (canSendUIEvents(*it) && (*it)->getSystem<UISystem>()->hasNavigationTargets())
+            return *it;
+    }
+    return nullptr;
+}
+
 bool Engine::navigateUI(NavigationDirection direction){
     if (direction == NavigationDirection::NONE || isTypingInUI())
         return false;
 
-    std::vector<Scene*> snapshot = getScenesSnapshot();
-    for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it){
-        if (canSendUIEvents(*it) && (*it)->getSystem<UISystem>()->eventOnNavigate(direction))
-            return true;
-    }
-    return false;
+    Scene* scene = getNavigationScene();
+    return scene && scene->getSystem<UISystem>()->eventOnNavigate(direction);
 }
 
 bool Engine::holdNavigation(NavigationDirection direction){
@@ -1727,12 +1732,10 @@ bool Engine::pressSubmit(int gamepad, int button, bool repeat){
     if (repeat || isTypingInUI())
         return false;
 
-    std::vector<Scene*> snapshot = getScenesSnapshot();
-    for (auto it = snapshot.rbegin(); it != snapshot.rend(); ++it){
-        if (canSendUIEvents(*it) && (*it)->getSystem<UISystem>()->eventOnSubmitDown()){
-            submitSource = {true, gamepad, button};
-            return true;
-        }
+    Scene* scene = getNavigationScene();
+    if (scene && scene->getSystem<UISystem>()->eventOnSubmitDown()){
+        submitSource = {true, gamepad, button};
+        return true;
     }
     return false;
 }

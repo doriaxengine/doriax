@@ -44,6 +44,7 @@ namespace doriax{
         double lastClickTime; // monotonic wall-clock seconds (Engine::getSystemTime)
 
         bool navigating; // focus moved by keys or a gamepad, drawn until the pointer moves
+        Entity navigationFocus; // the button keys and gamepads move from, if any
         Entity submitButton; // held down by the submit key or gamepad button
         unsigned int focusRequest; // counts setFocus calls, so a nested one stops the outer
 
@@ -119,6 +120,7 @@ namespace doriax{
         Rect getImageClipRect(Entity image, const ImageComponent& img);
         Rect getButtonVisibleRect(Entity entity);
         std::vector<std::pair<Entity, Vector2>> getNavigationTargets();
+        bool hasNavigationFocus() const;
         bool releaseSubmit(bool click);
 
         void pointerDownOnUI(Entity entity, float x, float y);
@@ -162,6 +164,7 @@ namespace doriax{
         bool isTextEditFocused();
         // focused and still visible and enabled, so it keeps the arrows and the submit keys
         bool isTextEditTyping();
+        bool hasNavigationTargets();
 
         // an image is still waiting for its texture to build its geometry
         bool hasPendingImages() const;

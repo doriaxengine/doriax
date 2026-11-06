@@ -47,6 +47,7 @@ UISystem::UISystem(Scene* scene): SubSystem(scene){
     lastClickTime = -1.0;
 
     navigating = false;
+    navigationFocus = NULL_ENTITY;
     submitButton = NULL_ENTITY;
     focusRequest = 0;
 
@@ -2090,6 +2091,11 @@ void UISystem::update(double dt){
         return;
     }
 
+    // shown again by the next key or gamepad press, like in a removed scene
+    if (navigating && !hasNavigationFocus()){
+        setNavigating(false);
+    }
+
     // need to be ordered by Transform
     auto layouts = scene->getComponentArray<UILayoutComponent>();
 
@@ -2756,6 +2762,7 @@ void UISystem::changeFocus(Entity entity, bool focused){
 
 void UISystem::setFocus(Entity entity){
     unsigned int request = ++focusRequest;
+    navigationFocus = isLiveUIEntity(entity) ? entity : NULL_ENTITY;
 
     std::vector<Entity> focusedEntities;
     auto uis = scene->getComponentArray<UIComponent>();
@@ -2860,6 +2867,17 @@ std::vector<std::pair<Entity, Vector2>> UISystem::getNavigationTargets(){
     return targets;
 }
 
+bool UISystem::hasNavigationTargets(){
+    return !getNavigationTargets().empty();
+}
+
+// on a button that shows, even if disabled or clipped for now
+bool UISystem::hasNavigationFocus() const {
+    const ButtonComponent* button = scene->findComponent<ButtonComponent>(navigationFocus);
+    const Transform* transform = scene->findComponent<Transform>(navigationFocus);
+    return button && button->focusable && transform && isVisibleInHierarchy(*transform);
+}
+
 bool UISystem::eventOnCharInput(wchar_t input){
     // Windows, macOS and iOS send a character past U+FFFF as two UTF-16 halves
     uint32_t codepoint = static_cast<uint32_t>(input);
@@ -2917,12 +2935,16 @@ bool UISystem::eventOnNavigate(NavigationDirection direction){
     if (isTextEditTyping())
         return false;
 
+    // the input stays with gameplay without a focus
+    if (!hasNavigationFocus())
+        return false;
+
     std::vector<std::pair<Entity, Vector2>> targets = getNavigationTargets();
     if (targets.empty())
         return false;
 
     auto current = std::find_if(targets.begin(), targets.end(), [this](const auto& target){
-        return scene->getComponent<UIComponent>(target.first).focused;
+        return target.first == navigationFocus;
     });
 
     // the first press only shows where the focus is
@@ -3743,6 +3765,9 @@ void UISystem::onComponentRemoved(Entity entity, ComponentId componentId) {
         }
         if (entity == submitButton) {
             submitButton = NULL_ENTITY;
+        }
+        if (entity == navigationFocus) {
+            navigationFocus = NULL_ENTITY;
         }
     }
 

@@ -317,6 +317,7 @@ namespace doriax {
         static void runFrame(bool draw);
 
         static bool isTypingInUI();
+        static Scene* getNavigationScene();
         static bool navigateUI(NavigationDirection direction);
         static bool holdNavigation(NavigationDirection direction);
         static bool isNavigationHeld(NavigationDirection direction);
