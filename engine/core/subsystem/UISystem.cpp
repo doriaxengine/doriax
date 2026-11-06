@@ -3062,7 +3062,7 @@ bool UISystem::isVisibleInHierarchy(const Transform& transform) const {
 
 // Entity must be a live UI entity. Every user callback here can create or destroy
 // entities, which invalidates the component references
-void UISystem::pointerDownOnUI(Entity entity, float x, float y){
+void UISystem::pointerDownOnUI(Entity entity, float x, float y, unsigned int request){
     Signature signature = scene->getSignature(entity);
     UIComponent* ui = scene->findComponent<UIComponent>(entity);
     ui->pointerMoved = false;
@@ -3208,6 +3208,15 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y){
     if (!ui)
         return;
 
+    // a focus callback that moves the focus itself wins
+    if (request != focusRequest){
+        if (textEditSelecting == entity){
+            textEditSelecting = NULL_ENTITY;
+            System::instance().hideVirtualKeyboard();
+        }
+        return;
+    }
+
     if (!ui->focused){
         ui->focused = true;
         ui->onGetFocus.call();
@@ -3218,14 +3227,14 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y){
 
     if (scene->findComponent<TextEditComponent>(entity))
         scene->getComponent<TextEditComponent>(entity).needUpdateTextEdit = true;
-
-    // a click moves the focus but doesn't start it
-    if (canHoldNavigationFocus(navigationFocus) && canHoldNavigationFocus(entity))
-        navigationFocus = entity;
 }
 
 bool UISystem::eventOnPointerDown(float x, float y){
     setNavigating(false);
+
+    // a click moves the focus but doesn't start it, decided before any callback runs
+    bool movesFocus = canHoldNavigationFocus(navigationFocus);
+    unsigned int request = focusRequest;
 
     lastUIFromPointer = NULL_ENTITY;
     lastPanelFromPointer = NULL_ENTITY;
@@ -3274,7 +3283,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
 
                 if (signature.test(scene->getComponentId<UIComponent>())){
                     UIComponent& ui = scene->getComponent<UIComponent>(entity);
-                    if (ui.focused){
+                    if (ui.focused && request == focusRequest){
                         ui.focused = false;
                         ui.onLostFocus.call();
                         if (scene->isEntityCreated(entity)){
@@ -3291,7 +3300,12 @@ bool UISystem::eventOnPointerDown(float x, float y){
     }
 
     if (isLiveUIEntity(lastUIFromPointer)){
-        pointerDownOnUI(lastUIFromPointer, x, y);
+        Entity entity = lastUIFromPointer;
+        pointerDownOnUI(entity, x, y, request);
+
+        if (movesFocus && request == focusRequest && canHoldNavigationFocus(entity)){
+            navigationFocus = entity;
+        }
     }else{
         lastUIFromPointer = NULL_ENTITY;
         System::instance().hideVirtualKeyboard();

@@ -123,7 +123,7 @@ namespace doriax{
         bool canHoldNavigationFocus(Entity entity) const;
         bool releaseSubmit(bool click);
 
-        void pointerDownOnUI(Entity entity, float x, float y);
+        void pointerDownOnUI(Entity entity, float x, float y, unsigned int request);
         void pointerMoveOnUI(Entity entity, float x, float y, Vector2 pointerDiff, CursorType& cursor);
         void applyScrollbarPointerPosition(Entity entity, float x, float y);
 
