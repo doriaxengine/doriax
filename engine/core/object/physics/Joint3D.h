@@ -5,6 +5,7 @@
 #define JOINT3D_H
 
 #include "EntityHandle.h"
+#include "component/Joint3DComponent.h"
 
 namespace doriax{
 
@@ -34,6 +35,28 @@ namespace doriax{
         void setPulleyJoint(Joint3DComponent& joint, Entity bodyA, Entity bodyB, Vector3 worldAnchorOnBodyA, Vector3 worldAnchorOnBodyB, Vector3 fixedPointA, Vector3 fixedPointB);
         
         Joint3DType getType();
+
+        // hinge and prismatic only
+        void setMotorState(Joint3DMotorState state);
+        Joint3DMotorState getMotorState() const;
+
+        void setMotorTargetVelocity(float velocity);
+        float getMotorTargetVelocity() const;
+
+        void setMotorTargetPosition(float position);
+        float getMotorTargetPosition() const;
+
+        void setMotorFrequency(float frequency);
+        float getMotorFrequency() const;
+
+        void setMotorDamping(float damping);
+        float getMotorDamping() const;
+
+        void setMotorMaxForce(float maxForce);
+        float getMotorMaxForce() const;
+
+        // hinge angle or prismatic position
+        float getCurrentPosition() const;
     };
 }
 

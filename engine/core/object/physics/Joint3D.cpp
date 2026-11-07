@@ -190,3 +190,81 @@ Joint3DType Joint3D::getType(){
 
     return joint.type;
 }
+
+void Joint3D::setMotorState(Joint3DMotorState state){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorState = state;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+Joint3DMotorState Joint3D::getMotorState() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorState;
+}
+
+void Joint3D::setMotorTargetVelocity(float velocity){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorTargetVelocity = velocity;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+float Joint3D::getMotorTargetVelocity() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorTargetVelocity;
+}
+
+void Joint3D::setMotorTargetPosition(float position){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorTargetPosition = position;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+float Joint3D::getMotorTargetPosition() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorTargetPosition;
+}
+
+void Joint3D::setMotorFrequency(float frequency){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorFrequency = frequency;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+float Joint3D::getMotorFrequency() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorFrequency;
+}
+
+void Joint3D::setMotorDamping(float damping){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorDamping = damping;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+float Joint3D::getMotorDamping() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorDamping;
+}
+
+void Joint3D::setMotorMaxForce(float maxForce){
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+    joint.motorMaxForce = maxForce;
+    scene->getSystem<PhysicsSystem>()->updateJointMotor3D(joint);
+}
+
+float Joint3D::getMotorMaxForce() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return joint.motorMaxForce;
+}
+
+float Joint3D::getCurrentPosition() const{
+    Joint3DComponent& joint = getComponent<Joint3DComponent>();
+
+    return scene->getSystem<PhysicsSystem>()->getJointPosition3D(joint);
+}

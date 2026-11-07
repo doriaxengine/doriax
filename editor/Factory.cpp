@@ -1788,6 +1788,16 @@ std::string editor::Factory::formatShape3DBuildQuality(Shape3DBuildQuality quali
     }
 }
 
+std::string editor::Factory::formatJoint3DMotorState(Joint3DMotorState state) {
+    switch (state) {
+        case Joint3DMotorState::VELOCITY: return "Joint3DMotorState::VELOCITY";
+        case Joint3DMotorState::POSITION: return "Joint3DMotorState::POSITION";
+        case Joint3DMotorState::POSITION_AND_VELOCITY: return "Joint3DMotorState::POSITION_AND_VELOCITY";
+        case Joint3DMotorState::OFF:
+        default: return "Joint3DMotorState::OFF";
+    }
+}
+
 std::string editor::Factory::formatActionState(ActionState state) {
     switch (state) {
         case ActionState::Running: return "ActionState::Running";
@@ -1973,6 +1983,12 @@ std::string editor::Factory::createJoint3DComponent(int indentSpaces, EntityRegi
     code << ind << "joint3d.numTeethRack = " << formatInt(joint.numTeethRack) << ";\n";
     code << ind << "joint3d.numTeethGear = " << formatInt(joint.numTeethGear) << ";\n";
     code << ind << "joint3d.rackLength = " << formatInt(joint.rackLength) << ";\n";
+    code << ind << "joint3d.motorState = " << formatJoint3DMotorState(joint.motorState) << ";\n";
+    code << ind << "joint3d.motorTargetVelocity = " << formatFloat(joint.motorTargetVelocity) << ";\n";
+    code << ind << "joint3d.motorTargetPosition = " << formatFloat(joint.motorTargetPosition) << ";\n";
+    code << ind << "joint3d.motorFrequency = " << formatFloat(joint.motorFrequency) << ";\n";
+    code << ind << "joint3d.motorDamping = " << formatFloat(joint.motorDamping) << ";\n";
+    code << ind << "joint3d.motorMaxForce = " << formatFloat(joint.motorMaxForce) << ";\n";
     code << ind << "joint3d.pathPoints.clear();\n";
     for (size_t i = 0; i < joint.pathPoints.size(); i++) {
         code << ind << "joint3d.pathPoints.push_back(" << formatVector3(joint.pathPoints[i]) << ");\n";

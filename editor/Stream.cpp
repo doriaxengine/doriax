@@ -6828,6 +6828,23 @@ Shape3DBuildQuality editor::Stream::stringToShape3DBuildQuality(const std::strin
     return Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE;
 }
 
+std::string editor::Stream::joint3DMotorStateToString(Joint3DMotorState state) {
+    switch (state) {
+        case Joint3DMotorState::VELOCITY: return "velocity";
+        case Joint3DMotorState::POSITION: return "position";
+        case Joint3DMotorState::POSITION_AND_VELOCITY: return "position_and_velocity";
+        case Joint3DMotorState::OFF:
+        default: return "off";
+    }
+}
+
+Joint3DMotorState editor::Stream::stringToJoint3DMotorState(const std::string& str) {
+    if (str == "velocity") return Joint3DMotorState::VELOCITY;
+    if (str == "position") return Joint3DMotorState::POSITION;
+    if (str == "position_and_velocity") return Joint3DMotorState::POSITION_AND_VELOCITY;
+    return Joint3DMotorState::OFF;
+}
+
 Joint3DType editor::Stream::stringToJoint3DType(const std::string& str) {
     if (str == "distance") return Joint3DType::DISTANCE;
     if (str == "point") return Joint3DType::POINT;
@@ -7230,6 +7247,12 @@ YAML::Node editor::Stream::encodeJoint3DComponent(const Joint3DComponent& joint)
     node["numTeethRack"] = joint.numTeethRack;
     node["numTeethGear"] = joint.numTeethGear;
     node["rackLength"] = joint.rackLength;
+    node["motorState"] = joint3DMotorStateToString(joint.motorState);
+    node["motorTargetVelocity"] = joint.motorTargetVelocity;
+    node["motorTargetPosition"] = joint.motorTargetPosition;
+    node["motorFrequency"] = joint.motorFrequency;
+    node["motorDamping"] = joint.motorDamping;
+    node["motorMaxForce"] = joint.motorMaxForce;
     YAML::Node pathPointsNode;
     for (const Vector3& point : joint.pathPoints){
         pathPointsNode.push_back(encodeVector3(point));
@@ -7278,6 +7301,12 @@ Joint3DComponent editor::Stream::decodeJoint3DComponent(const YAML::Node& node, 
     if (node["numTeethRack"]) joint.numTeethRack = node["numTeethRack"].as<int>();
     if (node["numTeethGear"]) joint.numTeethGear = node["numTeethGear"].as<int>();
     if (node["rackLength"]) joint.rackLength = node["rackLength"].as<int>();
+    if (node["motorState"]) joint.motorState = stringToJoint3DMotorState(node["motorState"].as<std::string>());
+    if (node["motorTargetVelocity"]) joint.motorTargetVelocity = node["motorTargetVelocity"].as<float>();
+    if (node["motorTargetPosition"]) joint.motorTargetPosition = node["motorTargetPosition"].as<float>();
+    if (node["motorFrequency"]) joint.motorFrequency = node["motorFrequency"].as<float>();
+    if (node["motorDamping"]) joint.motorDamping = node["motorDamping"].as<float>();
+    if (node["motorMaxForce"]) joint.motorMaxForce = node["motorMaxForce"].as<float>();
     if (node["pathPoints"]){
         joint.pathPoints.clear();
         for (const YAML::Node& pointNode : node["pathPoints"]){

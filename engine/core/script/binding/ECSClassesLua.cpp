@@ -1406,11 +1406,18 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("numTeethRack", &Joint3DComponent::numTeethRack, &Joint3DComponent::numTeethRack)
         .addProperty("numTeethGear", &Joint3DComponent::numTeethGear, &Joint3DComponent::numTeethGear)
         .addProperty("rackLength", &Joint3DComponent::rackLength, &Joint3DComponent::rackLength)
+        .addProperty("motorState", &Joint3DComponent::motorState, &Joint3DComponent::motorState)
+        .addProperty("motorTargetVelocity", &Joint3DComponent::motorTargetVelocity, &Joint3DComponent::motorTargetVelocity)
+        .addProperty("motorTargetPosition", &Joint3DComponent::motorTargetPosition, &Joint3DComponent::motorTargetPosition)
+        .addProperty("motorFrequency", &Joint3DComponent::motorFrequency, &Joint3DComponent::motorFrequency)
+        .addProperty("motorDamping", &Joint3DComponent::motorDamping, &Joint3DComponent::motorDamping)
+        .addProperty("motorMaxForce", &Joint3DComponent::motorMaxForce, &Joint3DComponent::motorMaxForce)
         .addProperty("pathPoints", &Joint3DComponent::pathPoints, &Joint3DComponent::pathPoints)
         .addProperty("pathPosition", &Joint3DComponent::pathPosition, &Joint3DComponent::pathPosition)
         .addProperty("isLooping", &Joint3DComponent::isLooping, &Joint3DComponent::isLooping)
         .addProperty("autoAnchors", &Joint3DComponent::autoAnchors, &Joint3DComponent::autoAnchors)
         .addProperty("needUpdateJoint", &Joint3DComponent::needUpdateJoint, &Joint3DComponent::needUpdateJoint)
+        .addProperty("needUpdateMotor", &Joint3DComponent::needUpdateMotor, &Joint3DComponent::needUpdateMotor)
         .endClass();
 #endif
 

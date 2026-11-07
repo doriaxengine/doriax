@@ -29,6 +29,13 @@ namespace doriax{
         PULLEY
     };
 
+    enum class Joint3DMotorState{
+        OFF,
+        VELOCITY,
+        POSITION,
+        POSITION_AND_VELOCITY
+    };
+
     struct DORIAX_API Joint3DComponent{
 #ifdef DORIAX_PHYSICS_3D
         JPH::TwoBodyConstraint* joint = NULL;
@@ -69,12 +76,21 @@ namespace doriax{
         int numTeethGear = 20;
         int rackLength = 100;
 
+        // hinge and prismatic only
+        Joint3DMotorState motorState = Joint3DMotorState::OFF;
+        float motorTargetVelocity = 0.0f;
+        float motorTargetPosition = 0.0f;
+        float motorFrequency = 2.0f;
+        float motorDamping = 1.0f;
+        float motorMaxForce = 0.0f; // 0 is no limit
+
         std::vector<Vector3> pathPoints;
         Vector3 pathPosition = Vector3::ZERO;
         bool isLooping = false;
         bool autoAnchors = true;
 
         bool needUpdateJoint = true;
+        bool needUpdateMotor = false;
         bool loggedWait = false; // the update loop retries it, a wait only logs once
     };
 

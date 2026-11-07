@@ -639,6 +639,12 @@ namespace {
         makeFastProperty<Joint3DComponent, int, &Joint3DComponent::numTeethRack>("numTeethRack", PropertyType::Int, UpdateFlags_Joint3D),
         makeFastProperty<Joint3DComponent, int, &Joint3DComponent::numTeethGear>("numTeethGear", PropertyType::Int, UpdateFlags_Joint3D),
         makeFastProperty<Joint3DComponent, int, &Joint3DComponent::rackLength>("rackLength", PropertyType::Int, UpdateFlags_Joint3D),
+        makeFastProperty<Joint3DComponent, Joint3DMotorState, &Joint3DComponent::motorState>("motorState", PropertyType::Enum, UpdateFlags_Joint3D_Motor),
+        makeFastProperty<Joint3DComponent, float, &Joint3DComponent::motorTargetVelocity>("motorTargetVelocity", PropertyType::Float, UpdateFlags_Joint3D_Motor),
+        makeFastProperty<Joint3DComponent, float, &Joint3DComponent::motorTargetPosition>("motorTargetPosition", PropertyType::Float, UpdateFlags_Joint3D_Motor),
+        makeFastProperty<Joint3DComponent, float, &Joint3DComponent::motorFrequency>("motorFrequency", PropertyType::Float, UpdateFlags_Joint3D_Motor),
+        makeFastProperty<Joint3DComponent, float, &Joint3DComponent::motorDamping>("motorDamping", PropertyType::Float, UpdateFlags_Joint3D_Motor),
+        makeFastProperty<Joint3DComponent, float, &Joint3DComponent::motorMaxForce>("motorMaxForce", PropertyType::Float, UpdateFlags_Joint3D_Motor),
         makeFastProperty<Joint3DComponent, Vector3, &Joint3DComponent::pathPosition>("pathPosition", PropertyType::Vector3, UpdateFlags_Joint3D),
         makeFastProperty<Joint3DComponent, bool, &Joint3DComponent::isLooping>("isLooping", PropertyType::Bool, UpdateFlags_Joint3D),
         makeFastProperty<Joint3DComponent, bool, &Joint3DComponent::autoAnchors>("autoAnchors", PropertyType::Bool, UpdateFlags_Joint3D),
@@ -4333,6 +4339,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
     if (updateFlags & UpdateFlags_Joint3D){
         if (Joint3DComponent* joint = registry->findComponent<Joint3DComponent>(entity)){
             joint->needUpdateJoint = true;
+        }
+    }
+    if (updateFlags & UpdateFlags_Joint3D_Motor){
+        if (Joint3DComponent* joint = registry->findComponent<Joint3DComponent>(entity)){
+            joint->needUpdateMotor = true;
         }
     }
     if (updateFlags & UpdateFlags_Model){

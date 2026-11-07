@@ -277,6 +277,8 @@ namespace doriax{
 		bool loadRackAndPinionJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB, Entity hinge, Entity slider, int numTeethRack, int numTeethGear, int rackLength);
 		bool loadPulleyJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB, Vector3 anchorA, Vector3 anchorB, Vector3 fixedPointA, Vector3 fixedPointB);
 		void destroyJoint3D(Joint3DComponent& joint);
+		void updateJointMotor3D(Joint3DComponent& joint);
+		float getJointPosition3D(const Joint3DComponent& joint) const;
 
 		void addBroadPhaseLayer3D(uint8_t index, uint32_t groupsToInclude);
 		void addBroadPhaseLayer3D(uint8_t index, uint32_t groupsToInclude, uint32_t groupsToExclude);

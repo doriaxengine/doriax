@@ -2614,6 +2614,7 @@ bool PhysicsSystem::loadHingeJoint3D(Joint3DComponent& joint, Entity bodyA, Enti
 
         world3D.AddConstraint(joint.joint);
         joint.type = Joint3DType::HINGE;
+        joint.needUpdateMotor = true; // fixedUpdate applies it
 
     }else{
         Log::error("Cannot create joint, error in bodyA or bodyB");
@@ -2746,6 +2747,7 @@ bool PhysicsSystem::loadPrismaticJoint3D(Joint3DComponent& joint, Entity bodyA, 
 
         world3D.AddConstraint(joint.joint);
         joint.type = Joint3DType::PRISMATIC;
+        joint.needUpdateMotor = true; // fixedUpdate applies it
 
     }else{
         Log::error("Cannot create joint, error in bodyA or bodyB");
@@ -3239,6 +3241,82 @@ void PhysicsSystem::destroyJoint3D(Joint3DComponent& joint){
     }
 }
 
+// same shift as the limits in loadPrismaticJoint3D
+static float getPrismaticLimitsOffset3D(const Joint3DComponent& joint){
+    float limitsMin = std::min(joint.limitsMin, joint.limitsMax);
+    float limitsMax = std::max(joint.limitsMin, joint.limitsMax);
+
+    if (limitsMin > 0.0f) return limitsMin;
+    if (limitsMax < 0.0f) return limitsMax;
+    return 0.0f;
+}
+
+static JPH::EMotorState getJoint3DMotorStateToJolt(Joint3DMotorState state){
+    if (state == Joint3DMotorState::VELOCITY){
+        return JPH::EMotorState::Velocity;
+    }else if (state == Joint3DMotorState::POSITION){
+        return JPH::EMotorState::Position;
+    }else if (state == Joint3DMotorState::POSITION_AND_VELOCITY){
+        return JPH::EMotorState::PositionAndVelocity;
+    }
+
+    return JPH::EMotorState::Off;
+}
+
+void PhysicsSystem::updateJointMotor3D(Joint3DComponent& joint){
+    // the solver reads it while stepping
+    if (steppingWorld3D){
+        joint.needUpdateMotor = true;
+        return;
+    }
+
+    joint.needUpdateMotor = false;
+
+    if (!joint.joint){
+        return;
+    }
+
+    JPH::MotorSettings motorSettings(std::max(joint.motorFrequency, 0.0f), std::max(joint.motorDamping, 0.0f));
+    float maxForce = (joint.motorMaxForce > 0.0f) ? joint.motorMaxForce : FLT_MAX;
+    motorSettings.SetForceLimit(maxForce);
+    motorSettings.SetTorqueLimit(maxForce);
+    JPH::EMotorState motorState = getJoint3DMotorStateToJolt(joint.motorState);
+
+    if (joint.joint->GetSubType() == JPH::EConstraintSubType::Hinge){
+        JPH::HingeConstraint* hinge = (JPH::HingeConstraint*)joint.joint;
+        hinge->GetMotorSettings() = motorSettings;
+        hinge->SetTargetAngularVelocity(Angle::defaultToRad(joint.motorTargetVelocity));
+        hinge->SetTargetAngle(Angle::defaultToRad(joint.motorTargetPosition));
+        hinge->SetMotorState(motorState);
+    }else if (joint.joint->GetSubType() == JPH::EConstraintSubType::Slider){
+        JPH::SliderConstraint* slider = (JPH::SliderConstraint*)joint.joint;
+        slider->GetMotorSettings() = motorSettings;
+        slider->SetTargetVelocity(joint.motorTargetVelocity);
+        slider->SetTargetPosition(joint.motorTargetPosition - getPrismaticLimitsOffset3D(joint));
+        slider->SetMotorState(motorState);
+    }else{
+        return;
+    }
+
+    if (motorState != JPH::EMotorState::Off){
+        getBodyInterface3D().ActivateConstraint(joint.joint);
+    }
+}
+
+float PhysicsSystem::getJointPosition3D(const Joint3DComponent& joint) const{
+    if (!joint.joint){
+        return 0.0f;
+    }
+
+    if (joint.joint->GetSubType() == JPH::EConstraintSubType::Hinge){
+        return Angle::radToDefault(((JPH::HingeConstraint*)joint.joint)->GetCurrentAngle());
+    }else if (joint.joint->GetSubType() == JPH::EConstraintSubType::Slider){
+        return ((JPH::SliderConstraint*)joint.joint)->GetCurrentPosition() + getPrismaticLimitsOffset3D(joint);
+    }
+
+    return 0.0f;
+}
+
 void PhysicsSystem::addBroadPhaseLayer3D(uint8_t index, uint32_t groupsToInclude){
     addBroadPhaseLayer3D(index, groupsToInclude, 0);
 }
@@ -3404,6 +3482,9 @@ void PhysicsSystem::fixedUpdate(double dt){
             if (loadJoint3D(entity, joint)){
                 joint.needUpdateJoint = false;
             }
+        }
+        if (joint.needUpdateMotor){
+            updateJointMotor3D(joint);
         }
     }
 

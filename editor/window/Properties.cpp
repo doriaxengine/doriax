@@ -390,6 +390,13 @@ static std::vector<editor::EnumEntry> entriesShape3DBuildQuality = {
     { (int)Shape3DBuildQuality::FAVOR_BUILD_SPEED, "Favor Build Speed" }
 };
 
+static std::vector<editor::EnumEntry> entriesJoint3DMotorState = {
+    { (int)Joint3DMotorState::OFF, "Off" },
+    { (int)Joint3DMotorState::VELOCITY, "Velocity" },
+    { (int)Joint3DMotorState::POSITION, "Position" },
+    { (int)Joint3DMotorState::POSITION_AND_VELOCITY, "Position and Velocity" }
+};
+
 static std::vector<editor::EnumEntry> entriesJoint2DType = {
     { (int)Joint2DType::DISTANCE, "Distance" },
     { (int)Joint2DType::REVOLUTE, "Revolute" },
@@ -11985,6 +11992,37 @@ void editor::Properties::drawJoint3DComponent(ComponentType cpType, SceneProject
     }
 
     endTable();
+
+    if (joint.type == Joint3DType::HINGE || joint.type == Joint3DType::PRISMATIC){
+        bool isHinge = (joint.type == Joint3DType::HINGE);
+        bool velocityMotor = (joint.motorState == Joint3DMotorState::VELOCITY || joint.motorState == Joint3DMotorState::POSITION_AND_VELOCITY);
+        bool positionMotor = (joint.motorState == Joint3DMotorState::POSITION || joint.motorState == Joint3DMotorState::POSITION_AND_VELOCITY);
+
+        RowSettings settingsMotorState;
+        settingsMotorState.enumEntries = &entriesJoint3DMotorState;
+
+        RowSettings settingsMotorValue;
+
+        RowSettings settingsMotorMaxForce;
+        settingsMotorMaxForce.secondColSize = 6 * ImGui::GetFontSize();
+        settingsMotorMaxForce.help = "0 is no limit";
+
+        ImGui::SeparatorText("Motor");
+        beginTable(cpType, getLabelSize("Target Velocity"), "joint3d_motor_settings");
+        propertyRow(RowPropertyType::Enum, cpType, "motorState", "State", sceneProject, entities, settingsMotorState);
+        if (velocityMotor){
+            propertyRow(RowPropertyType::Float, cpType, "motorTargetVelocity", "Target Velocity", sceneProject, entities, settingsMotorValue);
+        }
+        if (positionMotor){
+            propertyRow(RowPropertyType::Float, cpType, "motorTargetPosition", isHinge ? "Target Angle" : "Target Position", sceneProject, entities, settingsMotorValue);
+            propertyRow(RowPropertyType::FloatPositive, cpType, "motorFrequency", "Frequency", sceneProject, entities, settingsMotorValue);
+            propertyRow(RowPropertyType::FloatPositive, cpType, "motorDamping", "Damping", sceneProject, entities, settingsMotorValue);
+        }
+        if (joint.motorState != Joint3DMotorState::OFF){
+            propertyRow(RowPropertyType::FloatPositive, cpType, "motorMaxForce", isHinge ? "Max Torque" : "Max Force", sceneProject, entities, settingsMotorMaxForce);
+        }
+        endTable();
+    }
 }
 
 void editor::Properties::startActionPreview(Entity entity, Scene* scene, SceneProject* sceneProject) {

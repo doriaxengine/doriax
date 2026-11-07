@@ -128,6 +128,13 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("FAVOR_BUILD_SPEED", Shape3DBuildQuality::FAVOR_BUILD_SPEED)
         .endNamespace();
 
+    luabridge::getGlobalNamespace(L)
+        .beginNamespace("Joint3DMotorState")
+        .addVariable("OFF", Joint3DMotorState::OFF)
+        .addVariable("VELOCITY", Joint3DMotorState::VELOCITY)
+        .addVariable("POSITION", Joint3DMotorState::POSITION)
+        .addVariable("POSITION_AND_VELOCITY", Joint3DMotorState::POSITION_AND_VELOCITY)
+        .endNamespace();
 #endif
 
 #ifdef DORIAX_PHYSICS_2D
@@ -1539,6 +1546,13 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setRackAndPinionJoint", &Joint3D::setRackAndPinionJoint)
         .addFunction("setPulleyJoint", &Joint3D::setPulleyJoint)
         .addFunction("getType", &Joint3D::getType)
+        .addProperty("motorState", &Joint3D::getMotorState, &Joint3D::setMotorState)
+        .addProperty("motorTargetVelocity", &Joint3D::getMotorTargetVelocity, &Joint3D::setMotorTargetVelocity)
+        .addProperty("motorTargetPosition", &Joint3D::getMotorTargetPosition, &Joint3D::setMotorTargetPosition)
+        .addProperty("motorFrequency", &Joint3D::getMotorFrequency, &Joint3D::setMotorFrequency)
+        .addProperty("motorDamping", &Joint3D::getMotorDamping, &Joint3D::setMotorDamping)
+        .addProperty("motorMaxForce", &Joint3D::getMotorMaxForce, &Joint3D::setMotorMaxForce)
+        .addFunction("getCurrentPosition", &Joint3D::getCurrentPosition)
         .addFunction("getJoint3DComponent", [] (Joint3D* self) -> Joint3DComponent& { return self->getComponent<Joint3DComponent>(); })
         .endClass();
 
