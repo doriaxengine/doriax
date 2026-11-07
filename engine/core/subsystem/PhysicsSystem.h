@@ -44,6 +44,7 @@ namespace doriax{
 	
 
 	class DORIAX_API PhysicsSystem : public SubSystem {
+		friend class JoltActivationListener;
 
 	private:
 		Vector2 gravity2D;
@@ -68,6 +69,7 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_3D
 		bool lock3DBodies;
 		bool steppingWorld3D = false;
+		bool callingActivation3D = false;
 
 		void flushPendingDestroys3D();
 		bool prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB);

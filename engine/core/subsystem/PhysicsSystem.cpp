@@ -730,9 +730,9 @@ bool PhysicsSystem::isLock3DBodies() const{
 }
 
 // The step wins over lock3DBodies: a script re-arming the flag from a callback would
-// otherwise restore the deadlock.
+// otherwise restore the deadlock. Activation callbacks too: Jolt calls them locked.
 bool PhysicsSystem::useLockedInterfaces3D() const{
-    return lock3DBodies && !steppingWorld3D;
+    return lock3DBodies && !steppingWorld3D && !callingActivation3D;
 }
 
 JPH::BodyInterface& PhysicsSystem::getBodyInterface3D(){
@@ -3264,8 +3264,8 @@ static JPH::EMotorState getJoint3DMotorStateToJolt(Joint3DMotorState state){
 }
 
 void PhysicsSystem::updateJointMotor3D(Joint3DComponent& joint){
-    // the solver reads it while stepping
-    if (steppingWorld3D){
+    // applied later while Jolt steps or runs an activation callback
+    if (steppingWorld3D || callingActivation3D){
         joint.needUpdateMotor = true;
         return;
     }

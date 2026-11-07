@@ -115,7 +115,9 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+			physicsSystem->callingActivation3D = true;
 			physicsSystem->onBodyActivated3D(Body3D(scene, inBodyUserData));
+			physicsSystem->callingActivation3D = false;
 		}
 
 		virtual void OnBodyDeactivated(const JPH::BodyID &inBodyID, uint64_t inBodyUserData) override{
@@ -124,7 +126,9 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+			physicsSystem->callingActivation3D = true;
 			physicsSystem->onBodyDeactivated3D(Body3D(scene, inBodyUserData));
+			physicsSystem->callingActivation3D = false;
 		}
 	};
 
