@@ -39,6 +39,10 @@ namespace doriax{
     struct DORIAX_API Joint3DComponent{
 #ifdef DORIAX_PHYSICS_3D
         JPH::TwoBodyConstraint* joint = NULL;
+        // frames a body reload keeps, so the joint comes back in its rest pose
+        JPH::Ref<JPH::TwoBodyConstraintSettings> keptSettings;
+        Vector3 keptCenterOfMassA = Vector3::ZERO;
+        Vector3 keptCenterOfMassB = Vector3::ZERO;
 #endif
         Joint3DType type = Joint3DType::FIXED;
 

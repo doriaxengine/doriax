@@ -73,6 +73,7 @@ namespace doriax{
 
 		void flushPendingDestroys3D();
 		bool prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB);
+		bool loadKeptJoint3D(Joint3DComponent& joint);
 		bool useLockedInterfaces3D() const;
 
 		JoltActivationListener* activationListener3D;

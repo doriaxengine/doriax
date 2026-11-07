@@ -1064,6 +1064,10 @@ bool PhysicsSystem::loadJoint3D(Entity entity, Joint3DComponent& joint){
         return false;
     }
 
+    if (joint.keptSettings && !joint.needUpdateJoint && loadKeptJoint3D(joint)){
+        return true;
+    }
+
     switch (joint.type){
         case Joint3DType::FIXED:
             return loadFixedJoint3D(joint, joint.bodyA, joint.bodyB);
@@ -1939,6 +1943,12 @@ void PhysicsSystem::loadAndPlaceBody3D(Entity entity){
     }
 }
 
+static Vector3 getShapeCenterOfMass3D(const JPH::Body* body){
+    JPH::Vec3 center = body->GetShape()->GetCenterOfMass();
+
+    return Vector3(center.GetX(), center.GetY(), center.GetZ());
+}
+
 void PhysicsSystem::destroyBody3D(Body3DComponent& body){
     if (body.body.IsInvalid()){
         return;
@@ -1949,6 +1959,12 @@ void PhysicsSystem::destroyBody3D(Body3DComponent& body){
     for (size_t i = 0; i < joints->size(); i++){
         Joint3DComponent& joint = joints->getComponentFromIndex(i);
         if (joint.joint && (joint.joint->GetBody1()->GetID() == body.body || joint.joint->GetBody2()->GetID() == body.body)){
+            // a paused scene rebuilds from the definition, its bodies may have been moved by hand
+            if (!paused && joint.type != Joint3DType::PATH && joint.type != Joint3DType::GEAR && joint.type != Joint3DType::RACKANDPINON){
+                joint.keptSettings = (JPH::TwoBodyConstraintSettings*)joint.joint->GetConstraintSettings().GetPtr();
+                joint.keptCenterOfMassA = getShapeCenterOfMass3D(joint.joint->GetBody1());
+                joint.keptCenterOfMassB = getShapeCenterOfMass3D(joint.joint->GetBody2());
+            }
             destroyJoint3D(joint);
         }
     }
@@ -2399,8 +2415,35 @@ bool PhysicsSystem::prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity
     }
 
     joint.loggedWait = false;
+    joint.keptSettings = nullptr;
 
     destroyJoint3D(joint);
+
+    return true;
+}
+
+// Rebuilds a joint from the frames it had, unless a body's center of mass moved
+bool PhysicsSystem::loadKeptJoint3D(Joint3DComponent& joint){
+    Body3DComponent& bodyA = scene->getComponent<Body3DComponent>(joint.bodyA);
+    Body3DComponent& bodyB = scene->getComponent<Body3DComponent>(joint.bodyB);
+
+    const JPH::BodyLockInterface& bodyLockInterface = getBodyLockInterface3D();
+    JPH::BodyID bodies[2] = {bodyA.body, bodyB.body};
+    JPH::BodyLockMultiWrite lock(bodyLockInterface, bodies, 2);
+
+    JPH::Body* lockBodyA = lock.GetBody(0);
+    JPH::Body* lockBodyB = lock.GetBody(1);
+    if (!lockBodyA || !lockBodyB ||
+            getShapeCenterOfMass3D(lockBodyA) != joint.keptCenterOfMassA ||
+            getShapeCenterOfMass3D(lockBodyB) != joint.keptCenterOfMassB){
+        return false;
+    }
+
+    joint.joint = joint.keptSettings->Create(*lockBodyA, *lockBodyB);
+    joint.keptSettings = nullptr;
+
+    world3D.AddConstraint(joint.joint);
+    joint.needUpdateMotor = true; // fixedUpdate applies it
 
     return true;
 }
