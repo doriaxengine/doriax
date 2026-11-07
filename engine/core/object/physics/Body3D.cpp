@@ -709,11 +709,17 @@ void Body3D::setCollisionGroupID(uint32_t group){
 }
 
 bool Body3D::isAllowSleeping() const{
-    return getJoltBody().GetAllowSleeping();
+    const JPH::Body& jbody = getJoltBody();
+
+    return jbody.IsStatic() || jbody.GetAllowSleeping();
 }
 
 void Body3D::setAllowSleeping(bool allowSleeping){
-    getJoltBodyWrite().SetAllowSleeping(allowSleeping);
+    JPH::Body& jbody = getJoltBodyWrite();
+
+    if (!jbody.IsStatic()){
+        jbody.SetAllowSleeping(allowSleeping);
+    }
 }
 
 float Body3D::getFriction() const{
@@ -805,7 +811,11 @@ void Body3D::setLinearVelocity(Vector3 linearVelocity){
 }
 
 void Body3D::setLinearVelocityClamped(Vector3 linearVelocity){
-    getJoltBodyWrite().SetLinearVelocityClamped(JPH::Vec3(linearVelocity.x, linearVelocity.y, linearVelocity.z));
+    JPH::Body& jbody = getJoltBodyWrite();
+
+    if (!jbody.IsStatic()){
+        jbody.SetLinearVelocityClamped(JPH::Vec3(linearVelocity.x, linearVelocity.y, linearVelocity.z));
+    }
 }
 
 Vector3 Body3D::getAngularVelocity() const{
@@ -825,7 +835,11 @@ void Body3D::setAngularVelocity(Vector3 angularVelocity){
 }
 
 void Body3D::setAngularVelocityClamped(Vector3 angularVelocity){
-    getJoltBodyWrite().SetAngularVelocityClamped(JPH::Vec3(angularVelocity.x, angularVelocity.y, angularVelocity.z));
+    JPH::Body& jbody = getJoltBodyWrite();
+
+    if (!jbody.IsStatic()){
+        jbody.SetAngularVelocityClamped(JPH::Vec3(angularVelocity.x, angularVelocity.y, angularVelocity.z));
+    }
 }
 
 Vector3 Body3D::getPointVelocityCOM(Vector3 pointRelativeToCOM) const{
@@ -844,22 +858,31 @@ Vector3 Body3D::getPointVelocity(Vector3 point) const{
 }
 
 Vector3 Body3D::getAccumulatedForce() const{
-    JPH::Vec3 vec = getJoltBody().GetAccumulatedForce();
+    const JPH::Body& jbody = getJoltBody();
+    if (!jbody.IsDynamic()){
+        return Vector3::ZERO;
+    }
+
+    JPH::Vec3 vec = jbody.GetAccumulatedForce();
 
     return Vector3(vec.GetX(), vec.GetY(), vec.GetZ());
 }
 
 Vector3 Body3D::getAccumulatedTorque() const{
-    JPH::Vec3 vec = getJoltBody().GetAccumulatedTorque();
+    const JPH::Body& jbody = getJoltBody();
+    if (!jbody.IsDynamic()){
+        return Vector3::ZERO;
+    }
+
+    JPH::Vec3 vec = jbody.GetAccumulatedTorque();
 
     return Vector3(vec.GetX(), vec.GetY(), vec.GetZ());
 }
 
 Matrix4 Body3D::getInverseInertia() const{
-    Body3DComponent& body = getComponent<Body3DComponent>();
-
-    checkBody(body);
-    JPH::Mat44 mat = getBodyInterface().GetInverseInertia(body.body);
+    const JPH::Body& jbody = getJoltBody();
+    // zeros for static and kinematic bodies, like Jolt
+    JPH::Mat44 mat = jbody.IsDynamic() ? jbody.GetInverseInertia() : JPH::Mat44::sZero();
 
     Matrix4 retMat;
     for (int i = 0; i < 4; i++){
@@ -914,12 +937,14 @@ void Body3D::applyAngularImpulse(const Vector3& angularImpulse){
 bool Body3D::applyBuoyancyImpulse(const Vector3& surfacePosition, const Vector3& surfaceNormal, const float buoyancy, const float linearDrag, const float angularDrag, const Vector3& fluidVelocity, const Vector3& gravity, const float deltaTime){
     Body3DComponent& body = getComponent<Body3DComponent>();
 
-    JPH::Vec3 surPos = JPH::Vec3(surfacePosition.x, surfacePosition.y, surfacePosition.z);
+    checkBody(body);
+    JPH::RVec3 surPos = JPH::RVec3(surfacePosition.x, surfacePosition.y, surfacePosition.z);
     JPH::Vec3 surNor = JPH::Vec3(surfaceNormal.x, surfaceNormal.y, surfaceNormal.z);
     JPH::Vec3 fluVel = JPH::Vec3(fluidVelocity.x, fluidVelocity.y, fluidVelocity.z);
     JPH::Vec3 grav = JPH::Vec3(gravity.x, gravity.y, gravity.z);
 
-    return getJoltBodyWrite().ApplyBuoyancyImpulse(surPos, surNor, buoyancy, linearDrag, angularDrag, fluVel, grav, deltaTime);
+    // only moves dynamic bodies, and wakes them
+    return getBodyInterface().ApplyBuoyancyImpulse(body.body, surPos, surNor, buoyancy, linearDrag, angularDrag, fluVel, grav, deltaTime);
 }
 
 SubmergedVolume3D Body3D::getSubmergedVolume(const Vector3& surfacePosition, const Vector3& surfaceNormal) const{
