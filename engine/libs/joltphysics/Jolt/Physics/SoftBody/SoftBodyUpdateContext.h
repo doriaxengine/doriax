@@ -12,8 +12,12 @@ JPH_NAMESPACE_BEGIN
 class Body;
 class SoftBodyMotionProperties;
 class SoftBodyContactListener;
+class SimShapeFilter;
 
+/// @cond INTERNAL
 /// Temporary data used by the update of a soft body
+///
+/// WARNING: This class is an internal part of PhysicsSystem, it has no functions that can be called by users of the library.
 class SoftBodyUpdateContext : public NonCopyable
 {
 public:
@@ -24,6 +28,7 @@ public:
 	Body *								mBody;										///< Body that is being updated
 	SoftBodyMotionProperties *			mMotionProperties;							///< Motion properties of that body
 	SoftBodyContactListener *			mContactListener;							///< Contact listener to fire callbacks to
+	const SimShapeFilter *				mSimShapeFilter;							///< Shape filter to use for collision detection
 	RMat44								mCenterOfMassTransform;						///< Transform of the body relative to the soft body
 	Vec3								mGravity;									///< Gravity vector in local space of the soft body
 	Vec3								mDisplacementDueToGravity;					///< Displacement of the center of mass due to gravity in the current time step
@@ -53,5 +58,6 @@ public:
 	Vec3								mDeltaPosition;								///< Delta position of the body in the current time step, should be applied after the update
 	ECanSleep							mCanSleep;									///< Can the body sleep? Should be applied after the update
 };
+/// @endcond
 
 JPH_NAMESPACE_END

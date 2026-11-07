@@ -14,9 +14,16 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/AABBTree/NodeCodec/NodeCodecQuadTreeHalfFloat.h
 	${JOLT_PHYSICS_ROOT}/AABBTree/TriangleCodec/TriangleCodecIndexed8BitPackSOA4Flags.h
 	${JOLT_PHYSICS_ROOT}/ConfigurationString.h
+	${JOLT_PHYSICS_ROOT}/Compute/ComputeBuffer.h
+	${JOLT_PHYSICS_ROOT}/Compute/ComputeQueue.h
+	${JOLT_PHYSICS_ROOT}/Compute/ComputeSystem.cpp
+	${JOLT_PHYSICS_ROOT}/Compute/ComputeSystem.h
+	${JOLT_PHYSICS_ROOT}/Compute/ComputeShader.h
 	${JOLT_PHYSICS_ROOT}/Core/ARMNeon.h
+	${JOLT_PHYSICS_ROOT}/Core/RISCVVector.h
 	${JOLT_PHYSICS_ROOT}/Core/Array.h
 	${JOLT_PHYSICS_ROOT}/Core/Atomics.h
+	${JOLT_PHYSICS_ROOT}/Core/BinaryHeap.h
 	${JOLT_PHYSICS_ROOT}/Core/ByteBuffer.h
 	${JOLT_PHYSICS_ROOT}/Core/Color.cpp
 	${JOLT_PHYSICS_ROOT}/Core/Color.h
@@ -29,6 +36,8 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Core/FPException.h
 	${JOLT_PHYSICS_ROOT}/Core/FPFlushDenormals.h
 	${JOLT_PHYSICS_ROOT}/Core/HashCombine.h
+	${JOLT_PHYSICS_ROOT}/Core/HashTable.h
+	${JOLT_PHYSICS_ROOT}/Core/IncludeWindows.h
 	${JOLT_PHYSICS_ROOT}/Core/InsertionSort.h
 	${JOLT_PHYSICS_ROOT}/Core/IssueReporting.cpp
 	${JOLT_PHYSICS_ROOT}/Core/IssueReporting.h
@@ -44,11 +53,14 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Core/LinearCurve.h
 	${JOLT_PHYSICS_ROOT}/Core/LockFreeHashMap.h
 	${JOLT_PHYSICS_ROOT}/Core/LockFreeHashMap.inl
+	${JOLT_PHYSICS_ROOT}/Core/LSANSuppressions.h
 	${JOLT_PHYSICS_ROOT}/Core/Memory.cpp
 	${JOLT_PHYSICS_ROOT}/Core/Memory.h
 	${JOLT_PHYSICS_ROOT}/Core/Mutex.h
 	${JOLT_PHYSICS_ROOT}/Core/MutexArray.h
 	${JOLT_PHYSICS_ROOT}/Core/NonCopyable.h
+	${JOLT_PHYSICS_ROOT}/Core/ObjectToIDMap.h
+	${JOLT_PHYSICS_ROOT}/Core/Prefetch.h
 	${JOLT_PHYSICS_ROOT}/Core/Profiler.cpp
 	${JOLT_PHYSICS_ROOT}/Core/Profiler.h
 	${JOLT_PHYSICS_ROOT}/Core/Profiler.inl
@@ -63,6 +75,7 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Core/StaticArray.h
 	${JOLT_PHYSICS_ROOT}/Core/STLAlignedAllocator.h
 	${JOLT_PHYSICS_ROOT}/Core/STLAllocator.h
+	${JOLT_PHYSICS_ROOT}/Core/STLLocalAllocator.h
 	${JOLT_PHYSICS_ROOT}/Core/STLTempAllocator.h
 	${JOLT_PHYSICS_ROOT}/Core/StreamIn.h
 	${JOLT_PHYSICS_ROOT}/Core/StreamOut.h
@@ -75,7 +88,9 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Core/TickCounter.cpp
 	${JOLT_PHYSICS_ROOT}/Core/TickCounter.h
 	${JOLT_PHYSICS_ROOT}/Core/UnorderedMap.h
+	${JOLT_PHYSICS_ROOT}/Core/UnorderedMapFwd.h
 	${JOLT_PHYSICS_ROOT}/Core/UnorderedSet.h
+	${JOLT_PHYSICS_ROOT}/Core/UnorderedSetFwd.h
 	${JOLT_PHYSICS_ROOT}/Geometry/AABox.h
 	${JOLT_PHYSICS_ROOT}/Geometry/AABox4.h
 	${JOLT_PHYSICS_ROOT}/Geometry/ClipPoly.h
@@ -105,6 +120,8 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Geometry/Triangle.h
 	${JOLT_PHYSICS_ROOT}/Jolt.cmake
 	${JOLT_PHYSICS_ROOT}/Jolt.h
+	${JOLT_PHYSICS_ROOT}/Math/BVec16.h
+	${JOLT_PHYSICS_ROOT}/Math/BVec16.inl
 	${JOLT_PHYSICS_ROOT}/Math/DMat44.h
 	${JOLT_PHYSICS_ROOT}/Math/DMat44.inl
 	${JOLT_PHYSICS_ROOT}/Math/Double3.h
@@ -173,6 +190,7 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Physics/Character/Character.h
 	${JOLT_PHYSICS_ROOT}/Physics/Character/CharacterBase.cpp
 	${JOLT_PHYSICS_ROOT}/Physics/Character/CharacterBase.h
+	${JOLT_PHYSICS_ROOT}/Physics/Character/CharacterID.h
 	${JOLT_PHYSICS_ROOT}/Physics/Character/CharacterVirtual.cpp
 	${JOLT_PHYSICS_ROOT}/Physics/Character/CharacterVirtual.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/AABoxCast.h
@@ -203,6 +221,7 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideConvexVsTriangles.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollidePointResult.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideShape.h
+	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideShapeVsShapePerLeaf.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideSoftBodyVertexIterator.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideSoftBodyVerticesVsTriangles.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/CollideSphereVsTriangles.cpp
@@ -286,6 +305,8 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/Shape/TriangleShape.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/ShapeCast.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/ShapeFilter.h
+	${JOLT_PHYSICS_ROOT}/Physics/Collision/SimShapeFilter.h
+	${JOLT_PHYSICS_ROOT}/Physics/Collision/SimShapeFilterWrapper.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/SortReverseAndStore.h
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/TransformedShape.cpp
 	${JOLT_PHYSICS_ROOT}/Physics/Collision/TransformedShape.h
@@ -297,7 +318,9 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintManager.cpp
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintManager.h
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/AngleConstraintPart.h
+	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/AngularFrictionConstraintPart.h
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/AxisConstraintPart.h
+	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/ContactConstraintPart.h
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/DualAxisConstraintPart.h
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/GearConstraintPart.h
 	${JOLT_PHYSICS_ROOT}/Physics/Constraints/ConstraintPart/HingeRotationConstraintPart.h
@@ -346,6 +369,14 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Physics/DeterminismLog.h
 	${JOLT_PHYSICS_ROOT}/Physics/EActivation.h
 	${JOLT_PHYSICS_ROOT}/Physics/EPhysicsUpdateError.h
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/Hair.cpp
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/Hair.h
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/HairSettings.cpp
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/HairSettings.h
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/HairShaders.cpp
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/HairShaders.h
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/RegisterHair.cpp
+	${JOLT_PHYSICS_ROOT}/Physics/Hair/RegisterHair.h
 	${JOLT_PHYSICS_ROOT}/Physics/IslandBuilder.cpp
 	${JOLT_PHYSICS_ROOT}/Physics/IslandBuilder.h
 	${JOLT_PHYSICS_ROOT}/Physics/LargeIslandSplitter.cpp
@@ -418,23 +449,12 @@ set(JOLT_PHYSICS_SRC_FILES
 	${JOLT_PHYSICS_ROOT}/Skeleton/SkeletonMapper.h
 	${JOLT_PHYSICS_ROOT}/Skeleton/SkeletonPose.cpp
 	${JOLT_PHYSICS_ROOT}/Skeleton/SkeletonPose.h
-	${JOLT_PHYSICS_ROOT}/TriangleGrouper/TriangleGrouper.h
-	${JOLT_PHYSICS_ROOT}/TriangleGrouper/TriangleGrouperClosestCentroid.cpp
-	${JOLT_PHYSICS_ROOT}/TriangleGrouper/TriangleGrouperClosestCentroid.h
-	${JOLT_PHYSICS_ROOT}/TriangleGrouper/TriangleGrouperMorton.cpp
-	${JOLT_PHYSICS_ROOT}/TriangleGrouper/TriangleGrouperMorton.h
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitter.cpp
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitter.h
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterBinning.cpp
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterBinning.h
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterFixedLeafSize.cpp
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterFixedLeafSize.h
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterLongestAxis.cpp
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterLongestAxis.h
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterMean.cpp
 	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterMean.h
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterMorton.cpp
-	${JOLT_PHYSICS_ROOT}/TriangleSplitter/TriangleSplitterMorton.h
 )
 
 if (ENABLE_OBJECT_STREAM)

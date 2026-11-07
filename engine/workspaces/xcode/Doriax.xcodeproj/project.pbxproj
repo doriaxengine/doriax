@@ -139,10 +139,6 @@
 		7105CCDD2AD61DA5007C91BA /* Semaphore.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB242AD61DA4007C91BA /* Semaphore.cpp */; };
 		7105CCDE2AD61DA5007C91BA /* JobSystemWithBarrier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB252AD61DA4007C91BA /* JobSystemWithBarrier.cpp */; };
 		7105CCDF2AD61DA5007C91BA /* JobSystemWithBarrier.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB252AD61DA4007C91BA /* JobSystemWithBarrier.cpp */; };
-		7105CCE52AD61DA5007C91BA /* TriangleGrouperMorton.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB2C2AD61DA4007C91BA /* TriangleGrouperMorton.cpp */; };
-		7105CCE62AD61DA5007C91BA /* TriangleGrouperMorton.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB2C2AD61DA4007C91BA /* TriangleGrouperMorton.cpp */; };
-		7105CCE82AD61DA5007C91BA /* TriangleGrouperClosestCentroid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB2E2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.cpp */; };
-		7105CCE92AD61DA5007C91BA /* TriangleGrouperClosestCentroid.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB2E2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.cpp */; };
 		7105CCEB2AD61DA5007C91BA /* RegisterTypes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB312AD61DA4007C91BA /* RegisterTypes.cpp */; };
 		7105CCEC2AD61DA6007C91BA /* RegisterTypes.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB312AD61DA4007C91BA /* RegisterTypes.cpp */; };
 		7105CCED2AD61DA6007C91BA /* Skeleton.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB332AD61DA4007C91BA /* Skeleton.cpp */; };
@@ -153,16 +149,10 @@
 		7105CCF42AD61DA6007C91BA /* SkeletalAnimation.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB372AD61DA4007C91BA /* SkeletalAnimation.cpp */; };
 		7105CCF62AD61DA6007C91BA /* SkeletonPose.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB392AD61DA4007C91BA /* SkeletonPose.cpp */; };
 		7105CCF72AD61DA6007C91BA /* SkeletonPose.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB392AD61DA4007C91BA /* SkeletonPose.cpp */; };
-		7105CCF92AD61DA6007C91BA /* TriangleSplitterFixedLeafSize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB3C2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.cpp */; };
-		7105CCFA2AD61DA6007C91BA /* TriangleSplitterFixedLeafSize.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB3C2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.cpp */; };
 		7105CCFE2AD61DA6007C91BA /* TriangleSplitter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB402AD61DA4007C91BA /* TriangleSplitter.cpp */; };
 		7105CCFF2AD61DA6007C91BA /* TriangleSplitter.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB402AD61DA4007C91BA /* TriangleSplitter.cpp */; };
-		7105CD002AD61DA6007C91BA /* TriangleSplitterMorton.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB412AD61DA4007C91BA /* TriangleSplitterMorton.cpp */; };
-		7105CD012AD61DA6007C91BA /* TriangleSplitterMorton.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB412AD61DA4007C91BA /* TriangleSplitterMorton.cpp */; };
 		7105CD032AD61DA6007C91BA /* TriangleSplitterMean.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB432AD61DA4007C91BA /* TriangleSplitterMean.cpp */; };
 		7105CD042AD61DA6007C91BA /* TriangleSplitterMean.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB432AD61DA4007C91BA /* TriangleSplitterMean.cpp */; };
-		7105CD052AD61DA6007C91BA /* TriangleSplitterLongestAxis.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB442AD61DA4007C91BA /* TriangleSplitterLongestAxis.cpp */; };
-		7105CD062AD61DA6007C91BA /* TriangleSplitterLongestAxis.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB442AD61DA4007C91BA /* TriangleSplitterLongestAxis.cpp */; };
 		7105CD082AD61DA6007C91BA /* TriangleSplitterBinning.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB462AD61DA4007C91BA /* TriangleSplitterBinning.cpp */; };
 		7105CD092AD61DA6007C91BA /* TriangleSplitterBinning.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB462AD61DA4007C91BA /* TriangleSplitterBinning.cpp */; };
 		7105CD252AD61DA6007C91BA /* Vec3.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CB6B2AD61DA4007C91BA /* Vec3.cpp */; };
@@ -1192,6 +1182,16 @@
 		71C00422D2E7A0100C91BA00 /* meshoptimizer.h in Headers */ = {isa = PBXBuildFile; fileRef = 71C00402D2E7A0100C91BA00 /* meshoptimizer.h */; };
 		71C00452D2E7A0100C91BA00 /* libmeshoptimizer-ios.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 71C00432D2E7A0100C91BA00 /* libmeshoptimizer-ios.a */; };
 		71C00462D2E7A0100C91BA00 /* libmeshoptimizer-macos.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 71C00442D2E7A0100C91BA00 /* libmeshoptimizer-macos.a */; };
+		8149A626DE4307D939B31E3E /* ComputeSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2DEF68775EF98AE16F97BACE /* ComputeSystem.cpp */; };
+		97AF10F512FA9252CCBC2AB7 /* ComputeSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 2DEF68775EF98AE16F97BACE /* ComputeSystem.cpp */; };
+		77051338C7B21954F1747117 /* Hair.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ADBBD00C4A1F6438091A0686 /* Hair.cpp */; };
+		93FAC51A2EC11CFB397A32B6 /* Hair.cpp in Sources */ = {isa = PBXBuildFile; fileRef = ADBBD00C4A1F6438091A0686 /* Hair.cpp */; };
+		9E9234A9208C63EF85CA3B66 /* HairSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6364D2B0E8570A115CA4872C /* HairSettings.cpp */; };
+		35D1AF430B9E0E006AF63B83 /* HairSettings.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 6364D2B0E8570A115CA4872C /* HairSettings.cpp */; };
+		8523E2176DCFBEA958E0B30F /* HairShaders.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E719D99802D5B6FFACC7D4C1 /* HairShaders.cpp */; };
+		0BC9AE688F4417F797C35484 /* HairShaders.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E719D99802D5B6FFACC7D4C1 /* HairShaders.cpp */; };
+		928738799FD1522F14CB4066 /* RegisterHair.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8442B863A9F697A1A1E1279A /* RegisterHair.cpp */; };
+		36863642A3EBED82DECC444C /* RegisterHair.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 8442B863A9F697A1A1E1279A /* RegisterHair.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -1586,11 +1586,6 @@
 		7105CB272AD61DA4007C91BA /* StringTools.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = StringTools.h; sourceTree = "<group>"; };
 		7105CB282AD61DA4007C91BA /* JobSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JobSystem.h; sourceTree = "<group>"; };
 		7105CB292AD61DA4007C91BA /* Factory.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Factory.h; sourceTree = "<group>"; };
-		7105CB2B2AD61DA4007C91BA /* TriangleGrouper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleGrouper.h; sourceTree = "<group>"; };
-		7105CB2C2AD61DA4007C91BA /* TriangleGrouperMorton.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleGrouperMorton.cpp; sourceTree = "<group>"; };
-		7105CB2D2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleGrouperClosestCentroid.h; sourceTree = "<group>"; };
-		7105CB2E2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleGrouperClosestCentroid.cpp; sourceTree = "<group>"; };
-		7105CB2F2AD61DA4007C91BA /* TriangleGrouperMorton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleGrouperMorton.h; sourceTree = "<group>"; };
 		7105CB312AD61DA4007C91BA /* RegisterTypes.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = RegisterTypes.cpp; sourceTree = "<group>"; };
 		7105CB332AD61DA4007C91BA /* Skeleton.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Skeleton.cpp; sourceTree = "<group>"; };
 		7105CB342AD61DA4007C91BA /* SkeletonMapper.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SkeletonMapper.cpp; sourceTree = "<group>"; };
@@ -1600,18 +1595,12 @@
 		7105CB382AD61DA4007C91BA /* SkeletonPose.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SkeletonPose.h; sourceTree = "<group>"; };
 		7105CB392AD61DA4007C91BA /* SkeletonPose.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = SkeletonPose.cpp; sourceTree = "<group>"; };
 		7105CB3A2AD61DA4007C91BA /* SkeletalAnimation.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SkeletalAnimation.h; sourceTree = "<group>"; };
-		7105CB3C2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitterFixedLeafSize.cpp; sourceTree = "<group>"; };
-		7105CB3D2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitterFixedLeafSize.h; sourceTree = "<group>"; };
 		7105CB3E2AD61DA4007C91BA /* TriangleSplitter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitter.h; sourceTree = "<group>"; };
-		7105CB3F2AD61DA4007C91BA /* TriangleSplitterLongestAxis.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitterLongestAxis.h; sourceTree = "<group>"; };
 		7105CB402AD61DA4007C91BA /* TriangleSplitter.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitter.cpp; sourceTree = "<group>"; };
-		7105CB412AD61DA4007C91BA /* TriangleSplitterMorton.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitterMorton.cpp; sourceTree = "<group>"; };
 		7105CB422AD61DA4007C91BA /* TriangleSplitterMean.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitterMean.h; sourceTree = "<group>"; };
 		7105CB432AD61DA4007C91BA /* TriangleSplitterMean.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitterMean.cpp; sourceTree = "<group>"; };
-		7105CB442AD61DA4007C91BA /* TriangleSplitterLongestAxis.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitterLongestAxis.cpp; sourceTree = "<group>"; };
 		7105CB452AD61DA4007C91BA /* TriangleSplitterBinning.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitterBinning.h; sourceTree = "<group>"; };
 		7105CB462AD61DA4007C91BA /* TriangleSplitterBinning.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = TriangleSplitterBinning.cpp; sourceTree = "<group>"; };
-		7105CB472AD61DA4007C91BA /* TriangleSplitterMorton.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = TriangleSplitterMorton.h; sourceTree = "<group>"; };
 		7105CB4A2AD61DA4007C91BA /* DMat44.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DMat44.h; sourceTree = "<group>"; };
 		7105CB4B2AD61DA4007C91BA /* Mat44.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = Mat44.inl; sourceTree = "<group>"; };
 		7105CB4D2AD61DA4007C91BA /* DVec3.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DVec3.h; sourceTree = "<group>"; };
@@ -2993,6 +2982,37 @@
 		71C00402D2E7A0100C91BA00 /* meshoptimizer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = meshoptimizer.h; sourceTree = "<group>"; };
 		71C00432D2E7A0100C91BA00 /* libmeshoptimizer-ios.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libmeshoptimizer-ios.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		71C00442D2E7A0100C91BA00 /* libmeshoptimizer-macos.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libmeshoptimizer-macos.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6BC43D6592FE4E66857FB117 /* ComputeBuffer.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ComputeBuffer.h; sourceTree = "<group>"; };
+		F56A8C81234D00CB4F238F1F /* ComputeQueue.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ComputeQueue.h; sourceTree = "<group>"; };
+		789CF7EF057DBE5CCB68EE78 /* ComputeShader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ComputeShader.h; sourceTree = "<group>"; };
+		2DEF68775EF98AE16F97BACE /* ComputeSystem.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ComputeSystem.cpp; sourceTree = "<group>"; };
+		1B8A5DA7AF9FE55B4B7DA6F7 /* ComputeSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ComputeSystem.h; sourceTree = "<group>"; };
+		63F7B731FE02ADE83895DA04 /* BinaryHeap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BinaryHeap.h; sourceTree = "<group>"; };
+		97537C953D92A28C3CADDDC1 /* HashTable.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HashTable.h; sourceTree = "<group>"; };
+		BB4693E37ACAC1FF7C73C992 /* IncludeWindows.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IncludeWindows.h; sourceTree = "<group>"; };
+		B69AD40C4BC2B91034F4F87E /* LSANSuppressions.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LSANSuppressions.h; sourceTree = "<group>"; };
+		94A73F7E5ED9FC6A121EAAAE /* ObjectToIDMap.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ObjectToIDMap.h; sourceTree = "<group>"; };
+		475E529276E84C3DF5423810 /* Prefetch.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Prefetch.h; sourceTree = "<group>"; };
+		3B340C57A806E2434E3F14B0 /* RISCVVector.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RISCVVector.h; sourceTree = "<group>"; };
+		20401AA5EF1D43FD1CDB28CD /* STLLocalAllocator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = STLLocalAllocator.h; sourceTree = "<group>"; };
+		0DC0299BC3CF645927A179A8 /* UnorderedMapFwd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = UnorderedMapFwd.h; sourceTree = "<group>"; };
+		8FDCAB259597192A2E282031 /* UnorderedSetFwd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = UnorderedSetFwd.h; sourceTree = "<group>"; };
+		3A727D049078160859FD9160 /* BVec16.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BVec16.h; sourceTree = "<group>"; };
+		9FEF8E9A2B07258C0969962C /* BVec16.inl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = BVec16.inl; sourceTree = "<group>"; };
+		D75F582FC07855424C20A7BC /* CharacterID.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CharacterID.h; sourceTree = "<group>"; };
+		AA26192AE1A23657ADAE93B4 /* CollideShapeVsShapePerLeaf.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = CollideShapeVsShapePerLeaf.h; sourceTree = "<group>"; };
+		F9493590889383D0163839CF /* SimShapeFilter.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SimShapeFilter.h; sourceTree = "<group>"; };
+		FCFDC6228D626055D2A1841A /* SimShapeFilterWrapper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SimShapeFilterWrapper.h; sourceTree = "<group>"; };
+		95AE6831CD1BB4F582C6BC3B /* AngularFrictionConstraintPart.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AngularFrictionConstraintPart.h; sourceTree = "<group>"; };
+		197B6E66D7E3A3DFBCF517A6 /* ContactConstraintPart.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ContactConstraintPart.h; sourceTree = "<group>"; };
+		ADBBD00C4A1F6438091A0686 /* Hair.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Hair.cpp; sourceTree = "<group>"; };
+		C25B31DEE0BDEB5812B3468E /* Hair.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Hair.h; sourceTree = "<group>"; };
+		6364D2B0E8570A115CA4872C /* HairSettings.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HairSettings.cpp; sourceTree = "<group>"; };
+		6CC5B10502B06CCA7EF12019 /* HairSettings.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HairSettings.h; sourceTree = "<group>"; };
+		E719D99802D5B6FFACC7D4C1 /* HairShaders.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = HairShaders.cpp; sourceTree = "<group>"; };
+		5276638B5659DEE72537E071 /* HairShaders.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = HairShaders.h; sourceTree = "<group>"; };
+		8442B863A9F697A1A1E1279A /* RegisterHair.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = RegisterHair.cpp; sourceTree = "<group>"; };
+		85817DF32ABFE486AAAF09ED /* RegisterHair.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = RegisterHair.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -3293,7 +3313,6 @@
 				7105CAE82AD61DA4007C91BA /* Jolt.h */,
 				7105CAEA2AD61DA4007C91BA /* Renderer */,
 				7105CAF12AD61DA4007C91BA /* Core */,
-				7105CB2A2AD61DA4007C91BA /* TriangleGrouper */,
 				7105CB312AD61DA4007C91BA /* RegisterTypes.cpp */,
 				7105CB322AD61DA4007C91BA /* Skeleton */,
 				7105CB3B2AD61DA4007C91BA /* TriangleSplitter */,
@@ -3304,6 +3323,7 @@
 				7105CC792AD61DA5007C91BA /* ObjectStream */,
 				7105CC912AD61DA5007C91BA /* AABBTree */,
 				7105CC992AD61DA5007C91BA /* RegisterTypes.h */,
+				41ECFD34BDDA81CF29F2CD75 /* Compute */,
 			);
 			path = Jolt;
 			sourceTree = "<group>";
@@ -3388,20 +3408,18 @@
 				7105CAF82AD61DA4007C91BA /* TickCounter.cpp */,
 				7105CB0B2AD61DA4007C91BA /* UnorderedMap.h */,
 				7105CB1E2AD61DA4007C91BA /* UnorderedSet.h */,
+				63F7B731FE02ADE83895DA04 /* BinaryHeap.h */,
+				97537C953D92A28C3CADDDC1 /* HashTable.h */,
+				BB4693E37ACAC1FF7C73C992 /* IncludeWindows.h */,
+				B69AD40C4BC2B91034F4F87E /* LSANSuppressions.h */,
+				94A73F7E5ED9FC6A121EAAAE /* ObjectToIDMap.h */,
+				475E529276E84C3DF5423810 /* Prefetch.h */,
+				3B340C57A806E2434E3F14B0 /* RISCVVector.h */,
+				20401AA5EF1D43FD1CDB28CD /* STLLocalAllocator.h */,
+				0DC0299BC3CF645927A179A8 /* UnorderedMapFwd.h */,
+				8FDCAB259597192A2E282031 /* UnorderedSetFwd.h */,
 			);
 			path = Core;
-			sourceTree = "<group>";
-		};
-		7105CB2A2AD61DA4007C91BA /* TriangleGrouper */ = {
-			isa = PBXGroup;
-			children = (
-				7105CB2B2AD61DA4007C91BA /* TriangleGrouper.h */,
-				7105CB2C2AD61DA4007C91BA /* TriangleGrouperMorton.cpp */,
-				7105CB2D2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.h */,
-				7105CB2E2AD61DA4007C91BA /* TriangleGrouperClosestCentroid.cpp */,
-				7105CB2F2AD61DA4007C91BA /* TriangleGrouperMorton.h */,
-			);
-			path = TriangleGrouper;
 			sourceTree = "<group>";
 		};
 		7105CB322AD61DA4007C91BA /* Skeleton */ = {
@@ -3422,18 +3440,12 @@
 		7105CB3B2AD61DA4007C91BA /* TriangleSplitter */ = {
 			isa = PBXGroup;
 			children = (
-				7105CB3C2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.cpp */,
-				7105CB3D2AD61DA4007C91BA /* TriangleSplitterFixedLeafSize.h */,
 				7105CB3E2AD61DA4007C91BA /* TriangleSplitter.h */,
-				7105CB3F2AD61DA4007C91BA /* TriangleSplitterLongestAxis.h */,
 				7105CB402AD61DA4007C91BA /* TriangleSplitter.cpp */,
-				7105CB412AD61DA4007C91BA /* TriangleSplitterMorton.cpp */,
 				7105CB422AD61DA4007C91BA /* TriangleSplitterMean.h */,
 				7105CB432AD61DA4007C91BA /* TriangleSplitterMean.cpp */,
-				7105CB442AD61DA4007C91BA /* TriangleSplitterLongestAxis.cpp */,
 				7105CB452AD61DA4007C91BA /* TriangleSplitterBinning.h */,
 				7105CB462AD61DA4007C91BA /* TriangleSplitterBinning.cpp */,
-				7105CB472AD61DA4007C91BA /* TriangleSplitterMorton.h */,
 			);
 			path = TriangleSplitter;
 			sourceTree = "<group>";
@@ -3472,6 +3484,8 @@
 				7105CB5D2AD61DA4007C91BA /* Vec4.h */,
 				7105CB5B2AD61DA4007C91BA /* Vec4.inl */,
 				7105CB682AD61DA4007C91BA /* Vector.h */,
+				3A727D049078160859FD9160 /* BVec16.h */,
+				9FEF8E9A2B07258C0969962C /* BVec16.inl */,
 			);
 			path = Math;
 			sourceTree = "<group>";
@@ -3540,6 +3554,7 @@
 				7105CC082AD61DA5007C91BA /* StateRecorderImpl.cpp */,
 				7105CC042AD61DA5007C91BA /* StateRecorderImpl.h */,
 				7105CBC22AD61DA5007C91BA /* Vehicle */,
+				A1985C243C3C3778262CEFB4 /* Hair */,
 			);
 			path = Physics;
 			sourceTree = "<group>";
@@ -3608,6 +3623,8 @@
 				7105CB992AD61DA5007C91BA /* RotationEulerConstraintPart.h */,
 				7105CB9A2AD61DA5007C91BA /* DualAxisConstraintPart.h */,
 				7105CB9B2AD61DA5007C91BA /* AxisConstraintPart.h */,
+				95AE6831CD1BB4F582C6BC3B /* AngularFrictionConstraintPart.h */,
+				197B6E66D7E3A3DFBCF517A6 /* ContactConstraintPart.h */,
 			);
 			path = ConstraintPart;
 			sourceTree = "<group>";
@@ -3652,6 +3669,7 @@
 				7105CBE12AD61DA5007C91BA /* CharacterVirtual.h */,
 				7105CBE22AD61DA5007C91BA /* CharacterBase.h */,
 				7105CBE32AD61DA5007C91BA /* CharacterVirtual.cpp */,
+				D75F582FC07855424C20A7BC /* CharacterID.h */,
 			);
 			path = Character;
 			sourceTree = "<group>";
@@ -3754,6 +3772,9 @@
 				7105CC602AD61DA5007C91BA /* SortReverseAndStore.h */,
 				7105CC702AD61DA5007C91BA /* TransformedShape.h */,
 				7105CC672AD61DA5007C91BA /* TransformedShape.cpp */,
+				AA26192AE1A23657ADAE93B4 /* CollideShapeVsShapePerLeaf.h */,
+				F9493590889383D0163839CF /* SimShapeFilter.h */,
+				FCFDC6228D626055D2A1841A /* SimShapeFilterWrapper.h */,
 			);
 			path = Collision;
 			sourceTree = "<group>";
@@ -5682,6 +5703,33 @@
 			path = meshoptimizer;
 			sourceTree = "<group>";
 		};
+		41ECFD34BDDA81CF29F2CD75 /* Compute */ = {
+			isa = PBXGroup;
+			children = (
+				6BC43D6592FE4E66857FB117 /* ComputeBuffer.h */,
+				F56A8C81234D00CB4F238F1F /* ComputeQueue.h */,
+				789CF7EF057DBE5CCB68EE78 /* ComputeShader.h */,
+				2DEF68775EF98AE16F97BACE /* ComputeSystem.cpp */,
+				1B8A5DA7AF9FE55B4B7DA6F7 /* ComputeSystem.h */,
+			);
+			path = Compute;
+			sourceTree = "<group>";
+		};
+		A1985C243C3C3778262CEFB4 /* Hair */ = {
+			isa = PBXGroup;
+			children = (
+				ADBBD00C4A1F6438091A0686 /* Hair.cpp */,
+				C25B31DEE0BDEB5812B3468E /* Hair.h */,
+				6364D2B0E8570A115CA4872C /* HairSettings.cpp */,
+				6CC5B10502B06CCA7EF12019 /* HairSettings.h */,
+				E719D99802D5B6FFACC7D4C1 /* HairShaders.cpp */,
+				5276638B5659DEE72537E071 /* HairShaders.h */,
+				8442B863A9F697A1A1E1279A /* RegisterHair.cpp */,
+				85817DF32ABFE486AAAF09ED /* RegisterHair.h */,
+			);
+			path = Hair;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXHeadersBuildPhase section */
@@ -6809,7 +6857,6 @@
 				7151E79F2D2E01CB00FC3F38 /* PlaneShape.cpp in Sources */,
 				7151E7A02D2E01CB00FC3F38 /* EmptyShape.cpp in Sources */,
 				7151E7A12D2E01CB00FC3F38 /* TaperedCylinderShape.cpp in Sources */,
-				7105CCE82AD61DA5007C91BA /* TriangleGrouperClosestCentroid.cpp in Sources */,
 				7105CCAB2AD61DA5007C91BA /* TickCounter.cpp in Sources */,
 				7105CD7F2AD61DA6007C91BA /* PathConstraintPath.cpp in Sources */,
 				7105CD782AD61DA6007C91BA /* FixedConstraint.cpp in Sources */,
@@ -6829,7 +6876,6 @@
 				7105CD812AD61DA6007C91BA /* RackAndPinionConstraint.cpp in Sources */,
 				7105CE8B2AD61DA7007C91BA /* SerializableObject.cpp in Sources */,
 				7105CDEA2AD61DA6007C91BA /* StateRecorderImpl.cpp in Sources */,
-				7105CCF92AD61DA6007C91BA /* TriangleSplitterFixedLeafSize.cpp in Sources */,
 				7105CE262AD61DA6007C91BA /* OffsetCenterOfMassShape.cpp in Sources */,
 				7105CE612AD61DA6007C91BA /* CollideConvexVsTriangles.cpp in Sources */,
 				7105CCA02AD61DA5007C91BA /* DebugRendererRecorder.cpp in Sources */,
@@ -6843,7 +6889,6 @@
 				7105CD892AD61DA6007C91BA /* SwingTwistConstraint.cpp in Sources */,
 				7105CE092AD61DA6007C91BA /* CompoundShape.cpp in Sources */,
 				7105CE7A2AD61DA7007C91BA /* PhysicsMaterial.cpp in Sources */,
-				7105CD052AD61DA6007C91BA /* TriangleSplitterLongestAxis.cpp in Sources */,
 				7105CDF52AD61DA6007C91BA /* DeterminismLog.cpp in Sources */,
 				7105CE552AD61DA6007C91BA /* BroadPhaseQuadTree.cpp in Sources */,
 				7105CCBC2AD61DA5007C91BA /* RTTI.cpp in Sources */,
@@ -6852,7 +6897,6 @@
 				7105CD6A2AD61DA6007C91BA /* MotorSettings.cpp in Sources */,
 				7105CD322AD61DA6007C91BA /* OrientedBox.cpp in Sources */,
 				7105CCAF2AD61DA5007C91BA /* Profiler.cpp in Sources */,
-				7105CCE52AD61DA5007C91BA /* TriangleGrouperMorton.cpp in Sources */,
 				7105CDB32AD61DA6007C91BA /* VehicleDifferential.cpp in Sources */,
 				7105CE992AD61DA7007C91BA /* ObjectStreamBinaryIn.cpp in Sources */,
 				7105CC9D2AD61DA5007C91BA /* DebugRendererPlayback.cpp in Sources */,
@@ -6916,7 +6960,6 @@
 				7105CE312AD61DA6007C91BA /* CapsuleShape.cpp in Sources */,
 				7105CCFE2AD61DA6007C91BA /* TriangleSplitter.cpp in Sources */,
 				7105CDCD2AD61DA6007C91BA /* MassProperties.cpp in Sources */,
-				7105CD002AD61DA6007C91BA /* TriangleSplitterMorton.cpp in Sources */,
 				716A72F42B5DFA0E00DDE179 /* SoftBodySharedSettings.cpp in Sources */,
 				7105CE932AD61DA7007C91BA /* ObjectStreamTextOut.cpp in Sources */,
 				7105CE2C2AD61DA6007C91BA /* ScaledShape.cpp in Sources */,
@@ -6936,6 +6979,11 @@
 				7105CE952AD61DA7007C91BA /* ObjectStreamIn.cpp in Sources */,
 				7105CD5F2AD61DA6007C91BA /* GearConstraint.cpp in Sources */,
 				7105CD912AD61DA6007C91BA /* TrackedVehicleController.cpp in Sources */,
+				8149A626DE4307D939B31E3E /* ComputeSystem.cpp in Sources */,
+				77051338C7B21954F1747117 /* Hair.cpp in Sources */,
+				9E9234A9208C63EF85CA3B66 /* HairSettings.cpp in Sources */,
+				8523E2176DCFBEA958E0B30F /* HairShaders.cpp in Sources */,
+				928738799FD1522F14CB4066 /* RegisterHair.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -6954,7 +7002,6 @@
 				7151E7A22D2E01CB00FC3F38 /* PlaneShape.cpp in Sources */,
 				7151E7A32D2E01CB00FC3F38 /* EmptyShape.cpp in Sources */,
 				7151E7A42D2E01CB00FC3F38 /* TaperedCylinderShape.cpp in Sources */,
-				7105CCE92AD61DA5007C91BA /* TriangleGrouperClosestCentroid.cpp in Sources */,
 				7105CCAC2AD61DA5007C91BA /* TickCounter.cpp in Sources */,
 				7105CD802AD61DA6007C91BA /* PathConstraintPath.cpp in Sources */,
 				7105CD792AD61DA6007C91BA /* FixedConstraint.cpp in Sources */,
@@ -6974,7 +7021,6 @@
 				7105CD822AD61DA6007C91BA /* RackAndPinionConstraint.cpp in Sources */,
 				7105CE8C2AD61DA7007C91BA /* SerializableObject.cpp in Sources */,
 				7105CDEB2AD61DA6007C91BA /* StateRecorderImpl.cpp in Sources */,
-				7105CCFA2AD61DA6007C91BA /* TriangleSplitterFixedLeafSize.cpp in Sources */,
 				7105CE272AD61DA6007C91BA /* OffsetCenterOfMassShape.cpp in Sources */,
 				7105CE622AD61DA6007C91BA /* CollideConvexVsTriangles.cpp in Sources */,
 				7105CCA12AD61DA5007C91BA /* DebugRendererRecorder.cpp in Sources */,
@@ -6988,7 +7034,6 @@
 				7105CD8A2AD61DA6007C91BA /* SwingTwistConstraint.cpp in Sources */,
 				7105CE0A2AD61DA6007C91BA /* CompoundShape.cpp in Sources */,
 				7105CE7B2AD61DA7007C91BA /* PhysicsMaterial.cpp in Sources */,
-				7105CD062AD61DA6007C91BA /* TriangleSplitterLongestAxis.cpp in Sources */,
 				7105CDF62AD61DA6007C91BA /* DeterminismLog.cpp in Sources */,
 				7105CE562AD61DA6007C91BA /* BroadPhaseQuadTree.cpp in Sources */,
 				7105CCBD2AD61DA5007C91BA /* RTTI.cpp in Sources */,
@@ -6997,7 +7042,6 @@
 				7105CD6B2AD61DA6007C91BA /* MotorSettings.cpp in Sources */,
 				7105CD332AD61DA6007C91BA /* OrientedBox.cpp in Sources */,
 				7105CCB02AD61DA5007C91BA /* Profiler.cpp in Sources */,
-				7105CCE62AD61DA5007C91BA /* TriangleGrouperMorton.cpp in Sources */,
 				7105CDB42AD61DA6007C91BA /* VehicleDifferential.cpp in Sources */,
 				7105CE9A2AD61DA7007C91BA /* ObjectStreamBinaryIn.cpp in Sources */,
 				7105CC9E2AD61DA5007C91BA /* DebugRendererPlayback.cpp in Sources */,
@@ -7061,7 +7105,6 @@
 				7105CE322AD61DA6007C91BA /* CapsuleShape.cpp in Sources */,
 				7105CCFF2AD61DA6007C91BA /* TriangleSplitter.cpp in Sources */,
 				7105CDCE2AD61DA6007C91BA /* MassProperties.cpp in Sources */,
-				7105CD012AD61DA6007C91BA /* TriangleSplitterMorton.cpp in Sources */,
 				716A72F52B5DFA0E00DDE179 /* SoftBodySharedSettings.cpp in Sources */,
 				7105CE942AD61DA7007C91BA /* ObjectStreamTextOut.cpp in Sources */,
 				7105CE2D2AD61DA6007C91BA /* ScaledShape.cpp in Sources */,
@@ -7081,6 +7124,11 @@
 				7105CE962AD61DA7007C91BA /* ObjectStreamIn.cpp in Sources */,
 				7105CD602AD61DA6007C91BA /* GearConstraint.cpp in Sources */,
 				7105CD922AD61DA6007C91BA /* TrackedVehicleController.cpp in Sources */,
+				97AF10F512FA9252CCBC2AB7 /* ComputeSystem.cpp in Sources */,
+				93FAC51A2EC11CFB397A32B6 /* Hair.cpp in Sources */,
+				35D1AF430B9E0E006AF63B83 /* HairSettings.cpp in Sources */,
+				0BC9AE688F4417F797C35484 /* HairShaders.cpp in Sources */,
+				36863642A3EBED82DECC444C /* RegisterHair.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

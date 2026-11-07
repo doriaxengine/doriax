@@ -25,7 +25,7 @@ public:
 	virtual void				RestoreBinaryState(StreamIn &inStream) override;
 
 	float						mLongitudinalFriction = 4.0f;				///< Friction in forward direction of tire
-	float						mLateralFriction = 2.0f;					///< Friction in sideway direction of tire
+	float						mLateralFriction = 2.0f;					///< Friction in sideways direction of tire
 };
 
 /// Wheel object specifically for TrackedVehicleController
@@ -128,6 +128,9 @@ public:
 	/// Debug drawing of RPM meter
 	void						SetRPMMeter(Vec3Arg inPosition, float inSize) { mRPMMeterPosition = inPosition; mRPMMeterSize = inSize; }
 #endif // JPH_DEBUG_RENDERER
+
+	// See: VehicleController
+	virtual Ref<VehicleControllerSettings> GetSettings() const override;
 
 protected:
 	/// Synchronize angular velocities of left and right tracks according to their ratios

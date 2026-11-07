@@ -55,11 +55,17 @@ ShapeSettings::ShapeResult BoxShapeSettings::Create() const
 BoxShape::BoxShape(const BoxShapeSettings &inSettings, ShapeResult &outResult) :
 	ConvexShape(EShapeSubType::Box, inSettings, outResult),
 	mHalfExtent(inSettings.mHalfExtent),
-	mConvexRadius(inSettings.mConvexRadius)
+	mConvexRadius(min(inSettings.mConvexRadius, inSettings.mHalfExtent.ReduceMin()))
 {
+	// Check half extents
+	if (inSettings.mHalfExtent.ReduceMin() < 0.0f)
+	{
+		outResult.SetError("Invalid half extent");
+		return;
+	}
+
 	// Check convex radius
-	if (inSettings.mConvexRadius < 0.0f
-		|| inSettings.mHalfExtent.ReduceMin() <= inSettings.mConvexRadius)
+	if (inSettings.mConvexRadius < 0.0f)
 	{
 		outResult.SetError("Invalid convex radius");
 		return;
@@ -278,7 +284,7 @@ void BoxShape::CollideSoftBodyVertices(Mat44Arg inCenterOfMassTransform, Vec3Arg
 
 void BoxShape::GetTrianglesStart(GetTrianglesContext &ioContext, const AABox &inBox, Vec3Arg inPositionCOM, QuatArg inRotation, Vec3Arg inScale) const
 {
-	new (&ioContext) GetTrianglesContextVertexList(inPositionCOM, inRotation, inScale, Mat44::sScale(mHalfExtent), sUnitBoxTriangles, sizeof(sUnitBoxTriangles) / sizeof(Vec3), GetMaterial());
+	new (&ioContext) GetTrianglesContextVertexList(inPositionCOM, inRotation, inScale, Mat44::sScale(mHalfExtent), sUnitBoxTriangles, std::size(sUnitBoxTriangles), GetMaterial());
 }
 
 int BoxShape::GetTrianglesNext(GetTrianglesContext &ioContext, int inMaxTrianglesRequested, Float3 *outTriangleVertices, const PhysicsMaterial **outMaterials) const

@@ -16,7 +16,10 @@ constexpr float cDefaultPenetrationTolerance = 1.0e-4f; ///< Stop when there's l
 constexpr float cDefaultConvexRadius = 0.05f;
 
 /// Used by (Tapered)CapsuleShape to determine when supporting face is an edge rather than a point (unit: meter)
-static constexpr float cCapsuleProjectionSlop = 0.02f;
+constexpr float cCapsuleProjectionSlop = 0.02f;
+
+/// Max squared distance to consider a vertex to be the same as another vertex, used by the internal edge removal algorithm to determine if two edges are shared (unit: meter^2)
+constexpr float cDefaultInternalEdgeRemovalVertexToleranceSq = 1.0e-8f;
 
 /// Maximum amount of jobs to allow
 constexpr int cMaxPhysicsJobs = 2048;
@@ -55,8 +58,8 @@ struct PhysicsSettings
 	/// Fraction of its inner radius a body may penetrate another body for the LinearCast motion quality
 	float		mLinearCastMaxPenetration = 0.25f;
 
-	/// Max squared distance to use to determine if two points are on the same plane for determining the contact manifold between two shape faces (unit: meter^2)
-	float		mManifoldToleranceSq = 1.0e-6f;
+	/// Max distance to use to determine if two points are on the same plane for determining the contact manifold between two shape faces (unit: meter)
+	float		mManifoldTolerance = 1.0e-3f;
 
 	/// Maximum distance to correct in a single iteration when solving position constraints (unit: meters)
 	float		mMaxPenetrationDistance = 0.2f;
@@ -73,6 +76,9 @@ struct PhysicsSettings
 	/// Maximum allowed distance between old and new contact point to preserve contact forces for warm start (units: meter^2)
 	float		mContactPointPreserveLambdaMaxDistSq = Square(0.01f); ///< 1 cm
 
+	/// Max squared distance to consider a vertex to be the same as another vertex, used by the internal edge removal algorithm to determine if two edges are shared. (unit: meter^2)
+	float		mInternalEdgeRemovalVertexToleranceSq = cDefaultInternalEdgeRemovalVertexToleranceSq;
+
 	/// Number of solver velocity iterations to run
 	/// Note that this needs to be >= 2 in order for friction to work (friction is applied using the non-penetration impulse from the previous iteration)
 	uint		mNumVelocitySteps = 10;
@@ -80,13 +86,19 @@ struct PhysicsSettings
 	/// Number of solver position iterations to run
 	uint		mNumPositionSteps = 2;
 
-	/// Minimal velocity needed before a collision can be elastic (unit: m)
+	/// Minimal velocity needed before a collision can be elastic. If the relative velocity between colliding objects
+	/// in the direction of the contact normal is lower than this, the restitution will be zero regardless of the configured
+	/// value. This lets an object settle sooner. Must be a positive number. (unit: m)
 	float		mMinVelocityForRestitution = 1.0f;
 
 	/// Time before object is allowed to go to sleep (unit: seconds)
 	float		mTimeBeforeSleep = 0.5f;
 
-	/// Velocity of points on bounding box of object below which an object can be considered sleeping (unit: m/s)
+	/// To detect if an object is sleeping, we use 3 points:
+	/// - The center of mass.
+	/// - The centers of the faces of the bounding box that are furthest away from the center.
+	/// The movement of these points is tracked and if the velocity of all 3 points is lower than this value,
+	/// the object is allowed to go to sleep. Must be a positive number. (unit: m/s)
 	float		mPointVelocitySleepThreshold = 0.03f;
 
 	/// By default the simulation is deterministic, it is possible to turn this off by setting this setting to false. This will make the simulation run faster but it will no longer be deterministic.

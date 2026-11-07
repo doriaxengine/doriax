@@ -12,9 +12,8 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollidePointResult.h>
-#include <Jolt/Core/StreamIn.h>
-#include <Jolt/Core/StreamOut.h>
-#include <Jolt/Core/Factory.h>
+#include <Jolt/Core/StreamUtils.h>
+#include <Jolt/Core/UnorderedSet.h>
 #include <Jolt/ObjectStream/TypeDeclarations.h>
 
 JPH_NAMESPACE_BEGIN
@@ -113,7 +112,7 @@ void Shape::SaveWithChildren(StreamOut &inStream, ShapeToIDMap &ioShapeMap, Mate
 	if (shape_id_iter == ioShapeMap.end())
 	{
 		// Write shape ID of this shape
-		uint32 shape_id = (uint32)ioShapeMap.size();
+		uint32 shape_id = ioShapeMap.size();
 		ioShapeMap[this] = shape_id;
 		inStream.Write(shape_id);
 
@@ -233,7 +232,7 @@ Vec3 Shape::MakeScaleValid(Vec3Arg inScale) const
 
 Shape::ShapeResult Shape::ScaleShape(Vec3Arg inScale) const
 {
-	const Vec3 unit_scale = Vec3::sReplicate(1.0f);
+	const Vec3 unit_scale = Vec3::sOne();
 
 	if (inScale.IsNearZero())
 	{

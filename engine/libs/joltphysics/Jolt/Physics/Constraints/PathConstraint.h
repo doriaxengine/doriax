@@ -14,6 +14,9 @@
 
 JPH_NAMESPACE_BEGIN
 
+JPH_SUPPRESS_WARNING_PUSH
+JPH_GCC_SUPPRESS_WARNING("-Wshadow") // GCC complains about the 'Free' value conflicting with the 'Free' method
+
 /// How to constrain the rotation of the body to a PathConstraint
 enum class EPathRotationConstraintType
 {
@@ -24,6 +27,8 @@ enum class EPathRotationConstraintType
 	ConstrainToPath,				///< Fully constrain the rotation of body 2 to the path (following the tangent and normal of the path)
 	FullyConstrained,				///< Fully constrain the rotation of the body 2 to the rotation of body 1
 };
+
+JPH_SUPPRESS_WARNING_POP
 
 /// Path constraint settings, used to constrain the degrees of freedom between two bodies to a path
 ///
@@ -134,6 +139,9 @@ public:
 private:
 	// Internal helper function to calculate the values below
 	void							CalculateConstraintProperties(float inDeltaTime);
+
+	// Internal helper function to calculate the current constraint value C
+	inline float					CalculateConstraintValue() const;
 
 	// CONFIGURATION PROPERTIES FOLLOW
 
