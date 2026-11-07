@@ -3281,15 +3281,18 @@ void PhysicsSystem::updateJointMotor3D(Joint3DComponent& joint){
     motorSettings.SetForceLimit(maxForce);
     motorSettings.SetTorqueLimit(maxForce);
     JPH::EMotorState motorState = getJoint3DMotorStateToJolt(joint.motorState);
+    JPH::EMotorState previousState = JPH::EMotorState::Off;
 
     if (joint.joint->GetSubType() == JPH::EConstraintSubType::Hinge){
         JPH::HingeConstraint* hinge = (JPH::HingeConstraint*)joint.joint;
+        previousState = hinge->GetMotorState();
         hinge->GetMotorSettings() = motorSettings;
         hinge->SetTargetAngularVelocity(Angle::defaultToRad(joint.motorTargetVelocity));
         hinge->SetTargetAngle(Angle::defaultToRad(joint.motorTargetPosition));
         hinge->SetMotorState(motorState);
     }else if (joint.joint->GetSubType() == JPH::EConstraintSubType::Slider){
         JPH::SliderConstraint* slider = (JPH::SliderConstraint*)joint.joint;
+        previousState = slider->GetMotorState();
         slider->GetMotorSettings() = motorSettings;
         slider->SetTargetVelocity(joint.motorTargetVelocity);
         slider->SetTargetPosition(joint.motorTargetPosition - getPrismaticLimitsOffset3D(joint));
@@ -3298,7 +3301,8 @@ void PhysicsSystem::updateJointMotor3D(Joint3DComponent& joint){
         return;
     }
 
-    if (motorState != JPH::EMotorState::Off){
+    // a motor turned off wakes them too, or a held body would stay asleep
+    if (motorState != JPH::EMotorState::Off || previousState != JPH::EMotorState::Off){
         getBodyInterface3D().ActivateConstraint(joint.joint);
     }
 }
