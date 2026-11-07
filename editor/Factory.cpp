@@ -1780,6 +1780,14 @@ std::string editor::Factory::formatJoint3DType(Joint3DType type) {
     }
 }
 
+std::string editor::Factory::formatShape3DBuildQuality(Shape3DBuildQuality quality) {
+    switch (quality) {
+        case Shape3DBuildQuality::FAVOR_BUILD_SPEED: return "Shape3DBuildQuality::FAVOR_BUILD_SPEED";
+        case Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE:
+        default: return "Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE";
+    }
+}
+
 std::string editor::Factory::formatActionState(ActionState state) {
     switch (state) {
         case ActionState::Running: return "ActionState::Running";
@@ -1894,6 +1902,8 @@ std::string editor::Factory::createBody3DComponent(int indentSpaces, EntityRegis
         code << ind << "body3d.shapes[" << idx << "].source = " << formatShape3DSource(source) << ";\n";
         code << ind << "body3d.shapes[" << idx << "].sourceEntity = " << formatEntity(sourceEntity, entityVarNames) << ";\n";
         code << ind << "body3d.shapes[" << idx << "].samplesSize = " << body.shapes[i].samplesSize << ";\n";
+        code << ind << "body3d.shapes[" << idx << "].bitsPerSample = " << body.shapes[i].bitsPerSample << ";\n";
+        code << ind << "body3d.shapes[" << idx << "].buildQuality = " << formatShape3DBuildQuality(body.shapes[i].buildQuality) << ";\n";
         code << ind << "body3d.shapes[" << idx << "].numVertices = " << body.shapes[i].numVertices << ";\n";
         for (size_t j = 0; j < body.shapes[i].numVertices; j++) {
             code << ind << "body3d.shapes[" << idx << "].vertices[" << j << "] = " << formatVector3(body.shapes[i].vertices[j]) << ";\n";

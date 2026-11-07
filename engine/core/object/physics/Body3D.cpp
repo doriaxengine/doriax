@@ -384,6 +384,52 @@ float Body3D::getShapeDensity(size_t index) const{
     return 0;
 }
 
+void Body3D::setShapeBitsPerSample(size_t index, unsigned int bitsPerSample){
+    Body3DComponent& body = getComponent<Body3DComponent>();
+
+    if (index < body.numShapes){
+        body.shapes[index].bitsPerSample = bitsPerSample;
+        body.needUpdateShapes = true;
+    }else{
+        Log::error("Cannot find shape %zu of body", index);
+    }
+}
+
+unsigned int Body3D::getShapeBitsPerSample(size_t index) const{
+    Body3DComponent& body = getComponent<Body3DComponent>();
+
+    if (index < body.numShapes){
+        return body.shapes[index].bitsPerSample;
+    }else{
+        Log::error("Cannot find shape %zu of body", index);
+    }
+
+    return 0;
+}
+
+void Body3D::setShapeBuildQuality(size_t index, Shape3DBuildQuality buildQuality){
+    Body3DComponent& body = getComponent<Body3DComponent>();
+
+    if (index < body.numShapes){
+        body.shapes[index].buildQuality = buildQuality;
+        body.needUpdateShapes = true;
+    }else{
+        Log::error("Cannot find shape %zu of body", index);
+    }
+}
+
+Shape3DBuildQuality Body3D::getShapeBuildQuality(size_t index) const{
+    Body3DComponent& body = getComponent<Body3DComponent>();
+
+    if (index < body.numShapes){
+        return body.shapes[index].buildQuality;
+    }else{
+        Log::error("Cannot find shape %zu of body", index);
+    }
+
+    return Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE;
+}
+
 void Body3D::setType(BodyType type){
     Body3DComponent& body = getComponent<Body3DComponent>();
 

@@ -80,6 +80,11 @@ namespace doriax{
         float getShapeDensity() const;
         float getShapeDensity(size_t index) const;
 
+        void setShapeBitsPerSample(size_t index, unsigned int bitsPerSample);
+        unsigned int getShapeBitsPerSample(size_t index) const;
+        void setShapeBuildQuality(size_t index, Shape3DBuildQuality buildQuality);
+        Shape3DBuildQuality getShapeBuildQuality(size_t index) const;
+
         void setType(BodyType type);
         BodyType getType() const;
 

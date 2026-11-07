@@ -121,6 +121,13 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("DISCRETE", Body3DMotionQuality::DISCRETE)
         .addVariable("LINEAR_CAST", Body3DMotionQuality::LINEAR_CAST)
         .endNamespace();
+
+    luabridge::getGlobalNamespace(L)
+        .beginNamespace("Shape3DBuildQuality")
+        .addVariable("FAVOR_RUNTIME_PERFORMANCE", Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE)
+        .addVariable("FAVOR_BUILD_SPEED", Shape3DBuildQuality::FAVOR_BUILD_SPEED)
+        .endNamespace();
+
 #endif
 
 #ifdef DORIAX_PHYSICS_2D
@@ -1454,6 +1461,10 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getShapeDensity", 
             luabridge::overload<>(&Body3D::getShapeDensity),
             luabridge::overload<size_t>(&Body3D::getShapeDensity))
+        .addFunction("setShapeBitsPerSample", &Body3D::setShapeBitsPerSample)
+        .addFunction("getShapeBitsPerSample", &Body3D::getShapeBitsPerSample)
+        .addFunction("setShapeBuildQuality", &Body3D::setShapeBuildQuality)
+        .addFunction("getShapeBuildQuality", &Body3D::getShapeBuildQuality)
         .addProperty("type", &Body3D::getType, &Body3D::setType)
         .addProperty("motionQuality", &Body3D::getMotionQuality, &Body3D::setMotionQuality)
         .addFunction("canBeKinematicOrDynamic", &Body3D::canBeKinematicOrDynamic)

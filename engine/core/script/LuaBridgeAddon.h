@@ -135,6 +135,7 @@ namespace luabridge
     template<> struct Stack<Joint2DType> : EnumWrapper<Joint2DType>{};
     template<> struct Stack<Joint3DType> : EnumWrapper<Joint3DType>{};
     template<> struct Stack<Body3DMotionQuality> : EnumWrapper<Body3DMotionQuality>{};
+    template<> struct Stack<Shape3DBuildQuality> : EnumWrapper<Shape3DBuildQuality>{};
 
     template <>
     struct Stack <Touch>

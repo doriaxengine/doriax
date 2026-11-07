@@ -1136,6 +1136,12 @@ namespace {
         if (propertyName.compare(fieldPos, 11, "samplesSize") == 0 && fieldPos + 11 == propertyName.size()) {
             return {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defaultShape.samplesSize, (void*)&shape.samplesSize};
         }
+        if (propertyName.compare(fieldPos, 13, "bitsPerSample") == 0 && fieldPos + 13 == propertyName.size()) {
+            return {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defaultShape.bitsPerSample, (void*)&shape.bitsPerSample};
+        }
+        if (propertyName.compare(fieldPos, 12, "buildQuality") == 0 && fieldPos + 12 == propertyName.size()) {
+            return {PropertyType::Enum, UpdateFlags_Body3D, (void*)&defaultShape.buildQuality, (void*)&shape.buildQuality};
+        }
         if (propertyName.compare(fieldPos, 11, "numVertices") == 0 && fieldPos + 11 == propertyName.size()) {
             return {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defaultShape.numVertices, (void*)&shape.numVertices};
         }
@@ -2629,6 +2635,8 @@ namespace {
             ps["shapes[" + idx + "].source"] = {PropertyType::Enum, UpdateFlags_Body3D, (void*)&defShape.source, compRef ? (void*)&shape.source : nullptr};
             ps["shapes[" + idx + "].sourceEntity"] = {PropertyType::Entity, UpdateFlags_Body3D, (void*)&defShape.sourceEntity, compRef ? (void*)&shape.sourceEntity : nullptr};
             ps["shapes[" + idx + "].samplesSize"] = {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defShape.samplesSize, compRef ? (void*)&shape.samplesSize : nullptr};
+            ps["shapes[" + idx + "].bitsPerSample"] = {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defShape.bitsPerSample, compRef ? (void*)&shape.bitsPerSample : nullptr};
+            ps["shapes[" + idx + "].buildQuality"] = {PropertyType::Enum, UpdateFlags_Body3D, (void*)&defShape.buildQuality, compRef ? (void*)&shape.buildQuality : nullptr};
             ps["shapes[" + idx + "].numVertices"] = {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defShape.numVertices, compRef ? (void*)&shape.numVertices : nullptr};
             ps["shapes[" + idx + "].numIndices"] = {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defShape.numIndices, compRef ? (void*)&shape.numIndices : nullptr};
 

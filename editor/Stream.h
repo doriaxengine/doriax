@@ -371,6 +371,9 @@ namespace doriax::editor {
         static std::string joint3DTypeToString(Joint3DType type);
         static Joint3DType stringToJoint3DType(const std::string& str);
 
+        static std::string shape3DBuildQualityToString(Shape3DBuildQuality quality);
+        static Shape3DBuildQuality stringToShape3DBuildQuality(const std::string& str);
+
         static YAML::Node encodeBody2DComponent(const Body2DComponent& body);
         static Body2DComponent decodeBody2DComponent(const YAML::Node& node, const Body2DComponent* oldBody = nullptr);
 

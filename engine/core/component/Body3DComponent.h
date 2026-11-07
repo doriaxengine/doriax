@@ -42,6 +42,11 @@ namespace doriax{
         LINEAR_CAST
     };
 
+    enum class Shape3DBuildQuality{
+        FAVOR_RUNTIME_PERFORMANCE,
+        FAVOR_BUILD_SPEED
+    };
+
     // Same bits as JPH::EAllowedDOFs, so the backend takes them with a plain cast.
     enum Body3DAllowedDOFFlags : uint8_t {
         Body3DAllowedDOF_TranslationX = 1 << 0,
@@ -77,6 +82,8 @@ namespace doriax{
         Shape3DSource source = Shape3DSource::NONE;
         Entity sourceEntity = NULL_ENTITY;
         unsigned int samplesSize = 0;
+        unsigned int bitsPerSample = 8; // heightfield, 1 to 16
+        Shape3DBuildQuality buildQuality = Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE; // mesh
 
         HybridArray<Vector3, MAX_SHAPE_VERTICES_3D> vertices;
         uint16_t numVertices = 0;

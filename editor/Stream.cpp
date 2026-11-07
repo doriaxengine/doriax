@@ -6815,6 +6815,19 @@ std::string editor::Stream::joint3DTypeToString(Joint3DType type) {
     }
 }
 
+std::string editor::Stream::shape3DBuildQualityToString(Shape3DBuildQuality quality) {
+    switch (quality) {
+        case Shape3DBuildQuality::FAVOR_BUILD_SPEED: return "favor_build_speed";
+        case Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE:
+        default: return "favor_runtime_performance";
+    }
+}
+
+Shape3DBuildQuality editor::Stream::stringToShape3DBuildQuality(const std::string& str) {
+    if (str == "favor_build_speed") return Shape3DBuildQuality::FAVOR_BUILD_SPEED;
+    return Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE;
+}
+
 Joint3DType editor::Stream::stringToJoint3DType(const std::string& str) {
     if (str == "distance") return Joint3DType::DISTANCE;
     if (str == "point") return Joint3DType::POINT;
@@ -6997,6 +7010,8 @@ YAML::Node editor::Stream::encodeBody3DComponent(const Body3DComponent& body) {
 
         shapeNode["sourceEntity"] = body.shapes[i].sourceEntity;
         shapeNode["samplesSize"] = body.shapes[i].samplesSize;
+        shapeNode["bitsPerSample"] = body.shapes[i].bitsPerSample;
+        shapeNode["buildQuality"] = shape3DBuildQualityToString(body.shapes[i].buildQuality);
 
         YAML::Node verticesNode;
         for (size_t j = 0; j < body.shapes[i].numVertices; j++) {
@@ -7104,6 +7119,8 @@ Body3DComponent editor::Stream::decodeBody3DComponent(const YAML::Node& node, co
             if (node["shapes"][i]["sourceEntity"]) body.shapes[i].sourceEntity = node["shapes"][i]["sourceEntity"].as<Entity>();
 
             if (node["shapes"][i]["samplesSize"]) body.shapes[i].samplesSize = node["shapes"][i]["samplesSize"].as<unsigned int>();
+            if (node["shapes"][i]["bitsPerSample"]) body.shapes[i].bitsPerSample = node["shapes"][i]["bitsPerSample"].as<unsigned int>();
+            if (node["shapes"][i]["buildQuality"]) body.shapes[i].buildQuality = stringToShape3DBuildQuality(node["shapes"][i]["buildQuality"].as<std::string>());
 
             if (node["shapes"][i]["vertices"]) {
                 size_t vcount = node["shapes"][i]["vertices"].size();

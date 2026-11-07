@@ -68,6 +68,7 @@ namespace doriax::editor{
         static std::string formatShape3DSource(Shape3DSource source);
         static std::string formatJoint2DType(Joint2DType type);
         static std::string formatJoint3DType(Joint3DType type);
+        static std::string formatShape3DBuildQuality(Shape3DBuildQuality quality);
         static std::string formatActionState(ActionState state);
         static std::string formatLightState(LightState state);
         static std::string formatShadowQuality(ShadowQuality quality);

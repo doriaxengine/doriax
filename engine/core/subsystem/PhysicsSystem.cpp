@@ -1512,6 +1512,9 @@ bool PhysicsSystem::createShape3DForIndex(Entity entity, Body3DComponent& body, 
         }
 
         JPH::MeshShapeSettings shape_settings(jvertices, jindices);
+        shape_settings.mBuildQuality = (shapeData.buildQuality == Shape3DBuildQuality::FAVOR_BUILD_SPEED)
+            ? JPH::MeshShapeSettings::EBuildQuality::FavorBuildSpeed
+            : JPH::MeshShapeSettings::EBuildQuality::FavorRuntimePerformance;
         JPH::ShapeSettings::ShapeResult shape_result = shape_settings.Create();
         if (!shape_result.IsValid()) return false;
         shapeData.shape = shape_result.Get();
@@ -1581,6 +1584,7 @@ bool PhysicsSystem::createShape3DForIndex(Entity entity, Body3DComponent& body, 
         }
 
         JPH::HeightFieldShapeSettings shape_settings(samples, terrainOffset, terrainScale, samplesSize);
+        shape_settings.mBitsPerSample = std::clamp<unsigned int>(shapeData.bitsPerSample, 1, JPH::HeightFieldShapeConstants::cMaxBitsPerSample);
         JPH::ShapeSettings::ShapeResult shape_result = shape_settings.Create();
         delete[] samples;
 

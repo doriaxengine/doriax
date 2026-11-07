@@ -385,6 +385,11 @@ static std::vector<editor::EnumEntry> entriesShape3DSourceHeightfield = {
     { (int)Shape3DSource::ENTITY_HEIGHTFIELD, "Entity Heightfield" }
 };
 
+static std::vector<editor::EnumEntry> entriesShape3DBuildQuality = {
+    { (int)Shape3DBuildQuality::FAVOR_RUNTIME_PERFORMANCE, "Favor Runtime" },
+    { (int)Shape3DBuildQuality::FAVOR_BUILD_SPEED, "Favor Build Speed" }
+};
+
 static std::vector<editor::EnumEntry> entriesJoint2DType = {
     { (int)Joint2DType::DISTANCE, "Distance" },
     { (int)Joint2DType::REVOLUTE, "Revolute" },
@@ -416,6 +421,7 @@ static std::vector<int> po2Values = { 16, 32, 64, 128, 256, 512, 1024, 2048, 409
 static std::vector<int> probeResolutionValues = { 16, 32, 64, 128, 256, 512, 1024 };
 
 static std::vector<int> waterSubdivisionValues = { 16, 32, 64, 128, 256, 512 };
+static std::vector<int> heightFieldBitsValues = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
 
 static std::vector<editor::EnumEntry> entriesActionState = {
     { (int)ActionState::Running, "Running" },
@@ -11262,6 +11268,12 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
     RowSettings settingsShapeSourceHeightfield;
     settingsShapeSourceHeightfield.enumEntries = &entriesShape3DSourceHeightfield;
 
+    RowSettings settingsShapeBuildQuality;
+    settingsShapeBuildQuality.enumEntries = &entriesShape3DBuildQuality;
+
+    RowSettings settingsShapeBitsPerSample;
+    settingsShapeBitsPerSample.sliderValues = &heightFieldBitsValues;
+
     RowSettings settingsShapeValue;
 
     auto normalizeShape3DSource = [](Shape3DType type, Shape3DSource source) {
@@ -11541,7 +11553,9 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
             propertyRow(RowPropertyType::Enum, cpType, shapeKey + ".source", "Source", sceneProject, entities, settingsShapeSourceMesh);
             if (normalizedSourceUI == Shape3DSource::ENTITY_MESH){
                 propertyRow(RowPropertyType::LocalEntity, cpType, shapeKey + ".sourceEntity", "Source Entity", sceneProject, entities, settingsShapeValue);
-            }else if (normalizedSourceUI == Shape3DSource::RAW_MESH){
+            }
+            propertyRow(RowPropertyType::Enum, cpType, shapeKey + ".buildQuality", "Build Quality", sceneProject, entities, settingsShapeBuildQuality);
+            if (normalizedSourceUI == Shape3DSource::RAW_MESH){
                 // Vertices
                 propertyHeader("Vertices");
                 ImGui::Text("%d", shape.numVertices);
@@ -11695,6 +11709,7 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
                 propertyRow(RowPropertyType::LocalEntity, cpType, shapeKey + ".sourceEntity", "Source Entity", sceneProject, entities, settingsShapeValue);
             }
             propertyRow(RowPropertyType::UInt, cpType, shapeKey + ".samplesSize", "Samples Size", sceneProject, entities, settingsShapeValue);
+            propertyRow(RowPropertyType::UIntSlider, cpType, shapeKey + ".bitsPerSample", "Bits Per Sample", sceneProject, entities, settingsShapeBitsPerSample);
         }
 
         propertyRow(RowPropertyType::Float, cpType, shapeKey + ".density", "Density", sceneProject, entities, settingsShapeValue);
