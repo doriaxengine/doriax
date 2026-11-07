@@ -401,6 +401,10 @@ namespace doriax {
             return call(args...);
         }
 
+        bool empty() const {
+            return !subscribers || subscribers->empty();
+        }
+
         void clear(){
             if (subscribers) {
                 for (const auto& subscriber : *subscribers) {

@@ -9,6 +9,8 @@
 #include "object/physics/CollideShapeResult3D.h"
 #include "object/physics/Contact3D.h"
 
+#include <mutex>
+
 #include "Jolt/Jolt.h"
 
 #include "Jolt/RegisterTypes.h"
@@ -94,6 +96,9 @@ namespace doriax{
 		}
 	};
 
+	// Jolt calls listeners from its worker threads, but scripts run one at a time
+	inline std::recursive_mutex joltCallbackMutex;
+
 	class JoltActivationListener : public JPH::BodyActivationListener{
 	private:
         Scene* scene;
@@ -105,10 +110,20 @@ namespace doriax{
         }
 
 		virtual void OnBodyActivated(const JPH::BodyID &inBodyID, uint64_t inBodyUserData) override{
+			if (physicsSystem->onBodyActivated3D.empty()){
+				return;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 			physicsSystem->onBodyActivated3D(Body3D(scene, inBodyUserData));
 		}
 
 		virtual void OnBodyDeactivated(const JPH::BodyID &inBodyID, uint64_t inBodyUserData) override{
+			if (physicsSystem->onBodyDeactivated3D.empty()){
+				return;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 			physicsSystem->onBodyDeactivated3D(Body3D(scene, inBodyUserData));
 		}
 	};
@@ -125,6 +140,12 @@ namespace doriax{
 
 		// See: ContactListener
 		virtual JPH::ValidateResult	OnContactValidate(const JPH::Body &inBody1, const JPH::Body &inBody2, JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult &inCollisionResult) override{
+			if (physicsSystem->shouldCollide3D.empty()){
+				return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+
 			Entity entity1 = inBody1.GetUserData();
 			Body3D body1(scene, entity1);
 
@@ -139,6 +160,12 @@ namespace doriax{
 		}
 
 		virtual void OnContactAdded(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override{
+			if (physicsSystem->onContactAdded3D.empty()){
+				return;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+
 			Entity entity1 = inBody1.GetUserData();
 			Body3D body1(scene, entity1);
 
@@ -149,6 +176,12 @@ namespace doriax{
 		}
 
 		virtual void OnContactPersisted(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override{
+			if (physicsSystem->onContactPersisted3D.empty()){
+				return;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+
 			Entity entity1 = inBody1.GetUserData();
 			Body3D body1(scene, entity1);
 
@@ -159,6 +192,12 @@ namespace doriax{
 		}
 
 		virtual void OnContactRemoved(const JPH::SubShapeIDPair &inSubShapePair) override{
+			if (physicsSystem->onContactRemoved3D.empty()){
+				return;
+			}
+
+			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+
 			JPH::BodyInterface &body_interface = physicsSystem->getWorld3D()->GetBodyInterfaceNoLock();
 
 			const JPH::BodyID body1Id = inSubShapePair.GetBody1ID();
