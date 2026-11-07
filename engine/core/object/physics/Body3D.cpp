@@ -876,6 +876,34 @@ bool Body3D::applyBuoyancyImpulse(const Vector3& surfacePosition, const Vector3&
     return getJoltBodyWrite().ApplyBuoyancyImpulse(surPos, surNor, buoyancy, linearDrag, angularDrag, fluVel, grav, deltaTime);
 }
 
+SubmergedVolume3D Body3D::getSubmergedVolume(const Vector3& surfacePosition, const Vector3& surfaceNormal) const{
+    Body3DComponent& body = getComponent<Body3DComponent>();
+    SubmergedVolume3D result;
+
+    // Jolt has no volume for these
+    for (size_t i = 0; i < body.numShapes; i++){
+        if (body.shapes[i].type == Shape3DType::MESH || body.shapes[i].type == Shape3DType::HEIGHTFIELD){
+            Log::error("Cannot get the submerged volume of mesh or heightfield shapes");
+            return result;
+        }
+    }
+
+    const JPH::Body& jbody = getJoltBody();
+    Vector3 normal = surfaceNormal.normalized();
+    JPH::Vec3 center = JPH::Vec3::sZero();
+    jbody.GetSubmergedVolume(JPH::RVec3(surfacePosition.x, surfacePosition.y, surfacePosition.z), JPH::Vec3(normal.x, normal.y, normal.z),
+        result.totalVolume, result.submergedVolume, center);
+
+    if (result.totalVolume > 0.0f){
+        result.fraction = result.submergedVolume / result.totalVolume;
+    }
+
+    JPH::RVec3 worldCenter = jbody.GetCenterOfMassPosition() + center;
+    result.centerOfBuoyancy = Vector3(worldCenter.GetX(), worldCenter.GetY(), worldCenter.GetZ());
+
+    return result;
+}
+
 Vector3 Body3D::getCenterOfMassPosition(){
     Body3DComponent& body = getComponent<Body3DComponent>();
 

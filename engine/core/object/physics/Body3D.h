@@ -20,6 +20,13 @@ namespace doriax{
 
     class Object;
 
+    struct DORIAX_API SubmergedVolume3D{
+        float totalVolume = 0.0f;
+        float submergedVolume = 0.0f;
+        float fraction = 0.0f;
+        Vector3 centerOfBuoyancy = Vector3::ZERO; // world space
+    };
+
     class DORIAX_API Body3D: public EntityHandle{
     protected:
         void checkBody(const Body3DComponent& body) const;
@@ -166,6 +173,8 @@ namespace doriax{
         void applyImpulse(const Vector3& impulse, const Vector3& point);
         void applyAngularImpulse(const Vector3& angularImpulse);
         bool applyBuoyancyImpulse(const Vector3& surfacePosition, const Vector3& surfaceNormal, const float buoyancy, const float linearDrag, const float angularDrag, const Vector3& fluidVelocity, const Vector3& gravity, const float deltaTime);
+        // surfaceNormal points up, out of the fluid
+        SubmergedVolume3D getSubmergedVolume(const Vector3& surfacePosition, const Vector3& surfaceNormal) const;
 
         Vector3 getCenterOfMassPosition();
     };

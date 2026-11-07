@@ -1497,8 +1497,17 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const Vector3&, const Vector3&>(&Body3D::applyImpulse))
         .addFunction("applyAngularImpulse", &Body3D::applyAngularImpulse)
         .addFunction("applyBuoyancyImpulse", &Body3D::applyBuoyancyImpulse)
+        .addFunction("getSubmergedVolume", &Body3D::getSubmergedVolume)
         .addFunction("getCenterOfMassPosition", &Body3D::getCenterOfMassPosition)
         .addFunction("getBody3DComponent", &Body3D::getComponent<Body3DComponent>)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<SubmergedVolume3D>("SubmergedVolume3D")
+        .addProperty("totalVolume", &SubmergedVolume3D::totalVolume)
+        .addProperty("submergedVolume", &SubmergedVolume3D::submergedVolume)
+        .addProperty("fraction", &SubmergedVolume3D::fraction)
+        .addProperty("centerOfBuoyancy", &SubmergedVolume3D::centerOfBuoyancy)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
