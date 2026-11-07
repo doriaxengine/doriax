@@ -103,6 +103,14 @@ namespace doriax{
 	private:
         Scene* scene;
         PhysicsSystem* physicsSystem;
+
+        // restores the flag even when a callback throws
+        struct ActivationScope {
+            PhysicsSystem* system;
+            bool previous;
+            explicit ActivationScope(PhysicsSystem* s): system(s), previous(s->callingActivation3D) { s->callingActivation3D = true; }
+            ~ActivationScope() { system->callingActivation3D = previous; }
+        };
 	public:
         JoltActivationListener(Scene* scene, PhysicsSystem* physicsSystem){
             this->scene = scene;
@@ -115,9 +123,8 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
-			physicsSystem->callingActivation3D = true;
+			ActivationScope activation(physicsSystem);
 			physicsSystem->onBodyActivated3D(Body3D(scene, inBodyUserData));
-			physicsSystem->callingActivation3D = false;
 		}
 
 		virtual void OnBodyDeactivated(const JPH::BodyID &inBodyID, uint64_t inBodyUserData) override{
@@ -126,9 +133,8 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
-			physicsSystem->callingActivation3D = true;
+			ActivationScope activation(physicsSystem);
 			physicsSystem->onBodyDeactivated3D(Body3D(scene, inBodyUserData));
-			physicsSystem->callingActivation3D = false;
 		}
 	};
 
