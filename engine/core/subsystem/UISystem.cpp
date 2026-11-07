@@ -3215,9 +3215,9 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y, unsigned int req
     if (!ui)
         return;
 
-    // a focus callback that moves the focus itself wins
+    // a focus callback that moves the focus itself wins, ending the typing if it took it away
     if (request != focusRequest){
-        if (textEditSelecting == entity){
+        if (!ui->focused && textEditSelecting == entity){
             textEditSelecting = NULL_ENTITY;
             System::instance().hideVirtualKeyboard();
         }
