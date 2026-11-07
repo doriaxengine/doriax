@@ -520,17 +520,30 @@ void Body3D::setAllowedDOFs(bool translationX, bool translationY, bool translati
 }
 
 float Body3D::getMass() const{
-    Body3DComponent& body = getComponent<Body3DComponent>();
+    const JPH::Body& jbody = getJoltBody();
 
-    checkBody(body);
-    return getBodyInterface().GetShape(body.body)->GetMassProperties().mMass;
+    const JPH::MotionProperties* motionProperties = jbody.GetMotionPropertiesUnchecked();
+    if (motionProperties && motionProperties->GetInverseMassUnchecked() > 0.0f){
+        return 1.0f / motionProperties->GetInverseMassUnchecked();
+    }
+
+    return jbody.GetShape()->GetMassProperties().mMass;
 }
 
 void Body3D::setMass(float mass){
-    JPH::Body& jbody = getJoltBodyWrite();
-    JPH::MassProperties massProperties = jbody.GetShape()->GetMassProperties();
-    massProperties.mMass = mass;
-    jbody.GetMotionProperties()->SetMassProperties(jbody.GetMotionProperties()->GetAllowedDOFs(), massProperties);
+    if (mass <= 0.0f){
+        Log::error("Body3D mass must be greater than zero");
+        return;
+    }
+
+    JPH::MotionProperties* motionProperties = getJoltBodyWrite().GetMotionPropertiesUnchecked();
+    if (!motionProperties || motionProperties->GetInverseMassUnchecked() == 0.0f){
+        Log::warn("Cannot set the mass of a static body or one with locked translation");
+        return;
+    }
+
+    // scales the inertia too
+    motionProperties->ScaleToMass(mass);
 }
 
 void Body3D::setOverrideMassAndInertia(Vector3 solidBoxSize, float solidBoxDensity){
