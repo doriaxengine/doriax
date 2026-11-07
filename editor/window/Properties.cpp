@@ -640,7 +640,7 @@ void editor::Properties::drawScenePropertyRow(SceneProject* sceneProject, const 
             break;
         case ScenePropertyInputType::DragInt:
             if constexpr (std::is_same_v<T, int>) {
-                changed = UIUtils::dragInt(("##" + propertyName).c_str(), &value, 1.0f, (int)minValue, (int)maxValue);
+                changed = UIUtils::dragInt(("##" + propertyName).c_str(), &value, 1.0f, (int)minValue, (int)maxValue, "%d", ImGuiSliderFlags_ClampOnInput);
             }
             break;
         case ScenePropertyInputType::SliderFloat:
@@ -2628,7 +2628,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosX = ImGui::GetCursorScreenPos();
 
-        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_x_"+id).c_str(), &(newValue.x), settings.stepSize, min, max, settings.format, ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(newValue.x, eValue[entity].y, eValue[entity].z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2659,7 +2659,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosY = ImGui::GetCursorScreenPos();
 
-        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_y_"+id).c_str(), &(newValue.y), settings.stepSize, min, max, settings.format, ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(eValue[entity].x, newValue.y, eValue[entity].z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -2690,7 +2690,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
         // Store cursor position before drawing the input
         ImVec2 inputPosZ = ImGui::GetCursorScreenPos();
 
-        if (UIUtils::dragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, min, max, settings.format)){
+        if (UIUtils::dragFloat(("##input_z_"+id).c_str(), &(newValue.z), settings.stepSize, min, max, settings.format, ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Vector3(eValue[entity].x, eValue[entity].y, newValue.z), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3200,7 +3200,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (UIUtils::dragFloat(("##input_float_"+id).c_str(), &newValue, settings.stepSize, v_min, v_max, newFormat.c_str())){
+        if (UIUtils::dragFloat(("##input_float_"+id).c_str(), &newValue, settings.stepSize, v_min, v_max, newFormat.c_str(), ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 if (type == RowPropertyType::HalfCone){
                     cmd = new PropertyCmd<float>(project, sceneProject->id, entity, cpType, id, cos(Angle::defaultToRad(newValue / 2)), settings.onValueChanged);
@@ -3259,7 +3259,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (UIUtils::dragScalar(("##input_double_"+id).c_str(), ImGuiDataType_Double, &newValue, settings.stepSize, minPtr, maxPtr, settings.format)){
+        if (UIUtils::dragScalar(("##input_double_"+id).c_str(), ImGuiDataType_Double, &newValue, settings.stepSize, minPtr, maxPtr, settings.format, ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<double>(project, sceneProject->id, entity, cpType, id, newValue, settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3304,7 +3304,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (UIUtils::dragInt(("##input_uint_"+id).c_str(), (int*)&newValue, static_cast<int>(ceil(settings.stepSize)), 0.0f, INT_MAX)){
+        if (UIUtils::dragInt(("##input_uint_"+id).c_str(), (int*)&newValue, static_cast<int>(ceil(settings.stepSize)), 0.0f, INT_MAX, "%d", ImGuiSliderFlags_ClampOnInput)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<unsigned int>(project, sceneProject->id, entity, cpType, id, newValue, settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
