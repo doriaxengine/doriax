@@ -312,8 +312,8 @@ namespace doriax{
 		// to false and is never set at runtime, so exported games are unaffected.
 		bool disableFixedResolution = false;
 
-		// editor-only, holds the waves while the scene is stopped or paused
-		bool waterPaused = false;
+		// editor-only, holds water and wind while the scene is stopped or paused
+		bool animationPaused = false;
 
 		static uint32_t pixelsWhite[64];
 		static uint32_t pixelsBlack[64];
@@ -639,6 +639,9 @@ namespace doriax{
 		// and the size of the target being drawn (shadow slot, SSAO depth or camera color)
 		float frameTime;
 		Vector2 passResolution;
+		// wind clock and meters of air blown past, advanced by update()
+		double windTime;
+		double windTravel;
 
 		// SSR: per-frame fullscreen passes for the main camera. The opaque color pass
 		// renders into sceneColorFramebuffer, the ssr pass marches the depth pre-pass
@@ -975,7 +978,7 @@ namespace doriax{
 		// already baked either way.
 		void setDisableFixedResolution(bool disableFixedResolution);
 
-		void setWaterPaused(bool waterPaused);
+		void setAnimationPaused(bool animationPaused);
 		// moves the waves by the update time since the last call; draw() does it after drawing
 		void advanceWaters();
 		// drops all wakes, the editor calls it on Stop

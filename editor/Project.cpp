@@ -5146,7 +5146,7 @@ void editor::Project::pauseEngineScene(Scene* scene, bool pause) const{
     scene->getSystem<PhysicsSystem>()->setPaused(pause);
     scene->getSystem<ActionSystem>()->setPaused(pause);
     scene->getSystem<AudioSystem>()->setPaused(pause);
-    scene->getSystem<RenderSystem>()->setWaterPaused(pause);
+    scene->getSystem<RenderSystem>()->setAnimationPaused(pause);
 }
 
 void editor::Project::copyEngineApiToProject() {

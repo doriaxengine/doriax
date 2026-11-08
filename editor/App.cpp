@@ -2970,7 +2970,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v44: the SSAO blur skips taps across depth edges.
     // v45: terrain layers skip the far tiling and side planes where they do not show.
     // v46: mesh, depth and G-buffer shaders bend toward the scene wind (USE_WIND).
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v46";
+    // v47: wind gusts follow the air blown past, not the clock.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v47";
 }
 
 void editor::App::pushTabNotificationStyle(){

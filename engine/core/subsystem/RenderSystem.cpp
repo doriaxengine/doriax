@@ -186,19 +186,18 @@ namespace {
         render.applyUniformBlock(slot, sizeof(fade), &fade);
     }
 
-    // wind direction in model space, where the offset is added
-    void applyWindUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time){
-        float speed = wind.length();
-        Vector3 local(transform.modelMatrix.inverse() * Vector4(wind.x, wind.y, wind.z, 0.0f));
+    // the bend goes to model space, where the offset is added
+    void applyWindUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time, float travel){
+        Vector3 bend(transform.modelMatrix.inverse() * Vector4(wind.x, wind.y, wind.z, 0.0f));
         Vector2 ground(wind.x, wind.z);
-        if (local.length() > 0.0f){
-            local = local.normalized() * speed;
+        if (bend.length() > 0.0f){
+            bend = bend.normalized() * (mesh.windSway * wind.length() * 0.1f);
         }
         if (ground.length() > 0.0f){
             ground.normalize();
         }
 
-        float params[8] = {local.x, local.y, local.z, time, mesh.windSway, mesh.windSwayHeight, ground.x, ground.y};
+        float params[8] = {bend.x, bend.y, bend.z, time, mesh.windSwayHeight, ground.x, ground.y, travel};
         render.applyUniformBlock(slot, sizeof(params), &params);
     }
 
@@ -384,6 +383,8 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     hasWaterDepth = false;
     onlyDirectionalLights = false;
     frameTime = 0.0f;
+    windTime = 0.0;
+    windTravel = 0.0;
     passResolution = Vector2(0.0f, 0.0f);
 
     ssrLoaded = false;
@@ -2913,8 +2914,8 @@ void RenderSystem::setDisableFixedResolution(bool disableFixedResolution){
     this->disableFixedResolution = disableFixedResolution;
 }
 
-void RenderSystem::setWaterPaused(bool waterPaused){
-    this->waterPaused = waterPaused;
+void RenderSystem::setAnimationPaused(bool animationPaused){
+    this->animationPaused = animationPaused;
 }
 
 bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelines, InstancedMeshComponent* instmesh, TerrainComponent* terrain){
@@ -5000,7 +5001,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             if (mesh.submeshes[i].slotVSWind != -1){
-                applyWindUniform(render, mesh.submeshes[i].slotVSWind, mesh, transform, scene->getWind(), frameTime);
+                applyWindUniform(render, mesh.submeshes[i].slotVSWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
             }
 
             if (mesh.submeshes[i].slotFSTexCoordSets != -1){
@@ -5114,7 +5115,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             }
 
             if (mesh.submeshes[i].slotVSDepthWind != -1){
-                applyWindUniform(depthRender, mesh.submeshes[i].slotVSDepthWind, mesh, transform, scene->getWind(), frameTime);
+                applyWindUniform(depthRender, mesh.submeshes[i].slotVSDepthWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
             }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
@@ -5513,7 +5514,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             }
         }
         if (mesh.submeshes[i].slotVSGBufferWind != -1){
-            applyWindUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferWind, mesh, transform, scene->getWind(), frameTime);
+            applyWindUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
         }
 
         if (terrain){
@@ -7767,7 +7768,7 @@ void RenderSystem::advanceWaters(){
 
 void RenderSystem::updateWater(Entity entity, WaterComponent& water, Transform& transform, uint16_t pipelines, double dt){
     // applied by advanceWaters()
-    if (!waterPaused)
+    if (!animationPaused)
         water.pendingTime += (float)dt;
 
     // the variant follows the scene fog and shadows, and the water switches
@@ -8174,7 +8175,7 @@ void RenderSystem::setWaterExclusionParams(const WaterComponent& water, const Ve
 // Moving exclusions leave foam where it forms and waves spreading from where their bow
 // passed, both in a map of each water around the camera
 void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, const Transform& cameraTransform){
-    const bool running = !waterPaused && dt > 0.0;
+    const bool running = !animationPaused && dt > 0.0;
     const float step = (float)dt;
     auto waters = scene->getComponentArray<WaterComponent>();
     auto exclusions = scene->getComponentArray<WaterExclusionComponent>();
@@ -10803,6 +10804,12 @@ void RenderSystem::update(double dt){
         if (camera.needUpdate){
             camera.needUpdate = false;
         }
+    }
+
+    // gusts ride the air blown past, so a change of speed does not jump them
+    if (!animationPaused){
+        windTime += dt;
+        windTravel += scene->getWind().length() * dt;
     }
 
     updateWaterWakes(dt, mainCamera, mainCameraTransform);
