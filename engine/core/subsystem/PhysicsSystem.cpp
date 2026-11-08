@@ -1369,6 +1369,7 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
                 chainDef.ghost1 = b2vertices.front();
                 chainDef.ghost2 = b2vertices.back();
             }
+            chainDef.userData = shapeDef.userData;
             chainDef.isLoop = shapeData.loop;
             chainDef.materials = &shapeDef.material;
             chainDef.materialCount = 1;
