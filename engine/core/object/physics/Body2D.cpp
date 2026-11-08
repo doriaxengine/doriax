@@ -911,6 +911,15 @@ void Body2D::setFixedRotation(bool fixedRotation){
     b2Body_SetMotionLocks(body.body, locks);
 }
 
+void Body2D::setMotionLocks(bool linearX, bool linearY, bool angularZ){
+    if (refuseBodyChange()) return;
+
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    checkBody(body);
+    b2Body_SetMotionLocks(body.body, {linearX, linearY, angularZ});
+}
+
 void Body2D::setBullet(bool bullet){
     if (refuseBodyChange()) return;
 
@@ -1003,6 +1012,20 @@ bool Body2D::isFixedRotation() const{
 
     checkBody(body);
     return b2Body_GetMotionLocks(body.body).angularZ;
+}
+
+bool Body2D::isLinearXLocked() const{
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    checkBody(body);
+    return b2Body_GetMotionLocks(body.body).linearX;
+}
+
+bool Body2D::isLinearYLocked() const{
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    checkBody(body);
+    return b2Body_GetMotionLocks(body.body).linearY;
 }
 
 bool Body2D::isBullet() const{

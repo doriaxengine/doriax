@@ -124,6 +124,7 @@ namespace doriax{
         void setEnableSleep(bool enableSleep);
         void setAwake(bool awake);
         void setFixedRotation(bool fixedRotation);
+        void setMotionLocks(bool linearX, bool linearY, bool angularZ);
         void setBullet(bool bullet);
         void setType(BodyType type);
         void setEnabled(bool enabled);
@@ -138,6 +139,8 @@ namespace doriax{
         bool isEnableSleep() const;
         bool isAwake() const;
         bool isFixedRotation() const;
+        bool isLinearXLocked() const;
+        bool isLinearYLocked() const;
         bool isBullet() const;
         BodyType getType() const;
         bool isEnabled() const;
