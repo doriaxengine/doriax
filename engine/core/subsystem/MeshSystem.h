@@ -221,6 +221,8 @@ namespace doriax{
             float windSwayHeight;
             std::string customShader;
             std::string customDepthShader;
+            std::string vertexOffsetShader;
+            float vertexOffsetMax;
             ShaderUniformValues shaderUniforms;
         };
         typedef std::map<std::pair<int, std::string>, MeshSettings> MeshSettingsByNode;

@@ -553,6 +553,30 @@ std::string Mesh::getCustomDepthShader() const{
     return getMesh().customDepthShader;
 }
 
+void Mesh::setVertexOffsetShader(const std::string& path){
+    for (MeshComponent* mesh : getMeshes()){
+        if (mesh->vertexOffsetShader != path){
+            mesh->vertexOffsetShader = path;
+
+            mesh->needReload = true;
+        }
+    }
+}
+
+std::string Mesh::getVertexOffsetShader() const{
+    return getMesh().vertexOffsetShader;
+}
+
+void Mesh::setVertexOffsetMax(float vertexOffsetMax){
+    for (MeshComponent* mesh : getMeshes()){
+        mesh->vertexOffsetMax = vertexOffsetMax;
+    }
+}
+
+float Mesh::getVertexOffsetMax() const{
+    return getMesh().vertexOffsetMax;
+}
+
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){
     for (MeshComponent* mesh : getMeshes()){
         if (ShaderUniforms::set(mesh->shaderUniforms, name, value))

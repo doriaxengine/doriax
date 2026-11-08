@@ -828,6 +828,10 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";
     if (!mesh.customDepthShader.empty())
         code << ind << "mesh.customDepthShader = " << formatString(mesh.customDepthShader) << ";\n";
+    if (!mesh.vertexOffsetShader.empty()){
+        code << ind << "mesh.vertexOffsetShader = " << formatString(mesh.vertexOffsetShader) << ";\n";
+        code << ind << "mesh.vertexOffsetMax = " << formatFloat(mesh.vertexOffsetMax) << ";\n";
+    }
     if (!mesh.shaderUniforms.empty())
         code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
     code << ind << "mesh.vertexCount = " << formatUInt(mesh.vertexCount) << ";\n";

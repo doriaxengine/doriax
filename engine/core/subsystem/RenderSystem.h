@@ -120,6 +120,12 @@ namespace doriax{
 		Matrix4 normalMatrix;       // view-space normal matrix: transpose(inverse(view*model))
 	} vs_gbuffer_t;
 
+	typedef struct vs_vertex_offset_t {
+		Matrix4 worldToModel;
+		Vector4 wind;   // scene wind in m/s.xyz, meters of air blown past.w
+		Vector4 params; // scene time.x, longest offset.y
+	} vs_vertex_offset_t;
+
 	typedef struct fs_gbuffer_material_t {
 		Vector4 params;             // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutout
 		Vector4 baseColorFactor;
@@ -639,8 +645,8 @@ namespace doriax{
 		// and the size of the target being drawn (shadow slot, SSAO depth or camera color)
 		float frameTime;
 		Vector2 passResolution;
-		// wind clock and meters of air blown past, advanced by update()
-		double windTime;
+		// clock of wind and vertex offsets, and meters of air blown past, advanced by update()
+		double animationTime;
 		double windTravel;
 		// wind speed the bounds of swaying meshes are widened for
 		float windBoundsSpeed;

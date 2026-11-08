@@ -2971,7 +2971,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v45: terrain layers skip the far tiling and side planes where they do not show.
     // v46: mesh, depth and G-buffer shaders bend toward the scene wind (USE_WIND).
     // v47: wind gusts follow the air blown past, not the clock.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v47";
+    // v48: meshes take a vertex offset function from the project (USE_VERTEX_OFFSET).
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v48";
 }
 
 void editor::App::pushTabNotificationStyle(){

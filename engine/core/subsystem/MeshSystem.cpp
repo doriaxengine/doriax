@@ -297,7 +297,8 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.windSway, mesh.windSwayHeight, mesh.customShader, mesh.customDepthShader, mesh.shaderUniforms};
+            mesh.windSway, mesh.windSwayHeight, mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader,
+            mesh.vertexOffsetMax, mesh.shaderUniforms};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -315,6 +316,8 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.windSwayHeight = settings.windSwayHeight;
     mesh.customShader = settings.customShader;
     mesh.customDepthShader = settings.customDepthShader;
+    mesh.vertexOffsetShader = settings.vertexOffsetShader;
+    mesh.vertexOffsetMax = settings.vertexOffsetMax;
     mesh.shaderUniforms = settings.shaderUniforms;
 }
 

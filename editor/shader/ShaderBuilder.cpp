@@ -87,8 +87,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
 
     auto snapshot = std::make_shared<CustomSourceSnapshot>();
     std::filesystem::path projectRoot = project->getProjectPath();
-    std::filesystem::path includeRootRel = editor::Util::getCustomShaderIncludeRoot(customShader);
-    editor::Util::CustomShaderPaths paths = editor::Util::resolveCustomShaderPaths(customShader);
+    const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
+    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+    editor::Util::CustomShaderPaths paths = editor::Util::resolveCustomShaderPaths(forkShader);
     std::string signatureInput;
 
     auto loadEntryPoint = [&](const std::string& rel, const char* stage) -> bool {
@@ -108,20 +109,26 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     };
 
     // Failures are not cached: the file may be created or restored at any moment.
-    if (!loadEntryPoint(paths.vert, "vertex") || !loadEntryPoint(paths.frag, "fragment"))
+    if (!forkShader.empty() && (!loadEntryPoint(paths.vert, "vertex") || !loadEntryPoint(paths.frag, "fragment")))
         return snapshot;
+    if (!vertexOffset.empty()){
+        if (!loadEntryPoint(vertexOffset, "vertex offset"))
+            return snapshot;
+        // the engine include pulls the file in by its own path, so errors name it
+        snapshot->projectBuffers["vertex_offset_function.glsl"] = "#include \"" + vertexOffset + "\"\n";
+    }
 
     auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
         std::error_code ec;
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
-    // An empty include root means the entry point sits at the project root, where the
-    // first two candidates would be the same file.
-    bool hasLocalRoot = !includeRootRel.empty() && includeRootRel != ".";
-
     std::unordered_set<std::string> visited;
-    std::function<void(const std::string&)> visitSource = [&](const std::string& source) {
+    std::function<void(const std::string&, const std::filesystem::path&)> visitSource = [&](const std::string& source, const std::filesystem::path& includeRootRel) {
+        // An empty include root means the entry point sits at the project root, where the
+        // first two candidates would be the same file.
+        bool hasLocalRoot = !includeRootRel.empty() && includeRootRel != ".";
+
         for (const std::string& key : editor::Util::getShaderIncludeKeys(source)) {
             if (!visited.insert(key).second)
                 continue;
@@ -148,12 +155,17 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             }
 
             appendSignaturePart(signatureInput, origin, content);
-            visitSource(content);
+            visitSource(content, includeRootRel);
         }
     };
 
-    visitSource(snapshot->projectBuffers[paths.vert]);
-    visitSource(snapshot->projectBuffers[paths.frag]);
+    if (!forkShader.empty()){
+        const std::filesystem::path forkRoot = editor::Util::getCustomShaderIncludeRoot(forkShader);
+        visitSource(snapshot->projectBuffers[paths.vert], forkRoot);
+        visitSource(snapshot->projectBuffers[paths.frag], forkRoot);
+    }
+    if (!vertexOffset.empty())
+        visitSource(snapshot->projectBuffers[vertexOffset], std::filesystem::path(vertexOffset).parent_path());
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
     customSourceCache[cacheKey] = snapshot;
@@ -794,13 +806,18 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     // Only project files that are actually reachable through #include are overlaid.
     // Resolution order is the entry point's own directory, the project root, then the
     // embedded engine shader library already present in args.fileBuffers.
-    const editor::Util::CustomShaderPaths customPaths = editor::Util::resolveCustomShaderPaths(customShader);
-    const std::string vertKey = customPaths.vert;
-    const std::string fragKey = customPaths.frag;
     for (const auto& [key, content] : sources->projectBuffers)
         args.fileBuffers[key] = content;
-    args.vert_file = vertKey;
-    args.frag_file = fragKey;
+
+    // a vertex offset alone keeps the built-in entry points
+    const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
+    if (!forkShader.empty()) {
+        const editor::Util::CustomShaderPaths customPaths = editor::Util::resolveCustomShaderPaths(forkShader);
+        args.vert_file = customPaths.vert;
+        args.frag_file = customPaths.frag;
+    }
+    if (!ShaderPool::getCustomShaderVertexOffset(customShader).empty())
+        args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {

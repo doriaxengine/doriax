@@ -664,6 +664,8 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<MeshComponent, std::string, &MeshComponent::vertexOffsetShader>("vertexOffsetShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
     };
@@ -4103,8 +4105,8 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
         case ComponentType::MeshComponent:
             // a model root without submeshes is drawn by its parts and builds nothing
             if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity))
-                return mesh->numSubmeshes > 0 && failed(mesh->customShader, ShaderType::MESH, mesh->loaded,
-                                                        mesh->needReload, mesh->submeshes[0].customShaderId);
+                return mesh->numSubmeshes > 0 && failed(ShaderPool::getCustomShader(mesh->customShader, mesh->vertexOffsetShader), ShaderType::MESH,
+                                                        mesh->loaded, mesh->needReload, mesh->submeshes[0].customShaderId);
             break;
         case ComponentType::UIComponent:
             if (UIComponent* ui = scene->findComponent<UIComponent>(entity))

@@ -5162,7 +5162,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
     ShaderUniformRows uniformRows = resolveShaderUniformRows(cpType, shaderType, sceneProject, shaderEntity);
     const char* longestLabel = "Shader";
     if (cpType == ComponentType::MeshComponent)
-        longestLabel = "Depth Shader";
+        longestLabel = "Vertex Offset";
     else if (cpType == ComponentType::WaterComponent)
         longestLabel = "Underwater Shader";
     float labelSize = getLabelSize(longestLabel, false);
@@ -5182,6 +5182,15 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(1);
             ImGui::TextDisabled("Depth shader failed to build");
+        }
+
+        propertyHeader("Vertex Offset");
+        drawVertexOffsetRow(sceneProject, shaderEntity);
+        ImGui::SameLine(); helpMarker("A .glsl file with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition), returning how far each vertex moves in world units. It runs in the color, depth and G-buffer passes, so shadows and reflections follow, and its u_vs_customParams values are the uniforms below.");
+        if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
+            RowSettings maxSettings;
+            maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
+            propertyRow(RowPropertyType::FloatPositive, cpType, "vertexOffsetMax", "Max Offset", sceneProject, {shaderEntity}, maxSettings);
         }
     }
 
@@ -5208,6 +5217,8 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
             forkShader = sceneProject->scene->getDefaultCustomShader(shaderType);
         if (forkShader.empty() && cpType == ComponentType::MeshComponent)
             forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customDepthShader");
+        if (forkShader.empty() && cpType == ComponentType::MeshComponent)
+            forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader");
         if (forkShader.empty() && cpType == ComponentType::WaterComponent)
             forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customUnderwaterShader");
 
@@ -5257,6 +5268,92 @@ void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType
     // only the main shader has a scene default
     drawShaderRowContents(shaderType, currentShader, setShader, onFork, idSuffix,
                           currentShader.empty() ? sceneProject->scene->getDefaultCustomShader(shaderType) : std::string());
+}
+
+// one .glsl file, unlike the .vert/.frag pair of a fork
+void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity entity){
+    const std::filesystem::path projectPath = project->getProjectPath();
+    const std::string current = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, ComponentType::MeshComponent, "vertexOffsetShader");
+    const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
+
+    auto setOffset = [&](const std::string& value) {
+        Command* offsetCmd = new PropertyCmd<std::string>(project, sceneProject->id, entity, ComponentType::MeshComponent, "vertexOffsetShader", value);
+        CommandHandle::get(sceneProject->id)->addCommand(offsetCmd);
+    };
+    auto useFile = [&](const std::string& path) {
+        std::error_code ec;
+        std::filesystem::path rel = std::filesystem::relative(path, projectPath, ec);
+        if (ec || rel.empty() || *rel.begin() == ".." || rel.extension() != ".glsl") {
+            Backend::getApp().registerAlert("Error", "Pick a .glsl file inside the project.");
+            return;
+        }
+        setOffset(rel.generic_string());
+    };
+
+    if (current.empty())
+        ImGui::TextDisabled("None");
+    else
+        ImGui::TextWrapped("%s", current.c_str());
+
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x / 3.0, ImGui::GetStyle().FramePadding.y / 2.0));
+
+    ImGui::BeginDisabled(!current.empty());
+    if (ImGui::Button(ICON_FA_FILE_CIRCLE_PLUS "##new_vertex_offset")) {
+        std::string created = ProjectUtils::writeVertexOffsetTemplate(projectPath, sceneProject->scene->getEntityName(entity));
+        if (created.empty()) {
+            Backend::getApp().registerAlert("Error", "Could not write the vertex offset file.");
+        } else {
+            setOffset(created);
+            if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
+                codeEditor->openFile((projectPath / created).string(), true);
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Create a vertex offset from a template");
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_FOLDER_OPEN "##pick_vertex_offset")) {
+        std::string selected = FileDialogs::openFileDialog(projectPath.string(), FILE_DIALOG_SHADER);
+        if (!selected.empty())
+            useFile(selected);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Pick a .glsl file");
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!exists);
+    if (ImGui::Button(ICON_FA_FILE_CODE "##open_vertex_offset")) {
+        if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
+            codeEditor->openFile((projectPath / current).string(), true);
+    }
+    if (ImGui::IsItemHovered()) {
+        if (exists)
+            ImGui::SetTooltip("Open %s", current.c_str());
+        else
+            ImGui::SetTooltip("Vertex offset file not found");
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+    ImGui::BeginDisabled(current.empty());
+    if (ImGui::Button(ICON_FA_XMARK "##clear_vertex_offset"))
+        setOffset("");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Remove the vertex offset");
+    ImGui::EndDisabled();
+
+    ImGui::PopStyleVar();
+
+    // a .glsl dragged from the resources window
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")) {
+            std::vector<std::string> files = editor::Util::getStringsFromPayload(payload);
+            if (!files.empty())
+                useFile(files[0]);
+        }
+        ImGui::EndDragDropTarget();
+    }
 }
 
 editor::Properties::ShaderUniformRows editor::Properties::resolveShaderUniformRows(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity){

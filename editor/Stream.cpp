@@ -4992,6 +4992,10 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
         node["customShader"] = mesh.customShader;
     if (!mesh.customDepthShader.empty())
         node["customDepthShader"] = mesh.customDepthShader;
+    if (!mesh.vertexOffsetShader.empty()){
+        node["vertexOffsetShader"] = mesh.vertexOffsetShader;
+        node["vertexOffsetMax"] = mesh.vertexOffsetMax;
+    }
     if (!mesh.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
 
@@ -5067,6 +5071,8 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     // Written only when set
     mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
+    mesh.vertexOffsetShader = node["vertexOffsetShader"] ? node["vertexOffsetShader"].as<std::string>() : "";
+    mesh.vertexOffsetMax = decodeFinite(node["vertexOffsetMax"], 0.0f);
     mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     mesh.needUpdateShaderUniforms = true;
 

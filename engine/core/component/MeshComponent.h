@@ -72,16 +72,18 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // resolved ids of MeshComponent::customShader/customDepthShader (0 = built-in);
-        // cached here so the matching ShaderPool::remove uses the same key
+        // resolved ids of MeshComponent::customShader/customDepthShader and the vertex offset
+        // (0 = built-in); cached here so the matching ShaderPool::remove uses the same key
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
+        uint16_t customGBufferShaderId = 0;
 
         int slotVSParams = -1;
         int slotFSParams = -1;
         int slotFSTexCoordSets = -1;
         int slotVSFade = -1;
         int slotVSWind = -1;
+        int slotVSVertexOffset = -1;
         int slotFSLighting = -1;
         int slotFSReflectionProbe = -1;
         int slotFSLighting2D = -1;
@@ -102,6 +104,7 @@ namespace doriax{
         int slotFSDepthMaterial = -1;
         int slotVSDepthFade = -1;
         int slotVSDepthWind = -1;
+        int slotVSDepthVertexOffset = -1;
         int slotVSDepthSkinning = -1;
         int slotVSDepthMorphTarget = -1;
         int slotVSDepthTerrain = -1;
@@ -112,6 +115,7 @@ namespace doriax{
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;
         int slotVSGBufferWind = -1;
+        int slotVSGBufferVertexOffset = -1;
         int slotFSGBufferTerrainLayers = -1;
 
         // custom uniform blocks of the forked shaders, filled from MeshComponent::shaderUniforms
@@ -119,6 +123,7 @@ namespace doriax{
         CustomUniformBlock customFSParams;
         CustomUniformBlock customVSDepthParams;
         CustomUniformBlock customFSDepthParams;
+        CustomUniformBlock customVSGBufferParams; // the vertex offset's, in the G-buffer pass
 
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
@@ -184,6 +189,9 @@ namespace doriax{
         // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
         // vertices or discards keeps its shadows in step.
         std::string customDepthShader;
+        // project .glsl defining getVertexOffset(), applied in the color, depth and G-buffer passes
+        std::string vertexOffsetShader;
+        float vertexOffsetMax = 0.0f; // longest offset in world units, also widens the culling bounds; 0 = no limit
         // values of the fork's custom uniform blocks, by member name, shared by all submeshes
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;

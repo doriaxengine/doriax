@@ -123,6 +123,12 @@ namespace doriax{
         void setCustomDepthShader(const std::string& path);
         std::string getCustomDepthShader() const;
 
+        void setVertexOffsetShader(const std::string& path);
+        std::string getVertexOffsetShader() const;
+
+        void setVertexOffsetMax(float vertexOffsetMax);
+        float getVertexOffsetMax() const;
+
         void setShaderUniform(const std::string& name, const Vector4& value);
         void setShaderUniform(const std::string& name, const Vector3& value);
         void setShaderUniform(const std::string& name, const Vector2& value);

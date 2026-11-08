@@ -147,6 +147,9 @@ public:
     // Removes only files owned by the plan, then prunes the directories it created.
     static void removeShaderFork(const ShaderForkPlan& plan);
 
+    // a starting vertex offset in the default shader directory; its project path, empty on failure
+    static std::string writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.
     // Returns the command (caller must add it to CommandHandle) or nullptr if invalid.
     static Command* buildDeleteTileCmd(Project* project, uint32_t sceneId, Entity entity, unsigned int tileIndex);

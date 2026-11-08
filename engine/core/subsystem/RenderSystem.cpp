@@ -201,6 +201,12 @@ namespace {
         render.applyUniformBlock(slot, sizeof(params), &params);
     }
 
+    // the offset comes in world units and goes to model space, where it joins the position
+    void applyVertexOffsetUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time, float travel){
+        vs_vertex_offset_t params = {transform.modelMatrix.inverse(), Vector4(wind.x, wind.y, wind.z, travel), Vector4(time, mesh.vertexOffsetMax, 0.0f, 0.0f)};
+        render.applyUniformBlock(slot, sizeof(vs_vertex_offset_t), &params);
+    }
+
     // custom block of a forked shader, with the engine-written members refreshed
     void applyCustomUniforms(ObjectRender& render, CustomUniformBlock& block, float frameTime, const Vector2& resolution){
         if (block.slot == -1)
@@ -236,6 +242,7 @@ namespace {
             mesh.submeshes[i].customFSParams.writeValues(mesh.shaderUniforms, inherited);
             mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inherited);
             mesh.submeshes[i].customFSDepthParams.writeValues(mesh.shaderUniforms, inherited);
+            mesh.submeshes[i].customVSGBufferParams.writeValues(mesh.shaderUniforms, inherited);
         }
         mesh.needUpdateShaderUniforms = false;
     }
@@ -383,7 +390,7 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     hasWaterDepth = false;
     onlyDirectionalLights = false;
     frameTime = 0.0f;
-    windTime = 0.0;
+    animationTime = 0.0;
     windTravel = 0.0;
     windBoundsSpeed = 0.0f;
     passResolution = Vector2(0.0f, 0.0f);
@@ -3240,7 +3247,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Priority: component customShader > scene default shader > built-in (empty)
         const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
         const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(meshShaderSrc);
+        const std::string& vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
+        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset));
         // 'Dlo': built-in shader without the point/spot paths
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
@@ -3256,14 +3264,14 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
                 p_depthAlphaMask, p_instanceFade, p_wind);
-            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(mesh.customDepthShader);
+            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
                 // same fallback as the main shader below
                 if (mesh.submeshes[i].customDepthShaderId != 0 &&
                     ShaderPool::isShaderBuildFailed(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId)){
                     Log::error("Custom depth shader '%s' failed to compile; rendering '%s' with the built-in shader",
-                               mesh.customDepthShader.c_str(), scene->getEntityName(entity).c_str());
+                               ShaderPool::getCustomShaderName(mesh.submeshes[i].customDepthShaderId).c_str(), scene->getEntityName(entity).c_str());
                     mesh.submeshes[i].customDepthShaderId = 0;
                     mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, 0);
                 }
@@ -3295,9 +3303,18 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
                 gbufferHasOcclusionTex, gbufferOcclusionUV2, p_wind);
-            mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties);
-            if (!mesh.submeshes[i].gbufferShader->isCreated())
-                return false;
+            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
+            mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
+            if (!mesh.submeshes[i].gbufferShader->isCreated()){
+                // the color pass reports the failure
+                if (mesh.submeshes[i].customGBufferShaderId != 0 &&
+                    ShaderPool::isShaderBuildFailed(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId)){
+                    mesh.submeshes[i].customGBufferShaderId = 0;
+                    mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, 0);
+                }
+                if (!mesh.submeshes[i].gbufferShader->isCreated())
+                    return false;
+            }
         }
         if (!mesh.submeshes[i].shader->isCreated()){
             // A custom shader that failed to compile falls back to the built-in shader so
@@ -3307,7 +3324,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (mesh.submeshes[i].customShaderId != 0 &&
                 ShaderPool::isShaderBuildFailed(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId)){
                 Log::error("Custom shader '%s' failed to compile; rendering '%s' with the built-in shader",
-                           meshShaderSrc.c_str(), scene->getEntityName(entity).c_str());
+                           ShaderPool::getCustomShaderName(mesh.submeshes[i].customShaderId).c_str(), scene->getEntityName(entity).c_str());
                 mesh.submeshes[i].customShaderId = 0;
                 mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, 0);
             }
@@ -3327,6 +3344,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         if (p_wind){
             mesh.submeshes[i].slotVSWind = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
+        }
+        if (!vertexOffset.empty()){
+            mesh.submeshes[i].slotVSVertexOffset = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
         }
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
@@ -3492,6 +3512,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (p_wind){
                 mesh.submeshes[i].slotVSDepthWind = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
             }
+            if (!vertexOffset.empty()){
+                mesh.submeshes[i].slotVSDepthVertexOffset = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
+            }
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSDepthSkinning = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -3625,6 +3648,11 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
             if (p_wind){
                 mesh.submeshes[i].slotVSGBufferWind = gbufferShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
+            }
+            if (!vertexOffset.empty()){
+                mesh.submeshes[i].slotVSGBufferVertexOffset = gbufferShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
+                mesh.submeshes[i].customVSGBufferParams.resolve(gbufferShaderData, "u_vs_customParams");
+                mesh.submeshes[i].customVSGBufferParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
             }
 
             if (!loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
@@ -4119,7 +4147,8 @@ void RenderSystem::buildInstanceView(int viewIndex, InstancedMeshComponent& inst
         const Vector3 center = transform.modelMatrix * bounds.center;
         const float radius = bounds.radius * entityScale;
         if (instmesh.cullInstances){
-            if (!isInsideCamera(cameraFar, frustumPlanes, center, radius + instmesh.viewSettings.windReach * entityScale))
+            const float reach = instmesh.viewSettings.windReach * entityScale + instmesh.viewSettings.offsetReach;
+            if (!isInsideCamera(cameraFar, frustumPlanes, center, radius + reach))
                 continue;
             if (limitDistance && (center - eye).length() - radius > instmesh.cullDistance)
                 continue;
@@ -5002,7 +5031,10 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             if (mesh.submeshes[i].slotVSWind != -1){
-                applyWindUniform(render, mesh.submeshes[i].slotVSWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
+                applyWindUniform(render, mesh.submeshes[i].slotVSWind, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
+            }
+            if (mesh.submeshes[i].slotVSVertexOffset != -1){
+                applyVertexOffsetUniform(render, mesh.submeshes[i].slotVSVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
             }
 
             if (mesh.submeshes[i].slotFSTexCoordSets != -1){
@@ -5116,7 +5148,10 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             }
 
             if (mesh.submeshes[i].slotVSDepthWind != -1){
-                applyWindUniform(depthRender, mesh.submeshes[i].slotVSDepthWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
+                applyWindUniform(depthRender, mesh.submeshes[i].slotVSDepthWind, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
+            }
+            if (mesh.submeshes[i].slotVSDepthVertexOffset != -1){
+                applyVertexOffsetUniform(depthRender, mesh.submeshes[i].slotVSDepthVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
             }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
@@ -5454,6 +5489,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
     unsigned int instanceCount = draw.instanceCount;
 
     updateMeshBuffers(mesh);
+    writeCustomUniforms(mesh, scene);
 
     // the G-buffer pass renders the main camera's selection (view 0)
     if (terrain){
@@ -5515,8 +5551,12 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             }
         }
         if (mesh.submeshes[i].slotVSGBufferWind != -1){
-            applyWindUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferWind, mesh, transform, scene->getWind(), (float)windTime, (float)windTravel);
+            applyWindUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferWind, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
         }
+        if (mesh.submeshes[i].slotVSGBufferVertexOffset != -1){
+            applyVertexOffsetUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
+        }
+        applyCustomUniforms(gbufferRender, mesh.submeshes[i].customVSGBufferParams, frameTime, passResolution);
 
         if (terrain){
             terrain->eyePos = terrain->views[0].nodesEyePos;
@@ -6247,7 +6287,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
             // G-buffer shader may have been loaded for SSR
             if (submesh.gbufferShader){
                 submesh.gbufferShader.reset();
-                ShaderPool::remove(ShaderType::GBUFFER, submesh.gbufferShaderProperties);
+                ShaderPool::remove(ShaderType::GBUFFER, submesh.gbufferShaderProperties, submesh.customGBufferShaderId);
             }
 
             //Destroy texture
@@ -6305,6 +6345,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotFSTexCoordSets = -1;
         submesh.slotVSFade = -1;
         submesh.slotVSWind = -1;
+        submesh.slotVSVertexOffset = -1;
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
         submesh.slotVSSprite = -1;
@@ -6320,6 +6361,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
         submesh.slotVSDepthWind = -1;
+        submesh.slotVSDepthVertexOffset = -1;
         submesh.slotFSDepthMaterial = -1;
         submesh.slotVSDepthSkinning = -1;
         submesh.slotVSDepthMorphTarget = -1;
@@ -6331,12 +6373,14 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;
         submesh.slotVSGBufferWind = -1;
+        submesh.slotVSGBufferVertexOffset = -1;
         submesh.slotFSGBufferTerrainLayers = -1;
 
         submesh.customVSParams.clear();
         submesh.customFSParams.clear();
         submesh.customVSDepthParams.clear();
         submesh.customFSDepthParams.clear();
+        submesh.customVSGBufferParams.clear();
     }
 
     //Destroy buffer
@@ -10420,6 +10464,7 @@ void RenderSystem::update(double dt){
             // farthest the wind shader moves a vertex: full bend, gust, wobble and flutter
             const bool sway = mesh.windSway > 0.0f && !terrain;
             const float windReach = sway ? mesh.windSway * windBoundsSpeed * 0.1f * 1.35f : 0.0f;
+            const float offsetReach = (mesh.vertexOffsetShader.empty() || terrain) ? 0.0f : mesh.vertexOffsetMax;
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
             if (instmesh){
@@ -10464,7 +10509,7 @@ void RenderSystem::update(double dt){
 
                 instmesh->needUpdateInstances = false;
 
-                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance, windReach};
+                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance, windReach, offsetReach};
                 if (transform.needUpdate || viewSettings != instmesh->viewSettings){
                     instmesh->viewSettings = viewSettings;
                     instanceViewsDirty = true;
@@ -10593,7 +10638,7 @@ void RenderSystem::update(double dt){
             if (!mesh.loadCalled){
                 loadMesh(entity, mesh, pipelines, instmesh, terrain);
             }
-            if (mesh.needUpdateAABB || transform.needUpdate || sway){
+            if (mesh.needUpdateAABB || transform.needUpdate || sway || offsetReach > 0.0f){
                 // Bones cancel out this mesh's model matrix, so the shader draws at
                 // modelMatrix * bonesMatrix[b] * vertex and modelMatrix * aabb mis-sizes the box
                 // once posed. Each bone bounds only its own share: the whole aabb per bone works
@@ -10624,12 +10669,18 @@ void RenderSystem::update(double dt){
                         }
                     }
                 }
+                // moved vertices reach past the box: the wind in model units, the offset in world units
                 AABB box = mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB;
-                if (windReach > 0.0f && box.isFinite() && box != AABB::ZERO){
+                const bool widen = box.isFinite() && box != AABB::ZERO;
+                if (widen && windReach > 0.0f){
                     const Vector3 reach(windReach, windReach, windReach);
-                    box = AABB(box.getMinimum() - reach, box.getMaximum() + reach);
+                    box.setExtents(box.getMinimum() - reach, box.getMaximum() + reach);
                 }
                 mesh.worldAABB = transform.modelMatrix * box;
+                if (widen && offsetReach > 0.0f){
+                    const Vector3 reach(offsetReach, offsetReach, offsetReach);
+                    mesh.worldAABB.setExtents(mesh.worldAABB.getMinimum() - reach, mesh.worldAABB.getMaximum() + reach);
+                }
 
                 mesh.needUpdateAABB = false;
 
@@ -10824,7 +10875,7 @@ void RenderSystem::update(double dt){
 
     // gusts ride the air blown past, so a change of speed does not jump them
     if (!animationPaused){
-        windTime += dt;
+        animationTime += dt;
         windTravel += scene->getWind().length() * dt;
     }
 

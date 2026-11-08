@@ -115,6 +115,9 @@ in vec3 a_position;
 #ifdef USE_WIND
     #include "includes/wind.glsl"
 #endif
+#ifdef USE_VERTEX_OFFSET
+    #include "includes/vertex_offset.glsl"
+#endif
 
 vec4 getPosition(mat4 boneTransform){
     vec3 pos = a_position;
@@ -179,6 +182,9 @@ void main() {
 
     #ifdef USE_WIND
         pos.xyz += getWindOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
+    #endif
+    #ifdef USE_VERTEX_OFFSET
+        pos.xyz += getModelOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
     #endif
 
     vec4 worldPos = pbrParams.modelMatrix * pos;

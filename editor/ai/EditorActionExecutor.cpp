@@ -5126,7 +5126,7 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
     // default) is a project-relative base path; both must reference real files.
     static const std::set<std::string> shaderPathProperties = {
         "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader", "default_ui_shader",
-        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
+        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader", "vertexOffsetShader"
     };
     if (!shaderPathProperties.count(propertyName)) {
         return true;
@@ -5134,6 +5134,16 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
     const std::string value = args.value("string_value", "");
     if (value.empty()) {
         return true; // empty resets to the built-in shader
+    }
+
+    // a vertex offset is one .glsl file
+    if (propertyName == "vertexOffsetShader") {
+        if (fs::path(value).extension() != ".glsl" || !PathUtils::isSafeRelativePath(fs::path(value)) ||
+                !fs::exists(project->getProjectPath() / value)) {
+            error = "vertexOffsetShader must be an existing project-relative .glsl file. Write it with write_shader_file first.";
+            return false;
+        }
+        return true;
     }
 
     Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(value);

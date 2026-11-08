@@ -178,6 +178,25 @@ std::string ShaderPool::getCustomShaderName(uint16_t customId){
     return "";
 }
 
+std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& vertexOffset){
+    if (vertexOffset.empty())
+        return fork;
+
+    return fork + '#' + vertexOffset;
+}
+
+std::string ShaderPool::getCustomShaderFork(const std::string& customShader){
+    return customShader.substr(0, customShader.find('#'));
+}
+
+std::string ShaderPool::getCustomShaderVertexOffset(const std::string& customShader){
+    size_t separator = customShader.find('#');
+    if (separator == std::string::npos)
+        return "";
+
+    return customShader.substr(separator + 1);
+}
+
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
     std::string base = getCustomShaderName(customId);
     // Sanitize the project-relative base into a filesystem-safe, deterministic token

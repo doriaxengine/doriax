@@ -1570,7 +1570,7 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
     });
 }
 
-void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform) {
+void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform) {
     // customShader lives on every renderable component type (a mesh also has its depth
     // fork, a water its underwater one); visit each array in a registry, apply the
     // transform, and flag a shader reload on the entities that changed.
@@ -1595,6 +1595,16 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::customShader);
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customShader);
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader);
+
+        // a vertex offset is one file, not a .vert/.frag pair
+        auto meshes = registry->getComponentArray<MeshComponent>();
+        for (size_t i = 0; i < meshes->size(); ++i) {
+            std::string& vertexOffset = meshes->getComponentFromIndex(i).vertexOffsetShader;
+            if (!vertexOffset.empty() && fileTransform(vertexOffset)) {
+                Catalog::updateEntity(registry, meshes->getEntity(i), UpdateFlags_Shader_Reload);
+                changed = true;
+            }
+        }
         return changed;
     };
 
@@ -1667,6 +1677,12 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
             customShader = Util::makeCustomShader(newVert, newFrag);
         }
         return changed;
+    }, [&](std::string& path) -> bool {
+        std::string updated;
+        if (!remapRelativeString(oldRelative, newRelative, path, updated))
+            return false;
+        path = updated;
+        return true;
     });
 }
 
@@ -1690,6 +1706,11 @@ void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deleted
             return true;
         }
         return false;
+    }, [&](std::string& path) -> bool {
+        if (!matchesRelativeString(deletedRelative, path))
+            return false;
+        path.clear();
+        return true;
     });
 }
 
@@ -3923,8 +3944,13 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             const MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
             // a reload keeps the mesh unloaded until its new shaders have built
             if (mesh.loaded || mesh.submeshes[0].shader) {
-                uint16_t customShaderId = effectiveShaderId(mesh.customShader, ShaderType::MESH);
-                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(mesh.customDepthShader);
+                bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
+                // as in RenderSystem::loadMesh
+                const std::string vertexOffset = isTerrain ? std::string() : mesh.vertexOffsetShader;
+                const std::string& meshShader = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
+                uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, vertexOffset));
+                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
+                uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
                     if (!mesh.loaded && !mesh.submeshes[s].shader) {
                         continue;
@@ -3957,7 +3983,6 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     // arrive at runtime (scripts spawning them). Derive the props
                     // from the same submesh flags RenderSystem::loadMesh uses, and
                     // keep the stored key too (identical when it was computed).
-                    bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
                     bool isInstanced = signature.test(scene->getComponentId<InstancedMeshComponent>());
                     // From the components, not the stored word, for the same reason.
                     bool instancedFade = isInstanced && scene->getComponent<InstancedMeshComponent>(entity).distanceFade;
@@ -3972,7 +3997,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
                     insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
-                        keys.insert(ShaderPool::getShaderKey(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties));
+                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customGBufferShaderId);
                     }
                 }
             }
@@ -4108,7 +4133,7 @@ void editor::Project::invalidateCustomShaders() {
 
         for (Entity entity : sceneProject.entities) {
             if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity))
-                flagReload(mesh->needReload, sceneMesh || !mesh->customShader.empty() || !mesh->customDepthShader.empty());
+                flagReload(mesh->needReload, sceneMesh || !mesh->customShader.empty() || !mesh->customDepthShader.empty() || !mesh->vertexOffsetShader.empty());
             if (UIComponent* ui = scene->findComponent<UIComponent>(entity))
                 flagReload(ui->needReload, sceneUI || !ui->customShader.empty());
             if (PointsComponent* pts = scene->findComponent<PointsComponent>(entity))
@@ -6155,10 +6180,13 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
-    // Except those of deleted forks, which exports could not build
+    // Except those of deleted forks or vertex offsets, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
-        const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it)));
-        if (!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) {
+        const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
+        const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
+        const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+        if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
+                (!vertexOffset.empty() && !fs::exists(projectPath / vertexOffset))) {
             it = shaderKeys.erase(it);
         } else {
             ++it;

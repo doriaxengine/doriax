@@ -354,6 +354,35 @@ bool editor::ProjectUtils::writeShaderFork(const ShaderForkPlan& plan) {
     return success;
 }
 
+std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
+    const std::filesystem::path dirRel = defaultShaderForkDir();
+    const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName + "_offset");
+    std::string name = baseName;
+    int suffix = 2;
+    while (std::filesystem::exists(projectRoot / dirRel / (name + ".glsl")))
+        name = baseName + std::to_string(suffix++);
+
+    std::error_code ec;
+    std::filesystem::create_directories(projectRoot / dirRel, ec);
+    std::ofstream file(projectRoot / dirRel / (name + ".glsl"), std::ios::binary);
+    if (ec || !file)
+        return "";
+
+    file << R"(// Moves each vertex of the mesh by the returned world offset, in the color, depth and
+// G-buffer passes. vertexOffset.params.x is the scene time and vertexOffset.wind the scene
+// wind; the block below takes its values from the mesh's shader uniforms.
+uniform u_vs_customParams {
+    float waveHeight;
+} offsetParams;
+
+vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
+    float time = vertexOffset.params.x;
+    return vec3(0.0, sin(time * 2.0 + worldPosition.x) * offsetParams.waveHeight, 0.0);
+}
+)";
+    return (dirRel / (name + ".glsl")).generic_string();
+}
+
 void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {
     std::error_code ec;
     std::filesystem::remove(plan.vertPath, ec);

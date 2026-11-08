@@ -53,6 +53,9 @@ out vec2 v_projZW;
 #ifdef USE_WIND
     #include "includes/wind.glsl"
 #endif
+#ifdef USE_VERTEX_OFFSET
+    #include "includes/vertex_offset.glsl"
+#endif
 
 vec4 getPosition(mat4 boneTransform){
     vec3 pos = a_position;
@@ -95,6 +98,9 @@ void main() {
 
     #ifdef USE_WIND
         pos.xyz += getWindOffset(localPos.xyz, (depthParams.modelMatrix * pos).xyz);
+    #endif
+    #ifdef USE_VERTEX_OFFSET
+        pos.xyz += getModelOffset(localPos.xyz, (depthParams.modelMatrix * pos).xyz);
     #endif
 
     gl_Position = depthParams.mvpMatrix * pos;
