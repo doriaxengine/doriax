@@ -56,10 +56,9 @@ static void forEachBox2DShape(const Shape2D& shape, F fn){
     }
 }
 
-// a recycled contact keeps its old material, setting the same mass drops it
-static void refreshContacts(b2BodyId bodyId){
+// bodies sleeping on the shape wake up to feel the new material
+static void wakeContacts(b2BodyId bodyId){
     if (b2Body_GetType(bodyId) == b2_dynamicBody){
-        b2Body_SetMassData(bodyId, b2Body_GetMassData(bodyId));
         b2Body_SetAwake(bodyId, true);
         return;
     }
@@ -71,7 +70,6 @@ static void refreshContacts(b2BodyId bodyId){
         if (B2_ID_EQUALS(other, bodyId)){
             other = b2Shape_GetBody(contacts[i].shapeIdB);
         }
-        b2Body_SetMassData(other, b2Body_GetMassData(other));
         b2Body_SetAwake(other, true);
     }
 }
@@ -90,7 +88,7 @@ static void changeSurfaceMaterial(b2BodyId bodyId, const Shape2D& shape, F chang
         b2Chain_SetAllSurfaceMaterials(shape.chain, &material);
     }
     if (b2Body_IsValid(bodyId)){
-        refreshContacts(bodyId);
+        wakeContacts(bodyId);
     }
 }
 
