@@ -3740,7 +3740,8 @@ bool editor::Exporter::writeAppIcon() {
 std::vector<ShaderKey> editor::Exporter::getPairedShaderKeys(ShaderKey key) {
     key = ShaderPool::normalizeKey(key);
     std::vector<ShaderKey> keys;
-    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && ShaderPool::getCustomIdFromKey(key) == 0) {
+    const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(key));
+    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && ShaderPool::getCustomShaderFork(customShader).empty()) {
         key &= ~(ShaderKey(1) << 28);
         if (ShaderPool::getPropertiesFromKey(key) & (1u << 3)) {
             keys.push_back(key | (ShaderKey(1) << 28));
