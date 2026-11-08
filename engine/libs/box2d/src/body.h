@@ -3,12 +3,67 @@
 
 #pragma once
 
-#include "array.h"
+#include "container.h"
+#include "physics_world.h"
+#include "solver_set.h"
 
+#include "box2d/constants.h"
 #include "box2d/math_functions.h"
 #include "box2d/types.h"
 
-typedef struct b2World b2World;
+enum b2BodyFlags
+{
+	// This body has fixed translation along the x-axis
+	b2_lockLinearX = 0x00000001,
+
+	// This body has fixed translation along the y-axis
+	b2_lockLinearY = 0x00000002,
+
+	// This body has fixed rotation
+	b2_lockAngularZ = 0x00000004,
+
+	// This flag is used for debug draw and contact recycling. Only on b2BodySim.
+	b2_isFast = 0x00000008,
+
+	// This dynamic body does a final CCD pass against all body types, but not other bullets
+	b2_isBullet = 0x00000010,
+
+	// This body was speed capped in the current time step
+	b2_isSpeedCapped = 0x00000020,
+
+	// This body had a time of impact event in the current time step (body sim only).
+	b2_hadTimeOfImpact = 0x00000040,
+
+	// This body has no limit on angular velocity
+	b2_allowFastRotation = 0x00000080,
+
+	// This bullet body needs to have its AABB increased. Needed because bullets don't follow
+	// the standard broad-phase update.
+	b2_enlargeBulletBounds = 0x00000100,
+
+	// This body is dynamic so the solver should write to it.
+	// This prevents writing to kinematic bodies that causes a multithreaded sharing
+	// cache coherence problem even when the values are not changing.
+	// Used for b2BodyState flags.
+	b2_dynamicFlag = 0x00000200,
+
+	// Flag to indicate the user has used the updateBodyMass option to defer mass
+	// computation but b2Body_UpdateMassFromShapes was not called before the world step.
+	b2_dirtyMass = 0x00000400,
+
+	b2_enableSleep = 0x00000800,
+
+	b2_bodyEnableContactRecycling = 0x00001000,
+
+	// All lock flags
+	b2_allLocks = b2_lockAngularZ | b2_lockLinearX | b2_lockLinearY,
+
+	// If this flag is set then the body has fixed rotation
+	b2_fixedRotation = b2_lockAngularZ,
+
+	// These flags are transient per time step. These may be different across b2Body, b2BodySim, and b2BodyState.
+	b2_bodyTransientFlags = b2_isSpeedCapped | b2_hadTimeOfImpact,
+};
 
 // Body organizational details that are not used in the solver.
 typedef struct b2Body
@@ -40,9 +95,8 @@ typedef struct b2Body
 	// All enabled dynamic and kinematic bodies are in an island.
 	int islandId;
 
-	// doubly-linked island list
-	int islandPrev;
-	int islandNext;
+	// Need this island index for faster union-find
+	int islandIndex;
 
 	float mass;
 
@@ -51,34 +105,60 @@ typedef struct b2Body
 
 	float sleepThreshold;
 	float sleepTime;
+	float safetyFactor;
 
 	// this is used to adjust the fellAsleep flag in the body move array
 	int bodyMoveIndex;
 
 	int id;
 
+	// b2BodyFlags
+	uint32_t flags;
+
 	b2BodyType type;
 
 	// This is monotonically advanced when a body is allocated in this slot
 	// Used to check for invalid b2BodyId
-	uint16_t revision;
+	uint16_t generation;
 
-	bool enableSleep;
-	bool fixedRotation;
-	bool isSpeedCapped;
-	bool isMarked;
+	char name[B2_NAME_LENGTH + 1];
 } b2Body;
 
+// Body State
 // The body state is designed for fast conversion to and from SIMD via scatter-gather.
 // Only awake dynamic and kinematic bodies have a body state.
 // This is used in the performance critical constraint solver
 //
+// The solver operates on the body state. The body state array does not hold static bodies. Static bodies are shared
+// across worker threads. It would be okay to read their states, but writing to them would cause cache thrashing across
+// workers, even if the values don't change.
+// This causes some trouble when computing anchors. I rotate joint anchors using the body rotation every sub-step. For static
+// bodies the anchor doesn't rotate. Body A or B could be static and this can lead to lots of branching. This branching
+// should be minimized.
+//
+// Solution 1:
+// Use delta rotations. This means anchors need to be prepared in world space. The delta rotation for static bodies will be
+// identity using a dummy state. Base separation and angles need to be computed. Manifolds will be behind a frame, but that
+// is probably best if bodies move fast.
+//
+// Solution 2:
+// Use full rotation. The anchors for static bodies will be in world space while the anchors for dynamic bodies will be in local
+// space. Potentially confusing and bug prone.
+//
+// Note:
+// I rotate joint anchors each sub-step but not contact anchors. Joint stability improves a lot by rotating joint anchors
+// according to substep progress. Contacts have reduced stability when anchors are rotated during substeps, especially for
+// round shapes.
+
 // 32 bytes
 typedef struct b2BodyState
 {
 	b2Vec2 linearVelocity; // 8
 	float angularVelocity; // 4
-	int flags;			   // 4
+
+	// b2BodyFlags
+	// Important flags: locking, dynamic
+	uint32_t flags; // 4
 
 	// Using delta position reduces round-off error far from the origin
 	b2Vec2 deltaPosition; // 8
@@ -95,16 +175,15 @@ static const b2BodyState b2_identityBodyState = { { 0.0f, 0.0f }, 0.0f, 0, { 0.0
 // Transform data used for collision and solver preparation.
 typedef struct b2BodySim
 {
-	// todo better to have transform in sim or in base body? Try both!
-	// transform for body origin
-	b2Transform transform;
+	// transform for body origin, double translation in large world mode
+	b2WorldTransform transform;
 
 	// center of mass position in world space
-	b2Vec2 center;
+	b2Pos center;
 
 	// previous rotation and COM for TOI
 	b2Rot rotation0;
-	b2Vec2 center0;
+	b2Pos center0;
 
 	// location of center of mass relative to the body origin
 	b2Vec2 localCenter;
@@ -122,50 +201,95 @@ typedef struct b2BodySim
 	float angularDamping;
 	float gravityScale;
 
-	// body data can be moved around, the id is stable (used in b2BodyId)
+	// Index of b2Body
 	int bodyId;
 
-	// This flag is used for debug draw
-	bool isFast;
-
-	bool isBullet;
-	bool isSpeedCapped;
-	bool allowFastRotation;
-	bool enlargeAABB;
+	// b2BodyFlags
+	uint32_t flags;
 } b2BodySim;
 
 // Get a validated body from a world using an id.
 b2Body* b2GetBodyFullId( b2World* world, b2BodyId bodyId );
 
-b2Transform b2GetBodyTransformQuick( b2World* world, b2Body* body );
-b2Transform b2GetBodyTransform( b2World* world, int bodyId );
+b2WorldTransform b2GetBodyTransformQuick( b2World* world, b2Body* body );
+b2WorldTransform b2GetBodyTransform( b2World* world, int bodyId );
 
 // Create a b2BodyId from a raw id.
 b2BodyId b2MakeBodyId( b2World* world, int bodyId );
 
 bool b2ShouldBodiesCollide( b2World* world, b2Body* bodyA, b2Body* bodyB );
-bool b2IsBodyAwake( b2World* world, b2Body* body );
 
-b2BodySim* b2GetBodySim( b2World* world, b2Body* body );
-b2BodyState* b2GetBodyState( b2World* world, b2Body* body );
+void b2RefreshBodyContactIndices( b2World* world, b2Body* body );
 
-// careful calling this because it can invalidate body, state, joint, and contact pointers
+// Careful calling this because it can invalidate body, state, joint, and contact pointers.
 bool b2WakeBody( b2World* world, b2Body* body );
 
 void b2UpdateBodyMassData( b2World* world, b2Body* body );
+void b2SyncBodyFlags( b2World* world, b2Body* body );
 
-static inline b2Sweep b2MakeSweep( const b2BodySim* bodySim )
+// Build a sweep relative to a base position so continuous collision keeps float precision far
+// from the origin. The base cancels out of the relative motion the TOI actually solves.
+static inline b2Sweep b2MakeRelativeSweep( const b2BodySim* bodySim, b2Pos base )
 {
 	b2Sweep s;
-	s.c1 = bodySim->center0;
-	s.c2 = bodySim->center;
+	s.c1 = b2SubPos( bodySim->center0, base );
+	s.c2 = b2SubPos( bodySim->center, base );
 	s.q1 = bodySim->rotation0;
 	s.q2 = bodySim->transform.q;
 	s.localCenter = bodySim->localCenter;
 	return s;
 }
 
-// Define inline functions for arrays
-B2_ARRAY_INLINE( b2Body, b2Body );
-B2_ARRAY_INLINE( b2BodySim, b2BodySim );
-B2_ARRAY_INLINE( b2BodyState, b2BodyState );
+static inline b2BodySim* b2GetBodySim( b2World* world, b2Body* body )
+{
+	b2SolverSet* set = b2Array_Get( world->solverSets, body->setIndex );
+	b2BodySim* bodySim = b2Array_Get( set->bodySims, body->localIndex );
+	return bodySim;
+}
+
+static inline b2BodyState* b2GetBodyState( b2World* world, b2Body* body )
+{
+	if ( body->setIndex == b2_awakeSet )
+	{
+		b2SolverSet* set = b2Array_Get( world->solverSets, b2_awakeSet );
+		return b2Array_Get( set->bodyStates, body->localIndex );
+	}
+
+	return NULL;
+}
+
+// This encodes the body sim index for storage in the contact sim. This helps
+// avoid a lookup and cache miss in the narrow phase.
+static inline int b2EncodeBodySimIndex( const b2Body* body )
+{
+	if ( body->setIndex == b2_awakeSet )
+	{
+		return body->localIndex;
+	}
+
+	if ( body->setIndex == b2_staticSet )
+	{
+		return -( body->localIndex + 2 );
+	}
+
+	return B2_NULL_INDEX;
+}
+
+static inline bool b2IsStaticSimIndex( int encodedBodySimIndex )
+{
+	return encodedBodySimIndex < B2_NULL_INDEX;
+}
+
+// In the contact solver a static body sim is expected to have null index.
+static inline int b2DecodeAwakeIndex( int encodedBodySimIndex )
+{
+	return encodedBodySimIndex >= 0 ? encodedBodySimIndex : B2_NULL_INDEX;
+}
+
+// When a body goes to sleep the contact sim has a null index for it. This
+// also handles the case where the body is static and has an encoded
+// sim index of -2 or less.
+static inline int b2SleepBodySimIndex( int encodedIndex )
+{
+	return encodedIndex >= 0 ? B2_NULL_INDEX : encodedIndex;
+}

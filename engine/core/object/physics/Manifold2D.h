@@ -13,9 +13,10 @@ namespace doriax{
         private:
             Scene* scene;
             const b2Manifold* manifold;
+            b2BodyId bodyA;
 
         public:
-            Manifold2D(Scene* scene, const b2Manifold* manifold);
+            Manifold2D(Scene* scene, const b2Manifold* manifold, b2BodyId bodyA);
             virtual ~Manifold2D();
 
             Manifold2D(const Manifold2D& rhs);

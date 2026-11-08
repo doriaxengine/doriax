@@ -56,6 +56,21 @@ static void forEachBox2DShape(const Shape2D& shape, F fn){
     }
 }
 
+// a chain has one material for all its segments
+template<typename F>
+static void changeSurfaceMaterial(const Shape2D& shape, F change){
+    forEachBox2DShape(shape, [&](b2ShapeId shapeId){
+        b2SurfaceMaterial material = b2Shape_GetSurfaceMaterial(shapeId);
+        change(material);
+        b2Shape_SetSurfaceMaterial(shapeId, &material);
+    });
+    if (b2Chain_IsValid(shape.chain)){
+        b2SurfaceMaterial material = b2Chain_GetSurfaceMaterial(shape.chain, 0);
+        change(material);
+        b2Chain_SetAllSurfaceMaterials(shape.chain, &material);
+    }
+}
+
 static int appendShape2D(Body2DComponent& body){
     if (!body.shapes.validIndex(body.numShapes)){
         Log::error("Cannot add more shapes in this body");
@@ -446,13 +461,9 @@ void Body2D::setShapeFriction(size_t index, float friction){
         body.shapes[index].friction = friction;
         if (deferShapeChange(body)) return;
 
-        if (body.shapes[index].type != Shape2DType::CHAIN){
-            forEachBox2DShape(body.shapes[index], [&](b2ShapeId shapeId){
-                b2Shape_SetFriction(shapeId, friction);
-            });
-        }else if (b2Chain_IsValid(body.shapes[index].chain)){
-            b2Chain_SetFriction(body.shapes[index].chain, friction);
-        }
+        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+            material.friction = friction;
+        });
     }else{
         Log::error("Cannot find shape %i of body", index);
     }
@@ -465,13 +476,9 @@ void Body2D::setShapeRestitution(size_t index, float restitution){
         body.shapes[index].restitution = restitution;
         if (deferShapeChange(body)) return;
 
-        if (body.shapes[index].type != Shape2DType::CHAIN){
-            forEachBox2DShape(body.shapes[index], [&](b2ShapeId shapeId){
-                b2Shape_SetRestitution(shapeId, restitution);
-            });
-        }else if (b2Chain_IsValid(body.shapes[index].chain)){
-            b2Chain_SetRestitution(body.shapes[index].chain, restitution);
-        }
+        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+            material.restitution = restitution;
+        });
     }else{
         Log::error("Cannot find shape %i of body", index);
     }
@@ -810,7 +817,7 @@ void Body2D::setEnableSleep(bool enableSleep){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
-    b2Body_EnableSleep(body.body, enableSleep);
+    b2Body_EnableSleeping(body.body, enableSleep);
 }
 
 void Body2D::setAwake(bool awake){
@@ -828,7 +835,9 @@ void Body2D::setFixedRotation(bool fixedRotation){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
-    b2Body_SetFixedRotation(body.body, fixedRotation);
+    b2MotionLocks locks = b2Body_GetMotionLocks(body.body);
+    locks.angularZ = fixedRotation;
+    b2Body_SetMotionLocks(body.body, locks);
 }
 
 void Body2D::setBullet(bool bullet){
@@ -908,7 +917,7 @@ bool Body2D::isEnableSleep() const{
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
-    return b2Body_IsSleepEnabled(body.body);
+    return b2Body_IsSleepingEnabled(body.body);
 }
 
 bool Body2D::isAwake() const{
@@ -922,7 +931,7 @@ bool Body2D::isFixedRotation() const{
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
-    return b2Body_IsFixedRotation(body.body);
+    return b2Body_GetMotionLocks(body.body).angularZ;
 }
 
 bool Body2D::isBullet() const{
@@ -1116,7 +1125,7 @@ void Body2D::applyMassFromShapes(){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     checkBody(body);
-    b2Body_ApplyMassFromShapes(body.body);
+    b2Body_UpdateMassFromShapes(body.body);
 }
 
 void Body2D::applyForce(const Vector2& force, const Vector2& point, bool wake){

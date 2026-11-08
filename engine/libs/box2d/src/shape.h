@@ -3,11 +3,12 @@
 
 #pragma once
 
-#include "array.h"
+#include "container.h"
 
 #include "box2d/types.h"
 
 typedef struct b2BroadPhase b2BroadPhase;
+typedef struct b2World b2World;
 
 typedef struct b2Shape
 {
@@ -15,19 +16,17 @@ typedef struct b2Shape
 	int bodyId;
 	int prevShapeId;
 	int nextShapeId;
+	int sensorIndex;
 	b2ShapeType type;
+	b2SurfaceMaterial material;
 	float density;
-	float friction;
-	float restitution;
-
+	float aabbMargin;
 	b2AABB aabb;
-	b2AABB fatAABB;
 	b2Vec2 localCentroid;
 	int proxyKey;
 
 	b2Filter filter;
 	void* userData;
-	uint32_t customColor;
 
 	union
 	{
@@ -38,13 +37,12 @@ typedef struct b2Shape
 		b2ChainSegment chainSegment;
 	};
 
-	uint16_t revision;
-	bool isSensor;
+	uint16_t generation;
 	bool enableSensorEvents;
 	bool enableContactEvents;
+	bool enableCustomFiltering;
 	bool enableHitEvents;
 	bool enablePreSolveEvents;
-	bool enlargedAABB;
 } b2Shape;
 
 typedef struct b2ChainShape
@@ -52,11 +50,9 @@ typedef struct b2ChainShape
 	int id;
 	int bodyId;
 	int nextChainId;
-	int count;
+	int segmentCount;
+	uint16_t generation;
 	int* shapeIndices;
-	float friction;
-	float restitution;
-	uint16_t revision;
 } b2ChainShape;
 
 typedef struct b2ShapeExtent
@@ -65,12 +61,30 @@ typedef struct b2ShapeExtent
 	float maxExtent;
 } b2ShapeExtent;
 
-void b2CreateShapeProxy( b2Shape* shape, b2BroadPhase* bp, b2BodyType type, b2Transform transform, bool forcePairCreation );
+// Sensors are shapes that live in the broad-phase but never have contacts.
+// At the end of the time step all sensors are queried for overlap with any other shapes.
+// Sensors ignore body type and sleeping.
+// Sensors generate events when there is a new overlap or and overlap disappears.
+// The sensor overlaps don't get cleared until the next time step regardless of the overlapped
+// shapes being destroyed.
+// When a sensor is destroyed.
+typedef struct
+{
+	b2Array( int ) overlaps;
+} b2SensorOverlaps;
+
+void b2CreateShapeProxy( b2World* world, b2Shape* shape, b2BodyType type, b2WorldTransform transform, bool forcePairCreation );
 void b2DestroyShapeProxy( b2Shape* shape, b2BroadPhase* bp );
+
+void b2FreeChainData( b2ChainShape* chain );
 
 b2MassData b2ComputeShapeMass( const b2Shape* shape );
 b2ShapeExtent b2ComputeShapeExtent( const b2Shape* shape, b2Vec2 localCenter );
-b2AABB b2ComputeShapeAABB( const b2Shape* shape, b2Transform transform );
+b2AABB b2ComputeShapeAABB( const b2Shape* shape, b2WorldTransform transform );
+
+// Conservative world AABB for a shape, inflated by extra margin. In large world mode this is
+// computed in double and rounded outward so the inflation is not lost far from the origin.
+b2AABB b2ComputeFatShapeAABB( const b2Shape* shape, b2WorldTransform transform, float extra );
 b2Vec2 b2GetShapeCentroid( const b2Shape* shape );
 float b2GetShapePerimeter( const b2Shape* shape );
 float b2GetShapeProjectedPerimeter( const b2Shape* shape, b2Vec2 line );
@@ -80,5 +94,41 @@ b2ShapeProxy b2MakeShapeDistanceProxy( const b2Shape* shape );
 b2CastOutput b2RayCastShape( const b2RayCastInput* input, const b2Shape* shape, b2Transform transform );
 b2CastOutput b2ShapeCastShape( const b2ShapeCastInput* input, const b2Shape* shape, b2Transform transform );
 
-B2_ARRAY_INLINE( b2ChainShape, b2ChainShape );
-B2_ARRAY_INLINE( b2Shape, b2Shape );
+b2PlaneResult b2CollideMoverAndCircle( const b2Capsule* mover, const b2Circle* shape );
+b2PlaneResult b2CollideMoverAndCapsule( const b2Capsule* mover, const b2Capsule* shape );
+b2PlaneResult b2CollideMoverAndPolygon( const b2Capsule* mover, const b2Polygon* shape );
+b2PlaneResult b2CollideMoverAndSegment( const b2Capsule* mover, const b2Segment* shape );
+b2PlaneResult b2CollideMover( const b2Capsule* mover, const b2Shape* shape, b2Transform transform );
+
+static inline float b2GetShapeRadius( const b2Shape* shape )
+{
+	switch ( shape->type )
+	{
+		case b2_capsuleShape:
+			return shape->capsule.radius;
+		case b2_circleShape:
+			return shape->circle.radius;
+		case b2_polygonShape:
+			return shape->polygon.radius;
+		default:
+			return 0.0f;
+	}
+}
+
+static inline bool b2ShouldShapesCollide( b2Filter filterA, b2Filter filterB )
+{
+	if ( filterA.groupIndex == filterB.groupIndex && filterA.groupIndex != 0 )
+	{
+		return filterA.groupIndex > 0;
+	}
+
+	return ( filterA.maskBits & filterB.categoryBits ) != 0 && ( filterA.categoryBits & filterB.maskBits ) != 0;
+}
+
+static inline bool b2ShouldQueryCollide( b2Filter shapeFilter, b2QueryFilter queryFilter )
+{
+	return ( shapeFilter.categoryBits & queryFilter.maskBits ) != 0 && ( shapeFilter.maskBits & queryFilter.categoryBits ) != 0;
+}
+
+b2DeclareArray( b2Shape );
+b2DeclareArray( b2ChainShape );

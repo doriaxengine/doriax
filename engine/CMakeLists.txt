@@ -1064,9 +1064,6 @@ endif()
 # C++ scripts link only the engine library, so it has to export the physics libraries
 if(DORIAX_SHARED AND DORIAX_PHYSICS_2D)
     target_compile_definitions(box2d PRIVATE box2d_EXPORTS)
-    if(MINGW)
-        target_compile_options(box2d PRIVATE "SHELL:-include \"${CMAKE_CURRENT_SOURCE_DIR}/platform/win/Box2DExport.h\"")
-    endif()
 endif()
 
 if(DORIAX_SHARED AND DORIAX_PHYSICS_3D)

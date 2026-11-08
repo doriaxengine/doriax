@@ -34,7 +34,7 @@ b2ContactData Contact2D::getBox2DContact() const{
 }
 
 Manifold2D Contact2D::getManifold() const{
-    return Manifold2D(scene, &contact.manifold);
+    return Manifold2D(scene, &contact.manifold, b2Shape_GetBody(contact.shapeIdA));
 }
 
 Entity Contact2D::getBodyEntityA() const{

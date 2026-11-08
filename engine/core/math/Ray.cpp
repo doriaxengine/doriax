@@ -354,8 +354,7 @@ RayReturn Ray::intersects(const Body2D& body) const{
     size_t shapeIndex = 0;
     for (int i = 0; i < returnCount; ++i){
         b2ShapeId shapeid = shapeIds[i];
-        const b2RayCastInput rayCastInput = {bOrigin, translation, 1.0};
-        b2CastOutput castOutput = b2Shape_RayCast(shapeid, &rayCastInput);
+        b2WorldCastOutput castOutput = b2Shape_CastRay(shapeid, bOrigin, translation);
 
         if (castOutput.hit && castOutput.fraction < closestFraction){
             closestFraction = castOutput.fraction;
@@ -391,8 +390,7 @@ RayReturn Ray::intersects(const Body2D& body, size_t shape) const{
     b2Vec2 translation = b2Sub(bEnd, bOrigin);
 
     b2ShapeId shapeid = bodycomp.shapes[shape].shape;
-    const b2RayCastInput rayCastInput = {bOrigin, translation, 1.0};
-    b2CastOutput castOutput = b2Shape_RayCast(shapeid, &rayCastInput);
+    b2WorldCastOutput castOutput = b2Shape_CastRay(shapeid, bOrigin, translation);
 
     if (castOutput.hit){
         Vector3 point = Vector3(castOutput.point.x * ptmScale, castOutput.point.y * ptmScale, 0);

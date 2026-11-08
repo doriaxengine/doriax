@@ -42,6 +42,21 @@ namespace doriax{
             return true;
         }
 
+        static bool callPreSolve(Scene* scene, b2ShapeId shapeIdA, b2ShapeId shapeIdB, const b2Manifold* manifold){
+            size_t shapeIndexA = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdA));
+            size_t shapeIndexB = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdB));
+
+            b2BodyId bodyIdA = b2Shape_GetBody(shapeIdA);
+            b2BodyId bodyIdB = b2Shape_GetBody(shapeIdB);
+
+            Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
+            Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
+
+            return runFilter([&](){
+                return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold, bodyIdA), true);
+            });
+        }
+
     public:
 
         static bool CollisionFilter(b2ShapeId shapeIdA, b2ShapeId shapeIdB, void* context){
@@ -61,21 +76,21 @@ namespace doriax{
             });
         }
 
-        static bool PreSolve(b2ShapeId shapeIdA, b2ShapeId shapeIdB, b2Manifold* manifold, void* context){
-            Scene* scene = (Scene*)context;
+        static void PreSolve(b2ShapeId shapeIdA, b2ShapeId shapeIdB, b2Manifold* manifold, void* context){
+            if (!callPreSolve((Scene*)context, shapeIdA, shapeIdB, manifold)){
+                manifold->pointCount = 0;
+            }
+        }
 
-            size_t shapeIndexA = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdA));
-            size_t shapeIndexB = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdB));
+        // continuous collision has only the hit point and normal
+        static bool PreContinuous(b2ShapeId shapeIdA, b2ShapeId shapeIdB, b2Vec2 point, b2Vec2 normal, void* context){
+            b2Manifold manifold = {};
+            manifold.normal = normal;
+            manifold.pointCount = 1;
+            manifold.points[0].anchorA = b2Sub(point, b2Body_GetWorldCenter(b2Shape_GetBody(shapeIdA)));
+            manifold.points[0].anchorB = b2Sub(point, b2Body_GetWorldCenter(b2Shape_GetBody(shapeIdB)));
 
-            b2BodyId bodyIdA = b2Shape_GetBody(shapeIdA);
-            b2BodyId bodyIdB = b2Shape_GetBody(shapeIdB);
-
-            Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
-            Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
-
-            return runFilter([&](){
-                return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold), true);
-            });
+            return callPreSolve((Scene*)context, shapeIdA, shapeIdB, &manifold);
         }
 
         // A shape destroyed since the step (a body removed or recreated, or by an earlier
