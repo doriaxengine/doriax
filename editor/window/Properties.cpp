@@ -14383,6 +14383,7 @@ void editor::Properties::show(){
                         drawScenePropertyRow<float>(sceneProject, "ssao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
                         drawScenePropertyRow<float>(sceneProject, "ssao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
                         drawScenePropertyRow<float>(sceneProject, "ssao_bias", "Bias", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 0.1f);
+                        drawScenePropertyRow<bool>(sceneProject, "ssao_half_resolution", "Half Resolution", ScenePropertyInputType::Checkbox);
                         drawScenePropertyRow<bool>(sceneProject, "ssao_debug", "Debug View", ScenePropertyInputType::Checkbox);
                     }
 

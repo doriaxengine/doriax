@@ -5234,6 +5234,12 @@ bool RenderSystem::ensureSSAOFramebuffers(unsigned int width, unsigned int heigh
     if (!ensureDepthPrePassFramebuffer(width, height))
         return false;
 
+    // AO only, depth stays full size
+    if (scene->isSSAOHalfResolution()){
+        width = std::max(width / 2, 1u);
+        height = std::max(height / 2, 1u);
+    }
+
     if (ssaoFramebuffer.isCreated() && ssaoBlurFramebuffer.isCreated() && ssaoWidth == width && ssaoHeight == height)
         return true;
 
@@ -5300,7 +5306,7 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     fs_ssao.invProjection = renderProj.inverse();
     fs_ssao.params = Vector4(scene->getSSAORadius(), scene->getSSAOBias(), scene->getSSAOIntensity(), useGBufferNormal ? 1.0f : 0.0f);
     // xy = noise tiling (4x4), zw = inverse depth-texture size (neighbour taps for normals)
-    fs_ssao.noiseScale = Vector4((float)w / 4.0f, (float)h / 4.0f, 1.0f / (float)w, 1.0f / (float)h);
+    fs_ssao.noiseScale = Vector4((float)ssaoWidth / 4.0f, (float)ssaoHeight / 4.0f, 1.0f / (float)w, 1.0f / (float)h);
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoFramebuffer.getRender());
@@ -5314,14 +5320,16 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     }
     ssaoPassRender.endRenderPass();
 
-    // --- 3. blur pass ---
-    fs_ssao_blur.texelSize = Vector4(1.0f / (float)w, 1.0f / (float)h, 0.0, 0.0);
+    // --- 3. blur pass, kept to each surface by depth ---
+    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, 0.0, 0.0);
+    fs_ssao_blur.depthParams = Vector4(fs_ssao.invProjection[2][2], fs_ssao.invProjection[3][2], fs_ssao.invProjection[2][3], fs_ssao.invProjection[3][3]);
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoBlurFramebuffer.getRender());
     if (ssaoBlurRender.beginDraw(PIP_RTT)){
         ShaderData& bd = ssaoBlurShader.get()->shaderData;
         ssaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::SSAOTEXTURE), ShaderStageType::FRAGMENT, &ssaoFramebuffer.getRender().getColorTexture());
+        ssaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
         ssaoBlurRender.applyUniformBlock(ssaoBlurSlotParams, sizeof(fs_ssao_blur_t), &fs_ssao_blur);
         ssaoBlurRender.draw(0, 3, 1);
     }

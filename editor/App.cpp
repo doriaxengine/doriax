@@ -2967,7 +2967,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v41: the SSR composite rebuilds local probes; the G-buffer keeps material occlusion.
     // v42: water leaves no wake foam without a wake.
     // v43: directional shadow cascades blend across their splits.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v43";
+    // v44: the SSAO blur skips taps across depth edges.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v44";
 }
 
 void editor::App::pushTabNotificationStyle(){

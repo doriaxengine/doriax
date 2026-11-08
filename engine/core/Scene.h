@@ -127,6 +127,9 @@ namespace doriax{
         void setSSAOBias(float bias);
         float getSSAOBias() const;
 
+        void setSSAOHalfResolution(bool halfResolution);
+        bool isSSAOHalfResolution() const;
+
         void setSSAODebug(bool debug);
         bool isSSAODebug() const;
 

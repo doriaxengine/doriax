@@ -77,6 +77,7 @@ namespace doriax{
         float ssaoRadius = 0.5f;
         float ssaoIntensity = 1.0f;
         float ssaoBias = 0.025f;
+        bool ssaoHalfResolution = false;
         bool ssaoDebug = false;
 
         bool ssrEnabled = false;

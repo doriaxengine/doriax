@@ -2137,6 +2137,7 @@ Json sceneReadableProperties(SceneProject* sceneProject) {
     props["ssao_radius"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_radius")}};
     props["ssao_intensity"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_intensity")}};
     props["ssao_bias"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_bias")}};
+    props["ssao_half_resolution"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_half_resolution")}};
     props["ssao_debug"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_debug")}};
     props["ssr_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssr_enabled")}};
     props["ssr_max_distance"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssr_max_distance")}};
@@ -3456,7 +3457,7 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
         }
         cmd = new ScenePropertyCmd<Vector3>(project, sceneId, property, value);
     } else if (property == "ssao_enabled" || property == "mesh_lod_enabled" || property == "depth_prepass_enabled" ||
-               property == "ssao_debug" || property == "ssr_enabled" ||
+               property == "ssao_half_resolution" || property == "ssao_debug" || property == "ssr_enabled" ||
                property == "fixed_resolution_enabled") {
         if (!arguments.contains("bool_value") || !arguments["bool_value"].is_boolean()) {
             return failResult(property + " requires bool_value.");

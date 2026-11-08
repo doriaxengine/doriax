@@ -267,6 +267,14 @@ float Scene::getSSAOBias() const{
     return settings.ssaoBias;
 }
 
+void Scene::setSSAOHalfResolution(bool halfResolution){
+    settings.ssaoHalfResolution = halfResolution;
+}
+
+bool Scene::isSSAOHalfResolution() const{
+    return settings.ssaoHalfResolution;
+}
+
 void Scene::setSSAODebug(bool debug){
     settings.ssaoDebug = debug;
 }

@@ -135,6 +135,7 @@ namespace doriax{
 
 	typedef struct fs_ssao_blur_t {
 		Vector4 texelSize; // 1.0/textureSize in .xy
+		Vector4 depthParams; // view z from ndc depth
 	} fs_ssao_blur_t;
 
 	typedef struct fs_ssr_t {
@@ -610,7 +611,7 @@ namespace doriax{
 		unsigned int ssaoWidth;
 		unsigned int ssaoHeight;
 		Framebuffer ssaoDepthFramebuffer; // color = packed depth, depth = z-test
-		Framebuffer ssaoFramebuffer;      // raw AO
+		Framebuffer ssaoFramebuffer;      // raw AO, half size when the scene asks
 		Framebuffer ssaoBlurFramebuffer;  // blurred AO (sampled by meshes)
 		CameraRender ssaoPassRender;      // drives the offscreen SSAO passes
 		ObjectRender ssaoRender;          // fullscreen ssao.frag draw
