@@ -28,6 +28,7 @@ namespace doriax{
     struct DORIAX_API Joint2DComponent{
 #ifdef DORIAX_PHYSICS_2D
         b2JointId joint = b2_nullJointId;
+        b2BodyId targetBody = b2_nullBodyId; // mouse joint target, a static body
 #endif
         Joint2DType type = Joint2DType::DISTANCE;
 

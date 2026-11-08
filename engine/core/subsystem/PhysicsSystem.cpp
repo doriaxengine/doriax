@@ -2306,16 +2306,27 @@ bool PhysicsSystem::loadMouseJoint2D(Entity entity, Joint2DComponent& joint, Ent
 
         b2Vec2 worldTarget = {target.x / pointsToMeterScale2D, target.y / pointsToMeterScale2D};
 
+        // a static body keeps the target in the world and takes no force
+        b2BodyDef targetDef = b2DefaultBodyDef();
+        targetDef.position = worldTarget;
+        joint.targetBody = b2CreateBody(world2D, &targetDef);
+
         // a motor spring pulls bodyA to the target
         b2MotorJointDef jointDef = b2DefaultMotorJointDef();
-        jointDef.base.bodyIdA = myBodyB.body;
+        jointDef.base.bodyIdA = joint.targetBody;
         jointDef.base.bodyIdB = myBodyA.body;
-        jointDef.base.localFrameA.p = b2Body_GetLocalPoint(myBodyB.body, worldTarget);
         jointDef.base.localFrameB.p = b2Body_GetLocalPoint(myBodyA.body, worldTarget);
         jointDef.linearHertz = 4.0f;
         jointDef.linearDampingRatio = 1.0f;
         jointDef.maxSpringForce = std::max(10.0f, 1000.0f * b2Body_GetMass(myBodyA.body));
         jointDef.base.userData = reinterpret_cast<void*>((uint64_t)entity);
+
+        // angular friction, as Box2D's own mouse drag does
+        b2MassData massData = b2Body_GetMassData(myBodyA.body);
+        if (massData.mass > 0.0f){
+            float weight = massData.mass * b2Length(b2World_GetGravity(world2D));
+            jointDef.maxVelocityTorque = 0.25f * std::sqrt(massData.rotationalInertia / massData.mass) * weight;
+        }
 
         joint.joint = b2CreateMotorJoint(world2D, &jointDef);
         if (!b2Joint_IsValid(joint.joint)){
@@ -2459,6 +2470,14 @@ void PhysicsSystem::destroyJoint2D(Joint2DComponent& joint){
             b2DestroyJoint(joint.joint);
         }
         joint.joint = b2_nullJointId;
+    }
+    if (b2Body_IsValid(joint.targetBody)){
+        if (steppingWorld2D){
+            pendingBodyDestroy2D.push_back(joint.targetBody);
+        }else{
+            b2DestroyBody(joint.targetBody);
+        }
+        joint.targetBody = b2_nullBodyId;
     }
 }
 #endif
