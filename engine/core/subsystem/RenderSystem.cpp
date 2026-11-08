@@ -4481,10 +4481,6 @@ void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& subme
         render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
 
-    if (submesh.slotFSSeeThrough != -1){
-        render.applyUniformBlock(submesh.slotFSSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
-    }
-
     if (submesh.hasTextureRect){
         Rect fullRect(0, 0, 1, 1);
         render.applyUniformBlock(submesh.slotVSSprite, sizeof(float) * 4, &fullRect);
