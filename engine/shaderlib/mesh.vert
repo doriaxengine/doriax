@@ -164,6 +164,11 @@ void main() {
         vec4 pos = localPos;
     #endif
 
+    // before the fade, so a faded instance still shrinks to nothing
+    #ifdef USE_VERTEX_OFFSET
+        pos.xyz += getModelOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
+    #endif
+
     #ifdef USE_INSTANCE_FADE
         // Shrink toward the instance base, on XZ like the chunk selection so looking down does
         // not eat grass still inside the spawn square. An empty range keeps everything solid.
@@ -175,10 +180,6 @@ void main() {
                 (fadeParams.fadeRange.y - fadeParams.fadeRange.x), 0.0, 1.0);
         }
         pos.xyz = mix(fadeOrigin, pos.xyz, fadeVisible);
-    #endif
-
-    #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
     #endif
 
     vec4 worldPos = pbrParams.modelMatrix * pos;

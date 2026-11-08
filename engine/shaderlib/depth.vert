@@ -81,6 +81,11 @@ void main() {
         v_uv1 = a_texcoord1;
     #endif
 
+    // before the fade, so a faded instance still shrinks to nothing
+    #ifdef USE_VERTEX_OFFSET
+        pos.xyz += getModelOffset(localPos.xyz, (depthParams.modelMatrix * pos).xyz);
+    #endif
+
     #ifdef USE_INSTANCE_FADE
         // Matches mesh.vert exactly, so a shrinking instance shrinks its shadow in step.
         vec3 fadeOrigin = i_matrix_col4.xyz;
@@ -91,10 +96,6 @@ void main() {
                 (fadeParams.fadeRange.y - fadeParams.fadeRange.x), 0.0, 1.0);
         }
         pos.xyz = mix(fadeOrigin, pos.xyz, fadeVisible);
-    #endif
-
-    #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(localPos.xyz, (depthParams.modelMatrix * pos).xyz);
     #endif
 
     gl_Position = depthParams.mvpMatrix * pos;

@@ -2973,7 +2973,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v47: wind gusts follow the air blown past, not the clock.
     // v48: meshes take a vertex offset function from the project (USE_VERTEX_OFFSET).
     // v49: the wind sway is the vertex offset offsets/wind.glsl, without its own variant.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v49";
+    // v50: the vertex offset applies before the instance fade.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v50";
 }
 
 void editor::App::pushTabNotificationStyle(){
