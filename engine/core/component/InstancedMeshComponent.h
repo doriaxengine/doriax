@@ -51,14 +51,11 @@ namespace doriax{
         bool lodEnabled = true;
         float lodBias = 1;
         float cullDistance = 0;
-        // moved vertices reach past the spheres: the wind in model units, the offset in world units
-        float windReach = 0;
-        float offsetReach = 0;
+        float offsetReach = 0; // vertex offsets reach past the spheres, in world units
 
         bool operator!=(const InstanceViewSettings& o) const{
             return cull != o.cull || castShadows != o.castShadows || lodEnabled != o.lodEnabled ||
-                   lodBias != o.lodBias || cullDistance != o.cullDistance || windReach != o.windReach ||
-                   offsetReach != o.offsetReach;
+                   lodBias != o.lodBias || cullDistance != o.cullDistance || offsetReach != o.offsetReach;
         }
     };
 

@@ -153,7 +153,6 @@ namespace doriax{
         WATER_FS_PARAMS,
         UNDERWATER_FS_PARAMS,
         PROBE_FILTER_FS_PARAMS,
-        PBR_VS_WIND,
         PBR_VS_VERTEX_OFFSET
     };
 

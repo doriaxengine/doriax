@@ -149,6 +149,9 @@ public:
 
     // a starting vertex offset in the default shader directory; its project path, empty on failure
     static std::string writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+    // the engine's own vertex offsets, under offsets/ in its shader library
+    static std::vector<std::string> getEngineVertexOffsets();
+    static bool isEngineVertexOffset(const std::string& path);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.
     // Returns the command (caller must add it to CommandHandle) or nullptr if invalid.

@@ -297,8 +297,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.windSway, mesh.windSwayHeight, mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader,
-            mesh.vertexOffsetMax, mesh.shaderUniforms};
+            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader, mesh.vertexOffsetMax, mesh.shaderUniforms};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -312,8 +311,6 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.autoTransparency = settings.autoTransparency;
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
-    mesh.windSway = settings.windSway;
-    mesh.windSwayHeight = settings.windSwayHeight;
     mesh.customShader = settings.customShader;
     mesh.customDepthShader = settings.customDepthShader;
     mesh.vertexOffsetShader = settings.vertexOffsetShader;
@@ -3704,8 +3701,21 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
-            mesh.windSway = layer.windSway;
-            mesh.windSwayHeight = mesh.verticesAABB.getMaximum().y;
+            // wind sway runs the engine's wind offset, the tips bending most
+            const std::string vertexOffset = (layer.windSway > 0.0f) ? "offsets/wind.glsl" : "";
+            if (mesh.vertexOffsetShader != vertexOffset){
+                mesh.vertexOffsetShader = vertexOffset;
+                mesh.needReload = true;
+            }
+            const float swayHeight = mesh.verticesAABB.getMaximum().y;
+            if (ShaderUniforms::get(mesh.shaderUniforms, "windSway").x != layer.windSway ||
+                    ShaderUniforms::get(mesh.shaderUniforms, "windSwayHeight").x != swayHeight){
+                ShaderUniforms::set(mesh.shaderUniforms, "windSway", Vector4(layer.windSway, 0.0f, 0.0f, 0.0f));
+                ShaderUniforms::set(mesh.shaderUniforms, "windSwayHeight", Vector4(swayHeight, 0.0f, 0.0f, 0.0f));
+                mesh.needUpdateShaderUniforms = true;
+            }
+            // the sway's reach in 20 m/s of wind, gusts and flutter included
+            mesh.vertexOffsetMax = layer.windSway * 0.1f * 1.35f * 20.0f;
 
             // Grows with headroom and never shrinks, so a draw distance drag rebuilds little.
             if (instmesh.maxInstances < capacity){

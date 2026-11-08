@@ -217,8 +217,6 @@ namespace doriax{
             bool autoTransparency;
             bool lodEnabled;
             float lodBias;
-            float windSway;
-            float windSwayHeight;
             std::string customShader;
             std::string customDepthShader;
             std::string vertexOffsetShader;

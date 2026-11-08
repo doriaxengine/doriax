@@ -4979,8 +4979,6 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["receiveShadows"] = mesh.receiveShadows;
     node["lodEnabled"] = mesh.lodEnabled;
     node["lodBias"] = mesh.lodBias;
-    node["windSway"] = mesh.windSway;
-    node["windSwayHeight"] = mesh.windSwayHeight;
     node["renderInReflectionProbes"] = mesh.renderInReflectionProbes;
     node["shadowsBillboard"] = mesh.shadowsBillboard;
     node["transparent"] = mesh.transparent;
@@ -5059,8 +5057,6 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["receiveShadows"]) mesh.receiveShadows = node["receiveShadows"].as<bool>();
     if (node["lodEnabled"]) mesh.lodEnabled = node["lodEnabled"].as<bool>();
     mesh.lodBias = decodeFinite(node["lodBias"], mesh.lodBias);
-    mesh.windSway = decodeFinite(node["windSway"], mesh.windSway);
-    mesh.windSwayHeight = decodeFinite(node["windSwayHeight"], mesh.windSwayHeight);
     if (node["renderInReflectionProbes"]) mesh.renderInReflectionProbes = node["renderInReflectionProbes"].as<bool>();
     if (node["shadowsBillboard"]) mesh.shadowsBillboard = node["shadowsBillboard"].as<bool>();
     if (node["transparent"]) mesh.transparent = node["transparent"].as<bool>();

@@ -54,9 +54,6 @@ out vec3 v_normal;          // view space
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#ifdef USE_WIND
-    #include "includes/wind.glsl"
-#endif
 #ifdef USE_VERTEX_OFFSET
     #include "includes/vertex_offset.glsl"
 #endif
@@ -134,9 +131,6 @@ void main() {
         #endif
     #endif
 
-    #ifdef USE_WIND
-        pos.xyz += getWindOffset(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz);
-    #endif
     #ifdef USE_VERTEX_OFFSET
         pos.xyz += getModelOffset(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz);
     #endif

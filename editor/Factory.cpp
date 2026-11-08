@@ -821,8 +821,6 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     code << ind << "mesh.receiveShadows = " << formatBool(mesh.receiveShadows) << ";\n";
     code << ind << "mesh.lodEnabled = " << formatBool(mesh.lodEnabled) << ";\n";
     code << ind << "mesh.lodBias = " << formatFloat(mesh.lodBias) << ";\n";
-    code << ind << "mesh.windSway = " << formatFloat(mesh.windSway) << ";\n";
-    code << ind << "mesh.windSwayHeight = " << formatFloat(mesh.windSwayHeight) << ";\n";
     code << ind << "mesh.renderInReflectionProbes = " << formatBool(mesh.renderInReflectionProbes) << ";\n";
     if (!mesh.customShader.empty())
         code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";

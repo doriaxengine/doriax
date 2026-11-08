@@ -5136,11 +5136,13 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true; // empty resets to the built-in shader
     }
 
-    // a vertex offset is one .glsl file
+    // a vertex offset is one .glsl file, from the project or the engine
     if (propertyName == "vertexOffsetShader") {
+        if (ProjectUtils::isEngineVertexOffset(value))
+            return true;
         if (fs::path(value).extension() != ".glsl" || !PathUtils::isSafeRelativePath(fs::path(value)) ||
                 !fs::exists(project->getProjectPath() / value)) {
-            error = "vertexOffsetShader must be an existing project-relative .glsl file. Write it with write_shader_file first.";
+            error = "vertexOffsetShader must be an existing project-relative .glsl file, or an engine offset such as offsets/wind.glsl. Write a project one with write_shader_file first.";
             return false;
         }
         return true;

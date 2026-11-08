@@ -82,7 +82,6 @@ namespace doriax{
         int slotFSParams = -1;
         int slotFSTexCoordSets = -1;
         int slotVSFade = -1;
-        int slotVSWind = -1;
         int slotVSVertexOffset = -1;
         int slotFSLighting = -1;
         int slotFSReflectionProbe = -1;
@@ -103,7 +102,6 @@ namespace doriax{
         unsigned int sizeVSDepthParams = 0; // reflected: an older fork declares the block without mvpMatrix
         int slotFSDepthMaterial = -1;
         int slotVSDepthFade = -1;
-        int slotVSDepthWind = -1;
         int slotVSDepthVertexOffset = -1;
         int slotVSDepthSkinning = -1;
         int slotVSDepthMorphTarget = -1;
@@ -114,7 +112,6 @@ namespace doriax{
         int slotVSGBufferSkinning = -1;
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;
-        int slotVSGBufferWind = -1;
         int slotVSGBufferVertexOffset = -1;
         int slotFSGBufferTerrainLayers = -1;
 
@@ -123,7 +120,10 @@ namespace doriax{
         CustomUniformBlock customFSParams;
         CustomUniformBlock customVSDepthParams;
         CustomUniformBlock customFSDepthParams;
-        CustomUniformBlock customVSGBufferParams; // the vertex offset's, in the G-buffer pass
+        // u_vs_offsetParams of the vertex offset, in each pass
+        CustomUniformBlock customVSOffsetParams;
+        CustomUniformBlock customVSDepthOffsetParams;
+        CustomUniformBlock customVSGBufferOffsetParams;
 
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
@@ -221,9 +221,6 @@ namespace doriax{
 
         bool transparent = false;
         bool autoTransparency = true;
-
-        float windSway = 0.0f; // bend in 10 m/s of scene wind, in model units
-        float windSwayHeight = 0.0f; // model height of the full bend, 0 moves the whole mesh
 
         // opt-out of the scene's detail levels (Scene::setMeshLodEnabled); bias above 1 keeps detail longer
         bool lodEnabled = true;

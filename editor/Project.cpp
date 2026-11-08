@@ -3993,7 +3993,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         depthTexture, mesh.submeshes[s].hasSkinning,
                         mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
                         mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, mesh.windSway > 0.0f && !isTerrain);
+                        instancedFade);
                     insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
                     insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
@@ -6186,7 +6186,7 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
         const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
         const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
         if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
-                (!vertexOffset.empty() && !fs::exists(projectPath / vertexOffset))) {
+                (!vertexOffset.empty() && !fs::exists(projectPath / vertexOffset) && !ProjectUtils::isEngineVertexOffset(vertexOffset))) {
             it = shaderKeys.erase(it);
         } else {
             ++it;

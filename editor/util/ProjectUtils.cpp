@@ -371,7 +371,7 @@ std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesyste
     file << R"(// Moves each vertex of the mesh by the returned world offset, in the color, depth and
 // G-buffer passes. vertexOffset.params.x is the scene time and vertexOffset.wind the scene
 // wind; the block below takes its values from the mesh's shader uniforms.
-uniform u_vs_customParams {
+uniform u_vs_offsetParams {
     float waveHeight;
 } offsetParams;
 
@@ -381,6 +381,20 @@ vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
 }
 )";
     return (dirRel / (name + ".glsl")).generic_string();
+}
+
+std::vector<std::string> editor::ProjectUtils::getEngineVertexOffsets() {
+    std::vector<std::string> offsets;
+    for (const auto& entry : editor::shaderMap) {
+        if (isEngineVertexOffset(entry.first))
+            offsets.push_back(entry.first);
+    }
+    std::sort(offsets.begin(), offsets.end());
+    return offsets;
+}
+
+bool editor::ProjectUtils::isEngineVertexOffset(const std::string& path) {
+    return path.rfind("offsets/", 0) == 0 && editor::shaderMap.count(path) > 0;
 }
 
 void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {

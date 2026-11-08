@@ -657,8 +657,6 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::receiveShadows>("receiveShadows", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::lodEnabled>("lodEnabled", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::lodBias>("lodBias", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<MeshComponent, float, &MeshComponent::windSway>("windSway", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<MeshComponent, float, &MeshComponent::windSwayHeight>("windSwayHeight", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<MeshComponent, bool, &MeshComponent::renderInReflectionProbes>("renderInReflectionProbes", PropertyType::Bool, UpdateFlags_Reflection_Probe_Recapture_All),
         makeFastProperty<MeshComponent, bool, &MeshComponent::transparent>("transparent", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
@@ -4032,6 +4030,8 @@ std::vector<const CustomUniformBlock*> editor::Catalog::getShaderUniformBlocks(E
                     blocks.push_back(&mesh->submeshes[i].customVSDepthParams);
                 for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
                     blocks.push_back(&mesh->submeshes[i].customFSDepthParams);
+                for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
+                    blocks.push_back(&mesh->submeshes[i].customVSOffsetParams);
             }
             break;
         case ComponentType::UIComponent:

@@ -2972,7 +2972,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v46: mesh, depth and G-buffer shaders bend toward the scene wind (USE_WIND).
     // v47: wind gusts follow the air blown past, not the clock.
     // v48: meshes take a vertex offset function from the project (USE_VERTEX_OFFSET).
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v48";
+    // v49: the wind sway is the vertex offset offsets/wind.glsl, without its own variant.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v49";
 }
 
 void editor::App::pushTabNotificationStyle(){

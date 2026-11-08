@@ -648,8 +648,6 @@ namespace doriax{
 		// clock of wind and vertex offsets, and meters of air blown past, advanced by update()
 		double animationTime;
 		double windTravel;
-		// wind speed the bounds of swaying meshes are widened for
-		float windBoundsSpeed;
 
 		// SSR: per-frame fullscreen passes for the main camera. The opaque color pass
 		// renders into sceneColorFramebuffer, the ssr pass marches the depth pre-pass

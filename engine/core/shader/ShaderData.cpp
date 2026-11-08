@@ -155,8 +155,6 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_texCoordSets";
     }else if (type == UniformBlockType::PBR_VS_FADE){
         ustr = "u_vs_fade";
-    }else if (type == UniformBlockType::PBR_VS_WIND){
-        ustr = "u_vs_wind";
     }else if (type == UniformBlockType::PBR_VS_VERTEX_OFFSET){
         ustr = "u_vs_vertexOffset";
     }else if (type == UniformBlockType::FS_LIGHTING){

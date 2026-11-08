@@ -5186,7 +5186,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
 
         propertyHeader("Vertex Offset");
         drawVertexOffsetRow(sceneProject, shaderEntity);
-        ImGui::SameLine(); helpMarker("A .glsl file with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition), returning how far each vertex moves in world units. It runs in the color, depth and G-buffer passes, so shadows and reflections follow, and its u_vs_customParams values are the uniforms below.");
+        ImGui::SameLine(); helpMarker("A .glsl file with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition), returning how far each vertex moves in world units. It runs in the color, depth and G-buffer passes, so shadows and reflections follow, and its u_vs_offsetParams values are the uniforms below. The engine's offsets/wind.glsl sways the mesh in the scene wind.");
         if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
             RowSettings maxSettings;
             maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
@@ -5275,6 +5275,7 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
     const std::filesystem::path projectPath = project->getProjectPath();
     const std::string current = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, ComponentType::MeshComponent, "vertexOffsetShader");
     const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
+    const bool engineOffset = !exists && ProjectUtils::isEngineVertexOffset(current);
 
     auto setOffset = [&](const std::string& value) {
         Command* offsetCmd = new PropertyCmd<std::string>(project, sceneProject->id, entity, ComponentType::MeshComponent, "vertexOffsetShader", value);
@@ -5292,6 +5293,8 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
 
     if (current.empty())
         ImGui::TextDisabled("None");
+    else if (engineOffset)
+        ImGui::TextWrapped("%s (built-in)", current.c_str());
     else
         ImGui::TextWrapped("%s", current.c_str());
 
@@ -5313,6 +5316,19 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
     ImGui::EndDisabled();
 
     ImGui::SameLine();
+    if (ImGui::Button(ICON_FA_WIND "##engine_vertex_offset"))
+        ImGui::OpenPopup("engine_vertex_offsets");
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Use one of the engine's vertex offsets");
+    if (ImGui::BeginPopup("engine_vertex_offsets")) {
+        for (const std::string& offset : ProjectUtils::getEngineVertexOffsets()) {
+            if (ImGui::Selectable(offset.c_str(), offset == current))
+                setOffset(offset);
+        }
+        ImGui::EndPopup();
+    }
+
+    ImGui::SameLine();
     if (ImGui::Button(ICON_FA_FOLDER_OPEN "##pick_vertex_offset")) {
         std::string selected = FileDialogs::openFileDialog(projectPath.string(), FILE_DIALOG_SHADER);
         if (!selected.empty())
@@ -5330,6 +5346,8 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
     if (ImGui::IsItemHovered()) {
         if (exists)
             ImGui::SetTooltip("Open %s", current.c_str());
+        else if (engineOffset)
+            ImGui::SetTooltip("Built into the engine");
         else
             ImGui::SetTooltip("Vertex offset file not found");
     }
@@ -6349,17 +6367,6 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
         lodBiasSettings.help = "Scales how far detail is kept: above 1 keeps it longer, below 1 drops it sooner.";
         lodBiasSettings.secondColSize = 6 * ImGui::GetFontSize();
         propertyRow(RowPropertyType::FloatPositive, cpType, "lodBias", "Detail Bias", sceneProject, entities, lodBiasSettings);
-    }
-
-    RowSettings windSettings;
-    windSettings.help = "How far this mesh bends in 10 m/s of the scene Wind, in model units. 0 keeps it still.";
-    windSettings.secondColSize = 6 * ImGui::GetFontSize();
-    propertyRow(RowPropertyType::FloatPositive, cpType, "windSway", "Wind Sway", sceneProject, entities, windSettings);
-    if (sceneProject->scene->getComponent<MeshComponent>(entities[0]).windSway > 0.0f) {
-        RowSettings swayHeightSettings;
-        swayHeightSettings.help = "Model height where the bend is full; the base below stays put. 0 moves the whole mesh.";
-        swayHeightSettings.secondColSize = 6 * ImGui::GetFontSize();
-        propertyRow(RowPropertyType::FloatPositive, cpType, "windSwayHeight", "Sway Height", sceneProject, entities, swayHeightSettings);
     }
 
     RowSettings reflectionProbeSettings;
@@ -14555,7 +14562,7 @@ void editor::Properties::show(){
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
                     drawScenePropertyRow<Vector3>(sceneProject, "wind", "Velocity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
-                        "Air velocity (meters/s). Meshes with wind sway bend toward it and vertex offsets read it; it moves no physics body.");
+                        "Air velocity (meters/s). Vertex offsets read it, like the engine's offsets/wind.glsl, and foliage layers with wind sway bend in it; it moves no physics body.");
 
                     ImGui::EndTable();
                 }

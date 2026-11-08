@@ -80,7 +80,7 @@ namespace doriax{
         bool ssaoHalfResolution = false;
         bool ssaoDebug = false;
 
-        Vector3 wind = Vector3(0.0, 0.0, 0.0); // m/s, bends meshes with windSway
+        Vector3 wind = Vector3(0.0, 0.0, 0.0); // m/s, read by vertex offsets and foliage wind sway
 
         bool ssrEnabled = false;
         float ssrMaxDistance = 8.0f;   // max ray length in view-space units
