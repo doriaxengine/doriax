@@ -10,6 +10,7 @@ using namespace doriax;
 Contact2D::Contact2D(Scene* scene, b2ContactData contact){
     this->scene = scene;
     this->contact = contact;
+    this->centerA = b2Body_GetWorldCenter(b2Shape_GetBody(contact.shapeIdA));
 }
 
 Contact2D::~Contact2D(){
@@ -19,12 +20,14 @@ Contact2D::~Contact2D(){
 Contact2D::Contact2D(const Contact2D& rhs){
     scene = rhs.scene;
     contact = rhs.contact;
+    centerA = rhs.centerA;
 
 }
 
 Contact2D& Contact2D::operator=(const Contact2D& rhs){
     scene = rhs.scene;
     contact = rhs.contact;
+    centerA = rhs.centerA;
     
     return *this;
 }
@@ -34,7 +37,7 @@ b2ContactData Contact2D::getBox2DContact() const{
 }
 
 Manifold2D Contact2D::getManifold() const{
-    return Manifold2D(scene, &contact.manifold, b2Body_GetWorldCenter(b2Shape_GetBody(contact.shapeIdA)));
+    return Manifold2D(scene, &contact.manifold, centerA);
 }
 
 Entity Contact2D::getBodyEntityA() const{

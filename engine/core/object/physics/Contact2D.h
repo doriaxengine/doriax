@@ -16,6 +16,7 @@ namespace doriax{
     private:
         Scene* scene;
         b2ContactData contact;
+        b2Vec2 centerA; // the anchors start here, kept with the snapshot
 
     public:
         Contact2D(Scene* scene, b2ContactData contact);
