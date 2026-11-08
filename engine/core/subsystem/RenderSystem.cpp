@@ -10626,12 +10626,16 @@ void RenderSystem::update(double dt){
                         }
                     }
                 }
-                const AABB& box = mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB;
-                mesh.worldAABB = transform.modelMatrix * box;
-                if (offsetReach > 0.0f && box.isFinite() && box != AABB::ZERO){
-                    const Vector3 reach(offsetReach, offsetReach, offsetReach);
-                    mesh.worldAABB.setExtents(mesh.worldAABB.getMinimum() - reach, mesh.worldAABB.getMaximum() + reach);
-                }
+                // a vertex offset moves geometry up to offsetReach past its bounds
+                auto worldBounds = [&](const AABB& box){
+                    AABB world = transform.modelMatrix * box;
+                    if (offsetReach > 0.0f && box.isFinite() && box != AABB::ZERO){
+                        const Vector3 reach(offsetReach, offsetReach, offsetReach);
+                        world.setExtents(world.getMinimum() - reach, world.getMaximum() + reach);
+                    }
+                    return world;
+                };
+                mesh.worldAABB = worldBounds(mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB);
 
                 mesh.needUpdateAABB = false;
 
@@ -10641,7 +10645,7 @@ void RenderSystem::update(double dt){
                 if (signature.test(scene->getComponentId<TilemapComponent>())){
                     TilemapComponent& tilemap = scene->getComponent<TilemapComponent>(entity);
                     for (TilemapChunk& chunk : tilemap.chunks){
-                        chunk.worldAABB = transform.modelMatrix * chunk.aabb;
+                        chunk.worldAABB = worldBounds(chunk.aabb);
                     }
                 }
             }
