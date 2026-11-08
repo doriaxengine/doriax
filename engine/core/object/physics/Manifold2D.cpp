@@ -64,7 +64,8 @@ float Manifold2D::getManifoldPointNormalImpulse(int32_t index) const{
 
 float Manifold2D::getManifoldPointNormalVelocity(int32_t index) const{
     //TODO: check index by b2_maxManifoldPoints
-    return manifold->points[index].normalVelocity;
+    float pointsToMeterScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
+    return manifold->points[index].normalVelocity * pointsToMeterScale;
 }
 
 float Manifold2D::getManifoldPointTangentImpulse(int32_t index) const{
@@ -74,7 +75,8 @@ float Manifold2D::getManifoldPointTangentImpulse(int32_t index) const{
 
 float Manifold2D::getManifoldPointSeparation(int32_t index) const{
     //TODO: check index by b2_maxManifoldPoints
-    return manifold->points[index].separation;
+    float pointsToMeterScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
+    return manifold->points[index].separation * pointsToMeterScale;
 }
 
 bool Manifold2D::isManifoldPointPersisted(int32_t index) const{
@@ -83,8 +85,7 @@ bool Manifold2D::isManifoldPointPersisted(int32_t index) const{
 }
 
 Vector2 Manifold2D::getNormal() const{
-    float pointsToMeterScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
-    return Vector2(manifold->normal.x * pointsToMeterScale, manifold->normal.y * pointsToMeterScale);
+    return Vector2(manifold->normal.x, manifold->normal.y);
 }
 
 int32_t Manifold2D::getPointCount() const{
