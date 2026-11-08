@@ -232,6 +232,21 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
     return false;
 }
 
+// A vertex offset on the built-in shader takes its values from u_vs_offsetParams; the
+// G-buffer pass would never fill a fork's block name declared by the offset file.
+std::string getVertexOffsetBlockError(const ShaderData& shaderData, uint16_t customId) {
+    const std::string customShader = ShaderPool::getCustomShaderName(customId);
+    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+    if (vertexOffset.empty() || !ShaderPool::getCustomShaderFork(customShader).empty())
+        return "";
+
+    for (const ShaderStage& stage : shaderData.stages)
+        for (const ShaderUniformBlock& block : stage.uniformblocks)
+            if (block.name == "u_vs_customParams")
+                return vertexOffset + ": a vertex offset declares its values in u_vs_offsetParams, not u_vs_customParams";
+    return "";
+}
+
 } // namespace
 
 
@@ -959,6 +974,15 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) + getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
 
+    const std::string offsetError = getVertexOffsetBlockError(shaderData, customId);
+    if (!offsetError.empty()) {
+        if (trackProgress) {
+            ResourceProgress::failBuild(shaderKey);
+        }
+        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), offsetError.c_str());
+        throw std::runtime_error(offsetError);
+    }
+
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
     }
@@ -1131,6 +1155,10 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
+
+    const std::string offsetError = getVertexOffsetBlockError(shaderData, customId);
+    if (!offsetError.empty())
+        throw std::runtime_error(offsetError);
 
     Out::build(
         "Shader %s (%s) generated successfully",
