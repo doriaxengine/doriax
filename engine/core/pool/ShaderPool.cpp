@@ -198,13 +198,17 @@ std::string ShaderPool::getCustomShaderVertexOffset(const std::string& customSha
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
-    std::string base = getCustomShaderName(customId);
     // Sanitize the project-relative base into a filesystem-safe, deterministic token
-    // (e.g. "shaders/myMesh" -> "shaders_myMesh") used in .sdat filenames.
-    for (char& c : base){
+    // (e.g. "shaders/myMesh#offsets/wind.glsl" -> "shaders_myMesh_offsets_wind_glsl") used in .sdat filenames.
+    std::string base;
+    for (char c : getCustomShaderName(customId)){
         if (!(std::isalnum((unsigned char)c) || c == '_'))
             c = '_';
+        if (c != '_' || (!base.empty() && base.back() != '_'))
+            base += c;
     }
+    while (!base.empty() && base.back() == '_')
+        base.pop_back();
     return base;
 }
 
