@@ -7,6 +7,7 @@
 uniform u_fs_seeThrough {
     vec4 target; // world position.xyz, radius.w (0 = off)
     vec4 eye;    // camera position.xyz, share of the pixels dropped at the centre.w
+    vec4 depth;  // x = how far before the target a mesh starts to thin
 } seeThrough;
 
 void seeThroughDiscard(vec3 worldPosition){
@@ -22,8 +23,9 @@ void seeThroughDiscard(vec3 worldPosition){
     float along = dot(toFragment, axis);
     if (along <= 0.0)
         return;
-    // only in front of the target, fading out over the half radius before it
-    float front = 1.0 - smoothstep(targetDistance - radius, targetDistance - 0.5 * radius, along);
+    // only in front of the target: from the margin before it, fully at twice that
+    float margin = max(seeThrough.depth.x, 0.01);
+    float front = 1.0 - smoothstep(targetDistance - 2.0 * margin, targetDistance - margin, along);
     // a cone from the eye keeps the circle round the target one size on screen
     float coneRadius = radius * along / targetDistance;
     float inside = 1.0 - smoothstep(0.5 * coneRadius, coneRadius, length(toFragment - axis * along));

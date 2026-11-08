@@ -93,6 +93,7 @@ namespace doriax{
 	typedef struct fs_see_through_t {
 		Vector4 target; // xyz world position, w radius (0 = off)
 		Vector4 eye;    // xyz camera position, w share of the pixels dropped at the centre
+		Vector4 depth;  // x how far before the target a mesh starts to thin
 	} fs_see_through_t;
 
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it

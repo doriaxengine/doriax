@@ -983,6 +983,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             luabridge::overload<float, float, float>(&Scene::setSeeThroughTarget))
         .addProperty("seeThroughRadius", &Scene::getSeeThroughRadius, &Scene::setSeeThroughRadius)
         .addProperty("seeThroughOpacity", &Scene::getSeeThroughOpacity, &Scene::setSeeThroughOpacity)
+        .addProperty("seeThroughMargin", &Scene::getSeeThroughMargin, &Scene::setSeeThroughMargin)
         .addProperty("ssaoEnabled", &Scene::isSSAOEnabled, &Scene::setSSAOEnabled)
         .addProperty("ssaoRadius", &Scene::getSSAORadius, &Scene::setSSAORadius)
         .addProperty("ssaoIntensity", &Scene::getSSAOIntensity, &Scene::setSSAOIntensity)

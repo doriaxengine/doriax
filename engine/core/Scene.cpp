@@ -44,6 +44,7 @@ void Scene::init(){
     seeThroughTarget = Vector3(0, 0, 0);
     seeThroughRadius = 0.0f;
     seeThroughOpacity = 0.3f;
+    seeThroughMargin = 0.5f;
 
     // All persistent scene configuration (background, SSAO/SSR, gravity, default shaders, ...)
     // defaults through the SceneSettings member; see SceneSettings.h.
@@ -326,6 +327,14 @@ void Scene::setSeeThroughOpacity(float opacity){
 
 float Scene::getSeeThroughOpacity() const{
     return seeThroughOpacity;
+}
+
+void Scene::setSeeThroughMargin(float margin){
+    seeThroughMargin = std::max(margin, 0.0f);
+}
+
+float Scene::getSeeThroughMargin() const{
+    return seeThroughMargin;
 }
 
 void Scene::setSSREnabled(bool ssrEnabled){

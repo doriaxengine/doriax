@@ -11198,6 +11198,7 @@ void RenderSystem::draw(){
             Vector3 eye = cameraTransform.worldPosition;
             fs_seeThrough.target = Vector4(target.x, target.y, target.z, scene->getSeeThroughRadius());
             fs_seeThrough.eye = Vector4(eye.x, eye.y, eye.z, 1.0f - scene->getSeeThroughOpacity());
+            fs_seeThrough.depth = Vector4(scene->getSeeThroughMargin(), 0.0f, 0.0f, 0.0f);
         }
 
         int terrainView = 0;

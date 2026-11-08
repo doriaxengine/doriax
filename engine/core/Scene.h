@@ -44,6 +44,7 @@ namespace doriax{
         Vector3 seeThroughTarget;
         float seeThroughRadius;
         float seeThroughOpacity;
+        float seeThroughMargin;
 
         UIEventState uiEventState;
 
@@ -143,7 +144,8 @@ namespace doriax{
         Vector3 getWind() const;
 
         // see-through meshes thin out where they stand between the main camera and a sphere
-        // of radius round the target, down to opacity at its centre; radius 0 turns it off
+        // of radius round the target, down to opacity at its centre, from margin in front of
+        // the target; radius 0 turns it off
         void setSeeThroughTarget(Vector3 target);
         void setSeeThroughTarget(float x, float y, float z);
         Vector3 getSeeThroughTarget() const;
@@ -153,6 +155,9 @@ namespace doriax{
 
         void setSeeThroughOpacity(float opacity);
         float getSeeThroughOpacity() const;
+
+        void setSeeThroughMargin(float margin);
+        float getSeeThroughMargin() const;
 
         void setSSREnabled(bool ssrEnabled);
         bool isSSREnabled() const;
