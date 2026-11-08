@@ -96,6 +96,7 @@ namespace doriax{
         // A shape destroyed since the step (a body removed or recreated, or by an earlier
         // callback) still has its events, so they are skipped
         static void manageEvents(Scene* scene, b2WorldId world){
+            float pointsToMeterScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
             b2ContactEvents contactEvents = b2World_GetContactEvents(world);
             b2SensorEvents sensorEvents = b2World_GetSensorEvents(world);
 
@@ -147,10 +148,11 @@ namespace doriax{
                 Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
                 Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
 
-                Vector2 point(hitEvent->point.x, hitEvent->point.y);
+                Vector2 point(hitEvent->point.x * pointsToMeterScale, hitEvent->point.y * pointsToMeterScale);
                 Vector2 normal(hitEvent->normal.x, hitEvent->normal.y);
+                float approachSpeed = hitEvent->approachSpeed * pointsToMeterScale;
 
-                scene->getSystem<PhysicsSystem>()->hitContact2D.call(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, point, normal, hitEvent->approachSpeed);
+                scene->getSystem<PhysicsSystem>()->hitContact2D.call(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, point, normal, approachSpeed);
             }
 
             for (int i = 0; i < sensorEvents.beginCount; ++i){
