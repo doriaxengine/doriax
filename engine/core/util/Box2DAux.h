@@ -52,8 +52,9 @@ namespace doriax{
             Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
             Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
 
+            // pre-solve anchors start from the body origins
             return runFilter([&](){
-                return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold, bodyIdA), true);
+                return scene->getSystem<PhysicsSystem>()->preSolve2D.callRet(Body2D(scene, entityA), shapeIndexA, Body2D(scene, entityB), shapeIndexB, Manifold2D(scene, manifold, b2Body_GetPosition(bodyIdA)), true);
             });
         }
 
@@ -95,8 +96,8 @@ namespace doriax{
             b2Manifold manifold = {};
             manifold.normal = normal;
             manifold.pointCount = 1;
-            manifold.points[0].anchorA = b2Sub(point, b2Body_GetWorldCenter(b2Shape_GetBody(shapeIdA)));
-            manifold.points[0].anchorB = b2Sub(point, b2Body_GetWorldCenter(b2Shape_GetBody(shapeIdB)));
+            manifold.points[0].anchorA = b2Sub(point, b2Body_GetPosition(b2Shape_GetBody(shapeIdA)));
+            manifold.points[0].anchorB = b2Sub(point, b2Body_GetPosition(b2Shape_GetBody(shapeIdB)));
 
             return callPreSolve((Scene*)context, shapeIdA, shapeIdB, &manifold);
         }

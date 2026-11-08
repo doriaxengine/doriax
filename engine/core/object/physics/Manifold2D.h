@@ -13,12 +13,12 @@ namespace doriax{
         private:
             Scene* scene;
             const b2Manifold* manifold;
-            b2BodyId bodyA;
+            b2Vec2 originA; // world point the anchors of A start from
 
             bool hasPoint(int32_t index) const;
 
         public:
-            Manifold2D(Scene* scene, const b2Manifold* manifold, b2BodyId bodyA);
+            Manifold2D(Scene* scene, const b2Manifold* manifold, b2Vec2 originA);
             virtual ~Manifold2D();
 
             Manifold2D(const Manifold2D& rhs);

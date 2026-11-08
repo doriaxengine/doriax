@@ -7,10 +7,10 @@
 
 using namespace doriax;
 
-Manifold2D::Manifold2D(Scene* scene, const b2Manifold* manifold, b2BodyId bodyA){
+Manifold2D::Manifold2D(Scene* scene, const b2Manifold* manifold, b2Vec2 originA){
     this->scene = scene;
     this->manifold = manifold;
-    this->bodyA = bodyA;
+    this->originA = originA;
 }
 
 Manifold2D::~Manifold2D(){
@@ -20,14 +20,14 @@ Manifold2D::~Manifold2D(){
 Manifold2D::Manifold2D(const Manifold2D& rhs){
     scene = rhs.scene;
     manifold = rhs.manifold;
-    bodyA = rhs.bodyA;
+    originA = rhs.originA;
 
 }
 
 Manifold2D& Manifold2D::operator=(const Manifold2D& rhs){
     scene = rhs.scene;
     manifold = rhs.manifold;
-    bodyA = rhs.bodyA;
+    originA = rhs.originA;
     
     return *this;
 }
@@ -64,7 +64,7 @@ Vector2 Manifold2D::getManifoldPointPosition(int32_t index) const{
     if (!hasPoint(index)) return Vector2::ZERO;
 
     float pointsToMeterScale = scene->getSystem<PhysicsSystem>()->getPointsToMeterScale2D();
-    b2Vec2 point = b2Body_GetWorldCenter(bodyA) + manifold->points[index].anchorA;
+    b2Vec2 point = originA + manifold->points[index].anchorA;
     return Vector2(point.x * pointsToMeterScale, point.y * pointsToMeterScale);
 }
 
