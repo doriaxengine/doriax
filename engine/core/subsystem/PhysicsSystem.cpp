@@ -551,6 +551,8 @@ void PhysicsSystem::ensureWorld2D(){
         return;
     }
 
+    b2SetLogCallback(Box2DAux::LogMessage);
+
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = {this->gravity2D.x, this->gravity2D.y};
     world2D = b2CreateWorld(&worldDef);

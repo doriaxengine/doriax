@@ -59,6 +59,14 @@ namespace doriax{
 
     public:
 
+        static void LogMessage(const char* message){
+            std::string text = message;
+            if (!text.empty() && text.back() == '\n'){
+                text.pop_back();
+            }
+            Log::warn("Box2D: %s", text.c_str());
+        }
+
         static bool CollisionFilter(b2ShapeId shapeIdA, b2ShapeId shapeIdB, void* context){
             Scene* scene = (Scene*)context;
 
