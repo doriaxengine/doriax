@@ -15,6 +15,8 @@ namespace doriax{
             const b2Manifold* manifold;
             b2BodyId bodyA;
 
+            bool hasPoint(int32_t index) const;
+
         public:
             Manifold2D(Scene* scene, const b2Manifold* manifold, b2BodyId bodyA);
             virtual ~Manifold2D();
