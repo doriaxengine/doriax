@@ -2311,6 +2311,7 @@ bool PhysicsSystem::loadMouseJoint2D(Entity entity, Joint2DComponent& joint, Ent
         jointDef.base.bodyIdA = myBodyB.body;
         jointDef.base.bodyIdB = myBodyA.body;
         jointDef.base.localFrameA.p = b2Body_GetLocalPoint(myBodyB.body, worldTarget);
+        jointDef.base.localFrameB.p = b2Body_GetLocalPoint(myBodyA.body, worldTarget);
         jointDef.linearHertz = 4.0f;
         jointDef.linearDampingRatio = 1.0f;
         jointDef.maxSpringForce = std::max(10.0f, 1000.0f * b2Body_GetMass(myBodyA.body));
