@@ -51,10 +51,11 @@ namespace doriax{
         bool lodEnabled = true;
         float lodBias = 1;
         float cullDistance = 0;
+        float windReach = 0; // swayed vertices reach past the instance spheres
 
         bool operator!=(const InstanceViewSettings& o) const{
             return cull != o.cull || castShadows != o.castShadows || lodEnabled != o.lodEnabled ||
-                   lodBias != o.lodBias || cullDistance != o.cullDistance;
+                   lodBias != o.lodBias || cullDistance != o.cullDistance || windReach != o.windReach;
         }
     };
 

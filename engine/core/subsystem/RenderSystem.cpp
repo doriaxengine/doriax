@@ -385,6 +385,7 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     frameTime = 0.0f;
     windTime = 0.0;
     windTravel = 0.0;
+    windBoundsSpeed = 0.0f;
     passResolution = Vector2(0.0f, 0.0f);
 
     ssrLoaded = false;
@@ -4118,7 +4119,7 @@ void RenderSystem::buildInstanceView(int viewIndex, InstancedMeshComponent& inst
         const Vector3 center = transform.modelMatrix * bounds.center;
         const float radius = bounds.radius * entityScale;
         if (instmesh.cullInstances){
-            if (!isInsideCamera(cameraFar, frustumPlanes, center, radius))
+            if (!isInsideCamera(cameraFar, frustumPlanes, center, radius + instmesh.viewSettings.windReach * entityScale))
                 continue;
             if (limitDistance && (center - eye).length() - radius > instmesh.cullDistance)
                 continue;
@@ -10369,6 +10370,13 @@ void RenderSystem::update(double dt){
     // once that changes, the MVP they went without is updated before a pass reads it
     const bool settledMVPStale = settledSkippedMVP && !settledWithoutMVP;
     settledSkippedMVP = settledWithoutMVP;
+
+    // widened for a stronger wind than now, so gusts seldom rebuild the instance views
+    const float windSpeed = scene->getWind().length();
+    if (windSpeed > windBoundsSpeed || windSpeed < windBoundsSpeed * 0.5f){
+        windBoundsSpeed = windSpeed * 1.25f;
+    }
+
     auto meshes = scene->getComponentArray<MeshComponent>();
 
     for (int i = 0; i < transforms->size(); i++){
@@ -10408,6 +10416,10 @@ void RenderSystem::update(double dt){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
 
             TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
+
+            // farthest the wind shader moves a vertex: full bend, gust, wobble and flutter
+            const bool sway = mesh.windSway > 0.0f && !terrain;
+            const float windReach = sway ? mesh.windSway * windBoundsSpeed * 0.1f * 1.35f : 0.0f;
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
             if (instmesh){
@@ -10452,7 +10464,7 @@ void RenderSystem::update(double dt){
 
                 instmesh->needUpdateInstances = false;
 
-                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance};
+                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance, windReach};
                 if (transform.needUpdate || viewSettings != instmesh->viewSettings){
                     instmesh->viewSettings = viewSettings;
                     instanceViewsDirty = true;
@@ -10522,7 +10534,7 @@ void RenderSystem::update(double dt){
 
                 // wind sway turned on or off
                 const bool shaderWind = (mesh.submeshes[s].shaderProperties & (1u << 29)) != 0;
-                if (shaderWind != (mesh.windSway > 0.0f && !terrain)){
+                if (shaderWind != sway){
                     mesh.needReload = true;
                 }
 
@@ -10581,7 +10593,7 @@ void RenderSystem::update(double dt){
             if (!mesh.loadCalled){
                 loadMesh(entity, mesh, pipelines, instmesh, terrain);
             }
-            if (mesh.needUpdateAABB || transform.needUpdate){
+            if (mesh.needUpdateAABB || transform.needUpdate || sway){
                 // Bones cancel out this mesh's model matrix, so the shader draws at
                 // modelMatrix * bonesMatrix[b] * vertex and modelMatrix * aabb mis-sizes the box
                 // once posed. Each bone bounds only its own share: the whole aabb per bone works
@@ -10612,8 +10624,12 @@ void RenderSystem::update(double dt){
                         }
                     }
                 }
-                mesh.worldAABB = mesh.skinnedAABB.isNull() ? (transform.modelMatrix * mesh.aabb)
-                                                           : (transform.modelMatrix * mesh.skinnedAABB);
+                AABB box = mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB;
+                if (windReach > 0.0f && box.isFinite() && box != AABB::ZERO){
+                    const Vector3 reach(windReach, windReach, windReach);
+                    box = AABB(box.getMinimum() - reach, box.getMaximum() + reach);
+                }
+                mesh.worldAABB = transform.modelMatrix * box;
 
                 mesh.needUpdateAABB = false;
 
