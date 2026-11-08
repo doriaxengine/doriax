@@ -3536,6 +3536,14 @@ void PhysicsSystem::fixedUpdate(double dt){
         Joint2DComponent& joint = joints2d->getComponentFromIndex(i);
         Entity entity = joints2d->getEntity(i);
 
+        // Box2D removes a mouse joint only with bodyA, its target is a body of its own
+        if (joint.type == Joint2DType::MOUSE && b2Joint_IsValid(joint.joint)){
+            Body2DComponent* bodyB = scene->findComponent<Body2DComponent>(joint.bodyB);
+            if (!bodyB || !b2Body_IsValid(bodyB->body)){
+                destroyJoint2D(joint);
+            }
+        }
+
         if (joint.needUpdateJoint || !b2Joint_IsValid(joint.joint)){
             if (loadJoint2D(entity, joint)){
                 joint.needUpdateJoint = false;
