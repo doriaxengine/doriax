@@ -42,6 +42,11 @@ namespace doriax{
             return true;
         }
 
+        static bool hasPreSolveEvents(Scene* scene, Entity entity, size_t shapeIndex){
+            Body2DComponent* body = scene->findComponent<Body2DComponent>(entity);
+            return body && shapeIndex < body->numShapes && body->shapes[shapeIndex].preSolveEvents;
+        }
+
         static bool callPreSolve(Scene* scene, b2ShapeId shapeIdA, b2ShapeId shapeIdB, const b2Manifold* manifold){
             size_t shapeIndexA = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdA));
             size_t shapeIndexB = reinterpret_cast<size_t>(b2Shape_GetUserData(shapeIdB));
@@ -51,6 +56,11 @@ namespace doriax{
 
             Entity entityA = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdA));
             Entity entityB = reinterpret_cast<uintptr_t>(b2Body_GetUserData(bodyIdB));
+
+            // every shape has pre-solve on in Box2D, a contact only keeps the flags it had when made
+            if (!hasPreSolveEvents(scene, entityA, shapeIndexA) && !hasPreSolveEvents(scene, entityB, shapeIndexB)){
+                return true;
+            }
 
             // pre-solve anchors start from the body origins
             return runFilter([&](){

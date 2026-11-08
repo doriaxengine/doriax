@@ -562,6 +562,9 @@ void PhysicsSystem::ensureWorld2D(){
         return;
     }
 
+    // a reused contact would skip preSolve2D and keep its old material
+    b2World_SetContactRecycleDistance(world2D, 0.0f);
+
     b2World_SetPreSolveCallback(world2D, Box2DAux::PreSolve, Box2DAux::PreContinuous, scene);
     // TODO: could there be a performance issue by checking this often?
     b2World_SetCustomFilterCallback(world2D, Box2DAux::CollisionFilter, scene);
@@ -1199,11 +1202,8 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
         destroyShape2D(body, i);
     }
 
-    bool preSolveEvents = false;
-
     for (size_t i = 0; i < body.numShapes; i++){
         Shape2D& shapeData = body.shapes[i];
-        preSolveEvents = preSolveEvents || shapeData.preSolveEvents;
 
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.userData = reinterpret_cast<void*>(i);
@@ -1216,7 +1216,7 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
         shapeDef.enableCustomFiltering = true;
         shapeDef.enableHitEvents = shapeData.enableHitEvents;
         shapeDef.enableContactEvents = shapeData.contactEvents;
-        shapeDef.enablePreSolveEvents = shapeData.preSolveEvents;
+        shapeDef.enablePreSolveEvents = true; // the shape flag is checked in the callback
         shapeDef.enableSensorEvents = shapeData.sensorEvents || shapeData.sensor;
         shapeDef.filter.categoryBits = shapeData.categoryBits;
         shapeDef.filter.maskBits = shapeData.maskBits;
@@ -1379,9 +1379,6 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
             shapeData.chain = b2CreateChain(body.body, &chainDef);
         }
     }
-
-    // a recycled contact skips preSolve2D
-    b2Body_EnableContactRecycling(body.body, !preSolveEvents);
 
     body.needUpdateShapes = false;
     body.loadedScale = entityScale;
@@ -2041,6 +2038,7 @@ int PhysicsSystem::loadShape2D(Body2DComponent& body, void* shape, Shape2DType t
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.userData = reinterpret_cast<void*>(body.numShapes);
         shapeDef.enableCustomFiltering = true;
+        shapeDef.enablePreSolveEvents = true;
 
         if (!b2Body_IsValid(body.body)){
             Log::error("Cannot create 2D body shape without loaded body");

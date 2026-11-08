@@ -640,19 +640,11 @@ void Body2D::setShapePreSolveEvents(size_t index, bool preSolveEvent){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
     if (index >= 0 && index < body.numShapes){
-        body.shapes[index].preSolveEvents = preSolveEvent;
-        if (deferShapeChange(body)) return;
-
         if (body.shapes[index].type == Shape2DType::CHAIN){
             Log::error("Cannot set presolve events of chain shape %i", index);
         }else{
-            forEachBox2DShape(body.shapes[index], [&](b2ShapeId shapeId){
-                b2Shape_EnablePreSolveEvents(shapeId, preSolveEvent);
-            });
-            // a recycled contact skips preSolve2D
-            if (preSolveEvent && b2Body_IsValid(body.body)){
-                b2Body_EnableContactRecycling(body.body, false);
-            }
+            // read by the pre-solve callback, so it works at once, also during the step
+            body.shapes[index].preSolveEvents = preSolveEvent;
         }
     }else{
         Log::error("Cannot find shape %i of body", index);
