@@ -154,6 +154,10 @@ namespace doriax{
 		// True inside preSolve2D and shouldCollide2D. Box2D locks the world for the whole
 		// step, so a body can only be read then. Other changes are refused or wait for it.
 		bool isSteppingWorld2D() const;
+
+		// pushes shapes facing the position, impulsePerLength is per metre of their outline
+		void explode2D(Vector2 position, float radius, float falloff, float impulsePerLength);
+		void explode2D(Vector2 position, float radius, float falloff, float impulsePerLength, uint16_t maskBits);
 #endif
 
 #ifdef DORIAX_PHYSICS_3D

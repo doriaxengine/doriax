@@ -718,6 +718,30 @@ float PhysicsSystem::getPointsToMeterScale2D() const{
 void PhysicsSystem::setPointsToMeterScale2D(float pointsToMeterScale2D){
     this->pointsToMeterScale2D = pointsToMeterScale2D;
 }
+
+void PhysicsSystem::explode2D(Vector2 position, float radius, float falloff, float impulsePerLength){
+    explode2D(position, radius, falloff, impulsePerLength, 0xFFFF);
+}
+
+void PhysicsSystem::explode2D(Vector2 position, float radius, float falloff, float impulsePerLength, uint16_t maskBits){
+    if (!b2World_IsValid(world2D)){
+        return;
+    }
+
+    if (steppingWorld2D){
+        Log::error("Cannot explode while the 2D physics world is stepping");
+        return;
+    }
+
+    b2ExplosionDef explosionDef = b2DefaultExplosionDef();
+    explosionDef.maskBits = maskBits;
+    explosionDef.position = {position.x / pointsToMeterScale2D, position.y / pointsToMeterScale2D};
+    explosionDef.radius = radius / pointsToMeterScale2D;
+    explosionDef.falloff = falloff / pointsToMeterScale2D;
+    explosionDef.impulsePerLength = impulsePerLength;
+
+    b2World_Explode(world2D, &explosionDef);
+}
 #endif
 
 #ifdef DORIAX_PHYSICS_3D
