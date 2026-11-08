@@ -980,6 +980,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("receiveShadows", &MeshComponent::receiveShadows, &MeshComponent::receiveShadows)
         .addProperty("shadowsBillboard", &MeshComponent::shadowsBillboard, &MeshComponent::shadowsBillboard)
         .addProperty("renderInReflectionProbes", &MeshComponent::renderInReflectionProbes, &MeshComponent::renderInReflectionProbes)
+        .addProperty("seeThrough", &MeshComponent::seeThrough, &MeshComponent::seeThrough)
         .addProperty("transparent", &MeshComponent::transparent, &MeshComponent::transparent)
         .addProperty("autoTransparency", &MeshComponent::autoTransparency, &MeshComponent::autoTransparency)
         .addProperty("lodEnabled", &MeshComponent::lodEnabled, &MeshComponent::lodEnabled)

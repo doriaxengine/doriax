@@ -375,6 +375,8 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     resumePassRender.setDepthLoadActionLoad();
     currentUnderwater = NULL;
     hasWaterDepth = false;
+    fs_seeThrough = {};
+    fs_noSeeThrough = {};
     onlyDirectionalLights = false;
     frameTime = 0.0f;
     animationTime = 0.0;
@@ -1790,6 +1792,8 @@ void RenderSystem::renderReflectionProbeCapture(){
     applyViewLights(capturePosition);
 
     capturingReflectionProbe = true;
+    const fs_see_through_t mainSeeThrough = fs_seeThrough;
+    fs_seeThrough = fs_noSeeThrough;
     passResolution = Vector2((float)resolution, (float)resolution);
     runtime.capturePass.setClearColor(probe->includeSky ? scene->getBackgroundColor() : Vector4(0.0f, 0.0f, 0.0f, 1.0f));
     runtime.capturePass.startRenderPass(&runtime.captureFramebuffer, (size_t)face);
@@ -1826,6 +1830,7 @@ void RenderSystem::renderReflectionProbeCapture(){
     runtime.capturePass.endRenderPass();
     capturingReflectionProbe = false;
     fs_lighting = mainLighting;
+    fs_seeThrough = mainSeeThrough;
 
     delete captureCamera.framebuffer;
     captureCamera.framebuffer = nullptr;
@@ -3220,6 +3225,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
+        const bool p_seeThrough = mesh.seeThrough && !terrain;
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
@@ -3238,6 +3244,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
         }
+        // 'Stt' in every pass but shadows, which send it no target
+        if (p_seeThrough){
+            mesh.submeshes[i].shaderProperties |= 1u << 29;
+        }
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
         // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
         // (SSR uses its own G-buffer shader, built below). A depth fork is built even
@@ -3248,7 +3258,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade);
+                p_depthAlphaMask, p_instanceFade) | (p_seeThrough ? 1u << 9 : 0u);
             mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
@@ -3289,7 +3299,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2);
+                gbufferHasOcclusionTex, gbufferOcclusionUV2) | (p_seeThrough ? 1u << 12 : 0u);
             mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
@@ -3337,6 +3347,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         if (p_mirror){
             mesh.submeshes[i].slotFSMirror = shaderData.getUniformBlockIndex(UniformBlockType::FS_MIRROR);
+        }
+        if (p_seeThrough){
+            mesh.submeshes[i].slotFSSeeThrough = shaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
         }
         if ((hasLights || useIBL) && mesh.receiveLights){
             mesh.submeshes[i].slotFSLighting = shaderData.getUniformBlockIndex(UniformBlockType::FS_LIGHTING);
@@ -3492,6 +3505,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (p_depthAlphaMask){
                 mesh.submeshes[i].slotFSDepthMaterial = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_FS_MATERIAL);
             }
+            if (p_seeThrough){
+                mesh.submeshes[i].slotFSDepthSeeThrough = depthShaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
+            }
             if (p_instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
             }
@@ -3620,6 +3636,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
+            if (p_seeThrough){
+                mesh.submeshes[i].slotFSGBufferSeeThrough = gbufferShaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
+            }
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -4465,6 +4484,10 @@ void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& subme
         render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
 
+    if (submesh.slotFSSeeThrough != -1){
+        render.applyUniformBlock(submesh.slotFSSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
+    }
+
     if (submesh.hasTextureRect){
         Rect fullRect(0, 0, 1, 1);
         render.applyUniformBlock(submesh.slotVSSprite, sizeof(float) * 4, &fullRect);
@@ -4951,6 +4974,10 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 render.applyUniformBlock(mesh.submeshes[i].slotFSMirror, sizeof(float) * 16, &mesh.mirrorViewProjection);
             }
 
+            if (mesh.submeshes[i].slotFSSeeThrough != -1){
+                render.applyUniformBlock(mesh.submeshes[i].slotFSSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
+            }
+
             // a submesh is lit (uses the lighting block + full PBR params) unless it
             // was compiled as MATERIAL_UNLIT (property bit 0)
             bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0));
@@ -5128,6 +5155,11 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].slotVSDepthVertexOffset != -1){
                 applyVertexOffsetUniform(depthRender, mesh.submeshes[i].slotVSDepthVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
+            }
+
+            // the depth pre-pass drops what the color pass drops; shadow maps keep it all
+            if (mesh.submeshes[i].slotFSDepthSeeThrough != -1){
+                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthSeeThrough, sizeof(fs_see_through_t), forSSAO ? &fs_seeThrough : &fs_noSeeThrough);
             }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
@@ -5515,6 +5547,10 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         mat.params = Vector4(material.roughnessFactor, material.metallicFactor, iblSource, alphaCutoff);
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
+
+        if (mesh.submeshes[i].slotFSGBufferSeeThrough != -1){
+            gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
+        }
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -6320,6 +6356,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSVertexOffset = -1;
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
+        submesh.slotFSSeeThrough = -1;
         submesh.slotVSSprite = -1;
         submesh.slotVSShadows = -1;
         submesh.slotFSShadows = -1;
@@ -6334,12 +6371,14 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSDepthFade = -1;
         submesh.slotVSDepthVertexOffset = -1;
         submesh.slotFSDepthMaterial = -1;
+        submesh.slotFSDepthSeeThrough = -1;
         submesh.slotVSDepthSkinning = -1;
         submesh.slotVSDepthMorphTarget = -1;
         submesh.slotVSDepthTerrain = -1;
 
         submesh.slotVSGBufferParams = -1;
         submesh.slotFSGBufferMaterial = -1;
+        submesh.slotFSGBufferSeeThrough = -1;
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;
@@ -11150,6 +11189,15 @@ void RenderSystem::draw(){
         fs_lighting = mainLighting;
         if (!isMainCamera){
             applyViewLights(cameraTransform.worldPosition);
+        }
+
+        // only the main camera looks through to the target
+        fs_seeThrough = fs_noSeeThrough;
+        if (isMainCamera && scene->getSeeThroughRadius() > 0.0f){
+            Vector3 target = scene->getSeeThroughTarget();
+            Vector3 eye = cameraTransform.worldPosition;
+            fs_seeThrough.target = Vector4(target.x, target.y, target.z, scene->getSeeThroughRadius());
+            fs_seeThrough.eye = Vector4(eye.x, eye.y, eye.z, 1.0f - scene->getSeeThroughOpacity());
         }
 
         int terrainView = 0;

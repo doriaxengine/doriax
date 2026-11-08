@@ -569,6 +569,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("lodEnabled", &Mesh::isLodEnabled, &Mesh::setLodEnabled)
         .addProperty("lodBias", &Mesh::getLodBias, &Mesh::setLodBias)
         .addProperty("renderInReflectionProbes", &Mesh::isRenderInReflectionProbes, &Mesh::setRenderInReflectionProbes)
+        .addProperty("seeThrough", &Mesh::isSeeThrough, &Mesh::setSeeThrough)
         .addProperty("shadowsBillboard", &Mesh::isShadowsBillboard, &Mesh::setShadowsBillboard)
         .addProperty("transparent", &Mesh::isTransparent, &Mesh::setTransparent)
         .addProperty("autoTransparency", &Mesh::isAutoTransparency, &Mesh::setAutoTransparency)

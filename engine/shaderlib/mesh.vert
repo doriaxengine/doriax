@@ -38,7 +38,7 @@ invariant gl_Position;
 
 in vec3 a_position;
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_SEE_THROUGH)
     out vec3 v_position;
 #endif
 
@@ -184,7 +184,7 @@ void main() {
 
     vec4 worldPos = pbrParams.modelMatrix * pos;
 
-    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D)
+    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_SEE_THROUGH)
         v_position = vec3(worldPos.xyz) / worldPos.w;
     #endif
 

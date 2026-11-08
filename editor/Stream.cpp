@@ -4980,6 +4980,8 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["lodEnabled"] = mesh.lodEnabled;
     node["lodBias"] = mesh.lodBias;
     node["renderInReflectionProbes"] = mesh.renderInReflectionProbes;
+    if (mesh.seeThrough)
+        node["seeThrough"] = true;
     node["shadowsBillboard"] = mesh.shadowsBillboard;
     node["transparent"] = mesh.transparent;
 
@@ -5058,6 +5060,7 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["lodEnabled"]) mesh.lodEnabled = node["lodEnabled"].as<bool>();
     mesh.lodBias = decodeFinite(node["lodBias"], mesh.lodBias);
     if (node["renderInReflectionProbes"]) mesh.renderInReflectionProbes = node["renderInReflectionProbes"].as<bool>();
+    mesh.seeThrough = node["seeThrough"] && node["seeThrough"].as<bool>();
     if (node["shadowsBillboard"]) mesh.shadowsBillboard = node["shadowsBillboard"].as<bool>();
     if (node["transparent"]) mesh.transparent = node["transparent"].as<bool>();
 

@@ -19,6 +19,9 @@ uniform u_vs_gbufferParams {
 in vec3 a_position;
 out vec2 v_projZW;
 out vec3 v_normal;          // view space
+#ifdef USE_SEE_THROUGH
+    out vec3 v_worldPosition;
+#endif
 
 #ifdef HAS_NORMALS
     in vec3 a_normal;
@@ -138,6 +141,10 @@ void main() {
     gl_Position = mvpMatrix * pos;
 
     v_projZW = gl_Position.zw;
+    #ifdef USE_SEE_THROUGH
+        vec4 worldPosition = gbufferParams.modelMatrix * pos;
+        v_worldPosition = worldPosition.xyz / worldPosition.w;
+    #endif
     // No Y flip here: the G-buffer keeps the target's native orientation, and SSR
     // pairs it with the scene color through the flip flag in misc.z.
     #ifdef IS_VULKAN

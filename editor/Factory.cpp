@@ -822,6 +822,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     code << ind << "mesh.lodEnabled = " << formatBool(mesh.lodEnabled) << ";\n";
     code << ind << "mesh.lodBias = " << formatFloat(mesh.lodBias) << ";\n";
     code << ind << "mesh.renderInReflectionProbes = " << formatBool(mesh.renderInReflectionProbes) << ";\n";
+    if (mesh.seeThrough)
+        code << ind << "mesh.seeThrough = true;\n";
     if (!mesh.customShader.empty())
         code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";
     if (!mesh.customDepthShader.empty())

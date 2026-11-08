@@ -17,6 +17,7 @@
 #include "manager/BundleManager.h"
 #include "object/EntityHandle.h"
 #include "util/Color.h"
+#include <algorithm>
 
 using namespace doriax;
 
@@ -39,6 +40,10 @@ void Scene::init(){
     camera = NULL_ENTITY;
     defaultCamera = NULL_ENTITY;
     viewCamera = NULL_ENTITY;
+
+    seeThroughTarget = Vector3(0, 0, 0);
+    seeThroughRadius = 0.0f;
+    seeThroughOpacity = 0.3f;
 
     // All persistent scene configuration (background, SSAO/SSR, gravity, default shaders, ...)
     // defaults through the SceneSettings member; see SceneSettings.h.
@@ -293,6 +298,34 @@ void Scene::setWind(float x, float y, float z){
 
 Vector3 Scene::getWind() const{
     return settings.wind;
+}
+
+void Scene::setSeeThroughTarget(Vector3 target){
+    seeThroughTarget = target;
+}
+
+void Scene::setSeeThroughTarget(float x, float y, float z){
+    setSeeThroughTarget(Vector3(x, y, z));
+}
+
+Vector3 Scene::getSeeThroughTarget() const{
+    return seeThroughTarget;
+}
+
+void Scene::setSeeThroughRadius(float radius){
+    seeThroughRadius = std::max(radius, 0.0f);
+}
+
+float Scene::getSeeThroughRadius() const{
+    return seeThroughRadius;
+}
+
+void Scene::setSeeThroughOpacity(float opacity){
+    seeThroughOpacity = std::clamp(opacity, 0.0f, 1.0f);
+}
+
+float Scene::getSeeThroughOpacity() const{
+    return seeThroughOpacity;
 }
 
 void Scene::setSSREnabled(bool ssrEnabled){

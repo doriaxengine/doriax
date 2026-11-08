@@ -6373,6 +6373,10 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
     reflectionProbeSettings.help = "Draw this mesh into Reflection Probe captures. Turn off to keep an object out of its own reflection.";
     propertyRow(RowPropertyType::Bool, cpType, "renderInReflectionProbes", "Render in Probes", sceneProject, entities, reflectionProbeSettings);
 
+    RowSettings seeThroughSettings;
+    seeThroughSettings.help = "Thin this mesh out where it stands between the camera and the scene's see-through target (Scene setSeeThroughTarget and setSeeThroughRadius, set by a script), so the target shows through it. Shadows stay whole.";
+    propertyRow(RowPropertyType::Bool, cpType, "seeThrough", "See Through", sceneProject, entities, seeThroughSettings);
+
     RowSettings transparencySettings;
     transparencySettings.help = "Just for render ordering";
     propertyRowWithAutoButton(RowPropertyType::Bool, cpType, "transparent", "Transparent", "autoTransparency", "Auto Transparency", sceneProject, entities, transparencySettings);

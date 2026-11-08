@@ -475,6 +475,20 @@ bool Mesh::isRenderInReflectionProbes() const{
     return getMesh().renderInReflectionProbes;
 }
 
+void Mesh::setSeeThrough(bool seeThrough){
+    for (MeshComponent* mesh : getMeshes()){
+        if (mesh->seeThrough != seeThrough){
+            mesh->seeThrough = seeThrough;
+
+            mesh->needReload = true;
+        }
+    }
+}
+
+bool Mesh::isSeeThrough() const{
+    return getMesh().seeThrough;
+}
+
 void Mesh::setShadowsBillboard(bool shadowsBillboard){
     for (MeshComponent* mesh : getMeshes()){
         mesh->shadowsBillboard = shadowsBillboard;

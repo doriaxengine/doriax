@@ -90,6 +90,11 @@ namespace doriax{
 		Vector4 density_start_end;
 	} fs_fog_t;
 
+	typedef struct fs_see_through_t {
+		Vector4 target; // xyz world position, w radius (0 = off)
+		Vector4 eye;    // xyz camera position, w share of the pixels dropped at the centre
+	} fs_see_through_t;
+
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
 	typedef struct shadow_projection_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
@@ -609,6 +614,9 @@ namespace doriax{
 		fs_shadows_t fs_shadows;
 		fs_point_shadows_t fs_point_shadows;
 		fs_fog_t fs_fog;
+		// the see-through of the camera being drawn, and none for shadow maps and captures
+		fs_see_through_t fs_seeThrough;
+		fs_see_through_t fs_noSeeThrough;
 
 		// SSAO: per-frame fullscreen passes for the main camera. The depth pre-pass
 		// renders camera-space packed depth, then the ssao + blur fullscreen passes

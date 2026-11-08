@@ -448,9 +448,9 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
 
 int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
     switch (shaderType) {
-        case ShaderType::MESH:   return 29;
-        case ShaderType::DEPTH:  return 9;
-        case ShaderType::GBUFFER: return 12;
+        case ShaderType::MESH:   return 30;
+        case ShaderType::DEPTH:  return 10;
+        case ShaderType::GBUFFER: return 13;
         case ShaderType::UI:     return 4;
         case ShaderType::POINTS: return 4;
         case ShaderType::LINES:  return 2;
@@ -499,6 +499,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 26: return shortName ? "Ifd" : "Instance Fade";
             case 27: return shortName ? "Tpb" : "Terrain PBR";
             case 28: return shortName ? "Dlo" : "Directional Lights Only";
+            case 29: return shortName ? "Stt" : "See Through";
         }
     } else if (shaderType == ShaderType::DEPTH) {
         switch (bit) {
@@ -511,6 +512,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 6: return shortName ? "Ist" : "Instancing";
             case 7: return shortName ? "Ams" : "Alpha Mask";
             case 8: return shortName ? "Ifd" : "Instance Fade";
+            case 9: return shortName ? "Stt" : "See Through";
         }
     } else if (shaderType == ShaderType::GBUFFER) {
         switch (bit) {
@@ -526,6 +528,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 9: return shortName ? "Tpb" : "Terrain PBR";
             case 10: return shortName ? "Occ" : "Occlusion Texture";
             case 11: return shortName ? "Ou2" : "Occlusion UV2";
+            case 12: return shortName ? "Stt" : "See Through";
         }
     } else if (shaderType == ShaderType::UI) {
         switch (bit) {
@@ -628,11 +631,11 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     // optional features, in the order they are given up
     std::vector<int> optionalBits;
     if (shaderType == ShaderType::MESH){
-        optionalBits = {28, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
+        optionalBits = {28, 29, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Stt Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
     }else if (shaderType == ShaderType::DEPTH){
-        optionalBits = {7, 0}; // Ams Tex
+        optionalBits = {9, 7, 0}; // Stt Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){
-        optionalBits = {10, 8, 0}; // Occ Mrt Bct
+        optionalBits = {12, 10, 8, 0}; // Stt Occ Mrt Bct
     }
 
     std::vector<uint32_t> present;

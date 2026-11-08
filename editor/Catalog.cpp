@@ -658,6 +658,7 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::lodEnabled>("lodEnabled", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::lodBias>("lodBias", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<MeshComponent, bool, &MeshComponent::renderInReflectionProbes>("renderInReflectionProbes", PropertyType::Bool, UpdateFlags_Reflection_Probe_Recapture_All),
+        makeFastProperty<MeshComponent, bool, &MeshComponent::seeThrough>("seeThrough", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::transparent>("transparent", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),

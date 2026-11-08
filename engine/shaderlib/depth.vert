@@ -32,6 +32,9 @@ invariant gl_Position;
 
 in vec3 a_position;
 out vec2 v_projZW;
+#ifdef USE_SEE_THROUGH
+    out vec3 v_worldPosition;
+#endif
 
 #ifdef HAS_INSTANCING
     in vec4 i_matrix_col1;
@@ -101,6 +104,10 @@ void main() {
     gl_Position = depthParams.mvpMatrix * pos;
 
     v_projZW = gl_Position.zw;
+    #ifdef USE_SEE_THROUGH
+        vec4 worldPosition = depthParams.modelMatrix * pos;
+        v_worldPosition = worldPosition.xyz / worldPosition.w;
+    #endif
     // No Y flip here: the target keeps its native orientation and the atlas lookup
     // (getShadowAtlasUV) converts the coordinate when sampling.
     #ifdef IS_VULKAN

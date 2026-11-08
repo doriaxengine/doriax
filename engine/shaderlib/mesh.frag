@@ -14,7 +14,7 @@
 //       vec4 tint;
 //   } customParams;
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_SEE_THROUGH)
     in vec3 v_position;
 #endif
 
@@ -249,8 +249,15 @@ const float M_PI = 3.141592653589793;
 #ifdef HAS_FOG
     #include "includes/fog.glsl"
 #endif
+#ifdef USE_SEE_THROUGH
+    #include "includes/see_through.glsl"
+#endif
 
 void main() {
+    #ifdef USE_SEE_THROUGH
+        seeThroughDiscard(v_position);
+    #endif
+
     vec4 baseColor = getBaseColor();
 
     #if defined(USE_MIRROR) && defined(HAS_UV_SET1)

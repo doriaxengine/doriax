@@ -13,6 +13,10 @@
 
 out vec4 frag_color;
 in vec2 v_projZW;
+// in the vertex stage's order: GL pairs the stages by location
+#ifdef USE_SEE_THROUGH
+    in vec3 v_worldPosition;
+#endif
 
 #if defined(HAS_TEXTURE)
     uniform texture2D u_depthTexture;
@@ -27,8 +31,14 @@ in vec2 v_projZW;
 #endif
 
 #include "includes/depth_util.glsl"
+#ifdef USE_SEE_THROUGH
+    #include "includes/see_through.glsl"
+#endif
 
 void main() {
+    #ifdef USE_SEE_THROUGH
+        seeThroughDiscard(v_worldPosition);
+    #endif
     #if defined(ALPHA_MASK)
         float alpha = depthMaterial.alphaParams.x;
     #endif

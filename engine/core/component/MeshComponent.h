@@ -88,6 +88,7 @@ namespace doriax{
         int slotFSLighting2D = -1;
         int slotFSFog = -1;
         int slotFSMirror = -1;
+        int slotFSSeeThrough = -1;
         int slotVSSprite = -1;
         int slotVSShadows = -1;
         int slotFSShadows = -1;
@@ -101,6 +102,7 @@ namespace doriax{
         int slotVSDepthParams = -1;
         unsigned int sizeVSDepthParams = 0; // reflected: an older fork declares the block without mvpMatrix
         int slotFSDepthMaterial = -1;
+        int slotFSDepthSeeThrough = -1;
         int slotVSDepthFade = -1;
         int slotVSDepthVertexOffset = -1;
         int slotVSDepthSkinning = -1;
@@ -109,6 +111,7 @@ namespace doriax{
 
         int slotVSGBufferParams = -1;
         int slotFSGBufferMaterial = -1;
+        int slotFSGBufferSeeThrough = -1;
         int slotVSGBufferSkinning = -1;
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;
@@ -218,6 +221,8 @@ namespace doriax{
         bool receiveShadows = true;
         bool shadowsBillboard = true;
         bool renderInReflectionProbes = true; // when false the mesh is skipped by probe captures
+        // dithers away where it hides the scene's see-through target from the camera
+        bool seeThrough = false;
 
         bool transparent = false;
         bool autoTransparency = true;

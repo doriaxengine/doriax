@@ -977,6 +977,12 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("setWind",
             luabridge::overload<Vector3>(&Scene::setWind),
             luabridge::overload<float, float, float>(&Scene::setWind))
+        .addProperty("seeThroughTarget", &Scene::getSeeThroughTarget, (void (Scene::*)(Vector3))&Scene::setSeeThroughTarget)
+        .addFunction("setSeeThroughTarget",
+            luabridge::overload<Vector3>(&Scene::setSeeThroughTarget),
+            luabridge::overload<float, float, float>(&Scene::setSeeThroughTarget))
+        .addProperty("seeThroughRadius", &Scene::getSeeThroughRadius, &Scene::setSeeThroughRadius)
+        .addProperty("seeThroughOpacity", &Scene::getSeeThroughOpacity, &Scene::setSeeThroughOpacity)
         .addProperty("ssaoEnabled", &Scene::isSSAOEnabled, &Scene::setSSAOEnabled)
         .addProperty("ssaoRadius", &Scene::getSSAORadius, &Scene::setSSAORadius)
         .addProperty("ssaoIntensity", &Scene::getSSAOIntensity, &Scene::setSSAOIntensity)

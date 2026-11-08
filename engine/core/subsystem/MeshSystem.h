@@ -213,6 +213,7 @@ namespace doriax{
             bool receiveShadows;
             bool shadowsBillboard;
             bool renderInReflectionProbes;
+            bool seeThrough;
             bool transparent;
             bool autoTransparency;
             bool lodEnabled;

@@ -17,6 +17,10 @@ layout(location = 3) out vec4 frag_occlusion;
 
 in vec2 v_projZW;
 in vec3 v_normal;
+// in the vertex stage's order: GL pairs the stages by location
+#ifdef USE_SEE_THROUGH
+    in vec3 v_worldPosition;
+#endif
 
 uniform u_fs_gbufferMaterial {
     vec4 params;        // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutoff (-1 = disabled)
@@ -46,8 +50,14 @@ uniform u_fs_gbufferMaterial {
 #ifdef HAS_TERRAIN_PBR
     #include "includes/terrain_fs.glsl"
 #endif
+#ifdef USE_SEE_THROUGH
+    #include "includes/see_through.glsl"
+#endif
 
 void main() {
+    #ifdef USE_SEE_THROUGH
+        seeThroughDiscard(v_worldPosition);
+    #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)
         vec4 texColor = texture(sampler2D(u_baseColorTexture, u_baseColor_smp), v_uv1);

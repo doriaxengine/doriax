@@ -2974,7 +2974,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v48: meshes take a vertex offset function from the project (USE_VERTEX_OFFSET).
     // v49: the wind sway is the vertex offset offsets/wind.glsl, without its own variant.
     // v50: the vertex offset applies before the instance fade.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v50";
+    // v51: see-through meshes dither away in front of the scene's target (USE_SEE_THROUGH).
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v51";
 }
 
 void editor::App::pushTabNotificationStyle(){
