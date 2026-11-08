@@ -2308,6 +2308,7 @@ bool PhysicsSystem::loadMouseJoint2D(Entity entity, Joint2DComponent& joint, Ent
         // a static body keeps the target in the world and takes no force
         b2BodyDef targetDef = b2DefaultBodyDef();
         targetDef.position = worldTarget;
+        targetDef.isEnabled = b2Body_IsEnabled(myBodyB.body);
         joint.targetBody = b2CreateBody(world2D, &targetDef);
 
         // a motor spring pulls bodyA to the target
@@ -3535,11 +3536,17 @@ void PhysicsSystem::fixedUpdate(double dt){
         Joint2DComponent& joint = joints2d->getComponentFromIndex(i);
         Entity entity = joints2d->getEntity(i);
 
-        // Box2D removes a mouse joint only with bodyA, its target is a body of its own
+        // Box2D ties a mouse joint only to bodyA, its target body follows bodyB here
         if (joint.type == Joint2DType::MOUSE && b2Joint_IsValid(joint.joint)){
             Body2DComponent* bodyB = scene->findComponent<Body2DComponent>(joint.bodyB);
             if (!bodyB || !b2Body_IsValid(bodyB->body)){
                 destroyJoint2D(joint);
+            }else if (b2Body_IsEnabled(bodyB->body) != b2Body_IsEnabled(joint.targetBody)){
+                if (b2Body_IsEnabled(bodyB->body)){
+                    b2Body_Enable(joint.targetBody);
+                }else{
+                    b2Body_Disable(joint.targetBody);
+                }
             }
         }
 
