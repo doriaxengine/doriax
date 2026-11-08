@@ -435,6 +435,14 @@ void Body2D::setShapeRestitution(float restitution){
     setShapeRestitution(0, restitution);
 }
 
+void Body2D::setShapeRollingResistance(float rollingResistance){
+    setShapeRollingResistance(0, rollingResistance);
+}
+
+void Body2D::setShapeTangentSpeed(float tangentSpeed){
+    setShapeTangentSpeed(0, tangentSpeed);
+}
+
 void Body2D::setShapeDensity(size_t index, float density){
     Body2DComponent& body = getComponent<Body2DComponent>();
 
@@ -478,6 +486,37 @@ void Body2D::setShapeRestitution(size_t index, float restitution){
 
         changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
             material.restitution = restitution;
+        });
+    }else{
+        Log::error("Cannot find shape %i of body", index);
+    }
+}
+
+void Body2D::setShapeRollingResistance(size_t index, float rollingResistance){
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    if (index >= 0 && index < body.numShapes){
+        body.shapes[index].rollingResistance = rollingResistance;
+        if (deferShapeChange(body)) return;
+
+        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+            material.rollingResistance = rollingResistance;
+        });
+    }else{
+        Log::error("Cannot find shape %i of body", index);
+    }
+}
+
+void Body2D::setShapeTangentSpeed(size_t index, float tangentSpeed){
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    if (index >= 0 && index < body.numShapes){
+        body.shapes[index].tangentSpeed = tangentSpeed;
+        if (deferShapeChange(body)) return;
+
+        float pointsToMeterScale = getPointsToMeterScale();
+        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+            material.tangentSpeed = tangentSpeed / pointsToMeterScale;
         });
     }else{
         Log::error("Cannot find shape %i of body", index);
@@ -625,6 +664,14 @@ float Body2D::getShapeRestitution() const{
     return getShapeRestitution(0);
 }
 
+float Body2D::getShapeRollingResistance() const{
+    return getShapeRollingResistance(0);
+}
+
+float Body2D::getShapeTangentSpeed() const{
+    return getShapeTangentSpeed(0);
+}
+
 
 float Body2D::getShapeDensity(size_t index) const{
     Body2DComponent& body = getComponent<Body2DComponent>();
@@ -660,6 +707,30 @@ float Body2D::getShapeRestitution(size_t index) const{
     }
 
     return -1;
+}
+
+float Body2D::getShapeRollingResistance(size_t index) const{
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    if (index >= 0 && index < body.numShapes){
+        return body.shapes[index].rollingResistance;
+    }else{
+        Log::error("Cannot find shape %i of body", index);
+    }
+
+    return -1;
+}
+
+float Body2D::getShapeTangentSpeed(size_t index) const{
+    Body2DComponent& body = getComponent<Body2DComponent>();
+
+    if (index >= 0 && index < body.numShapes){
+        return body.shapes[index].tangentSpeed;
+    }else{
+        Log::error("Cannot find shape %i of body", index);
+    }
+
+    return 0;
 }
 
 bool Body2D::isShapeEnableHitEvents() const{

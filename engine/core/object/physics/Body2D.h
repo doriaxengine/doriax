@@ -65,10 +65,14 @@ namespace doriax{
         void setShapeDensity(float density);
         void setShapeFriction(float friction);
         void setShapeRestitution(float restitution);
+        void setShapeRollingResistance(float rollingResistance);
+        void setShapeTangentSpeed(float tangentSpeed);
 
         void setShapeDensity(size_t index, float density);
         void setShapeFriction(size_t index, float friction);
         void setShapeRestitution(size_t index, float restitution);
+        void setShapeRollingResistance(size_t index, float rollingResistance);
+        void setShapeTangentSpeed(size_t index, float tangentSpeed);
 
         // no live toggle in Box2D, shapes are rebuilt on the next step
         void setShapeSensor(bool sensor);
@@ -90,10 +94,14 @@ namespace doriax{
         float getShapeDensity() const;
         float getShapeFriction() const;
         float getShapeRestitution() const;
+        float getShapeRollingResistance() const;
+        float getShapeTangentSpeed() const;
 
         float getShapeDensity(size_t index) const;
         float getShapeFriction(size_t index) const;
         float getShapeRestitution(size_t index) const;
+        float getShapeRollingResistance(size_t index) const;
+        float getShapeTangentSpeed(size_t index) const;
 
         bool isShapeEnableHitEvents() const;
         bool isShapeContactEvents() const;

@@ -1834,6 +1834,8 @@ std::string editor::Factory::createBody2DComponent(int indentSpaces, EntityRegis
         code << ind << "body2d.shapes[" << idx << "].density = " << formatFloat(body.shapes[i].density) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].friction = " << formatFloat(body.shapes[i].friction) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].restitution = " << formatFloat(body.shapes[i].restitution) << ";\n";
+        code << ind << "body2d.shapes[" << idx << "].rollingResistance = " << formatFloat(body.shapes[i].rollingResistance) << ";\n";
+        code << ind << "body2d.shapes[" << idx << "].tangentSpeed = " << formatFloat(body.shapes[i].tangentSpeed) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].sensor = " << formatBool(body.shapes[i].sensor) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].enableHitEvents = " << formatBool(body.shapes[i].enableHitEvents) << ";\n";
         code << ind << "body2d.shapes[" << idx << "].contactEvents = " << formatBool(body.shapes[i].contactEvents) << ";\n";

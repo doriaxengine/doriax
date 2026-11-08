@@ -1181,6 +1181,8 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
         shapeDef.density = shapeData.density;
         shapeDef.material.friction = shapeData.friction;
         shapeDef.material.restitution = shapeData.restitution;
+        shapeDef.material.rollingResistance = shapeData.rollingResistance;
+        shapeDef.material.tangentSpeed = shapeData.tangentSpeed / pointsToMeterScale2D;
         shapeDef.isSensor = shapeData.sensor;
         shapeDef.enableCustomFiltering = true;
         shapeDef.enableHitEvents = shapeData.enableHitEvents;

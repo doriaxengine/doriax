@@ -1299,6 +1299,20 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getShapeRestitution", 
             luabridge::overload<>(&Body2D::getShapeRestitution),
             luabridge::overload<size_t>(&Body2D::getShapeRestitution))
+        .addProperty("shapeRollingResistance", (float(Body2D::*)()const)&Body2D::getShapeRollingResistance, (void(Body2D::*)(float))&Body2D::setShapeRollingResistance)
+        .addFunction("setShapeRollingResistance", 
+            luabridge::overload<float>(&Body2D::setShapeRollingResistance),
+            luabridge::overload<size_t, float>(&Body2D::setShapeRollingResistance))
+        .addFunction("getShapeRollingResistance", 
+            luabridge::overload<>(&Body2D::getShapeRollingResistance),
+            luabridge::overload<size_t>(&Body2D::getShapeRollingResistance))
+        .addProperty("shapeTangentSpeed", (float(Body2D::*)()const)&Body2D::getShapeTangentSpeed, (void(Body2D::*)(float))&Body2D::setShapeTangentSpeed)
+        .addFunction("setShapeTangentSpeed", 
+            luabridge::overload<float>(&Body2D::setShapeTangentSpeed),
+            luabridge::overload<size_t, float>(&Body2D::setShapeTangentSpeed))
+        .addFunction("getShapeTangentSpeed", 
+            luabridge::overload<>(&Body2D::getShapeTangentSpeed),
+            luabridge::overload<size_t>(&Body2D::getShapeTangentSpeed))
         .addProperty("shapeSensor", (bool(Body2D::*)()const)&Body2D::isShapeSensor, (void(Body2D::*)(bool))&Body2D::setShapeSensor)
         .addFunction("setShapeSensor", 
             luabridge::overload<bool>(&Body2D::setShapeSensor),

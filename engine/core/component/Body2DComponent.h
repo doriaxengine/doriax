@@ -53,6 +53,8 @@ namespace doriax{
         float density = 1.0f;
         float friction = 0.6f;
         float restitution = 0.0f;
+        float rollingResistance = 0.0f;
+        float tangentSpeed = 0.0f; // conveyor belt speed, points per second
 
         // overlap only: always fires the sensor contact events, never collides
         bool sensor = false;

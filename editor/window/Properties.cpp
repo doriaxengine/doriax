@@ -11058,6 +11058,12 @@ void editor::Properties::drawBody2DComponent(ComponentType cpType, SceneProject*
         }
         propertyRow(RowPropertyType::Float, cpType, shapeKey + ".friction", "Friction", sceneProject, entities, settingsFloat);
         propertyRow(RowPropertyType::Float, cpType, shapeKey + ".restitution", "Restitution", sceneProject, entities, settingsFloat);
+        RowSettings rollingSettings = settingsFloat;
+        rollingSettings.help = "Slows circles and capsules rolling on it";
+        propertyRow(RowPropertyType::Float, cpType, shapeKey + ".rollingResistance", "Rolling Resistance", sceneProject, entities, rollingSettings);
+        RowSettings tangentSettings = settingsFloat;
+        tangentSettings.help = "Surface speed for conveyor belts, in points per second";
+        propertyRow(RowPropertyType::Float, cpType, shapeKey + ".tangentSpeed", "Tangent Speed", sceneProject, entities, tangentSettings);
         if (shape.type != Shape2DType::CHAIN){
             RowSettings sensorSettings;
             sensorSettings.help = "Overlap only: never collides and always reports its sensor events";

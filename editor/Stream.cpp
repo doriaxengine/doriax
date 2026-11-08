@@ -6883,6 +6883,8 @@ YAML::Node editor::Stream::encodeBody2DComponent(const Body2DComponent& body) {
         shapeNode["density"] = body.shapes[i].density;
         shapeNode["friction"] = body.shapes[i].friction;
         shapeNode["restitution"] = body.shapes[i].restitution;
+        shapeNode["rollingResistance"] = body.shapes[i].rollingResistance;
+        shapeNode["tangentSpeed"] = body.shapes[i].tangentSpeed;
         shapeNode["sensor"] = body.shapes[i].sensor;
         shapeNode["enableHitEvents"] = body.shapes[i].enableHitEvents;
         shapeNode["contactEvents"] = body.shapes[i].contactEvents;
@@ -6937,6 +6939,8 @@ Body2DComponent editor::Stream::decodeBody2DComponent(const YAML::Node& node, co
             if (node["shapes"][i]["density"]) body.shapes[i].density = node["shapes"][i]["density"].as<float>();
             if (node["shapes"][i]["friction"]) body.shapes[i].friction = node["shapes"][i]["friction"].as<float>();
             if (node["shapes"][i]["restitution"]) body.shapes[i].restitution = node["shapes"][i]["restitution"].as<float>();
+            if (node["shapes"][i]["rollingResistance"]) body.shapes[i].rollingResistance = node["shapes"][i]["rollingResistance"].as<float>();
+            if (node["shapes"][i]["tangentSpeed"]) body.shapes[i].tangentSpeed = node["shapes"][i]["tangentSpeed"].as<float>();
             if (node["shapes"][i]["sensor"]) body.shapes[i].sensor = node["shapes"][i]["sensor"].as<bool>();
             if (node["shapes"][i]["enableHitEvents"]) body.shapes[i].enableHitEvents = node["shapes"][i]["enableHitEvents"].as<bool>();
             if (node["shapes"][i]["contactEvents"]) body.shapes[i].contactEvents = node["shapes"][i]["contactEvents"].as<bool>();
