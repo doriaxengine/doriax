@@ -16,6 +16,7 @@
 #include "pool/ShaderPool.h"
 #include "util/SHA1.h"
 #include "util/Util.h"
+#include "util/ProjectUtils.h"
 
 #include <cstring>
 #include <cstdint>
@@ -115,10 +116,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     if (!vertexOffset.empty()){
         // a project file, else one of the engine's own, such as offsets/wind.glsl
         std::error_code ec;
-        auto engineIt = editor::shaderMap.find(vertexOffset);
-        if (engineIt != editor::shaderMap.end() && !std::filesystem::exists(projectRoot / vertexOffset, ec)){
-            appendSignaturePart(signatureInput, "engine:" + vertexOffset, engineIt->second);
-            vertexOffsetSource = engineIt->second;
+        if (editor::ProjectUtils::isEngineVertexOffset(vertexOffset) && !std::filesystem::exists(projectRoot / vertexOffset, ec)){
+            vertexOffsetSource = editor::shaderMap.at(vertexOffset);
+            appendSignaturePart(signatureInput, "engine:" + vertexOffset, vertexOffsetSource);
         }else{
             if (!loadEntryPoint(vertexOffset, "vertex offset"))
                 return snapshot;
