@@ -283,6 +283,18 @@ bool Scene::isSSAODebug() const{
     return settings.ssaoDebug;
 }
 
+void Scene::setWind(Vector3 wind){
+    settings.wind = wind;
+}
+
+void Scene::setWind(float x, float y, float z){
+    setWind(Vector3(x, y, z));
+}
+
+Vector3 Scene::getWind() const{
+    return settings.wind;
+}
+
 void Scene::setSSREnabled(bool ssrEnabled){
     if (settings.ssrEnabled != ssrEnabled){
         settings.ssrEnabled = ssrEnabled;

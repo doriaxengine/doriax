@@ -973,6 +973,10 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("setGravity3D",
             luabridge::overload<Vector3>(&Scene::setGravity3D),
             luabridge::overload<float, float, float>(&Scene::setGravity3D))
+        .addProperty("wind", &Scene::getWind, (void (Scene::*)(Vector3))&Scene::setWind)
+        .addFunction("setWind",
+            luabridge::overload<Vector3>(&Scene::setWind),
+            luabridge::overload<float, float, float>(&Scene::setWind))
         .addProperty("ssaoEnabled", &Scene::isSSAOEnabled, &Scene::setSSAOEnabled)
         .addProperty("ssaoRadius", &Scene::getSSAORadius, &Scene::setSSAORadius)
         .addProperty("ssaoIntensity", &Scene::getSSAOIntensity, &Scene::setSSAOIntensity)

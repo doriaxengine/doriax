@@ -491,7 +491,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_scene_property",
-            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default custom shader per type via default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader as string_value (project-relative fork base path, empty to reset to built-in) - used by every component of that type whose own customShader is empty (priority: component customShader > scene default > built-in). Use fork_shader with shader_type (no entity) to create the fork first.",
+            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). wind (vector3_value, air velocity in m/s) bends meshes whose Mesh windSway is above 0 and terrain foliage layers with wind_sway. Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default custom shader per type via default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader as string_value (project-relative fork base path, empty to reset to built-in) - used by every component of that type whose own customShader is empty (priority: component customShader > scene default > built-in). Use fork_shader with shader_type (no entity) to create the fork first.",
             objectSchemaFromProperties(propertyValueFields({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"property", stringSchema("Scene property name")}
@@ -713,7 +713,8 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"draw_distance", numberSchema("Distance from the camera where instances stop drawing")},
                 {"min_draw_distance", numberSchema("Distance from the camera inside which instances are skipped (0 = none). A copy of a layer with a simpler mesh, min_draw_distance near the original's draw_distance and a longer draw_distance becomes its far level of detail")},
                 {"seed", integerSchema("Random seed of the scatter")},
-                {"cast_shadows", boolSchema("Whether the instances cast shadows")}
+                {"cast_shadows", boolSchema("Whether the instances cast shadows")},
+                {"wind_sway", numberSchema("How far the tips bend in 10 m/s of scene wind (scene property wind), 0 = still")}
             }),
             false
         },

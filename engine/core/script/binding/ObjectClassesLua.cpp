@@ -568,6 +568,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("receiveShadows", &Mesh::isReceiveShadows, &Mesh::setReceiveShadows)
         .addProperty("lodEnabled", &Mesh::isLodEnabled, &Mesh::setLodEnabled)
         .addProperty("lodBias", &Mesh::getLodBias, &Mesh::setLodBias)
+        .addProperty("windSway", &Mesh::getWindSway, &Mesh::setWindSway)
+        .addProperty("windSwayHeight", &Mesh::getWindSwayHeight, &Mesh::setWindSwayHeight)
         .addProperty("renderInReflectionProbes", &Mesh::isRenderInReflectionProbes, &Mesh::setRenderInReflectionProbes)
         .addProperty("shadowsBillboard", &Mesh::isShadowsBillboard, &Mesh::setShadowsBillboard)
         .addProperty("transparent", &Mesh::isTransparent, &Mesh::setTransparent)

@@ -133,6 +133,7 @@ namespace doriax{
         float minDrawDistance = 0; // nearer ones are skipped, so a layer copy can be its far detail level
         unsigned int seed = 0;
         bool castShadows = true; // off spares grass-scale scatter the shadow cascades
+        float windSway = 0; // tips bend this far at 10 m/s of scene wind
     };
 
     struct DORIAX_API TerrainComponent{

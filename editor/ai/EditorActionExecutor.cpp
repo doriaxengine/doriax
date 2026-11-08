@@ -2130,6 +2130,7 @@ Json sceneReadableProperties(SceneProject* sceneProject) {
     props["shadows_2d_quality"] = {{"type", "int"}, {"value", static_cast<int>(Catalog::getSceneProperty<ShadowQuality>(scene, "shadows_2d_quality"))}};
     props["physics_gravity_2d"] = {{"type", "vector2"}, {"value", vector2Json(Catalog::getSceneProperty<Vector2>(scene, "physics_gravity_2d"))}};
     props["physics_gravity_3d"] = {{"type", "vector3"}, {"value", vector3Json(Catalog::getSceneProperty<Vector3>(scene, "physics_gravity_3d"))}};
+    props["wind"] = {{"type", "vector3"}, {"value", vector3Json(Catalog::getSceneProperty<Vector3>(scene, "wind"))}};
     props["mesh_lod_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "mesh_lod_enabled")}};
     props["mesh_lod_threshold"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "mesh_lod_threshold")}};
     props["depth_prepass_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "depth_prepass_enabled")}};
@@ -3450,10 +3451,10 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
             return failResult("physics_gravity_2d requires vector2_value.");
         }
         cmd = new ScenePropertyCmd<Vector2>(project, sceneId, property, value);
-    } else if (property == "physics_gravity_3d") {
+    } else if (property == "physics_gravity_3d" || property == "wind") {
         Vector3 value = Catalog::getSceneProperty<Vector3>(sceneProject->scene, property);
         if (!parseVector3(arguments.value("vector3_value", Json::object()), value)) {
-            return failResult("physics_gravity_3d requires vector3_value.");
+            return failResult(property + " requires vector3_value.");
         }
         cmd = new ScenePropertyCmd<Vector3>(project, sceneId, property, value);
     } else if (property == "ssao_enabled" || property == "mesh_lod_enabled" || property == "depth_prepass_enabled" ||
@@ -3984,7 +3985,8 @@ ActionResult EditorActionExecutor::setTerrainFoliageLayer(const Json& arguments)
             {"min_height", &TerrainFoliageLayer::minHeight},
             {"max_height", &TerrainFoliageLayer::maxHeight},
             {"draw_distance", &TerrainFoliageLayer::drawDistance},
-            {"min_draw_distance", &TerrainFoliageLayer::minDrawDistance}
+            {"min_draw_distance", &TerrainFoliageLayer::minDrawDistance},
+            {"wind_sway", &TerrainFoliageLayer::windSway}
         };
         for (const FloatField& entry : floatFields) {
             if (!arguments.contains(entry.arg)) continue;

@@ -982,6 +982,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("autoTransparency", &MeshComponent::autoTransparency, &MeshComponent::autoTransparency)
         .addProperty("lodEnabled", &MeshComponent::lodEnabled, &MeshComponent::lodEnabled)
         .addProperty("lodBias", &MeshComponent::lodBias, &MeshComponent::lodBias)
+        .addProperty("windSway", &MeshComponent::windSway, &MeshComponent::windSway)
+        .addProperty("windSwayHeight", &MeshComponent::windSwayHeight, &MeshComponent::windSwayHeight)
         .addProperty("cullingMode", &MeshComponent::cullingMode, &MeshComponent::cullingMode)
         .addProperty("windingOrder", &MeshComponent::windingOrder, &MeshComponent::windingOrder)
         .addProperty("needUpdateAABB", &MeshComponent::needUpdateAABB, &MeshComponent::needUpdateAABB)
@@ -1111,6 +1113,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("minDrawDistance", &TerrainFoliageLayer::minDrawDistance, &TerrainFoliageLayer::minDrawDistance)
         .addProperty("seed", &TerrainFoliageLayer::seed, &TerrainFoliageLayer::seed)
         .addProperty("castShadows", &TerrainFoliageLayer::castShadows, &TerrainFoliageLayer::castShadows)
+        .addProperty("windSway", &TerrainFoliageLayer::windSway, &TerrainFoliageLayer::windSway)
         .endClass();
 
     luabridge::getGlobalNamespace(L)

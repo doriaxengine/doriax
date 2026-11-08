@@ -112,6 +112,9 @@ in vec3 a_position;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
+#ifdef USE_WIND
+    #include "includes/wind.glsl"
+#endif
 
 vec4 getPosition(mat4 boneTransform){
     vec3 pos = a_position;
@@ -153,11 +156,12 @@ vec3 getTangent(mat4 boneTransform){
 void main() {
     mat4 boneTransform = getBoneTransform();
 
+    vec4 localPos = getPosition(boneTransform);
     #ifdef HAS_INSTANCING
         mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
-        vec4 pos = instanceMatrix * getPosition(boneTransform);
+        vec4 pos = instanceMatrix * localPos;
     #else
-        vec4 pos = getPosition(boneTransform);
+        vec4 pos = localPos;
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -171,6 +175,10 @@ void main() {
                 (fadeParams.fadeRange.y - fadeParams.fadeRange.x), 0.0, 1.0);
         }
         pos.xyz = mix(fadeOrigin, pos.xyz, fadeVisible);
+    #endif
+
+    #ifdef USE_WIND
+        pos.xyz += getWindOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
     #endif
 
     vec4 worldPos = pbrParams.modelMatrix * pos;

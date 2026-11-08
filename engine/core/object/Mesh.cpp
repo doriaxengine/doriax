@@ -413,6 +413,26 @@ bool Mesh::isCastShadows() const{
     return getMesh().castShadows;
 }
 
+void Mesh::setWindSway(float windSway){
+    for (MeshComponent* mesh : getMeshes()){
+        mesh->windSway = windSway;
+    }
+}
+
+float Mesh::getWindSway() const{
+    return getMesh().windSway;
+}
+
+void Mesh::setWindSwayHeight(float windSwayHeight){
+    for (MeshComponent* mesh : getMeshes()){
+        mesh->windSwayHeight = windSwayHeight;
+    }
+}
+
+float Mesh::getWindSwayHeight() const{
+    return getMesh().windSwayHeight;
+}
+
 void Mesh::setLodEnabled(bool lodEnabled){
     for (MeshComponent* mesh : getMeshes()){
         if (mesh->lodEnabled != lodEnabled){

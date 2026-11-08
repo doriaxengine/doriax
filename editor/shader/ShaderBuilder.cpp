@@ -471,6 +471,7 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 25)) defs.push_back({"ALPHA_OPAQUE", "1"});               // 'Aop'
     if (prop & (1 << 26)) defs.push_back({"USE_INSTANCE_FADE", "1"});          // 'Ifd'
     if (prop & (1 << 27)) defs.push_back({"HAS_TERRAIN_PBR", "1"});            // 'Tpb'
+    if (prop & (1 << 29)) defs.push_back({"USE_WIND", "1"});                   // 'Wnd'
 }
 
 void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -483,6 +484,7 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 6))  defs.push_back({"HAS_INSTANCING", "1"});    // 'Ist'
     if (prop & (1 << 7))  defs.push_back({"ALPHA_MASK", "1"});         // 'Ams'
     if (prop & (1 << 8))  defs.push_back({"USE_INSTANCE_FADE", "1"}); // 'Ifd'
+    if (prop & (1 << 9))  defs.push_back({"USE_WIND", "1"});          // 'Wnd'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -498,6 +500,7 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 9))  defs.push_back({"HAS_TERRAIN_PBR", "1"});               // 'Tpb'
     if (prop & (1 << 10)) defs.push_back({"HAS_OCCLUSION_TEXTURE", "1"});         // 'Occ'
     if (prop & (1 << 11)) defs.push_back({"OCCLUSION_UV2", "1"});                 // 'Ou2'
+    if (prop & (1 << 12)) defs.push_back({"USE_WIND", "1"});                      // 'Wnd'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {

@@ -133,6 +133,10 @@ namespace doriax{
         void setSSAODebug(bool debug);
         bool isSSAODebug() const;
 
+        void setWind(Vector3 wind);
+        void setWind(float x, float y, float z);
+        Vector3 getWind() const;
+
         void setSSREnabled(bool ssrEnabled);
         bool isSSREnabled() const;
 

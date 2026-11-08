@@ -6254,6 +6254,17 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
         propertyRow(RowPropertyType::FloatPositive, cpType, "lodBias", "Detail Bias", sceneProject, entities, lodBiasSettings);
     }
 
+    RowSettings windSettings;
+    windSettings.help = "How far this mesh bends in 10 m/s of the scene Wind, in model units. 0 keeps it still.";
+    windSettings.secondColSize = 6 * ImGui::GetFontSize();
+    propertyRow(RowPropertyType::FloatPositive, cpType, "windSway", "Wind Sway", sceneProject, entities, windSettings);
+    if (sceneProject->scene->getComponent<MeshComponent>(entities[0]).windSway > 0.0f) {
+        RowSettings swayHeightSettings;
+        swayHeightSettings.help = "Model height where the bend is full; the base below stays put. 0 moves the whole mesh.";
+        swayHeightSettings.secondColSize = 6 * ImGui::GetFontSize();
+        propertyRow(RowPropertyType::FloatPositive, cpType, "windSwayHeight", "Sway Height", sceneProject, entities, swayHeightSettings);
+    }
+
     RowSettings reflectionProbeSettings;
     reflectionProbeSettings.help = "Draw this mesh into Reflection Probe captures. Turn off to keep an object out of its own reflection.";
     propertyRow(RowPropertyType::Bool, cpType, "renderInReflectionProbes", "Render in Probes", sceneProject, entities, reflectionProbeSettings);
@@ -14449,6 +14460,8 @@ void editor::Properties::show(){
                     if (sceneProject->sceneType == SceneType::SCENE_3D) {
                         drawScenePropertyRow<Vector3>(sceneProject, "physics_gravity_3d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
                             "Gravity applied to 3D physics bodies (meters/s^2).");
+                        drawScenePropertyRow<Vector3>(sceneProject, "wind", "Wind", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
+                            "Air velocity (meters/s) that bends meshes with wind sway. It moves no bodies.");
                     } else {
                         drawScenePropertyRow<Vector2>(sceneProject, "physics_gravity_2d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
                             "Gravity applied to 2D physics bodies (meters/s^2).");

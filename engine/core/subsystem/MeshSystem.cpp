@@ -3699,6 +3699,8 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
+            mesh.windSway = layer.windSway;
+            mesh.windSwayHeight = mesh.verticesAABB.getMaximum().y;
 
             // Grows with headroom and never shrinks, so a draw distance drag rebuilds little.
             if (instmesh.maxInstances < capacity){

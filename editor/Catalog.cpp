@@ -657,6 +657,8 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::receiveShadows>("receiveShadows", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::lodEnabled>("lodEnabled", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::lodBias>("lodBias", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<MeshComponent, float, &MeshComponent::windSway>("windSway", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<MeshComponent, float, &MeshComponent::windSwayHeight>("windSwayHeight", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<MeshComponent, bool, &MeshComponent::renderInReflectionProbes>("renderInReflectionProbes", PropertyType::Bool, UpdateFlags_Reflection_Probe_Recapture_All),
         makeFastProperty<MeshComponent, bool, &MeshComponent::transparent>("transparent", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
@@ -1396,6 +1398,7 @@ namespace {
         if (fieldName == ".minDrawDistance") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.minDrawDistance, &layer.minDrawDistance};
         if (fieldName == ".seed") return {PropertyType::UInt, UpdateFlags_Terrain_Foliage, &def.seed, &layer.seed};
         if (fieldName == ".castShadows") return {PropertyType::Bool, UpdateFlags_Terrain_Foliage, &def.castShadows, &layer.castShadows};
+        if (fieldName == ".windSway") return {PropertyType::Float, UpdateFlags_Terrain_Foliage, &def.windSway, &layer.windSway};
 
         return PropertyData();
     }
@@ -2505,6 +2508,7 @@ namespace {
             field(".minDrawDistance", PropertyType::Float, (void*)&defLayer.minDrawDistance, layer ? (void*)&layer->minDrawDistance : nullptr);
             field(".seed", PropertyType::UInt, (void*)&defLayer.seed, layer ? (void*)&layer->seed : nullptr);
             field(".castShadows", PropertyType::Bool, (void*)&defLayer.castShadows, layer ? (void*)&layer->castShadows : nullptr);
+            field(".windSway", PropertyType::Float, (void*)&defLayer.windSway, layer ? (void*)&layer->windSway : nullptr);
         }
     }
 

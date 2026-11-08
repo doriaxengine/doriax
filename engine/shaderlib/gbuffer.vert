@@ -54,6 +54,9 @@ out vec3 v_normal;          // view space
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
+#ifdef USE_WIND
+    #include "includes/wind.glsl"
+#endif
 
 vec4 getPosition(mat4 boneTransform){
     vec3 pos = a_position;
@@ -126,6 +129,10 @@ void main() {
         #else
             v_uvOcclusion = a_texcoord1;
         #endif
+    #endif
+
+    #ifdef USE_WIND
+        pos.xyz += getWindOffset(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz);
     #endif
 
     gl_Position = mvpMatrix * pos;

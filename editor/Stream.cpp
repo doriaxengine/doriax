@@ -2964,6 +2964,7 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["ssrBlur"] = scene->getSSRBlur();
     sceneNode["gravity2D"] = encodeVector2(scene->getGravity2D());
     sceneNode["gravity3D"] = encodeVector3(scene->getGravity3D());
+    sceneNode["wind"] = encodeVector3(scene->getWind());
     sceneNode["fixedResolutionEnabled"] = scene->isFixedResolutionEnabled();
     sceneNode["fixedResolutionWidth"] = scene->getFixedResolutionWidth();
     sceneNode["fixedResolutionHeight"] = scene->getFixedResolutionHeight();
@@ -3090,6 +3091,7 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
     // absent key restores the engine default so decoding into a reused scene (play restore) is exact
     scene->setGravity2D(node["gravity2D"] ? decodeVector2(node["gravity2D"]) : Vector2(0.0f, -9.81f));
     scene->setGravity3D(node["gravity3D"] ? decodeVector3(node["gravity3D"]) : Vector3(0.0f, -9.81f, 0.0f));
+    scene->setWind(node["wind"] ? decodeVector3(node["wind"]) : Vector3(0.0f, 0.0f, 0.0f));
 
     if (node["fixedResolutionEnabled"]) {
         scene->setFixedResolutionEnabled(node["fixedResolutionEnabled"].as<bool>());
@@ -4977,6 +4979,8 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["receiveShadows"] = mesh.receiveShadows;
     node["lodEnabled"] = mesh.lodEnabled;
     node["lodBias"] = mesh.lodBias;
+    node["windSway"] = mesh.windSway;
+    node["windSwayHeight"] = mesh.windSwayHeight;
     node["renderInReflectionProbes"] = mesh.renderInReflectionProbes;
     node["shadowsBillboard"] = mesh.shadowsBillboard;
     node["transparent"] = mesh.transparent;
@@ -5051,6 +5055,8 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["receiveShadows"]) mesh.receiveShadows = node["receiveShadows"].as<bool>();
     if (node["lodEnabled"]) mesh.lodEnabled = node["lodEnabled"].as<bool>();
     mesh.lodBias = decodeFinite(node["lodBias"], mesh.lodBias);
+    mesh.windSway = decodeFinite(node["windSway"], mesh.windSway);
+    mesh.windSwayHeight = decodeFinite(node["windSwayHeight"], mesh.windSwayHeight);
     if (node["renderInReflectionProbes"]) mesh.renderInReflectionProbes = node["renderInReflectionProbes"].as<bool>();
     if (node["shadowsBillboard"]) mesh.shadowsBillboard = node["shadowsBillboard"].as<bool>();
     if (node["transparent"]) mesh.transparent = node["transparent"].as<bool>();
@@ -5739,6 +5745,7 @@ YAML::Node editor::Stream::encodeTerrainFoliageLayer(const TerrainFoliageLayer& 
     node["minDrawDistance"] = layer.minDrawDistance;
     node["seed"] = layer.seed;
     node["castShadows"] = layer.castShadows;
+    node["windSway"] = layer.windSway;
     return node;
 }
 
@@ -5759,6 +5766,7 @@ TerrainFoliageLayer editor::Stream::decodeTerrainFoliageLayer(const YAML::Node& 
     layer.maxHeight = decodeFinite(node["maxHeight"], layer.maxHeight);
     layer.drawDistance = decodeFinite(node["drawDistance"], layer.drawDistance);
     layer.minDrawDistance = decodeFinite(node["minDrawDistance"], layer.minDrawDistance);
+    layer.windSway = decodeFinite(node["windSway"], layer.windSway);
     return layer;
 }
 

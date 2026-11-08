@@ -3182,6 +3182,10 @@ void editor::TerrainEditWindow::show(){
             if (ImGui::Checkbox("##foliage_cast_shadows", &layer.castShadows)){
                 setFoliageLayerProperty("castShadows", layer.castShadows);
             }
+            terrainPropertyRow("Wind sway", "How far the tips bend in 10 m/s of the scene wind. 0 keeps them still.");
+            if (UIUtils::dragFloat("##foliage_wind_sway", &layer.windSway, 0.01f, 0.0f, 2.0f, "%.2f")){
+                setFoliageLayerProperty("windSway", std::max(0.0f, layer.windSway));
+            }
             terrainPropertyRow("Seed", "Change the seed to reshuffle instance positions.");
             if (UIUtils::inputScalar("##foliage_seed", ImGuiDataType_U32, &layer.seed)){
                 setFoliageLayerProperty("seed", layer.seed);

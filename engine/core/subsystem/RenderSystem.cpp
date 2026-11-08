@@ -186,6 +186,22 @@ namespace {
         render.applyUniformBlock(slot, sizeof(fade), &fade);
     }
 
+    // wind direction in model space, where the offset is added
+    void applyWindUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time){
+        float speed = wind.length();
+        Vector3 local(transform.modelMatrix.inverse() * Vector4(wind.x, wind.y, wind.z, 0.0f));
+        Vector2 ground(wind.x, wind.z);
+        if (local.length() > 0.0f){
+            local = local.normalized() * speed;
+        }
+        if (ground.length() > 0.0f){
+            ground.normalize();
+        }
+
+        float params[8] = {local.x, local.y, local.z, time, mesh.windSway, mesh.windSwayHeight, ground.x, ground.y};
+        render.applyUniformBlock(slot, sizeof(params), &params);
+    }
+
     // custom block of a forked shader, with the engine-written members refreshed
     void applyCustomUniforms(ObjectRender& render, CustomUniformBlock& block, float frameTime, const Vector2& resolution){
         if (block.slot == -1)
@@ -3209,13 +3225,14 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
+        const bool p_wind = mesh.windSway > 0.0f && !terrain;
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
                         p_hasTangent, mesh.submeshes[i].hasVertexColor3, mesh.submeshes[i].hasVertexColor4, mesh.submeshes[i].hasTextureRect,
                         hasFog, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                         (terrain)?true:false, (instmesh)?true:false, p_ibl, p_mirror, p_ssao, p_light2d, p_shadows2d,
-                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface);
+                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_wind);
         // a user-forked main shader overrides the built-in Mesh shader; the variant
         // (#define) system, depth/gbuffer passes and bind-slots are unchanged.
         // Priority: component customShader > scene default shader > built-in (empty)
@@ -3236,7 +3253,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade);
+                p_depthAlphaMask, p_instanceFade, p_wind);
             mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(mesh.customDepthShader);
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
@@ -3275,7 +3292,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2);
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_wind);
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties);
             if (!mesh.submeshes[i].gbufferShader->isCreated())
                 return false;
@@ -3305,6 +3322,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         if (p_instanceFade){
             mesh.submeshes[i].slotVSFade = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
+        }
+        if (p_wind){
+            mesh.submeshes[i].slotVSWind = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
         }
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
@@ -3467,6 +3487,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (p_instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
             }
+            if (p_wind){
+                mesh.submeshes[i].slotVSDepthWind = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
+            }
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSDepthSkinning = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -3597,6 +3620,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
             if (mesh.submeshes[i].hasMorphTarget){
                 mesh.submeshes[i].slotVSGBufferMorphTarget = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_MORPHTARGET);
+            }
+            if (p_wind){
+                mesh.submeshes[i].slotVSGBufferWind = gbufferShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_WIND);
             }
 
             if (!loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
@@ -4973,6 +4999,10 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 applyInstanceFadeUniform(render, mesh.submeshes[i].slotVSFade, *instmesh);
             }
 
+            if (mesh.submeshes[i].slotVSWind != -1){
+                applyWindUniform(render, mesh.submeshes[i].slotVSWind, mesh, transform, scene->getWind(), frameTime);
+            }
+
             if (mesh.submeshes[i].slotFSTexCoordSets != -1){
                 // per-texture UV set selector (0 = a_texcoord1, 1 = a_texcoord2):
                 // set0 = baseColor, metallicRoughness, occlusion, emissive; set1.x = normal
@@ -5081,6 +5111,10 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].slotVSDepthFade != -1 && instmesh){
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
+            }
+
+            if (mesh.submeshes[i].slotVSDepthWind != -1){
+                applyWindUniform(depthRender, mesh.submeshes[i].slotVSDepthWind, mesh, transform, scene->getWind(), frameTime);
             }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
@@ -5477,6 +5511,9 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             }else{
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
             }
+        }
+        if (mesh.submeshes[i].slotVSGBufferWind != -1){
+            applyWindUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferWind, mesh, transform, scene->getWind(), frameTime);
         }
 
         if (terrain){
@@ -6265,6 +6302,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotFSParams = -1;
         submesh.slotFSTexCoordSets = -1;
         submesh.slotVSFade = -1;
+        submesh.slotVSWind = -1;
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
         submesh.slotVSSprite = -1;
@@ -6279,6 +6317,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
 
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
+        submesh.slotVSDepthWind = -1;
         submesh.slotFSDepthMaterial = -1;
         submesh.slotVSDepthSkinning = -1;
         submesh.slotVSDepthMorphTarget = -1;
@@ -6289,6 +6328,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;
+        submesh.slotVSGBufferWind = -1;
         submesh.slotFSGBufferTerrainLayers = -1;
 
         submesh.customVSParams.clear();
@@ -10477,6 +10517,12 @@ void RenderSystem::update(double dt){
                     if (shaderTerrainSurface != hasTerrainSurfaceLayers(*terrain)){
                         mesh.needReload = true;
                     }
+                }
+
+                // wind sway turned on or off
+                const bool shaderWind = (mesh.submeshes[s].shaderProperties & (1u << 29)) != 0;
+                if (shaderWind != (mesh.windSway > 0.0f && !terrain)){
+                    mesh.needReload = true;
                 }
 
                 // Texture edits only rebind the color pass, but they select the G-buffer variant

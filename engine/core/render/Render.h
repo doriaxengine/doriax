@@ -152,7 +152,8 @@ namespace doriax{
         WATER_VS_PARAMS,
         WATER_FS_PARAMS,
         UNDERWATER_FS_PARAMS,
-        PROBE_FILTER_FS_PARAMS
+        PROBE_FILTER_FS_PARAMS,
+        PBR_VS_WIND
     };
 
     enum class StorageBufferType{

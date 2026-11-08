@@ -93,6 +93,12 @@ namespace doriax{
         void setReceiveShadows(bool receiveShadows);
         bool isReceiveShadows() const;
 
+        void setWindSway(float windSway);
+        float getWindSway() const;
+
+        void setWindSwayHeight(float windSwayHeight);
+        float getWindSwayHeight() const;
+
         void setLodEnabled(bool lodEnabled);
         bool isLodEnabled() const;
 
