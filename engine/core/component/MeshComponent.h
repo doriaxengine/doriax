@@ -189,9 +189,9 @@ namespace doriax{
         // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
         // vertices or discards keeps its shadows in step.
         std::string customDepthShader;
-        // project .glsl defining getVertexOffset(), applied in the color, depth and G-buffer passes
+        // .glsl defining getVertexOffset(), from the project or the engine, applied in every pass
         std::string vertexOffsetShader;
-        float vertexOffsetMax = 0.0f; // longest offset in world units, also widens the culling bounds; 0 = no limit
+        float vertexOffsetMax = 0.0f; // longest offset in world units, widens the bounds; 0 = no limit
         // values of the fork's custom uniform blocks, by member name, shared by all submeshes
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;

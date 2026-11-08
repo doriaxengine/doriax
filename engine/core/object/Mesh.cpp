@@ -550,6 +550,7 @@ std::string Mesh::getVertexOffsetShader() const{
 void Mesh::setVertexOffsetMax(float vertexOffsetMax){
     for (MeshComponent* mesh : getMeshes()){
         mesh->vertexOffsetMax = vertexOffsetMax;
+        mesh->needUpdateAABB = true;
     }
 }
 

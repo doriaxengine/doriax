@@ -1,5 +1,4 @@
-// The scene wind's bend of a vertex in world units, for vertex offsets: more near the top,
-// with gusts that roll downwind across the ground, a slow wobble and a small flutter
+// The scene wind's bend of a vertex in world units, for vertex offsets
 vec3 getWindSway(vec3 localPosition, vec3 worldPosition, float sway, float swayHeight){
     float bend = 1.0;
     if (swayHeight > 0.0){

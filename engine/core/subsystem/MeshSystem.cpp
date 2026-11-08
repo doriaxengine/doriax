@@ -3701,7 +3701,7 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
-            // wind sway runs the engine's wind offset, the tips bending most
+            // wind sway runs the engine's wind offset
             const std::string vertexOffset = (layer.windSway > 0.0f) ? "offsets/wind.glsl" : "";
             if (mesh.vertexOffsetShader != vertexOffset){
                 mesh.vertexOffsetShader = vertexOffset;
@@ -3714,8 +3714,12 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 ShaderUniforms::set(mesh.shaderUniforms, "windSwayHeight", Vector4(swayHeight, 0.0f, 0.0f, 0.0f));
                 mesh.needUpdateShaderUniforms = true;
             }
-            // the sway's reach in 20 m/s of wind, gusts and flutter included
-            mesh.vertexOffsetMax = layer.windSway * 0.1f * 1.35f * 20.0f;
+            // its reach in 20 m/s of wind, gusts and flutter included
+            const float reach = layer.windSway * 0.1f * 1.35f * 20.0f;
+            if (mesh.vertexOffsetMax != reach){
+                mesh.vertexOffsetMax = reach;
+                mesh.needUpdateAABB = true;
+            }
 
             // Grows with headroom and never shrinks, so a draw distance drag rebuilds little.
             if (instmesh.maxInstances < capacity){

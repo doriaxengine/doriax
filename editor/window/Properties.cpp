@@ -5186,7 +5186,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
 
         propertyHeader("Vertex Offset");
         drawVertexOffsetRow(sceneProject, shaderEntity);
-        ImGui::SameLine(); helpMarker("A .glsl file with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition), returning how far each vertex moves in world units. It runs in the color, depth and G-buffer passes, so shadows and reflections follow, and its u_vs_offsetParams values are the uniforms below. The engine's offsets/wind.glsl sways the mesh in the scene wind.");
+        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow; its u_vs_offsetParams are the uniforms below. The engine's offsets/wind.glsl sways the mesh in the scene wind.");
         if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
             RowSettings maxSettings;
             maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";

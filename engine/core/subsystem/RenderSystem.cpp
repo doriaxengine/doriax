@@ -186,7 +186,7 @@ namespace {
         render.applyUniformBlock(slot, sizeof(fade), &fade);
     }
 
-    // the offset comes in world units and goes to model space, where it joins the position
+    // the offset comes in world units, the shader turns it to model space
     void applyVertexOffsetUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time, float travel){
         vs_vertex_offset_t params = {transform.modelMatrix.inverse(), Vector4(wind.x, wind.y, wind.z, travel), Vector4(time, mesh.vertexOffsetMax, 0.0f, 0.0f)};
         render.applyUniformBlock(slot, sizeof(vs_vertex_offset_t), &params);
@@ -3232,7 +3232,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Priority: component customShader > scene default shader > built-in (empty)
         const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
         const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        const std::string& vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
+        const std::string vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
         mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset));
         // 'Dlo': built-in shader without the point/spot paths
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
@@ -10385,7 +10385,6 @@ void RenderSystem::update(double dt){
     // once that changes, the MVP they went without is updated before a pass reads it
     const bool settledMVPStale = settledSkippedMVP && !settledWithoutMVP;
     settledSkippedMVP = settledWithoutMVP;
-
     auto meshes = scene->getComponentArray<MeshComponent>();
 
     for (int i = 0; i < transforms->size(); i++){
@@ -10595,7 +10594,7 @@ void RenderSystem::update(double dt){
             if (!mesh.loadCalled){
                 loadMesh(entity, mesh, pipelines, instmesh, terrain);
             }
-            if (mesh.needUpdateAABB || transform.needUpdate || offsetReach > 0.0f){
+            if (mesh.needUpdateAABB || transform.needUpdate){
                 // Bones cancel out this mesh's model matrix, so the shader draws at
                 // modelMatrix * bonesMatrix[b] * vertex and modelMatrix * aabb mis-sizes the box
                 // once posed. Each bone bounds only its own share: the whole aabb per bone works

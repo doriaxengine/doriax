@@ -663,7 +663,7 @@ namespace {
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::vertexOffsetShader>("vertexOffsetShader", PropertyType::String, UpdateFlags_Shader_Reload),
-        makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_Transform),
         makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
     };

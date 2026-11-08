@@ -5,7 +5,7 @@ uniform u_vs_vertexOffset {
     vec4 params;       //scene time.x, longest offset.y (0 = no limit)
 } vertexOffset;
 
-// filled by the shader builder with the project file
+// the mesh's offset file, mapped in by the shader builder
 #include "vertex_offset_function.glsl"
 
 vec3 getModelOffset(vec3 localPosition, vec3 worldPosition){
