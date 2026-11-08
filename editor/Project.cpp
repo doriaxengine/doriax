@@ -4131,20 +4131,33 @@ void editor::Project::invalidateCustomShaders() {
             sceneProject.needUpdateRender = true;
         };
 
-        for (Entity entity : sceneProject.entities) {
-            if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity))
-                flagReload(mesh->needReload, sceneMesh || !mesh->customShader.empty() || !mesh->customDepthShader.empty() || !mesh->vertexOffsetShader.empty());
-            if (UIComponent* ui = scene->findComponent<UIComponent>(entity))
-                flagReload(ui->needReload, sceneUI || !ui->customShader.empty());
-            if (PointsComponent* pts = scene->findComponent<PointsComponent>(entity))
-                flagReload(pts->needReload, scenePoints || !pts->customShader.empty());
-            if (LinesComponent* ln = scene->findComponent<LinesComponent>(entity))
-                flagReload(ln->needReload, sceneLines || !ln->customShader.empty());
-            if (SkyComponent* sky = scene->findComponent<SkyComponent>(entity))
-                flagReload(sky->needReload, sceneSky || !sky->customShader.empty());
-            if (WaterComponent* water = scene->findComponent<WaterComponent>(entity))
-                flagReload(water->needReload, sceneWater || !water->customShader.empty() || !water->customUnderwaterShader.empty());
-        }
+        // every component, not just the authored ones: generated foliage and Play
+        // entities lost their handles too
+        auto flagComponents = [&](auto* componentArray, auto&& usesFork) {
+            for (size_t i = 0; i < componentArray->size(); i++) {
+                auto& component = componentArray->getComponentFromIndex(i);
+                flagReload(component.needReload, usesFork(component));
+            }
+        };
+
+        flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
+            return sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty() || !mesh.vertexOffsetShader.empty();
+        });
+        flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
+            return sceneUI || !ui.customShader.empty();
+        });
+        flagComponents(scene->getComponentArray<PointsComponent>(), [&](const PointsComponent& points) {
+            return scenePoints || !points.customShader.empty();
+        });
+        flagComponents(scene->getComponentArray<LinesComponent>(), [&](const LinesComponent& lines) {
+            return sceneLines || !lines.customShader.empty();
+        });
+        flagComponents(scene->getComponentArray<SkyComponent>(), [&](const SkyComponent& sky) {
+            return sceneSky || !sky.customShader.empty();
+        });
+        flagComponents(scene->getComponentArray<WaterComponent>(), [&](const WaterComponent& water) {
+            return sceneWater || !water.customShader.empty() || !water.customUnderwaterShader.empty();
+        });
 
         // post-process passes hold their shader directly, so the chain is rebuilt whole
         if (!scene->getPostProcessPasses().empty()) {
