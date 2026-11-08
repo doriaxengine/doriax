@@ -56,9 +56,29 @@ static void forEachBox2DShape(const Shape2D& shape, F fn){
     }
 }
 
+// a recycled contact keeps its old material, a mass update drops it
+static void refreshContacts(b2BodyId bodyId){
+    if (b2Body_GetType(bodyId) == b2_dynamicBody){
+        b2Body_UpdateMassFromShapes(bodyId);
+        b2Body_SetAwake(bodyId, true);
+        return;
+    }
+
+    std::vector<b2ContactData> contacts(b2Body_GetContactCapacity(bodyId));
+    int count = b2Body_GetContactData(bodyId, contacts.data(), (int)contacts.size());
+    for (int i = 0; i < count; i++){
+        b2BodyId other = b2Shape_GetBody(contacts[i].shapeIdA);
+        if (B2_ID_EQUALS(other, bodyId)){
+            other = b2Shape_GetBody(contacts[i].shapeIdB);
+        }
+        b2Body_UpdateMassFromShapes(other);
+        b2Body_SetAwake(other, true);
+    }
+}
+
 // a chain has one material for all its segments
 template<typename F>
-static void changeSurfaceMaterial(const Shape2D& shape, F change){
+static void changeSurfaceMaterial(b2BodyId bodyId, const Shape2D& shape, F change){
     forEachBox2DShape(shape, [&](b2ShapeId shapeId){
         b2SurfaceMaterial material = b2Shape_GetSurfaceMaterial(shapeId);
         change(material);
@@ -68,6 +88,9 @@ static void changeSurfaceMaterial(const Shape2D& shape, F change){
         b2SurfaceMaterial material = b2Chain_GetSurfaceMaterial(shape.chain, 0);
         change(material);
         b2Chain_SetAllSurfaceMaterials(shape.chain, &material);
+    }
+    if (b2Body_IsValid(bodyId)){
+        refreshContacts(bodyId);
     }
 }
 
@@ -469,7 +492,7 @@ void Body2D::setShapeFriction(size_t index, float friction){
         body.shapes[index].friction = friction;
         if (deferShapeChange(body)) return;
 
-        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+        changeSurfaceMaterial(body.body, body.shapes[index], [&](b2SurfaceMaterial& material){
             material.friction = friction;
         });
     }else{
@@ -484,7 +507,7 @@ void Body2D::setShapeRestitution(size_t index, float restitution){
         body.shapes[index].restitution = restitution;
         if (deferShapeChange(body)) return;
 
-        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+        changeSurfaceMaterial(body.body, body.shapes[index], [&](b2SurfaceMaterial& material){
             material.restitution = restitution;
         });
     }else{
@@ -499,7 +522,7 @@ void Body2D::setShapeRollingResistance(size_t index, float rollingResistance){
         body.shapes[index].rollingResistance = rollingResistance;
         if (deferShapeChange(body)) return;
 
-        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+        changeSurfaceMaterial(body.body, body.shapes[index], [&](b2SurfaceMaterial& material){
             material.rollingResistance = rollingResistance;
         });
     }else{
@@ -515,7 +538,7 @@ void Body2D::setShapeTangentSpeed(size_t index, float tangentSpeed){
         if (deferShapeChange(body)) return;
 
         float pointsToMeterScale = getPointsToMeterScale();
-        changeSurfaceMaterial(body.shapes[index], [&](b2SurfaceMaterial& material){
+        changeSurfaceMaterial(body.body, body.shapes[index], [&](b2SurfaceMaterial& material){
             material.tangentSpeed = tangentSpeed / pointsToMeterScale;
         });
     }else{
