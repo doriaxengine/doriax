@@ -109,19 +109,24 @@ vec4 sampleTerrainSlice(float slice, vec2 uv, vec2 dx, vec2 dy){
 
 // A flat projection stretches over a cliff, so steep ground moves to the side planes.
 // The layer transform rides on every projection, so all of its maps stay in step.
+// The far tiling and the side planes are only fetched where they show.
 vec4 getTerrainSlice(float slice, vec2 scale, vec2 offset){
     vec2 dx = terrainFlatDX * scale;
     vec2 dy = terrainFlatDY * scale;
 
-    vec4 color = mix(
-        sampleTerrainSlice(slice, v_terrainTextureDetailTiled * scale + offset, dx, dy),
-        sampleTerrainSlice(slice, terrainFarUV * scale + offset, dx * TERRAIN_TILE_BREAK_RATE, dy * TERRAIN_TILE_BREAK_RATE),
-        terrainFarAmount);
+    vec4 color = sampleTerrainSlice(slice, v_terrainTextureDetailTiled * scale + offset, dx, dy);
+    if (terrainFarAmount > 0.0){
+        color = mix(color,
+            sampleTerrainSlice(slice, terrainFarUV * scale + offset, dx * TERRAIN_TILE_BREAK_RATE, dy * TERRAIN_TILE_BREAK_RATE),
+            terrainFarAmount);
+    }
 
     #ifdef HAS_NORMALS
-        vec4 side = sampleTerrainSlice(slice, terrainSideXUV * scale + offset, terrainSideXDX * scale, terrainSideXDY * scale) * terrainSideWeight.x +
-                    sampleTerrainSlice(slice, terrainSideZUV * scale + offset, terrainSideZDX * scale, terrainSideZDY * scale) * terrainSideWeight.y;
-        color = mix(color, side, terrainSideAmount);
+        if (terrainSideAmount > 0.0){
+            vec4 side = sampleTerrainSlice(slice, terrainSideXUV * scale + offset, terrainSideXDX * scale, terrainSideXDY * scale) * terrainSideWeight.x +
+                        sampleTerrainSlice(slice, terrainSideZUV * scale + offset, terrainSideZDX * scale, terrainSideZDY * scale) * terrainSideWeight.y;
+            color = mix(color, side, terrainSideAmount);
+        }
     #endif
 
     return color;
@@ -194,11 +199,16 @@ vec4 getTerrainColor(vec4 color){
         vec2 dx = terrainFlatDX * scale;
         vec2 dy = terrainFlatDY * scale;
 
-        vec3 flatNormal = mix(
-            sampleTerrainTangentNormal(slice, v_terrainTextureDetailTiled * scale + offset, dx, dy, strength),
-            sampleTerrainTangentNormal(slice, terrainFarUV * scale + offset, dx * TERRAIN_TILE_BREAK_RATE, dy * TERRAIN_TILE_BREAK_RATE, strength),
-            terrainFarAmount);
+        vec3 flatNormal = sampleTerrainTangentNormal(slice, v_terrainTextureDetailTiled * scale + offset, dx, dy, strength);
+        if (terrainFarAmount > 0.0){
+            flatNormal = mix(flatNormal,
+                sampleTerrainTangentNormal(slice, terrainFarUV * scale + offset, dx * TERRAIN_TILE_BREAK_RATE, dy * TERRAIN_TILE_BREAK_RATE, strength),
+                terrainFarAmount);
+        }
         vec3 normal = vec3(flatNormal.xy + geom.xz, abs(flatNormal.z) * geom.y).xzy;
+        if (terrainSideAmount <= 0.0){
+            return normalize(normal);
+        }
 
         vec3 sideX = sampleTerrainTangentNormal(slice, terrainSideXUV * scale + offset, terrainSideXDX * scale, terrainSideXDY * scale, strength);
         vec3 sideZ = sampleTerrainTangentNormal(slice, terrainSideZUV * scale + offset, terrainSideZDX * scale, terrainSideZDY * scale, strength);

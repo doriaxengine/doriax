@@ -2968,7 +2968,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v42: water leaves no wake foam without a wake.
     // v43: directional shadow cascades blend across their splits.
     // v44: the SSAO blur skips taps across depth edges.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v44";
+    // v45: terrain layers skip the far tiling and side planes where they do not show.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v45";
 }
 
 void editor::App::pushTabNotificationStyle(){
