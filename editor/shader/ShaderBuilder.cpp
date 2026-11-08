@@ -133,49 +133,73 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
+    // Includes share one namespace, so an offset keys its own files by project path,
+    // where a fork file of the same name cannot stand in for them
     std::unordered_set<std::string> visited;
-    std::function<void(const std::string&, const std::filesystem::path&)> visitSource = [&](const std::string& source, const std::filesystem::path& includeRootRel) {
+    std::unordered_map<std::string, std::string> offsetPaths;
+    std::function<std::string(const std::string&, const std::filesystem::path&, bool)> visitSource =
+            [&](const std::string& source, const std::filesystem::path& includeRootRel, bool offset) {
         // An empty include root means the entry point sits at the project root, where the
         // first two candidates would be the same file.
         bool hasLocalRoot = !includeRootRel.empty() && includeRootRel != ".";
 
-        for (const std::string& key : editor::Util::getShaderIncludeKeys(source)) {
-            if (!visited.insert(key).second)
-                continue;
+        std::string renamed;
+        size_t copied = 0;
+        for (const editor::Util::ShaderInclude& include : editor::Util::getShaderIncludes(source)) {
+            const std::string& key = include.key;
+            if (visited.insert(offset ? "offset:" + key : key).second) {
+                if (!editor::Util::isSafeRelativePath(key)) {
+                    appendSignaturePart(signatureInput, "unsafe:" + key, "");
+                    continue;
+                }
 
-            if (!editor::Util::isSafeRelativePath(key)) {
-                appendSignaturePart(signatureInput, "unsafe:" + key, "");
-                continue;
+                std::string content;
+                std::string origin;
+                std::string path;
+                if (hasLocalRoot && readCandidate(projectRoot / includeRootRel / key, content)) {
+                    origin = "local:" + key;
+                    path = offset ? (includeRootRel / key).lexically_normal().generic_string() : key;
+                } else if (readCandidate(projectRoot / key, content)) {
+                    origin = "project:" + key;
+                    path = key;
+                } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
+                    origin = "engine:" + key;
+                    content = engineIt->second;
+                } else {
+                    appendSignaturePart(signatureInput, "missing:" + key, "");
+                    continue;
+                }
+
+                appendSignaturePart(signatureInput, origin, content);
+                if (offset && !path.empty())
+                    offsetPaths[key] = path;
+                content = visitSource(content, includeRootRel, offset);
+                // the fork's file wins a name both use, as it does over the engine's
+                if (!path.empty())
+                    snapshot->projectBuffers.emplace(path, std::move(content));
             }
 
-            std::string content;
-            std::string origin;
-            if (hasLocalRoot && readCandidate(projectRoot / includeRootRel / key, content)) {
-                origin = "local:" + key;
-                snapshot->projectBuffers[key] = content;
-            } else if (readCandidate(projectRoot / key, content)) {
-                origin = "project:" + key;
-                snapshot->projectBuffers[key] = content;
-            } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
-                origin = "engine:" + key;
-                content = engineIt->second;
-            } else {
-                appendSignaturePart(signatureInput, "missing:" + key, "");
-                continue;
+            auto offsetPath = offsetPaths.find(key);
+            if (offset && offsetPath != offsetPaths.end() && offsetPath->second != key) {
+                renamed.append(source, copied, include.position - copied);
+                renamed += offsetPath->second;
+                copied = include.position + key.size();
             }
-
-            appendSignaturePart(signatureInput, origin, content);
-            visitSource(content, includeRootRel);
         }
+
+        if (copied == 0)
+            return source;
+        renamed.append(source, copied, std::string::npos);
+        return renamed;
     };
 
     if (!forkShader.empty()){
         const std::filesystem::path forkRoot = editor::Util::getCustomShaderIncludeRoot(forkShader);
-        visitSource(snapshot->projectBuffers[paths.vert], forkRoot);
-        visitSource(snapshot->projectBuffers[paths.frag], forkRoot);
+        visitSource(snapshot->projectBuffers[paths.vert], forkRoot, false);
+        visitSource(snapshot->projectBuffers[paths.frag], forkRoot, false);
     }
     if (!vertexOffset.empty())
-        visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path());
+        snapshot->projectBuffers[vertexOffset] = visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path(), true);
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
     customSourceCache[cacheKey] = snapshot;

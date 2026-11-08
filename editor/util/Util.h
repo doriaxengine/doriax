@@ -170,19 +170,25 @@ namespace doriax::editor{
             return !relative.empty() && *relative.begin() != "..";
         }
 
-        // The paths quoted by every '#include "..."' in a GLSL source, in order.
-        inline static std::vector<std::string> getShaderIncludeKeys(const std::string& source) {
+        struct ShaderInclude {
+            std::string key;
+            size_t position = 0; // of the key in the source
+        };
+
+        // Every '#include "..."' in a GLSL source, in order.
+        inline static std::vector<ShaderInclude> getShaderIncludes(const std::string& source) {
             auto skipBlanks = [](std::string_view line, size_t i) {
                 while (i < line.size() && (line[i] == ' ' || line[i] == '\t')) i++;
                 return i;
             };
 
-            std::vector<std::string> keys;
+            std::vector<ShaderInclude> includes;
             for (size_t lineStart = 0; lineStart <= source.size(); ) {
                 size_t lineEnd = source.find('\n', lineStart);
                 if (lineEnd == std::string::npos)
                     lineEnd = source.size();
 
+                const size_t lineOffset = lineStart;
                 std::string_view line(source.data() + lineStart, lineEnd - lineStart);
                 lineStart = lineEnd + 1;
 
@@ -195,8 +201,16 @@ namespace doriax::editor{
 
                 size_t close = line.find('"', ++i);
                 if (close != std::string_view::npos && close > i)
-                    keys.push_back(std::string(line.substr(i, close - i)));
+                    includes.push_back({std::string(line.substr(i, close - i)), lineOffset + i});
             }
+            return includes;
+        }
+
+        // The paths quoted by every '#include "..."' in a GLSL source, in order.
+        inline static std::vector<std::string> getShaderIncludeKeys(const std::string& source) {
+            std::vector<std::string> keys;
+            for (ShaderInclude& include : getShaderIncludes(source))
+                keys.push_back(std::move(include.key));
             return keys;
         }
 
