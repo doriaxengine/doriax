@@ -356,7 +356,7 @@ RayReturn Ray::intersects(const Body2D& body) const{
         b2ShapeId shapeid = shapeIds[i];
         b2WorldCastOutput castOutput = b2Shape_CastRay(shapeid, bOrigin, translation);
 
-        if (castOutput.hit && castOutput.fraction < closestFraction){
+        if (castOutput.hit && !Box2DAux::startsInside(castOutput.normal) && castOutput.fraction < closestFraction){
             closestFraction = castOutput.fraction;
             intersectionPoint = castOutput.point;
             intersectionNormal = castOutput.normal;
@@ -392,7 +392,7 @@ RayReturn Ray::intersects(const Body2D& body, size_t shape) const{
     b2ShapeId shapeid = bodycomp.shapes[shape].shape;
     b2WorldCastOutput castOutput = b2Shape_CastRay(shapeid, bOrigin, translation);
 
-    if (castOutput.hit){
+    if (castOutput.hit && !Box2DAux::startsInside(castOutput.normal)){
         Vector3 point = Vector3(castOutput.point.x * ptmScale, castOutput.point.y * ptmScale, 0);
         Vector3 normal = Vector3(castOutput.normal.x, castOutput.normal.y, 0);
 

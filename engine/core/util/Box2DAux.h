@@ -199,11 +199,20 @@ namespace doriax{
             }
         }
 
+        // a ray starting inside a shape hits it at once with no normal
+        static bool startsInside(b2Vec2 normal){
+            return normal.x == 0.0f && normal.y == 0.0f;
+        }
+
         // fraction return to fint the closest intersection
         // return 1 to store all intersections
         // https://www.iforce2d.net/b2dtut/world-querying
         static float CastCallback(b2ShapeId shapeId, b2Vec2 point, b2Vec2 normal, float fraction, void* context){
             Box2DWorldRayCastContext* ctx = (Box2DWorldRayCastContext*)context;
+
+            if (startsInside(normal)){
+                return 1.0f;
+            }
 
             b2BodyId bodyId = b2Shape_GetBody(shapeId);
             if (ctx->onlyStatic && (b2Body_GetType(bodyId) != b2_staticBody)){
