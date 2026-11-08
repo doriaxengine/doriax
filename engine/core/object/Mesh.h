@@ -102,7 +102,6 @@ namespace doriax{
         void setRenderInReflectionProbes(bool renderInReflectionProbes);
         bool isRenderInReflectionProbes() const;
 
-        // thins out where it hides the scene's see-through target (Scene::setSeeThroughTarget)
         void setSeeThrough(bool seeThrough);
         bool isSeeThrough() const;
 

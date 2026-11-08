@@ -6374,7 +6374,7 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
     propertyRow(RowPropertyType::Bool, cpType, "renderInReflectionProbes", "Render in Probes", sceneProject, entities, reflectionProbeSettings);
 
     RowSettings seeThroughSettings;
-    seeThroughSettings.help = "Thin this mesh out where it stands between the camera and the scene's see-through target (Scene setSeeThroughTarget and setSeeThroughRadius, set by a script), so the target shows through it. Shadows stay whole.";
+    seeThroughSettings.help = "Dither this mesh away where it hides the scene's see-through target, which a script sets. Shadows stay whole.";
     propertyRow(RowPropertyType::Bool, cpType, "seeThrough", "See Through", sceneProject, entities, seeThroughSettings);
 
     RowSettings transparencySettings;

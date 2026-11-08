@@ -40,7 +40,7 @@ namespace doriax{
         // Gravity's live value stays in PhysicsSystem; settings.gravity* is only the default.
         SceneSettings settings;
 
-        // what see-through meshes keep in view (MeshComponent::seeThrough); runtime only
+        // runtime only, read by see-through meshes
         Vector3 seeThroughTarget;
         float seeThroughRadius;
         float seeThroughOpacity;
@@ -143,9 +143,7 @@ namespace doriax{
         void setWind(float x, float y, float z);
         Vector3 getWind() const;
 
-        // see-through meshes thin out where they stand between the main camera and a sphere
-        // of radius round the target, down to opacity at its centre, from margin in front of
-        // the target; radius 0 turns it off
+        // meshes with seeThrough dither away in front of the target; radius 0 turns it off
         void setSeeThroughTarget(Vector3 target);
         void setSeeThroughTarget(float x, float y, float z);
         Vector3 getSeeThroughTarget() const;

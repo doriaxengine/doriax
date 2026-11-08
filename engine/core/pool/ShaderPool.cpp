@@ -864,7 +864,7 @@ uint32_t ShaderPool::getMeshProperties(
     return prop;
 }
 
-uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask, bool instanceFade){
+uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask, bool instanceFade, bool seeThrough){
     uint32_t prop = 0;
 
     prop |= texture          ? (1 <<  0) : 0;
@@ -876,11 +876,12 @@ uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool mo
     prop |= instanced        ? (1 <<  6) : 0;
     prop |= alphaMask        ? (1 <<  7) : 0;
     prop |= instanceFade     ? (1 <<  8) : 0;
+    prop |= seeThrough       ? (1 <<  9) : 0;
 
     return prop;
 }
 
-uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2){
+uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2, bool seeThrough){
     uint32_t prop = 0;
 
     prop |= baseColorTexture        ? (1 <<  0) : 0;
@@ -895,6 +896,7 @@ uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normal
     prop |= terrainPBR              ? (1 <<  9) : 0;
     prop |= occlusionTexture        ? (1 << 10) : 0;
     prop |= (occlusionTexture && occlusionUV2) ? (1 << 11) : 0;
+    prop |= seeThrough              ? (1 << 12) : 0;
 
     return prop;
 }

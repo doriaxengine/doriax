@@ -221,8 +221,7 @@ namespace doriax{
         bool receiveShadows = true;
         bool shadowsBillboard = true;
         bool renderInReflectionProbes = true; // when false the mesh is skipped by probe captures
-        // dithers away where it hides the scene's see-through target from the camera
-        bool seeThrough = false;
+        bool seeThrough = false; // dithers away where it hides the scene's see-through target
 
         bool transparent = false;
         bool autoTransparency = true;

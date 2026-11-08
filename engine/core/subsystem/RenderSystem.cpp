@@ -1792,7 +1792,6 @@ void RenderSystem::renderReflectionProbeCapture(){
     applyViewLights(capturePosition);
 
     capturingReflectionProbe = true;
-    const fs_see_through_t mainSeeThrough = fs_seeThrough;
     fs_seeThrough = fs_noSeeThrough;
     passResolution = Vector2((float)resolution, (float)resolution);
     runtime.capturePass.setClearColor(probe->includeSky ? scene->getBackgroundColor() : Vector4(0.0f, 0.0f, 0.0f, 1.0f));
@@ -1830,7 +1829,6 @@ void RenderSystem::renderReflectionProbeCapture(){
     runtime.capturePass.endRenderPass();
     capturingReflectionProbe = false;
     fs_lighting = mainLighting;
-    fs_seeThrough = mainSeeThrough;
 
     delete captureCamera.framebuffer;
     captureCamera.framebuffer = nullptr;
@@ -3244,9 +3242,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
         }
-        // 'Stt' in every pass but shadows, which send it no target
         if (p_seeThrough){
-            mesh.submeshes[i].shaderProperties |= 1u << 29;
+            mesh.submeshes[i].shaderProperties |= 1u << 29; // 'Stt'
         }
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
         // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
@@ -3258,7 +3255,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade) | (p_seeThrough ? 1u << 9 : 0u);
+                p_depthAlphaMask, p_instanceFade, p_seeThrough);
             mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
@@ -3299,7 +3296,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2) | (p_seeThrough ? 1u << 12 : 0u);
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_seeThrough);
             mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
@@ -5157,7 +5154,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 applyVertexOffsetUniform(depthRender, mesh.submeshes[i].slotVSDepthVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
             }
 
-            // the depth pre-pass drops what the color pass drops; shadow maps keep it all
+            // shadow maps keep the whole mesh
             if (mesh.submeshes[i].slotFSDepthSeeThrough != -1){
                 depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthSeeThrough, sizeof(fs_see_through_t), forSSAO ? &fs_seeThrough : &fs_noSeeThrough);
             }
@@ -11198,7 +11195,7 @@ void RenderSystem::draw(){
             Vector3 eye = cameraTransform.worldPosition;
             fs_seeThrough.target = Vector4(target.x, target.y, target.z, scene->getSeeThroughRadius());
             fs_seeThrough.eye = Vector4(eye.x, eye.y, eye.z, 1.0f - scene->getSeeThroughOpacity());
-            fs_seeThrough.depth = Vector4(scene->getSeeThroughMargin(), 0.0f, 0.0f, 0.0f);
+            fs_seeThrough.params = Vector4(scene->getSeeThroughMargin(), 0.0f, 0.0f, 0.0f);
         }
 
         int terrainView = 0;

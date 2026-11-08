@@ -17,7 +17,6 @@
 #include "manager/BundleManager.h"
 #include "object/EntityHandle.h"
 #include "util/Color.h"
-#include <algorithm>
 
 using namespace doriax;
 

@@ -92,8 +92,8 @@ namespace doriax{
 
 	typedef struct fs_see_through_t {
 		Vector4 target; // xyz world position, w radius (0 = off)
-		Vector4 eye;    // xyz camera position, w share of the pixels dropped at the centre
-		Vector4 depth;  // x how far before the target a mesh starts to thin
+		Vector4 eye;    // xyz camera position, w 1 - opacity
+		Vector4 params; // x margin
 	} fs_see_through_t;
 
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
@@ -615,8 +615,7 @@ namespace doriax{
 		fs_shadows_t fs_shadows;
 		fs_point_shadows_t fs_point_shadows;
 		fs_fog_t fs_fog;
-		// the see-through of the camera being drawn, and none for shadow maps and captures
-		fs_see_through_t fs_seeThrough;
+		fs_see_through_t fs_seeThrough; // main camera only
 		fs_see_through_t fs_noSeeThrough;
 
 		// SSAO: per-frame fullscreen passes for the main camera. The depth pre-pass
