@@ -1199,8 +1199,11 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
         destroyShape2D(body, i);
     }
 
+    bool preSolveEvents = false;
+
     for (size_t i = 0; i < body.numShapes; i++){
         Shape2D& shapeData = body.shapes[i];
+        preSolveEvents = preSolveEvents || shapeData.preSolveEvents;
 
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.userData = reinterpret_cast<void*>(i);
@@ -1376,6 +1379,9 @@ bool PhysicsSystem::syncBody2DShapes(Entity entity, Body2DComponent& body){
             shapeData.chain = b2CreateChain(body.body, &chainDef);
         }
     }
+
+    // a recycled contact skips preSolve2D
+    b2Body_EnableContactRecycling(body.body, !preSolveEvents);
 
     body.needUpdateShapes = false;
     body.loadedScale = entityScale;
