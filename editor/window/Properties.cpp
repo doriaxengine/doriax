@@ -14547,6 +14547,20 @@ void editor::Properties::show(){
                 }
             }
 
+            if (sceneProject->sceneType == SceneType::SCENE_3D) {
+                ImGui::SeparatorText("Wind");
+
+                if (ImGui::BeginTable("scene_wind_table", 2, tableFlags)) {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Velocity"));
+                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                    drawScenePropertyRow<Vector3>(sceneProject, "wind", "Velocity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
+                        "Air velocity (meters/s). Meshes with wind sway bend toward it and vertex offsets read it; it moves no physics body.");
+
+                    ImGui::EndTable();
+                }
+            }
+
             if (sceneProject->sceneType != SceneType::SCENE_UI) {
                 ImGui::SeparatorText("Physics");
 
@@ -14557,8 +14571,6 @@ void editor::Properties::show(){
                     if (sceneProject->sceneType == SceneType::SCENE_3D) {
                         drawScenePropertyRow<Vector3>(sceneProject, "physics_gravity_3d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
                             "Gravity applied to 3D physics bodies (meters/s^2).");
-                        drawScenePropertyRow<Vector3>(sceneProject, "wind", "Wind", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
-                            "Air velocity (meters/s) that bends meshes with wind sway. It moves no bodies.");
                     } else {
                         drawScenePropertyRow<Vector2>(sceneProject, "physics_gravity_2d", "Gravity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
                             "Gravity applied to 2D physics bodies (meters/s^2).");
