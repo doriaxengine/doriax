@@ -13,6 +13,9 @@
 //       float time;
 //       vec4 tint;
 //   } customParams;
+//
+// Shader parameters are declared in comments, as "// @param float wetness = 0", and read as
+// params.wetness once main() has called loadShaderParameters().
 
 uniform u_vs_pbrParams {
     mat4 modelMatrix;
@@ -38,7 +41,7 @@ invariant gl_Position;
 
 in vec3 a_position;
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_SEE_THROUGH)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
     out vec3 v_position;
 #endif
 
@@ -94,6 +97,10 @@ in vec3 a_position;
 #if defined(HAS_VERTEX_COLOR_VEC4) || defined(HAS_INSTANCING)
     out vec4 v_color;
 #endif
+// the UV set as the mesh stores it, before any texture rect, as the depth passes read it
+#if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+    out vec2 v_coverageUV;
+#endif
 
 #ifdef HAS_INSTANCING
     in vec4 i_matrix_col1;
@@ -106,6 +113,7 @@ in vec3 a_position;
     #endif
 #endif
 
+#include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
 #include "includes/instance_normal.glsl"
 #include "includes/morphtarget.glsl"
@@ -154,6 +162,8 @@ vec3 getTangent(mat4 boneTransform){
 #endif
 
 void main() {
+    loadShaderParameters();
+
     mat4 boneTransform = getBoneTransform();
 
     vec4 localPos = getPosition(boneTransform);
@@ -184,7 +194,7 @@ void main() {
 
     vec4 worldPos = pbrParams.modelMatrix * pos;
 
-    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_SEE_THROUGH)
+    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
         v_position = vec3(worldPos.xyz) / worldPos.w;
     #endif
 
@@ -230,6 +240,10 @@ void main() {
         #else
             v_uv1 = getTerrainTiledTexture(pos.xyz);
         #endif
+    #endif
+
+    #if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+        v_coverageUV = a_texcoord1;
     #endif
 
     #ifdef HAS_UV_SET2

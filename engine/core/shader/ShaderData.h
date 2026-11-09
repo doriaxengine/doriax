@@ -8,6 +8,7 @@
 #include <vector>
 #include <cstdint>
 #include "render/Render.h"
+#include "math/Vector4.h"
 
 namespace doriax {
 
@@ -74,6 +75,26 @@ namespace doriax {
         unsigned int slot;
     };
 
+    // OBJECT: the component's shader uniforms, SCENE and VIEW: shared by a scene or a camera,
+    // ENGINE: the effect context the renderer writes
+    enum class ShaderParameterScope{
+        OBJECT,
+        SCENE,
+        VIEW,
+        ENGINE
+    };
+
+    // a parameter a shader declares, member being its name in the generated block
+    struct ShaderParameterInfo{
+        ShaderStageType stage = ShaderStageType::VERTEX;
+        std::string member;
+        ShaderParameterScope scope = ShaderParameterScope::OBJECT;
+        std::string collection;
+        std::string name;
+        ShaderUniformType type = ShaderUniformType::FLOAT4;
+        Vector4 defaultValue = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    };
+
     struct ShaderBinSource{
         unsigned char* data = NULL;
         uint32_t size;
@@ -100,6 +121,7 @@ namespace doriax {
         unsigned int version;
         bool es;
         std::vector<ShaderStage> stages;
+        std::vector<ShaderParameterInfo> parameters;
 
 
         ShaderData();

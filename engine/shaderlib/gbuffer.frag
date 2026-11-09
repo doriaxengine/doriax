@@ -18,7 +18,7 @@ layout(location = 3) out vec4 frag_occlusion;
 in vec2 v_projZW;
 in vec3 v_normal;
 // in the vertex stage's order: GL pairs the stages by location
-#ifdef USE_SEE_THROUGH
+#ifdef USE_COVERAGE
     in vec3 v_worldPosition;
 #endif
 
@@ -27,8 +27,11 @@ uniform u_fs_gbufferMaterial {
     vec4 baseColorFactor;
 } gbufferMaterial;
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE)
+#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
     in vec2 v_uv1;
+    #define COVERAGE_UV v_uv1
+#else
+    #define COVERAGE_UV vec2(0.0)
 #endif
 #if defined(HAS_BASECOLOR_TEXTURE)
     uniform texture2D u_baseColorTexture;
@@ -50,19 +53,15 @@ uniform u_fs_gbufferMaterial {
 #ifdef HAS_TERRAIN_PBR
     #include "includes/terrain_fs.glsl"
 #endif
-#ifdef USE_SEE_THROUGH
-    uniform u_fs_seeThrough {
-        vec4 target;
-        vec4 axis;
-        vec4 params;
-    } seeThrough;
-
-    #include "includes/see_through.glsl"
+#include "includes/parameters_fs.glsl"
+#ifdef USE_COVERAGE
+    #include "includes/coverage.glsl"
 #endif
 
 void main() {
-    #ifdef USE_SEE_THROUGH
-        seeThroughDiscard(v_worldPosition, seeThrough.target, seeThrough.axis, seeThrough.params);
+    loadShaderParameters();
+    #ifdef USE_COVERAGE
+        applyCoverage(v_worldPosition, COVERAGE_UV);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)

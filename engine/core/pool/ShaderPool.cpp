@@ -179,11 +179,13 @@ std::string ShaderPool::getCustomShaderName(uint16_t customId){
     return "";
 }
 
-std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& vertexOffset){
-    if (vertexOffset.empty())
-        return fork;
+std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage){
+    if (!coverage.empty())
+        return fork + '#' + vertexOffset + '#' + coverage;
+    if (!vertexOffset.empty())
+        return fork + '#' + vertexOffset;
 
-    return fork + '#' + vertexOffset;
+    return fork;
 }
 
 std::string ShaderPool::getCustomShaderFork(const std::string& customShader){
@@ -192,6 +194,19 @@ std::string ShaderPool::getCustomShaderFork(const std::string& customShader){
 
 std::string ShaderPool::getCustomShaderVertexOffset(const std::string& customShader){
     size_t separator = customShader.find('#');
+    if (separator == std::string::npos)
+        return "";
+
+    size_t end = customShader.find('#', separator + 1);
+    return customShader.substr(separator + 1, end == std::string::npos ? std::string::npos : end - separator - 1);
+}
+
+std::string ShaderPool::getCustomShaderCoverage(const std::string& customShader){
+    size_t separator = customShader.find('#');
+    if (separator == std::string::npos)
+        return "";
+
+    separator = customShader.find('#', separator + 1);
     if (separator == std::string::npos)
         return "";
 
@@ -458,7 +473,7 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
 
 int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
     switch (shaderType) {
-        case ShaderType::MESH:   return 30;
+        case ShaderType::MESH:   return 29;
         case ShaderType::DEPTH:  return 10;
         case ShaderType::GBUFFER: return 13;
         case ShaderType::UI:     return 4;
@@ -509,7 +524,6 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 26: return shortName ? "Ifd" : "Instance Fade";
             case 27: return shortName ? "Tpb" : "Terrain PBR";
             case 28: return shortName ? "Dlo" : "Directional Lights Only";
-            case 29: return shortName ? "Stt" : "See Through";
         }
     } else if (shaderType == ShaderType::DEPTH) {
         switch (bit) {
@@ -522,7 +536,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 6: return shortName ? "Ist" : "Instancing";
             case 7: return shortName ? "Ams" : "Alpha Mask";
             case 8: return shortName ? "Ifd" : "Instance Fade";
-            case 9: return shortName ? "Stt" : "See Through";
+            case 9: return shortName ? "Uv1" : "UV1";
         }
     } else if (shaderType == ShaderType::GBUFFER) {
         switch (bit) {
@@ -538,7 +552,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 9: return shortName ? "Tpb" : "Terrain PBR";
             case 10: return shortName ? "Occ" : "Occlusion Texture";
             case 11: return shortName ? "Ou2" : "Occlusion UV2";
-            case 12: return shortName ? "Stt" : "See Through";
+            case 12: return shortName ? "Uv1" : "UV1";
         }
     } else if (shaderType == ShaderType::UI) {
         switch (bit) {
@@ -641,11 +655,11 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     // optional features, in the order they are given up
     std::vector<int> optionalBits;
     if (shaderType == ShaderType::MESH){
-        optionalBits = {28, 29, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Stt Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
+        optionalBits = {28, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
     }else if (shaderType == ShaderType::DEPTH){
-        optionalBits = {9, 7, 0}; // Stt Ams Tex
+        optionalBits = {9, 7, 0}; // Uv1 Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){
-        optionalBits = {12, 10, 8, 0}; // Stt Occ Mrt Bct
+        optionalBits = {12, 10, 8, 0}; // Uv1 Occ Mrt Bct
     }
 
     std::vector<uint32_t> present;
@@ -874,7 +888,7 @@ uint32_t ShaderPool::getMeshProperties(
     return prop;
 }
 
-uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask, bool instanceFade, bool seeThrough){
+uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask, bool instanceFade, bool uv1){
     uint32_t prop = 0;
 
     prop |= texture          ? (1 <<  0) : 0;
@@ -886,12 +900,12 @@ uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool mo
     prop |= instanced        ? (1 <<  6) : 0;
     prop |= alphaMask        ? (1 <<  7) : 0;
     prop |= instanceFade     ? (1 <<  8) : 0;
-    prop |= seeThrough       ? (1 <<  9) : 0;
+    prop |= uv1              ? (1 <<  9) : 0;
 
     return prop;
 }
 
-uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2, bool seeThrough){
+uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2, bool uv1){
     uint32_t prop = 0;
 
     prop |= baseColorTexture        ? (1 <<  0) : 0;
@@ -906,7 +920,7 @@ uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normal
     prop |= terrainPBR              ? (1 <<  9) : 0;
     prop |= occlusionTexture        ? (1 << 10) : 0;
     prop |= (occlusionTexture && occlusionUV2) ? (1 << 11) : 0;
-    prop |= seeThrough              ? (1 << 12) : 0;
+    prop |= uv1                     ? (1 << 12) : 0;
 
     return prop;
 }

@@ -949,6 +949,7 @@ set(DORIAX_SRCS
     core/service/WebPortal.cpp
     core/shader/ShaderData.cpp
     core/shader/ShaderDataSerializer.cpp
+    core/shader/ShaderParameters.cpp
     core/shader/ShaderUniforms.cpp
     core/subsystem/ActionSystem.cpp
     core/subsystem/AudioSystem.cpp

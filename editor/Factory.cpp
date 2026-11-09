@@ -822,7 +822,6 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     code << ind << "mesh.lodEnabled = " << formatBool(mesh.lodEnabled) << ";\n";
     code << ind << "mesh.lodBias = " << formatFloat(mesh.lodBias) << ";\n";
     code << ind << "mesh.renderInReflectionProbes = " << formatBool(mesh.renderInReflectionProbes) << ";\n";
-    code << ind << "mesh.seeThrough = " << formatBool(mesh.seeThrough) << ";\n";
     if (!mesh.customShader.empty())
         code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";
     if (!mesh.customDepthShader.empty())
@@ -830,6 +829,10 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     if (!mesh.vertexOffsetShader.empty()){
         code << ind << "mesh.vertexOffsetShader = " << formatString(mesh.vertexOffsetShader) << ";\n";
         code << ind << "mesh.vertexOffsetMax = " << formatFloat(mesh.vertexOffsetMax) << ";\n";
+    }
+    if (!mesh.coverageShader.empty()){
+        code << ind << "mesh.coverageShader = " << formatString(mesh.coverageShader) << ";\n";
+        code << ind << "mesh.coverageShadows = " << formatBool(mesh.coverageShadows) << ";\n";
     }
     if (!mesh.shaderUniforms.empty())
         code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
@@ -1516,6 +1519,8 @@ std::string editor::Factory::createCameraComponent(int indentSpaces, EntityRegis
     code << ind << "camera.framebufferWidth = " << formatUInt(camera.framebufferWidth) << ";\n";
     code << ind << "camera.framebufferHeight = " << formatUInt(camera.framebufferHeight) << ";\n";
     code << ind << "camera.framebufferFilter = " << formatTextureFilter(camera.framebufferFilter) << ";\n";
+    if (!camera.shaderParameters.empty())
+        code << ind << "camera.shaderParameters = " << formatShaderUniforms(camera.shaderParameters) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "CameraComponent", "camera", assignExisting);
     return code.str();
 }
@@ -2727,7 +2732,8 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     out << ind2 << "scene->setShadow2DQuality(" << formatShadowQuality(scene->getShadow2DQuality()) << ");\n";
     out << ind2 << "scene->setGravity2D(" << formatVector2(scene->getGravity2D()) << ");\n";
     out << ind2 << "scene->setGravity3D(" << formatVector3(scene->getGravity3D()) << ");\n";
-    out << ind2 << "scene->setWind(" << formatVector3(scene->getWind()) << ");\n";
+    if (!scene->getShaderParameterDefaults().empty())
+        out << ind2 << "scene->setShaderParameterDefaults(" << formatShaderUniforms(scene->getShaderParameterDefaults()) << ");\n";
     out << ind2 << "scene->setLightState(" << formatLightState(scene->getLightState()) << ");\n";
     out << ind2 << "scene->setSSAOEnabled(" << formatBool(scene->isSSAOEnabled()) << ");\n";
     out << ind2 << "scene->setSSAORadius(" << formatFloat(scene->getSSAORadius()) << ");\n";

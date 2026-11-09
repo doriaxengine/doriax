@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "shader/ShaderParameterParser.h"
 #include "Project.h"
 #include "render/Render.h"
 #include "render/preview/MeshPreviewRender.h"
@@ -305,7 +306,8 @@ namespace doriax::editor{
         // one shader property of that row (customShader, a mesh's customDepthShader or a
         // water's customUnderwaterShader)
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
-        void drawVertexOffsetRow(SceneProject* sceneProject, Entity entity);
+        // a mesh's vertexOffsetShader or coverageShader: one .glsl, a project file or an engine preset
+        void drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage);
         // Custom block members of the component's loaded shader (own or scene default
         // fork), one per name with the vertex declaration first.
         struct ShaderUniformRows {
@@ -322,6 +324,27 @@ namespace doriax::editor{
         // one member row; an unset value shows the inherited one, and RESET drops an override
         ShaderUniformEdit drawShaderUniformRow(const ShaderUniform& uniform, const ShaderUniformValues& values,
                                                const ShaderUniformValues* inherited, const std::string& idPrefix, Vector4& newValue);
+        // annotations of a fork or an effect file, parsed again once a second at most
+        const ShaderEffectAnnotations& getShaderAnnotations(const std::string& shader, bool fork);
+        // one declared parameter; an unset value shows the inherited one, else the declared default
+        ShaderUniformEdit drawParameterRow(const ShaderParameterDeclaration& declaration, const std::string& key, const ShaderUniformValues& values,
+                                           const ShaderUniformValues* inherited, const std::string& idPrefix, Vector4& newValue);
+        // rows keyed by name, or Collection.name when shared; makeCmd stores the new values
+        void drawParameterTable(const std::string& id, uint32_t sceneId, const std::vector<ShaderParameterDeclaration>& parameters, const ShaderUniformValues& values,
+                                const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
+        // the @param rows of one fork or effect file and the shared values it reads; false when empty
+        bool drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
+                                  const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
+        void drawMeshShaderParameters(SceneProject* sceneProject, Entity entity);
+        // scene or view parameters the mesh shaders declare, and stored ones nothing declares
+        std::vector<ShaderParameterDeclaration> collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored);
+        void drawSceneShaderParameters(SceneProject* sceneProject);
+        void drawCameraShaderParameters(SceneProject* sceneProject, Entity entity);
+        struct CachedShaderAnnotations {
+            ShaderEffectAnnotations annotations;
+            double parsedAt = -1.0;
+        };
+        std::map<std::string, CachedShaderAnnotations> shaderAnnotationsCache;
         void drawShaderUniformWarnings(const std::vector<std::string>& warnings);
         // label column of a uniforms table, with room for the reset arrow when it can show
         float getShaderUniformsLabelSize(const std::vector<ShaderUniform>& members, bool resetArrow);

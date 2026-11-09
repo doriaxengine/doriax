@@ -6,6 +6,7 @@
 #include "util/Angle.h"
 #include "Engine.h"
 #include "subsystem/RenderSystem.h"
+#include "shader/ShaderParameters.h"
 
 using namespace doriax;
 
@@ -636,6 +637,55 @@ float Camera::getDistanceFromTarget() const {
     CameraComponent& camera = getComponent<CameraComponent>();
 
     return (transform.position - camera.target).length();
+}
+
+void Camera::setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value){
+    scene->setViewShaderParameter(entity, collection, name, value);
+}
+
+void Camera::setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value){
+    setShaderParameter(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
+}
+
+void Camera::setShaderParameter(const std::string& collection, const std::string& name, const Vector2& value){
+    setShaderParameter(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
+}
+
+void Camera::setShaderParameter(const std::string& collection, const std::string& name, float value){
+    setShaderParameter(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
+}
+
+Vector4 Camera::getShaderParameter(const std::string& collection, const std::string& name) const{
+    return scene->getViewShaderParameter(entity, collection, name);
+}
+
+bool Camera::clearShaderParameter(const std::string& collection, const std::string& name){
+    return scene->clearViewShaderParameter(entity, collection, name);
+}
+
+void Camera::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value){
+    if (ShaderParameters::checkKey(collection, name))
+        ShaderUniforms::set(getComponent<CameraComponent>().shaderParameters, ShaderParameters::getKey(collection, name), value);
+}
+
+void Camera::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value){
+    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
+}
+
+void Camera::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value){
+    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
+}
+
+void Camera::setShaderParameterDefault(const std::string& collection, const std::string& name, float value){
+    setShaderParameterDefault(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
+}
+
+Vector4 Camera::getShaderParameterDefault(const std::string& collection, const std::string& name) const{
+    return ShaderUniforms::get(getComponent<CameraComponent>().shaderParameters, ShaderParameters::getKey(collection, name));
+}
+
+bool Camera::removeShaderParameterDefault(const std::string& collection, const std::string& name){
+    return ShaderUniforms::remove(getComponent<CameraComponent>().shaderParameters, ShaderParameters::getKey(collection, name));
 }
 
 void Camera::updateCamera(){

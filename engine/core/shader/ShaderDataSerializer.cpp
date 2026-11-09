@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ShaderDataSerializer.h"
+#include "ShaderParameters.h"
 
 #include "io/Data.h"
 #include "io/File.h"
@@ -18,7 +19,8 @@ constexpr uint32_t SDAT_MAGIC = 0x54414453; // 'S''D''A''T' little-endian
 // Serialization format version of the .sdat blob. Bump only when the on-disk
 // layout changes. To invalidate caches after a shader *source* change, bump the
 // cache directory version in App::getUserShaderCacheDir() instead.
-constexpr uint32_t SDAT_VERSION = 1;
+// v2 adds the declared shader parameters.
+constexpr uint32_t SDAT_VERSION = 2;
 
 // Sanity limits to guard against malformed files
 constexpr uint32_t kMaxString = 32u * 1024u * 1024u; // 32MB
@@ -30,6 +32,7 @@ constexpr uint32_t kMaxStorageBuffers = 32;
 constexpr uint32_t kMaxTextures = 64;
 constexpr uint32_t kMaxSamplers = 64;
 constexpr uint32_t kMaxTextureSamplerPairs = 64;
+constexpr uint32_t kMaxParameters = 256;
 
 class ShaderDataSerializerHelper {
 public:
@@ -45,6 +48,9 @@ public:
 
     template <typename Writer>
     static void writeI32(Writer& out, int32_t v);
+
+    template <typename Writer>
+    static void writeFloat(Writer& out, float v);
 
     template <typename Writer>
     static void writeU8(Writer& out, uint8_t v);
@@ -65,6 +71,7 @@ public:
     static bool readU32(FileData& in, uint32_t& v);
     static bool readU64(FileData& in, uint64_t& v);
     static bool readI32(FileData& in, int32_t& v);
+    static bool readFloat(FileData& in, float& v);
     static bool readU8(FileData& in, uint8_t& v);
     static bool readBool(FileData& in, bool& v);
     static bool readString(FileData& in, std::string& s);
@@ -117,6 +124,13 @@ void ShaderDataSerializerHelper::writeU64(Writer& out, uint64_t v) {
 template <typename Writer>
 void ShaderDataSerializerHelper::writeI32(Writer& out, int32_t v) {
     writeU32(out, static_cast<uint32_t>(v));
+}
+
+template <typename Writer>
+void ShaderDataSerializerHelper::writeFloat(Writer& out, float v) {
+    uint32_t bits = 0;
+    memcpy(&bits, &v, sizeof(bits));
+    writeU32(out, bits);
 }
 
 template <typename Writer>
@@ -230,6 +244,20 @@ void ShaderDataSerializerHelper::writeShaderData(Writer& out, uint64_t shaderKey
             writeString(out, p.samplerName);
             writeU32(out, static_cast<uint32_t>(p.slot));
         }
+    }
+
+    writeU32(out, static_cast<uint32_t>(shaderData.parameters.size()));
+    for (const auto& parameter : shaderData.parameters) {
+        writeU32(out, static_cast<uint32_t>(parameter.stage));
+        writeString(out, parameter.member);
+        writeU32(out, static_cast<uint32_t>(parameter.scope));
+        writeString(out, parameter.collection);
+        writeString(out, parameter.name);
+        writeU32(out, static_cast<uint32_t>(parameter.type));
+        writeFloat(out, parameter.defaultValue.x);
+        writeFloat(out, parameter.defaultValue.y);
+        writeFloat(out, parameter.defaultValue.z);
+        writeFloat(out, parameter.defaultValue.w);
     }
 }
 
@@ -354,6 +382,19 @@ nlohmann::json ShaderDataSerializerHelper::shaderDataToJson(uint64_t shaderKey, 
         root["stages"].push_back(stageJson);
     }
 
+    root["parameters"] = nlohmann::json::array();
+    for (const auto& parameter : shaderData.parameters) {
+        root["parameters"].push_back({
+            {"stage", shaderStageName(parameter.stage)},
+            {"member", parameter.member},
+            {"scope", ShaderParameters::getScopeName(parameter.scope)},
+            {"collection", parameter.collection},
+            {"name", parameter.name},
+            {"type", static_cast<uint32_t>(parameter.type)},
+            {"default", {parameter.defaultValue.x, parameter.defaultValue.y, parameter.defaultValue.z, parameter.defaultValue.w}}
+        });
+    }
+
     return root;
 }
 
@@ -386,6 +427,13 @@ bool ShaderDataSerializerHelper::readI32(FileData& in, int32_t& v) {
     uint32_t u = 0;
     if (!readU32(in, u)) return false;
     v = static_cast<int32_t>(u);
+    return true;
+}
+
+bool ShaderDataSerializerHelper::readFloat(FileData& in, float& v) {
+    uint32_t bits = 0;
+    if (!readU32(in, bits)) return false;
+    memcpy(&v, &bits, sizeof(v));
     return true;
 }
 
@@ -489,7 +537,7 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
         return setErr(err, "Invalid SDAT magic: " + filepath);
     }
 
-    if (version != SDAT_VERSION) {
+    if (version != SDAT_VERSION && version != 1) {
         return setErr(err, "Unsupported SDAT version: " + filepath);
     }
 
@@ -749,6 +797,33 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
         }
 
         tmp.stages.push_back(stage);
+    }
+
+    if (version >= 2) {
+        uint32_t parameterCount = 0;
+        if (!readU32(in, parameterCount)) {
+            return setErr(err, "Failed to read parameter count: " + filepath);
+        }
+        if (parameterCount > kMaxParameters) {
+            return setErr(err, "Too many parameters in file: " + filepath);
+        }
+        tmp.parameters.reserve(parameterCount);
+        for (uint32_t p = 0; p < parameterCount; p++) {
+            ShaderParameterInfo parameter;
+            uint32_t stage = 0;
+            uint32_t scope = 0;
+            uint32_t type = 0;
+            Vector4& value = parameter.defaultValue;
+            if (!readU32(in, stage) || !readString(in, parameter.member) || !readU32(in, scope) ||
+                !readString(in, parameter.collection) || !readString(in, parameter.name) || !readU32(in, type) ||
+                !readFloat(in, value.x) || !readFloat(in, value.y) || !readFloat(in, value.z) || !readFloat(in, value.w)) {
+                return setErr(err, "Failed to read parameter: " + filepath);
+            }
+            parameter.stage = static_cast<ShaderStageType>(stage);
+            parameter.scope = static_cast<ShaderParameterScope>(scope);
+            parameter.type = static_cast<ShaderUniformType>(type);
+            tmp.parameters.push_back(parameter);
+        }
     }
 
     outShaderData = tmp;

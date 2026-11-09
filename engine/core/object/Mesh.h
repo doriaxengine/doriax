@@ -102,9 +102,6 @@ namespace doriax{
         void setRenderInReflectionProbes(bool renderInReflectionProbes);
         bool isRenderInReflectionProbes() const;
 
-        void setSeeThrough(bool seeThrough);
-        bool isSeeThrough() const;
-
         void setShadowsBillboard(bool shadowsBillboard);
         bool isShadowsBillboard() const;
 
@@ -125,6 +122,14 @@ namespace doriax{
 
         void setVertexOffsetMax(float vertexOffsetMax);
         float getVertexOffsetMax() const;
+
+        // .glsl defining float getCoverage(CoverageContext context), from the project or the engine
+        void setCoverageShader(const std::string& path);
+        std::string getCoverageShader() const;
+
+        // the shadow maps follow the coverage too, instead of keeping the whole silhouette
+        void setCoverageShadows(bool coverageShadows);
+        bool isCoverageShadows() const;
 
         void setShaderUniform(const std::string& name, const Vector4& value);
         void setShaderUniform(const std::string& name, const Vector3& value);

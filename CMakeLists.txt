@@ -574,6 +574,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/util/TextEncoding.cpp
 
     ${EDITOR_DIR}/shader/ShaderBuilder.cpp
+    ${EDITOR_DIR}/shader/ShaderParameterParser.cpp
 
     ${EDITOR_DIR}/window/Properties.cpp
     ${EDITOR_DIR}/window/OutputWindow.cpp

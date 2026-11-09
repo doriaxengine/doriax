@@ -289,11 +289,6 @@ namespace doriax::editor{
                     return scene->getGravity3D();
                 }
             }
-            else if (propertyName == "wind") {
-                if constexpr (std::is_same_v<T, Vector3>) {
-                    return scene->getWind();
-                }
-            }
             else if (propertyName == "light_state") {
                 if constexpr (std::is_same_v<T, LightState>) {
                     return scene->getLightState();
@@ -439,6 +434,9 @@ namespace doriax::editor{
                 ShaderType type;
                 if (getDefaultShaderUniformsType(propertyName, type))
                     return scene->getDefaultShaderUniforms(type);
+                // saved scene shader parameters by "Collection.name"
+                if (propertyName == "shader_parameters")
+                    return scene->getShaderParameterDefaults();
             }
 
             // Return default value if property not found
@@ -493,9 +491,6 @@ namespace doriax::editor{
             }
             else if (propertyName == "physics_gravity_3d") {
                 if constexpr (std::is_same_v<T, Vector3>) return d.gravity3D;
-            }
-            else if (propertyName == "wind") {
-                if constexpr (std::is_same_v<T, Vector3>) return d.wind;
             }
             else if (propertyName == "light_state") {
                 if constexpr (std::is_same_v<T, LightState>) return d.lightState;
@@ -581,6 +576,9 @@ namespace doriax::editor{
             else if (propertyName == "post_process") {
                 if constexpr (std::is_same_v<T, std::vector<PostProcessPass>>) return d.postProcess;
             }
+            else if (propertyName == "shader_parameters") {
+                if constexpr (std::is_same_v<T, ShaderUniformValues>) return d.shaderParameters;
+            }
 
             // Unknown property (or type mismatch): fall back to the type-generic default.
             return getSceneProperty<T>(nullptr, propertyName);
@@ -633,11 +631,6 @@ namespace doriax::editor{
             else if (propertyName == "physics_gravity_3d") {
                 if constexpr (std::is_same_v<T, Vector3>) {
                     scene->setGravity3D(value);
-                }
-            }
-            else if (propertyName == "wind") {
-                if constexpr (std::is_same_v<T, Vector3>) {
-                    scene->setWind(value);
                 }
             }
             else if (propertyName == "light_state") {
@@ -785,6 +778,8 @@ namespace doriax::editor{
                 ShaderType type;
                 if (getDefaultShaderUniformsType(propertyName, type))
                     scene->setDefaultShaderUniforms(type, value);
+                if (propertyName == "shader_parameters")
+                    scene->setShaderParameterDefaults(value);
             }
         }
     };

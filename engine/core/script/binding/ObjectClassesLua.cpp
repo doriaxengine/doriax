@@ -321,6 +321,20 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("depthTest", &Camera::isDepthTest, &Camera::setDepthTest)
         .addFunction("screenToRay", &Camera::screenToRay)
         .addFunction("getDistanceFromTarget", &Camera::getDistanceFromTarget)
+        .addFunction("setShaderParameter",
+            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Camera::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Camera::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Camera::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, float>(&Camera::setShaderParameter))
+        .addFunction("getShaderParameter", &Camera::getShaderParameter)
+        .addFunction("clearShaderParameter", &Camera::clearShaderParameter)
+        .addFunction("setShaderParameterDefault",
+            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Camera::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Camera::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Camera::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, float>(&Camera::setShaderParameterDefault))
+        .addFunction("getShaderParameterDefault", &Camera::getShaderParameterDefault)
+        .addFunction("removeShaderParameterDefault", &Camera::removeShaderParameterDefault)
         .addFunction("updateCamera", &Camera::updateCamera)
         .addFunction("getCameraComponent", &Camera::getComponent<CameraComponent>)
         .endClass();
@@ -569,7 +583,6 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("lodEnabled", &Mesh::isLodEnabled, &Mesh::setLodEnabled)
         .addProperty("lodBias", &Mesh::getLodBias, &Mesh::setLodBias)
         .addProperty("renderInReflectionProbes", &Mesh::isRenderInReflectionProbes, &Mesh::setRenderInReflectionProbes)
-        .addProperty("seeThrough", &Mesh::isSeeThrough, &Mesh::setSeeThrough)
         .addProperty("shadowsBillboard", &Mesh::isShadowsBillboard, &Mesh::setShadowsBillboard)
         .addProperty("transparent", &Mesh::isTransparent, &Mesh::setTransparent)
         .addProperty("autoTransparency", &Mesh::isAutoTransparency, &Mesh::setAutoTransparency)
@@ -577,6 +590,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("customDepthShader", &Mesh::getCustomDepthShader, &Mesh::setCustomDepthShader)
         .addProperty("vertexOffsetShader", &Mesh::getVertexOffsetShader, &Mesh::setVertexOffsetShader)
         .addProperty("vertexOffsetMax", &Mesh::getVertexOffsetMax, &Mesh::setVertexOffsetMax)
+        .addProperty("coverageShader", &Mesh::getCoverageShader, &Mesh::setCoverageShader)
+        .addProperty("coverageShadows", &Mesh::isCoverageShadows, &Mesh::setCoverageShadows)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Mesh::setShaderUniform),

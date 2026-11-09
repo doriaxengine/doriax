@@ -296,8 +296,9 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
-            mesh.renderInReflectionProbes, mesh.seeThrough, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader, mesh.vertexOffsetMax, mesh.shaderUniforms};
+            mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
+            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader, mesh.vertexOffsetMax,
+            mesh.coverageShader, mesh.coverageShadows, mesh.shaderUniforms};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -307,7 +308,6 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.receiveShadows = settings.receiveShadows;
     mesh.shadowsBillboard = settings.shadowsBillboard;
     mesh.renderInReflectionProbes = settings.renderInReflectionProbes;
-    mesh.seeThrough = settings.seeThrough;
     mesh.transparent = settings.transparent;
     mesh.autoTransparency = settings.autoTransparency;
     mesh.lodEnabled = settings.lodEnabled;
@@ -316,6 +316,8 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.customDepthShader = settings.customDepthShader;
     mesh.vertexOffsetShader = settings.vertexOffsetShader;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
+    mesh.coverageShader = settings.coverageShader;
+    mesh.coverageShadows = settings.coverageShadows;
     mesh.shaderUniforms = settings.shaderUniforms;
 }
 

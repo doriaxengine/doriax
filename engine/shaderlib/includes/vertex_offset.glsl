@@ -1,19 +1,20 @@
 // Moves a vertex by the mesh's vertexOffsetShader, the same in the color, depth and G-buffer passes
-uniform u_vs_vertexOffset {
-    mat4 worldToModel; //turns the world offset into model space
-    vec4 wind;         //scene wind in m/s.xyz, meters of air blown past.w
-    vec4 params;       //scene time.x, longest offset.y (0 = no limit)
-} vertexOffset;
+#include "includes/parameters_vs.glsl"
+
+// seconds since the scene started, held while the editor pauses it
+float getEffectTime(){
+    return effectVS.effect_offset.x;
+}
 
 // the mesh's offset file, mapped in by the shader builder
 #include "vertex_offset_function.glsl"
 
 vec3 getModelOffset(vec3 localPosition, vec3 worldPosition){
     vec3 offset = getVertexOffset(localPosition, worldPosition);
-    float limit = vertexOffset.params.y;
+    float limit = effectVS.effect_offset.y;
     if (limit > 0.0 && length(offset) > limit){
         offset = normalize(offset) * limit;
     }
 
-    return mat3(vertexOffset.worldToModel) * offset;
+    return mat3(effectVS.effect_worldToModel) * offset;
 }

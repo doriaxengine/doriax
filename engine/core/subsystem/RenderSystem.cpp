@@ -187,9 +187,32 @@ namespace {
     }
 
     // the offset comes in world units, the shader turns it to model space
-    void applyVertexOffsetUniform(ObjectRender& render, int slot, const MeshComponent& mesh, const Transform& transform, const Vector3& wind, float time, float travel){
-        vs_vertex_offset_t params = {transform.modelMatrix.inverse(), Vector4(wind.x, wind.y, wind.z, travel), Vector4(time, mesh.vertexOffsetMax, 0.0f, 0.0f)};
-        render.applyUniformBlock(slot, sizeof(vs_vertex_offset_t), &params);
+    void applyVertexEffect(ObjectRender& render, ShaderParameterBlock& block, const MeshComponent& mesh, const Transform& transform, const ShaderEffectView& view){
+        if (block.slot == -1)
+            return;
+
+        block.writeVertexContext(transform.modelMatrix, view.time, mesh.vertexOffsetMax);
+        block.writeShared(view.scene, view.view);
+        render.applyUniformBlock(block.slot, block.size, block.data.data());
+    }
+
+    // the fragment stage's own effect block (depth and G-buffer passes)
+    void applyFragmentEffect(ObjectRender& render, ShaderParameterBlock& block, const ShaderEffectView& view, bool coverage){
+        if (block.slot == -1)
+            return;
+
+        block.writeFragmentContext(view, coverage, false);
+        block.writeShared(view.scene, view.view);
+        render.applyUniformBlock(block.slot, block.size, block.data.data());
+    }
+
+    void writeEffectObjects(Submesh& submesh, const ShaderUniformValues& values, const ShaderUniformValues* inherited){
+        submesh.effectVS.writeObject(values, inherited);
+        submesh.effectFS.writeObject(values, inherited);
+        submesh.effectDepthVS.writeObject(values, inherited);
+        submesh.effectDepthFS.writeObject(values, inherited);
+        submesh.effectGBufferVS.writeObject(values, inherited);
+        submesh.effectGBufferFS.writeObject(values, inherited);
     }
 
     // custom block of a forked shader, with the engine-written members refreshed
@@ -227,9 +250,7 @@ namespace {
             mesh.submeshes[i].customFSParams.writeValues(mesh.shaderUniforms, inherited);
             mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inherited);
             mesh.submeshes[i].customFSDepthParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customVSOffsetParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customVSDepthOffsetParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customVSGBufferOffsetParams.writeValues(mesh.shaderUniforms, inherited);
+            writeEffectObjects(mesh.submeshes[i], mesh.shaderUniforms, inherited);
         }
         mesh.needUpdateShaderUniforms = false;
     }
@@ -375,12 +396,9 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     resumePassRender.setDepthLoadActionLoad();
     currentUnderwater = NULL;
     hasWaterDepth = false;
-    fs_seeThrough = {};
-    fs_noSeeThrough = {};
     onlyDirectionalLights = false;
     frameTime = 0.0f;
     animationTime = 0.0;
-    windTravel = 0.0;
     passResolution = Vector2(0.0f, 0.0f);
 
     ssrLoaded = false;
@@ -1792,7 +1810,8 @@ void RenderSystem::renderReflectionProbeCapture(){
     applyViewLights(capturePosition);
 
     capturingReflectionProbe = true;
-    fs_seeThrough = fs_noSeeThrough;
+    // no camera owns a capture, so view parameters read their declared defaults
+    setEffectView(NULL_ENTITY, captureCamera, captureTransform);
     passResolution = Vector2((float)resolution, (float)resolution);
     runtime.capturePass.setClearColor(probe->includeSky ? scene->getBackgroundColor() : Vector4(0.0f, 0.0f, 0.0f, 1.0f));
     runtime.capturePass.startRenderPass(&runtime.captureFramebuffer, (size_t)face);
@@ -2915,6 +2934,10 @@ void RenderSystem::setAnimationPaused(bool animationPaused){
     this->animationPaused = animationPaused;
 }
 
+void RenderSystem::resetAnimationTime(){
+    animationTime = 0.0;
+}
+
 bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelines, InstancedMeshComponent* instmesh, TerrainComponent* terrain){
 
     if (!Engine::isViewLoaded()) 
@@ -3223,7 +3246,14 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
-        const bool p_seeThrough = mesh.seeThrough && !terrain;
+        // terrain builds its vertices in the shader and takes no effect functions
+        const std::string vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
+        const std::string coverage = terrain ? std::string() : mesh.coverageShader;
+        // a coverage function reads UV set 1 in every pass; a missing texture binds white
+        const bool p_coverageUV = !coverage.empty() && mesh.submeshes[i].hasTexCoord1;
+        if (p_coverageUV){
+            p_hasTexture1 = true;
+        }
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
@@ -3236,14 +3266,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Priority: component customShader > scene default shader > built-in (empty)
         const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
         const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        const std::string vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
-        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset));
+        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset, coverage));
         // 'Dlo': built-in shader without the point/spot paths
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
-        }
-        if (p_seeThrough){
-            mesh.submeshes[i].shaderProperties |= 1u << 29; // 'Stt'
         }
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
         // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
@@ -3255,8 +3281,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade, p_seeThrough);
-            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
+                p_depthAlphaMask, p_instanceFade, p_coverageUV);
+            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
                 // same fallback as the main shader below
@@ -3274,10 +3300,12 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
             mesh.submeshes[i].customVSDepthParams.resolve(depthShaderData, "u_vs_customParams");
             mesh.submeshes[i].customFSDepthParams.resolve(depthShaderData, "u_fs_customParams");
-            mesh.submeshes[i].customVSDepthOffsetParams.resolve(depthShaderData, "u_vs_offsetParams");
             mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
             mesh.submeshes[i].customFSDepthParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].customVSDepthOffsetParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].effectDepthVS.resolve(depthShaderData, "u_vs_effect", ShaderStageType::VERTEX);
+            mesh.submeshes[i].effectDepthFS.resolve(depthShaderData, "u_fs_effect", ShaderStageType::FRAGMENT);
+            mesh.submeshes[i].effectDepthVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].effectDepthFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
         }else if (mesh.submeshes[i].depthShader){
             // a reload keeps the handle; release it with the key it was taken with
             mesh.submeshes[i].depthShader.reset();
@@ -3296,8 +3324,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_seeThrough);
-            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_coverageUV);
+            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
                 // the color pass reports the failure
@@ -3330,16 +3358,17 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
         mesh.submeshes[i].slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_PARAMS);
         mesh.submeshes[i].slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_PARAMS);
-        shaderData.getUniformBlockMembers("u_fs_pbrParams", mesh.submeshes[i].sizeFSParams);
         if (p_hasTexture2){
             mesh.submeshes[i].slotFSTexCoordSets = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_TEXCOORDSETS);
         }
         if (p_instanceFade){
             mesh.submeshes[i].slotVSFade = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
         }
-        if (!vertexOffset.empty()){
-            mesh.submeshes[i].slotVSVertexOffset = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
-        }
+        // the fragment stage keeps them in the material block, having no block to spare
+        mesh.submeshes[i].effectVS.resolve(shaderData, "u_vs_effect", ShaderStageType::VERTEX);
+        mesh.submeshes[i].effectFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
+        mesh.submeshes[i].effectVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].effectFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
         }
@@ -3372,13 +3401,11 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (mesh.submeshes[i].hasMorphTarget){
             mesh.submeshes[i].slotVSMorphTarget = shaderData.getUniformBlockIndex(UniformBlockType::VS_MORPHTARGET);
         }
-        // custom blocks of a forked shader and of the vertex offset (none in the built-in)
+        // custom blocks of a forked shader (none in the built-in)
         mesh.submeshes[i].customVSParams.resolve(shaderData, "u_vs_customParams");
         mesh.submeshes[i].customFSParams.resolve(shaderData, "u_fs_customParams");
-        mesh.submeshes[i].customVSOffsetParams.resolve(shaderData, "u_vs_offsetParams");
         mesh.submeshes[i].customVSParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
         mesh.submeshes[i].customFSParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-        mesh.submeshes[i].customVSOffsetParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
 
         if (!loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
             return false;
@@ -3500,14 +3527,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (p_depthAlphaMask){
                 mesh.submeshes[i].slotFSDepthMaterial = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_FS_MATERIAL);
             }
-            if (p_seeThrough){
-                mesh.submeshes[i].slotFSDepthSeeThrough = depthShaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
-            }
             if (p_instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
-            }
-            if (!vertexOffset.empty()){
-                mesh.submeshes[i].slotVSDepthVertexOffset = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
             }
 
             if (mesh.submeshes[i].hasSkinning){
@@ -3631,9 +3652,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
-            if (p_seeThrough){
-                mesh.submeshes[i].slotFSGBufferSeeThrough = gbufferShaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
-            }
+            mesh.submeshes[i].effectGBufferVS.resolve(gbufferShaderData, "u_vs_effect", ShaderStageType::VERTEX);
+            mesh.submeshes[i].effectGBufferFS.resolve(gbufferShaderData, "u_fs_effect", ShaderStageType::FRAGMENT);
+            mesh.submeshes[i].effectGBufferVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].effectGBufferFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -3642,11 +3664,6 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
             if (mesh.submeshes[i].hasMorphTarget){
                 mesh.submeshes[i].slotVSGBufferMorphTarget = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_MORPHTARGET);
-            }
-            if (!vertexOffset.empty()){
-                mesh.submeshes[i].slotVSGBufferVertexOffset = gbufferShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_VERTEX_OFFSET);
-                mesh.submeshes[i].customVSGBufferOffsetParams.resolve(gbufferShaderData, "u_vs_offsetParams");
-                mesh.submeshes[i].customVSGBufferOffsetParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
             }
 
             if (!loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
@@ -4331,10 +4348,10 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
     constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
 
-    // shader properties first, they rule out lit meshes; a vertex offset needs its own draw
+    // shader properties first, they rule out lit meshes; an effect function needs its own draw
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
-        mesh.vertexOffsetShader.empty() &&
+        mesh.vertexOffsetShader.empty() && mesh.coverageShader.empty() &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
         !submesh.needUpdateTexture && !submesh.lodData;
@@ -5013,11 +5030,13 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             // Unlit alpha-mask variants include the metallic/roughness padding
             // and alphaCutoff from the shared CPU material prefix.
             const unsigned int paramsSize = sizeof(float) * (submeshLit ? 12 : ((mesh.submeshes[i].shaderProperties & (1u << 24)) ? 8 : 4));
-            if (mesh.submeshes[i].sizeFSParams == paramsSize + sizeof(fs_see_through_t)){
-                float params[24];
-                std::memcpy(params, &mesh.submeshes[i].material, paramsSize);
-                std::memcpy(params + paramsSize / sizeof(float), &fs_seeThrough, sizeof(fs_see_through_t));
-                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize + sizeof(fs_see_through_t), params);
+            ShaderParameterBlock& effectFS = mesh.submeshes[i].effectFS;
+            if (effectFS.slot != -1){
+                // the material prefix, up to the first declared member, then the members
+                std::memcpy(effectFS.data.data(), &mesh.submeshes[i].material, std::min(paramsSize, effectFS.firstOffset));
+                effectFS.writeFragmentContext(effectView, true, mesh.submeshes[i].alphaBlend);
+                effectFS.writeShared(effectView.scene, effectView.view);
+                render.applyUniformBlock(effectFS.slot, effectFS.size, effectFS.data.data());
             }else{
                 render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize, &mesh.submeshes[i].material);
             }
@@ -5026,9 +5045,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 applyInstanceFadeUniform(render, mesh.submeshes[i].slotVSFade, *instmesh);
             }
 
-            if (mesh.submeshes[i].slotVSVertexOffset != -1){
-                applyVertexOffsetUniform(render, mesh.submeshes[i].slotVSVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
-            }
+            applyVertexEffect(render, mesh.submeshes[i].effectVS, mesh, transform, effectView);
 
             if (mesh.submeshes[i].slotFSTexCoordSets != -1){
                 // per-texture UV set selector (0 = a_texcoord1, 1 = a_texcoord2):
@@ -5053,7 +5070,6 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             applyCustomUniforms(render, mesh.submeshes[i].customVSParams, frameTime, passResolution);
             applyCustomUniforms(render, mesh.submeshes[i].customFSParams, frameTime, passResolution);
-            applyCustomUniforms(render, mesh.submeshes[i].customVSOffsetParams, frameTime, passResolution);
 
             if (tilemap && !tilemapDrawRanges.empty()){
                 if (instmesh){
@@ -5136,20 +5152,14 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             applyCustomUniforms(depthRender, mesh.submeshes[i].customVSDepthParams, frameTime, passResolution);
             applyCustomUniforms(depthRender, mesh.submeshes[i].customFSDepthParams, frameTime, passResolution);
-            applyCustomUniforms(depthRender, mesh.submeshes[i].customVSDepthOffsetParams, frameTime, passResolution);
 
             if (mesh.submeshes[i].slotVSDepthFade != -1 && instmesh){
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
 
-            if (mesh.submeshes[i].slotVSDepthVertexOffset != -1){
-                applyVertexOffsetUniform(depthRender, mesh.submeshes[i].slotVSDepthVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
-            }
-
-            // shadow maps keep the whole mesh
-            if (mesh.submeshes[i].slotFSDepthSeeThrough != -1){
-                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthSeeThrough, sizeof(fs_see_through_t), forSSAO ? &fs_seeThrough : &fs_noSeeThrough);
-            }
+            applyVertexEffect(depthRender, mesh.submeshes[i].effectDepthVS, mesh, transform, effectView);
+            // shadow maps keep the whole silhouette unless the mesh asks
+            applyFragmentEffect(depthRender, mesh.submeshes[i].effectDepthFS, effectView, forSSAO || mesh.coverageShadows);
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
@@ -5537,9 +5547,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
-        if (mesh.submeshes[i].slotFSGBufferSeeThrough != -1){
-            gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
-        }
+        applyFragmentEffect(gbufferRender, mesh.submeshes[i].effectGBufferFS, effectView, true);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -5551,10 +5559,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
             }
         }
-        if (mesh.submeshes[i].slotVSGBufferVertexOffset != -1){
-            applyVertexOffsetUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferVertexOffset, mesh, transform, scene->getWind(), (float)animationTime, (float)windTravel);
-        }
-        applyCustomUniforms(gbufferRender, mesh.submeshes[i].customVSGBufferOffsetParams, frameTime, passResolution);
+        applyVertexEffect(gbufferRender, mesh.submeshes[i].effectGBufferVS, mesh, transform, effectView);
 
         if (terrain){
             terrain->eyePos = terrain->views[0].nodesEyePos;
@@ -6342,7 +6347,6 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotFSParams = -1;
         submesh.slotFSTexCoordSets = -1;
         submesh.slotVSFade = -1;
-        submesh.slotVSVertexOffset = -1;
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
         submesh.slotVSSprite = -1;
@@ -6357,29 +6361,28 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
 
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
-        submesh.slotVSDepthVertexOffset = -1;
         submesh.slotFSDepthMaterial = -1;
-        submesh.slotFSDepthSeeThrough = -1;
         submesh.slotVSDepthSkinning = -1;
         submesh.slotVSDepthMorphTarget = -1;
         submesh.slotVSDepthTerrain = -1;
 
         submesh.slotVSGBufferParams = -1;
         submesh.slotFSGBufferMaterial = -1;
-        submesh.slotFSGBufferSeeThrough = -1;
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;
-        submesh.slotVSGBufferVertexOffset = -1;
         submesh.slotFSGBufferTerrainLayers = -1;
 
         submesh.customVSParams.clear();
         submesh.customFSParams.clear();
         submesh.customVSDepthParams.clear();
         submesh.customFSDepthParams.clear();
-        submesh.customVSOffsetParams.clear();
-        submesh.customVSDepthOffsetParams.clear();
-        submesh.customVSGBufferOffsetParams.clear();
+        submesh.effectVS.clear();
+        submesh.effectFS.clear();
+        submesh.effectDepthVS.clear();
+        submesh.effectDepthFS.clear();
+        submesh.effectGBufferVS.clear();
+        submesh.effectGBufferFS.clear();
     }
 
     //Destroy buffer
@@ -9310,6 +9313,19 @@ void RenderSystem::getLoadCount(size_t& loaded, size_t& total) const{
     }
 }
 
+void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& camera, const Transform& cameraTransform){
+    effectView.eye = cameraTransform.worldPosition;
+    // worldDirection is the camera's backward axis
+    effectView.forward = -camera.worldDirection;
+    effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+    // depth targets start at the corner, the color pass moves this to its own
+    effectView.ditherOrigin = Vector2(0.0f, 0.0f);
+    effectView.time = (float)animationTime;
+    effectView.scene = &scene->getShaderParameterTable();
+    scene->resolveViewShaderParameters(cameraEntity, viewParameters);
+    effectView.view = &viewParameters;
+}
+
 void RenderSystem::updateCameraFrustumPlanes(const Matrix4 viewProjectionMatrix, Plane* frustumPlanes){
 
     frustumPlanes[FRUSTUM_PLANE_LEFT].normal.x = viewProjectionMatrix[0][3] + viewProjectionMatrix[0][0];
@@ -10861,11 +10877,10 @@ void RenderSystem::update(double dt){
         }
     }
 
-    // gusts ride the air blown past, so a change of speed does not jump them
     if (!animationPaused){
         animationTime += dt;
-        windTravel += scene->getWind().length() * dt;
     }
+    scene->updateShaderParameters(dt, animationPaused);
 
     updateWaterWakes(dt, mainCamera, mainCameraTransform);
 
@@ -10925,6 +10940,13 @@ void RenderSystem::draw(){
         fixedResFramebuffer.destroy();
         fixedResWidth = 0;
         fixedResHeight = 0;
+    }
+
+    // shadow maps are fitted to the main camera, so effect functions see it there too
+    if (CameraComponent* effectCamera = scene->findComponent<CameraComponent>(mainCameraEntity)){
+        if (Transform* effectTransform = scene->findComponent<Transform>(mainCameraEntity)){
+            setEffectView(mainCameraEntity, *effectCamera, *effectTransform);
+        }
     }
 
     //---------Depth shader----------
@@ -11185,22 +11207,8 @@ void RenderSystem::draw(){
             applyViewLights(cameraTransform.worldPosition);
         }
 
-        // only the main camera looks through to the target
-        fs_seeThrough = fs_noSeeThrough;
-        const float seeThroughRadius = isMainCamera ? scene->getSeeThroughRadius() : 0.0f;
-        if (seeThroughRadius > 0.0f){
-            const Vector3 target = scene->getSeeThroughTarget();
-            const Vector3 toTarget = target - cameraTransform.worldPosition;
-            const float distance = toTarget.length();
-            const bool perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
-            // a cone from the eye, or a cylinder along an orthographic view
-            if (!perspective || distance > seeThroughRadius){
-                const Vector3 axis = perspective ? toTarget / distance : -camera.worldDirection;
-                fs_seeThrough.target = Vector4(target.x, target.y, target.z, seeThroughRadius);
-                fs_seeThrough.axis = Vector4(axis.x, axis.y, axis.z, perspective ? 1.0f / distance : 0.0f);
-                fs_seeThrough.params = Vector4(scene->getSeeThroughMargin(), 1.0f - scene->getSeeThroughOpacity(), 0.0f, 0.0f);
-            }
-        }
+        // effect functions see this camera, with its own view parameters
+        setEffectView(cameraEntity, camera, cameraTransform);
 
         int terrainView = 0;
         if (!isMainCamera){
@@ -11445,8 +11453,8 @@ void RenderSystem::draw(){
 
         passResolution = Vector2(colorPassViewport.getWidth(), colorPassViewport.getHeight());
         // a flipped or offset color target dithers the pixels the depth passes do
-        fs_seeThrough.params.z = colorPassViewport.getX();
-        fs_seeThrough.params.w = colorPassViewport.getY() + (isRenderingFlipped(camera) ? colorPassViewport.getHeight() : 0.0f);
+        effectView.ditherOrigin = Vector2(colorPassViewport.getX(),
+            colorPassViewport.getY() + (isRenderingFlipped(camera) ? colorPassViewport.getHeight() : 0.0f));
 
 
         //---------Draw opaque meshes and UI----------

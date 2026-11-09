@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ShaderBuilder.h"
+#include "ShaderParameterParser.h"
 
 #include "ShaderDataSerializer.h"
 #include "App.h"
@@ -90,6 +91,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     std::filesystem::path projectRoot = project->getProjectPath();
     const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
     const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+    const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
     editor::Util::CustomShaderPaths paths = editor::Util::resolveCustomShaderPaths(forkShader);
     std::string signatureInput;
 
@@ -112,34 +114,39 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     // Failures are not cached: the file may be created or restored at any moment.
     if (!forkShader.empty() && (!loadEntryPoint(paths.vert, "vertex") || !loadEntryPoint(paths.frag, "fragment")))
         return snapshot;
-    std::string vertexOffsetSource;
-    if (!vertexOffset.empty()){
-        // a project file, else one of the engine's own, such as offsets/wind.glsl
+    // a project file, else an engine one, pulled in by its own path so errors name it
+    auto loadEffectFunction = [&](const std::string& path, const char* kind, const char* functionFile, std::string& source) -> bool {
         std::error_code ec;
-        if (editor::ProjectUtils::isEngineVertexOffset(vertexOffset) && !std::filesystem::exists(projectRoot / vertexOffset, ec)){
-            vertexOffsetSource = editor::shaderMap.at(vertexOffset);
-            appendSignaturePart(signatureInput, "engine:" + vertexOffset, vertexOffsetSource);
+        if (editor::ProjectUtils::isEngineEffectFunction(path) && !std::filesystem::exists(projectRoot / path, ec)){
+            source = editor::shaderMap.at(path);
+            appendSignaturePart(signatureInput, "engine:" + path, source);
         }else{
-            if (!loadEntryPoint(vertexOffset, "vertex offset"))
-                return snapshot;
-            vertexOffsetSource = std::move(snapshot->projectBuffers[vertexOffset]);
-            snapshot->projectBuffers.erase(vertexOffset);
+            if (!loadEntryPoint(path, kind))
+                return false;
+            source = std::move(snapshot->projectBuffers[path]);
+            snapshot->projectBuffers.erase(path);
         }
-        // the engine include pulls the file in by its own path, so errors name it
-        snapshot->projectBuffers["vertex_offset_function.glsl"] = "#include \"/" + vertexOffset + "\"\n";
-    }
+        snapshot->projectBuffers[functionFile] = "#include \"/" + path + "\"\n";
+        return true;
+    };
+    std::string vertexOffsetSource;
+    if (!vertexOffset.empty() && !loadEffectFunction(vertexOffset, "vertex offset", "vertex_offset_function.glsl", vertexOffsetSource))
+        return snapshot;
+    std::string coverageSource;
+    if (!coverage.empty() && !loadEffectFunction(coverage, "coverage", "coverage_function.glsl", coverageSource))
+        return snapshot;
 
     auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
         std::error_code ec;
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
-    // Includes share one namespace, so an offset keys its files by '/' and their project
+    // Includes share one namespace, so an effect file keys its files by '/' and their project
     // path, which no fork include can name, even at the project root
     std::unordered_set<std::string> visited;
-    std::unordered_map<std::string, std::string> offsetPaths;
+    std::unordered_map<std::string, std::string> effectPaths;
     std::function<std::string(const std::string&, const std::filesystem::path&, bool)> visitSource =
-            [&](const std::string& source, const std::filesystem::path& includeRootRel, bool offset) {
+            [&](const std::string& source, const std::filesystem::path& includeRootRel, bool effect) {
         // An empty include root means the entry point sits at the project root, where the
         // first two candidates would be the same file.
         bool hasLocalRoot = !includeRootRel.empty() && includeRootRel != ".";
@@ -148,7 +155,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         size_t copied = 0;
         for (const editor::Util::ShaderInclude& include : editor::Util::getShaderIncludes(source)) {
             const std::string& key = include.key;
-            if (visited.insert(offset ? "offset:" + key : key).second) {
+            // effect files resolve from their own folder, where one name can be another file
+            const std::string visitKey = effect ? "effect:" + includeRootRel.generic_string() + ":" + key : key;
+            if (visited.insert(visitKey).second) {
                 if (!editor::Util::isSafeRelativePath(key)) {
                     appendSignaturePart(signatureInput, "unsafe:" + key, "");
                     continue;
@@ -159,10 +168,10 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 std::string path;
                 if (hasLocalRoot && readCandidate(projectRoot / includeRootRel / key, content)) {
                     origin = "local:" + key;
-                    path = offset ? "/" + (includeRootRel / key).lexically_normal().generic_string() : key;
+                    path = effect ? "/" + (includeRootRel / key).lexically_normal().generic_string() : key;
                 } else if (readCandidate(projectRoot / key, content)) {
                     origin = "project:" + key;
-                    path = offset ? "/" + std::filesystem::path(key).lexically_normal().generic_string() : key;
+                    path = effect ? "/" + std::filesystem::path(key).lexically_normal().generic_string() : key;
                 } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
                     origin = "engine:" + key;
                     content = engineIt->second;
@@ -172,18 +181,18 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 }
 
                 appendSignaturePart(signatureInput, origin, content);
-                if (offset && !path.empty())
-                    offsetPaths[key] = path;
-                content = visitSource(content, includeRootRel, offset);
+                if (effect && !path.empty())
+                    effectPaths[visitKey] = path;
+                content = visitSource(content, includeRootRel, effect);
                 // the fork's file wins a name both use, as it does over the engine's
                 if (!path.empty())
                     snapshot->projectBuffers.emplace(path, std::move(content));
             }
 
-            auto offsetPath = offsetPaths.find(key);
-            if (offset && offsetPath != offsetPaths.end() && offsetPath->second != key) {
+            auto effectPath = effectPaths.find(visitKey);
+            if (effect && effectPath != effectPaths.end() && effectPath->second != key) {
                 renamed.append(source, copied, include.position - copied);
-                renamed += offsetPath->second;
+                renamed += effectPath->second;
                 copied = include.position + key.size();
             }
         }
@@ -201,6 +210,8 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     }
     if (!vertexOffset.empty())
         snapshot->projectBuffers["/" + vertexOffset] = visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path(), true);
+    if (!coverage.empty())
+        snapshot->projectBuffers["/" + coverage] = visitSource(coverageSource, std::filesystem::path(coverage).parent_path(), true);
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
     customSourceCache[cacheKey] = snapshot;
@@ -224,6 +235,54 @@ void clearCustomSourceCache() {
     customSourceCache.clear();
 }
 
+// parameter headers and hook defines of a mesh pass; throws on a bad annotation
+void setupShaderParameters(shadercompiler::args_t& args, const std::string& vertexOffset, const std::string& coverage,
+                           std::vector<ShaderParameterInfo>& parameters) {
+    // the files each stage reaches, to find the hooks
+    std::unordered_set<std::string> vertexFiles;
+    std::unordered_set<std::string> fragmentFiles;
+    auto lookup = [&args](std::unordered_set<std::string>& reached) {
+        return [&args, &reached](const std::string& key) -> const std::string* {
+            reached.insert(key);
+            auto it = args.fileBuffers.find(key);
+            return it != args.fileBuffers.end() ? &it->second : nullptr;
+        };
+    };
+
+    editor::ShaderEffectAnnotations vertexAnnotations;
+    editor::ShaderEffectAnnotations fragmentAnnotations;
+    editor::ShaderParameterParser::parseTree(args.vert_file, lookup(vertexFiles), vertexAnnotations);
+    editor::ShaderParameterParser::parseTree(args.frag_file, lookup(fragmentFiles), fragmentAnnotations);
+
+    std::vector<std::string> errors = vertexAnnotations.errors;
+    errors.insert(errors.end(), fragmentAnnotations.errors.begin(), fragmentAnnotations.errors.end());
+
+    const bool useVertexOffset = !vertexOffset.empty();
+    const bool useCoverage = !coverage.empty();
+    if (useVertexOffset)
+        args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
+    if (useCoverage)
+        args.defines.push_back({"USE_COVERAGE", "1"});
+
+    // a fork from before the hooks existed cannot run the function
+    if (useVertexOffset && !vertexFiles.count("includes/vertex_offset.glsl"))
+        editor::Out::warning("%s does not include includes/vertex_offset.glsl, so the vertex offset %s does nothing in it", args.vert_file.c_str(), vertexOffset.c_str());
+    if (useCoverage && !fragmentFiles.count("includes/coverage.glsl"))
+        editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage %s does nothing in it", args.frag_file.c_str(), coverage.c_str());
+
+    args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
+        ShaderStageType::VERTEX, vertexAnnotations.parameters, useVertexOffset, false, parameters, errors);
+    args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
+        ShaderStageType::FRAGMENT, fragmentAnnotations.parameters, false, useCoverage, parameters, errors);
+
+    if (!errors.empty()){
+        std::string message = "Shader parameter annotations:";
+        for (const std::string& error : errors)
+            message += "\n" + error;
+        throw std::runtime_error(message);
+    }
+}
+
 bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
                    const std::string& name, const char* value) {
     const std::string annotation = std::string("@") + tag + " " + name + " " + value;
@@ -233,18 +292,18 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
     return false;
 }
 
-// A vertex offset on the built-in shader takes its values from u_vs_offsetParams; the
-// G-buffer pass would never fill a fork's block name declared by the offset file.
-std::string getVertexOffsetBlockError(const ShaderData& shaderData, uint16_t customId) {
+// the G-buffer pass would never fill a custom block an effect file declares
+std::string getEffectBlockError(const ShaderData& shaderData, uint16_t customId) {
     const std::string customShader = ShaderPool::getCustomShaderName(customId);
     const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
-    if (vertexOffset.empty() || !ShaderPool::getCustomShaderFork(customShader).empty())
+    const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
+    if ((vertexOffset.empty() && coverage.empty()) || !ShaderPool::getCustomShaderFork(customShader).empty())
         return "";
 
     for (const ShaderStage& stage : shaderData.stages)
         for (const ShaderUniformBlock& block : stage.uniformblocks)
-            if (block.name == "u_vs_customParams")
-                return vertexOffset + ": a vertex offset declares its values in u_vs_offsetParams, not u_vs_customParams";
+            if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams")
+                return (vertexOffset.empty() ? coverage : vertexOffset) + ": an effect function declares its values with // @param annotations, not " + block.name;
     return "";
 }
 
@@ -533,7 +592,6 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 25)) defs.push_back({"ALPHA_OPAQUE", "1"});               // 'Aop'
     if (prop & (1 << 26)) defs.push_back({"USE_INSTANCE_FADE", "1"});          // 'Ifd'
     if (prop & (1 << 27)) defs.push_back({"HAS_TERRAIN_PBR", "1"});            // 'Tpb'
-    if (prop & (1 << 29)) defs.push_back({"USE_SEE_THROUGH", "1"});            // 'Stt'
 }
 
 void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -546,7 +604,7 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 6))  defs.push_back({"HAS_INSTANCING", "1"});    // 'Ist'
     if (prop & (1 << 7))  defs.push_back({"ALPHA_MASK", "1"});         // 'Ams'
     if (prop & (1 << 8))  defs.push_back({"USE_INSTANCE_FADE", "1"}); // 'Ifd'
-    if (prop & (1 << 9))  defs.push_back({"USE_SEE_THROUGH", "1"});   // 'Stt'
+    if (prop & (1 << 9))  defs.push_back({"HAS_UV_SET1", "1"});       // 'Uv1'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -562,7 +620,7 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 9))  defs.push_back({"HAS_TERRAIN_PBR", "1"});               // 'Tpb'
     if (prop & (1 << 10)) defs.push_back({"HAS_OCCLUSION_TEXTURE", "1"});         // 'Occ'
     if (prop & (1 << 11)) defs.push_back({"OCCLUSION_UV2", "1"});                 // 'Ou2'
-    if (prop & (1 << 12)) defs.push_back({"USE_SEE_THROUGH", "1"});               // 'Stt'
+    if (prop & (1 << 12)) defs.push_back({"HAS_UV_SET1", "1"});                   // 'Uv1'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -818,7 +876,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>* parameters) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -829,10 +887,15 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         throw std::runtime_error("Unknown shader type");
     }
 
-    if (args.lang == shadercompiler::LANG_GLSL &&
-            (shaderType == ShaderType::MESH || shaderType == ShaderType::DEPTH ||
-             shaderType == ShaderType::GBUFFER))
+    const bool meshPass = shaderType == ShaderType::MESH || shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER;
+    if (args.lang == shadercompiler::LANG_GLSL && meshPass)
         args.defines.push_back({"SKINNING_TEXTURE", "1"});
+
+    // the built-in passes declare no parameters
+    std::vector<ShaderParameterInfo> unusedParameters;
+    std::vector<std::string> unusedErrors;
+    args.fileBuffers["shader_params_vs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::VERTEX, {}, false, false, unusedParameters, unusedErrors);
+    args.fileBuffers["shader_params_fs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::FRAGMENT, {}, false, false, unusedParameters, unusedErrors);
 
     if (customId == 0)
         return;
@@ -859,15 +922,22 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     for (const auto& [key, content] : sources->projectBuffers)
         args.fileBuffers[key] = content;
 
-    // a vertex offset alone keeps the built-in entry points
+    // effect functions alone keep the built-in entry points
     const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
     if (!forkShader.empty()) {
         const editor::Util::CustomShaderPaths customPaths = editor::Util::resolveCustomShaderPaths(forkShader);
         args.vert_file = customPaths.vert;
         args.frag_file = customPaths.frag;
     }
-    if (!ShaderPool::getCustomShaderVertexOffset(customShader).empty())
-        args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
+
+    // the mesh passes run effect functions and read declared parameters
+    if (meshPass) {
+        std::vector<ShaderParameterInfo> declared;
+        setupShaderParameters(args, ShaderPool::getCustomShaderVertexOffset(customShader),
+                              ShaderPool::getCustomShaderCoverage(customShader), declared);
+        if (parameters)
+            *parameters = std::move(declared);
+    }
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {
@@ -907,12 +977,14 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     std::string compileLog;
     args.error_output = &compileLog;
 
+    std::vector<ShaderParameterInfo> parameters;
     try {
-        setupBuildArgs(args, shaderKey, project);
-    } catch (const std::exception&) {
+        setupBuildArgs(args, shaderKey, project, &parameters);
+    } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
         }
+        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), e.what());
         throw;
     }
 
@@ -977,14 +1049,15 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     // Use a deterministic basename for stage naming and disk cache
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) + getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
+    shaderData.parameters = std::move(parameters);
 
-    const std::string offsetError = getVertexOffsetBlockError(shaderData, customId);
-    if (!offsetError.empty()) {
+    const std::string effectError = getEffectBlockError(shaderData, customId);
+    if (!effectError.empty()) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
         }
-        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), offsetError.c_str());
-        throw std::runtime_error(offsetError);
+        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), effectError.c_str());
+        throw std::runtime_error(effectError);
     }
 
     if (shutdownRequested) {
@@ -1138,7 +1211,8 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.fileBuffers = editor::shaderMap;
     applyShaderBackend(args, backend);
 
-    setupBuildArgs(args, shaderKey, project);
+    std::vector<ShaderParameterInfo> parameters;
+    setupBuildArgs(args, shaderKey, project, &parameters);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
@@ -1159,10 +1233,11 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
+    shaderData.parameters = std::move(parameters);
 
-    const std::string offsetError = getVertexOffsetBlockError(shaderData, customId);
-    if (!offsetError.empty())
-        throw std::runtime_error(offsetError);
+    const std::string effectError = getEffectBlockError(shaderData, customId);
+    if (!effectError.empty())
+        throw std::runtime_error(effectError);
 
     Out::build(
         "Shader %s (%s) generated successfully",

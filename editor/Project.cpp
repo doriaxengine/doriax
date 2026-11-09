@@ -1596,11 +1596,16 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customShader);
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader);
 
-        // a vertex offset is one file, not a .vert/.frag pair
+        // an effect function is one file, not a .vert/.frag pair
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
-            std::string& vertexOffset = meshes->getComponentFromIndex(i).vertexOffsetShader;
-            if (!vertexOffset.empty() && fileTransform(vertexOffset)) {
+            MeshComponent& mesh = meshes->getComponentFromIndex(i);
+            bool meshChanged = false;
+            for (std::string* path : {&mesh.vertexOffsetShader, &mesh.coverageShader}) {
+                if (!path->empty() && fileTransform(*path))
+                    meshChanged = true;
+            }
+            if (meshChanged) {
                 Catalog::updateEntity(registry, meshes->getEntity(i), UpdateFlags_Shader_Reload);
                 changed = true;
             }
@@ -3947,10 +3952,11 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                 bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
                 // as in RenderSystem::loadMesh
                 const std::string vertexOffset = isTerrain ? std::string() : mesh.vertexOffsetShader;
+                const std::string coverage = isTerrain ? std::string() : mesh.coverageShader;
                 const std::string& meshShader = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
-                uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, vertexOffset));
-                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset));
-                uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset));
+                uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, vertexOffset, coverage));
+                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
+                uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
                     if (!mesh.loaded && !mesh.submeshes[s].shader) {
                         continue;
@@ -3993,7 +3999,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         depthTexture, mesh.submeshes[s].hasSkinning,
                         mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
                         mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, mesh.seeThrough && !isTerrain);
+                        instancedFade, !coverage.empty() && mesh.submeshes[s].hasTexCoord1);
                     insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
                     insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
@@ -4141,7 +4147,8 @@ void editor::Project::invalidateCustomShaders() {
         };
 
         flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
-            return sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty() || !mesh.vertexOffsetShader.empty();
+            return sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty() || !mesh.vertexOffsetShader.empty() ||
+                !mesh.coverageShader.empty();
         });
         flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
             return sceneUI || !ui.customShader.empty();
@@ -5404,8 +5411,9 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
         // Destroy all bundle instances created during play
         BundleManager::destroyAllInstances(sceneProject->scene);
 
-        // Drop the wakes left during play
+        // Drop the wakes left during play, and start the effect clock over
         sceneProject->scene->getSystem<RenderSystem>()->clearWaterWakes();
+        sceneProject->scene->getSystem<RenderSystem>()->resetAnimationTime();
 
         // Restore snapshot if present
         if (sceneProject->playStateSnapshot && !sceneProject->playStateSnapshot.IsNull()) {
@@ -6207,13 +6215,17 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
-    // Except those of deleted forks or vertex offsets, which exports could not build
+    // Except those of deleted forks or effect functions, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
         const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
         const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
         const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+        const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
+        auto missingEffect = [&](const std::string& path) {
+            return !path.empty() && !fs::exists(projectPath / path) && !ProjectUtils::isEngineEffectFunction(path);
+        };
         if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
-                (!vertexOffset.empty() && !fs::exists(projectPath / vertexOffset) && !ProjectUtils::isEngineVertexOffset(vertexOffset))) {
+                missingEffect(vertexOffset) || missingEffect(coverage)) {
             it = shaderKeys.erase(it);
         } else {
             ++it;

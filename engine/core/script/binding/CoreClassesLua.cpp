@@ -973,17 +973,34 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addFunction("setGravity3D",
             luabridge::overload<Vector3>(&Scene::setGravity3D),
             luabridge::overload<float, float, float>(&Scene::setGravity3D))
-        .addProperty("wind", &Scene::getWind, (void (Scene::*)(Vector3))&Scene::setWind)
-        .addFunction("setWind",
-            luabridge::overload<Vector3>(&Scene::setWind),
-            luabridge::overload<float, float, float>(&Scene::setWind))
-        .addProperty("seeThroughTarget", &Scene::getSeeThroughTarget, (void (Scene::*)(Vector3))&Scene::setSeeThroughTarget)
-        .addFunction("setSeeThroughTarget",
-            luabridge::overload<Vector3>(&Scene::setSeeThroughTarget),
-            luabridge::overload<float, float, float>(&Scene::setSeeThroughTarget))
-        .addProperty("seeThroughRadius", &Scene::getSeeThroughRadius, &Scene::setSeeThroughRadius)
-        .addProperty("seeThroughOpacity", &Scene::getSeeThroughOpacity, &Scene::setSeeThroughOpacity)
-        .addProperty("seeThroughMargin", &Scene::getSeeThroughMargin, &Scene::setSeeThroughMargin)
+        .addFunction("setShaderParameter",
+            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Scene::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Scene::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Scene::setShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, float>(&Scene::setShaderParameter))
+        .addFunction("getShaderParameter", &Scene::getShaderParameter)
+        .addFunction("clearShaderParameter", &Scene::clearShaderParameter)
+        .addFunction("setShaderParameterDefault",
+            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Scene::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Scene::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Scene::setShaderParameterDefault),
+            luabridge::overload<const std::string&, const std::string&, float>(&Scene::setShaderParameterDefault))
+        .addFunction("getShaderParameterDefault", &Scene::getShaderParameterDefault)
+        .addFunction("removeShaderParameterDefault", &Scene::removeShaderParameterDefault)
+        .addFunction("setViewShaderParameter",
+            luabridge::overload<Entity, const std::string&, const std::string&, const Vector4&>(&Scene::setViewShaderParameter),
+            luabridge::overload<Entity, const std::string&, const std::string&, const Vector3&>(&Scene::setViewShaderParameter),
+            luabridge::overload<Entity, const std::string&, const std::string&, const Vector2&>(&Scene::setViewShaderParameter),
+            luabridge::overload<Entity, const std::string&, const std::string&, float>(&Scene::setViewShaderParameter))
+        .addFunction("getViewShaderParameter", &Scene::getViewShaderParameter)
+        .addFunction("clearViewShaderParameter", &Scene::clearViewShaderParameter)
+        .addFunction("setMainViewShaderParameter",
+            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Scene::setMainViewShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Scene::setMainViewShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Scene::setMainViewShaderParameter),
+            luabridge::overload<const std::string&, const std::string&, float>(&Scene::setMainViewShaderParameter))
+        .addFunction("getMainViewShaderParameter", &Scene::getMainViewShaderParameter)
+        .addFunction("clearMainViewShaderParameter", &Scene::clearMainViewShaderParameter)
         .addProperty("ssaoEnabled", &Scene::isSSAOEnabled, &Scene::setSSAOEnabled)
         .addProperty("ssaoRadius", &Scene::getSSAORadius, &Scene::setSSAORadius)
         .addProperty("ssaoIntensity", &Scene::getSSAOIntensity, &Scene::setSSAOIntensity)

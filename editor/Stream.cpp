@@ -2964,7 +2964,8 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["ssrBlur"] = scene->getSSRBlur();
     sceneNode["gravity2D"] = encodeVector2(scene->getGravity2D());
     sceneNode["gravity3D"] = encodeVector3(scene->getGravity3D());
-    sceneNode["wind"] = encodeVector3(scene->getWind());
+    if (!scene->getShaderParameterDefaults().empty())
+        sceneNode["shaderParameters"] = encodeShaderUniforms(scene->getShaderParameterDefaults());
     sceneNode["fixedResolutionEnabled"] = scene->isFixedResolutionEnabled();
     sceneNode["fixedResolutionWidth"] = scene->getFixedResolutionWidth();
     sceneNode["fixedResolutionHeight"] = scene->getFixedResolutionHeight();
@@ -3091,7 +3092,9 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
     // absent key restores the engine default so decoding into a reused scene (play restore) is exact
     scene->setGravity2D(node["gravity2D"] ? decodeVector2(node["gravity2D"]) : Vector2(0.0f, -9.81f));
     scene->setGravity3D(node["gravity3D"] ? decodeVector3(node["gravity3D"]) : Vector3(0.0f, -9.81f, 0.0f));
-    scene->setWind(node["wind"] ? decodeVector3(node["wind"]) : Vector3(0.0f, 0.0f, 0.0f));
+    // runtime values a Play session set go with the restore
+    scene->setShaderParameterDefaults(decodeShaderUniforms(node["shaderParameters"]));
+    scene->resetRuntimeShaderParameters();
 
     if (node["fixedResolutionEnabled"]) {
         scene->setFixedResolutionEnabled(node["fixedResolutionEnabled"].as<bool>());
@@ -4980,7 +4983,6 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["lodEnabled"] = mesh.lodEnabled;
     node["lodBias"] = mesh.lodBias;
     node["renderInReflectionProbes"] = mesh.renderInReflectionProbes;
-    node["seeThrough"] = mesh.seeThrough;
     node["shadowsBillboard"] = mesh.shadowsBillboard;
     node["transparent"] = mesh.transparent;
 
@@ -4994,6 +4996,10 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     if (!mesh.vertexOffsetShader.empty()){
         node["vertexOffsetShader"] = mesh.vertexOffsetShader;
         node["vertexOffsetMax"] = mesh.vertexOffsetMax;
+    }
+    if (!mesh.coverageShader.empty()){
+        node["coverageShader"] = mesh.coverageShader;
+        node["coverageShadows"] = mesh.coverageShadows;
     }
     if (!mesh.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
@@ -5059,7 +5065,6 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["lodEnabled"]) mesh.lodEnabled = node["lodEnabled"].as<bool>();
     mesh.lodBias = decodeFinite(node["lodBias"], mesh.lodBias);
     if (node["renderInReflectionProbes"]) mesh.renderInReflectionProbes = node["renderInReflectionProbes"].as<bool>();
-    if (node["seeThrough"]) mesh.seeThrough = node["seeThrough"].as<bool>();
     if (node["shadowsBillboard"]) mesh.shadowsBillboard = node["shadowsBillboard"].as<bool>();
     if (node["transparent"]) mesh.transparent = node["transparent"].as<bool>();
 
@@ -5071,6 +5076,8 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
     mesh.vertexOffsetShader = node["vertexOffsetShader"] ? node["vertexOffsetShader"].as<std::string>() : "";
     mesh.vertexOffsetMax = decodeFinite(node["vertexOffsetMax"], 0.0f);
+    mesh.coverageShader = node["coverageShader"] ? node["coverageShader"].as<std::string>() : "";
+    mesh.coverageShadows = node["coverageShadows"] ? node["coverageShadows"].as<bool>() : false;
     mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     mesh.needUpdateShaderUniforms = true;
 
@@ -6322,6 +6329,8 @@ YAML::Node editor::Stream::encodeCameraComponent(const CameraComponent& camera) 
     node["framebufferWidth"] = camera.framebufferWidth;
     node["framebufferHeight"] = camera.framebufferHeight;
     node["framebufferFilter"] = textureFilterToString(camera.framebufferFilter);
+    if (!camera.shaderParameters.empty())
+        node["shaderParameters"] = encodeShaderUniforms(camera.shaderParameters);
 
     return node;
 }
@@ -6349,6 +6358,7 @@ CameraComponent editor::Stream::decodeCameraComponent(const YAML::Node& node, co
     if (node["framebufferWidth"]) camera.framebufferWidth = node["framebufferWidth"].as<unsigned int>();
     if (node["framebufferHeight"]) camera.framebufferHeight = node["framebufferHeight"].as<unsigned int>();
     if (node["framebufferFilter"]) camera.framebufferFilter = stringToTextureFilter(node["framebufferFilter"].as<std::string>());
+    camera.shaderParameters = decodeShaderUniforms(node["shaderParameters"]);
 
     return camera;
 }

@@ -11,7 +11,10 @@
 #include "SceneSettings.h"
 #include "render/Render.h"
 #include "math/Vector2.h"
+#include "shader/ShaderParameters.h"
+#include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 
@@ -40,11 +43,14 @@ namespace doriax{
         // Gravity's live value stays in PhysicsSystem; settings.gravity* is only the default.
         SceneSettings settings;
 
-        // runtime only, read by see-through meshes
-        Vector3 seeThroughTarget;
-        float seeThroughRadius;
-        float seeThroughOpacity;
-        float seeThroughMargin;
+        // runtime shader parameters, never saved
+        ShaderUniformValues runtimeShaderParameters;
+        std::unordered_map<Entity, ShaderUniformValues> viewShaderParameters;
+        ShaderUniformValues mainViewShaderParameters;
+        std::vector<std::shared_ptr<ShaderParameterProvider>> shaderParameterProviders;
+        uint64_t shaderParameterRevision;
+        mutable uint64_t shaderParameterTableRevision;
+        mutable ShaderParameterTable shaderParameterTable;
 
         UIEventState uiEventState;
 
@@ -71,6 +77,7 @@ namespace doriax{
             if (entity == viewCamera) {
                 viewCamera = NULL_ENTITY;
             }
+            viewShaderParameters.erase(entity);
             for (auto const& pair : systems) {
                 for (ComponentId componentId = 0; componentId < signature.size(); ++componentId) {
                     if (signature.test(componentId)) {
@@ -139,23 +146,45 @@ namespace doriax{
         void setSSAODebug(bool debug);
         bool isSSAODebug() const;
 
-        void setWind(Vector3 wind);
-        void setWind(float x, float y, float z);
-        Vector3 getWind() const;
+        // runtime values of "@scene Collection.name" parameters, over the saved defaults
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector2& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, float value);
+        Vector4 getShaderParameter(const std::string& collection, const std::string& name) const;
+        bool clearShaderParameter(const std::string& collection, const std::string& name);
 
-        // meshes with seeThrough dither away in front of the target; radius 0 turns it off
-        void setSeeThroughTarget(Vector3 target);
-        void setSeeThroughTarget(float x, float y, float z);
-        Vector3 getSeeThroughTarget() const;
+        // saved with the scene
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, float value);
+        Vector4 getShaderParameterDefault(const std::string& collection, const std::string& name) const;
+        bool removeShaderParameterDefault(const std::string& collection, const std::string& name);
+        void setShaderParameterDefaults(const ShaderUniformValues& values);
+        const ShaderUniformValues& getShaderParameterDefaults() const;
+        // drops every runtime scene and view value, and what providers accumulated
+        void resetRuntimeShaderParameters();
 
-        void setSeeThroughRadius(float radius);
-        float getSeeThroughRadius() const;
+        // runtime values of "@view Collection.name" parameters for one camera
+        void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector4& value);
+        void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector3& value);
+        void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector2& value);
+        void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, float value);
+        Vector4 getViewShaderParameter(Entity camera, const std::string& collection, const std::string& name) const;
+        bool clearViewShaderParameter(Entity camera, const std::string& collection, const std::string& name);
 
-        void setSeeThroughOpacity(float opacity);
-        float getSeeThroughOpacity() const;
+        // runtime view values of whichever camera renders the scene
+        void setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);
+        void setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector3& value);
+        void setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector2& value);
+        void setMainViewShaderParameter(const std::string& collection, const std::string& name, float value);
+        Vector4 getMainViewShaderParameter(const std::string& collection, const std::string& name) const;
+        bool clearMainViewShaderParameter(const std::string& collection, const std::string& name);
 
-        void setSeeThroughMargin(float margin);
-        float getSeeThroughMargin() const;
+        void updateShaderParameters(double dt, bool paused);
+        const ShaderParameterTable& getShaderParameterTable() const;
+        void resolveViewShaderParameters(Entity camera, ShaderParameterTable& table);
 
         void setSSREnabled(bool ssrEnabled);
         bool isSSREnabled() const;

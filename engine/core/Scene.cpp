@@ -40,10 +40,9 @@ void Scene::init(){
     defaultCamera = NULL_ENTITY;
     viewCamera = NULL_ENTITY;
 
-    seeThroughTarget = Vector3(0, 0, 0);
-    seeThroughRadius = 0.0f;
-    seeThroughOpacity = 0.3f;
-    seeThroughMargin = 0.5f;
+    shaderParameterRevision = 1;
+    shaderParameterTableRevision = 0;
+    shaderParameterProviders.push_back(std::make_shared<WindParameterProvider>());
 
     // All persistent scene configuration (background, SSAO/SSR, gravity, default shaders, ...)
     // defaults through the SceneSettings member; see SceneSettings.h.
@@ -288,52 +287,175 @@ bool Scene::isSSAODebug() const{
     return settings.ssaoDebug;
 }
 
-void Scene::setWind(Vector3 wind){
-    settings.wind = wind;
+void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value){
+    if (ShaderParameters::checkKey(collection, name) && ShaderUniforms::set(runtimeShaderParameters, ShaderParameters::getKey(collection, name), value))
+        shaderParameterRevision++;
 }
 
-void Scene::setWind(float x, float y, float z){
-    setWind(Vector3(x, y, z));
+void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value){
+    setShaderParameter(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
 }
 
-Vector3 Scene::getWind() const{
-    return settings.wind;
+void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector2& value){
+    setShaderParameter(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
 }
 
-void Scene::setSeeThroughTarget(Vector3 target){
-    seeThroughTarget = target;
+void Scene::setShaderParameter(const std::string& collection, const std::string& name, float value){
+    setShaderParameter(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
 }
 
-void Scene::setSeeThroughTarget(float x, float y, float z){
-    setSeeThroughTarget(Vector3(x, y, z));
+Vector4 Scene::getShaderParameter(const std::string& collection, const std::string& name) const{
+    const std::string key = ShaderParameters::getKey(collection, name);
+    if (ShaderUniforms::has(runtimeShaderParameters, key))
+        return ShaderUniforms::get(runtimeShaderParameters, key);
+    return ShaderUniforms::get(settings.shaderParameters, key);
 }
 
-Vector3 Scene::getSeeThroughTarget() const{
-    return seeThroughTarget;
+bool Scene::clearShaderParameter(const std::string& collection, const std::string& name){
+    if (!ShaderUniforms::remove(runtimeShaderParameters, ShaderParameters::getKey(collection, name)))
+        return false;
+    shaderParameterRevision++;
+    return true;
 }
 
-void Scene::setSeeThroughRadius(float radius){
-    seeThroughRadius = std::max(radius, 0.0f);
+void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value){
+    if (ShaderParameters::checkKey(collection, name) && ShaderUniforms::set(settings.shaderParameters, ShaderParameters::getKey(collection, name), value))
+        shaderParameterRevision++;
 }
 
-float Scene::getSeeThroughRadius() const{
-    return seeThroughRadius;
+void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value){
+    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
 }
 
-void Scene::setSeeThroughOpacity(float opacity){
-    seeThroughOpacity = std::clamp(opacity, 0.0f, 1.0f);
+void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value){
+    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
 }
 
-float Scene::getSeeThroughOpacity() const{
-    return seeThroughOpacity;
+void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, float value){
+    setShaderParameterDefault(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
 }
 
-void Scene::setSeeThroughMargin(float margin){
-    seeThroughMargin = std::max(margin, 0.0f);
+Vector4 Scene::getShaderParameterDefault(const std::string& collection, const std::string& name) const{
+    return ShaderUniforms::get(settings.shaderParameters, ShaderParameters::getKey(collection, name));
 }
 
-float Scene::getSeeThroughMargin() const{
-    return seeThroughMargin;
+bool Scene::removeShaderParameterDefault(const std::string& collection, const std::string& name){
+    if (!ShaderUniforms::remove(settings.shaderParameters, ShaderParameters::getKey(collection, name)))
+        return false;
+    shaderParameterRevision++;
+    return true;
+}
+
+void Scene::setShaderParameterDefaults(const ShaderUniformValues& values){
+    settings.shaderParameters = values;
+    shaderParameterRevision++;
+}
+
+const ShaderUniformValues& Scene::getShaderParameterDefaults() const{
+    return settings.shaderParameters;
+}
+
+void Scene::resetRuntimeShaderParameters(){
+    runtimeShaderParameters.clear();
+    viewShaderParameters.clear();
+    mainViewShaderParameters.clear();
+    for (const auto& provider : shaderParameterProviders){
+        provider->reset();
+    }
+    shaderParameterRevision++;
+}
+
+void Scene::setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector4& value){
+    if (!ShaderParameters::checkKey(collection, name))
+        return;
+    if (!findComponent<CameraComponent>(camera)){
+        Log::error("View shader parameter '%s.%s' needs a camera entity", collection.c_str(), name.c_str());
+        return;
+    }
+    ShaderUniforms::set(viewShaderParameters[camera], ShaderParameters::getKey(collection, name), value);
+}
+
+void Scene::setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector3& value){
+    setViewShaderParameter(camera, collection, name, Vector4(value.x, value.y, value.z, 0.0f));
+}
+
+void Scene::setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector2& value){
+    setViewShaderParameter(camera, collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
+}
+
+void Scene::setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, float value){
+    setViewShaderParameter(camera, collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
+}
+
+// what the camera's shaders read, as resolveViewShaderParameters orders it
+Vector4 Scene::getViewShaderParameter(Entity camera, const std::string& collection, const std::string& name) const{
+    const std::string key = ShaderParameters::getKey(collection, name);
+    auto runtime = viewShaderParameters.find(camera);
+    if (runtime != viewShaderParameters.end() && ShaderUniforms::has(runtime->second, key))
+        return ShaderUniforms::get(runtime->second, key);
+    if (camera != NULL_ENTITY && camera == getRenderCamera() && ShaderUniforms::has(mainViewShaderParameters, key))
+        return ShaderUniforms::get(mainViewShaderParameters, key);
+    if (const CameraComponent* cameraComponent = const_cast<Scene*>(this)->findComponent<CameraComponent>(camera))
+        return ShaderUniforms::get(cameraComponent->shaderParameters, key);
+    return Vector4::ZERO;
+}
+
+bool Scene::clearViewShaderParameter(Entity camera, const std::string& collection, const std::string& name){
+    auto runtime = viewShaderParameters.find(camera);
+    return runtime != viewShaderParameters.end() && ShaderUniforms::remove(runtime->second, ShaderParameters::getKey(collection, name));
+}
+
+void Scene::setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector4& value){
+    if (ShaderParameters::checkKey(collection, name))
+        ShaderUniforms::set(mainViewShaderParameters, ShaderParameters::getKey(collection, name), value);
+}
+
+void Scene::setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector3& value){
+    setMainViewShaderParameter(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
+}
+
+void Scene::setMainViewShaderParameter(const std::string& collection, const std::string& name, const Vector2& value){
+    setMainViewShaderParameter(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
+}
+
+void Scene::setMainViewShaderParameter(const std::string& collection, const std::string& name, float value){
+    setMainViewShaderParameter(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
+}
+
+Vector4 Scene::getMainViewShaderParameter(const std::string& collection, const std::string& name) const{
+    return ShaderUniforms::get(mainViewShaderParameters, ShaderParameters::getKey(collection, name));
+}
+
+bool Scene::clearMainViewShaderParameter(const std::string& collection, const std::string& name){
+    return ShaderUniforms::remove(mainViewShaderParameters, ShaderParameters::getKey(collection, name));
+}
+
+void Scene::updateShaderParameters(double dt, bool paused){
+    for (const auto& provider : shaderParameterProviders){
+        provider->update(this, dt, paused);
+    }
+}
+
+const ShaderParameterTable& Scene::getShaderParameterTable() const{
+    if (shaderParameterTableRevision != shaderParameterRevision){
+        shaderParameterTable.clear();
+        shaderParameterTable.apply(settings.shaderParameters);
+        shaderParameterTable.apply(runtimeShaderParameters);
+        shaderParameterTableRevision = shaderParameterRevision;
+    }
+    return shaderParameterTable;
+}
+
+// saved values, then the main view's while the camera renders the scene, then its own runtime ones
+void Scene::resolveViewShaderParameters(Entity camera, ShaderParameterTable& table){
+    table.clear();
+    if (CameraComponent* cameraComponent = findComponent<CameraComponent>(camera))
+        table.apply(cameraComponent->shaderParameters);
+    if (camera != NULL_ENTITY && camera == getRenderCamera())
+        table.apply(mainViewShaderParameters);
+    auto runtime = viewShaderParameters.find(camera);
+    if (runtime != viewShaderParameters.end())
+        table.apply(runtime->second);
 }
 
 void Scene::setSSREnabled(bool ssrEnabled){

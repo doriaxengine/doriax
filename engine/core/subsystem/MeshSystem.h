@@ -213,7 +213,6 @@ namespace doriax{
             bool receiveShadows;
             bool shadowsBillboard;
             bool renderInReflectionProbes;
-            bool seeThrough;
             bool transparent;
             bool autoTransparency;
             bool lodEnabled;
@@ -222,6 +221,8 @@ namespace doriax{
             std::string customDepthShader;
             std::string vertexOffsetShader;
             float vertexOffsetMax;
+            std::string coverageShader;
+            bool coverageShadows;
             ShaderUniformValues shaderUniforms;
         };
         typedef std::map<std::pair<int, std::string>, MeshSettings> MeshSettingsByNode;

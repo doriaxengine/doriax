@@ -475,20 +475,6 @@ bool Mesh::isRenderInReflectionProbes() const{
     return getMesh().renderInReflectionProbes;
 }
 
-void Mesh::setSeeThrough(bool seeThrough){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->seeThrough != seeThrough){
-            mesh->seeThrough = seeThrough;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-bool Mesh::isSeeThrough() const{
-    return getMesh().seeThrough;
-}
-
 void Mesh::setShadowsBillboard(bool shadowsBillboard){
     for (MeshComponent* mesh : getMeshes()){
         mesh->shadowsBillboard = shadowsBillboard;
@@ -570,6 +556,30 @@ void Mesh::setVertexOffsetMax(float vertexOffsetMax){
 
 float Mesh::getVertexOffsetMax() const{
     return getMesh().vertexOffsetMax;
+}
+
+void Mesh::setCoverageShader(const std::string& path){
+    for (MeshComponent* mesh : getMeshes()){
+        if (mesh->coverageShader != path){
+            mesh->coverageShader = path;
+
+            mesh->needReload = true;
+        }
+    }
+}
+
+std::string Mesh::getCoverageShader() const{
+    return getMesh().coverageShader;
+}
+
+void Mesh::setCoverageShadows(bool coverageShadows){
+    for (MeshComponent* mesh : getMeshes()){
+        mesh->coverageShadows = coverageShadows;
+    }
+}
+
+bool Mesh::isCoverageShadows() const{
+    return getMesh().coverageShadows;
 }
 
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){

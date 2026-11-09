@@ -5185,12 +5185,21 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
         }
 
         propertyHeader("Vertex Offset");
-        drawVertexOffsetRow(sceneProject, shaderEntity);
-        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow; its u_vs_offsetParams are the uniforms below. The engine's offsets/wind.glsl sways the mesh in the scene wind.");
+        drawEffectFunctionRow(sceneProject, shaderEntity, false);
+        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow. Its @param values are the parameters below; the engine's offsets/wind.glsl sways the mesh in the scene's Wind.velocity.");
         if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
             RowSettings maxSettings;
             maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
             propertyRow(RowPropertyType::FloatPositive, cpType, "vertexOffsetMax", "Max Offset", sceneProject, {shaderEntity}, maxSettings);
+        }
+
+        propertyHeader("Coverage");
+        drawEffectFunctionRow(sceneProject, shaderEntity, true);
+        ImGui::SameLine(); helpMarker("A .glsl with float getCoverage(CoverageContext context) returning how much of each fragment stays: 1 keeps it, 0 removes it, and opaque surfaces keep a dithered share in between while blended ones fade. The color, depth and G-buffer passes all apply it, so SSAO and reflections agree. The engine's coverage/see_through.glsl opens a view to a target a script sets.");
+        if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "coverageShader")->empty()) {
+            RowSettings shadowSettings;
+            shadowSettings.help = "The shadow maps follow the coverage too. Off keeps the whole shadow, though the material's alpha mask still applies.";
+            propertyRow(RowPropertyType::Bool, cpType, "coverageShadows", "Cut Shadows", sceneProject, {shaderEntity}, shadowSettings);
         }
     }
 
@@ -5217,8 +5226,6 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
             forkShader = sceneProject->scene->getDefaultCustomShader(shaderType);
         if (forkShader.empty() && cpType == ComponentType::MeshComponent)
             forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customDepthShader");
-        if (forkShader.empty() && cpType == ComponentType::MeshComponent)
-            forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader");
         if (forkShader.empty() && cpType == ComponentType::WaterComponent)
             forkShader = *Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customUnderwaterShader");
 
@@ -5228,6 +5235,9 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
         drawShaderUniformRows(cpType, sceneProject, shaderEntity, uniformRows, false);
         endTable();
     }
+
+    if (cpType == ComponentType::MeshComponent)
+        drawMeshShaderParameters(sceneProject, shaderEntity);
 }
 
 void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix){
@@ -5271,15 +5281,25 @@ void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType
 }
 
 // one .glsl file, unlike the .vert/.frag pair of a fork
-void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity entity){
+void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage){
     const std::filesystem::path projectPath = project->getProjectPath();
-    const std::string current = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, ComponentType::MeshComponent, "vertexOffsetShader");
+    const char* propertyName = coverage ? "coverageShader" : "vertexOffsetShader";
+    const std::string idSuffix = coverage ? "coverage" : "vertex_offset";
+    const std::string current = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, ComponentType::MeshComponent, propertyName);
     const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
-    const bool engineOffset = !exists && ProjectUtils::isEngineVertexOffset(current);
+    const bool engineFunction = !exists && ProjectUtils::isEngineEffectFunction(current);
+    const uint32_t sceneId = sceneProject->id;
 
-    auto setOffset = [&](const std::string& value) {
-        Command* offsetCmd = new PropertyCmd<std::string>(project, sceneProject->id, entity, ComponentType::MeshComponent, "vertexOffsetShader", value);
-        CommandHandle::get(sceneProject->id)->addCommand(offsetCmd);
+    // a coverage function suggests its shadow policy, applied in the same step
+    auto setFunction = [&](const std::string& value) {
+        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+        multiCmd->addPropertyCmd<std::string>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, value);
+        if (coverage && !value.empty()) {
+            const ShaderEffectAnnotations& annotations = getShaderAnnotations(value, false);
+            if (annotations.hasCoverageShadows)
+                multiCmd->addPropertyCmd<bool>(project, sceneId, entity, ComponentType::MeshComponent, "coverageShadows", annotations.coverageShadows);
+        }
+        CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
     };
     auto useFile = [&](const std::string& path) {
         std::error_code ec;
@@ -5288,12 +5308,16 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
             Backend::getApp().registerAlert("Error", "Pick a .glsl file inside the project.");
             return;
         }
-        setOffset(rel.generic_string());
+        setFunction(rel.generic_string());
+    };
+    auto openInEditor = [&](const std::string& rel) {
+        if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
+            codeEditor->openFile((projectPath / rel).string(), true);
     };
 
     if (current.empty())
         ImGui::TextDisabled("None");
-    else if (engineOffset)
+    else if (engineFunction)
         ImGui::TextWrapped("%s (built-in)", current.c_str());
     else
         ImGui::TextWrapped("%s", current.c_str());
@@ -5301,35 +5325,45 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x / 3.0, ImGui::GetStyle().FramePadding.y / 2.0));
 
     ImGui::BeginDisabled(!current.empty());
-    if (ImGui::Button(ICON_FA_FILE_CIRCLE_PLUS "##new_vertex_offset")) {
-        std::string created = ProjectUtils::writeVertexOffsetTemplate(projectPath, sceneProject->scene->getEntityName(entity));
+    if (ImGui::Button((std::string(ICON_FA_FILE_CIRCLE_PLUS "##new_") + idSuffix).c_str())) {
+        const std::string name = sceneProject->scene->getEntityName(entity);
+        std::string created = coverage ? ProjectUtils::writeCoverageTemplate(projectPath, name) : ProjectUtils::writeVertexOffsetTemplate(projectPath, name);
         if (created.empty()) {
-            Backend::getApp().registerAlert("Error", "Could not write the vertex offset file.");
+            Backend::getApp().registerAlert("Error", "Could not write the effect function file.");
         } else {
-            setOffset(created);
-            if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
-                codeEditor->openFile((projectPath / created).string(), true);
+            setFunction(created);
+            openInEditor(created);
         }
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Create a vertex offset from a template");
+        ImGui::SetTooltip(coverage ? "Create a coverage function from a template" : "Create a vertex offset from a template");
     ImGui::EndDisabled();
 
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_WIND "##engine_vertex_offset"))
-        ImGui::OpenPopup("engine_vertex_offsets");
+    const std::string presetsPopup = "engine_effects_" + idSuffix;
+    if (ImGui::Button((std::string(coverage ? ICON_FA_EYE_SLASH : ICON_FA_WIND) + "##engine_" + idSuffix).c_str()))
+        ImGui::OpenPopup(presetsPopup.c_str());
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Use one of the engine's vertex offsets");
-    if (ImGui::BeginPopup("engine_vertex_offsets")) {
-        for (const std::string& offset : ProjectUtils::getEngineVertexOffsets()) {
-            if (ImGui::Selectable(offset.c_str(), offset == current))
-                setOffset(offset);
+        ImGui::SetTooltip(coverage ? "Use one of the engine's coverage functions" : "Use one of the engine's vertex offsets");
+    if (ImGui::BeginPopup(presetsPopup.c_str())) {
+        for (const std::string& preset : coverage ? ProjectUtils::getEngineCoverages() : ProjectUtils::getEngineVertexOffsets()) {
+            if (ImGui::Selectable(preset.c_str(), preset == current))
+                setFunction(preset);
+            // the first line of the file says what it does
+            if (ImGui::IsItemHovered()) {
+                std::string source;
+                if (ProjectUtils::readShaderSource(projectPath, preset, source)) {
+                    std::string firstLine = source.substr(0, source.find('\n'));
+                    if (firstLine.rfind("//", 0) == 0)
+                        ImGui::SetTooltip("%s", firstLine.substr(2).c_str());
+                }
+            }
         }
         ImGui::EndPopup();
     }
 
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_FOLDER_OPEN "##pick_vertex_offset")) {
+    if (ImGui::Button((std::string(ICON_FA_FOLDER_OPEN "##pick_") + idSuffix).c_str())) {
         std::string selected = FileDialogs::openFileDialog(projectPath.string(), FILE_DIALOG_SHADER);
         if (!selected.empty())
             useFile(selected);
@@ -5337,28 +5371,45 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Pick a .glsl file");
 
+    // a built-in one becomes a project file to change
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!engineFunction);
+    if (ImGui::Button((std::string(ICON_FA_CODE_FORK "##copy_") + idSuffix).c_str())) {
+        const std::string name = std::filesystem::path(current).stem().string();
+        std::string copied = ProjectUtils::copyEffectFunctionToProject(projectPath, current, name);
+        if (copied.empty()) {
+            Backend::getApp().registerAlert("Error", "Could not copy the effect function into the project.");
+        } else {
+            setFunction(copied);
+            openInEditor(copied);
+            if (ResourcesWindow* resources = Backend::getApp().getResourcesWindow())
+                resources->refreshCurrentDirectory();
+        }
+    }
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Copy the built-in function into the project to change it");
+    ImGui::EndDisabled();
+
     ImGui::SameLine();
     ImGui::BeginDisabled(!exists);
-    if (ImGui::Button(ICON_FA_FILE_CODE "##open_vertex_offset")) {
-        if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
-            codeEditor->openFile((projectPath / current).string(), true);
-    }
+    if (ImGui::Button((std::string(ICON_FA_FILE_CODE "##open_") + idSuffix).c_str()))
+        openInEditor(current);
     if (ImGui::IsItemHovered()) {
         if (exists)
             ImGui::SetTooltip("Open %s", current.c_str());
-        else if (engineOffset)
+        else if (engineFunction)
             ImGui::SetTooltip("Built into the engine");
         else
-            ImGui::SetTooltip("Vertex offset file not found");
+            ImGui::SetTooltip("Effect function file not found");
     }
     ImGui::EndDisabled();
 
     ImGui::SameLine();
     ImGui::BeginDisabled(current.empty());
-    if (ImGui::Button(ICON_FA_XMARK "##clear_vertex_offset"))
-        setOffset("");
+    if (ImGui::Button((std::string(ICON_FA_XMARK "##clear_") + idSuffix).c_str()))
+        setFunction("");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Remove the vertex offset");
+        ImGui::SetTooltip(coverage ? "Remove the coverage function" : "Remove the vertex offset");
     ImGui::EndDisabled();
 
     ImGui::PopStyleVar();
@@ -5372,6 +5423,253 @@ void editor::Properties::drawVertexOffsetRow(SceneProject* sceneProject, Entity 
         }
         ImGui::EndDragDropTarget();
     }
+}
+
+const editor::ShaderEffectAnnotations& editor::Properties::getShaderAnnotations(const std::string& shader, bool fork){
+    CachedShaderAnnotations& cached = shaderAnnotationsCache[(fork ? "fork:" : "") + shader];
+    const double now = ImGui::GetTime();
+    if (cached.parsedAt < 0.0 || now - cached.parsedAt > 1.0) {
+        if (fork) {
+            const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
+            cached.annotations = ProjectUtils::getShaderAnnotations(project->getProjectPath(), {paths.vert, paths.frag}, Util::getCustomShaderIncludeRoot(shader));
+        } else {
+            cached.annotations = ProjectUtils::getShaderAnnotations(project->getProjectPath(), {shader}, std::filesystem::path(shader).parent_path());
+        }
+        cached.parsedAt = now;
+    }
+    return cached.annotations;
+}
+
+editor::Properties::ShaderUniformEdit editor::Properties::drawParameterRow(const ShaderParameterDeclaration& declaration, const std::string& key, const ShaderUniformValues& values,
+                                                                          const ShaderUniformValues* inherited, const std::string& idPrefix, Vector4& newValue){
+    const bool hasOwn = ShaderUniforms::has(values, key);
+    const bool reset = propertyHeader(declaration.collection.empty() ? declaration.name : key, -1, hasOwn);
+    if (ImGui::IsItemHovered() && !declaration.description.empty())
+        ImGui::SetTooltip("%s", declaration.description.c_str());
+
+    // a script writes it while the scene runs
+    if (declaration.runtime) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("Set at runtime");
+        return reset ? ShaderUniformEdit::RESET : ShaderUniformEdit::NONE;
+    }
+
+    Vector4 value = declaration.defaultValue;
+    if (hasOwn)
+        value = ShaderUniforms::get(values, key);
+    else if (inherited && ShaderUniforms::has(*inherited, key))
+        value = ShaderUniforms::get(*inherited, key);
+    float fields[4] = {value.x, value.y, value.z, value.w};
+    const int components = ShaderParameters::getComponentCount(declaration.type);
+
+    const std::string id = idPrefix + key;
+    bool changed = false;
+    ImGui::SetNextItemWidth(-1);
+    if (declaration.color && components >= 3) {
+        changed = components == 3 ? ImGui::ColorEdit3(id.c_str(), fields, ImGuiColorEditFlags_Float) : ImGui::ColorEdit4(id.c_str(), fields, ImGuiColorEditFlags_Float);
+    } else {
+        const bool ranged = declaration.hasRange && declaration.maxValue > declaration.minValue;
+        const float speed = ranged ? (declaration.maxValue - declaration.minValue) / 200.0f : 0.01f;
+        changed = UIUtils::dragScalarN(id.c_str(), ImGuiDataType_Float, fields, components, speed,
+            ranged ? &declaration.minValue : nullptr, ranged ? &declaration.maxValue : nullptr);
+    }
+    if (ImGui::IsItemHovered() && !declaration.description.empty() && !ImGui::IsItemActive())
+        ImGui::SetTooltip("%s", declaration.description.c_str());
+
+    if (reset)
+        return ShaderUniformEdit::RESET;
+    if (!changed)
+        return ShaderUniformEdit::NONE;
+    newValue = Vector4(fields[0], fields[1], fields[2], fields[3]);
+    return ShaderUniformEdit::CHANGED;
+}
+
+void editor::Properties::drawParameterTable(const std::string& id, uint32_t sceneId, const std::vector<ShaderParameterDeclaration>& parameters, const ShaderUniformValues& values,
+                                            const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd){
+    auto keyOf = [](const ShaderParameterDeclaration& parameter) {
+        return parameter.collection.empty() ? parameter.name : ShaderParameters::getKey(parameter.collection, parameter.name);
+    };
+
+    float labelSize = 0.0f;
+    for (const ShaderParameterDeclaration& parameter : parameters)
+        labelSize = std::max(labelSize, getLabelSize(keyOf(parameter), true));
+
+    if (!ImGui::BeginTable(id.c_str(), 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV))
+        return;
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, labelSize);
+    ImGui::TableSetupColumn("Value");
+
+    for (const ShaderParameterDeclaration& parameter : parameters) {
+        const std::string key = keyOf(parameter);
+        Vector4 newValue;
+        ShaderUniformEdit edit = drawParameterRow(parameter, key, values, inherited, "##" + id + "_", newValue);
+        if (edit == ShaderUniformEdit::CHANGED) {
+            ShaderUniformValues newValues = values;
+            ShaderUniforms::set(newValues, key, newValue);
+            // a drag merges into one undo step, closed when the field lets go
+            cmd = makeCmd(newValues);
+            CommandHandle::get(sceneId)->addCommand(cmd);
+        } else if (edit == ShaderUniformEdit::RESET) {
+            ShaderUniformValues newValues = values;
+            ShaderUniforms::remove(newValues, key);
+            CommandHandle::get(sceneId)->addCommandNoMerge(makeCmd(newValues));
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit() && cmd) {
+            cmd->setNoMerge();
+            cmd = nullptr;
+        }
+    }
+    ImGui::EndTable();
+}
+
+bool editor::Properties::drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
+                                              const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd){
+    // a vertex and a fragment file may both include a declaration
+    std::vector<ShaderParameterDeclaration> own;
+    std::vector<std::string> shared;
+    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (declaration.scope == ShaderParameterScope::OBJECT) {
+            if (std::none_of(own.begin(), own.end(), [&](const ShaderParameterDeclaration& other) { return other.name == declaration.name; }))
+                own.push_back(declaration);
+        } else {
+            const std::string name = std::string(ShaderParameters::getScopeName(declaration.scope)) + " " + ShaderParameters::getKey(declaration.collection, declaration.name);
+            if (std::find(shared.begin(), shared.end(), name) == shared.end())
+                shared.push_back(name);
+        }
+    }
+    if (own.empty() && shared.empty() && annotations.errors.empty())
+        return false;
+
+    ImGui::SeparatorText((title + " Parameters").c_str());
+    for (const std::string& error : annotations.errors) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+        ImGui::TextWrapped("%s", error.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (!own.empty())
+        drawParameterTable(title + "_parameters", sceneId, own, values, inherited, makeCmd);
+
+    // edited on the scene and on each camera
+    if (!shared.empty()) {
+        std::string list;
+        for (const std::string& name : shared)
+            list += (list.empty() ? "" : ", ") + name;
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("Reads %s", list.c_str());
+        ImGui::PopStyleColor();
+    }
+    return true;
+}
+
+// the forks and effect files a mesh is built from, as RenderSystem::loadMesh picks them
+static std::vector<std::pair<std::string, bool>> getMeshShaderSources(Scene* scene, const MeshComponent& mesh){
+    const std::string& colorFork = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
+    std::vector<std::pair<std::string, bool>> sources;
+    for (const std::string* fork : {&colorFork, &mesh.customDepthShader}) {
+        if (!fork->empty())
+            sources.push_back({*fork, true});
+    }
+    for (const std::string* effect : {&mesh.vertexOffsetShader, &mesh.coverageShader}) {
+        if (!effect->empty())
+            sources.push_back({*effect, false});
+    }
+    return sources;
+}
+
+void editor::Properties::drawMeshShaderParameters(SceneProject* sceneProject, Entity entity){
+    Scene* scene = sceneProject->scene;
+    const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+    if (!mesh)
+        return;
+
+    const ShaderUniformValues values = mesh->shaderUniforms;
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh->customShader);
+    const uint32_t sceneId = sceneProject->id;
+    for (const auto& [source, fork] : getMeshShaderSources(scene, *mesh)) {
+        // a fork and an effect file can share a title
+        ImGui::PushID(source.c_str());
+        const std::string title = fork ? shaderForkName(source) : std::filesystem::path(source).stem().string();
+        drawShaderParameters(title, sceneId, getShaderAnnotations(source, fork), values, inherited, [&](const ShaderUniformValues& newValues) -> Command* {
+            return new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, ComponentType::MeshComponent, "shaderUniforms", newValues);
+        });
+        ImGui::PopID();
+    }
+}
+
+std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored){
+    std::vector<ShaderParameterDeclaration> result;
+    auto add = [&](const ShaderParameterDeclaration& declaration) {
+        for (const ShaderParameterDeclaration& existing : result) {
+            if (existing.collection == declaration.collection && existing.name == declaration.name)
+                return;
+        }
+        result.push_back(declaration);
+    };
+
+    // every mesh, foliage chunks included
+    Scene* scene = sceneProject->scene;
+    std::set<std::pair<std::string, bool>> sources;
+    auto meshes = scene->getComponentArray<MeshComponent>();
+    for (size_t i = 0; i < meshes->size(); i++) {
+        for (const auto& source : getMeshShaderSources(scene, meshes->getComponentFromIndex(i)))
+            sources.insert(source);
+    }
+    for (const auto& [source, fork] : sources) {
+        for (const ShaderParameterDeclaration& declaration : getShaderAnnotations(source, fork).parameters) {
+            if (declaration.scope == scope)
+                add(declaration);
+        }
+    }
+    // stored values nothing declares, so they can still be seen and removed
+    for (const auto& entry : stored) {
+        ShaderParameterDeclaration declaration;
+        declaration.scope = scope;
+        declaration.type = ShaderUniformType::FLOAT4;
+        if (!ShaderParameters::splitKey(entry.first, declaration.collection, declaration.name))
+            continue;
+        declaration.description = "No shader in the scene declares it";
+        add(declaration);
+    }
+
+    std::sort(result.begin(), result.end(), [](const ShaderParameterDeclaration& a, const ShaderParameterDeclaration& b) {
+        return a.collection != b.collection ? a.collection < b.collection : a.name < b.name;
+    });
+    return result;
+}
+
+void editor::Properties::drawSceneShaderParameters(SceneProject* sceneProject){
+    const ShaderUniformValues values = Catalog::getSceneProperty<ShaderUniformValues>(sceneProject->scene, "shader_parameters");
+    const std::vector<ShaderParameterDeclaration> parameters = collectSharedParameters(sceneProject, ShaderParameterScope::SCENE, values);
+    if (parameters.empty())
+        return;
+
+    ImGui::SeparatorText("Shader Parameters");
+    ImGui::SameLine();
+    helpMarker("Values of every \"@scene Collection.name\" the scene's shaders declare, like the wind of offsets/wind.glsl. Scripts override them with scene:setShaderParameter.");
+
+    const uint32_t sceneId = sceneProject->id;
+    drawParameterTable("scene_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {
+        return new ScenePropertyCmd<ShaderUniformValues>(project, sceneId, "shader_parameters", newValues);
+    });
+}
+
+void editor::Properties::drawCameraShaderParameters(SceneProject* sceneProject, Entity entity){
+    const CameraComponent* camera = sceneProject->scene->findComponent<CameraComponent>(entity);
+    if (!camera)
+        return;
+    const ShaderUniformValues values = camera->shaderParameters;
+    const std::vector<ShaderParameterDeclaration> parameters = collectSharedParameters(sceneProject, ShaderParameterScope::VIEW, values);
+    if (parameters.empty())
+        return;
+
+    ImGui::SeparatorText("Shader Parameters");
+    ImGui::SameLine();
+    helpMarker("Values of every \"@view Collection.name\" the scene's shaders declare, for this camera, like the opening of coverage/see_through.glsl. Scripts override them with camera:setShaderParameter, or scene:setMainViewShaderParameter for whichever camera renders the scene.");
+
+    const uint32_t sceneId = sceneProject->id;
+    drawParameterTable("camera_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {
+        return new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, ComponentType::CameraComponent, "shaderParameters", newValues);
+    });
 }
 
 editor::Properties::ShaderUniformRows editor::Properties::resolveShaderUniformRows(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity){
@@ -6372,10 +6670,6 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
     RowSettings reflectionProbeSettings;
     reflectionProbeSettings.help = "Draw this mesh into Reflection Probe captures. Turn off to keep an object out of its own reflection.";
     propertyRow(RowPropertyType::Bool, cpType, "renderInReflectionProbes", "Render in Probes", sceneProject, entities, reflectionProbeSettings);
-
-    RowSettings seeThroughSettings;
-    seeThroughSettings.help = "Dither this mesh away where it hides the scene's see-through target, which a script sets. Shadows stay whole.";
-    propertyRow(RowPropertyType::Bool, cpType, "seeThrough", "See Through", sceneProject, entities, seeThroughSettings);
 
     RowSettings transparencySettings;
     transparencySettings.help = "Just for render ordering";
@@ -7614,6 +7908,9 @@ void editor::Properties::drawCameraComponent(ComponentType cpType, SceneProject*
         propertyRow(RowPropertyType::Enum, cpType, "framebufferFilter", "Filter", sceneProject, entities, filterSettings);
         endTable();
     }
+
+    if (entities.size() == 1)
+        drawCameraShaderParameters(sceneProject, entities[0]);
 }
 
 void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
@@ -14558,18 +14855,9 @@ void editor::Properties::show(){
                 }
             }
 
-            if (sceneProject->sceneType == SceneType::SCENE_3D) {
-                ImGui::SeparatorText("Wind");
-
-                if (ImGui::BeginTable("scene_wind_table", 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Velocity"));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                    drawScenePropertyRow<Vector3>(sceneProject, "wind", "Velocity", ScenePropertyInputType::DragFloat, -1.0f, 0.0f, 1.0f,
-                        "Air velocity (meters/s). Vertex offsets read it, like the engine's offsets/wind.glsl, and foliage layers with wind sway bend in it; it moves no physics body.");
-
-                    ImGui::EndTable();
-                }
+            // the collections the scene's shaders declare, Wind among them once something sways
+            if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                drawSceneShaderParameters(sceneProject);
             }
 
             if (sceneProject->sceneType != SceneType::SCENE_UI) {
@@ -14646,17 +14934,28 @@ void editor::Properties::show(){
                     }
                     ImGui::EndTable();
                 }
-                if (rows.members.empty())
-                    return;
-
-                shaderUniformsSeparator(sceneProject->scene->getDefaultCustomShader(type));
-                if (ImGui::BeginTable((std::string(propertyName) + "_uniforms_table").c_str(), 2, tableFlags)) {
-                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(rows.members, false));
-                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-                    drawSceneShaderUniforms(sceneProject, type, rows, used, false);
-                    ImGui::EndTable();
+                const std::string fork = sceneProject->scene->getDefaultCustomShader(type);
+                if (!rows.members.empty()) {
+                    shaderUniformsSeparator(fork);
+                    if (ImGui::BeginTable((std::string(propertyName) + "_uniforms_table").c_str(), 2, tableFlags)) {
+                        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getShaderUniformsLabelSize(rows.members, false));
+                        ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                        drawSceneShaderUniforms(sceneProject, type, rows, used, false);
+                        ImGui::EndTable();
+                    }
+                    afterUniforms = true;
                 }
-                afterUniforms = true;
+
+                // what a default mesh fork declares, inherited by the meshes using it
+                if (type == ShaderType::MESH && !fork.empty()) {
+                    const uint32_t sceneId = sceneProject->id;
+                    const char* uniformsProperty = Catalog::getDefaultShaderUniformsProperty(type);
+                    const ShaderUniformValues values = Catalog::getSceneProperty<ShaderUniformValues>(sceneProject->scene, uniformsProperty);
+                    afterUniforms = drawShaderParameters(shaderForkName(fork), sceneId, getShaderAnnotations(fork, true), values, nullptr,
+                        [&](const ShaderUniformValues& newValues) -> Command* {
+                            return new ScenePropertyCmd<ShaderUniformValues>(project, sceneId, uniformsProperty, newValues);
+                        }) || afterUniforms;
+                }
             };
 
             if (sceneProject->sceneType != SceneType::SCENE_UI) {

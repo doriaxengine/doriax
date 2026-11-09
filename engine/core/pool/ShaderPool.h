@@ -85,10 +85,11 @@ namespace doriax{
         static std::string getCustomShaderName(uint16_t customId);     // project-relative base, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-        // a vertex offset rides on the custom shader name as "fork#offset", so it needs no variant bit
-        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset);
+        // effect functions ride on the custom shader name, "fork#vertexOffset#coverage"
+        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage = "");
         static std::string getCustomShaderFork(const std::string& customShader);
         static std::string getCustomShaderVertexOffset(const std::string& customShader);
+        static std::string getCustomShaderCoverage(const std::string& customShader);
 
         // Frees the GPU handle of every cached forked-shader variant so the next get()
         // rebuilds (used by the editor after a shader source is edited). The pool keeps
@@ -122,8 +123,9 @@ namespace doriax{
                         bool light2d = false, bool shadows2d = false,
                         bool alphaMask = false, bool alphaOpaque = false, bool instanceFade = false,
                         bool terrainPBR = false);
-        static uint32_t getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask = false, bool instanceFade = false, bool seeThrough = false);
-        static uint32_t getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR = false, bool occlusionTexture = false, bool occlusionUV2 = false, bool seeThrough = false);
+        // uv1: UV set 1 for a coverage function
+        static uint32_t getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask = false, bool instanceFade = false, bool uv1 = false);
+        static uint32_t getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR = false, bool occlusionTexture = false, bool occlusionUV2 = false, bool uv1 = false);
         static uint32_t getUIProperties(bool texture, bool fontAtlasTexture, bool vertexColorVec3, bool vertexColorVec4);
         static uint32_t getPointsProperties(bool texture, bool vertexColorVec3, bool vertexColorVec4, bool textureRect);
         static uint32_t getLinesProperties(bool vertexColorVec3, bool vertexColorVec4);

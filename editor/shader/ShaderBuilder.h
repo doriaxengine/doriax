@@ -64,7 +64,8 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key. For custom shaders, resolves only
         // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
         // Throws on failure.
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project);
+        // parameters receives what the effect functions and the fork declare, for ShaderData
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>* parameters = nullptr);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
         std::string getShaderDisplayName(ShaderKey key);

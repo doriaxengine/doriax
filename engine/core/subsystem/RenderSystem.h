@@ -90,12 +90,6 @@ namespace doriax{
 		Vector4 density_start_end;
 	} fs_fog_t;
 
-	typedef struct fs_see_through_t {
-		Vector4 target; // xyz world position, w radius (0 = off)
-		Vector4 axis;   // xyz view direction, w 1 / target distance (0 = orthographic)
-		Vector4 params; // x margin, y 1 - opacity, zw pixel origin
-	} fs_see_through_t;
-
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
 	typedef struct shadow_projection_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
@@ -125,12 +119,6 @@ namespace doriax{
 		Matrix4 viewProjectionMatrix;
 		Matrix4 normalMatrix;       // view-space normal matrix: transpose(inverse(view*model))
 	} vs_gbuffer_t;
-
-	typedef struct vs_vertex_offset_t {
-		Matrix4 worldToModel;
-		Vector4 wind;   // scene wind in m/s.xyz, meters of air blown past.w
-		Vector4 params; // scene time.x, longest offset.y
-	} vs_vertex_offset_t;
 
 	typedef struct fs_gbuffer_material_t {
 		Vector4 params;             // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutout
@@ -615,8 +603,9 @@ namespace doriax{
 		fs_shadows_t fs_shadows;
 		fs_point_shadows_t fs_point_shadows;
 		fs_fog_t fs_fog;
-		fs_see_through_t fs_seeThrough; // main camera only
-		fs_see_through_t fs_noSeeThrough;
+		// the camera effect functions see in the pass being drawn
+		ShaderEffectView effectView;
+		ShaderParameterTable viewParameters;
 
 		// SSAO: per-frame fullscreen passes for the main camera. The depth pre-pass
 		// renders camera-space packed depth, then the ssao + blur fullscreen passes
@@ -653,9 +642,8 @@ namespace doriax{
 		// and the size of the target being drawn (shadow slot, SSAO depth or camera color)
 		float frameTime;
 		Vector2 passResolution;
-		// clock of wind and vertex offsets, and meters of air blown past, advanced by update()
+		// clock of the effect functions, advanced by update() unless the editor holds the scene
 		double animationTime;
-		double windTravel;
 
 		// SSR: per-frame fullscreen passes for the main camera. The opaque color pass
 		// renders into sceneColorFramebuffer, the ssr pass marches the depth pre-pass
@@ -969,6 +957,8 @@ namespace doriax{
 		void updatePoints(PointsComponent& points, Transform& transform, CameraComponent& camera, Transform& camTransform);
 		void updateTerrain(TerrainComponent& terrain, Transform& transform, CameraComponent& camera, Transform& cameraTransform, int viewIndex);
 		void updateCameraFrustumPlanes(const Matrix4 viewProjectionMatrix, Plane* frustumPlanes);
+		// NULL_ENTITY: no view parameters, the declared defaults apply
+		void setEffectView(Entity cameraEntity, const CameraComponent& camera, const Transform& cameraTransform);
 		void updateInstancedMesh(InstancedMeshComponent& instmesh, MeshComponent& mesh, Transform& transform, CameraComponent& camera, Transform& camTransform);
 
 		void sortPoints(PointsComponent& points, Transform& transform, CameraComponent& camera, Transform& camTransform);
@@ -993,6 +983,8 @@ namespace doriax{
 		void setDisableFixedResolution(bool disableFixedResolution);
 
 		void setAnimationPaused(bool animationPaused);
+		// restarts the clock of the effect functions, the editor calls it on Stop
+		void resetAnimationTime();
 		// moves the waves by the update time since the last call; draw() does it after drawing
 		void advanceWaters();
 		// drops all wakes, the editor calls it on Stop

@@ -22,6 +22,7 @@ ShaderData::ShaderData(const ShaderData& d){
     this->version = d.version;
     this->es = d.es;
     this->stages = d.stages;
+    this->parameters = d.parameters;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){
@@ -36,6 +37,7 @@ ShaderData& ShaderData::operator = (const ShaderData& d){
     this->version = d.version;
     this->es = d.es;
     this->stages = d.stages;
+    this->parameters = d.parameters;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){
@@ -155,8 +157,6 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_texCoordSets";
     }else if (type == UniformBlockType::PBR_VS_FADE){
         ustr = "u_vs_fade";
-    }else if (type == UniformBlockType::PBR_VS_VERTEX_OFFSET){
-        ustr = "u_vs_vertexOffset";
     }else if (type == UniformBlockType::FS_LIGHTING){
         ustr = "u_fs_lighting";
     }else if (type == UniformBlockType::FS_REFLECTION_PROBE){
@@ -165,8 +165,6 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_fog";
     }else if (type == UniformBlockType::FS_MIRROR){
         ustr = "u_fs_mirror";
-    }else if (type == UniformBlockType::FS_SEE_THROUGH){
-        ustr = "u_fs_seeThrough";
     }else if (type == UniformBlockType::VS_SHADOWS){
         ustr = "u_vs_shadows";
     }else if (type == UniformBlockType::FS_SHADOWS){

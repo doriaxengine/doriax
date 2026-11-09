@@ -12,9 +12,11 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <sstream>
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <list>
 #include <map>
 #include <unordered_set>
 
@@ -354,9 +356,12 @@ bool editor::ProjectUtils::writeShaderFork(const ShaderForkPlan& plan) {
     return success;
 }
 
-std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    const std::filesystem::path dirRel = defaultShaderForkDir();
-    const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName + "_offset");
+namespace {
+
+// a .glsl under a free name in the default shader directory; its project path, empty on failure
+std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content) {
+    const std::filesystem::path dirRel = editor::ProjectUtils::defaultShaderForkDir();
+    const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName);
     std::string name = baseName;
     int suffix = 2;
     while (std::filesystem::exists(projectRoot / dirRel / (name + ".glsl")))
@@ -368,19 +373,43 @@ std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesyste
     if (ec || !file)
         return "";
 
-    file << R"(// Moves each vertex of the mesh by the returned world offset, in the color, depth and
-// G-buffer passes. vertexOffset.params.x is the scene time and vertexOffset.wind the scene
-// wind; the block below takes its values from the mesh's shader uniforms.
-uniform u_vs_offsetParams {
-    float waveHeight;
-} offsetParams;
+    file << content;
+    return file ? (dirRel / (name + ".glsl")).generic_string() : "";
+}
+
+}
+
+std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
+    return writeEffectFile(projectRoot, desiredName + "_offset", R"(// Moves each vertex by the returned offset in world units, the same in every pass.
+// The values declared below are the mesh's shader uniforms, read as params.name.
+// @param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
+// @param float waveSpeed = 2 [0, 10] "Waves per second"
 
 vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
-    float time = vertexOffset.params.x;
-    return vec3(0.0, sin(time * 2.0 + worldPosition.x) * offsetParams.waveHeight, 0.0);
+    float time = getEffectTime();
+    return vec3(0.0, sin(time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
 }
-)";
-    return (dirRel / (name + ".glsl")).generic_string();
+)");
+}
+
+std::string editor::ProjectUtils::writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
+    return writeEffectFile(projectRoot, desiredName + "_coverage", R"(// Returns how much of each fragment stays, from 0 (removed) to 1 (kept), the same in every pass.
+// Opaque surfaces dither in between, blended ones fade.
+// @param float cutHeight = 1 "World height above which the mesh is cut away"
+// @param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
+// @coverage_shadows apply
+
+float getCoverage(CoverageContext context){
+    return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
+}
+)");
+}
+
+std::string editor::ProjectUtils::copyEffectFunctionToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
+    auto source = editor::shaderMap.find(enginePath);
+    if (source == editor::shaderMap.end())
+        return "";
+    return writeEffectFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
 }
 
 std::vector<std::string> editor::ProjectUtils::getEngineVertexOffsets() {
@@ -395,6 +424,65 @@ std::vector<std::string> editor::ProjectUtils::getEngineVertexOffsets() {
 
 bool editor::ProjectUtils::isEngineVertexOffset(const std::string& path) {
     return path.rfind("offsets/", 0) == 0 && editor::shaderMap.count(path) > 0;
+}
+
+std::vector<std::string> editor::ProjectUtils::getEngineCoverages() {
+    std::vector<std::string> coverages;
+    for (const auto& entry : editor::shaderMap) {
+        if (isEngineCoverage(entry.first))
+            coverages.push_back(entry.first);
+    }
+    std::sort(coverages.begin(), coverages.end());
+    return coverages;
+}
+
+bool editor::ProjectUtils::isEngineCoverage(const std::string& path) {
+    return path.rfind("coverage/", 0) == 0 && editor::shaderMap.count(path) > 0;
+}
+
+bool editor::ProjectUtils::isEngineEffectFunction(const std::string& path) {
+    return isEngineVertexOffset(path) || isEngineCoverage(path);
+}
+
+bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source) {
+    std::error_code ec;
+    if (!path.empty() && std::filesystem::is_regular_file(projectRoot / path, ec)) {
+        std::ifstream file(projectRoot / path, std::ios::binary);
+        std::ostringstream content;
+        content << file.rdbuf();
+        source = content.str();
+        return true;
+    }
+    auto engine = editor::shaderMap.find(path);
+    if (engine == editor::shaderMap.end())
+        return false;
+    source = engine->second;
+    return true;
+}
+
+editor::ShaderEffectAnnotations editor::ProjectUtils::getShaderAnnotations(const std::filesystem::path& projectRoot, const std::vector<std::string>& files,
+                                                                          const std::filesystem::path& includeRoot) {
+    ShaderEffectAnnotations annotations;
+    std::list<std::string> sources; // the lookup hands out pointers into it
+    auto read = [&](const std::string& path) -> const std::string* {
+        std::string source;
+        if (!readShaderSource(projectRoot, path, source))
+            return nullptr;
+        sources.push_back(std::move(source));
+        return &sources.back();
+    };
+
+    for (const std::string& file : files) {
+        ShaderParameterParser::parseTree(file, [&](const std::string& key) -> const std::string* {
+            if (key == file)
+                return read(file);
+            std::error_code ec;
+            if (!includeRoot.empty() && std::filesystem::is_regular_file(projectRoot / includeRoot / key, ec))
+                return read((includeRoot / key).generic_string());
+            return read(key);
+        }, annotations);
+    }
+    return annotations;
 }
 
 void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {

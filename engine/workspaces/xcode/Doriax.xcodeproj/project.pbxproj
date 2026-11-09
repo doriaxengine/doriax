@@ -48,8 +48,11 @@
 		175DCE6B30255343008C19EC /* CharExtent.h in Headers */ = {isa = PBXBuildFile; fileRef = 175DCE6930255343008C19EC /* CharExtent.h */; };
 		175DCE6C30255343008C19EC /* DefaultFontArabic.h in Headers */ = {isa = PBXBuildFile; fileRef = 175DCE6A30255343008C19EC /* DefaultFontArabic.h */; };
 		1776226C3058741F00F220CC /* ShaderUniforms.h in Headers */ = {isa = PBXBuildFile; fileRef = 1776226A3058741F00F220CC /* ShaderUniforms.h */; };
+		D0F1A2B53058741F00F220CC /* ShaderParameters.h in Headers */ = {isa = PBXBuildFile; fileRef = D0F1A2B33058741F00F220CC /* ShaderParameters.h */; };
 		1776226D3058741F00F220CC /* ShaderUniforms.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1776226B3058741F00F220CC /* ShaderUniforms.cpp */; };
+		D0F1A2B63058741F00F220CC /* ShaderParameters.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0F1A2B43058741F00F220CC /* ShaderParameters.cpp */; };
 		1776226E3058741F00F220CC /* ShaderUniforms.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1776226B3058741F00F220CC /* ShaderUniforms.cpp */; };
+		D0F1A2B73058741F00F220CC /* ShaderParameters.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D0F1A2B43058741F00F220CC /* ShaderParameters.cpp */; };
 		1787AD8E2F673CE000DB1D75 /* BundleComponent.h in Headers */ = {isa = PBXBuildFile; fileRef = 1787AD8D2F673CE000DB1D75 /* BundleComponent.h */; };
 		1787AD942F6C333300DB1D75 /* SceneManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1787AD922F6C333300DB1D75 /* SceneManager.cpp */; };
 		1787AD952F6C333300DB1D75 /* BundleManager.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1787AD902F6C333300DB1D75 /* BundleManager.cpp */; };
@@ -1510,6 +1513,8 @@
 		175DCE6A30255343008C19EC /* DefaultFontArabic.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DefaultFontArabic.h; sourceTree = "<group>"; };
 		1776226A3058741F00F220CC /* ShaderUniforms.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ShaderUniforms.h; sourceTree = "<group>"; };
 		1776226B3058741F00F220CC /* ShaderUniforms.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ShaderUniforms.cpp; sourceTree = "<group>"; };
+		D0F1A2B33058741F00F220CC /* ShaderParameters.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ShaderParameters.h; sourceTree = "<group>"; };
+		D0F1A2B43058741F00F220CC /* ShaderParameters.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = ShaderParameters.cpp; sourceTree = "<group>"; };
 		1787AD8D2F673CE000DB1D75 /* BundleComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BundleComponent.h; sourceTree = "<group>"; };
 		1787AD8F2F6C333300DB1D75 /* BundleManager.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = BundleManager.h; sourceTree = "<group>"; };
 		1787AD902F6C333300DB1D75 /* BundleManager.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = BundleManager.cpp; sourceTree = "<group>"; };
@@ -5543,6 +5548,8 @@
 				1789660B2F1D764600E89E52 /* ShaderDataSerializer.cpp */,
 				1776226A3058741F00F220CC /* ShaderUniforms.h */,
 				1776226B3058741F00F220CC /* ShaderUniforms.cpp */,
+				D0F1A2B33058741F00F220CC /* ShaderParameters.h */,
+				D0F1A2B43058741F00F220CC /* ShaderParameters.cpp */,
 			);
 			path = shader;
 			sourceTree = "<group>";
@@ -5986,6 +5993,7 @@
 				71BE622225B1DB83006D6E02 /* TextureData.h in Headers */,
 				717AD98A292118EF007D7DB5 /* UIContainerComponent.h in Headers */,
 				1776226C3058741F00F220CC /* ShaderUniforms.h in Headers */,
+				D0F1A2B53058741F00F220CC /* ShaderParameters.h in Headers */,
 				7105A55A28B305910092EA05 /* Color.h in Headers */,
 				71ABBD342783C8BB001CE3AF /* Image.h in Headers */,
 				71ABBD13277A3166001CE3AF /* TextComponent.h in Headers */,
@@ -7304,6 +7312,7 @@
 				17C4A1BD310A0001008C19EC /* WaterExclusion.cpp in Sources */,
 				71ABBD0F277A313C001CE3AF /* AlphaAction.cpp in Sources */,
 				1776226E3058741F00F220CC /* ShaderUniforms.cpp in Sources */,
+				D0F1A2B73058741F00F220CC /* ShaderParameters.cpp in Sources */,
 				716803CF2DF75EA200ED71BE /* ThreadPoolManager.cpp in Sources */,
 				716803D02DF75EA200ED71BE /* ResourceProgress.cpp in Sources */,
 				71BE624225B1DB9E006D6E02 /* TexturePool.cpp in Sources */,
@@ -7502,6 +7511,7 @@
 				17C4A1BC310A0001008C19EC /* WaterExclusion.cpp in Sources */,
 				71ABBD0E277A313C001CE3AF /* AlphaAction.cpp in Sources */,
 				1776226D3058741F00F220CC /* ShaderUniforms.cpp in Sources */,
+				D0F1A2B63058741F00F220CC /* ShaderParameters.cpp in Sources */,
 				716803D12DF75EA200ED71BE /* ThreadPoolManager.cpp in Sources */,
 				716803D22DF75EA200ED71BE /* ResourceProgress.cpp in Sources */,
 				71BE624125B1DB9E006D6E02 /* TexturePool.cpp in Sources */,

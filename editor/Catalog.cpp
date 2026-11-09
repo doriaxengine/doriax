@@ -506,6 +506,8 @@ namespace {
         makeFastProperty<CameraComponent, unsigned int, &CameraComponent::framebufferWidth>("framebufferWidth", PropertyType::UInt, UpdateFlags_None),
         makeFastProperty<CameraComponent, unsigned int, &CameraComponent::framebufferHeight>("framebufferHeight", PropertyType::UInt, UpdateFlags_None),
         makeFastProperty<CameraComponent, TextureFilter, &CameraComponent::framebufferFilter>("framebufferFilter", PropertyType::Enum, UpdateFlags_None),
+        // view shader parameters are read every frame
+        makeFastProperty<CameraComponent, ShaderUniformValues, &CameraComponent::shaderParameters>("shaderParameters", PropertyType::Custom, UpdateFlags_None),
     };
 
     static const FastPropertyDescriptor kSoundProperties[] = {
@@ -658,13 +660,14 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::lodEnabled>("lodEnabled", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::lodBias>("lodBias", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<MeshComponent, bool, &MeshComponent::renderInReflectionProbes>("renderInReflectionProbes", PropertyType::Bool, UpdateFlags_Reflection_Probe_Recapture_All),
-        makeFastProperty<MeshComponent, bool, &MeshComponent::seeThrough>("seeThrough", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::transparent>("transparent", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::vertexOffsetShader>("vertexOffsetShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_Transform),
+        makeFastProperty<MeshComponent, std::string, &MeshComponent::coverageShader>("coverageShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<MeshComponent, bool, &MeshComponent::coverageShadows>("coverageShadows", PropertyType::Bool, UpdateFlags_None),
         makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
     };
@@ -4031,8 +4034,6 @@ std::vector<const CustomUniformBlock*> editor::Catalog::getShaderUniformBlocks(E
                     blocks.push_back(&mesh->submeshes[i].customVSDepthParams);
                 for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
                     blocks.push_back(&mesh->submeshes[i].customFSDepthParams);
-                for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
-                    blocks.push_back(&mesh->submeshes[i].customVSOffsetParams);
             }
             break;
         case ComponentType::UIComponent:
@@ -4106,7 +4107,7 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
         case ComponentType::MeshComponent:
             // a model root without submeshes is drawn by its parts and builds nothing
             if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity))
-                return mesh->numSubmeshes > 0 && failed(ShaderPool::getCustomShader(mesh->customShader, mesh->vertexOffsetShader), ShaderType::MESH,
+                return mesh->numSubmeshes > 0 && failed(ShaderPool::getCustomShader(mesh->customShader, mesh->vertexOffsetShader, mesh->coverageShader), ShaderType::MESH,
                                                         mesh->loaded, mesh->needReload, mesh->submeshes[0].customShaderId);
             break;
         case ComponentType::UIComponent:

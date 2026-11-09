@@ -15,6 +15,7 @@
 #include "texture/TextureData.h"
 #include "texture/Material.h"
 #include "shader/ShaderUniforms.h"
+#include "shader/ShaderParameters.h"
 #include "buffer/InterleavedBuffer.h"
 #include "buffer/IndexBuffer.h"
 #include "buffer/ExternalBuffer.h"
@@ -80,10 +81,8 @@ namespace doriax{
 
         int slotVSParams = -1;
         int slotFSParams = -1;
-        unsigned int sizeFSParams = 0; // reflected: see-through values follow the material
         int slotFSTexCoordSets = -1;
         int slotVSFade = -1;
-        int slotVSVertexOffset = -1;
         int slotFSLighting = -1;
         int slotFSReflectionProbe = -1;
         int slotFSLighting2D = -1;
@@ -102,20 +101,16 @@ namespace doriax{
         int slotVSDepthParams = -1;
         unsigned int sizeVSDepthParams = 0; // reflected: an older fork declares the block without mvpMatrix
         int slotFSDepthMaterial = -1;
-        int slotFSDepthSeeThrough = -1;
         int slotVSDepthFade = -1;
-        int slotVSDepthVertexOffset = -1;
         int slotVSDepthSkinning = -1;
         int slotVSDepthMorphTarget = -1;
         int slotVSDepthTerrain = -1;
 
         int slotVSGBufferParams = -1;
         int slotFSGBufferMaterial = -1;
-        int slotFSGBufferSeeThrough = -1;
         int slotVSGBufferSkinning = -1;
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;
-        int slotVSGBufferVertexOffset = -1;
         int slotFSGBufferTerrainLayers = -1;
 
         // custom uniform blocks of the forked shaders, filled from MeshComponent::shaderUniforms
@@ -123,10 +118,13 @@ namespace doriax{
         CustomUniformBlock customFSParams;
         CustomUniformBlock customVSDepthParams;
         CustomUniformBlock customFSDepthParams;
-        // u_vs_offsetParams of the vertex offset, in each pass
-        CustomUniformBlock customVSOffsetParams;
-        CustomUniformBlock customVSDepthOffsetParams;
-        CustomUniformBlock customVSGBufferOffsetParams;
+        // declared parameters of each pass and stage
+        ShaderParameterBlock effectVS;
+        ShaderParameterBlock effectFS;
+        ShaderParameterBlock effectDepthVS;
+        ShaderParameterBlock effectDepthFS;
+        ShaderParameterBlock effectGBufferVS;
+        ShaderParameterBlock effectGBufferFS;
 
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
@@ -195,6 +193,9 @@ namespace doriax{
         // .glsl defining getVertexOffset(), from the project or the engine, applied in every pass
         std::string vertexOffsetShader;
         float vertexOffsetMax = 0.0f; // longest offset in world units, widens the bounds; 0 = no limit
+        // .glsl defining getCoverage(), from the project or the engine, applied in every pass
+        std::string coverageShader;
+        bool coverageShadows = false; // shadow maps follow the coverage too
         // values of the fork's custom uniform blocks, by member name, shared by all submeshes
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
@@ -221,7 +222,6 @@ namespace doriax{
         bool receiveShadows = true;
         bool shadowsBillboard = true;
         bool renderInReflectionProbes = true; // when false the mesh is skipped by probe captures
-        bool seeThrough = false; // dithers away where it hides the scene's see-through target
 
         bool transparent = false;
         bool autoTransparency = true;

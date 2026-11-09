@@ -32,7 +32,7 @@ invariant gl_Position;
 
 in vec3 a_position;
 out vec2 v_projZW;
-#ifdef USE_SEE_THROUGH
+#ifdef USE_COVERAGE
     out vec3 v_worldPosition;
 #endif
 
@@ -43,11 +43,13 @@ out vec2 v_projZW;
     in vec4 i_matrix_col4;
 #endif
 
-#if defined(HAS_TEXTURE)
+// the alpha mask texture, or the coverage function reading the UV set
+#if defined(HAS_TEXTURE) || defined(HAS_UV_SET1)
     in vec2 a_texcoord1;
     out vec2 v_uv1;
 #endif
 
+#include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
 #include "includes/morphtarget.glsl"
 #ifdef HAS_TERRAIN
@@ -70,6 +72,8 @@ vec4 getPosition(mat4 boneTransform){
 }
 
 void main() {
+    loadShaderParameters();
+
     mat4 boneTransform = getBoneTransform();
 
     vec4 localPos = getPosition(boneTransform);
@@ -80,7 +84,7 @@ void main() {
         vec4 pos = localPos;
     #endif
 
-    #if defined(HAS_TEXTURE)
+    #if defined(HAS_TEXTURE) || defined(HAS_UV_SET1)
         v_uv1 = a_texcoord1;
     #endif
 
@@ -104,7 +108,7 @@ void main() {
     gl_Position = depthParams.mvpMatrix * pos;
 
     v_projZW = gl_Position.zw;
-    #ifdef USE_SEE_THROUGH
+    #ifdef USE_COVERAGE
         vec4 worldPosition = depthParams.modelMatrix * pos;
         v_worldPosition = worldPosition.xyz / worldPosition.w;
     #endif

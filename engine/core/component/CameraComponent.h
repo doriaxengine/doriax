@@ -9,6 +9,7 @@
 #include "math/Plane.h"
 #include "texture/Framebuffer.h"
 #include "render/CameraRender.h"
+#include "shader/ShaderUniforms.h"
 
 #define DEFAULT_ORTHO_NEAR          -10
 #define DEFAULT_ORTHO_FAR           10
@@ -96,6 +97,9 @@ namespace doriax{
         bool hasCustomViewMatrix = false;
         Matrix4 customViewMatrix;
         bool invertCulling = false;
+
+        // saved view shader parameters by "Collection.name"
+        ShaderUniformValues shaderParameters;
 
         bool needUpdate = true;
     };

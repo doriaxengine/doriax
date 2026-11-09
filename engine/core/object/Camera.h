@@ -118,6 +118,22 @@ namespace doriax{
 
         float getDistanceFromTarget() const;
 
+        // runtime view shader parameters, as Scene::setViewShaderParameter
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, const Vector2& value);
+        void setShaderParameter(const std::string& collection, const std::string& name, float value);
+        Vector4 getShaderParameter(const std::string& collection, const std::string& name) const;
+        bool clearShaderParameter(const std::string& collection, const std::string& name);
+
+        // saved with the camera
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value);
+        void setShaderParameterDefault(const std::string& collection, const std::string& name, float value);
+        Vector4 getShaderParameterDefault(const std::string& collection, const std::string& name) const;
+        bool removeShaderParameterDefault(const std::string& collection, const std::string& name);
+
         void updateCamera();
     };
 

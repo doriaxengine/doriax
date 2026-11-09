@@ -19,7 +19,7 @@ uniform u_vs_gbufferParams {
 in vec3 a_position;
 out vec2 v_projZW;
 out vec3 v_normal;          // view space
-#ifdef USE_SEE_THROUGH
+#ifdef USE_COVERAGE
     out vec3 v_worldPosition;
 #endif
 
@@ -34,14 +34,14 @@ out vec3 v_normal;          // view space
     in vec4 i_matrix_col4;
 #endif
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE)
+#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
     out vec2 v_uv1;
 #endif
 // Terrain carries no texcoord vertex attribute (its UVs are generated from the
 // world position in-shader, like mesh.vert). Declaring a_texcoord1 for terrain
 // would leave that attribute slot unbound, making the pipeline's vertex layout
 // non-continuous and failing sokol validation, so only non-terrain declares it.
-#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)))
+#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)) || defined(HAS_UV_SET1))
     in vec2 a_texcoord1;
 #endif
 // baked occlusion (material occlusionTexture), on the UV set the material names
@@ -52,6 +52,7 @@ out vec3 v_normal;          // view space
     out vec2 v_uvOcclusion;
 #endif
 
+#include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
 #include "includes/morphtarget.glsl"
 #ifdef HAS_TERRAIN
@@ -87,6 +88,8 @@ vec3 getNormalObj(mat4 boneTransform, vec4 position){
 }
 
 void main() {
+    loadShaderParameters();
+
     mat4 mvpMatrix = gbufferParams.viewProjectionMatrix * gbufferParams.modelMatrix;
 
     mat4 boneTransform = getBoneTransform();
@@ -115,7 +118,7 @@ void main() {
         vec2 terrainBaseUV = getTerrainTiledTexture(objPos.xyz);
     #endif
 
-    #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE)
+    #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
         #ifdef HAS_TERRAIN_PBR
             v_uv1 = terrainBaseUV;
         #elif defined(HAS_TERRAIN)
@@ -141,7 +144,7 @@ void main() {
     gl_Position = mvpMatrix * pos;
 
     v_projZW = gl_Position.zw;
-    #ifdef USE_SEE_THROUGH
+    #ifdef USE_COVERAGE
         vec4 worldPosition = gbufferParams.modelMatrix * pos;
         v_worldPosition = worldPosition.xyz / worldPosition.w;
     #endif

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "shader/ShaderParameterParser.h"
 #include "lua.hpp"
 
 #include <string>
@@ -152,9 +153,24 @@ public:
 
     // a starting vertex offset in the default shader directory; its project path, empty on failure
     static std::string writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+    // a starting coverage function, the same way
+    static std::string writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+    // a project copy of an engine effect function, to change it
+    static std::string copyEffectFunctionToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
     // the engine's own vertex offsets, under offsets/ in its shader library
     static std::vector<std::string> getEngineVertexOffsets();
     static bool isEngineVertexOffset(const std::string& path);
+    // the engine's own coverage functions, under coverage/
+    static std::vector<std::string> getEngineCoverages();
+    static bool isEngineCoverage(const std::string& path);
+    // either kind; a project file of the same path overrides it
+    static bool isEngineEffectFunction(const std::string& path);
+    // a shader file from the project, else the engine library
+    static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
+    // the annotations of shader files and their includes, resolved as the shader build does:
+    // includeRoot, the project root, then the engine library
+    static ShaderEffectAnnotations getShaderAnnotations(const std::filesystem::path& projectRoot, const std::vector<std::string>& files,
+                                                        const std::filesystem::path& includeRoot);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.
     // Returns the command (caller must add it to CommandHandle) or nullptr if invalid.
