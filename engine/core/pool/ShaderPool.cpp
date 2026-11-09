@@ -13,6 +13,7 @@
 #include <string>
 #include <mutex>
 #include <cctype>
+#include <cstdio>
 #include <set>
 #include <bitset>
 
@@ -198,18 +199,27 @@ std::string ShaderPool::getCustomShaderVertexOffset(const std::string& customSha
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
-    // Sanitize the project-relative base into a filesystem-safe, deterministic token
-    // (e.g. "shaders/myMesh#offsets/wind.glsl" -> "shaders_myMesh_offsets_wind_glsl") used in .sdat filenames.
+    // Filesystem-safe token for .sdat names ("shaders/myMesh#offsets/wind.glsl" -> "shaders_myMesh_offsets_wind_glsl_7e274965").
+    // The FNV-1a of the name keeps apart names that sanitize alike, the same on every platform.
+    const std::string name = getCustomShaderName(customId);
+    if (name.empty())
+        return "";
+
     std::string base;
-    for (char c : getCustomShaderName(customId)){
+    uint32_t hash = 2166136261u;
+    for (char c : name){
+        hash = (hash ^ (unsigned char)c) * 16777619u;
         if (!(std::isalnum((unsigned char)c) || c == '_'))
             c = '_';
         if (c != '_' || (!base.empty() && base.back() != '_'))
             base += c;
     }
-    while (!base.empty() && base.back() == '_')
-        base.pop_back();
-    return base;
+    if (!base.empty() && base.back() != '_')
+        base += '_';
+
+    char suffix[9];
+    snprintf(suffix, sizeof(suffix), "%08x", hash);
+    return base + suffix;
 }
 
 void ShaderPool::setShaderBuilder(ShaderBuilderFn fn) {
