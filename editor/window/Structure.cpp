@@ -1256,9 +1256,10 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
     if (!node.isScene && !node.isChildScene) {
         auto& sceneCollapsedEntities = collapsedEntities[getNodeSceneId(node)];
         if (!node.children.empty() && !nodeOpen) {
-            sceneCollapsedEntities.insert(node.id);
-        } else {
-            sceneCollapsedEntities.erase(node.id);
+            if (sceneCollapsedEntities.insert(node.id).second)
+                collapsedChanged = true;
+        } else if (sceneCollapsedEntities.erase(node.id)) {
+            collapsedChanged = true;
         }
     }
 
@@ -2487,7 +2488,8 @@ void editor::Structure::show(){
     ImGui::BeginChild("StructureScrollRegion", ImVec2(0, 0), true, ImGuiWindowFlags_HorizontalScrollbar);
 
     // Apply search filtering if there's a search term
-    if (strlen(searchBuffer) > 0) {
+    const bool hasSearch = strlen(searchBuffer) > 0;
+    if (hasSearch) {
         std::string searchStr = searchBuffer;
         if (!matchCase) {
             std::transform(searchStr.begin(), searchStr.end(), searchStr.begin(), ::tolower);
@@ -2495,8 +2497,12 @@ void editor::Structure::show(){
         markMatchingNodes(root, searchStr);
     }
 
-    visibleEntitySelectionOrder.clear();
-    collectVisibleEntitySelectionOrder(root, strlen(searchBuffer) > 0);
+    // without a search it only changes with the tree
+    if (rebuildTree || hasSearch || visibleOrderFiltered) {
+        visibleOrderFiltered = hasSearch;
+        visibleEntitySelectionOrder.clear();
+        collectVisibleEntitySelectionOrder(root, hasSearch);
+    }
 
     revealOpenNodes.clear();
     revealTargetNode = nullptr;
@@ -2506,7 +2512,10 @@ void editor::Structure::show(){
     }
 
     showTreeNode(root);
-    syncSceneWindowSelectionHierarchy(root);
+    if (rebuildTree || collapsedChanged) {
+        collapsedChanged = false;
+        syncSceneWindowSelectionHierarchy(root);
+    }
     float treeLastCursorY = ImGui::GetCursorScreenPos().y;
 
     // Handle right-click in empty space

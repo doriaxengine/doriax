@@ -64,7 +64,9 @@ namespace doriax::editor{
 
         std::vector<uint32_t> selectedScenes;
         std::vector<EntitySelectionEntry> visibleEntitySelectionOrder;
+        bool visibleOrderFiltered = false;
         std::unordered_map<uint32_t, std::unordered_set<Entity>> collapsedEntities;
+        bool collapsedChanged = false;
 
         bool windowOpen;
         bool focusRequested;
