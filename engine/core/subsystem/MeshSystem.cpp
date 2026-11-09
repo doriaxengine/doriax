@@ -3087,19 +3087,15 @@ void MeshSystem::createTerrainNode(TerrainComponent& terrain, float x, float y, 
 
         node.childs[0] = terrain.numNodes;
         createTerrainNode(terrain, x - quarterSize, y - quarterSize, halfSize, lodDepth - 1);
-        terrain.nodes[node.childs[0]].visible = false;
 
         node.childs[1] = terrain.numNodes;
         createTerrainNode(terrain, x - quarterSize, y + quarterSize, halfSize, lodDepth - 1);
-        terrain.nodes[node.childs[1]].visible = false;
 
         node.childs[2] = terrain.numNodes;
         createTerrainNode(terrain, x + quarterSize, y - quarterSize, halfSize, lodDepth - 1);
-        terrain.nodes[node.childs[2]].visible = false;
 
         node.childs[3] = terrain.numNodes;
         createTerrainNode(terrain, x + quarterSize, y + quarterSize, halfSize, lodDepth - 1);
-        terrain.nodes[node.childs[3]].visible = false;
 
         node.hasChilds = true;
 

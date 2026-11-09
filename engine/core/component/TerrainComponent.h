@@ -52,8 +52,6 @@ namespace doriax{
 
         float maxHeight = 0;
         float minHeight = 0;
-        
-        float visible = false;
     };
 
     // Per-view CDLOD state. Index 0 is the main camera (also reused by the shadow

@@ -8954,10 +8954,6 @@ void RenderSystem::sortPoints(PointsComponent& points, Transform& transform, Cam
 
 void RenderSystem::updateTerrain(TerrainComponent& terrain, Transform& transform, CameraComponent& camera, Transform& cameraTransform, int viewIndex){
     if (terrain.heightMapLoaded){
-        for (int i = 0; i < terrain.numNodes; i++){
-            terrain.nodes[i].visible = false;
-        }
-
         for (int s = 0; s < 2; s++){
             terrain.views[viewIndex].nodesbuffer[s].clear();
         }
@@ -9027,7 +9023,6 @@ bool RenderSystem::terrainNodeLODSelect(TerrainComponent& terrain, Transform& tr
     if( lodLevel == 0 ) {
         //Full resolution
         terrainNode.resolution = terrain.resolution;
-        terrainNode.visible = true;
         appendTerrainNode(terrain.views[viewIndex].nodesbuffer[0], terrainNode);
 
         return true;
@@ -9036,7 +9031,6 @@ bool RenderSystem::terrainNodeLODSelect(TerrainComponent& terrain, Transform& tr
         if( !isTerrainNodeInSphere(cameraTransform.worldPosition, terrain.ranges[lodLevel-1], box) ) {
             //Full resolution
             terrainNode.resolution = terrain.resolution;
-            terrainNode.visible = true;
             appendTerrainNode(terrain.views[viewIndex].nodesbuffer[0], terrainNode);
         } else {
             for (int i = 0; i < 4; i++) {
@@ -9045,7 +9039,6 @@ bool RenderSystem::terrainNodeLODSelect(TerrainComponent& terrain, Transform& tr
                     //Half resolution
                     child.resolution = terrain.resolution / 2;
                     child.currentRange = terrainNode.currentRange;
-                    child.visible = true;
                     appendTerrainNode(terrain.views[viewIndex].nodesbuffer[1], child);
                 }
             }
