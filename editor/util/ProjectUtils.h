@@ -29,6 +29,9 @@ public:
 
     static Entity getLockedEntityParent(Scene* scene, Entity entity);
     static bool isEntityLocked(Scene* scene, Entity entity);
+    // Model and foliage parts, to check a whole tree in one pass
+    static std::unordered_set<Entity> getOwnedEntities(Scene* scene);
+    static bool isEntityLocked(Scene* scene, Entity entity, const std::unordered_set<Entity>& ownedEntities);
     static Entity getParentModel(Scene* scene, Entity entity);
     // Model owning the imported parts an entity is or contains, never a model itself
     static Entity getModelBranchOwner(Scene* scene, Entity entity);

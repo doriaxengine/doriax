@@ -2111,6 +2111,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
 
     Entity mainCamera = sceneProject->mainCamera;
     size_t order = 0;
+    const std::unordered_set<Entity> ownedEntities = ProjectUtils::getOwnedEntities(sceneProject->scene);
     std::unordered_map<Entity, TreeNode*> entityNodeMap;
     std::unordered_map<Entity, std::filesystem::path> bundleEntityPaths;
     std::unordered_map<Entity, std::list<TreeNode>> virtualBundleChildren;
@@ -2162,6 +2163,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
         // If child scene is expanded inline, build entity tree nodes for it
         if (childScene->expandedInline && childScene->scene) {
             std::unordered_set<Entity> childEntitiesSet(childScene->entities.begin(), childScene->entities.end());
+            const std::unordered_set<Entity> childOwnedEntities = ProjectUtils::getOwnedEntities(childScene->scene);
             std::unordered_map<Entity, TreeNode*> childEntityNodeMap;
 
             // non-hierarchical entities
@@ -2201,7 +2203,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
                     enode.isBone = signature.test(childScene->scene->getComponentId<BoneComponent>());
                     enode.isBundleRoot = signature.test(childScene->scene->getComponentId<BundleComponent>());
                     enode.hasTransform = true;
-                    enode.isLocked = ProjectUtils::isEntityLocked(childScene->scene, entity);
+                    enode.isLocked = ProjectUtils::isEntityLocked(childScene->scene, entity, childOwnedEntities);
                     enode.order = order++;
                     enode.name = childScene->scene->getEntityName(entity);
 
@@ -2248,7 +2250,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.hasScript = hasScripts(sceneProject->scene, entity);
             child.isBone = signature.test(sceneProject->scene->getComponentId<BoneComponent>());
             child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
-            child.isLocked = child.isPlayCreated || ProjectUtils::isEntityLocked(sceneProject->scene, entity);
+            child.isLocked = child.isPlayCreated || ProjectUtils::isEntityLocked(sceneProject->scene, entity, ownedEntities);
             child.order = order++;
             child.name = sceneProject->scene->getEntityName(entity);
             auto bundleIt = bundleEntityPaths.find(entity);
@@ -2333,7 +2335,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.hasTransform = true;
             child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
             child.isLocked = child.isPlayCreated
-                || ProjectUtils::isEntityLocked(sceneProject->scene, entity)
+                || ProjectUtils::isEntityLocked(sceneProject->scene, entity, ownedEntities)
                 || ProjectUtils::getModelBranchOwner(sceneProject->scene, entity) != NULL_ENTITY;
             child.canEditModelHierarchy = ProjectUtils::canEditModelBranch(sceneProject->scene, entity, &child.hierarchyReason);
             child.order = order++;

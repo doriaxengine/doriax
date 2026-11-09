@@ -562,11 +562,64 @@ bool editor::ProjectUtils::hasCustomMeshParenting(Scene* scene, Entity model) {
     return scene->getSystem<MeshSystem>()->hasCustomMeshParenting(model, scene->getComponent<ModelComponent>(model));
 }
 
+// Button, scrollbar, progress bar, text edit and panel parts
+static Entity getLockedUIParent(Scene* scene, Entity entity){
+    Signature signature = scene->getSignature(entity);
+    if (!signature.test(scene->getComponentId<Transform>())){
+        return NULL_ENTITY;
+    }
+
+    Transform& transform = scene->getComponent<Transform>(entity);
+    if (transform.parent == NULL_ENTITY){
+        return NULL_ENTITY;
+    }
+
+    Entity parent = transform.parent;
+    Signature parentSignature = scene->getSignature(parent);
+
+    if (parentSignature.test(scene->getComponentId<ButtonComponent>())){
+        ButtonComponent& button = scene->getComponent<ButtonComponent>(parent);
+        if (button.label == entity){
+            return parent;
+        }
+    }
+
+    if (parentSignature.test(scene->getComponentId<ScrollbarComponent>())){
+        ScrollbarComponent& scrollbar = scene->getComponent<ScrollbarComponent>(parent);
+        if (scrollbar.bar == entity){
+            return parent;
+        }
+    }
+
+    if (parentSignature.test(scene->getComponentId<ProgressbarComponent>())){
+        ProgressbarComponent& progressbar = scene->getComponent<ProgressbarComponent>(parent);
+        if (progressbar.fill == entity){
+            return parent;
+        }
+    }
+
+    if (parentSignature.test(scene->getComponentId<TextEditComponent>())){
+        TextEditComponent& textedit = scene->getComponent<TextEditComponent>(parent);
+        if (textedit.text == entity || textedit.selection == entity || textedit.cursor == entity){
+            return parent;
+        }
+    }
+
+    auto panels = scene->getComponentArray<PanelComponent>();
+    for (size_t i = 0; i < panels->size(); ++i) {
+        Entity panelEntity = panels->getEntity(i);
+        PanelComponent& panel = panels->getComponentFromIndex(i);
+        if (panel.headerimage == entity || panel.headercontainer == entity || panel.headertext == entity) {
+            return panelEntity;
+        }
+    }
+
+    return NULL_ENTITY;
+}
+
 Entity editor::ProjectUtils::getLockedEntityParent(Scene* scene, Entity entity){
     if (entity == NULL_ENTITY)
         return NULL_ENTITY;
-
-    Signature signature = scene->getSignature(entity);
 
     // Foliage instances are resolved, not authored: they belong to their terrain the same way
     // model nodes belong to their model.
@@ -629,60 +682,58 @@ Entity editor::ProjectUtils::getLockedEntityParent(Scene* scene, Entity entity){
         }
     }
 
-    if (!signature.test(scene->getComponentId<Transform>())){
-        return NULL_ENTITY;
-    }
-
-    Transform& transform = scene->getComponent<Transform>(entity);
-    if (transform.parent == NULL_ENTITY){
-        return NULL_ENTITY;
-    }
-
-    Entity parent = transform.parent;
-    Signature parentSignature = scene->getSignature(parent);
-
-    if (parentSignature.test(scene->getComponentId<ButtonComponent>())){
-        ButtonComponent& button = scene->getComponent<ButtonComponent>(parent);
-        if (button.label == entity){
-            return parent;
-        }
-    }
-
-    if (parentSignature.test(scene->getComponentId<ScrollbarComponent>())){
-        ScrollbarComponent& scrollbar = scene->getComponent<ScrollbarComponent>(parent);
-        if (scrollbar.bar == entity){
-            return parent;
-        }
-    }
-
-    if (parentSignature.test(scene->getComponentId<ProgressbarComponent>())){
-        ProgressbarComponent& progressbar = scene->getComponent<ProgressbarComponent>(parent);
-        if (progressbar.fill == entity){
-            return parent;
-        }
-    }
-
-    if (parentSignature.test(scene->getComponentId<TextEditComponent>())){
-        TextEditComponent& textedit = scene->getComponent<TextEditComponent>(parent);
-        if (textedit.text == entity || textedit.selection == entity || textedit.cursor == entity){
-            return parent;
-        }
-    }
-
-    auto panels = scene->getComponentArray<PanelComponent>();
-    for (size_t i = 0; i < panels->size(); ++i) {
-        Entity panelEntity = panels->getEntity(i);
-        PanelComponent& panel = panels->getComponentFromIndex(i);
-        if (panel.headerimage == entity || panel.headercontainer == entity || panel.headertext == entity) {
-            return panelEntity;
-        }
-    }
-
-    return NULL_ENTITY;
+    return getLockedUIParent(scene, entity);
 }
 
 bool editor::ProjectUtils::isEntityLocked(Scene* scene, Entity entity){
     return getLockedEntityParent(scene, entity) != NULL_ENTITY;
+}
+
+std::unordered_set<Entity> editor::ProjectUtils::getOwnedEntities(Scene* scene){
+    std::unordered_set<Entity> owned;
+
+    auto meshSystem = scene->getSystem<MeshSystem>();
+    auto terrains = scene->getComponentArray<TerrainComponent>();
+    for (size_t i = 0; i < terrains->size(); ++i) {
+        const std::vector<Entity> foliage = meshSystem->getFoliageEntities(terrains->getEntity(i));
+        owned.insert(foliage.begin(), foliage.end());
+    }
+
+    auto models = scene->getComponentArray<ModelComponent>();
+    for (size_t i = 0; i < models->size(); ++i) {
+        ModelComponent& model = models->getComponentFromIndex(i);
+
+        owned.insert(model.skeleton);
+        for (const auto& anim : model.animations){
+            owned.insert(anim);
+
+            AnimationComponent* animComp = scene->findComponent<AnimationComponent>(anim);
+            if (animComp){
+                for (const auto& frame : animComp->actions){
+                    owned.insert(frame.action);
+                }
+            }
+        }
+        for (const auto& bone : model.bonesIdMapping) {
+            owned.insert(bone.second);
+        }
+        for (const auto& node : model.meshNodesMapping) {
+            owned.insert(node.second);
+        }
+        for (const auto& node : model.nodesIdMapping) {
+            owned.insert(node.second);
+        }
+    }
+    owned.erase(NULL_ENTITY);
+
+    return owned;
+}
+
+bool editor::ProjectUtils::isEntityLocked(Scene* scene, Entity entity, const std::unordered_set<Entity>& ownedEntities){
+    if (entity == NULL_ENTITY)
+        return false;
+
+    return ownedEntities.count(entity) || getLockedUIParent(scene, entity) != NULL_ENTITY;
 }
 
 Entity editor::ProjectUtils::getEffectiveParent(Scene* scene, Entity entity) {
