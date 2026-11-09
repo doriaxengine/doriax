@@ -690,6 +690,11 @@ float editor::SceneRender::billboardScreenScale(const Vector3& worldPos, float l
 }
 
 void editor::SceneRender::updateRenderSystem(){
+    // a running scene updates them in its own frame
+    if (isPlaying && Engine::isSceneRunning(scene)){
+        return;
+    }
+
     if (!isPlaying){
         syncSceneCamera();
     }
