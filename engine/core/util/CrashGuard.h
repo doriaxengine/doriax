@@ -26,6 +26,7 @@
     // Use C headers for POSIX signal and setjmp APIs to get C-level names.
     #include <signal.h>
     #include <setjmp.h>
+    #include <mutex>
 #endif
 
 namespace doriax {
@@ -98,9 +99,9 @@ namespace doriax {
 
     namespace detail {
         struct GuardTLS {
-            sigjmp_buf env;
-            bool active = false;
+            sigjmp_buf* env = nullptr; // innermost guard
             int lastSig = 0;
+            unsigned int calls = 0;
         };
 
         // One TLS state per thread
@@ -128,73 +129,66 @@ namespace doriax {
             }
         }
 
+        inline const int guardedSignals[] = {SIGSEGV, SIGBUS, SIGFPE, SIGILL, SIGABRT};
+        inline struct sigaction previousActions[5];
+        inline std::mutex handlersMutex;
+
         inline void crashSignalHandler(int sig, siginfo_t* /*info*/, void* /*ucontext*/) {
-            if (g_tls.active) {
+            if (g_tls.env) {
                 g_tls.lastSig = sig;
-                siglongjmp(g_tls.env, 1);
+                siglongjmp(*g_tls.env, 1);
             } else {
-                // Not guarded: restore default and re-raise to terminate
-                ::signal(sig, SIG_DFL);
+                // Not guarded: restore the previous handler and re-raise
+                for (int i = 0; i < 5; i++) {
+                    if (guardedSignals[i] == sig)
+                        sigaction(sig, &previousActions[i], nullptr);
+                }
                 ::raise(sig);
             }
         }
 
-        struct SignalScope {
-            struct sigaction old_segv{};
-            struct sigaction old_bus{};
-            struct sigaction old_fpe{};
-            struct sigaction old_ill{};
-            struct sigaction old_abrt{};
-            bool installed = false;
+        inline bool handlersInstalled() {
+            struct sigaction current{};
+            sigaction(SIGSEGV, nullptr, &current);
+            return current.sa_sigaction == &crashSignalHandler;
+        }
 
-            void install() {
-                struct sigaction sa{};
-                sa.sa_sigaction = &crashSignalHandler;
-                sigemptyset(&sa.sa_mask);
-                sigaddset(&sa.sa_mask, SIGSEGV);
-                sigaddset(&sa.sa_mask, SIGBUS);
-                sigaddset(&sa.sa_mask, SIGFPE);
-                sigaddset(&sa.sa_mask, SIGILL);
-                sigaddset(&sa.sa_mask, SIGABRT);
-                sa.sa_flags = SA_SIGINFO | SA_NODEFER;
+        // Installed once, not around each call
+        inline void installHandlers() {
+            std::lock_guard<std::mutex> lock(handlersMutex);
+            if (handlersInstalled())
+                return;
 
-                sigaction(SIGSEGV, &sa, &old_segv);
-                sigaction(SIGBUS,  &sa, &old_bus);
-                sigaction(SIGFPE,  &sa, &old_fpe);
-                sigaction(SIGILL,  &sa, &old_ill);
-                sigaction(SIGABRT, &sa, &old_abrt);
-                installed = true;
-            }
+            struct sigaction sa{};
+            sa.sa_sigaction = &crashSignalHandler;
+            // Nothing blocked in the handler, so the jump out keeps the signal mask
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = SA_SIGINFO | SA_NODEFER;
 
-            void restore() {
-                if (!installed) return;
-                sigaction(SIGSEGV, &old_segv, nullptr);
-                sigaction(SIGBUS,  &old_bus,  nullptr);
-                sigaction(SIGFPE,  &old_fpe,  nullptr);
-                sigaction(SIGILL,  &old_ill,  nullptr);
-                sigaction(SIGABRT, &old_abrt, nullptr);
-                installed = false;
-            }
-        };
+            for (int i = 0; i < 5; i++)
+                sigaction(guardedSignals[i], &sa, &previousActions[i]);
+        }
     } // namespace detail
 
     template<typename Fn>
     inline bool callWithCrashGuard(Fn&& fn, CrashInfo* outInfo) {
         using namespace detail;
 
-        SignalScope scope;
-        scope.install();
+        // Checked again now and then, in case another handler took the signals
+        if ((g_tls.calls++ & 1023) == 0 && !handlersInstalled())
+            installHandlers();
 
-        g_tls.active = true;
+        sigjmp_buf env;
+        sigjmp_buf* outerEnv = g_tls.env;
+        g_tls.env = &env;
         g_tls.lastSig = 0;
 
-        if (sigsetjmp(g_tls.env, 1) == 0) {
+        if (sigsetjmp(env, 0) == 0) {
             // Execute the user function
             fn();
 
             // Success path
-            g_tls.active = false;
-            scope.restore();
+            g_tls.env = outerEnv;
             return true;
         } else {
             // We jumped back from a signal
@@ -204,8 +198,7 @@ namespace doriax {
                 outInfo->description = sigDesc(g_tls.lastSig);
             }
 
-            g_tls.active = false;
-            scope.restore();
+            g_tls.env = outerEnv;
             return false;
         }
     }
