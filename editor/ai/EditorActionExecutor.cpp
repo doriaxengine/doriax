@@ -5025,9 +5025,15 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
                     return false;
                 }
                 if (requireFiles) {
-                    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(customShader);
-                    if (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag)) {
+                    // a fork, a vertex offset after '#', or both
+                    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
+                    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
+                    if (!paths.vert.empty() && (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag))) {
                         error = "'" + spec + "' references missing files (" + paths.vert + ", " + paths.frag + ").";
+                        return false;
+                    }
+                    if (!vertexOffset.empty() && !fs::exists(project->getProjectPath() / vertexOffset) && !ProjectUtils::isEngineVertexOffset(vertexOffset)) {
+                        error = "'" + spec + "' references a missing vertex offset (" + vertexOffset + ").";
                         return false;
                     }
                 }
