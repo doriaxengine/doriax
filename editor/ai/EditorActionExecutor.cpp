@@ -1400,7 +1400,7 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
                             material.baseColorTexture.getSvgScale())}};
         }
         case PropertyType::Custom:
-            if (propertyName == "shaderUniforms") {
+            if (propertyName == "shaderUniforms" || propertyName == "shaderParameters") {
                 return shaderUniformValuesJson(*static_cast<ShaderUniformValues*>(property.ref));
             }
             if (propertyName == "bursts") {
@@ -2130,7 +2130,11 @@ Json sceneReadableProperties(SceneProject* sceneProject) {
     props["shadows_2d_quality"] = {{"type", "int"}, {"value", static_cast<int>(Catalog::getSceneProperty<ShadowQuality>(scene, "shadows_2d_quality"))}};
     props["physics_gravity_2d"] = {{"type", "vector2"}, {"value", vector2Json(Catalog::getSceneProperty<Vector2>(scene, "physics_gravity_2d"))}};
     props["physics_gravity_3d"] = {{"type", "vector3"}, {"value", vector3Json(Catalog::getSceneProperty<Vector3>(scene, "physics_gravity_3d"))}};
-    props["wind"] = {{"type", "vector3"}, {"value", vector3Json(Catalog::getSceneProperty<Vector3>(scene, "wind"))}};
+    Json shaderParameters = Json::object();
+    for (const auto& parameter : scene->getShaderParameterDefaults()) {
+        shaderParameters[parameter.first] = vector4Json(parameter.second);
+    }
+    props["shader_parameters"] = {{"type", "map"}, {"value", shaderParameters}};
     props["mesh_lod_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "mesh_lod_enabled")}};
     props["mesh_lod_threshold"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "mesh_lod_threshold")}};
     props["depth_prepass_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "depth_prepass_enabled")}};
@@ -2331,6 +2335,46 @@ private:
     bool removed = false;
     uint32_t previousSelectedScene = NULL_PROJECT_SCENE;
 };
+
+bool parseShaderUniformValue(const Json& args, Vector4& out, std::string& error) {
+    if (args.contains("vector4_value")) {
+        if (!parseVector4(args["vector4_value"], out)) { error = "vector4_value must have x, y, z and w."; return false; }
+        return true;
+    }
+    if (args.contains("vector3_value")) {
+        Vector3 v;
+        if (!parseVector3(args["vector3_value"], v)) { error = "vector3_value must have x, y and z."; return false; }
+        out = Vector4(v.x, v.y, v.z, 0.0f);
+        return true;
+    }
+    if (args.contains("vector2_value")) {
+        Vector2 v;
+        if (!parseVector2(args["vector2_value"], v)) { error = "vector2_value must have x and y."; return false; }
+        out = Vector4(v.x, v.y, 0.0f, 0.0f);
+        return true;
+    }
+    if (args.contains("number_value") && args["number_value"].is_number()) {
+        out = Vector4(args["number_value"].get<float>(), 0.0f, 0.0f, 0.0f);
+        return true;
+    }
+    error = "Give number_value, vector2_value, vector3_value or vector4_value.";
+    return false;
+}
+
+// "shader_parameter:Collection.name", a saved scene or camera value
+bool setShaderParameterValue(const std::string& property, const Json& args, ShaderUniformValues& values, std::string& error) {
+    std::string collection, name;
+    const std::string key = property.substr(std::string("shader_parameter:").size());
+    if (!ShaderParameters::splitKey(key, collection, name) || !ShaderParameters::isValidKey(collection, name)) {
+        error = "Name a shader parameter as shader_parameter:Collection.name, with letters, digits and underscores.";
+        return false;
+    }
+    Vector4 value;
+    if (!parseShaderUniformValue(args, value, error))
+        return false;
+    ShaderUniforms::set(values, key, value);
+    return true;
+}
 
 } // namespace
 
@@ -3203,13 +3247,23 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
     if (entity == NULL_ENTITY) return failResult("Entity not found.");
     ComponentType component;
     if (!parseComponentType(arguments.value("component", ""), component)) return failResult("Unknown component type.");
+    const std::string propertyName = arguments.value("property", "");
+    std::string error;
+
+    if (component == ComponentType::CameraComponent && propertyName.rfind("shader_parameter:", 0) == 0) {
+        ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderParameters");
+        if (!valuesRef) return failResult("Entity has no CameraComponent.");
+        ShaderUniformValues values = *valuesRef;
+        if (!setShaderParameterValue(propertyName, arguments, values, error)) return failResult(error);
+        CommandHandle::get(sceneId)->addCommandNoMerge(
+            new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderParameters", values));
+        return okResult("Set camera shader parameter through the command history.");
+    }
 
     auto properties = Catalog::findEntityProperties(sceneProject->scene, entity, component);
-    const std::string propertyName = arguments.value("property", "");
     auto it = properties.find(propertyName);
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
 
-    std::string error;
     if (!validateButtonUIProperty(sceneProject->scene, entity, component, propertyName, error)) return failResult(error);
     if (!validateCustomShaderValue(propertyName, arguments, error)) return failResult(error);
 
@@ -3451,7 +3505,12 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
             return failResult("physics_gravity_2d requires vector2_value.");
         }
         cmd = new ScenePropertyCmd<Vector2>(project, sceneId, property, value);
-    } else if (property == "physics_gravity_3d" || property == "wind") {
+    } else if (property.rfind("shader_parameter:", 0) == 0) {
+        ShaderUniformValues values = Catalog::getSceneProperty<ShaderUniformValues>(sceneProject->scene, "shader_parameters");
+        std::string error;
+        if (!setShaderParameterValue(property, arguments, values, error)) return failResult(error);
+        cmd = new ScenePropertyCmd<ShaderUniformValues>(project, sceneId, "shader_parameters", values);
+    } else if (property == "physics_gravity_3d") {
         Vector3 value = Catalog::getSceneProperty<Vector3>(sceneProject->scene, property);
         if (!parseVector3(arguments.value("vector3_value", Json::object()), value)) {
             return failResult(property + " requires vector3_value.");
@@ -5025,16 +5084,17 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
                     return false;
                 }
                 if (requireFiles) {
-                    // a fork, a vertex offset after '#', or both
+                    // a fork, then a vertex offset and a coverage function after '#'
                     const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-                    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
                     if (!paths.vert.empty() && (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag))) {
                         error = "'" + spec + "' references missing files (" + paths.vert + ", " + paths.frag + ").";
                         return false;
                     }
-                    if (!vertexOffset.empty() && !fs::exists(project->getProjectPath() / vertexOffset) && !ProjectUtils::isEngineVertexOffset(vertexOffset)) {
-                        error = "'" + spec + "' references a missing vertex offset (" + vertexOffset + ").";
-                        return false;
+                    for (const std::string& effect : {ShaderPool::getCustomShaderVertexOffset(customShader), ShaderPool::getCustomShaderCoverage(customShader)}) {
+                        if (!effect.empty() && !fs::exists(project->getProjectPath() / effect) && !ProjectUtils::isEngineEffectFunction(effect)) {
+                            error = "'" + spec + "' references a missing effect function (" + effect + ").";
+                            return false;
+                        }
                     }
                 }
                 customId = ShaderPool::registerCustomShader(customShader);
@@ -5132,7 +5192,8 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
     // default) is a project-relative base path; both must reference real files.
     static const std::set<std::string> shaderPathProperties = {
         "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader", "default_ui_shader",
-        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader", "vertexOffsetShader"
+        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader", "vertexOffsetShader",
+        "coverageShader"
     };
     if (!shaderPathProperties.count(propertyName)) {
         return true;
@@ -5142,13 +5203,15 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true; // empty resets to the built-in shader
     }
 
-    // a vertex offset is one .glsl file, from the project or the engine
-    if (propertyName == "vertexOffsetShader") {
-        if (ProjectUtils::isEngineVertexOffset(value))
+    // an effect function is one .glsl file, from the project or the engine
+    if (propertyName == "vertexOffsetShader" || propertyName == "coverageShader") {
+        const bool vertexOffset = propertyName == "vertexOffsetShader";
+        if (vertexOffset ? ProjectUtils::isEngineVertexOffset(value) : ProjectUtils::isEngineCoverage(value))
             return true;
         if (fs::path(value).extension() != ".glsl" || !PathUtils::isSafeRelativePath(fs::path(value)) ||
                 !fs::exists(project->getProjectPath() / value)) {
-            error = "vertexOffsetShader must be an existing project-relative .glsl file, or an engine offset such as offsets/wind.glsl. Write a project one with write_shader_file first.";
+            error = propertyName + " must be an existing project-relative .glsl file, or an engine one such as " +
+                (vertexOffset ? "offsets/wind.glsl" : "coverage/see_through.glsl") + ". Write a project one with write_shader_file first.";
             return false;
         }
         return true;
@@ -5374,31 +5437,6 @@ std::string shaderUniformSetNote(const Json& members, const std::string& name, b
     }
     return " Note: the loaded shader declares no member named '" + name +
            "' (it may still be building, or the name differs); the value is kept and applies once declared.";
-}
-
-bool parseShaderUniformValue(const Json& args, Vector4& out, std::string& error) {
-    if (args.contains("vector4_value")) {
-        if (!parseVector4(args["vector4_value"], out)) { error = "vector4_value must have x, y, z and w."; return false; }
-        return true;
-    }
-    if (args.contains("vector3_value")) {
-        Vector3 v;
-        if (!parseVector3(args["vector3_value"], v)) { error = "vector3_value must have x, y and z."; return false; }
-        out = Vector4(v.x, v.y, v.z, 0.0f);
-        return true;
-    }
-    if (args.contains("vector2_value")) {
-        Vector2 v;
-        if (!parseVector2(args["vector2_value"], v)) { error = "vector2_value must have x and y."; return false; }
-        out = Vector4(v.x, v.y, 0.0f, 0.0f);
-        return true;
-    }
-    if (args.contains("number_value") && args["number_value"].is_number()) {
-        out = Vector4(args["number_value"].get<float>(), 0.0f, 0.0f, 0.0f);
-        return true;
-    }
-    error = "set_shader_uniform requires number_value, vector2_value, vector3_value or vector4_value.";
-    return false;
 }
 
 } // namespace
