@@ -1,15 +1,8 @@
 #version 450
 
-// A fork may declare a u_fs_customParams block: its members are filled by name from the
-// component's shader uniforms (Properties window, setShaderUniform). Two names are
-// written by the engine instead: "time" (seconds since startup) and "resolution"
-// (xy = render target size, zw = 1 / size). Do not mix int and float members: GL
-// uploads the block typed after its first member.
-//
-//   uniform u_fs_customParams {
-//       float time;
-//       vec4 tint;
-//   } customParams;
+// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// params.amount once main() has called loadShaderParameters(). Engine.time and
+// Engine.resolution (xy size, zw 1 / size) come from the engine.
 
 in vec3 v_position;
 in vec3 v_normal;
@@ -114,6 +107,8 @@ uniform sampler u_waterWake_smp;
     uniform texture2D u_shadowPointAtlas;
     uniform sampler u_shadowPointAtlas_smp;
 #endif
+
+#include "includes/parameters_fs.glsl"
 
 const float M_PI = 3.141592653589793;
 const float WATER_F0 = 0.02;
@@ -317,6 +312,8 @@ bool isExcluded(vec3 position){
 }
 
 void main(){
+    loadShaderParameters();
+
     vec3 toEye = water.eyePos.xyz - v_position;
     float eyeDistance = length(toEye);
     // pixel size on the surface, taken before any branch

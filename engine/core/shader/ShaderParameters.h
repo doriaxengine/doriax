@@ -5,6 +5,7 @@
 #define SHADERPARAMETERS_H
 
 #include "Export.h"
+#include "ShaderData.h"
 #include "ShaderUniforms.h"
 #include "math/Vector2.h"
 #include "math/Vector3.h"
@@ -17,7 +18,6 @@
 namespace doriax{
 
     class Scene;
-    class ShaderData;
 
     // resolved values of one scene or one camera, indexed by interned key
     class DORIAX_API ShaderParameterTable{
@@ -79,8 +79,11 @@ namespace doriax{
         unsigned int firstOffset = 0;
         std::vector<uint8_t> data;
         std::vector<Binding> bindings;
-        int worldToModel = -1;   // engine context bindings, -1 when not declared
-        int offsetInfo = -1;
+        // engine value bindings, -1 when not declared
+        int engineTime = -1;
+        int engineResolution = -1;
+        int worldToModel = -1;
+        int offsetMax = -1;
         int eye = -1;
         int forward = -1;
         int pass = -1;
@@ -91,8 +94,9 @@ namespace doriax{
 
         // own value, else inherited, else the declared default
         void writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited = nullptr);
-        void writeShared(const ShaderParameterTable* scene, const ShaderParameterTable* view);
-        void writeVertexContext(const Matrix4& modelMatrix, float time, float offsetMax);
+        // the engine clock and target size, then the scene and view values
+        void writeFrame(const ShaderEffectView& view, const Vector2& resolution);
+        void writeVertexContext(const Matrix4& modelMatrix, float maxOffset);
         // coverage false bypasses the effect, fade blends instead of dithering
         void writeFragmentContext(const ShaderEffectView& view, bool coverage, bool fade);
     };

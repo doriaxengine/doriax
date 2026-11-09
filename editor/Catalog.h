@@ -203,10 +203,6 @@ namespace doriax::editor{
         // writing the value, and puts the whole mask back on undo.
         static uint32_t* getSubmeshOverrideMask(EntityRegistry* registry, Entity entity, ComponentType component, const std::string& propertyName, uint32_t& propertyFields);
 
-        // custom uniform blocks of a Mesh/UI/Points/Lines/Sky/Water component's loaded shader, vertex first
-        static std::vector<const CustomUniformBlock*> getShaderUniformBlocks(EntityRegistry* registry, Entity entity, ComponentType component);
-        // declarations the engine cannot upload right: mixed int/float blocks, one name with two types
-        static std::vector<std::string> getShaderUniformWarnings(const std::vector<const CustomUniformBlock*>& blocks);
         // the component's custom shader (own or scene default) failed and the built-in is rendering
         static bool isCustomShaderBuildFailed(Scene* scene, Entity entity, ComponentType component);
         // same for a mesh's depth fork

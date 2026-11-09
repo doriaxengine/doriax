@@ -13,7 +13,7 @@
 #include "render/ObjectRender.h"
 #include "render/ShaderRender.h"
 #include "render/TextureRender.h"
-#include "shader/ShaderUniforms.h"
+#include "shader/ShaderParameters.h"
 #include "texture/Texture.h"
 #include "util/Color.h"
 #include <memory>
@@ -57,11 +57,11 @@ namespace doriax{
         int slotFSShadows = -1;
         int slotFSShadowProjection = -1;
         int slotFSPointShadows = -1;
-        // values of the fork's custom uniform blocks, by member name
+        // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
-        CustomUniformBlock customVSParams;
-        CustomUniformBlock customFSParams;
+        ShaderParameterBlock paramsVS;
+        ShaderParameterBlock paramsFS;
 
         // the fullscreen fade seen from inside, loaded with the water while underwater is on
         bool underwaterLoaded = false;
@@ -70,7 +70,8 @@ namespace doriax{
         std::string customUnderwaterShader; // fork of underwater.frag, built-in when empty
         uint16_t customUnderwaterShaderId = 0;
         int slotUnderwaterParams = -1;
-        CustomUniformBlock customUnderwaterParams;
+        ShaderParameterBlock underwaterParamsVS;
+        ShaderParameterBlock underwaterParamsFS;
 
         Vector2 size = Vector2(50.0f, 50.0f);
         unsigned int subdivisions = 128;

@@ -2977,7 +2977,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v52: see-through meshes dither away in front of the scene's target (USE_SEE_THROUGH).
     // v53: see-through values ride on u_fs_pbrParams; orthographic views and flipped targets.
     // v54: declared shader parameters and coverage functions (USE_COVERAGE), SDAT v2.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v54";
+    // v55: every shader reads its values from u_vs_params/u_fs_params; custom blocks removed.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v55";
 }
 
 void editor::App::pushTabNotificationStyle(){

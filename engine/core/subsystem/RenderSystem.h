@@ -638,9 +638,7 @@ namespace doriax{
 		// the water holding the main camera, which fades the scene copy
 		WaterComponent* currentUnderwater;
 
-		// engine-written custom uniforms: seconds since startup, sampled once per draw(),
-		// and the size of the target being drawn (shadow slot, SSAO depth or camera color)
-		float frameTime;
+		// size of the target being drawn (shadow slot, depth, G-buffer or camera color), Engine.resolution
 		Vector2 passResolution;
 		// clock of the effect functions, advanced by update() unless the editor holds the scene
 		double animationTime;
@@ -697,7 +695,8 @@ namespace doriax{
 			ObjectRender render;
 			int passIndex;                         // index in the scene chain (disabled passes skipped)
 			uint16_t customId;                     // 0 = built-in passthrough
-			CustomUniformBlock params;             // u_fs_postParams, slot -1 when the fork has none
+			ShaderParameterBlock paramsVS;         // slot -1 when the pass declares none
+			ShaderParameterBlock paramsFS;
 			std::pair<int, int> slotSceneColor;
 			std::pair<int, int> slotDepth;
 			std::pair<int, int> slotGBuffer;
@@ -1041,7 +1040,7 @@ namespace doriax{
 		void updateSpriteBatch(Entity entity);
 		void needReloadPostProcess();
 		void needUpdatePostProcessUniforms();
-		// components inheriting the default shader of this type rewrite their custom blocks
+		// components inheriting the default shader of this type rewrite their parameters
 		void needUpdateDefaultShaderUniforms(ShaderType type);
 		void needReloadUIs();
 		void needReloadSky();

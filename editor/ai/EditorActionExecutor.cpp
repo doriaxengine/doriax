@@ -5356,87 +5356,75 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
 
 namespace {
 
-const char* shaderUniformTypeName(ShaderUniformType type) {
-    switch (type) {
-        case ShaderUniformType::FLOAT:  return "float";
-        case ShaderUniformType::FLOAT2: return "vec2";
-        case ShaderUniformType::FLOAT3: return "vec3";
-        case ShaderUniformType::FLOAT4: return "vec4";
-        case ShaderUniformType::INT:    return "int";
-        case ShaderUniformType::INT2:   return "ivec2";
-        case ShaderUniformType::INT3:   return "ivec3";
-        case ShaderUniformType::INT4:   return "ivec4";
-        default: return "other";
-    }
-}
-
-// one entry per member name; engine-written names are flagged
-void appendShaderUniformMembers(Json& members, const CustomUniformBlock& block, const ShaderUniformValues& values) {
-    for (const ShaderUniform& uniform : block.members) {
+// the @param declarations of a shader file, each name once, with the value it reads
+void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
+                            const ShaderUniformValues* inherited) {
+    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (declaration.scope != ShaderParameterScope::OBJECT) continue;
         bool listed = false;
         for (const Json& existing : members) {
-            if (existing.value("name", "") == uniform.name) {
+            if (existing.value("name", "") == declaration.name) {
                 listed = true;
                 break;
             }
         }
         if (listed) continue;
 
-        const bool reserved = ShaderUniforms::isReserved(uniform.name);
-        const bool editable = ShaderUniforms::isEditable(uniform);
-        Json member = {{"name", uniform.name},
-                       {"type", shaderUniformTypeName(uniform.type)},
-                       {"engine_written", reserved},
-                       {"editable", editable && !reserved}};
-        if (uniform.arrayCount > 1) {
-            member["array_count"] = uniform.arrayCount;
+        const bool hasValue = ShaderUniforms::has(values, declaration.name);
+        Vector4 value = declaration.defaultValue;
+        if (hasValue)
+            value = ShaderUniforms::get(values, declaration.name);
+        else if (inherited && ShaderUniforms::has(*inherited, declaration.name))
+            value = ShaderUniforms::get(*inherited, declaration.name);
+
+        Json member = {{"name", declaration.name},
+                       {"type", ShaderParameterParser::getTypeName(declaration.type)},
+                       {"value", vector4Json(value)},
+                       {"default", vector4Json(declaration.defaultValue)},
+                       {"has_value", hasValue}};
+        if (declaration.hasRange) {
+            member["min"] = declaration.minValue;
+            member["max"] = declaration.maxValue;
         }
-        if (!reserved && editable) {
-            member["value"] = vector4Json(ShaderUniforms::get(values, uniform.name));
-            member["has_value"] = ShaderUniforms::has(values, uniform.name);
-        }
+        if (declaration.color) member["color"] = true;
+        if (declaration.runtime) member["runtime"] = true;
+        if (!declaration.description.empty()) member["description"] = declaration.description;
         members.push_back(member);
     }
 }
 
-void collectComponentShaderUniformMembers(Json& members, Json& warnings, EntityRegistry* registry, Entity entity,
-                                          ComponentType component, const ShaderUniformValues& values) {
-    std::vector<const CustomUniformBlock*> blocks = Catalog::getShaderUniformBlocks(registry, entity, component);
-    for (const CustomUniformBlock* block : blocks) {
-        appendShaderUniformMembers(members, *block, values);
-    }
-    warnings = Catalog::getShaderUniformWarnings(blocks);
-}
-
-// reflected from the pool; a pass still building or failed lists none
-void collectPassShaderUniformMembers(Json& members, Json& warnings, const PostProcessPass& pass, bool& buildFailed) {
-    uint16_t customId = ShaderPool::registerCustomShader(pass.shader);
-    buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
-    std::shared_ptr<ShaderRender> shader = ShaderPool::get(ShaderType::POSTPROCESS, 0, customId);
+void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
+                                          ComponentType component, ShaderType shaderType, const ShaderUniformValues& values) {
+    const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, component, "customShader");
+    const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
     warnings = Json::array();
-    if (!buildFailed && shader && shader->isCreated()) {
-        CustomUniformBlock block;
-        block.resolve(shader->shaderData, "u_fs_postParams");
-        appendShaderUniformMembers(members, block, pass.uniforms);
-        warnings = Catalog::getShaderUniformWarnings({&block});
+    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity)) {
+        const ShaderEffectAnnotations annotations = ProjectUtils::getSourceAnnotations(project->getProjectPath(), source, fork);
+        appendParameterMembers(members, annotations, values, inherited);
+        for (const std::string& error : annotations.errors) warnings.push_back(error);
     }
 }
 
-// the value is stored either way; the note says when the shader cannot use it
+void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* project, const PostProcessPass& pass, bool& buildFailed) {
+    const uint16_t customId = ShaderPool::registerCustomShader(pass.shader);
+    buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
+    warnings = Json::array();
+    if (pass.shader.empty()) return;
+    const ShaderEffectAnnotations annotations = ProjectUtils::getSourceAnnotations(project->getProjectPath(), pass.shader, true);
+    appendParameterMembers(members, annotations, pass.uniforms, nullptr);
+    for (const std::string& error : annotations.errors) warnings.push_back(error);
+}
+
+// the value is stored either way; the note says when no shader file declares it
 std::string shaderUniformSetNote(const Json& members, const std::string& name, bool& declared) {
     declared = false;
     for (const Json& member : members) {
         if (member.value("name", "") == name) {
             declared = true;
-            if (!member.value("editable", false)) {
-                return " Note: '" + name + "' is a matrix or array member, which takes no value and stays zero; "
-                       "declare one scalar or vector member per value instead.";
-            }
             return "";
         }
     }
-    return " Note: the loaded shader declares no member named '" + name +
-           "' (it may still be building, or the name differs); the value is kept and applies once declared.";
+    return " Note: no shader file declares '// @param <type> " + name + "'; the value is kept and applies once declared.";
 }
 
 } // namespace
@@ -5458,7 +5446,7 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
 
         Json warnings;
         bool buildFailed = false;
-        collectPassShaderUniformMembers(members, warnings, pass, buildFailed);
+        collectPassShaderUniformMembers(members, warnings, project, pass, buildFailed);
 
         return okResult("Inspected post-process pass uniforms.",
                         Json{{"scene_id", sceneId},
@@ -5485,7 +5473,7 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
         ? sceneProject->scene->getDefaultCustomShader(shaderType) : *customShader;
 
     Json warnings;
-    collectComponentShaderUniformMembers(members, warnings, sceneProject->scene, entity, component, *valuesRef);
+    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, *valuesRef);
 
     Json result{{"scene_id", sceneId},
                 {"entity_id", entity},
@@ -5496,7 +5484,7 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
                 {"members", members},
                 {"warnings", warnings},
                 {"values", shaderUniformValuesJson(*valuesRef)}};
-    // a mesh's depth fork declares blocks of its own, listed in the same members
+    // a mesh's depth fork can declare values of its own, listed in the same members
     if (std::string* customDepthShader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader")) {
         result["custom_depth_shader"] = *customDepthShader;
         result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
@@ -5517,9 +5505,6 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
 
     const std::string name = arguments.value("name", "");
     if (name.empty()) return failResult("set_shader_uniform requires name.");
-    if (ShaderUniforms::isReserved(name)) {
-        return failResult("'" + name + "' is written by the engine every frame and cannot be set; rename the shader member to drive it yourself.");
-    }
 
     const bool remove = arguments.value("remove", false);
     Vector4 value;
@@ -5543,7 +5528,7 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
         Json declared = Json::array();
         Json warnings;
         bool buildFailed = false;
-        collectPassShaderUniformMembers(declared, warnings, passes[passIndex], buildFailed);
+        collectPassShaderUniformMembers(declared, warnings, project, passes[passIndex], buildFailed);
         bool declaredMember = false;
         std::string message = remove ? "Removed post-process uniform through the command history."
                                      : "Set post-process uniform through the command history.";
@@ -5570,7 +5555,7 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
 
     Json declared = Json::array();
     Json warnings;
-    collectComponentShaderUniformMembers(declared, warnings, sceneProject->scene, entity, component, values);
+    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values);
     bool declaredMember = false;
     std::string message = remove ? "Removed shader uniform through the command history."
                                  : "Set shader uniform through the command history.";

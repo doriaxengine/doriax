@@ -235,15 +235,24 @@ void clearCustomSourceCache() {
     customSourceCache.clear();
 }
 
-// parameter headers and hook defines of a mesh pass; throws on a bad annotation
+// parameter headers of a custom shader and the defines of its hooks; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& vertexOffset, const std::string& coverage,
                            std::vector<ShaderParameterInfo>& parameters) {
-    // the files each stage reaches, to find the hooks
+    const bool useVertexOffset = !vertexOffset.empty();
+    const bool useCoverage = !coverage.empty();
+    if (useVertexOffset)
+        args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
+    if (useCoverage)
+        args.defines.push_back({"USE_COVERAGE", "1"});
+
+    // the files each stage reaches, to find the hooks; an inactive hook is not read
     std::unordered_set<std::string> vertexFiles;
     std::unordered_set<std::string> fragmentFiles;
-    auto lookup = [&args](std::unordered_set<std::string>& reached) {
-        return [&args, &reached](const std::string& key) -> const std::string* {
+    auto lookup = [&](std::unordered_set<std::string>& reached) {
+        return [&](const std::string& key) -> const std::string* {
             reached.insert(key);
+            if ((key == "includes/vertex_offset.glsl" && !useVertexOffset) || (key == "includes/coverage.glsl" && !useCoverage))
+                return nullptr;
             auto it = args.fileBuffers.find(key);
             return it != args.fileBuffers.end() ? &it->second : nullptr;
         };
@@ -257,13 +266,6 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& vert
     std::vector<std::string> errors = vertexAnnotations.errors;
     errors.insert(errors.end(), fragmentAnnotations.errors.begin(), fragmentAnnotations.errors.end());
 
-    const bool useVertexOffset = !vertexOffset.empty();
-    const bool useCoverage = !coverage.empty();
-    if (useVertexOffset)
-        args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
-    if (useCoverage)
-        args.defines.push_back({"USE_COVERAGE", "1"});
-
     // a fork from before the hooks existed cannot run the function
     if (useVertexOffset && !vertexFiles.count("includes/vertex_offset.glsl"))
         editor::Out::warning("%s does not include includes/vertex_offset.glsl, so the vertex offset %s does nothing in it", args.vert_file.c_str(), vertexOffset.c_str());
@@ -271,9 +273,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& vert
         editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage %s does nothing in it", args.frag_file.c_str(), coverage.c_str());
 
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations.parameters, useVertexOffset, false, parameters, errors);
+        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, parameters, errors);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations.parameters, false, useCoverage, parameters, errors);
+        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters, errors);
 
     if (!errors.empty()){
         std::string message = "Shader parameter annotations:";
@@ -292,18 +294,15 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
     return false;
 }
 
-// the G-buffer pass would never fill a custom block an effect file declares
-std::string getEffectBlockError(const ShaderData& shaderData, uint16_t customId) {
-    const std::string customShader = ShaderPool::getCustomShaderName(customId);
-    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
-    const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
-    if ((vertexOffset.empty() && coverage.empty()) || !ShaderPool::getCustomShaderFork(customShader).empty())
+// the custom blocks of v0.8 are no longer filled, so an old fork fails with a pointer to the annotations
+std::string getLegacyBlockError(const ShaderData& shaderData, uint16_t customId) {
+    if (customId == 0)
         return "";
 
     for (const ShaderStage& stage : shaderData.stages)
         for (const ShaderUniformBlock& block : stage.uniformblocks)
-            if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams")
-                return (vertexOffset.empty() ? coverage : vertexOffset) + ": an effect function declares its values with // @param annotations, not " + block.name;
+            if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams" || block.name == "u_fs_postParams")
+                return ShaderPool::getCustomShaderName(customId) + ": " + block.name + " is no longer filled, declare its values as // @param annotations";
     return "";
 }
 
@@ -891,11 +890,11 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     if (args.lang == shadercompiler::LANG_GLSL && meshPass)
         args.defines.push_back({"SKINNING_TEXTURE", "1"});
 
-    // the built-in passes declare no parameters
+    // the built-in shaders declare no parameters
     std::vector<ShaderParameterInfo> unusedParameters;
     std::vector<std::string> unusedErrors;
-    args.fileBuffers["shader_params_vs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::VERTEX, {}, false, false, unusedParameters, unusedErrors);
-    args.fileBuffers["shader_params_fs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::FRAGMENT, {}, false, false, unusedParameters, unusedErrors);
+    args.fileBuffers["shader_params_vs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::VERTEX, ShaderEffectAnnotations(), false, false, unusedParameters, unusedErrors);
+    args.fileBuffers["shader_params_fs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::FRAGMENT, ShaderEffectAnnotations(), false, false, unusedParameters, unusedErrors);
 
     if (customId == 0)
         return;
@@ -930,14 +929,11 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.frag_file = customPaths.frag;
     }
 
-    // the mesh passes run effect functions and read declared parameters
-    if (meshPass) {
-        std::vector<ShaderParameterInfo> declared;
-        setupShaderParameters(args, ShaderPool::getCustomShaderVertexOffset(customShader),
-                              ShaderPool::getCustomShaderCoverage(customShader), declared);
-        if (parameters)
-            *parameters = std::move(declared);
-    }
+    std::vector<ShaderParameterInfo> declared;
+    setupShaderParameters(args, ShaderPool::getCustomShaderVertexOffset(customShader),
+                          ShaderPool::getCustomShaderCoverage(customShader), declared);
+    if (parameters)
+        *parameters = std::move(declared);
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {
@@ -1051,13 +1047,13 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
     shaderData.parameters = std::move(parameters);
 
-    const std::string effectError = getEffectBlockError(shaderData, customId);
-    if (!effectError.empty()) {
+    const std::string blockError = getLegacyBlockError(shaderData, customId);
+    if (!blockError.empty()) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
         }
-        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), effectError.c_str());
-        throw std::runtime_error(effectError);
+        Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), blockError.c_str());
+        throw std::runtime_error(blockError);
     }
 
     if (shutdownRequested) {
@@ -1235,9 +1231,9 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
     shaderData.parameters = std::move(parameters);
 
-    const std::string effectError = getEffectBlockError(shaderData, customId);
-    if (!effectError.empty())
-        throw std::runtime_error(effectError);
+    const std::string blockError = getLegacyBlockError(shaderData, customId);
+    if (!blockError.empty())
+        throw std::runtime_error(blockError);
 
     Out::build(
         "Shader %s (%s) generated successfully",

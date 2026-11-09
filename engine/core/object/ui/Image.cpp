@@ -230,8 +230,8 @@ std::string Image::getCustomShader() const{
 void Image::setShaderUniform(const std::string& name, const Vector4& value){
     UIComponent& ui = getComponent<UIComponent>();
 
-    if (ShaderUniforms::set(ui.shaderUniforms, name, value))
-        ui.needUpdateShaderUniforms = true;
+    ShaderUniforms::set(ui.shaderUniforms, name, value);
+    ui.needUpdateShaderUniforms = true;
 }
 
 void Image::setShaderUniform(const std::string& name, const Vector3& value){

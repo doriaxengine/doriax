@@ -10,7 +10,7 @@
 #include "render/ObjectRender.h"
 #include "render/ShaderRender.h"
 #include "texture/Texture.h"
-#include "shader/ShaderUniforms.h"
+#include "shader/ShaderParameters.h"
 #include "math/AABB.h"
 #include "Engine.h"
 #include <string>
@@ -58,11 +58,11 @@ namespace doriax{
         std::string customShader;
         uint16_t customShaderId = 0;
         int slotVSParams = -1;
-        // values of the fork's custom uniform blocks, by member name
+        // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
-        CustomUniformBlock customVSParams;
-        CustomUniformBlock customFSParams;
+        ShaderParameterBlock paramsVS;
+        ShaderParameterBlock paramsFS;
 
         Texture texture;
 

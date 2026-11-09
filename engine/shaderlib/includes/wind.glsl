@@ -9,7 +9,7 @@ vec3 getWindSway(vec3 localPosition, vec3 worldPosition, float sway, float swayH
     }
 
     vec3 air = Wind.velocity;
-    float time = getEffectTime();
+    float time = Engine.time;
     float ground = length(air.xz);
     float along = ground > 0.0 ? dot(worldPosition.xz, air.xz) / ground : 0.0;
     float gust = 0.5 + 0.5 * sin((along - Wind.travel) * 0.3);

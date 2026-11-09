@@ -125,6 +125,10 @@ int ShaderParameters::getComponentCount(ShaderUniformType type){
         case ShaderUniformType::FLOAT2: return 2;
         case ShaderUniformType::FLOAT3: return 3;
         case ShaderUniformType::FLOAT4: return 4;
+        case ShaderUniformType::INT:    return 1;
+        case ShaderUniformType::INT2:   return 2;
+        case ShaderUniformType::INT3:   return 3;
+        case ShaderUniformType::INT4:   return 4;
         case ShaderUniformType::MAT4:   return 16;
         default:                        return 0;
     }
@@ -162,10 +166,14 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
 
         if (info->scope == ShaderParameterScope::ENGINE){
             const int index = (int)bindings.size();
-            if (info->name == "worldToModel" && member.type == ShaderUniformType::MAT4){
+            if (info->name == "time"){
+                engineTime = index;
+            }else if (info->name == "resolution"){
+                engineResolution = index;
+            }else if (info->name == "worldToModel" && member.type == ShaderUniformType::MAT4){
                 worldToModel = index;
-            }else if (info->name == "offset"){
-                offsetInfo = index;
+            }else if (info->name == "offsetMax"){
+                offsetMax = index;
             }else if (info->name == "eye"){
                 eye = index;
             }else if (info->name == "forward"){
@@ -176,9 +184,9 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
                 continue;
             }
         }else{
-            // float scalars and vectors
-            const int components = ShaderParameters::getComponentCount(member.type);
-            if (components == 0 || components > 4)
+            // int parameters are packed as floats too
+            if (member.type != ShaderUniformType::FLOAT && member.type != ShaderUniformType::FLOAT2 &&
+                    member.type != ShaderUniformType::FLOAT3 && member.type != ShaderUniformType::FLOAT4)
                 continue;
             if (info->scope == ShaderParameterScope::SCENE || info->scope == ShaderParameterScope::VIEW){
                 binding.key = ShaderParameters::intern(ShaderParameters::getKey(info->collection, info->name));
@@ -204,7 +212,7 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
 
     // declared defaults until something writes
     writeObject(ShaderUniformValues());
-    writeShared(nullptr, nullptr);
+    writeFrame(ShaderEffectView(), Vector2(0.0f, 0.0f));
 
     return slot != -1;
 }
@@ -215,8 +223,10 @@ void ShaderParameterBlock::clear(){
     firstOffset = 0;
     data.clear();
     bindings.clear();
+    engineTime = -1;
+    engineResolution = -1;
     worldToModel = -1;
-    offsetInfo = -1;
+    offsetMax = -1;
     eye = -1;
     forward = -1;
     pass = -1;
@@ -237,15 +247,23 @@ void ShaderParameterBlock::writeObject(const ShaderUniformValues& values, const 
     }
 }
 
-void ShaderParameterBlock::writeShared(const ShaderParameterTable* scene, const ShaderParameterTable* view){
+void ShaderParameterBlock::writeFrame(const ShaderEffectView& view, const Vector2& resolution){
+    if (engineTime != -1){
+        writeValue(data, bindings[engineTime], Vector4(view.time, 0.0f, 0.0f, 0.0f));
+    }
+    if (engineResolution != -1){
+        const float invWidth = resolution.x > 0.0f ? 1.0f / resolution.x : 0.0f;
+        const float invHeight = resolution.y > 0.0f ? 1.0f / resolution.y : 0.0f;
+        writeValue(data, bindings[engineResolution], Vector4(resolution.x, resolution.y, invWidth, invHeight));
+    }
     if (!shared)
         return;
     for (const Binding& binding : bindings){
         const ShaderParameterTable* table = nullptr;
         if (binding.scope == ShaderParameterScope::SCENE){
-            table = scene;
+            table = view.scene;
         }else if (binding.scope == ShaderParameterScope::VIEW){
-            table = view;
+            table = view.view;
         }else{
             continue;
         }
@@ -254,13 +272,13 @@ void ShaderParameterBlock::writeShared(const ShaderParameterTable* scene, const 
     }
 }
 
-void ShaderParameterBlock::writeVertexContext(const Matrix4& modelMatrix, float time, float offsetMax){
+void ShaderParameterBlock::writeVertexContext(const Matrix4& modelMatrix, float maxOffset){
     if (worldToModel != -1){
         const Matrix4 inverse = modelMatrix.inverse();
         writeFloats(data, bindings[worldToModel].offset, &inverse[0][0], 16);
     }
-    if (offsetInfo != -1){
-        writeValue(data, bindings[offsetInfo], Vector4(time, offsetMax, 0.0f, 0.0f));
+    if (offsetMax != -1){
+        writeValue(data, bindings[offsetMax], Vector4(maxOffset, 0.0f, 0.0f, 0.0f));
     }
 }
 
@@ -269,7 +287,7 @@ void ShaderParameterBlock::writeFragmentContext(const ShaderEffectView& view, bo
         writeValue(data, bindings[eye], Vector4(view.eye.x, view.eye.y, view.eye.z, view.perspective ? 1.0f : 0.0f));
     }
     if (forward != -1){
-        writeValue(data, bindings[forward], Vector4(view.forward.x, view.forward.y, view.forward.z, view.time));
+        writeValue(data, bindings[forward], Vector4(view.forward.x, view.forward.y, view.forward.z, 0.0f));
     }
     if (pass != -1){
         writeValue(data, bindings[pass], Vector4(view.ditherOrigin.x, view.ditherOrigin.y, coverage ? 1.0f : 0.0f, fade ? 1.0f : 0.0f));

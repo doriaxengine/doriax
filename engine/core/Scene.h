@@ -273,7 +273,7 @@ namespace doriax{
         void setDefaultCustomShader(ShaderType type, const std::string& path);
         const std::string& getDefaultCustomShader(ShaderType type) const;
 
-        // custom block values of a default shader, under those of the components inheriting it
+        // parameter values of a default shader, under those of the components inheriting it
         void setDefaultShaderUniforms(ShaderType type, const ShaderUniformValues& values);
         const ShaderUniformValues& getDefaultShaderUniforms(ShaderType type) const;
         void setDefaultShaderUniform(ShaderType type, const std::string& name, const Vector4& value);
@@ -290,7 +290,7 @@ namespace doriax{
         const std::vector<PostProcessPass>& getPostProcessPasses() const;
         void setPostProcessPasses(const std::vector<PostProcessPass>& passes);
 
-        // one u_fs_postParams member of a pass; rewrites the value without rebuilding the chain
+        // one @param value of a pass; rewrites the value without rebuilding the chain
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector4& value);
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector3& value);
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector2& value);

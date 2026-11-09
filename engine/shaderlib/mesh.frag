@@ -1,19 +1,12 @@
 #version 450
 
-// A fork may declare a u_fs_customParams block: its members are filled by name from the
-// component's shader uniforms (Properties window, setShaderUniform). Two names are
-// written by the engine instead: "time" (seconds since startup) and "resolution"
-// (xy = render target size, zw = 1 / size). Do not mix int and float members: GL
-// uploads the block typed after its first member.
+// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// params.amount once main() has called loadShaderParameters(). Engine.time and
+// Engine.resolution (xy size, zw 1 / size) come from the engine.
 //
 // The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
 // step with a discard here, fork the depth shader too (Depth Shader in Properties). A
 // coverage function on the mesh cuts every pass alike without a fork.
-//
-//   uniform u_fs_customParams {
-//       float time;
-//       vec4 tint;
-//   } customParams;
 
 #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
     in vec3 v_position;
@@ -115,7 +108,7 @@ uniform u_fs_pbrParams {
 // in place of includes/parameters_fs.glsl
 #define SHADER_PARAMETERS_FS
 #ifdef HAS_SHADER_PARAMS_FS
-    #define effectFS pbrParams
+    #define paramsFS pbrParams
     void loadShaderParameters(){
         SHADER_PARAMS_FS_LOAD(pbrParams)
     }

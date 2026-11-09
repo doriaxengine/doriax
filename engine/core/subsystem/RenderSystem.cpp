@@ -186,84 +186,73 @@ namespace {
         render.applyUniformBlock(slot, sizeof(fade), &fade);
     }
 
-    // the offset comes in world units, the shader turns it to model space
-    void applyVertexEffect(ObjectRender& render, ShaderParameterBlock& block, const MeshComponent& mesh, const Transform& transform, const ShaderEffectView& view){
+    // a parameter block with this draw's engine and shared values
+    void applyParameters(ObjectRender& render, ShaderParameterBlock& block, const ShaderEffectView& view, const Vector2& resolution){
         if (block.slot == -1)
             return;
 
-        block.writeVertexContext(transform.modelMatrix, view.time, mesh.vertexOffsetMax);
-        block.writeShared(view.scene, view.view);
+        block.writeFrame(view, resolution);
         render.applyUniformBlock(block.slot, block.size, block.data.data());
     }
 
-    // the fragment stage's own effect block (depth and G-buffer passes)
-    void applyFragmentEffect(ObjectRender& render, ShaderParameterBlock& block, const ShaderEffectView& view, bool coverage){
+    // the offset comes in world units, the shader turns it to model space
+    void applyVertexParameters(ObjectRender& render, ShaderParameterBlock& block, const MeshComponent& mesh, const Transform& transform,
+                               const ShaderEffectView& view, const Vector2& resolution){
+        if (block.slot == -1)
+            return;
+
+        block.writeVertexContext(transform.modelMatrix, mesh.vertexOffsetMax);
+        applyParameters(render, block, view, resolution);
+    }
+
+    // the fragment stage of the depth and G-buffer passes
+    void applyFragmentParameters(ObjectRender& render, ShaderParameterBlock& block, const ShaderEffectView& view, const Vector2& resolution, bool coverage){
         if (block.slot == -1)
             return;
 
         block.writeFragmentContext(view, coverage, false);
-        block.writeShared(view.scene, view.view);
-        render.applyUniformBlock(block.slot, block.size, block.data.data());
+        applyParameters(render, block, view, resolution);
     }
 
-    void writeEffectObjects(Submesh& submesh, const ShaderUniformValues& values, const ShaderUniformValues* inherited){
-        submesh.effectVS.writeObject(values, inherited);
-        submesh.effectFS.writeObject(values, inherited);
-        submesh.effectDepthVS.writeObject(values, inherited);
-        submesh.effectDepthFS.writeObject(values, inherited);
-        submesh.effectGBufferVS.writeObject(values, inherited);
-        submesh.effectGBufferFS.writeObject(values, inherited);
-    }
-
-    // custom block of a forked shader, with the engine-written members refreshed
-    void applyCustomUniforms(ObjectRender& render, CustomUniformBlock& block, float frameTime, const Vector2& resolution){
-        if (block.slot == -1)
-            return;
-
-        block.writeTime(frameTime);
-        block.writeResolution(resolution.x, resolution.y);
-        render.applyUniformBlock(block.slot, (unsigned int)block.data.size(), block.data.data());
-    }
-
-    // both stages of a single-block component, rewritten first when its values changed
+    // both stages of a single-shader component, rewritten first when its values changed
     template<typename T>
-    void applyCustomUniforms(ObjectRender& render, T& component, const Scene* scene, ShaderType type,
-                             float frameTime, const Vector2& resolution){
+    void applyParameters(ObjectRender& render, T& component, const Scene* scene, ShaderType type, const ShaderEffectView& view, const Vector2& resolution){
         if (component.needUpdateShaderUniforms){
             const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(type, component.customShader);
-            component.customVSParams.writeValues(component.shaderUniforms, inherited);
-            component.customFSParams.writeValues(component.shaderUniforms, inherited);
+            component.paramsVS.writeObject(component.shaderUniforms, inherited);
+            component.paramsFS.writeObject(component.shaderUniforms, inherited);
             component.needUpdateShaderUniforms = false;
         }
-        applyCustomUniforms(render, component.customVSParams, frameTime, resolution);
-        applyCustomUniforms(render, component.customFSParams, frameTime, resolution);
+        applyParameters(render, component.paramsVS, view, resolution);
+        applyParameters(render, component.paramsFS, view, resolution);
     }
 
-    // the mesh blocks of both forks, from whichever pass draws first (depth runs before color)
-    void writeCustomUniforms(MeshComponent& mesh, const Scene* scene){
+    // the mesh blocks of every pass, from whichever pass draws first (depth runs before color)
+    void writeParameters(MeshComponent& mesh, const Scene* scene){
         if (!mesh.needUpdateShaderUniforms)
             return;
 
         const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
         for (int i = 0; i < mesh.numSubmeshes; i++){
-            mesh.submeshes[i].customVSParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customFSParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inherited);
-            mesh.submeshes[i].customFSDepthParams.writeValues(mesh.shaderUniforms, inherited);
-            writeEffectObjects(mesh.submeshes[i], mesh.shaderUniforms, inherited);
+            Submesh& submesh = mesh.submeshes[i];
+            for (ShaderParameterBlock* block : {&submesh.paramsVS, &submesh.paramsFS, &submesh.depthParamsVS, &submesh.depthParamsFS,
+                                                &submesh.gbufferParamsVS, &submesh.gbufferParamsFS}){
+                block->writeObject(mesh.shaderUniforms, inherited);
+            }
         }
         mesh.needUpdateShaderUniforms = false;
     }
 
-    // the water blocks of both forks, from whichever pass draws first (underwater runs before the surface)
-    void writeCustomUniforms(WaterComponent& water, const Scene* scene){
+    // the water blocks of both shaders, from whichever pass draws first (underwater runs before the surface)
+    void writeParameters(WaterComponent& water, const Scene* scene){
         if (!water.needUpdateShaderUniforms)
             return;
 
         const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
-        water.customVSParams.writeValues(water.shaderUniforms, inherited);
-        water.customFSParams.writeValues(water.shaderUniforms, inherited);
-        water.customUnderwaterParams.writeValues(water.shaderUniforms, inherited);
+        water.paramsVS.writeObject(water.shaderUniforms, inherited);
+        water.paramsFS.writeObject(water.shaderUniforms, inherited);
+        water.underwaterParamsVS.writeObject(water.shaderUniforms, inherited);
+        water.underwaterParamsFS.writeObject(water.shaderUniforms, inherited);
         water.needUpdateShaderUniforms = false;
     }
 
@@ -397,7 +386,6 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     currentUnderwater = NULL;
     hasWaterDepth = false;
     onlyDirectionalLights = false;
-    frameTime = 0.0f;
     animationTime = 0.0;
     passResolution = Vector2(0.0f, 0.0f);
 
@@ -3296,16 +3284,12 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 if (!mesh.submeshes[i].depthShader->isCreated())
                     return false;
             }
-            // custom blocks of a forked depth shader, sharing the mesh values
+            // the depth shader's parameters, sharing the mesh values
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
-            mesh.submeshes[i].customVSDepthParams.resolve(depthShaderData, "u_vs_customParams");
-            mesh.submeshes[i].customFSDepthParams.resolve(depthShaderData, "u_fs_customParams");
-            mesh.submeshes[i].customVSDepthParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].customFSDepthParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].effectDepthVS.resolve(depthShaderData, "u_vs_effect", ShaderStageType::VERTEX);
-            mesh.submeshes[i].effectDepthFS.resolve(depthShaderData, "u_fs_effect", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].effectDepthVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].effectDepthFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsVS.resolve(depthShaderData, "u_vs_params", ShaderStageType::VERTEX);
+            mesh.submeshes[i].depthParamsFS.resolve(depthShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
+            mesh.submeshes[i].depthParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
         }else if (mesh.submeshes[i].depthShader){
             // a reload keeps the handle; release it with the key it was taken with
             mesh.submeshes[i].depthShader.reset();
@@ -3365,10 +3349,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotVSFade = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
         }
         // the fragment stage keeps them in the material block, having no block to spare
-        mesh.submeshes[i].effectVS.resolve(shaderData, "u_vs_effect", ShaderStageType::VERTEX);
-        mesh.submeshes[i].effectFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
-        mesh.submeshes[i].effectVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-        mesh.submeshes[i].effectFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+        mesh.submeshes[i].paramsFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
+        mesh.submeshes[i].paramsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
         }
@@ -3401,12 +3385,6 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (mesh.submeshes[i].hasMorphTarget){
             mesh.submeshes[i].slotVSMorphTarget = shaderData.getUniformBlockIndex(UniformBlockType::VS_MORPHTARGET);
         }
-        // custom blocks of a forked shader (none in the built-in)
-        mesh.submeshes[i].customVSParams.resolve(shaderData, "u_vs_customParams");
-        mesh.submeshes[i].customFSParams.resolve(shaderData, "u_fs_customParams");
-        mesh.submeshes[i].customVSParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-        mesh.submeshes[i].customFSParams.writeValues(mesh.shaderUniforms, inheritedUniforms);
-
         if (!loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
             return false;
         }
@@ -3652,10 +3630,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
-            mesh.submeshes[i].effectGBufferVS.resolve(gbufferShaderData, "u_vs_effect", ShaderStageType::VERTEX);
-            mesh.submeshes[i].effectGBufferFS.resolve(gbufferShaderData, "u_fs_effect", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].effectGBufferVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].effectGBufferFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
+            mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
+            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -4915,7 +4893,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
         unsigned int instanceCount = draw.instanceCount;
 
         updateMeshBuffers(mesh);
-        writeCustomUniforms(mesh, scene);
+        writeParameters(mesh, scene);
 
         if (terrain){
             updateTerrainNodesBuffer(*terrain, terrainView);
@@ -5030,13 +5008,13 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             // Unlit alpha-mask variants include the metallic/roughness padding
             // and alphaCutoff from the shared CPU material prefix.
             const unsigned int paramsSize = sizeof(float) * (submeshLit ? 12 : ((mesh.submeshes[i].shaderProperties & (1u << 24)) ? 8 : 4));
-            ShaderParameterBlock& effectFS = mesh.submeshes[i].effectFS;
-            if (effectFS.slot != -1){
+            ShaderParameterBlock& paramsFS = mesh.submeshes[i].paramsFS;
+            if (paramsFS.slot != -1){
                 // the material prefix, up to the first declared member, then the members
-                std::memcpy(effectFS.data.data(), &mesh.submeshes[i].material, std::min(paramsSize, effectFS.firstOffset));
-                effectFS.writeFragmentContext(effectView, true, mesh.submeshes[i].alphaBlend);
-                effectFS.writeShared(effectView.scene, effectView.view);
-                render.applyUniformBlock(effectFS.slot, effectFS.size, effectFS.data.data());
+                std::memcpy(paramsFS.data.data(), &mesh.submeshes[i].material, std::min(paramsSize, paramsFS.firstOffset));
+                paramsFS.writeFragmentContext(effectView, true, mesh.submeshes[i].alphaBlend);
+                paramsFS.writeFrame(effectView, passResolution);
+                render.applyUniformBlock(paramsFS.slot, paramsFS.size, paramsFS.data.data());
             }else{
                 render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize, &mesh.submeshes[i].material);
             }
@@ -5045,7 +5023,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 applyInstanceFadeUniform(render, mesh.submeshes[i].slotVSFade, *instmesh);
             }
 
-            applyVertexEffect(render, mesh.submeshes[i].effectVS, mesh, transform, effectView);
+            applyVertexParameters(render, mesh.submeshes[i].paramsVS, mesh, transform, effectView, passResolution);
 
             if (mesh.submeshes[i].slotFSTexCoordSets != -1){
                 // per-texture UV set selector (0 = a_texcoord1, 1 = a_texcoord2):
@@ -5067,9 +5045,6 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             //model, normal and mvp matrix
             render.applyUniformBlock(mesh.submeshes[i].slotVSParams, sizeof(float) * 48, &transform.modelMatrix);
-
-            applyCustomUniforms(render, mesh.submeshes[i].customVSParams, frameTime, passResolution);
-            applyCustomUniforms(render, mesh.submeshes[i].customFSParams, frameTime, passResolution);
 
             if (tilemap && !tilemapDrawRanges.empty()){
                 if (instmesh){
@@ -5106,7 +5081,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
         unsigned int instanceCount = draw.instanceCount;
 
         updateMeshBuffers(mesh);
-        writeCustomUniforms(mesh, scene);
+        writeParameters(mesh, scene);
 
         // the depth pass renders the main camera's selection (view 0)
         if (terrain){
@@ -5150,16 +5125,13 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             //model, mvp matrix
             depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthParams, std::min((unsigned int)sizeof(vs_depth_t), mesh.submeshes[i].sizeVSDepthParams), &vsDepthParams);
 
-            applyCustomUniforms(depthRender, mesh.submeshes[i].customVSDepthParams, frameTime, passResolution);
-            applyCustomUniforms(depthRender, mesh.submeshes[i].customFSDepthParams, frameTime, passResolution);
-
             if (mesh.submeshes[i].slotVSDepthFade != -1 && instmesh){
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
 
-            applyVertexEffect(depthRender, mesh.submeshes[i].effectDepthVS, mesh, transform, effectView);
+            applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, effectView, passResolution);
             // shadow maps keep the whole silhouette unless the mesh asks
-            applyFragmentEffect(depthRender, mesh.submeshes[i].effectDepthFS, effectView, forSSAO || mesh.coverageShadows);
+            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, effectView, passResolution, forSSAO || mesh.coverageShadows);
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
@@ -5496,7 +5468,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
     unsigned int instanceCount = draw.instanceCount;
 
     updateMeshBuffers(mesh);
-    writeCustomUniforms(mesh, scene);
+    writeParameters(mesh, scene);
 
     // the G-buffer pass renders the main camera's selection (view 0)
     if (terrain){
@@ -5547,7 +5519,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
-        applyFragmentEffect(gbufferRender, mesh.submeshes[i].effectGBufferFS, effectView, true);
+        applyFragmentParameters(gbufferRender, mesh.submeshes[i].gbufferParamsFS, effectView, passResolution, true);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -5559,7 +5531,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
             }
         }
-        applyVertexEffect(gbufferRender, mesh.submeshes[i].effectGBufferVS, mesh, transform, effectView);
+        applyVertexParameters(gbufferRender, mesh.submeshes[i].gbufferParamsVS, mesh, transform, effectView, passResolution);
 
         if (terrain){
             terrain->eyePos = terrain->views[0].nodesEyePos;
@@ -5594,6 +5566,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
 
     gbufferPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0)); // color[0] background -> depth ~1.0
     gbufferPassRender.startRenderPass(&gbufferFramebuffer.getRender());
+    passResolution = Vector2((float)gbufferFramebuffer.getWidth(), (float)gbufferFramebuffer.getHeight());
 
     // composite probe slots, given in first-use order
     ssrProbeCount = 0;
@@ -6123,9 +6096,10 @@ void RenderSystem::loadPostProcess(){
             postProcessNeedsGBuffer = true;
 
         // stored by name, so a renamed or removed member just drops
-        if (pass.params.resolve(sd, "u_fs_postParams")){
-            pass.params.writeValues(passes[i].uniforms);
-        }
+        pass.paramsVS.resolve(sd, "u_vs_params", ShaderStageType::VERTEX);
+        pass.paramsFS.resolve(sd, "u_fs_params", ShaderStageType::FRAGMENT);
+        pass.paramsVS.writeObject(passes[i].uniforms);
+        pass.paramsFS.writeObject(passes[i].uniforms);
 
         postProcessPasses.push_back(std::move(pass));
     }
@@ -6143,7 +6117,8 @@ void RenderSystem::updatePostProcessUniforms(){
     for (int i = 0; i < (int)postProcessPasses.size(); i++){
         PostProcessRuntime& pass = postProcessPasses[i];
         if (pass.passIndex < (int)passes.size()){
-            pass.params.writeValues(passes[pass.passIndex].uniforms);
+            pass.paramsVS.writeObject(passes[pass.passIndex].uniforms);
+            pass.paramsFS.writeObject(passes[pass.passIndex].uniforms);
         }
     }
 
@@ -6233,7 +6208,9 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
             pass.render.addTexture(pass.slotDepth, ShaderStageType::FRAGMENT, depthTexture);
             pass.render.addTexture(pass.slotGBuffer, ShaderStageType::FRAGMENT, gbufferTexture);
             pass.render.addTexture(pass.slotSSAO, ShaderStageType::FRAGMENT, ssaoTexture);
-            applyCustomUniforms(pass.render, pass.params, frameTime, Vector2((float)postProcessWidth, (float)postProcessHeight));
+            const Vector2 resolution((float)postProcessWidth, (float)postProcessHeight);
+            applyParameters(pass.render, pass.paramsVS, effectView, resolution);
+            applyParameters(pass.render, pass.paramsFS, effectView, resolution);
             pass.render.draw(0, 3, 1);
         }
         postProcessPassRender.endRenderPass();
@@ -6373,16 +6350,12 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSGBufferTerrain = -1;
         submesh.slotFSGBufferTerrainLayers = -1;
 
-        submesh.customVSParams.clear();
-        submesh.customFSParams.clear();
-        submesh.customVSDepthParams.clear();
-        submesh.customFSDepthParams.clear();
-        submesh.effectVS.clear();
-        submesh.effectFS.clear();
-        submesh.effectDepthVS.clear();
-        submesh.effectDepthFS.clear();
-        submesh.effectGBufferVS.clear();
-        submesh.effectGBufferFS.clear();
+        submesh.paramsVS.clear();
+        submesh.paramsFS.clear();
+        submesh.depthParamsVS.clear();
+        submesh.depthParamsFS.clear();
+        submesh.gbufferParamsVS.clear();
+        submesh.gbufferParamsFS.clear();
     }
 
     //Destroy buffer
@@ -6470,11 +6443,11 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
 
     ui.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_VS_PARAMS);
     ui.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_FS_PARAMS);
-    ui.customVSParams.resolve(shaderData, "u_vs_customParams");
-    ui.customFSParams.resolve(shaderData, "u_fs_customParams");
+    ui.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    ui.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
     const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::UI, ui.customShader);
-    ui.customVSParams.writeValues(ui.shaderUniforms, inheritedUniforms);
-    ui.customFSParams.writeValues(ui.shaderUniforms, inheritedUniforms);
+    ui.paramsVS.writeObject(ui.shaderUniforms, inheritedUniforms);
+    ui.paramsFS.writeObject(ui.shaderUniforms, inheritedUniforms);
     ui.needUpdateShaderUniforms = false;
 
     size_t bufferSize;
@@ -6575,7 +6548,7 @@ bool RenderSystem::drawUI(UIComponent& ui, Transform& transform, PipelineType pi
         render.applyUniformBlock(ui.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
         //Color
         render.applyUniformBlock(ui.slotFSParams, sizeof(float) * 4, &ui.color);
-        applyCustomUniforms(render, ui, scene, ShaderType::UI, frameTime, passResolution);
+        applyParameters(render, ui, scene, ShaderType::UI, effectView, passResolution);
         render.draw(0, ui.vertexCount, 1);
 
     }
@@ -6618,8 +6591,8 @@ void RenderSystem::destroyUI(Entity entity, UIComponent& ui){
     //Shaders uniforms
     ui.slotVSParams = -1;
     ui.slotFSParams = -1;
-    ui.customVSParams.clear();
-    ui.customFSParams.clear();
+    ui.paramsVS.clear();
+    ui.paramsFS.clear();
 
     SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
@@ -6665,11 +6638,11 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
     ShaderData& shaderData = points.shader.get()->shaderData;
 
     points.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::POINTS_VS_PARAMS);
-    points.customVSParams.resolve(shaderData, "u_vs_customParams");
-    points.customFSParams.resolve(shaderData, "u_fs_customParams");
+    points.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    points.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
     const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::POINTS, points.customShader);
-    points.customVSParams.writeValues(points.shaderUniforms, inheritedUniforms);
-    points.customFSParams.writeValues(points.shaderUniforms, inheritedUniforms);
+    points.paramsVS.writeObject(points.shaderUniforms, inheritedUniforms);
+    points.paramsFS.writeObject(points.shaderUniforms, inheritedUniforms);
     points.needUpdateShaderUniforms = false;
 
     points.buffer.clear();
@@ -6754,11 +6727,11 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
     ShaderData& shaderData = lines.shader.get()->shaderData;
 
     lines.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::LINES_VS_PARAMS);
-    lines.customVSParams.resolve(shaderData, "u_vs_customParams");
-    lines.customFSParams.resolve(shaderData, "u_fs_customParams");
+    lines.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    lines.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
     const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::LINES, lines.customShader);
-    lines.customVSParams.writeValues(lines.shaderUniforms, inheritedUniforms);
-    lines.customFSParams.writeValues(lines.shaderUniforms, inheritedUniforms);
+    lines.paramsVS.writeObject(lines.shaderUniforms, inheritedUniforms);
+    lines.paramsFS.writeObject(lines.shaderUniforms, inheritedUniforms);
     lines.needUpdateShaderUniforms = false;
 
     lines.buffer.clear();
@@ -6876,7 +6849,7 @@ bool RenderSystem::drawPoints(PointsComponent& points, Transform& transform, Cam
         vsParams.mvpMatrix = transform.modelViewProjectionMatrix;
         vsParams.pointScale = computePointsScale(camera, getPointsViewportHeight(camera));
         render.applyUniformBlock(points.slotVSParams, sizeof(vs_points_params_t), &vsParams);
-        applyCustomUniforms(render, points, scene, ShaderType::POINTS, frameTime, passResolution);
+        applyParameters(render, points, scene, ShaderType::POINTS, effectView, passResolution);
         render.draw(0, points.numVisible, 1);
     }
 
@@ -6909,8 +6882,8 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
 
     //Shaders uniforms
     points.slotVSParams = -1;
-    points.customVSParams.clear();
-    points.customFSParams.clear();
+    points.paramsVS.clear();
+    points.paramsFS.clear();
 
     SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
@@ -6934,7 +6907,7 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
             return false;
         }
         render.applyUniformBlock(lines.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
-        applyCustomUniforms(render, lines, scene, ShaderType::LINES, frameTime, passResolution);
+        applyParameters(render, lines, scene, ShaderType::LINES, effectView, passResolution);
         render.draw(0, linesSize * 2, 1);
     }
 
@@ -6964,8 +6937,8 @@ void RenderSystem::destroyLines(Entity entity, LinesComponent& lines){
 
     //Shaders uniforms
     lines.slotVSParams = -1;
-    lines.customVSParams.clear();
-    lines.customFSParams.clear();
+    lines.paramsVS.clear();
+    lines.paramsFS.clear();
 
     SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
@@ -7044,11 +7017,11 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
 
     sky.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::SKY_VS_PARAMS);
     sky.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::SKY_FS_PARAMS);
-    sky.customVSParams.resolve(shaderData, "u_vs_customParams");
-    sky.customFSParams.resolve(shaderData, "u_fs_customParams");
+    sky.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    sky.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
     const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::SKYBOX, sky.customShader);
-    sky.customVSParams.writeValues(sky.shaderUniforms, inheritedUniforms);
-    sky.customFSParams.writeValues(sky.shaderUniforms, inheritedUniforms);
+    sky.paramsVS.writeObject(sky.shaderUniforms, inheritedUniforms);
+    sky.paramsFS.writeObject(sky.shaderUniforms, inheritedUniforms);
     sky.needUpdateShaderUniforms = false;
 
     if (TextureRender* textureRender = sky.texture.getRender(&emptyCubeWhite)){
@@ -7105,7 +7078,7 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
         }
         render.applyUniformBlock(sky.slotVSParams, sizeof(float) * 16, &sky.skyViewProjectionMatrix);
         render.applyUniformBlock(sky.slotFSParams, sizeof(float) * 4, &sky.color);
-        applyCustomUniforms(render, sky, scene, ShaderType::SKYBOX, frameTime, passResolution);
+        applyParameters(render, sky, scene, ShaderType::SKYBOX, effectView, passResolution);
         render.draw(0, 36, 1);
     }
 
@@ -7143,8 +7116,8 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
     //Shaders uniforms
     sky.slotVSParams = -1;
     sky.slotFSParams = -1;
-    sky.customVSParams.clear();
-    sky.customFSParams.clear();
+    sky.paramsVS.clear();
+    sky.paramsFS.clear();
 
     SystemRender::addQueueCommand(&changeDestroy, new check_load_t{scene, entity});
 }
@@ -7700,11 +7673,11 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
         water.slotFSShadowProjection = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOW_PROJECTION);
         water.slotFSPointShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_POINT_SHADOWS);
     }
-    water.customVSParams.resolve(shaderData, "u_vs_customParams");
-    water.customFSParams.resolve(shaderData, "u_fs_customParams");
+    water.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    water.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
     const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
-    water.customVSParams.writeValues(water.shaderUniforms, inheritedUniforms);
-    water.customFSParams.writeValues(water.shaderUniforms, inheritedUniforms);
+    water.paramsVS.writeObject(water.shaderUniforms, inheritedUniforms);
+    water.paramsFS.writeObject(water.shaderUniforms, inheritedUniforms);
     water.needUpdateShaderUniforms = false;
 
     // grid on local XZ, kept by reloads that only change the shader
@@ -7983,9 +7956,9 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     render.applyUniformBlock(water.slotFSShadowProjection, sizeof(shadow_projection_t), &shadowProjection);
     render.applyUniformBlock(water.slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
     render.applyUniformBlock(water.slotFSPointShadows, sizeof(fs_point_shadows_t), &fs_point_shadows);
-    writeCustomUniforms(water, scene);
-    applyCustomUniforms(render, water.customVSParams, frameTime, passResolution);
-    applyCustomUniforms(render, water.customFSParams, frameTime, passResolution);
+    writeParameters(water, scene);
+    applyParameters(render, water.paramsVS, effectView, passResolution);
+    applyParameters(render, water.paramsFS, effectView, passResolution);
 
     render.draw(0, water.indexCount, 1);
 
@@ -8045,10 +8018,11 @@ void RenderSystem::destroyWater(Entity entity, WaterComponent& water){
     water.slotFSShadows = -1;
     water.slotFSShadowProjection = -1;
     water.slotFSPointShadows = -1;
-    water.customVSParams.clear();
-    water.customFSParams.clear();
+    water.paramsVS.clear();
+    water.paramsFS.clear();
     water.slotUnderwaterParams = -1;
-    water.customUnderwaterParams.clear();
+    water.underwaterParamsVS.clear();
+    water.underwaterParamsFS.clear();
 
     SystemRender::addQueueCommand(&changeWaterDestroy, new check_load_t{scene, entity});
 }
@@ -8417,8 +8391,11 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     water.underwaterRender.beginLoad(PrimitiveType::TRIANGLES);
     water.underwaterRender.setShader(water.underwaterShader.get());
     water.slotUnderwaterParams = shaderData.getUniformBlockIndex(UniformBlockType::UNDERWATER_FS_PARAMS);
-    water.customUnderwaterParams.resolve(shaderData, "u_fs_customParams");
-    water.customUnderwaterParams.writeValues(water.shaderUniforms, scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader));
+    water.underwaterParamsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
+    water.underwaterParamsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
+    water.underwaterParamsVS.writeObject(water.shaderUniforms, inherited);
+    water.underwaterParamsFS.writeObject(water.shaderUniforms, inherited);
     if (!water.underwaterRender.endLoad(PIP_RTT_NODEPTH, false, true, CullingMode::BACK, WindingOrder::CCW))
         return false;
 
@@ -8470,8 +8447,9 @@ void RenderSystem::drawUnderwater(WaterComponent& water, CameraComponent& camera
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, currentSceneDepthTexture ? currentSceneDepthTexture : &emptyWhite);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::IRRADIANCEMAP), ShaderStageType::FRAGMENT, irradiance);
     render.applyUniformBlock(water.slotUnderwaterParams, sizeof(fs_underwater_t), &params);
-    writeCustomUniforms(water, scene);
-    applyCustomUniforms(render, water.customUnderwaterParams, frameTime, passResolution);
+    writeParameters(water, scene);
+    applyParameters(render, water.underwaterParamsVS, effectView, passResolution);
+    applyParameters(render, water.underwaterParamsFS, effectView, passResolution);
     render.draw(0, 3, 1);
 }
 
@@ -10920,8 +10898,6 @@ void RenderSystem::draw(){
 
     auto transforms = scene->getComponentArray<Transform>();
     auto cameras = scene->getComponentArray<CameraComponent>();
-
-    frameTime = (float)Engine::getSystemTime();
 
     updateShadowBindings();
     updateAllTerrainRenderTextures();

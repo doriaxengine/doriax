@@ -1,21 +1,11 @@
 #version 450
 
-// A fork may declare a u_vs_customParams block: its members are filled by name from the
-// component's shader uniforms (Properties window, setShaderUniform). Two names are
-// written by the engine instead: "time" (seconds since startup) and "resolution"
-// (xy = render target size, zw = 1 / size). Do not mix int and float members: GL
-// uploads the block typed after its first member.
+// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// params.amount once main() has called loadShaderParameters(). Engine.time and
+// Engine.resolution (xy size, zw 1 / size) come from the engine.
 //
 // The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
 // step with positions displaced here, fork the depth shader too (Depth Shader in Properties).
-//
-//   uniform u_vs_customParams {
-//       float time;
-//       vec4 tint;
-//   } customParams;
-//
-// Shader parameters are declared in comments, as "// @param float wetness = 0", and read as
-// params.wetness once main() has called loadShaderParameters().
 
 uniform u_vs_pbrParams {
     mat4 modelMatrix;

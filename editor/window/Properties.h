@@ -308,22 +308,7 @@ namespace doriax::editor{
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
         // a mesh's vertexOffsetShader or coverageShader: one .glsl, a project file or an engine preset
         void drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage);
-        // Custom block members of the component's loaded shader (own or scene default
-        // fork), one per name with the vertex declaration first.
-        struct ShaderUniformRows {
-            std::vector<ShaderUniform> members;
-            std::vector<std::string> warnings;
-            bool buildFailed = false; // the fork failed and the built-in is rendering
-            // scene values of the default shader the component inherits, null with its own fork
-            const ShaderUniformValues* inherited = nullptr;
-        };
-        ShaderUniformRows resolveShaderUniformRows(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
-        // the build state and warnings (status), or the member rows, stored by name in shaderUniforms
-        void drawShaderUniformRows(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ShaderUniformRows& rows, bool status);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
-        // one member row; an unset value shows the inherited one, and RESET drops an override
-        ShaderUniformEdit drawShaderUniformRow(const ShaderUniform& uniform, const ShaderUniformValues& values,
-                                               const ShaderUniformValues* inherited, const std::string& idPrefix, Vector4& newValue);
         // annotations of a fork or an effect file, parsed again once a second at most
         const ShaderEffectAnnotations& getShaderAnnotations(const std::string& shader, bool fork);
         // one declared parameter; an unset value shows the inherited one, else the declared default
@@ -335,8 +320,9 @@ namespace doriax::editor{
         // the @param rows of one fork or effect file and the shared values it reads; false when empty
         bool drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
-        void drawMeshShaderParameters(SceneProject* sceneProject, Entity entity);
-        // scene or view parameters the mesh shaders declare, and stored ones nothing declares
+        // a section per shader file the component is built from, stored by name in shaderUniforms
+        void drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
+        // scene or view parameters the scene's shaders declare, and stored ones nothing declares
         std::vector<ShaderParameterDeclaration> collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored);
         void drawSceneShaderParameters(SceneProject* sceneProject);
         void drawCameraShaderParameters(SceneProject* sceneProject, Entity entity);
@@ -345,31 +331,13 @@ namespace doriax::editor{
             double parsedAt = -1.0;
         };
         std::map<std::string, CachedShaderAnnotations> shaderAnnotationsCache;
-        void drawShaderUniformWarnings(const std::vector<std::string>& warnings);
-        // label column of a uniforms table, with room for the reset arrow when it can show
-        float getShaderUniformsLabelSize(const std::vector<ShaderUniform>& members, bool resetArrow);
         // Scene-level variant: edits a scene default shader property (e.g. "default_mesh_shader"),
         // used by every component of that type whose customShader is empty.
         void drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label);
-        // members of a scene default fork, from the components rendering with it (used)
-        ShaderUniformRows resolveSceneShaderUniformRows(SceneProject* sceneProject, ShaderType shaderType, bool& used);
-        // same split for a default shader's rows, whose values are stored on the scene
-        void drawSceneShaderUniforms(SceneProject* sceneProject, ShaderType shaderType, const ShaderUniformRows& rows, bool used, bool status);
 
         // Ordered user post-process chain: per-pass enable, shader fork/pick, reorder
-        // and remove. Uniform rows come from the fork's own u_fs_postParams block.
+        // and remove, then the parameters each pass shader declares.
         void drawScenePostProcess(SceneProject* sceneProject);
-        // A pass's resolved shader. The pool lookup takes a lock, so it is done once per
-        // pass per frame and shared by the label column and the uniform rows.
-        struct PostProcessShader {
-            std::shared_ptr<ShaderRender> shader;
-            CustomUniformBlock block; // u_fs_postParams, slot -1 when not declared
-            bool buildFailed = false;
-        };
-        PostProcessShader resolvePostProcessShader(const PostProcessPass& pass);
-        // same split as drawShaderUniformRows, for a pass's u_fs_postParams members
-        void drawPostProcessUniforms(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index,
-                                     const PostProcessShader& resolved, bool status);
 
         // Commits a planned fork as one undoable step and opens the new .vert/.frag in the
         // code editor. Alerts instead when the plan is invalid or the files cannot be written.

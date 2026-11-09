@@ -6,7 +6,7 @@
 
 #include "buffer/Buffer.h"
 #include "texture/Texture.h"
-#include "shader/ShaderUniforms.h"
+#include "shader/ShaderParameters.h"
 #include <string>
 
 namespace doriax{
@@ -27,11 +27,11 @@ namespace doriax{
         uint16_t customShaderId = 0;
         int slotVSParams = -1;
         int slotFSParams = -1;
-        // values of the fork's custom uniform blocks, by member name
+        // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
-        CustomUniformBlock customVSParams;
-        CustomUniformBlock customFSParams;
+        ShaderParameterBlock paramsVS;
+        ShaderParameterBlock paramsFS;
 
         Texture texture;
         Vector4 color = Vector4(1.0, 1.0, 1.0, 1.0); //sRGB

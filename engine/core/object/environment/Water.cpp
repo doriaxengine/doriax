@@ -475,8 +475,8 @@ std::string Water::getCustomUnderwaterShader() const{
 void Water::setShaderUniform(const std::string& name, const Vector4& value){
     WaterComponent& water = getComponent<WaterComponent>();
 
-    if (ShaderUniforms::set(water.shaderUniforms, name, value))
-        water.needUpdateShaderUniforms = true;
+    ShaderUniforms::set(water.shaderUniforms, name, value);
+    water.needUpdateShaderUniforms = true;
 }
 
 void Water::setShaderUniform(const std::string& name, const Vector3& value){

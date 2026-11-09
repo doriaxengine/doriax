@@ -5,12 +5,12 @@
 #include "shader_params_fs.glsl"
 
 #ifdef HAS_SHADER_PARAMS_FS
-    uniform u_fs_effect {
+    uniform u_fs_params {
         SHADER_PARAMS_FS_MEMBERS
-    } effectFS;
+    } paramsFS;
 
     void loadShaderParameters(){
-        SHADER_PARAMS_FS_LOAD(effectFS)
+        SHADER_PARAMS_FS_LOAD(paramsFS)
     }
 #else
     void loadShaderParameters(){}

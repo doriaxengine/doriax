@@ -34,6 +34,9 @@ namespace doriax::editor {
         // "@coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;
+        // the code reads Engine.time or Engine.resolution
+        bool engineTime = false;
+        bool engineResolution = false;
         std::vector<std::string> errors;
     };
 
@@ -51,7 +54,7 @@ namespace doriax::editor {
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
         // shader_params_vs.glsl or shader_params_fs.glsl, adding the effect context the hooks read
-        static std::string generateHeader(ShaderStageType stage, const std::vector<ShaderParameterDeclaration>& declarations,
+        static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                           bool vertexContext, bool fragmentContext,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<std::string>& errors);
     };

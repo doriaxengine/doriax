@@ -14,7 +14,6 @@
 #include "render/TextureRender.h"
 #include "texture/TextureData.h"
 #include "texture/Material.h"
-#include "shader/ShaderUniforms.h"
 #include "shader/ShaderParameters.h"
 #include "buffer/InterleavedBuffer.h"
 #include "buffer/IndexBuffer.h"
@@ -113,18 +112,13 @@ namespace doriax{
         int slotVSGBufferTerrain = -1;
         int slotFSGBufferTerrainLayers = -1;
 
-        // custom uniform blocks of the forked shaders, filled from MeshComponent::shaderUniforms
-        CustomUniformBlock customVSParams;
-        CustomUniformBlock customFSParams;
-        CustomUniformBlock customVSDepthParams;
-        CustomUniformBlock customFSDepthParams;
-        // declared parameters of each pass and stage
-        ShaderParameterBlock effectVS;
-        ShaderParameterBlock effectFS;
-        ShaderParameterBlock effectDepthVS;
-        ShaderParameterBlock effectDepthFS;
-        ShaderParameterBlock effectGBufferVS;
-        ShaderParameterBlock effectGBufferFS;
+        // declared parameters of each pass and stage, filled from MeshComponent::shaderUniforms
+        ShaderParameterBlock paramsVS;
+        ShaderParameterBlock paramsFS;
+        ShaderParameterBlock depthParamsVS;
+        ShaderParameterBlock depthParamsFS;
+        ShaderParameterBlock gbufferParamsVS;
+        ShaderParameterBlock gbufferParamsFS;
 
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
 
@@ -196,7 +190,7 @@ namespace doriax{
         // .glsl defining getCoverage(), from the project or the engine, applied in every pass
         std::string coverageShader;
         bool coverageShadows = false; // shadow maps follow the coverage too
-        // values of the fork's custom uniform blocks, by member name, shared by all submeshes
+        // values of the declared parameters, by name, shared by all submeshes
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
 

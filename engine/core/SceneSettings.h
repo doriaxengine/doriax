@@ -32,8 +32,7 @@ namespace doriax{
     };
 
     // One user post-process pass: a forked fullscreen shader run after the scene color.
-    // Uniforms are keyed by the name reflected from the shader's u_fs_postParams block,
-    // so a renamed or removed member just drops and an unset one stays zero.
+    // Uniforms are the values of its @param declarations by name; an unset one reads its default.
     struct PostProcessPass {
         std::string shader; // project-relative fork base, empty = built-in passthrough
         bool enabled = true;
@@ -113,7 +112,7 @@ namespace doriax{
         std::string defaultLinesShader;
         std::string defaultWaterShader;
 
-        // custom block values of the default shaders, under the inheriting components' own
+        // parameter values of the default shaders, under the inheriting components' own
         ShaderUniformValues defaultMeshShaderUniforms;
         ShaderUniformValues defaultUIShaderUniforms;
         ShaderUniformValues defaultSkyShaderUniforms;

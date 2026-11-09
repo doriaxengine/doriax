@@ -1,17 +1,10 @@
 #version 450
 
-// A fork may declare a u_vs_customParams block: its members are filled by name from the
-// component's shader uniforms (Properties window, setShaderUniform). Two names are
-// written by the engine instead: "time" (seconds since startup) and "resolution"
-// (xy = render target size, zw = 1 / size). Do not mix int and float members: GL
-// uploads the block typed after its first member.
+// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// params.amount once main() has called loadShaderParameters(). Engine.time and
+// Engine.resolution (xy size, zw 1 / size) come from the engine.
 //
 // sumWaterWaves in RenderSystem.cpp repeats this wave sum for height queries: change both.
-//
-//   uniform u_vs_customParams {
-//       float time;
-//       vec4 tint;
-//   } customParams;
 
 uniform u_vs_waterParams {
     mat4 modelMatrix;
@@ -27,6 +20,8 @@ in vec3 a_position;
 out vec3 v_position;
 out vec3 v_normal;
 out float v_waveHeight;
+
+#include "includes/parameters_vs.glsl"
 
 const float TWO_PI = 6.283185307179586;
 
@@ -47,6 +42,8 @@ vec3 gerstnerWave(vec4 wave, float phase, vec2 p, float steepness, inout vec3 ta
 }
 
 void main(){
+    loadShaderParameters();
+
     vec4 worldPos = waterParams.modelMatrix * vec4(a_position, 1.0);
     worldPos.y = waterParams.modelMatrix[3].y; // level even when the entity is tilted
     vec2 p = worldPos.xz;

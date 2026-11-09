@@ -8,7 +8,7 @@
 #include "render/ObjectRender.h"
 #include "buffer/InterleavedBuffer.h"
 #include "buffer/IndexBuffer.h"
-#include "shader/ShaderUniforms.h"
+#include "shader/ShaderParameters.h"
 #include "math/AABB.h"
 #include <string>
 
@@ -34,11 +34,11 @@ namespace doriax{
         uint16_t customShaderId = 0;
         int slotVSParams = -1;
         int slotFSParams = -1;
-        // values of the fork's custom uniform blocks, by member name
+        // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
-        CustomUniformBlock customVSParams;
-        CustomUniformBlock customFSParams;
+        ShaderParameterBlock paramsVS;
+        ShaderParameterBlock paramsFS;
 
         PrimitiveType primitiveType = PrimitiveType::TRIANGLES;
         unsigned int vertexCount = 0;

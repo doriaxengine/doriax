@@ -288,8 +288,10 @@ bool Scene::isSSAODebug() const{
 }
 
 void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value){
-    if (ShaderParameters::checkKey(collection, name) && ShaderUniforms::set(runtimeShaderParameters, ShaderParameters::getKey(collection, name), value))
-        shaderParameterRevision++;
+    if (!ShaderParameters::checkKey(collection, name))
+        return;
+    ShaderUniforms::set(runtimeShaderParameters, ShaderParameters::getKey(collection, name), value);
+    shaderParameterRevision++;
 }
 
 void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value){
@@ -319,8 +321,10 @@ bool Scene::clearShaderParameter(const std::string& collection, const std::strin
 }
 
 void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value){
-    if (ShaderParameters::checkKey(collection, name) && ShaderUniforms::set(settings.shaderParameters, ShaderParameters::getKey(collection, name), value))
-        shaderParameterRevision++;
+    if (!ShaderParameters::checkKey(collection, name))
+        return;
+    ShaderUniforms::set(settings.shaderParameters, ShaderParameters::getKey(collection, name), value);
+    shaderParameterRevision++;
 }
 
 void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value){
@@ -786,8 +790,10 @@ const ShaderUniformValues& Scene::getDefaultShaderUniforms(ShaderType type) cons
 
 void Scene::setDefaultShaderUniform(ShaderType type, const std::string& name, const Vector4& value){
     ShaderUniformValues* field = defaultShaderUniformsField(settings, type);
-    if (field && ShaderUniforms::set(*field, name, value))
-        getSystem<RenderSystem>()->needUpdateDefaultShaderUniforms(type);
+    if (!field)
+        return;
+    ShaderUniforms::set(*field, name, value);
+    getSystem<RenderSystem>()->needUpdateDefaultShaderUniforms(type);
 }
 
 void Scene::setDefaultShaderUniform(ShaderType type, const std::string& name, const Vector3& value){
@@ -849,8 +855,8 @@ void Scene::setPostProcessUniform(unsigned int index, const std::string& name, c
         return;
     }
 
-    if (ShaderUniforms::set(settings.postProcess[index].uniforms, name, value))
-        getSystem<RenderSystem>()->needUpdatePostProcessUniforms();
+    ShaderUniforms::set(settings.postProcess[index].uniforms, name, value);
+    getSystem<RenderSystem>()->needUpdatePostProcessUniforms();
 }
 
 void Scene::setPostProcessUniform(unsigned int index, const std::string& name, const Vector3& value){

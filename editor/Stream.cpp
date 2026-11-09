@@ -1244,9 +1244,7 @@ ShaderUniformValues editor::Stream::decodeShaderUniforms(const YAML::Node& node)
     ShaderUniformValues uniforms;
     if (node && node.IsMap()) {
         for (const auto& uniform : node) {
-            std::string name = uniform.first.as<std::string>();
-            if (!ShaderUniforms::isReserved(name))
-                uniforms.push_back({name, decodeVector4(uniform.second)});
+            uniforms.push_back({uniform.first.as<std::string>(), decodeVector4(uniform.second)});
         }
     }
     return uniforms;

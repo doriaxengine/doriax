@@ -584,8 +584,8 @@ bool Mesh::isCoverageShadows() const{
 
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){
     for (MeshComponent* mesh : getMeshes()){
-        if (ShaderUniforms::set(mesh->shaderUniforms, name, value))
-            mesh->needUpdateShaderUniforms = true;
+        ShaderUniforms::set(mesh->shaderUniforms, name, value);
+        mesh->needUpdateShaderUniforms = true;
     }
 }
 

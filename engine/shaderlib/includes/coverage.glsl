@@ -12,34 +12,30 @@ struct CoverageContext {
     float time;
 };
 
-float getEffectTime(){
-    return effectFS.effect_forward.w;
-}
-
 // the mesh's coverage file, mapped in by the shader builder
 #include "coverage_function.glsl"
 
 // discards a removed fragment; returns the alpha factor of a blended one
 float applyCoverage(vec3 worldPosition, vec2 uv){
     // shadow maps keeping their silhouette
-    if (effectFS.effect_pass.z < 0.5)
+    if (paramsFS.effect_pass.z < 0.5)
         return 1.0;
 
     CoverageContext context;
     context.worldPosition = worldPosition;
     context.uv = uv;
-    context.eye = effectFS.effect_eye.xyz;
-    context.forward = effectFS.effect_forward.xyz;
-    context.perspective = effectFS.effect_eye.w > 0.5;
-    context.pixel = abs(gl_FragCoord.xy - effectFS.effect_pass.xy);
-    context.time = effectFS.effect_forward.w;
+    context.eye = paramsFS.effect_eye.xyz;
+    context.forward = paramsFS.effect_forward;
+    context.perspective = paramsFS.effect_eye.w > 0.5;
+    context.pixel = abs(gl_FragCoord.xy - paramsFS.effect_pass.xy);
+    context.time = Engine.time;
 
     float coverage = clamp(getCoverage(context), 0.0, 1.0);
     // keeps the inputs alive when the function ignores them, so the stages still pair
     if (worldPosition.x < -3.0e38 || uv.x < -3.0e38)
         coverage = 0.0;
 
-    if (effectFS.effect_pass.w > 0.5){
+    if (paramsFS.effect_pass.w > 0.5){
         if (coverage <= 0.0)
             discard;
         return coverage;

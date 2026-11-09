@@ -5,12 +5,12 @@
 #include "shader_params_vs.glsl"
 
 #ifdef HAS_SHADER_PARAMS_VS
-    uniform u_vs_effect {
+    uniform u_vs_params {
         SHADER_PARAMS_VS_MEMBERS
-    } effectVS;
+    } paramsVS;
 
     void loadShaderParameters(){
-        SHADER_PARAMS_VS_LOAD(effectVS)
+        SHADER_PARAMS_VS_LOAD(paramsVS)
     }
 #else
     void loadShaderParameters(){}

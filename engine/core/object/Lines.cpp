@@ -229,8 +229,8 @@ std::string Lines::getCustomShader() const{
 void Lines::setShaderUniform(const std::string& name, const Vector4& value){
     LinesComponent& lines = getComponent<LinesComponent>();
 
-    if (ShaderUniforms::set(lines.shaderUniforms, name, value))
-        lines.needUpdateShaderUniforms = true;
+    ShaderUniforms::set(lines.shaderUniforms, name, value);
+    lines.needUpdateShaderUniforms = true;
 }
 
 void Lines::setShaderUniform(const std::string& name, const Vector3& value){

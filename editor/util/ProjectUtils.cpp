@@ -386,8 +386,7 @@ std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesyste
 // @param float waveSpeed = 2 [0, 10] "Waves per second"
 
 vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
-    float time = getEffectTime();
-    return vec3(0.0, sin(time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
+    return vec3(0.0, sin(Engine.time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
 }
 )");
 }
@@ -483,6 +482,44 @@ editor::ShaderEffectAnnotations editor::ProjectUtils::getShaderAnnotations(const
         }, annotations);
     }
     return annotations;
+}
+
+editor::ShaderEffectAnnotations editor::ProjectUtils::getSourceAnnotations(const std::filesystem::path& projectRoot, const std::string& source, bool fork) {
+    if (!fork)
+        return getShaderAnnotations(projectRoot, {source}, std::filesystem::path(source).parent_path());
+
+    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(source);
+    return getShaderAnnotations(projectRoot, {paths.vert, paths.frag}, Util::getCustomShaderIncludeRoot(source));
+}
+
+std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity) {
+    std::vector<std::pair<std::string, bool>> sources;
+    auto addFork = [&](const std::string& fork) {
+        if (!fork.empty())
+            sources.push_back({fork, true});
+    };
+    auto addEffect = [&](const std::string& effect) {
+        if (!effect.empty())
+            sources.push_back({effect, false});
+    };
+
+    // meshes directly, a scene can hold thousands
+    if (cpType == ComponentType::MeshComponent) {
+        if (const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
+            addFork(mesh->customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh->customShader);
+            addFork(mesh->customDepthShader);
+            addEffect(mesh->vertexOffsetShader);
+            addEffect(mesh->coverageShader);
+        }
+        return sources;
+    }
+    if (const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "customShader"))
+        addFork(customShader->empty() ? scene->getDefaultCustomShader(shaderType) : *customShader);
+    if (cpType == ComponentType::WaterComponent) {
+        if (const WaterComponent* water = scene->findComponent<WaterComponent>(entity))
+            addFork(water->customUnderwaterShader);
+    }
+    return sources;
 }
 
 void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {
