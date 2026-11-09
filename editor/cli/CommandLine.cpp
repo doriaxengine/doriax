@@ -50,6 +50,8 @@ struct ExportCliOptions {
     std::string startScene;
     std::set<ShaderBackend> backends;
     std::set<ShaderKey> shaderKeys;
+    // parsed again once the project has loaded, which resets the custom shader registry
+    std::vector<std::string> shaderSpecs;
     bool help = false;
     bool listScenes = false;
 };
@@ -178,7 +180,16 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
     return false;
 }
 
-static bool parseShaderSpec(const std::string& value, ShaderKey& out, std::string& error) {
+static bool parseShaderSpec(const std::string& spec, ShaderKey& out, std::string& error) {
+    // a fork and its effect functions follow '@', as "fork#vertexOffset#coverage"
+    const size_t customSeparator = spec.find('@');
+    const std::string value = spec.substr(0, customSeparator);
+    const std::string customShader = customSeparator == std::string::npos ? "" : spec.substr(customSeparator + 1);
+    if (customSeparator != std::string::npos && customShader.empty()) {
+        error = "Missing custom shader after '@' in " + spec;
+        return false;
+    }
+
     const size_t separator = value.find(':');
     const std::string typePart  = separator == std::string::npos ? value : value.substr(0, separator);
     const std::string propsPart = separator == std::string::npos ? ""    : value.substr(separator + 1);
@@ -213,7 +224,7 @@ static bool parseShaderSpec(const std::string& value, ShaderKey& out, std::strin
         }
     }
 
-    out = ShaderPool::getShaderKey(type, properties);
+    out = ShaderPool::getShaderKey(type, properties, ShaderPool::registerCustomShader(customShader));
     return true;
 }
 
@@ -270,7 +281,8 @@ static void printUsage(const std::string& commandName) {
         << "      --lua <path>            Lua directory, relative to the project or absolute.\n"
         << "      --start-scene <id|name> Start scene override.\n"
         << "      --backend <list>        opengl, opengles, d3d11, metal-macos, metal-ios, vulkan, all. Can repeat.\n"
-        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. Can repeat.\n"
+        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. A fork and its\n"
+        << "                              effect functions follow @, e.g. mesh:Uv1,Nor@#offsets/wind.glsl. Can repeat.\n"
         << "      --list-scenes           Print project scenes and exit.\n"
         << "  -h, --help                  Show this help.\n\n"
         << "If no --backend is provided, all supported backends are used.\n"
@@ -350,6 +362,7 @@ static bool parseArgs(int argc, char** argv, ExportCliOptions& options, std::str
                 return false;
             }
             options.shaderKeys.insert(key);
+            options.shaderSpecs.push_back(value);
         } else if (arg == "--list-scenes") {
             options.listScenes = true;
         } else {
@@ -529,6 +542,12 @@ int CommandLine::runExportCommand(int argc, char** argv, const char* executableN
     const fs::path projectPath = normalizeProjectPath(options.projectPath);
     if (!project.loadProject(projectPath, false)) {
         return 1;
+    }
+    options.shaderKeys.clear();
+    for (const std::string& spec : options.shaderSpecs) {
+        ShaderKey key;
+        if (parseShaderSpec(spec, key, error))
+            options.shaderKeys.insert(key);
     }
 
     if (options.listScenes) {
