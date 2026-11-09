@@ -7239,7 +7239,7 @@ namespace {
     }
 
     unsigned char toUnorm8(float value){
-        return (unsigned char)std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f);
+        return (unsigned char)(std::clamp(value, 0.0f, 1.0f) * 255.0f + 0.5f);
     }
 
     // The hull from above: its bottom and top over each texel and how far the texel is outside
@@ -8286,6 +8286,12 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
         }
     }
 
+    // with nothing to stamp, an empty map stays empty
+    bool stamps = false;
+    for (int i = 0; i < exclusions->size() && !stamps; i++){
+        stamps = !exclusions->getComponentFromIndex(i).wakeHistory.empty();
+    }
+
     for (int w = 0; w < waters->size(); w++){
         WaterComponent& water = waters->getComponentFromIndex(w);
         const Entity waterEntity = waters->getEntity(w);
@@ -8309,12 +8315,18 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
             water.wakeWaves.assign(count, 0.0f);
             water.wakeTexels.assign(count * 4, 0);
             water.wakeTexelSize = texel;
+            water.wakeEmpty = false;
             upload = true;
         }
         if (!water.wakeTexture.isCreated()){
             if (!water.wakeTexture.createDynamicTexture("water|wake", size, size, ColorFormat::RGBA, TextureFilter::LINEAR, TextureWrap::REPEAT))
                 continue;
+            water.wakeEmpty = false;
             upload = true;
+        }
+        if (water.wakeEmpty && !stamps){
+            water.wakeActive = crossed;
+            continue;
         }
 
         // around what the camera looks at, never far from the eye
@@ -8364,6 +8376,7 @@ void RenderSystem::updateWaterWakes(double dt, const CameraComponent& camera, co
         // update() can run more than once per frame, uploaded in draw()
         water.wakeNeedUpload = true;
         water.wakeActive = strongest > 0.004f || crossed;
+        water.wakeEmpty = strongest <= 0.0f;
     }
 }
 
