@@ -198,14 +198,6 @@ Matrix4::operator const float *() const{
      return (float*)matrix;
 }
 
-void Matrix4::set(const int col, const int row, const float val){
-    matrix[col][row] = val;
-}
-
-float Matrix4::get(const int col, const int row) const{
-    return matrix[col][row];
-}
-
 
 Vector4 Matrix4::row(const unsigned int row) const{
     return Vector4(matrix[0][row], matrix[1][row], matrix[2][row], matrix[3][row]);

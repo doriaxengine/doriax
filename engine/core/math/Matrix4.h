@@ -53,8 +53,8 @@ namespace doriax {
 
         Vector4 row(const unsigned int row) const;
         Vector4 column(const unsigned int column) const;
-        void set(const int col, const int row, const float val);
-        float get(const int col, const int row) const;
+        void set(const int col, const int row, const float val){ matrix[col][row] = val; }
+        float get(const int col, const int row) const{ return matrix[col][row]; }
 
         void setRow(const unsigned int row, const Vector4& vec);
         void setColumn(const unsigned int column, const Vector4& vec);
