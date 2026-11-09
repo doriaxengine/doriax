@@ -4109,9 +4109,9 @@ void editor::Project::invalidateCustomShaders() {
     editor::ShaderBuilder::invalidateCustomShaders();
     ShaderPool::destroyCustomShaders();
 
-    for (auto& sceneProject : getScenes()) {
+    auto invalidate = [](SceneProject& sceneProject) {
         if (!sceneProject.scene)
-            continue;
+            return;
         Scene* scene = sceneProject.scene;
         // a component rides on a fork either via its own customShader or the scene default
         bool sceneMesh = !scene->getDefaultMeshShader().empty();
@@ -4163,6 +4163,20 @@ void editor::Project::invalidateCustomShaders() {
         if (!scene->getPostProcessPasses().empty()) {
             scene->getSystem<RenderSystem>()->needReloadPostProcess();
             sceneProject.needUpdateRender = true;
+        }
+    };
+
+    for (auto& sceneProject : getScenes()) {
+        invalidate(sceneProject);
+    }
+
+    // Play runs copies of child scenes and layers, which are not in the project's list
+    std::scoped_lock lock(playSessionMutex);
+    if (activePlaySession) {
+        for (const auto& entry : activePlaySession->runtimeScenes) {
+            if (entry.ownedRuntime && entry.runtime) {
+                invalidate(*entry.runtime);
+            }
         }
     }
 }
