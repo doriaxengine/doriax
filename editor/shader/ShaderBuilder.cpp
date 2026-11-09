@@ -122,10 +122,11 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         }else{
             if (!loadEntryPoint(vertexOffset, "vertex offset"))
                 return snapshot;
-            vertexOffsetSource = snapshot->projectBuffers[vertexOffset];
+            vertexOffsetSource = std::move(snapshot->projectBuffers[vertexOffset]);
+            snapshot->projectBuffers.erase(vertexOffset);
         }
         // the engine include pulls the file in by its own path, so errors name it
-        snapshot->projectBuffers["vertex_offset_function.glsl"] = "#include \"" + vertexOffset + "\"\n";
+        snapshot->projectBuffers["vertex_offset_function.glsl"] = "#include \"/" + vertexOffset + "\"\n";
     }
 
     auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
@@ -133,8 +134,8 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
-    // Includes share one namespace, so an offset keys its own files by project path,
-    // where a fork file of the same name cannot stand in for them
+    // Includes share one namespace, so an offset keys its files by '/' and their project
+    // path, which no fork include can name, even at the project root
     std::unordered_set<std::string> visited;
     std::unordered_map<std::string, std::string> offsetPaths;
     std::function<std::string(const std::string&, const std::filesystem::path&, bool)> visitSource =
@@ -158,10 +159,10 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 std::string path;
                 if (hasLocalRoot && readCandidate(projectRoot / includeRootRel / key, content)) {
                     origin = "local:" + key;
-                    path = offset ? (includeRootRel / key).lexically_normal().generic_string() : key;
+                    path = offset ? "/" + (includeRootRel / key).lexically_normal().generic_string() : key;
                 } else if (readCandidate(projectRoot / key, content)) {
                     origin = "project:" + key;
-                    path = key;
+                    path = offset ? "/" + std::filesystem::path(key).lexically_normal().generic_string() : key;
                 } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
                     origin = "engine:" + key;
                     content = engineIt->second;
@@ -199,7 +200,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         visitSource(snapshot->projectBuffers[paths.frag], forkRoot, false);
     }
     if (!vertexOffset.empty())
-        snapshot->projectBuffers[vertexOffset] = visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path(), true);
+        snapshot->projectBuffers["/" + vertexOffset] = visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path(), true);
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
     customSourceCache[cacheKey] = snapshot;
