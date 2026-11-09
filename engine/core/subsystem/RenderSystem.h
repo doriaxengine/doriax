@@ -92,8 +92,8 @@ namespace doriax{
 
 	typedef struct fs_see_through_t {
 		Vector4 target; // xyz world position, w radius (0 = off)
-		Vector4 eye;    // xyz camera position, w 1 - opacity
-		Vector4 params; // x margin
+		Vector4 axis;   // xyz view direction, w 1 / target distance (0 = orthographic)
+		Vector4 params; // x margin, y 1 - opacity, zw pixel origin
 	} fs_see_through_t;
 
 	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it

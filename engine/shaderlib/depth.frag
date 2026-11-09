@@ -32,12 +32,18 @@ in vec2 v_projZW;
 
 #include "includes/depth_util.glsl"
 #ifdef USE_SEE_THROUGH
+    uniform u_fs_seeThrough {
+        vec4 target;
+        vec4 axis;
+        vec4 params;
+    } seeThrough;
+
     #include "includes/see_through.glsl"
 #endif
 
 void main() {
     #ifdef USE_SEE_THROUGH
-        seeThroughDiscard(v_worldPosition);
+        seeThroughDiscard(v_worldPosition, seeThrough.target, seeThrough.axis, seeThrough.params);
     #endif
     #if defined(ALPHA_MASK)
         float alpha = depthMaterial.alphaParams.x;

@@ -80,6 +80,7 @@ namespace doriax{
 
         int slotVSParams = -1;
         int slotFSParams = -1;
+        unsigned int sizeFSParams = 0; // reflected: see-through values follow the material
         int slotFSTexCoordSets = -1;
         int slotVSFade = -1;
         int slotVSVertexOffset = -1;
@@ -88,7 +89,6 @@ namespace doriax{
         int slotFSLighting2D = -1;
         int slotFSFog = -1;
         int slotFSMirror = -1;
-        int slotFSSeeThrough = -1;
         int slotVSSprite = -1;
         int slotVSShadows = -1;
         int slotFSShadows = -1;

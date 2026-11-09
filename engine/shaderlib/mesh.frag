@@ -96,6 +96,12 @@ uniform u_fs_pbrParams {
         vec3 emissiveFactor;
         float foliageTransmission;
     #endif
+    // here, not in a block of its own, to stay within 8 fragment blocks
+    #ifdef USE_SEE_THROUGH
+        vec4 seeThroughTarget;
+        vec4 seeThroughAxis;
+        vec4 seeThroughParams;
+    #endif
 } pbrParams;
 
 #if defined(USE_PUNCTUAL) || defined(USE_IBL)
@@ -255,7 +261,7 @@ const float M_PI = 3.141592653589793;
 
 void main() {
     #ifdef USE_SEE_THROUGH
-        seeThroughDiscard(v_position);
+        seeThroughDiscard(v_position, pbrParams.seeThroughTarget, pbrParams.seeThroughAxis, pbrParams.seeThroughParams);
     #endif
 
     vec4 baseColor = getBaseColor();

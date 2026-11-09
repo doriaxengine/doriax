@@ -51,12 +51,18 @@ uniform u_fs_gbufferMaterial {
     #include "includes/terrain_fs.glsl"
 #endif
 #ifdef USE_SEE_THROUGH
+    uniform u_fs_seeThrough {
+        vec4 target;
+        vec4 axis;
+        vec4 params;
+    } seeThrough;
+
     #include "includes/see_through.glsl"
 #endif
 
 void main() {
     #ifdef USE_SEE_THROUGH
-        seeThroughDiscard(v_worldPosition);
+        seeThroughDiscard(v_worldPosition, seeThrough.target, seeThrough.axis, seeThrough.params);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)

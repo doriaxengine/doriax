@@ -3330,6 +3330,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
 
         mesh.submeshes[i].slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_PARAMS);
         mesh.submeshes[i].slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_PARAMS);
+        shaderData.getUniformBlockMembers("u_fs_pbrParams", mesh.submeshes[i].sizeFSParams);
         if (p_hasTexture2){
             mesh.submeshes[i].slotFSTexCoordSets = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_TEXCOORDSETS);
         }
@@ -3344,9 +3345,6 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         if (p_mirror){
             mesh.submeshes[i].slotFSMirror = shaderData.getUniformBlockIndex(UniformBlockType::FS_MIRROR);
-        }
-        if (p_seeThrough){
-            mesh.submeshes[i].slotFSSeeThrough = shaderData.getUniformBlockIndex(UniformBlockType::FS_SEE_THROUGH);
         }
         if ((hasLights || useIBL) && mesh.receiveLights){
             mesh.submeshes[i].slotFSLighting = shaderData.getUniformBlockIndex(UniformBlockType::FS_LIGHTING);
@@ -4967,10 +4965,6 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 render.applyUniformBlock(mesh.submeshes[i].slotFSMirror, sizeof(float) * 16, &mesh.mirrorViewProjection);
             }
 
-            if (mesh.submeshes[i].slotFSSeeThrough != -1){
-                render.applyUniformBlock(mesh.submeshes[i].slotFSSeeThrough, sizeof(fs_see_through_t), &fs_seeThrough);
-            }
-
             // a submesh is lit (uses the lighting block + full PBR params) unless it
             // was compiled as MATERIAL_UNLIT (property bit 0)
             bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0));
@@ -5016,14 +5010,16 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 }
             }
 
-            if (submeshLit){
-                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, sizeof(float) * 12, &mesh.submeshes[i].material);
-            }else if (mesh.submeshes[i].shaderProperties & (1u << 24)){
-                // Unlit alpha-mask variants include the metallic/roughness padding
-                // and alphaCutoff from the shared CPU material prefix.
-                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, sizeof(float) * 8, &mesh.submeshes[i].material);
+            // Unlit alpha-mask variants include the metallic/roughness padding
+            // and alphaCutoff from the shared CPU material prefix.
+            const unsigned int paramsSize = sizeof(float) * (submeshLit ? 12 : ((mesh.submeshes[i].shaderProperties & (1u << 24)) ? 8 : 4));
+            if (mesh.submeshes[i].sizeFSParams == paramsSize + sizeof(fs_see_through_t)){
+                float params[24];
+                std::memcpy(params, &mesh.submeshes[i].material, paramsSize);
+                std::memcpy(params + paramsSize / sizeof(float), &fs_seeThrough, sizeof(fs_see_through_t));
+                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize + sizeof(fs_see_through_t), params);
             }else{
-                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, sizeof(float) * 4, &mesh.submeshes[i].material);
+                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize, &mesh.submeshes[i].material);
             }
 
             if (mesh.submeshes[i].slotVSFade != -1 && instmesh){
@@ -6349,7 +6345,6 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSVertexOffset = -1;
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
-        submesh.slotFSSeeThrough = -1;
         submesh.slotVSSprite = -1;
         submesh.slotVSShadows = -1;
         submesh.slotFSShadows = -1;
@@ -11186,12 +11181,19 @@ void RenderSystem::draw(){
 
         // only the main camera looks through to the target
         fs_seeThrough = fs_noSeeThrough;
-        if (isMainCamera && scene->getSeeThroughRadius() > 0.0f){
-            Vector3 target = scene->getSeeThroughTarget();
-            Vector3 eye = cameraTransform.worldPosition;
-            fs_seeThrough.target = Vector4(target.x, target.y, target.z, scene->getSeeThroughRadius());
-            fs_seeThrough.eye = Vector4(eye.x, eye.y, eye.z, 1.0f - scene->getSeeThroughOpacity());
-            fs_seeThrough.params = Vector4(scene->getSeeThroughMargin(), 0.0f, 0.0f, 0.0f);
+        const float seeThroughRadius = isMainCamera ? scene->getSeeThroughRadius() : 0.0f;
+        if (seeThroughRadius > 0.0f){
+            const Vector3 target = scene->getSeeThroughTarget();
+            const Vector3 toTarget = target - cameraTransform.worldPosition;
+            const float distance = toTarget.length();
+            const bool perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+            // a cone from the eye, or a cylinder along an orthographic view
+            if (!perspective || distance > seeThroughRadius){
+                const Vector3 axis = perspective ? toTarget / distance : -camera.worldDirection;
+                fs_seeThrough.target = Vector4(target.x, target.y, target.z, seeThroughRadius);
+                fs_seeThrough.axis = Vector4(axis.x, axis.y, axis.z, perspective ? 1.0f / distance : 0.0f);
+                fs_seeThrough.params = Vector4(scene->getSeeThroughMargin(), 1.0f - scene->getSeeThroughOpacity(), 0.0f, 0.0f);
+            }
         }
 
         int terrainView = 0;
@@ -11436,6 +11438,9 @@ void RenderSystem::draw(){
         }
 
         passResolution = Vector2(colorPassViewport.getWidth(), colorPassViewport.getHeight());
+        // a flipped or offset color target dithers the pixels the depth passes do
+        fs_seeThrough.params.z = colorPassViewport.getX();
+        fs_seeThrough.params.w = colorPassViewport.getY() + (isRenderingFlipped(camera) ? colorPassViewport.getHeight() : 0.0f);
 
 
         //---------Draw opaque meshes and UI----------
