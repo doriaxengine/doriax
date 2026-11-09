@@ -5399,7 +5399,7 @@ void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project
     const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
     warnings = Json::array();
     for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity)) {
-        const ShaderEffectAnnotations annotations = ProjectUtils::getSourceAnnotations(project->getProjectPath(), source, fork);
+        const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, source, fork);
         appendParameterMembers(members, annotations, values, inherited);
         for (const std::string& error : annotations.errors) warnings.push_back(error);
     }
@@ -5410,7 +5410,7 @@ void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* pro
     buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
     warnings = Json::array();
     if (pass.shader.empty()) return;
-    const ShaderEffectAnnotations annotations = ProjectUtils::getSourceAnnotations(project->getProjectPath(), pass.shader, true);
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader, true);
     appendParameterMembers(members, annotations, pass.uniforms, nullptr);
     for (const std::string& error : annotations.errors) warnings.push_back(error);
 }

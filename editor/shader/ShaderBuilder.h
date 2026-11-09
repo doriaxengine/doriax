@@ -7,6 +7,7 @@
 
 #include "shader/ShaderBuildTypes.h"
 #include "ShaderData.h"
+#include "ShaderParameterParser.h"
 #include <vector>
 #include <set>
 #include <unordered_map>
@@ -64,8 +65,8 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key. For custom shaders, resolves only
         // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
         // Throws on failure.
-        // parameters receives what the effect functions and the fork declare, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>* parameters = nullptr);
+        // parameters takes what the fork and the effect functions declare, for ShaderData
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>& parameters);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
         std::string getShaderDisplayName(ShaderKey key);
@@ -81,6 +82,8 @@ namespace doriax::editor {
         virtual ~ShaderBuilder();
 
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
+        // annotations of a fork (its .vert and .frag) or of an effect file, with their includes
+        static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader, bool fork);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 
         // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.

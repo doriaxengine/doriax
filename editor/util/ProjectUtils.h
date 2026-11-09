@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "shader/ShaderParameterParser.h"
 #include "lua.hpp"
 
 #include <string>
@@ -167,14 +166,7 @@ public:
     static bool isEngineEffectFunction(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
-    // the annotations of shader files and their includes, resolved as the shader build does:
-    // includeRoot, the project root, then the engine library
-    static ShaderEffectAnnotations getShaderAnnotations(const std::filesystem::path& projectRoot, const std::vector<std::string>& files,
-                                                        const std::filesystem::path& includeRoot);
-    // the annotations of a fork (its .vert and .frag) or of an effect file
-    static ShaderEffectAnnotations getSourceAnnotations(const std::filesystem::path& projectRoot, const std::string& source, bool fork);
-    // the files a component's shaders are built from, as the renderer picks them: its fork (own or the
-    // scene default), a mesh's depth fork and effect files, a water's underwater fork; true for forks
+    // the forks (true) and effect files (false) a component draws with, as the renderer picks them
     static std::vector<std::pair<std::string, bool>> getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.

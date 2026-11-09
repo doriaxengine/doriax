@@ -123,7 +123,7 @@ namespace doriax{
         void setVertexOffsetMax(float vertexOffsetMax);
         float getVertexOffsetMax() const;
 
-        // .glsl defining float getCoverage(CoverageContext context), from the project or the engine
+        // .glsl defining getCoverage(), from the project or the engine
         void setCoverageShader(const std::string& path);
         std::string getCoverageShader() const;
 

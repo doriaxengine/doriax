@@ -638,7 +638,7 @@ namespace doriax{
 		// the water holding the main camera, which fades the scene copy
 		WaterComponent* currentUnderwater;
 
-		// size of the target being drawn (shadow slot, depth, G-buffer or camera color), Engine.resolution
+		// size of the target being drawn, read as Engine.resolution
 		Vector2 passResolution;
 		// clock of the effect functions, advanced by update() unless the editor holds the scene
 		double animationTime;

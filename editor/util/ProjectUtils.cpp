@@ -16,7 +16,6 @@
 #include <filesystem>
 #include <functional>
 #include <limits>
-#include <list>
 #include <map>
 #include <unordered_set>
 
@@ -358,7 +357,7 @@ bool editor::ProjectUtils::writeShaderFork(const ShaderForkPlan& plan) {
 
 namespace {
 
-// a .glsl under a free name in the default shader directory; its project path, empty on failure
+// writes a .glsl under a free name in the default shader directory; empty on failure
 std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content) {
     const std::filesystem::path dirRel = editor::ProjectUtils::defaultShaderForkDir();
     const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName);
@@ -457,39 +456,6 @@ bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& project
         return false;
     source = engine->second;
     return true;
-}
-
-editor::ShaderEffectAnnotations editor::ProjectUtils::getShaderAnnotations(const std::filesystem::path& projectRoot, const std::vector<std::string>& files,
-                                                                          const std::filesystem::path& includeRoot) {
-    ShaderEffectAnnotations annotations;
-    std::list<std::string> sources; // the lookup hands out pointers into it
-    auto read = [&](const std::string& path) -> const std::string* {
-        std::string source;
-        if (!readShaderSource(projectRoot, path, source))
-            return nullptr;
-        sources.push_back(std::move(source));
-        return &sources.back();
-    };
-
-    for (const std::string& file : files) {
-        ShaderParameterParser::parseTree(file, [&](const std::string& key) -> const std::string* {
-            if (key == file)
-                return read(file);
-            std::error_code ec;
-            if (!includeRoot.empty() && std::filesystem::is_regular_file(projectRoot / includeRoot / key, ec))
-                return read((includeRoot / key).generic_string());
-            return read(key);
-        }, annotations);
-    }
-    return annotations;
-}
-
-editor::ShaderEffectAnnotations editor::ProjectUtils::getSourceAnnotations(const std::filesystem::path& projectRoot, const std::string& source, bool fork) {
-    if (!fork)
-        return getShaderAnnotations(projectRoot, {source}, std::filesystem::path(source).parent_path());
-
-    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(source);
-    return getShaderAnnotations(projectRoot, {paths.vert, paths.frag}, Util::getCustomShaderIncludeRoot(source));
 }
 
 std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity) {

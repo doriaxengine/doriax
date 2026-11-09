@@ -3,7 +3,6 @@
 
 #include "ShaderParameters.h"
 
-#include "ShaderData.h"
 #include "Scene.h"
 #include "Log.h"
 
@@ -209,10 +208,6 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
     for (const Binding& binding : bindings){
         firstOffset = std::min(firstOffset, binding.offset);
     }
-
-    // declared defaults until something writes
-    writeObject(ShaderUniformValues());
-    writeFrame(ShaderEffectView(), Vector2(0.0f, 0.0f));
 
     return slot != -1;
 }

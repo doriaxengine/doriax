@@ -86,7 +86,7 @@ namespace doriax{
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
         // effect functions ride on the custom shader name, "fork#vertexOffset#coverage"
-        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage = "");
+        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage);
         static std::string getCustomShaderFork(const std::string& customShader);
         static std::string getCustomShaderVertexOffset(const std::string& customShader);
         static std::string getCustomShaderCoverage(const std::string& customShader);

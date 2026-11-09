@@ -40,9 +40,7 @@ void Scene::init(){
     defaultCamera = NULL_ENTITY;
     viewCamera = NULL_ENTITY;
 
-    shaderParameterRevision = 1;
-    shaderParameterTableRevision = 0;
-    shaderParameterProviders.push_back(std::make_shared<WindParameterProvider>());
+    needUpdateShaderParameterTable = true;
 
     // All persistent scene configuration (background, SSAO/SSR, gravity, default shaders, ...)
     // defaults through the SceneSettings member; see SceneSettings.h.
@@ -291,7 +289,7 @@ void Scene::setShaderParameter(const std::string& collection, const std::string&
     if (!ShaderParameters::checkKey(collection, name))
         return;
     ShaderUniforms::set(runtimeShaderParameters, ShaderParameters::getKey(collection, name), value);
-    shaderParameterRevision++;
+    needUpdateShaderParameterTable = true;
 }
 
 void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value){
@@ -316,43 +314,13 @@ Vector4 Scene::getShaderParameter(const std::string& collection, const std::stri
 bool Scene::clearShaderParameter(const std::string& collection, const std::string& name){
     if (!ShaderUniforms::remove(runtimeShaderParameters, ShaderParameters::getKey(collection, name)))
         return false;
-    shaderParameterRevision++;
-    return true;
-}
-
-void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value){
-    if (!ShaderParameters::checkKey(collection, name))
-        return;
-    ShaderUniforms::set(settings.shaderParameters, ShaderParameters::getKey(collection, name), value);
-    shaderParameterRevision++;
-}
-
-void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value){
-    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, value.z, 0.0f));
-}
-
-void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value){
-    setShaderParameterDefault(collection, name, Vector4(value.x, value.y, 0.0f, 0.0f));
-}
-
-void Scene::setShaderParameterDefault(const std::string& collection, const std::string& name, float value){
-    setShaderParameterDefault(collection, name, Vector4(value, 0.0f, 0.0f, 0.0f));
-}
-
-Vector4 Scene::getShaderParameterDefault(const std::string& collection, const std::string& name) const{
-    return ShaderUniforms::get(settings.shaderParameters, ShaderParameters::getKey(collection, name));
-}
-
-bool Scene::removeShaderParameterDefault(const std::string& collection, const std::string& name){
-    if (!ShaderUniforms::remove(settings.shaderParameters, ShaderParameters::getKey(collection, name)))
-        return false;
-    shaderParameterRevision++;
+    needUpdateShaderParameterTable = true;
     return true;
 }
 
 void Scene::setShaderParameterDefaults(const ShaderUniformValues& values){
     settings.shaderParameters = values;
-    shaderParameterRevision++;
+    needUpdateShaderParameterTable = true;
 }
 
 const ShaderUniformValues& Scene::getShaderParameterDefaults() const{
@@ -363,10 +331,8 @@ void Scene::resetRuntimeShaderParameters(){
     runtimeShaderParameters.clear();
     viewShaderParameters.clear();
     mainViewShaderParameters.clear();
-    for (const auto& provider : shaderParameterProviders){
-        provider->reset();
-    }
-    shaderParameterRevision++;
+    windProvider.reset();
+    needUpdateShaderParameterTable = true;
 }
 
 void Scene::setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector4& value){
@@ -435,22 +401,20 @@ bool Scene::clearMainViewShaderParameter(const std::string& collection, const st
 }
 
 void Scene::updateShaderParameters(double dt, bool paused){
-    for (const auto& provider : shaderParameterProviders){
-        provider->update(this, dt, paused);
-    }
+    windProvider.update(this, dt, paused);
 }
 
-const ShaderParameterTable& Scene::getShaderParameterTable() const{
-    if (shaderParameterTableRevision != shaderParameterRevision){
+const ShaderParameterTable& Scene::getShaderParameterTable(){
+    if (needUpdateShaderParameterTable){
         shaderParameterTable.clear();
         shaderParameterTable.apply(settings.shaderParameters);
         shaderParameterTable.apply(runtimeShaderParameters);
-        shaderParameterTableRevision = shaderParameterRevision;
+        needUpdateShaderParameterTable = false;
     }
     return shaderParameterTable;
 }
 
-// saved values, then the main view's while the camera renders the scene, then its own runtime ones
+// saved values, then the main view's for the render camera, then the camera's runtime ones
 void Scene::resolveViewShaderParameters(Entity camera, ShaderParameterTable& table){
     table.clear();
     if (CameraComponent* cameraComponent = findComponent<CameraComponent>(camera))

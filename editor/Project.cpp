@@ -1600,11 +1600,9 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
-            bool meshChanged = false;
-            for (std::string* path : {&mesh.vertexOffsetShader, &mesh.coverageShader}) {
-                if (!path->empty() && fileTransform(*path))
-                    meshChanged = true;
-            }
+            bool meshChanged = !mesh.vertexOffsetShader.empty() && fileTransform(mesh.vertexOffsetShader);
+            if (!mesh.coverageShader.empty() && fileTransform(mesh.coverageShader))
+                meshChanged = true;
             if (meshChanged) {
                 Catalog::updateEntity(registry, meshes->getEntity(i), UpdateFlags_Shader_Reload);
                 changed = true;

@@ -980,13 +980,6 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             luabridge::overload<const std::string&, const std::string&, float>(&Scene::setShaderParameter))
         .addFunction("getShaderParameter", &Scene::getShaderParameter)
         .addFunction("clearShaderParameter", &Scene::clearShaderParameter)
-        .addFunction("setShaderParameterDefault",
-            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Scene::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Scene::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Scene::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, float>(&Scene::setShaderParameterDefault))
-        .addFunction("getShaderParameterDefault", &Scene::getShaderParameterDefault)
-        .addFunction("removeShaderParameterDefault", &Scene::removeShaderParameterDefault)
         .addFunction("setViewShaderParameter",
             luabridge::overload<Entity, const std::string&, const std::string&, const Vector4&>(&Scene::setViewShaderParameter),
             luabridge::overload<Entity, const std::string&, const std::string&, const Vector3&>(&Scene::setViewShaderParameter),

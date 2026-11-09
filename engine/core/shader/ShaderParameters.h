@@ -28,7 +28,7 @@ namespace doriax{
     public:
         void clear();
         void set(uint32_t key, const Vector4& value);
-        void apply(const ShaderUniformValues& values);
+        void apply(const ShaderUniformValues& entries);
         const Vector4* find(uint32_t key) const;
     };
 
@@ -101,23 +101,14 @@ namespace doriax{
         void writeFragmentContext(const ShaderEffectView& view, bool coverage, bool fade);
     };
 
-    // computes runtime parameters every update, like the wind travel
-    class DORIAX_API ShaderParameterProvider{
-    public:
-        virtual ~ShaderParameterProvider() = default;
-        virtual void update(Scene* scene, double dt, bool paused) = 0;
-        // drops what it accumulated, with the scene's runtime values
-        virtual void reset(){}
-    };
-
-    // meters of air blown past, so gusts do not jump when the wind speed changes
-    class DORIAX_API WindParameterProvider: public ShaderParameterProvider{
+    // writes Wind.travel, the meters of air blown past, so gusts do not jump when the wind changes
+    class DORIAX_API WindParameterProvider{
     private:
         double travel = 0.0;
 
     public:
-        void update(Scene* scene, double dt, bool paused) override;
-        void reset() override;
+        void update(Scene* scene, double dt, bool paused);
+        void reset();
     };
 
 }

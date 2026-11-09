@@ -5361,7 +5361,7 @@ const editor::ShaderEffectAnnotations& editor::Properties::getShaderAnnotations(
     CachedShaderAnnotations& cached = shaderAnnotationsCache[(fork ? "fork:" : "") + shader];
     const double now = ImGui::GetTime();
     if (cached.parsedAt < 0.0 || now - cached.parsedAt > 1.0) {
-        cached.annotations = ProjectUtils::getSourceAnnotations(project->getProjectPath(), shader, fork);
+        cached.annotations = ShaderBuilder::getShaderAnnotations(project, shader, fork);
         cached.parsedAt = now;
     }
     return cached.annotations;
@@ -5527,29 +5527,36 @@ std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectShare
         result.push_back(declaration);
     };
 
-    // every shader of the scene: components (foliage chunks included), defaults and post-process passes
+    // every shader file of the scene: forks (true) and effect files (false)
     Scene* scene = sceneProject->scene;
     std::set<std::pair<std::string, bool>> sources;
-    auto addComponents = [&](const auto& components, ComponentType cpType, ShaderType shaderType) {
-        for (size_t i = 0; i < components->size(); i++) {
-            for (const auto& source : ProjectUtils::getComponentShaderSources(scene, cpType, shaderType, components->getEntity(i)))
-                sources.insert(source);
-        }
+    auto addSource = [&](const std::string& shader, bool fork) {
+        if (!shader.empty())
+            sources.insert({shader, fork});
     };
-    addComponents(scene->getComponentArray<MeshComponent>(), ComponentType::MeshComponent, ShaderType::MESH);
-    addComponents(scene->getComponentArray<UIComponent>(), ComponentType::UIComponent, ShaderType::UI);
-    addComponents(scene->getComponentArray<PointsComponent>(), ComponentType::PointsComponent, ShaderType::POINTS);
-    addComponents(scene->getComponentArray<LinesComponent>(), ComponentType::LinesComponent, ShaderType::LINES);
-    addComponents(scene->getComponentArray<SkyComponent>(), ComponentType::SkyComponent, ShaderType::SKYBOX);
-    addComponents(scene->getComponentArray<WaterComponent>(), ComponentType::WaterComponent, ShaderType::WATER);
-    for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::POINTS, ShaderType::LINES, ShaderType::SKYBOX, ShaderType::WATER}) {
-        if (!scene->getDefaultCustomShader(type).empty())
-            sources.insert({scene->getDefaultCustomShader(type), true});
+    auto addForks = [&](const auto& components, ShaderType type) {
+        addSource(scene->getDefaultCustomShader(type), true);
+        for (size_t i = 0; i < components->size(); i++)
+            addSource(components->getComponentFromIndex(i).customShader, true);
+    };
+    auto meshes = scene->getComponentArray<MeshComponent>();
+    auto waters = scene->getComponentArray<WaterComponent>();
+    addForks(meshes, ShaderType::MESH);
+    addForks(scene->getComponentArray<UIComponent>(), ShaderType::UI);
+    addForks(scene->getComponentArray<PointsComponent>(), ShaderType::POINTS);
+    addForks(scene->getComponentArray<LinesComponent>(), ShaderType::LINES);
+    addForks(scene->getComponentArray<SkyComponent>(), ShaderType::SKYBOX);
+    addForks(waters, ShaderType::WATER);
+    for (size_t i = 0; i < meshes->size(); i++) {
+        const MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        addSource(mesh.customDepthShader, true);
+        addSource(mesh.vertexOffsetShader, false);
+        addSource(mesh.coverageShader, false);
     }
-    for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
-        if (!pass.shader.empty())
-            sources.insert({pass.shader, true});
-    }
+    for (size_t i = 0; i < waters->size(); i++)
+        addSource(waters->getComponentFromIndex(i).customUnderwaterShader, true);
+    for (const PostProcessPass& pass : scene->getPostProcessPasses())
+        addSource(pass.shader, true);
     for (const auto& [source, fork] : sources) {
         for (const ShaderParameterDeclaration& declaration : getShaderAnnotations(source, fork).parameters) {
             if (declaration.scope == scope)
@@ -14517,10 +14524,8 @@ void editor::Properties::show(){
                 }
             }
 
-            // the collections the scene's shaders declare, Wind among them once something sways
-            if (sceneProject->sceneType != SceneType::SCENE_UI) {
-                drawSceneShaderParameters(sceneProject);
-            }
+            // shown once a shader of the scene declares one, like the wind
+            drawSceneShaderParameters(sceneProject);
 
             if (sceneProject->sceneType != SceneType::SCENE_UI) {
                 ImGui::SeparatorText("Physics");

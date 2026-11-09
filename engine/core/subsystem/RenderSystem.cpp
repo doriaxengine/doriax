@@ -227,7 +227,7 @@ namespace {
         applyParameters(render, component.paramsFS, view, resolution);
     }
 
-    // the mesh blocks of every pass, from whichever pass draws first (depth runs before color)
+    // the mesh blocks of every pass, from whichever draws first (depth does)
     void writeParameters(MeshComponent& mesh, const Scene* scene){
         if (!mesh.needUpdateShaderUniforms)
             return;
@@ -235,15 +235,17 @@ namespace {
         const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
         for (int i = 0; i < mesh.numSubmeshes; i++){
             Submesh& submesh = mesh.submeshes[i];
-            for (ShaderParameterBlock* block : {&submesh.paramsVS, &submesh.paramsFS, &submesh.depthParamsVS, &submesh.depthParamsFS,
-                                                &submesh.gbufferParamsVS, &submesh.gbufferParamsFS}){
-                block->writeObject(mesh.shaderUniforms, inherited);
-            }
+            submesh.paramsVS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.paramsFS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.depthParamsVS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.depthParamsFS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.gbufferParamsVS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.gbufferParamsFS.writeObject(mesh.shaderUniforms, inherited);
         }
         mesh.needUpdateShaderUniforms = false;
     }
 
-    // the water blocks of both shaders, from whichever pass draws first (underwater runs before the surface)
+    // the water blocks of both shaders, from whichever draws first (underwater does)
     void writeParameters(WaterComponent& water, const Scene* scene){
         if (!water.needUpdateShaderUniforms)
             return;
@@ -6095,7 +6097,7 @@ void RenderSystem::loadPostProcess(){
         if (pass.slotGBuffer.first != -1)
             postProcessNeedsGBuffer = true;
 
-        // stored by name, so a renamed or removed member just drops
+        // stored by name, so a renamed or removed parameter just drops
         pass.paramsVS.resolve(sd, "u_vs_params", ShaderStageType::VERTEX);
         pass.paramsFS.resolve(sd, "u_fs_params", ShaderStageType::FRAGMENT);
         pass.paramsVS.writeObject(passes[i].uniforms);

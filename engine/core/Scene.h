@@ -12,7 +12,6 @@
 #include "render/Render.h"
 #include "math/Vector2.h"
 #include "shader/ShaderParameters.h"
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -47,10 +46,10 @@ namespace doriax{
         ShaderUniformValues runtimeShaderParameters;
         std::unordered_map<Entity, ShaderUniformValues> viewShaderParameters;
         ShaderUniformValues mainViewShaderParameters;
-        std::vector<std::shared_ptr<ShaderParameterProvider>> shaderParameterProviders;
-        uint64_t shaderParameterRevision;
-        mutable uint64_t shaderParameterTableRevision;
-        mutable ShaderParameterTable shaderParameterTable;
+        WindParameterProvider windProvider;
+        // saved and runtime scene values merged
+        ShaderParameterTable shaderParameterTable;
+        bool needUpdateShaderParameterTable;
 
         UIEventState uiEventState;
 
@@ -154,16 +153,10 @@ namespace doriax{
         Vector4 getShaderParameter(const std::string& collection, const std::string& name) const;
         bool clearShaderParameter(const std::string& collection, const std::string& name);
 
-        // saved with the scene
-        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector4& value);
-        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector3& value);
-        void setShaderParameterDefault(const std::string& collection, const std::string& name, const Vector2& value);
-        void setShaderParameterDefault(const std::string& collection, const std::string& name, float value);
-        Vector4 getShaderParameterDefault(const std::string& collection, const std::string& name) const;
-        bool removeShaderParameterDefault(const std::string& collection, const std::string& name);
+        // saved with the scene, by "Collection.name"
         void setShaderParameterDefaults(const ShaderUniformValues& values);
         const ShaderUniformValues& getShaderParameterDefaults() const;
-        // drops every runtime scene and view value, and what providers accumulated
+        // drops every runtime scene and view value, and the wind travel
         void resetRuntimeShaderParameters();
 
         // runtime values of "@view Collection.name" parameters for one camera
@@ -183,7 +176,7 @@ namespace doriax{
         bool clearMainViewShaderParameter(const std::string& collection, const std::string& name);
 
         void updateShaderParameters(double dt, bool paused);
-        const ShaderParameterTable& getShaderParameterTable() const;
+        const ShaderParameterTable& getShaderParameterTable();
         void resolveViewShaderParameters(Entity camera, ShaderParameterTable& table);
 
         void setSSREnabled(bool ssrEnabled);

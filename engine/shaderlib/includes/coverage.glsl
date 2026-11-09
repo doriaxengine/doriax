@@ -1,4 +1,4 @@
-// Cuts a fragment by the mesh's coverageShader, the same in the color, depth and G-buffer passes
+// Cuts a fragment by the mesh's coverageShader, the same in every pass
 #include "includes/parameters_fs.glsl"
 #include "includes/coverage_helpers.glsl"
 
@@ -9,7 +9,6 @@ struct CoverageContext {
     vec3 forward;
     bool perspective;
     vec2 pixel;         // from a corner every pass shares
-    float time;
 };
 
 // the mesh's coverage file, mapped in by the shader builder
@@ -28,7 +27,6 @@ float applyCoverage(vec3 worldPosition, vec2 uv){
     context.forward = paramsFS.effect_forward;
     context.perspective = paramsFS.effect_eye.w > 0.5;
     context.pixel = abs(gl_FragCoord.xy - paramsFS.effect_pass.xy);
-    context.time = Engine.time;
 
     float coverage = clamp(getCoverage(context), 0.0, 1.0);
     // keeps the inputs alive when the function ignores them, so the stages still pair

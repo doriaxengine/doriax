@@ -1,4 +1,5 @@
-// The vertex stage's declared parameters; loadShaderParameters() copies them to params.name and Collection.name
+// The vertex stage's declared parameters, copied by loadShaderParameters()
+// to params.name and Collection.name
 #ifndef SHADER_PARAMETERS_VS
 #define SHADER_PARAMETERS_VS
 

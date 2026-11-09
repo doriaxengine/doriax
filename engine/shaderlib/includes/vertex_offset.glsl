@@ -1,4 +1,4 @@
-// Moves a vertex by the mesh's vertexOffsetShader, the same in the color, depth and G-buffer passes
+// Moves a vertex by the mesh's vertexOffsetShader, the same in every pass
 #include "includes/parameters_vs.glsl"
 
 // the mesh's offset file, mapped in by the shader builder

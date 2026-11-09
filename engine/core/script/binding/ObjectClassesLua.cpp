@@ -328,13 +328,6 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, const std::string&, float>(&Camera::setShaderParameter))
         .addFunction("getShaderParameter", &Camera::getShaderParameter)
         .addFunction("clearShaderParameter", &Camera::clearShaderParameter)
-        .addFunction("setShaderParameterDefault",
-            luabridge::overload<const std::string&, const std::string&, const Vector4&>(&Camera::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, const Vector3&>(&Camera::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, const Vector2&>(&Camera::setShaderParameterDefault),
-            luabridge::overload<const std::string&, const std::string&, float>(&Camera::setShaderParameterDefault))
-        .addFunction("getShaderParameterDefault", &Camera::getShaderParameterDefault)
-        .addFunction("removeShaderParameterDefault", &Camera::removeShaderParameterDefault)
         .addFunction("updateCamera", &Camera::updateCamera)
         .addFunction("getCameraComponent", &Camera::getComponent<CameraComponent>)
         .endClass();

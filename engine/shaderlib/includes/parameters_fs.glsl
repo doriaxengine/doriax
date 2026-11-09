@@ -1,4 +1,5 @@
-// The fragment stage's declared parameters, as parameters_vs.glsl; mesh.frag keeps them in its material block
+// The fragment stage's declared parameters, as parameters_vs.glsl
+// (mesh.frag keeps them in its material block)
 #ifndef SHADER_PARAMETERS_FS
 #define SHADER_PARAMETERS_FS
 

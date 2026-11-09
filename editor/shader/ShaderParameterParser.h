@@ -53,7 +53,7 @@ namespace doriax::editor {
         // member of the generated block: p_name, s_Collection_name, v_Collection_name
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
-        // shader_params_vs.glsl or shader_params_fs.glsl, adding the effect context the hooks read
+        // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                           bool vertexContext, bool fragmentContext,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<std::string>& errors);

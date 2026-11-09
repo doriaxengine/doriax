@@ -235,7 +235,7 @@ void clearCustomSourceCache() {
     customSourceCache.clear();
 }
 
-// parameter headers of a custom shader and the defines of its hooks; throws on a bad annotation
+// parameter headers and hook defines of a custom shader; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& vertexOffset, const std::string& coverage,
                            std::vector<ShaderParameterInfo>& parameters) {
     const bool useVertexOffset = !vertexOffset.empty();
@@ -277,6 +277,16 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& vert
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters, errors);
 
+    // a fork that dropped the call would read zeros
+    auto warnMissingLoad = [&](const std::string& file, const char* header) {
+        auto source = args.fileBuffers.find(file);
+        if (args.fileBuffers[header].find(" = block.") != std::string::npos && source != args.fileBuffers.end() &&
+                source->second.find("loadShaderParameters();") == std::string::npos)
+            editor::Out::warning("%s declares shader parameters but never calls loadShaderParameters(), so they read zero", file.c_str());
+    };
+    warnMissingLoad(args.vert_file, "shader_params_vs.glsl");
+    warnMissingLoad(args.frag_file, "shader_params_fs.glsl");
+
     if (!errors.empty()){
         std::string message = "Shader parameter annotations:";
         for (const std::string& error : errors)
@@ -294,7 +304,7 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
     return false;
 }
 
-// the custom blocks of v0.8 are no longer filled, so an old fork fails with a pointer to the annotations
+// a v0.8 fork still declaring a custom block, which nothing fills any more
 std::string getLegacyBlockError(const ShaderData& shaderData, uint16_t customId) {
     if (customId == 0)
         return "";
@@ -308,6 +318,31 @@ std::string getLegacyBlockError(const ShaderData& shaderData, uint16_t customId)
 
 } // namespace
 
+
+// read from the sources the build resolves, so both see the same includes
+editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Project* project, const std::string& shader, bool fork) {
+    ShaderEffectAnnotations annotations;
+    // any effect slot resolves a single .glsl
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, fork ? shader : "#" + shader);
+    if (!sources->valid)
+        return annotations;
+
+    auto lookup = [&](const std::string& key) -> const std::string* {
+        auto projectFile = sources->projectBuffers.find(key);
+        if (projectFile != sources->projectBuffers.end())
+            return &projectFile->second;
+        auto engineFile = editor::shaderMap.find(key);
+        return engineFile != editor::shaderMap.end() ? &engineFile->second : nullptr;
+    };
+    if (fork) {
+        const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
+        ShaderParameterParser::parseTree(paths.vert, lookup, annotations);
+        ShaderParameterParser::parseTree(paths.frag, lookup, annotations);
+    } else {
+        ShaderParameterParser::parseTree("/" + shader, lookup, annotations);
+    }
+    return annotations;
+}
 
 std::unordered_map<ShaderKey, ShaderData> editor::ShaderBuilder::shaderDataCache;
 std::unordered_map<ShaderKey, std::future<ShaderData>> editor::ShaderBuilder::pendingBuilds;
@@ -875,7 +910,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>* parameters) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>& parameters) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -891,10 +926,8 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.defines.push_back({"SKINNING_TEXTURE", "1"});
 
     // the built-in shaders declare no parameters
-    std::vector<ShaderParameterInfo> unusedParameters;
-    std::vector<std::string> unusedErrors;
-    args.fileBuffers["shader_params_vs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::VERTEX, ShaderEffectAnnotations(), false, false, unusedParameters, unusedErrors);
-    args.fileBuffers["shader_params_fs.glsl"] = ShaderParameterParser::generateHeader(ShaderStageType::FRAGMENT, ShaderEffectAnnotations(), false, false, unusedParameters, unusedErrors);
+    args.fileBuffers["shader_params_vs.glsl"] = "// no parameters\n";
+    args.fileBuffers["shader_params_fs.glsl"] = "// no parameters\n";
 
     if (customId == 0)
         return;
@@ -929,11 +962,8 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.frag_file = customPaths.frag;
     }
 
-    std::vector<ShaderParameterInfo> declared;
     setupShaderParameters(args, ShaderPool::getCustomShaderVertexOffset(customShader),
-                          ShaderPool::getCustomShaderCoverage(customShader), declared);
-    if (parameters)
-        *parameters = std::move(declared);
+                          ShaderPool::getCustomShaderCoverage(customShader), parameters);
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {
@@ -975,7 +1005,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     std::vector<ShaderParameterInfo> parameters;
     try {
-        setupBuildArgs(args, shaderKey, project, &parameters);
+        setupBuildArgs(args, shaderKey, project, parameters);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1208,7 +1238,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     applyShaderBackend(args, backend);
 
     std::vector<ShaderParameterInfo> parameters;
-    setupBuildArgs(args, shaderKey, project, &parameters);
+    setupBuildArgs(args, shaderKey, project, parameters);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");

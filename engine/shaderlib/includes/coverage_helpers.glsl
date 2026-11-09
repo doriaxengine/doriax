@@ -9,12 +9,6 @@ float coverageBelowHeight(vec3 worldPosition, float height, float softness){
     return 1.0 - smoothstep(height, height + softness, worldPosition.y);
 }
 
-// 0 inside the sphere, 1 outside, with a soft rim of the given width inside its radius
-float coverageOutsideSphere(vec3 worldPosition, vec3 center, float radius, float softness){
-    float distanceToCenter = length(worldPosition - center);
-    return smoothstep(radius - max(softness, 0.0001), radius, distanceToCenter);
-}
-
 // a smooth value noise in [0, 1], for dissolves that stay put in world space
 float coverageHash(vec3 p){
     p = fract(p * 0.3183099 + vec3(0.71, 0.113, 0.419));
@@ -32,8 +26,8 @@ float coverageNoise(vec3 p){
                    mix(coverageHash(i + vec3(0, 1, 1)), coverageHash(i + vec3(1, 1, 1)), u.x), u.y), u.z);
 }
 
-// opening in front of a target, a cone from a perspective eye or a cylinder along an orthographic
-// view, starting margin before the target; opacity is what stays inside
+// opening in front of a target: a cone from a perspective eye, a cylinder along an
+// orthographic view. It starts margin before the target; opacity is what stays inside
 float coverageViewOpening(vec3 worldPosition, vec3 eye, vec3 forward, bool perspective,
                           vec3 target, float radius, float opacity, float margin){
     if (radius <= 0.0)
