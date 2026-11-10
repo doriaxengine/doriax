@@ -19,6 +19,8 @@ namespace doriax {
         // - Does NOT serialize stage bytecode (kept empty).
         //
         // Returns true on success. On failure, returns false and optionally fills err.
+        // within the limits the readers accept
+        static bool validate(const ShaderData& shaderData, std::string* err = nullptr);
         static bool writeToFile(const std::string& filepath, uint64_t shaderKey, const ShaderData& shaderData, std::string* err = nullptr);
         static bool writeToBytes(std::vector<unsigned char>& outBytes, uint64_t shaderKey, const ShaderData& shaderData, std::string* err = nullptr);
         static bool writeJsonToFile(const std::string& filepath, uint64_t shaderKey, const ShaderData& shaderData, std::string* err = nullptr);

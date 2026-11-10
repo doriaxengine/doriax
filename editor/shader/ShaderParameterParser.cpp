@@ -5,6 +5,7 @@
 #include "shader/ShaderParameters.h"
 #include "util/Util.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <map>
@@ -103,6 +104,54 @@ std::string displayName(const editor::ShaderParameterDeclaration& declaration){
 // "file:line: name", the start of an error
 std::string errorPrefix(const editor::ShaderParameterDeclaration& declaration){
     return declaration.sourceName + ":" + std::to_string(declaration.line) + ": " + displayName(declaration);
+}
+
+// one declaration per parameter: repeats of the same type merge, others clash
+std::vector<editor::ShaderParameterDeclaration> mergeDeclarations(const std::vector<editor::ShaderParameterDeclaration>& declarations, std::vector<std::string>* errors){
+    using editor::ShaderParameterParser;
+    // an include both stages reach would report its clash twice
+    auto report = [&](const std::string& error){
+        if (errors && std::find(errors->begin(), errors->end(), error) == errors->end())
+            errors->push_back(error);
+    };
+
+    std::vector<editor::ShaderParameterDeclaration> merged;
+    std::map<std::string, ShaderParameterScope> collectionScopes;
+    std::set<std::string> memberNames;
+    for (const editor::ShaderParameterDeclaration& declaration : declarations){
+        bool repeated = false;
+        for (editor::ShaderParameterDeclaration& existing : merged){
+            if (existing.scope == declaration.scope && existing.collection == declaration.collection && existing.name == declaration.name){
+                if (existing.type != declaration.type){
+                    report(errorPrefix(declaration) + " is a " + ShaderParameterParser::getTypeName(declaration.type) +
+                        " here but a " + ShaderParameterParser::getTypeName(existing.type) + " in " + existing.sourceName);
+                }else if (existing.description.empty()){
+                    existing.description = declaration.description;
+                }
+                repeated = true;
+                break;
+            }
+        }
+        if (repeated)
+            continue;
+
+        if (!declaration.collection.empty()){
+            auto scope = collectionScopes.find(declaration.collection);
+            if (scope != collectionScopes.end() && scope->second != declaration.scope){
+                report(errorPrefix(declaration) + " is in a " + ShaderParameters::getScopeName(scope->second) +
+                    " collection, not a " + ShaderParameters::getScopeName(declaration.scope) + " one");
+                continue;
+            }
+            collectionScopes[declaration.collection] = declaration.scope;
+        }
+
+        if (!memberNames.insert(ShaderParameterParser::getMemberName(declaration)).second){
+            report(errorPrefix(declaration) + " clashes with another parameter");
+            continue;
+        }
+        merged.push_back(declaration);
+    }
+    return merged;
 }
 
 struct Member {
@@ -310,9 +359,13 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
     visit(rootKey);
 }
 
+void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){
+    mergeDeclarations(declarations, &errors);
+}
+
 std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                                           bool vertexContext, bool fragmentContext,
-                                                          std::vector<ShaderParameterInfo>& parameters, std::vector<std::string>& errors){
+                                                          std::vector<ShaderParameterInfo>& parameters){
     const std::string suffix = stage == ShaderStageType::VERTEX ? "VS" : "FS";
 
     std::vector<Member> members;
@@ -347,43 +400,11 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         engineStruct += " vec4 resolution;";
     }
 
-    // one declaration per parameter: repeats of the same type merge, others clash
-    std::vector<ShaderParameterDeclaration> merged;
-    std::map<std::string, ShaderParameterScope> collectionScopes;
-    std::set<std::string> memberNames;
-    for (const ShaderParameterDeclaration& declaration : annotations.parameters){
-        bool repeated = false;
-        for (ShaderParameterDeclaration& existing : merged){
-            if (existing.scope == declaration.scope && existing.collection == declaration.collection && existing.name == declaration.name){
-                if (existing.type != declaration.type){
-                    errors.push_back(errorPrefix(declaration) + " is a " + getTypeName(declaration.type) +
-                        " here but a " + getTypeName(existing.type) + " in " + existing.sourceName);
-                }else if (existing.description.empty()){
-                    existing.description = declaration.description;
-                }
-                repeated = true;
-                break;
-            }
-        }
-        if (repeated)
-            continue;
-
-        if (!declaration.collection.empty()){
-            auto scope = collectionScopes.find(declaration.collection);
-            if (scope != collectionScopes.end() && scope->second != declaration.scope){
-                errors.push_back(errorPrefix(declaration) + " is in a " + ShaderParameters::getScopeName(scope->second) +
-                    " collection, not a " + ShaderParameters::getScopeName(declaration.scope) + " one");
-                continue;
-            }
-            collectionScopes[declaration.collection] = declaration.scope;
-        }
-
-        const std::string member = getMemberName(declaration);
-        if (!memberNames.insert(member).second){
-            errors.push_back(errorPrefix(declaration) + " clashes with another parameter");
-            continue;
-        }
-        merged.push_back(declaration);
+    const std::vector<ShaderParameterDeclaration> merged = mergeDeclarations(annotations.parameters, nullptr);
+    std::set<std::string> collections;
+    for (const ShaderParameterDeclaration& declaration : merged){
+        if (!declaration.collection.empty())
+            collections.insert(declaration.collection);
     }
 
     std::ostringstream structs;
@@ -402,7 +423,7 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         }
         structs << " };\nShaderParamsObject params;\n";
     }
-    for (const auto& [collection, scope] : collectionScopes){
+    for (const std::string& collection : collections){
         structs << "struct ShaderParams_" << collection << " {";
         for (const ShaderParameterDeclaration& declaration : merged){
             if (declaration.collection == collection)

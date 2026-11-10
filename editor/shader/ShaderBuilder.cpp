@@ -272,10 +272,15 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& vert
     if (useCoverage && !fragmentFiles.count("includes/coverage.glsl"))
         editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage %s does nothing in it", args.frag_file.c_str(), coverage.c_str());
 
+    // both stages read one value by name, so they are checked together
+    std::vector<editor::ShaderParameterDeclaration> declarations = vertexAnnotations.parameters;
+    declarations.insert(declarations.end(), fragmentAnnotations.parameters.begin(), fragmentAnnotations.parameters.end());
+    editor::ShaderParameterParser::checkDeclarations(declarations, errors);
+
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, parameters, errors);
+        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, parameters);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters, errors);
+        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters);
 
     // a fork that dropped the call would read zeros
     auto warnMissingLoad = [&](const std::string& file, const char* header) {
@@ -304,15 +309,21 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
     return false;
 }
 
-// a v0.8 fork still declaring a custom block, which nothing fills any more
-std::string getLegacyBlockError(const ShaderData& shaderData, uint16_t customId) {
+// a v0.8 fork still declaring a custom block, which nothing fills any more,
+// or a shader past what the runtime loads
+std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) {
     if (customId == 0)
         return "";
 
+    const std::string name = ShaderPool::getCustomShaderName(customId);
     for (const ShaderStage& stage : shaderData.stages)
         for (const ShaderUniformBlock& block : stage.uniformblocks)
             if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams" || block.name == "u_fs_postParams")
-                return ShaderPool::getCustomShaderName(customId) + ": " + block.name + " is no longer filled, declare its values as // @param annotations";
+                return name + ": " + block.name + " is no longer filled; fork the built-in shader again and declare its values as // @param annotations";
+
+    std::string error;
+    if (!ShaderDataSerializer::validate(shaderData, &error))
+        return name + ": " + error;
     return "";
 }
 
@@ -341,6 +352,8 @@ editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Proj
     } else {
         ShaderParameterParser::parseTree("/" + shader, lookup, annotations);
     }
+    // the clashes the build would stop at
+    ShaderParameterParser::checkDeclarations(annotations.parameters, annotations.errors);
     return annotations;
 }
 
@@ -1077,7 +1090,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
     shaderData.parameters = std::move(parameters);
 
-    const std::string blockError = getLegacyBlockError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData, customId);
     if (!blockError.empty()) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1261,7 +1274,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
     shaderData.parameters = std::move(parameters);
 
-    const std::string blockError = getLegacyBlockError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData, customId);
     if (!blockError.empty())
         throw std::runtime_error(blockError);
 

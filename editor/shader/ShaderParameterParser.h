@@ -56,7 +56,9 @@ namespace doriax::editor {
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                           bool vertexContext, bool fragmentContext,
-                                          std::vector<ShaderParameterInfo>& parameters, std::vector<std::string>& errors);
+                                          std::vector<ShaderParameterInfo>& parameters);
+        // a name with two types, a collection in two scopes; given both stages, as one value feeds them
+        static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
     };
 
 }

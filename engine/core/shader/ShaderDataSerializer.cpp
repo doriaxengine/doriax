@@ -27,12 +27,13 @@ constexpr uint32_t kMaxString = 32u * 1024u * 1024u; // 32MB
 constexpr uint32_t kMaxStages = 16;
 constexpr uint32_t kMaxAttributes = 64;
 constexpr uint32_t kMaxUniformBlocks = 32;
-constexpr uint32_t kMaxUniforms = 128;
+// a block of floats, as the generated parameter blocks are, fits 4 KB within GL's 16 KB minimum
+constexpr uint32_t kMaxUniforms = 1024;
 constexpr uint32_t kMaxStorageBuffers = 32;
 constexpr uint32_t kMaxTextures = 64;
 constexpr uint32_t kMaxSamplers = 64;
 constexpr uint32_t kMaxTextureSamplerPairs = 64;
-constexpr uint32_t kMaxParameters = 256;
+constexpr uint32_t kMaxParameters = 1024;
 
 class ShaderDataSerializerHelper {
 public:
@@ -467,6 +468,24 @@ bool ShaderDataSerializerHelper::readString(FileData& in, std::string& s) {
 
     s.resize(len);
     return in.read((unsigned char*)&s[0], len) == len;
+}
+
+bool ShaderDataSerializer::validate(const ShaderData& shaderData, std::string* err) {
+    if (shaderData.stages.size() > kMaxStages)
+        return ShaderDataSerializerHelper::setErr(err, "Too many shader stages");
+    if (shaderData.parameters.size() > kMaxParameters)
+        return ShaderDataSerializerHelper::setErr(err, "Too many shader parameters (limit " + std::to_string(kMaxParameters) + ")");
+    for (const ShaderStage& stage : shaderData.stages) {
+        if (stage.attributes.size() > kMaxAttributes || stage.uniformblocks.size() > kMaxUniformBlocks ||
+            stage.storagebuffers.size() > kMaxStorageBuffers || stage.textures.size() > kMaxTextures ||
+            stage.samplers.size() > kMaxSamplers || stage.textureSamplerPairs.size() > kMaxTextureSamplerPairs)
+            return ShaderDataSerializerHelper::setErr(err, "Too many inputs in a shader stage");
+        for (const ShaderUniformBlock& block : stage.uniformblocks) {
+            if (block.uniforms.size() > kMaxUniforms)
+                return ShaderDataSerializerHelper::setErr(err, "Too many members in " + block.name + " (limit " + std::to_string(kMaxUniforms) + ")");
+        }
+    }
+    return true;
 }
 
 bool ShaderDataSerializer::writeToFile(const std::string& filepath, uint64_t shaderKey, const ShaderData& shaderData, std::string* err) {
