@@ -2902,79 +2902,8 @@ std::filesystem::path editor::App::getUserCacheBaseDir() {
 }
 
 std::filesystem::path editor::App::getUserShaderCacheDir(){
-    // Bump this version on any shader source change to invalidate stale cached
-    // .sdat (the cache is keyed by shaderType+properties, not source content).
-    // v4: mirror (USE_MIRROR) variants changed the u_fs_mirror block guard.
-    // v5: SSAO (mesh.frag USE_SSAO + viewportInfo, new ssao/ssao_blur shaders).
-    // v6: SSR (G-buffer geometry pass + ssr/ssr_blur/composite fullscreen shaders;
-    //     energy-conserving SSR-over-IBL, glossy roughness blur, debug modes).
-    // v7: second UV set (HAS_UV_SET2) — per-texture UV selection via u_fs_texCoordSets.
-    // v8: directional/spot shadows share u_shadowAtlas (replaces u_shadowMap1..6),
-    //     3x3 atlas, SSAO on terrain (USE_SSAO + depth HAS_TERRAIN).
-    // v9: dual shadow atlases — u_shadowAtlas (directional/spot, projective) and
-    //     u_shadowPointAtlas (point cube faces); removes the u_shadowCubeMap* samplers
-    //     and keeps each atlas within the GPU max texture size.
-    // v10: 2D lighting — mesh USE_LIGHT2D/USE_SHADOWS_2D variants (u_fs_lighting2d,
-    //      u_normalTexture on unlit, v_position guard) and the shadow2d 1D polar pass.
-    // v11: uniform-driven shadow PCF (ShadowQuality) — USE_SHADOWS_PCF variant removed,
-    //      shadows.glsl/lighting2d.glsl loop by radius from cameraDir.w / atlasInfo.w.
-    // v12: fixed game resolution — new blit fullscreen shader (blit.frag).
-    // v13: box-projected local reflection probes in the mesh IBL path.
-    // v14: G-buffer (SSR) terrain fix — gbuffer.vert no longer declares a_texcoord1
-    //      for terrain (generates the base-tile UV in-shader), so the terrain G-buffer
-    //      pipeline's vertex layout is continuous and passes sokol validation.
-    // v15: skinning capacity increased to 128 bones; every skinned shader uniform block changed.
-    // v16: projected spotlight masks add spotUp_maskAspect[MAX_LIGHTS] to u_fs_lighting
-    //      and add the shared u_spotMaskAtlas sampler to punctual mesh variants,
-    //      using the engine's native texture Y orientation.
-    // v17: projective shadows use a depth-only atlas with a comparison sampler.
-    // v18: vec3 vertex colors on meshes — v_color is promoted to vec4 under instancing.
-    // v19: Vulkan shadow atlas lookups and screen-space depth/texture orientation fixes,
-    //      later widened from IS_VULKAN to every non-GL backend (Metal, D3D11) across
-    //      the depth, G-buffer and fullscreen passes: same shaders, so still v19.
-    // v20: dynamically sized skinning uses storage buffers, or an unfilterable bone
-    //      texture with a nonfiltering sampler on GL/GLES.
-    // v21: backend-specific storage-buffer bindings are preserved in reflection data.
-    // v22: composite.frag samples the scene color and reflection in destination space
-    //      (params.w), so SSR can composite to the swapchain in exported builds.
-    // v23: explicit SSR LOD sampling prevents D3D11 loop-unrolling failures.
-    // v24: instanced distance fade (USE_INSTANCE_FADE) scales each instance toward its own
-    //      base in the mesh and depth vertex shaders, from the new u_vs_fade block. Terrain
-    //      detail layers blend by height, project triplanar on steep ground and break their
-    //      tiling with distance, from three new terrain varyings.
-    // v25: skinned normals and tangents are transformed as directions (mat3), no longer
-    //      as points, so posed bone translations stop flattening the lighting.
-    // v26: shadow PCF loop bounds are clamped on every backend, not just HLSL, so a
-    //      bad uniform can no longer produce an unbounded loop (a GPU hang).
-    // v27: per-layer PBR terrain (HAS_TERRAIN_PBR) — layer maps are slices of the detail
-    //      array driven by u_fs_terrainLayers, in the color pass and the G-buffer alike.
-    // v28: paired bilinear shadow PCF taps; depth.vert takes a prebuilt mvpMatrix and
-    //      gl_Position is invariant, so a depth prepass matches the color pass; instanced
-    //      normals use the cofactor matrix; backfaces flip the shading normal; leaf
-    //      transmission adds foliageTransmission to u_fs_pbrParams.
-    // v29: sprite and tilemap UVs (HAS_TEXTURERECT) use centroid interpolation, so MSAA
-    //      edge pixels no longer sample outside their atlas rect.
-    // v30: Water component — new water and underwater shaders.
-    // v32: Water exclusions, appended to u_fs_waterParams.
-    // v33: pbr.glsl reads u_fs_texCoordSets.set1 in every UV-set variant.
-    // v34: shadow projection in the fragment shader, directional-only variant.
-    // v35: the directional-only variant declares no point or spot bindings.
-    // v36: probe_filter prefilters runtime reflection probe captures into roughness mips.
-    // v37: probe_filter downsamples each level from the one above.
-    // v38: ssr fades out rough surfaces (SSR_MAX_ROUGHNESS).
-    // v39: point shadow atlas sampled at an explicit LOD.
-    // v40: water samples the wake map of moving exclusions.
-    // v41: the SSR composite rebuilds local probes; the G-buffer keeps material occlusion.
-    // v42: water leaves no wake foam without a wake.
-    // v43: directional shadow cascades blend across their splits.
-    // v44: the SSAO blur skips taps across depth edges.
-    // v45: terrain layers skip the far tiling and side planes where they do not show.
-    // v46: mesh, depth and G-buffer shaders bend toward the scene wind (USE_WIND).
-    // v47: wind gusts follow the air blown past, not the clock.
-    // v48: meshes take a vertex offset function from the project (USE_VERTEX_OFFSET).
-    // v49: the wind sway is the vertex offset offsets/wind.glsl, without its own variant.
-    // v50: the vertex offset applies before the instance fade.
-    // v52: see-through meshes dither away in front of the scene's target (USE_SEE_THROUGH).
+    // Bump on any shader source change: the .sdat cache is keyed by shaderType and
+    // properties, not by source. Older entries are in git history.
     // v53: see-through values ride on u_fs_pbrParams; orthographic views and flipped targets.
     // v54: declared shader parameters and coverage functions (USE_COVERAGE), SDAT v2.
     // v55: every shader reads its values from u_vs_params/u_fs_params; custom blocks removed.
