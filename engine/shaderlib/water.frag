@@ -26,7 +26,7 @@ uniform u_fs_waterParams {
     vec4 refraction;               // x = distortion, y = 1 when this pass has the scene copy
     vec4 refractionRect;           // xy = view origin, zw = view size, in scene copy uv
     vec4 caustics;                 // x = strength, y = 1 / cell size
-    vec4 waveScale;                // x = longest wavelength
+    vec4 waveScale;                // x = longest wavelength, yz = its direction on world XZ, w = distance its crests have run
     vec4 exclusionCount;           // x = volumes keeping the water out
     vec4 exclusionRows[MAX_WATER_EXCLUSIONS * 3]; // world to 0-1 across the volume, three rows each
     vec4 exclusionShapes[MAX_WATER_EXCLUSIONS];   // x = 0 box, 1 sphere, 2 hull; y = hull map layer
@@ -112,6 +112,7 @@ uniform sampler u_waterWake_smp;
 
 const float M_PI = 3.141592653589793;
 const float WATER_F0 = 0.02;
+const float FOAM_CELLS = 3.0; // per meter
 
 float clampedDot(vec3 x, vec3 y){
     return clamp(dot(x, y), 0.0, 1.0);
@@ -152,15 +153,8 @@ float valueNoise(vec2 p){
                mix(hash12(i + vec2(0.0, 1.0)), hash12(i + vec2(1.0, 1.0)), u.x), u.y);
 }
 
-// drifting foam pattern, in [0, 1]
-float foamNoise(vec2 p, float time){
-    float n = valueNoise(p * 1.9 + vec2(time * 0.21, -time * 0.13));
-    n += 0.5 * valueNoise(p * 4.3 - vec2(time * 0.17, time * 0.27));
-    return n / 1.5;
-}
-
-// a web of light where drifting cells meet, in [0, 1]
-float causticCells(vec2 p, float time){
+// distance to the edge between the two nearest drifting cells
+float cellEdge(vec2 p, float phase, float drift){
     vec2 cell = floor(p);
     vec2 f = fract(p);
     float nearest = 8.0;
@@ -169,13 +163,56 @@ float causticCells(vec2 p, float time){
         for (int x = -1; x <= 1; x++){
             vec2 o = vec2(float(x), float(y));
             vec2 seed = vec2(hash12(cell + o), hash12(cell + o + 17.31));
-            vec2 d = o + 0.5 + 0.4 * sin(time * 0.8 + 6.2831 * seed) - f;
+            vec2 d = o + 0.5 + drift * sin(phase + 6.2831 * seed) - f;
             float dist = dot(d, d);
             second = (dist < nearest) ? nearest : min(second, dist);
             nearest = min(nearest, dist);
         }
     }
-    return 1.0 - smoothstep(0.0, 0.2, sqrt(second) - sqrt(nearest));
+    return sqrt(second) - sqrt(nearest);
+}
+
+// density the foam needs to stay, lowest on the cell edges
+float foamPattern(vec2 p, float time){
+    p += 0.3 * vec2(valueNoise(p * 0.7 + time * 0.11), valueNoise(p * 0.7 - time * 0.09 + 5.3));
+    float inside = clamp(cellEdge(p, time * 0.5, 0.38) * 1.6, 0.0, 1.0);
+    float flecks = valueNoise(p * 3.7 + vec2(time * 0.21, -time * 0.13));
+    return clamp(0.12 + 0.62 * inside + 0.3 * flecks, 0.0, 1.0);
+}
+
+// streaks along the crests of the longest wave, with thinner foam behind
+float getWhitecaps(vec2 p, float crest, float amount, float time){
+    float size = water.waveScale.x;
+    vec2 along = water.waveScale.yz;
+    vec2 q = vec2(dot(p, along), dot(p, vec2(-along.y, along.x)));
+    q.x -= water.waveScale.w;
+    // rougher patches drift slower
+    float rough = valueNoise(q / (0.9 * size) + vec2(time * 0.08, 0.0));
+    float level = 0.95 - 0.5 * amount - 0.2 * (rough - 0.5) - 0.2 * (crest - 0.5);
+    // bend the streaks
+    q += 0.05 * size * vec2(valueNoise(q / (0.13 * size)), valueNoise(q / (0.13 * size) + 7.3));
+    vec2 scale = vec2(1.0 / (0.03 * size), 1.0 / (0.085 * size));
+    float ragged = 0.2 * valueNoise(q * scale.x * 1.9 + time * 0.3);
+    float front = 0.8 * valueNoise(q * scale + vec2(0.0, time * 0.07)) + ragged;
+    float behind = 0.8 * valueNoise((q - vec2(0.02 * size, 0.0)) * scale + vec2(0.0, (time - 0.5) * 0.07)) + ragged;
+    float spill = smoothstep(level - 0.07, level + 0.07, front);
+    return max(spill, 0.5 * smoothstep(level - 0.07, level + 0.07, behind)) * 0.65;
+}
+
+// foam cover of a density
+float getFoam(float density, vec2 p, float footprint, float time){
+    if (density <= 0.001)
+        return 0.0;
+    // cells under a pixel blend into an even cover
+    float detail = 1.0 - smoothstep(0.1, 0.45, footprint * FOAM_CELLS);
+    float pattern = mix(0.55, foamPattern(p * FOAM_CELLS, time), detail);
+    float edge = 0.16 + 0.2 * (1.0 - detail);
+    return smoothstep(pattern - edge, pattern + edge, density * 1.12) * mix(0.45, 0.95, density) * smoothstep(0.0, 0.3, density);
+}
+
+// a web of light where drifting cells meet, in [0, 1]
+float causticCells(vec2 p, float time){
+    return 1.0 - smoothstep(0.0, 0.2, cellEdge(p, time * 0.8, 0.4));
 }
 
 // sunlight focused by the waves on the floor, two layers hide the repetition
@@ -446,19 +483,18 @@ void main(){
     }
     vec3 body = mix(water.shallowColor.rgb, water.deepColor.rgb, deepness);
 
-    // shore and crest foam, broken up by noise that settles far away
-    float noise = foamNoise(v_position.xz * 2.5, water.eyePos.w);
-    noise = mix(noise, 0.5, smoothstep(25.0, 90.0, eyeDistance));
-    float foam = 0.0;
+    // foam density from the shore, whitecaps and wake
+    float density = 0.0;
     if (hasDepth && water.foamColor.w > 0.0){
         float shore = 1.0 - clamp(pathDepth / water.foamColor.w, 0.0, 1.0);
-        foam = smoothstep(noise - 0.08, noise + 0.08, shore * shore);
+        density = shore * shore;
     }
     float crestFoam = water.ripples.w;
-    float crestMask = smoothstep(1.0 - crestFoam * 2.0, 1.0 - crestFoam, crest) * step(0.001, crestFoam);
-    foam = max(foam, crestMask * smoothstep(0.4, 0.7, noise));
-    // wake foam breaks up as it fades, none without a wake
-    foam = max(foam, smoothstep(noise - 0.15, noise + 0.15, wake.r * 1.5) * min(0.35 + wake.r * 2.0, 1.0) * smoothstep(0.0, 0.03, wake.r));
+    if (crestFoam > 0.001){
+        density = max(density, getWhitecaps(v_position.xz, crest, crestFoam, water.eyePos.w));
+    }
+    density = max(density, min(wake.r * 1.5, 1.0) * smoothstep(0.0, 0.03, wake.r));
+    float foam = getFoam(density, v_position.xz, footprint, water.eyePos.w);
 
     vec3 color;
     float alpha;

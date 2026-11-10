@@ -7762,6 +7762,9 @@ void RenderSystem::advanceWater(WaterComponent& water, float seconds){
     for (int i = 0; i < WATER_WAVE_COUNT; i++){
         water.wavePhase[i] = std::fmod(water.wavePhase[i] + getWaterWaveFrequency(water, waves[i]) * seconds, WATER_TWO_PI);
     }
+    // whitecaps run with the longest wave
+    const float crestSpeed = getWaterWaveFrequency(water, waves[0]) * waves[0].wavelength / WATER_TWO_PI;
+    water.crestTravel = std::fmod(water.crestTravel + crestSpeed * seconds, 10000.0f);
 
     // the two ripple layers drift apart, in normal map tiles
     const float travel = water.rippleSpeed * seconds / std::max(water.normalScale, 0.01f);
@@ -7939,7 +7942,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     fsParams.refraction = Vector4(water.refractionDistortion, (water.refraction && currentSceneCopy) ? 1.0f : 0.0f, 0.0f, 0.0f);
     fsParams.refractionRect = currentSceneCopyRect;
     fsParams.caustics = Vector4(std::max(water.caustics, 0.0f), 1.0f / std::max(water.causticsScale, 0.01f), 0.0f, 0.0f);
-    fsParams.waveScale = Vector4(std::max(water.waveLength, 0.01f), 0.0f, 0.0f, 0.0f);
+    fsParams.waveScale = Vector4(std::max(water.waveLength, 0.01f), waves[0].direction.x, waves[0].direction.y, water.crestTravel);
     setWaterExclusionParams(water, camTransform.worldPosition, fsParams);
     if (wake){
         const float texel = water.wakeTexelSize;

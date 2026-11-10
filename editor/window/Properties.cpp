@@ -8939,7 +8939,7 @@ void editor::Properties::drawWaterComponent(ComponentType cpType, SceneProject* 
     RowSettings shoreSettings = floatSettings;
     shoreSettings.help = "Water depth the shore foam covers. Needs Depth Effects.";
     RowSettings crestSettings = unitSettings;
-    crestSettings.help = "Share of the highest crests that turn to foam.";
+    crestSettings.help = "How much of the surface breaks into whitecaps, 0 for none.";
     propertyRow(RowPropertyType::Bool, cpType, "depthEffects", "Depth Effects", sceneProject, entities, depthSettings);
     propertyRow(RowPropertyType::Color3L, cpType, "foamColor", "Foam Color", sceneProject, entities);
     propertyRow(RowPropertyType::FloatPositive, cpType, "shoreFoam", "Shore Foam", sceneProject, entities, shoreSettings);

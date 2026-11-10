@@ -97,7 +97,7 @@ namespace doriax{
 
         Vector3 foamColor = Vector3(1.0f, 1.0f, 1.0f); // linear color
         float shoreFoam = 0.4f; // depth covered by shore foam
-        float crestFoam = 0.15f;
+        float crestFoam = 0.15f; // whitecaps, 0 = none
 
         bool receiveShadows = true;
         bool depthEffects = true; // shore foam and depth tint from the scene depth
@@ -127,6 +127,7 @@ namespace doriax{
         // advanced by RenderSystem::advanceWaters() at the end of each frame
         float wavePhase[WATER_WAVE_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
         Vector2 rippleOffset[2] = {Vector2(0.0f, 0.0f), Vector2(0.0f, 0.0f)};
+        float crestTravel = 0.0f; // whitecap travel in meters
         float time = 0.0f;
         float pendingTime = 0.0f; // update time not applied yet
 
