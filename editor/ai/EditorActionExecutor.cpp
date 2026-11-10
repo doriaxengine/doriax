@@ -5189,6 +5189,24 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
     return okResult("Generated shaders.", Json{{"target_dir", FileUtils::pathToGenericUtf8(config.targetDir)}});
 }
 
+namespace {
+
+// empty when both entry points of a custom shader are files of the project
+std::string customShaderFilesError(const Project* project, const std::string& shader) {
+    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
+    const std::string files = " (" + paths.vert + ", " + paths.frag + ")";
+    if (!PathUtils::isSafeRelativePath(fs::path(paths.vert)) || !PathUtils::isSafeRelativePath(fs::path(paths.frag))) {
+        return "must use safe project-relative paths" + files;
+    }
+    const fs::path projectPath = project->getProjectPath();
+    if (!fs::exists(projectPath / paths.vert) || !fs::exists(projectPath / paths.frag)) {
+        return "references missing files" + files;
+    }
+    return "";
+}
+
+} // namespace
+
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
     // Every shader-path property (per-component customShader, or a scene's per-type
     // default) is a project-relative base path; both must reference real files.
@@ -5219,11 +5237,10 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true;
     }
 
-    Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(value);
-    const fs::path projectPath = project->getProjectPath();
-    if (!fs::exists(projectPath / paths.vert) || !fs::exists(projectPath / paths.frag)) {
-        error = propertyName + " references missing files (" + paths.vert + ", " + paths.frag +
-                "). Use fork_shader to create a fork, or write_shader_file to author the .vert/.frag, before setting " + propertyName + ".";
+    const std::string filesError = customShaderFilesError(project, value);
+    if (!filesError.empty()) {
+        error = propertyName + " " + filesError +
+                ". Use fork_shader to create a fork, or write_shader_file to author the .vert/.frag, before setting " + propertyName + ".";
         return false;
     }
     return true;
@@ -5588,11 +5605,9 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
     const bool hasShader = arguments.contains("shader");
     const std::string shader = arguments.value("shader", "");
     if (!shader.empty()) {
-        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
-        const fs::path projectPath = project->getProjectPath();
-        if (!fs::exists(projectPath / paths.vert) || !fs::exists(projectPath / paths.frag)) {
-            return failResult("shader references missing files (" + paths.vert + ", " + paths.frag +
-                              "). Use fork_shader with shader_type postprocess to create a pass with its fork.");
+        const std::string filesError = customShaderFilesError(project, shader);
+        if (!filesError.empty()) {
+            return failResult("shader " + filesError + ". Use fork_shader with shader_type postprocess to create a pass with its fork.");
         }
     }
 
