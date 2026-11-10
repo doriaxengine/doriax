@@ -180,6 +180,11 @@ bool SokolShader::createShader(ShaderData& shaderData){
 
         // uniform blocks
         for (int ub = 0; ub < stage->uniformblocks.size(); ub++) {
+            if (stage->uniformblocks[ub].slot >= SG_MAX_UNIFORMBLOCK_BINDSLOTS){
+                Log::error("Uniform block '%s' slot %u exceeds SG_MAX_UNIFORMBLOCK_BINDSLOTS (%d)",
+                    stage->uniformblocks[ub].name.c_str(), stage->uniformblocks[ub].slot, SG_MAX_UNIFORMBLOCK_BINDSLOTS);
+                return false;
+            }
             sg_shader_uniform_block* ubdesc = &shader_desc.uniform_blocks[stage->uniformblocks[ub].slot];
             ubdesc->stage = shader_stage;
             ubdesc->size = roundup(stage->uniformblocks[ub].sizeBytes, 16);
@@ -195,6 +200,12 @@ bool SokolShader::createShader(ShaderData& shaderData){
                     ubdesc->glsl_uniforms[0].type = flattenedUniformToSokolType(stage->uniformblocks[ub].uniforms[0].type);
                     ubdesc->glsl_uniforms[0].array_count = ubdesc->size / 16;
                 }else{
+                    // members of mixed types are declared one by one
+                    if (stage->uniformblocks[ub].uniforms.size() > SG_MAX_UNIFORMBLOCK_MEMBERS){
+                        Log::error("Uniform block '%s' mixes member types and has %d members, more than SG_MAX_UNIFORMBLOCK_MEMBERS (%d)",
+                            stage->uniformblocks[ub].name.c_str(), (int)stage->uniformblocks[ub].uniforms.size(), SG_MAX_UNIFORMBLOCK_MEMBERS);
+                        return false;
+                    }
                     for (int u = 0; u < (int)stage->uniformblocks[ub].uniforms.size(); u++) {
                         ubdesc->glsl_uniforms[u].glsl_name = stage->uniformblocks[ub].uniforms[u].name.c_str();
                         ubdesc->glsl_uniforms[u].type = uniformToSokolType(stage->uniformblocks[ub].uniforms[u].type);
