@@ -2904,10 +2904,10 @@ std::filesystem::path editor::App::getUserCacheBaseDir() {
 std::filesystem::path editor::App::getUserShaderCacheDir(){
     // Bump on any shader source change: the .sdat cache is keyed by shaderType and
     // properties, not by source. Older entries are in git history.
-    // v54: declared shader parameters and coverage functions (USE_COVERAGE), SDAT v2.
     // v55: every shader reads its values from u_vs_params/u_fs_params; custom blocks removed.
     // v56: water foam in cells and whitecaps that run with the waves.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v56";
+    // v57: wind sway that grows with the wind and is paced by it.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v57";
 }
 
 void editor::App::pushTabNotificationStyle(){

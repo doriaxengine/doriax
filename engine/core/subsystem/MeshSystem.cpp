@@ -3713,8 +3713,8 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 ShaderUniforms::set(mesh.shaderUniforms, "windSwayHeight", Vector4(swayHeight, 0.0f, 0.0f, 0.0f));
                 mesh.needUpdateShaderUniforms = true;
             }
-            // its reach in 20 m/s of wind, gusts and flutter included
-            const float reach = layer.windSway * 0.1f * 1.35f * 20.0f;
+            // its reach in 20 m/s of wind
+            const float reach = layer.windSway * 4.0f;
             if (mesh.vertexOffsetMax != reach){
                 mesh.vertexOffsetMax = reach;
                 mesh.needUpdateAABB = true;
