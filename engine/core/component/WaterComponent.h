@@ -127,7 +127,7 @@ namespace doriax{
         // advanced by RenderSystem::advanceWaters() at the end of each frame
         float wavePhase[WATER_WAVE_COUNT] = {0.0f, 0.0f, 0.0f, 0.0f};
         Vector2 rippleOffset[2] = {Vector2(0.0f, 0.0f), Vector2(0.0f, 0.0f)};
-        float crestTravel = 0.0f; // whitecap travel in meters
+        float crestTravel = 0.0f; // whitecap travel in wavelengths
         float time = 0.0f;
         float pendingTime = 0.0f; // update time not applied yet
 

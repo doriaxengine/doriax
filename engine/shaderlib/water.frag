@@ -26,7 +26,7 @@ uniform u_fs_waterParams {
     vec4 refraction;               // x = distortion, y = 1 when this pass has the scene copy
     vec4 refractionRect;           // xy = view origin, zw = view size, in scene copy uv
     vec4 caustics;                 // x = strength, y = 1 / cell size
-    vec4 waveScale;                // x = longest wavelength, yz = its direction on world XZ, w = distance its crests have run
+    vec4 waveScale;                // x = longest wavelength, yz = its direction on world XZ, w = wavelengths its crests have run
     vec4 exclusionCount;           // x = volumes keeping the water out
     vec4 exclusionRows[MAX_WATER_EXCLUSIONS * 3]; // world to 0-1 across the volume, three rows each
     vec4 exclusionShapes[MAX_WATER_EXCLUSIONS];   // x = 0 box, 1 sphere, 2 hull; y = hull map layer
@@ -113,6 +113,7 @@ uniform sampler u_waterWake_smp;
 const float M_PI = 3.141592653589793;
 const float WATER_F0 = 0.02;
 const float FOAM_CELLS = 3.0; // per meter
+const float CREST_REPEAT = 468.0; // wavelengths before the whitecaps repeat, as in RenderSystem
 
 float clampedDot(vec3 x, vec3 y){
     return clamp(dot(x, y), 0.0, 1.0);
@@ -180,34 +181,63 @@ float foamPattern(vec2 p, float time){
     return clamp(0.12 + 0.62 * inside + 0.3 * flecks, 0.0, 1.0);
 }
 
-// streaks along the crests of the longest wave, with thinner foam behind
-float getWhitecaps(vec2 p, float crest, float amount, float time){
+// share of a noise kept, its cells under a pixel would flicker
+float noiseDetail(float cellsPerPixel){
+    return 1.0 - smoothstep(0.1, 0.45, cellsPerPixel);
+}
+
+// value noise repeating every period cells along x
+float valueNoiseRepeatX(vec2 p, float period){
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    // half a cell in, so a rounded mod never lands on the period
+    vec2 x = mod(i.x + vec2(0.5, 1.5), period);
+    return mix(mix(hash12(vec2(x.x, i.y)), hash12(vec2(x.y, i.y)), u.x),
+               mix(hash12(vec2(x.x, i.y + 1.0)), hash12(vec2(x.y, i.y + 1.0)), u.x), u.y);
+}
+
+// q in wavelengths; cells.x in CREST_REPEAT along the wave, cells.y per wavelength across
+float crestNoise(vec2 q, vec2 cells, vec2 offset){
+    return valueNoiseRepeatX(q * vec2(cells.x / CREST_REPEAT, cells.y) + offset, cells.x);
+}
+
+// streaks along the crests of the longest wave, with thinner foam behind;
+// under a pixel they lose detail to cover, the foam they average to
+float getWhitecaps(vec2 p, float crest, float amount, float footprint, float time, out float detail, out float cover){
     float size = water.waveScale.x;
     vec2 along = water.waveScale.yz;
-    vec2 q = vec2(dot(p, along), dot(p, vec2(-along.y, along.x)));
+    vec2 q = vec2(dot(p, along), dot(p, vec2(-along.y, along.x))) / size;
     q.x -= water.waveScale.w;
+    float pixel = footprint / size;
     // rougher patches drift slower
-    float rough = valueNoise(q / (0.9 * size) + vec2(time * 0.08, 0.0));
+    float rough = mix(0.5, crestNoise(q, vec2(520.0, 1.0 / 0.9), vec2(time * 0.08, 0.0)), noiseDetail(pixel / 0.9));
     float level = 0.95 - 0.5 * amount - 0.2 * (rough - 0.5) - 0.2 * (crest - 0.5);
+    detail = noiseDetail(pixel / 0.03);
+    // fitted to the average of the streaks
+    cover = (1.0 - detail) * pow(1.0 - smoothstep(0.1, 0.94, level), 1.25);
+    if (detail <= 0.0)
+        return 0.0;
     // bend the streaks
-    q += 0.05 * size * vec2(valueNoise(q / (0.13 * size)), valueNoise(q / (0.13 * size) + 7.3));
-    vec2 scale = vec2(1.0 / (0.03 * size), 1.0 / (0.085 * size));
-    float ragged = 0.2 * valueNoise(q * scale.x * 1.9 + time * 0.3);
-    float front = 0.8 * valueNoise(q * scale + vec2(0.0, time * 0.07)) + ragged;
-    float behind = 0.8 * valueNoise((q - vec2(0.02 * size, 0.0)) * scale + vec2(0.0, (time - 0.5) * 0.07)) + ragged;
+    q += 0.05 * vec2(crestNoise(q, vec2(3600.0, 1.0 / 0.13), vec2(0.0)), crestNoise(q, vec2(3600.0, 1.0 / 0.13), vec2(7.3)));
+    float ragged = 0.2 * mix(0.5, crestNoise(q, vec2(29640.0, 1.9 / 0.03), vec2(time * 0.3)), noiseDetail(pixel * 1.9 / 0.03));
+    float front = 0.8 * crestNoise(q, vec2(15600.0, 1.0 / 0.085), vec2(0.0, time * 0.07)) + ragged;
+    float behind = 0.8 * crestNoise(q - vec2(0.02, 0.0), vec2(15600.0, 1.0 / 0.085), vec2(0.0, (time - 0.5) * 0.07)) + ragged;
     float spill = smoothstep(level - 0.07, level + 0.07, front);
     return max(spill, 0.5 * smoothstep(level - 0.07, level + 0.07, behind)) * 0.65;
 }
 
-// foam cover of a density
-float getFoam(float density, vec2 p, float footprint, float time){
-    if (density <= 0.001)
-        return 0.0;
+// x = density the foam needs to stay, y = edge width
+vec2 getFoamCells(vec2 p, float footprint, float time){
     // cells under a pixel blend into an even cover
-    float detail = 1.0 - smoothstep(0.1, 0.45, footprint * FOAM_CELLS);
+    float detail = noiseDetail(footprint * FOAM_CELLS);
     float pattern = mix(0.55, foamPattern(p * FOAM_CELLS, time), detail);
-    float edge = 0.16 + 0.2 * (1.0 - detail);
-    return smoothstep(pattern - edge, pattern + edge, density * 1.12) * mix(0.45, 0.95, density) * smoothstep(0.0, 0.3, density);
+    return vec2(pattern, 0.16 + 0.2 * (1.0 - detail));
+}
+
+// foam cover of a density
+float getFoam(float density, vec2 cells){
+    return smoothstep(cells.x - cells.y, cells.x + cells.y, density * 1.12) * mix(0.45, 0.95, density) * smoothstep(0.0, 0.3, density);
 }
 
 // a web of light where drifting cells meet, in [0, 1]
@@ -489,12 +519,19 @@ void main(){
         float shore = 1.0 - clamp(pathDepth / water.foamColor.w, 0.0, 1.0);
         density = shore * shore;
     }
-    float crestFoam = water.ripples.w;
-    if (crestFoam > 0.001){
-        density = max(density, getWhitecaps(v_position.xz, crest, crestFoam, water.eyePos.w));
-    }
     density = max(density, min(wake.r * 1.5, 1.0) * smoothstep(0.0, 0.03, wake.r));
-    float foam = getFoam(density, v_position.xz, footprint, water.eyePos.w);
+    float whitecaps = 0.0;
+    float crestDetail = 0.0;
+    float crestCover = 0.0;
+    if (water.ripples.w > 0.001){
+        whitecaps = getWhitecaps(v_position.xz, crest, water.ripples.w, footprint, water.eyePos.w, crestDetail, crestCover);
+    }
+    float foam = 0.0;
+    if (max(density, max(whitecaps, crestCover)) > 0.001){
+        vec2 cells = getFoamCells(v_position.xz, footprint, water.eyePos.w);
+        // 0.65 is a full streak
+        foam = max(getFoam(density, cells), crestDetail * getFoam(whitecaps, cells) + crestCover * getFoam(0.65, cells));
+    }
 
     vec3 color;
     float alpha;

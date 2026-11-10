@@ -7126,6 +7126,7 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
 
 namespace {
     constexpr float WATER_TWO_PI = 6.2831853f;
+    constexpr float WATER_CREST_REPEAT = 468.0f; // wavelengths, CREST_REPEAT of water.frag
 
     struct WaterWave{
         Vector2 direction; // on world XZ
@@ -7762,9 +7763,9 @@ void RenderSystem::advanceWater(WaterComponent& water, float seconds){
     for (int i = 0; i < WATER_WAVE_COUNT; i++){
         water.wavePhase[i] = std::fmod(water.wavePhase[i] + getWaterWaveFrequency(water, waves[i]) * seconds, WATER_TWO_PI);
     }
-    // whitecaps run with the longest wave
-    const float crestSpeed = getWaterWaveFrequency(water, waves[0]) * waves[0].wavelength / WATER_TWO_PI;
-    water.crestTravel = std::fmod(water.crestTravel + crestSpeed * seconds, 10000.0f);
+    // whitecaps run with the longest wave, wrapped where their pattern repeats
+    const float crestSpeed = getWaterWaveFrequency(water, waves[0]) / WATER_TWO_PI;
+    water.crestTravel = std::fmod(water.crestTravel + crestSpeed * seconds, WATER_CREST_REPEAT);
 
     // the two ripple layers drift apart, in normal map tiles
     const float travel = water.rippleSpeed * seconds / std::max(water.normalScale, 0.01f);
