@@ -970,13 +970,14 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "fork_shader",
-            "Fork a built-in shader into a project-relative directory as one undoable step. Give entity_id/entity_name to fork a single component's shader (points its customShader at the fork); with shader_type depth on a MeshComponent it forks the depth shader instead (points customDepthShader at the fork): shadow maps, plus SSAO/post-process depth while SSR is off (with SSR on they read the built-in G-buffer) - needed when the mesh fork displaces vertices or discards, so shadows follow; with shader_type underwater on a WaterComponent it forks the fade a camera below the surface sees (points customUnderwaterShader at the fork). Omit entity_id/entity_name and give shader_type instead to fork a scene-wide default shader for that type (points the scene's default_<type>_shader at the fork, used by every component of that type without its own customShader - see set_scene_property). Creates <name>.vert and <name>.frag directly in that directory. With fork_includes the fork is placed in its own <directory>/<name>/ folder together with an includes/ copy of the engine .glsl files it uses, so those edits override the engine library only for this fork. This is the correct way to start a custom shader; do not set customShader or a scene default_*_shader to files that do not exist.",
+            "Fork a built-in shader into a project-relative directory as one undoable step. Give entity_id/entity_name to fork a single component's shader (points its customShader at the fork); with shader_type depth on a MeshComponent it forks the depth shader instead (points customDepthShader at the fork): shadow maps, plus SSAO/post-process depth while SSR is off (with SSR on they read the built-in G-buffer) - needed when the mesh fork displaces vertices or discards, so shadows follow; with shader_type underwater on a WaterComponent it forks the fade a camera below the surface sees (points customUnderwaterShader at the fork). Omit entity_id/entity_name and give shader_type instead to fork a scene-wide default shader for that type (points the scene's default_<type>_shader at the fork, used by every component of that type without its own customShader - see set_scene_property). With shader_type postprocess and no entity it forks a post-process pass instead (fullscreen.vert and postprocess.frag): a new pass at the end of the scene chain, or the passthrough pass at pass_index, runs the fork. Creates <name>.vert and <name>.frag directly in that directory. With fork_includes the fork is placed in its own <directory>/<name>/ folder together with an includes/ copy of the engine .glsl files it uses, so those edits override the engine library only for this fork. This is the correct way to start a custom shader; do not set customShader or a scene default_*_shader to files that do not exist.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id. Omit both this and entity_name, and give shader_type, to fork a scene default instead")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
                 {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect the entity's renderable component. Ignored when forking a scene default")},
-                {"shader_type", stringSchema("mesh, ui, sky, points, lines, or water. Required when entity_id/entity_name are omitted, to fork a scene-wide default shader for that type; with an entity only depth (fork a mesh's depth shader) or underwater (fork a water's underwater shader) is meaningful")},
+                {"shader_type", stringSchema("mesh, ui, sky, points, lines, or water. Required when entity_id/entity_name are omitted, to fork a scene-wide default shader for that type; postprocess forks a post-process pass instead; with an entity only depth (fork a mesh's depth shader) or underwater (fork a water's underwater shader) is meaningful")},
+                {"pass_index", integerSchema("With shader_type postprocess: the passthrough pass that takes the fork. Omit to add a new pass at the end of the chain")},
                 {"directory", stringSchema("Optional safe project-relative destination directory; defaults to shaders")},
                 {"fork_includes", boolSchema("Also copy the built-in transitive .glsl includes so they can be edited; this moves the fork into its own <name>/ directory")}
             }),
@@ -1020,6 +1021,27 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"vector4_value", vector4Schema("Value for a vec4 member")},
                 {"remove", boolSchema("Remove the stored value instead of setting one")}
             }, {"name"}),
+            false
+        },
+        {
+            "list_post_process_passes",
+            "List a scene's post-process chain in the order it runs: each pass with its index, shader (project-relative fork base, empty = the built-in passthrough), enabled flag and stored parameter values. Use inspect_shader_uniforms with pass_index to see what a pass's shader declares.",
+            objectSchema({
+                {"scene_id", integerSchema("Scene id. Omit to use the selected scene")}
+            }),
+            true
+        },
+        {
+            "set_post_process_pass",
+            "Change a scene's post-process chain, the fullscreen passes run over its finished image, as one undoable step; returns the chain after it. action add inserts a pass at pass_index (the end when omitted) using shader, an existing fork, or the built-in passthrough when shader is omitted; remove deletes the pass at pass_index; move takes it to to_index (passes run from index 0); set changes its shader (which clears its parameter values) and/or enabled. To write a new effect, call fork_shader with shader_type postprocess instead: it copies the pass template and adds the pass in one step. Set parameter values with set_shader_uniform and pass_index. The chain runs on the scene's active camera and is skipped while the scene is drawn as a layer.",
+            objectSchema({
+                {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
+                {"action", stringSchema("add, remove, move, or set. Defaults to set")},
+                {"pass_index", integerSchema("Pass index (0 = first pass of the chain). Required except for add, which appends when it is omitted")},
+                {"to_index", integerSchema("New index of the pass, for move")},
+                {"shader", stringSchema("Project-relative fork base path with no extension (vert=base.vert, frag=base.frag), or \"a.vert|b.frag\"; empty = the built-in passthrough")},
+                {"enabled", boolSchema("Whether the pass runs")}
+            }),
             false
         },
         {
@@ -1524,7 +1546,7 @@ std::string EditorActionRegistry::guidance() {
         << "Custom shaders are per-component on Mesh/UI/Points/Lines/Sky/Water via the customShader property. To customize, call fork_shader (it copies the built-in <type>.vert/.frag into a project-relative directory and sets customShader in one undoable step; directory defaults to shaders, and fork_includes optionally copies the engine includes into an editable includes/ folder beside the fork). Never set customShader by hand to files that do not exist; the value is a base path with no extension (vert=base.vert, frag=base.frag) or two explicit paths joined by '|' (\"a.vert|b.frag\") when the entry points have different names. Both a .vert and a .frag are always required. Clear customShader (empty string) to reset to the built-in shader. A Mesh fork drives the color pass only: when it displaces vertices or discards, also fork the depth shader (fork_shader with shader_type depth sets customDepthShader) so shadow maps follow - and SSAO/post-process depth while SSR is off (with SSR on they read the G-buffer, which keeps the built-in shader); it reads the same shaderUniforms.\n"
         << "A MeshComponent can also run effect functions without forking: vertexOffsetShader is one .glsl defining vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) that returns a world-space offset, and coverageShader is one .glsl defining float getCoverage(CoverageContext context) that returns how much of each fragment stays (1 kept, 0 removed; opaque surfaces dither in between, blended ones fade). Both run in the color, depth and G-buffer passes, so shadows, SSAO and SSR follow; coverageShadows (bool) makes the shadow maps follow the coverage too, otherwise they keep the whole silhouette. Effect files declare their values in comments, never in uniform blocks: \"// @param float strength = 0.5 [0, 2]\" is a mesh shader uniform read as params.strength (set it with set_shader_uniform), \"// @scene vec3 Wind.velocity\" a scene parameter read as Wind.velocity (set with set_scene_property shader_parameter:Wind.velocity) and \"// @view float SeeThrough.radius\" a per-camera parameter read as SeeThrough.radius (set with set_component_property CameraComponent shader_parameter:SeeThrough.radius). Engine.time is the scene clock; CoverageContext has worldPosition, uv, eye, forward, perspective and pixel, and includes/coverage_helpers.glsl has coverageBelowHeight, coverageNoise and coverageViewOpening. Set vertexOffsetMax to the longest offset: longer ones are clamped and culling widens the bounds by it. The engine ships offsets/wind.glsl (uniforms windSway and windSwayHeight, scene Wind.velocity), offsets/interaction.glsl (scene Interaction.position and Interaction.radius, which a script updates), coverage/see_through.glsl (view SeeThrough.target, radius, opacity and margin, which a script updates with scene:setMainViewShaderParameter), coverage/height_clip.glsl (scene Clip.height and Clip.softness) and coverage/dissolve.glsl (uniforms dissolve, dissolveScale, dissolveEdge).\n"
         << "The forked .vert/.frag are complete, compiling engine shaders with a strict structure: a #version line, #include \"includes/...\" (resolved against the engine library), #ifdef variant guards, uniform blocks, texture and sampler declarations, in/out varyings, and a specific fragment output variable. Editing them with write_shader_file REQUIRES first calling read_resource_file on the forked file, then making minimal targeted changes that PRESERVE the #version, #include lines, uniform blocks, ALL original texture and sampler declarations (uniform sampler2D/samplerCube/textureN/samplerN and their #ifdef guards), in/out declarations, and the existing output variable name. Keep every original texture/sampler declaration even if your new code does not sample it - the engine binds them by fixed slot, so removing or renaming one breaks the texture bindings. Likewise keep the original main() code that READS the in varyings (v_position, v_normal, v_uv1, v_color, etc.): if you delete a varying's usage the GLSL compiler strips that fragment input and the shader fails to cross-compile with a vertex/fragment interface mismatch (\"vertex shader output X does not exist in fragment shader inputs\"). Prefer to keep the original main() body that consumes the varyings and layer your effect on the final color (e.g. compute the original color, then posterize/override it), rather than deleting the existing computations. Only change the shading math (usually near the end of main()). Never rewrite a shader from scratch, drop the #version/#include lines, or invent sampler, texture, output or engine uniform names - that produces compile errors (e.g. missing precision qualifier / wrong #version) or broken bindings. A stylized custom shader (e.g. toon/cel) may legitimately replace the lighting model and stop sampling the shadow or IBL maps; that is allowed - keep their declarations (the engine harmlessly skips the now-unused bindings), but briefly tell the user when your shader changes lighting behavior such as no longer receiving shadows, so they can ask to keep it. If a custom shader fails to compile, the object falls back to the built-in shader and the error appears in the output window; read that error and the forked source, then fix minimally.\n"
-        << "A fork declares its values as comments, never as uniform blocks (u_vs_customParams, u_fs_customParams and u_fs_postParams fail the build; to port such a fork, reset it, fork the built-in again and reapply its edits): \"// @param float amplitude = 0.2 [0, 1] \\\"Wave height\\\"\" is read as params.amplitude once main() has called loadShaderParameters(), which every built-in shader already does; types are float, vec2-4, int and ivec2-4, and color, runtime and a [min, max] range are optional. Keep the existing engine blocks and the includes/parameters_*.glsl include untouched. Values are filled BY NAME from the component's shaderUniforms (or the pass uniforms), an unset one reads the scene default shader's value, else the declared default: set them with set_shader_uniform (undoable, no shader rebuild) and list them with inspect_shader_uniforms; scripts use mesh:setShaderUniform(\"amplitude\", 0.3) / scene:setPostProcessUniform(0, \"amount\", 0.5). Engine.time (seconds of the scene clock, which holds in the editor view until Play) and Engine.resolution (xy = target size, zw = 1/size) are always readable, so an animated effect just reads Engine.time and moves once the scene plays. \"// @scene vec3 Weather.wind\" and \"// @view float Fade.amount\" read values shared by the scene or set per camera.\n";
+        << "A fork declares its values as comments, never as uniform blocks (u_vs_customParams, u_fs_customParams and u_fs_postParams fail the build; to port such a fork, reset it, fork the built-in again and reapply its edits): \"// @param float amplitude = 0.2 [0, 1] \\\"Wave height\\\"\" is read as params.amplitude once main() has called loadShaderParameters(), which every built-in shader already does; types are float, vec2-4, int and ivec2-4, and color, runtime and a [min, max] range are optional. Keep the existing engine blocks and the includes/parameters_*.glsl include untouched. Values are filled BY NAME from the component's shaderUniforms (or the pass uniforms), an unset one reads the scene default shader's value, else the declared default: set them with set_shader_uniform (undoable, no shader rebuild) and list them with inspect_shader_uniforms; scripts use mesh:setShaderUniform(\"amplitude\", 0.3) / scene:setPostProcessUniform(0, \"amount\", 0.5). A scene's post-process chain is read with list_post_process_passes and changed with set_post_process_pass (add, remove, move, enable); fork_shader with shader_type postprocess adds a pass with a new fork of the passthrough template. Engine.time (seconds of the scene clock, which holds in the editor view until Play) and Engine.resolution (xy = target size, zw = 1/size) are always readable, so an animated effect just reads Engine.time and moves once the scene plays. \"// @scene vec3 Weather.wind\" and \"// @view float Fade.amount\" read values shared by the scene or set per camera.\n";
     return text.str();
 }
 
@@ -1818,7 +1840,18 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
             return fail("fork_shader fork_includes must be a boolean.");
         }
         if (hasEntitySelector(arguments) || hasString(arguments, "shader_type")) return ok();
-        return fail("fork_shader requires entity_id/entity_name, or shader_type to fork a scene default.");
+        return fail("fork_shader requires entity_id/entity_name, or shader_type to fork a scene default or a post-process pass.");
+    }
+    if (name == "set_post_process_pass") {
+        const std::string action = arguments.value("action", "set");
+        if (action != "add" && action != "remove" && action != "move" && action != "set") {
+            return fail("set_post_process_pass action must be add, remove, move, or set.");
+        }
+        if (action != "add" && !arguments.contains("pass_index")) return fail("set_post_process_pass requires pass_index.");
+        if (action == "move" && !arguments.contains("to_index")) return fail("set_post_process_pass move requires to_index.");
+        if (arguments.contains("shader") && !arguments["shader"].is_string()) return fail("set_post_process_pass shader must be a string.");
+        if (arguments.contains("enabled") && !arguments["enabled"].is_boolean()) return fail("set_post_process_pass enabled must be a boolean.");
+        return ok();
     }
     if (name == "inspect_shader_uniforms") {
         if (hasEntitySelector(arguments) || arguments.contains("pass_index")) return ok();
@@ -2263,6 +2296,9 @@ std::string EditorActionRegistry::describe(const std::string& name, const Json& 
         if (arguments.contains("entity_name")) {
             return "Fork shader for \"" + arguments.value("entity_name", "") + "\"";
         }
+        if (arguments.value("shader_type", "") == "postprocess") {
+            return "Fork post-process pass shader";
+        }
         if (arguments.contains("shader_type")) {
             return "Fork scene default " + arguments.value("shader_type", "") + " shader";
         }
@@ -2273,6 +2309,16 @@ std::string EditorActionRegistry::describe(const std::string& name, const Json& 
     }
     if (name == "inspect_shader_uniforms") {
         return "Inspect shader uniforms";
+    }
+    if (name == "list_post_process_passes") {
+        return "List post-process passes";
+    }
+    if (name == "set_post_process_pass") {
+        const std::string action = arguments.value("action", "set");
+        if (action == "add") return "Add post-process pass " + arguments.value("shader", "");
+        if (action == "remove") return "Remove post-process pass " + std::to_string(arguments.value("pass_index", 0));
+        if (action == "move") return "Move post-process pass " + std::to_string(arguments.value("pass_index", 0));
+        return "Set post-process pass " + std::to_string(arguments.value("pass_index", 0));
     }
     if (name == "set_shader_uniform") {
         const std::string verb = arguments.value("remove", false) ? "Remove" : "Set";

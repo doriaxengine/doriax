@@ -2516,6 +2516,8 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "write_shader_file") return writeShaderFile(arguments);
     if (name == "inspect_shader_uniforms") return inspectShaderUniforms(arguments);
     if (name == "set_shader_uniform") return setShaderUniform(arguments);
+    if (name == "list_post_process_passes") return listPostProcessPasses(arguments);
+    if (name == "set_post_process_pass") return setPostProcessPass(arguments);
     if (name == "create_terrain_heightmap") return createTerrainHeightmap(arguments);
     if (name == "import_project_model") return importProjectModel(arguments);
     if (name == "reload_project_model") return reloadProjectModel(arguments);
@@ -5245,6 +5247,56 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
         return failResult("directory is in the project trash.");
     }
 
+    // a new post-process pass, or a passthrough one at pass_index
+    if (!hasEntity && lower(shaderTypeArg) == "postprocess") {
+        std::vector<PostProcessPass> passes = sceneProject->scene->getPostProcessPasses();
+        const int passIndex = arguments.value("pass_index", (int)passes.size());
+        if (passIndex < 0 || passIndex > (int)passes.size()) {
+            return failResult("Post-process pass not found; the scene has " + std::to_string(passes.size()) + " pass(es).");
+        }
+        if (passIndex == (int)passes.size()) {
+            passes.push_back(PostProcessPass());
+        }else if (!passes[passIndex].shader.empty()) {
+            return failResult("Pass already uses a custom shader (" + passes[passIndex].shader +
+                              "). Edit it with write_shader_file, or reset it with set_post_process_pass before forking again.");
+        }
+
+        const std::string desiredName = sceneProject->name + " Post " + std::to_string(passIndex + 1);
+        const std::string forkName = ProjectUtils::makeUniqueShaderName(
+            project->getProjectPath() / targetDirectory, ShaderType::POSTPROCESS, desiredName);
+        auto makePropertyCmd = [this, sceneId, passIndex, passes](const std::string& forkBase) mutable {
+            passes[passIndex].shader = forkBase;
+            return std::make_unique<ScenePropertyCmd<std::vector<PostProcessPass>>>(
+                project, sceneId, "post_process", passes);
+        };
+        auto* forkCmd = new ForkShaderCmd(project, ShaderType::POSTPROCESS, makePropertyCmd,
+                                          targetDirectory, forkName, forkIncludes);
+        if (!forkCmd->isValid()) {
+            const std::string error = forkCmd->getError();
+            delete forkCmd;
+            return failResult(error.empty() ? "Failed to plan the shader fork." : error);
+        }
+
+        const std::string base = forkCmd->getBase();
+        CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
+
+        if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
+            !fs::exists(project->getProjectPath() / (base + ".frag"))) {
+            return failResult("Shader fork did not write its source files.");
+        }
+
+        if (resourcesWindow) {
+            resourcesWindow->refreshCurrentDirectory();
+        }
+        Out::info("AI forked post-process shader: %s", base.c_str());
+
+        return okResult("Forked post-process pass shader through the command history.",
+                        Json{{"custom_shader", base},
+                             {"vert_path", base + ".vert"},
+                             {"frag_path", base + ".frag"},
+                             {"pass_index", passIndex}});
+    }
+
     // No entity selector: fork a scene-wide default shader for the given type instead of a
     // specific component (priority: component customShader > scene default > built-in).
     if (!hasEntity) {
@@ -5496,6 +5548,96 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     }
 
     return okResult("Inspected shader uniforms.", result);
+}
+
+namespace {
+
+Json postProcessPassesJson(const std::vector<PostProcessPass>& passes) {
+    Json list = Json::array();
+    for (size_t i = 0; i < passes.size(); i++) {
+        list.push_back(Json{{"pass_index", i},
+                            {"shader", passes[i].shader},
+                            {"enabled", passes[i].enabled},
+                            {"values", shaderUniformValuesJson(passes[i].uniforms)}});
+    }
+    return list;
+}
+
+} // namespace
+
+ActionResult EditorActionExecutor::listPostProcessPasses(const Json& arguments) {
+    uint32_t sceneId = resolveSceneId(project, arguments);
+    SceneProject* sceneProject = project->getScene(sceneId);
+    if (!sceneProject || !sceneProject->scene) return expectedMissResult("Scene not found.");
+
+    return okResult("Listed post-process passes.",
+                    Json{{"scene_id", sceneId},
+                         {"passes", postProcessPassesJson(sceneProject->scene->getPostProcessPasses())}});
+}
+
+ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
+    uint32_t sceneId = resolveSceneId(project, arguments);
+    SceneProject* sceneProject = project->getScene(sceneId);
+    if (!sceneProject || !sceneProject->scene) return failResult("Scene not found.");
+
+    std::vector<PostProcessPass> passes = sceneProject->scene->getPostProcessPasses();
+    const std::string action = lower(arguments.value("action", "set"));
+    const int count = (int)passes.size();
+
+    // empty keeps the built-in passthrough
+    const bool hasShader = arguments.contains("shader");
+    const std::string shader = arguments.value("shader", "");
+    if (!shader.empty()) {
+        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
+        const fs::path projectPath = project->getProjectPath();
+        if (!fs::exists(projectPath / paths.vert) || !fs::exists(projectPath / paths.frag)) {
+            return failResult("shader references missing files (" + paths.vert + ", " + paths.frag +
+                              "). Use fork_shader with shader_type postprocess to create a pass with its fork.");
+        }
+    }
+
+    int passIndex = arguments.value("pass_index", action == "add" ? count : -1);
+    if (action == "add") {
+        if (passIndex < 0 || passIndex > count) {
+            return failResult("pass_index must be between 0 and " + std::to_string(count) + " to add a pass.");
+        }
+        PostProcessPass pass;
+        pass.shader = shader;
+        pass.enabled = arguments.value("enabled", true);
+        passes.insert(passes.begin() + passIndex, pass);
+    }else{
+        if (passIndex < 0 || passIndex >= count) {
+            return failResult("Post-process pass not found; the scene has " + std::to_string(count) + " pass(es).");
+        }
+        if (action == "remove") {
+            passes.erase(passes.begin() + passIndex);
+        }else if (action == "move") {
+            const int toIndex = arguments.value("to_index", -1);
+            if (toIndex < 0 || toIndex >= count) {
+                return failResult("to_index must be between 0 and " + std::to_string(count - 1) + ".");
+            }
+            PostProcessPass pass = passes[passIndex];
+            passes.erase(passes.begin() + passIndex);
+            passes.insert(passes.begin() + toIndex, pass);
+            passIndex = toIndex;
+        }else if (action == "set") {
+            if (hasShader && passes[passIndex].shader != shader) {
+                passes[passIndex].shader = shader;
+                passes[passIndex].uniforms.clear(); // another shader has other members
+            }
+            passes[passIndex].enabled = arguments.value("enabled", passes[passIndex].enabled);
+        }else{
+            return failResult("action must be add, remove, move, or set.");
+        }
+    }
+
+    CommandHandle::get(sceneId)->addCommandNoMerge(
+        new ScenePropertyCmd<std::vector<PostProcessPass>>(project, sceneId, "post_process", passes));
+
+    return okResult("Changed the post-process chain through the command history.",
+                    Json{{"scene_id", sceneId},
+                         {"pass_index", action == "remove" ? Json(nullptr) : Json(passIndex)},
+                         {"passes", postProcessPassesJson(passes)}});
 }
 
 ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
