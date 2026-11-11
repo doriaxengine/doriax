@@ -59,6 +59,11 @@ namespace doriax::editor {
                                           std::vector<ShaderParameterInfo>& parameters);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them
         static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
+        // a u_vs_customParams, u_fs_customParams or u_fs_postParams block (v0.8.4 port)
+        static bool hasLegacyBlock(const std::string& source);
+        // turns that block of a fork stage into parameters (v0.8.4 port); false with the reason
+        // when a member has no parameter type, true and untouched without such a block
+        static bool portLegacyBlock(std::string& source, ShaderStageType stage, std::string& error);
         // the clashes between sources, which none of them shows alone
         static std::vector<std::string> checkSources(const std::vector<const ShaderEffectAnnotations*>& sources);
     };

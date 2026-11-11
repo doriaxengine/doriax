@@ -9,8 +9,10 @@
 #include <cctype>
 #include <cstdlib>
 #include <map>
+#include <regex>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 using namespace doriax;
 
@@ -79,6 +81,69 @@ std::string stripComments(const std::string& source){
             code += source[i];
     }
     return code;
+}
+
+// the source with its comments blanked, so positions match
+std::string maskComments(const std::string& source){
+    std::string code = source;
+    for (size_t i = 0; i < code.size(); i++){
+        size_t end = i;
+        if (code.compare(i, 2, "//") == 0){
+            end = code.find('\n', i);
+        }else if (code.compare(i, 2, "/*") == 0){
+            end = code.find("*/", i + 2);
+            end = (end == std::string::npos) ? end : end + 2;
+        }else{
+            continue;
+        }
+        end = std::min(end, code.size());
+        for (; i < end; i++){
+            if (code[i] != '\n')
+                code[i] = ' ';
+        }
+        i--;
+    }
+    return code;
+}
+
+// "uniform <name> { ... } instance;" found in code without comments
+struct UniformBlock {
+    size_t start = 0;      // of "uniform"
+    size_t bodyStart = 0;  // after the brace
+    size_t bodyEnd = 0;    // at the closing one
+    size_t end = 0;        // after the semicolon
+    std::string name;
+    std::string instance;
+};
+
+bool findUniformBlock(const std::string& code, const std::regex& header, UniformBlock& block){
+    std::smatch match;
+    if (!std::regex_search(code, match, header))
+        return false;
+
+    block.start = match.position(0);
+    block.bodyStart = block.start + match.length(0);
+    block.bodyEnd = code.find('}', block.bodyStart);
+    const size_t semicolon = (block.bodyEnd == std::string::npos) ? block.bodyEnd : code.find(';', block.bodyEnd);
+    if (semicolon == std::string::npos)
+        return false;
+
+    block.end = semicolon + 1;
+    block.name = match[1];
+    block.instance = trim(code.substr(block.bodyEnd + 1, semicolon - block.bodyEnd - 1));
+    return true;
+}
+
+// the blocks a fork declared for its own values before parameters (v0.8.4 port)
+bool findLegacyBlock(const std::string& code, UniformBlock& block){
+    static const std::regex header(R"(uniform\s+(u_vs_customParams|u_fs_customParams|u_fs_postParams)\s*\{)");
+    return findUniformBlock(code, header, block);
+}
+
+// cheap to rule out before the comments are blanked
+bool namesLegacyBlock(const std::string& source){
+    return source.find("u_vs_customParams") != std::string::npos || source.find("u_fs_customParams") != std::string::npos ||
+        source.find("u_fs_postParams") != std::string::npos;
 }
 
 void scanEngineUses(const std::string& source, editor::ShaderEffectAnnotations& out){
@@ -378,6 +443,115 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
 
 void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){
     mergeDeclarations(declarations, &errors);
+}
+
+bool editor::ShaderParameterParser::hasLegacyBlock(const std::string& source){
+    if (!namesLegacyBlock(source))
+        return false;
+
+    UniformBlock block;
+    return findLegacyBlock(maskComments(source), block);
+}
+
+bool editor::ShaderParameterParser::portLegacyBlock(std::string& source, ShaderStageType stage, std::string& error){
+    if (!namesLegacyBlock(source))
+        return true;
+
+    // ported with plain newlines, a Windows file gets its own back at the end
+    const bool crlf = source.find("\r\n") != std::string::npos;
+    std::string text = source;
+    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
+
+    const std::string code = maskComments(text);
+    UniformBlock block;
+    if (!findLegacyBlock(code, block))
+        return true;
+
+    if (block.instance.empty() || !ShaderParameters::isValidName(block.instance)){
+        error = block.name + " has no instance name";
+        return false;
+    }
+
+    // read from the text, where a comment after a member is its description
+    static const std::regex memberPattern(R"(^(\w+)\s+(\w+)\s*;\s*(?://\s*(.*))?$)");
+    std::string declarations;
+    std::istringstream members(text.substr(block.bodyStart, block.bodyEnd - block.bodyStart));
+    std::string line;
+    while (std::getline(members, line)){
+        const std::string memberText = trim(line);
+        if (memberText.empty() || memberText.rfind("//", 0) == 0)
+            continue;
+
+        std::smatch member;
+        ShaderUniformType type;
+        if (!std::regex_match(memberText, member, memberPattern) || !parseTypeName(member[1], type)){
+            error = "'" + memberText + "' is not a float, vec2-4, int or ivec2-4 member";
+            return false;
+        }
+        // Engine.time and Engine.resolution now
+        if (member[2] == "time" || member[2] == "resolution")
+            continue;
+
+        // quotes and escapes would end the description early
+        std::string description = trim(member[3]);
+        std::replace(description.begin(), description.end(), '"', '\'');
+        std::replace(description.begin(), description.end(), '\\', '/');
+        declarations += "#pragma param " + member[1].str() + " " + member[2].str();
+        if (!description.empty())
+            declarations += " \"" + description + "\"";
+        declarations += "\n";
+    }
+
+    // (position, length, text), applied from the end so positions hold
+    std::vector<std::tuple<size_t, size_t, std::string>> edits;
+
+    // mesh.frag keeps its parameters in the material block, having no block to spare
+    static const std::regex materialHeader(R"(uniform\s+(u_fs_pbrParams)\s*\{)");
+    UniformBlock material;
+    const bool vertex = stage == ShaderStageType::VERTEX;
+    if (!vertex && findUniformBlock(code, materialHeader, material) && !material.instance.empty()){
+        // before the block and before the first code that can read a parameter
+        if (text.find("\"shader_params_fs.glsl\"") == std::string::npos){
+            if (block.start < material.start)
+                declarations += "\n#include \"shader_params_fs.glsl\"\n";
+            else
+                edits.emplace_back(material.start, 0, "#include \"shader_params_fs.glsl\"\n\n");
+        }
+        edits.emplace_back(material.bodyEnd, 0, "    #ifdef HAS_SHADER_PARAMS_FS\n        SHADER_PARAMS_FS_MEMBERS\n    #endif\n");
+        edits.emplace_back(material.end, 0,
+            "\n\n#define SHADER_PARAMETERS_FS\n#ifdef HAS_SHADER_PARAMS_FS\n    #define paramsFS " + material.instance +
+            "\n    void loadShaderParameters(){\n        SHADER_PARAMS_FS_LOAD(" + material.instance + ")\n    }\n#else\n    void loadShaderParameters(){}\n#endif");
+    }else{
+        const std::string header = vertex ? "includes/parameters_vs.glsl" : "includes/parameters_fs.glsl";
+        if (text.find("\"" + header + "\"") == std::string::npos)
+            declarations += std::string(declarations.empty() ? "" : "\n") + "#include \"" + header + "\"\n";
+    }
+    while (!declarations.empty() && declarations.back() == '\n')
+        declarations.pop_back();
+    edits.emplace_back(block.start, block.end - block.start, declarations);
+
+    if (code.find("loadShaderParameters();") == std::string::npos){
+        static const std::regex mainPattern(R"(void\s+main\s*\(\s*(?:void)?\s*\)\s*\{)");
+        std::smatch entry;
+        if (!std::regex_search(code, entry, mainPattern)){
+            error = "main() not found";
+            return false;
+        }
+        edits.emplace_back(entry.position(0) + entry.length(0), 0, "\n    loadShaderParameters();\n");
+    }
+
+    std::sort(edits.begin(), edits.end(), [](const auto& a, const auto& b){ return std::get<0>(a) > std::get<0>(b); });
+    for (const auto& [position, length, replacement] : edits)
+        text.replace(position, length, replacement);
+
+    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\.time\\b"), "Engine.time");
+    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\.resolution\\b"), "Engine.resolution");
+    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\."), "params.");
+
+    if (crlf)
+        text = std::regex_replace(text, std::regex("\n"), "\r\n");
+    source = text;
+    return true;
 }
 
 std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::vector<const ShaderEffectAnnotations*>& sources){

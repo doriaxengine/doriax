@@ -17,11 +17,13 @@
 #include "pool/ShaderPool.h"
 #include "util/SHA1.h"
 #include "util/Util.h"
+#include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
 
 #include <cstring>
 #include <cstdint>
 #include <filesystem>
+#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -312,7 +314,7 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
 // SG_MAX_UNIFORMBLOCK_MEMBERS: on GL, a block of mixed member types declares them one by one
 constexpr size_t maxMixedBlockMembers = 16;
 
-// a v0.8 fork still declaring a custom block, which nothing fills any more,
+// a fork still declaring a custom block, which nothing fills any more (v0.8.4 port),
 // or a shader past what the runtime loads
 std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) {
     if (customId == 0)
@@ -322,7 +324,7 @@ std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) 
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
             if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams" || block.name == "u_fs_postParams")
-                return name + ": " + block.name + " is no longer filled; fork the built-in shader again and declare its values as #pragma param lines";
+                return name + ": " + block.name + " is no longer filled; reopen the project to port the fork to shader parameters";
             if (shaderData.lang == ShaderLang::GLSL && !block.flattened && block.uniforms.size() > maxMixedBlockMembers)
                 return name + ": " + block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
                     " members, more than the " + std::to_string(maxMixedBlockMembers) + " OpenGL loads";
@@ -363,6 +365,67 @@ editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Proj
     // the clashes the build would stop at
     ShaderParameterParser::checkDeclarations(annotations.parameters, annotations.errors);
     return annotations;
+}
+
+std::vector<std::string> editor::ShaderBuilder::findLegacyShaders(Project* project) {
+    std::vector<std::string> files;
+    const std::filesystem::path root = project->getProjectPath();
+    std::error_code ec;
+    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
+    for (const std::filesystem::recursive_directory_iterator end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        // .doriax, .git and the like, and copies of a project inside this one
+        std::error_code ignored;
+        if (it->is_directory(ignored)) {
+            if ((!name.empty() && name[0] == '.') || std::filesystem::exists(it->path() / "project.yaml", ignored))
+                it.disable_recursion_pending();
+            continue;
+        }
+        const std::string extension = it->path().extension().string();
+        if (extension != ".vert" && extension != ".frag")
+            continue;
+
+        std::string source;
+        if (readTextFile(it->path(), source) && ShaderParameterParser::hasLegacyBlock(source))
+            files.push_back(it->path().lexically_relative(root).generic_string());
+    }
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+bool editor::ShaderBuilder::portLegacyShaders(Project* project, const std::vector<std::string>& files, size_t& rewritten, std::string& error) {
+    const std::filesystem::path root = project->getProjectPath();
+    rewritten = 0;
+
+    std::vector<std::pair<std::string, std::string>> ported;
+    for (const std::string& file : files) {
+        std::string source;
+        if (!readTextFile(root / file, source)) {
+            error = "can't read " + file;
+            return false;
+        }
+        const ShaderStageType stage = std::filesystem::path(file).extension() == ".vert" ? ShaderStageType::VERTEX : ShaderStageType::FRAGMENT;
+        std::string result = source;
+        std::string reason;
+        if (!ShaderParameterParser::portLegacyBlock(result, stage, reason)) {
+            error = file + ": " + reason;
+            return false;
+        }
+        if (result != source)
+            ported.push_back({file, std::move(result)});
+    }
+
+    for (const auto& [file, source] : ported) {
+        if (!FileUtils::writeFileReplacing(root / file, source)) {
+            error = "can't write " + file;
+            return false;
+        }
+        rewritten++;
+    }
+
+    if (rewritten > 0)
+        project->invalidateCustomShaders();
+    return true;
 }
 
 std::unordered_map<ShaderKey, ShaderData> editor::ShaderBuilder::shaderDataCache;

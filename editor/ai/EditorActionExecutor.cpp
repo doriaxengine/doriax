@@ -2514,6 +2514,7 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "generate_shaders") return generateShaders(arguments, cancel);
     if (name == "fork_shader") return forkShader(arguments);
     if (name == "write_shader_file") return writeShaderFile(arguments);
+    if (name == "port_shader_fork") return portShaderFork(arguments);
     if (name == "inspect_shader_uniforms") return inspectShaderUniforms(arguments);
     if (name == "set_shader_uniform") return setShaderUniform(arguments);
     if (name == "list_post_process_passes") return listPostProcessPasses(arguments);
@@ -5781,6 +5782,31 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
                          {"bytes", content.size()}});
 }
 
+
+// v0.8.4 port
+ActionResult EditorActionExecutor::portShaderFork(const Json& arguments) {
+    const std::string shader = arguments.value("shader", "");
+    std::string error = customShaderFilesError(project, shader);
+    if (!error.empty()) {
+        return failResult("shader " + error);
+    }
+    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
+    size_t rewritten = 0;
+    if (!ShaderBuilder::portLegacyShaders(project, {paths.vert, paths.frag}, rewritten, error)) {
+        return failResult("Could not port the fork: " + error);
+    }
+    if (rewritten == 0) {
+        return okResult("Nothing to port: the fork declares no v0.8.4 block.", Json{{"shader", shader}, {"ported", false}});
+    }
+
+    if (resourcesWindow) {
+        resourcesWindow->refreshCurrentDirectory();
+    }
+    Out::info("AI ported shader fork: %s", shader.c_str());
+
+    return okResult("Ported the shader fork to parameters.",
+                    Json{{"shader", shader}, {"ported", true}, {"vert_path", paths.vert}, {"frag_path", paths.frag}});
+}
 
 ActionResult EditorActionExecutor::createTerrainHeightmap(const Json& arguments) {
     uint32_t sceneId = resolveSceneId(project, arguments);

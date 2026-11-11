@@ -5919,6 +5919,32 @@ bool editor::Project::saveProjectToPath(const std::filesystem::path& path) {
     return true;
 }
 
+void editor::Project::offerLegacyShaderPort() {
+    const std::vector<std::string> files = ShaderBuilder::findLegacyShaders(this);
+    if (files.empty()) {
+        return;
+    }
+
+    std::string message = "These custom shaders declare their values in a uniform block, which the engine no longer fills:\n";
+    for (const std::string& file : files) {
+        message += "\n" + file;
+    }
+    message += "\n\nRewrite them to declare shader parameters instead?";
+
+    editor::getEditorHost().registerConfirmAlert("Custom shaders from an older version", message, [this, files]() {
+        // one at a time, so a file that can't be ported doesn't hold the others back
+        for (const std::string& file : files) {
+            size_t rewritten = 0;
+            std::string error;
+            if (ShaderBuilder::portLegacyShaders(this, {file}, rewritten, error)) {
+                Out::info("Ported custom shader to parameters: %s", file.c_str());
+            } else {
+                Out::error("Could not port custom shader %s", error.c_str());
+            }
+        }
+    });
+}
+
 bool editor::Project::loadProject(const std::filesystem::path path, bool updateLastOpened) {
     if (isAnyScenePlaying()) {
         Out::warning("Cannot load a project while a scene is running or stopping.");
@@ -6016,6 +6042,11 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
         }
 
         Out::info("Project loaded successfully: \"%s\"", projectPath.string().c_str());
+
+        // v0.8.4 port: only where a person answers, the command line takes every alert as a yes
+        if (editor::getEditorHost().locksProjects()) {
+            offerLegacyShaderPort();
+        }
         return true;
 
     } catch (const YAML::Exception& e) {

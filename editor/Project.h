@@ -850,6 +850,8 @@ namespace doriax::editor{
         // Flushes compiled forked-shader caches and flags meshes that use a custom
         // shader for reload, so editing a shader source file updates the viewport.
         void invalidateCustomShaders();
+        // v0.8.4 port: asks to rewrite the forks that still declare a custom block
+        void offerLegacyShaderPort();
 
         SceneProject* getScene(uint32_t sceneId);
         const SceneProject* getScene(uint32_t sceneId) const;
