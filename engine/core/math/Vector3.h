@@ -66,9 +66,9 @@ namespace doriax {
         bool isValid() const;
 
         float length () const;
-        float squaredLength () const;
-        float dotProduct(const Vector3& v) const;
-        float absDotProduct(const Vector3& v) const;
+        float squaredLength () const{ return x * x + y * y + z * z; }
+        float dotProduct(const Vector3& v) const{ return x * v.x + y * v.y + z * v.z; }
+        float absDotProduct(const Vector3& v) const{ return fabsf(x * v.x) + fabsf(y * v.y) + fabsf(z * v.z); }
         float distance(const Vector3& rhs) const;
         float squaredDistance(const Vector3& rhs) const;
 

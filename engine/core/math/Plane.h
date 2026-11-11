@@ -42,7 +42,7 @@ namespace doriax{
         Side getSide (const AABB& rkBox) const;
         Side getSide (const OBB& obb) const;
 
-        float getDistance (const Vector3& rkPoint) const;
+        float getDistance (const Vector3& rkPoint) const{ return normal.dotProduct(rkPoint) + d; }
 
         void redefine(const Vector3& rkPoint0, const Vector3& rkPoint1, const Vector3& rkPoint2);
         void redefine(const Vector3& rkNormal, const Vector3& rkPoint);

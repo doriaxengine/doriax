@@ -47,10 +47,6 @@ bool Plane::operator!=(const Plane& rhs) const {
     return (rhs.d != d || rhs.normal != normal);
 }
 
-float Plane::getDistance (const Vector3& rkPoint) const {
-    return normal.dotProduct(rkPoint) + d;
-}
-
 Plane::Side Plane::getSide (const Vector3& rkPoint) const {
     float fDistance = getDistance(rkPoint);
 

@@ -148,18 +148,6 @@ float Vector3::length () const{
     return (float)sqrt( x * x + y * y + z * z );
 }
 
-float Vector3::squaredLength () const{
-    return x * x + y * y + z * z;
-}
-
-float Vector3::dotProduct(const Vector3& v) const{
-    return x * v.x + y * v.y + z * v.z;
-}
-
-float Vector3::absDotProduct(const Vector3& v) const{
-    return fabsf(x * v.x) + fabsf(y * v.y) + fabsf(z * v.z);
-}
-
 float Vector3::distance(const Vector3& rhs) const{
     return (*this - rhs).length();
 }
