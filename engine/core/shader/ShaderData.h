@@ -95,6 +95,26 @@ namespace doriax {
         Vector4 defaultValue = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     };
 
+    enum class ShaderTextureDefault{
+        WHITE,
+        BLACK,
+        NORMAL
+    };
+
+    // a texture a shader declares; textures of one filter and wrap share a sampler
+    struct ShaderTextureInfo{
+        ShaderStageType stage = ShaderStageType::FRAGMENT;
+        std::string name;
+        TextureType type = TextureType::TEXTURE_2D;
+        ShaderTextureDefault defaultTexture = ShaderTextureDefault::WHITE;
+        TextureFilter filter = TextureFilter::LINEAR;
+        TextureWrap wrap = TextureWrap::REPEAT;
+
+        // uniform names of the texture and of its sampler
+        std::string getTextureName() const { return name + "_texture"; }
+        std::string getSamplerName() const;
+    };
+
     // what a shader's hooks ask of the renderer
     enum ShaderFlags : uint32_t {
         ShaderFlag_CoverageShadows = 1 << 0  // shadow maps follow getCoverage()
@@ -127,6 +147,7 @@ namespace doriax {
         bool es;
         std::vector<ShaderStage> stages;
         std::vector<ShaderParameterInfo> parameters;
+        std::vector<ShaderTextureInfo> textureParameters;
         uint32_t flags = 0;
 
         ShaderData();

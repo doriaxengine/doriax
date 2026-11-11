@@ -261,6 +261,15 @@ void ShaderDataSerializerHelper::writeShaderData(Writer& out, uint64_t shaderKey
         writeFloat(out, parameter.defaultValue.w);
     }
     writeU32(out, shaderData.flags);
+    writeU32(out, static_cast<uint32_t>(shaderData.textureParameters.size()));
+    for (const auto& texture : shaderData.textureParameters) {
+        writeU32(out, static_cast<uint32_t>(texture.stage));
+        writeString(out, texture.name);
+        writeU32(out, static_cast<uint32_t>(texture.type));
+        writeU32(out, static_cast<uint32_t>(texture.defaultTexture));
+        writeU32(out, static_cast<uint32_t>(texture.filter));
+        writeU32(out, static_cast<uint32_t>(texture.wrap));
+    }
 }
 
 const char* ShaderDataSerializerHelper::shaderLangName(ShaderLang lang) {
@@ -385,6 +394,17 @@ nlohmann::json ShaderDataSerializerHelper::shaderDataToJson(uint64_t shaderKey, 
     }
 
     root["flags"] = shaderData.flags;
+    root["textureParameters"] = nlohmann::json::array();
+    for (const auto& texture : shaderData.textureParameters) {
+        root["textureParameters"].push_back({
+            {"stage", shaderStageName(texture.stage)},
+            {"name", texture.name},
+            {"type", static_cast<uint32_t>(texture.type)},
+            {"default", static_cast<uint32_t>(texture.defaultTexture)},
+            {"filter", static_cast<uint32_t>(texture.filter)},
+            {"wrap", static_cast<uint32_t>(texture.wrap)}
+        });
+    }
     root["parameters"] = nlohmann::json::array();
     for (const auto& parameter : shaderData.parameters) {
         root["parameters"].push_back({
@@ -846,8 +866,33 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
             tmp.parameters.push_back(parameter);
         }
     }
-    if (version >= 3 && !readU32(in, tmp.flags)) {
-        return setErr(err, "Failed to read flags: " + filepath);
+    if (version >= 3) {
+        uint32_t textureCount = 0;
+        if (!readU32(in, tmp.flags) || !readU32(in, textureCount)) {
+            return setErr(err, "Failed to read flags: " + filepath);
+        }
+        if (textureCount > kMaxParameters) {
+            return setErr(err, "Too many texture parameters in file: " + filepath);
+        }
+        tmp.textureParameters.reserve(textureCount);
+        for (uint32_t t = 0; t < textureCount; t++) {
+            ShaderTextureInfo texture;
+            uint32_t stage = 0;
+            uint32_t type = 0;
+            uint32_t defaultTexture = 0;
+            uint32_t filter = 0;
+            uint32_t wrap = 0;
+            if (!readU32(in, stage) || !readString(in, texture.name) || !readU32(in, type) || !readU32(in, defaultTexture) ||
+                !readU32(in, filter) || !readU32(in, wrap)) {
+                return setErr(err, "Failed to read texture parameter: " + filepath);
+            }
+            texture.stage = static_cast<ShaderStageType>(stage);
+            texture.type = static_cast<TextureType>(type);
+            texture.defaultTexture = static_cast<ShaderTextureDefault>(defaultTexture);
+            texture.filter = static_cast<TextureFilter>(filter);
+            texture.wrap = static_cast<TextureWrap>(wrap);
+            tmp.textureParameters.push_back(texture);
+        }
     }
 
     outShaderData = tmp;

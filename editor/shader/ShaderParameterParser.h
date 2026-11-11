@@ -24,6 +24,12 @@ namespace doriax::editor {
         float maxValue = 0.0f;
         bool color = false;
         bool runtime = false;
+        // "#pragma param texture2D detail = white linear repeat"
+        bool texture = false;
+        TextureType textureType = TextureType::TEXTURE_2D;
+        ShaderTextureDefault textureDefault = ShaderTextureDefault::WHITE;
+        TextureFilter filter = TextureFilter::LINEAR;
+        TextureWrap wrap = TextureWrap::REPEAT;
         std::string description;
         std::string sourceName;
         int line = 0;
@@ -67,7 +73,10 @@ namespace doriax::editor {
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                           bool vertexContext, bool fragmentContext,
-                                          std::vector<ShaderParameterInfo>& parameters);
+                                          std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);
+        // the names a shader file reads its textures by, as defines (or their undefs) around the file:
+        // "detail" samples, "detail_sampler" goes with "detail_texture" into a function
+        static std::string generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them
         static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
         // the clashes between sources, which none of them shows alone

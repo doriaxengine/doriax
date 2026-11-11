@@ -81,6 +81,20 @@ std::string stripComments(const std::string& source){
     return code;
 }
 
+// default, filter or wrap of a texture declaration
+bool parseTextureWord(const std::string& word, editor::ShaderParameterDeclaration& declaration){
+    if (word == "white"){ declaration.textureDefault = ShaderTextureDefault::WHITE; return true; }
+    if (word == "black"){ declaration.textureDefault = ShaderTextureDefault::BLACK; return true; }
+    if (word == "normal"){ declaration.textureDefault = ShaderTextureDefault::NORMAL; return true; }
+    if (word == "nearest"){ declaration.filter = TextureFilter::NEAREST; return true; }
+    if (word == "linear"){ declaration.filter = TextureFilter::LINEAR; return true; }
+    if (word == "trilinear"){ declaration.filter = TextureFilter::LINEAR_MIPMAP_LINEAR; return true; }
+    if (word == "repeat"){ declaration.wrap = TextureWrap::REPEAT; return true; }
+    if (word == "clamp"){ declaration.wrap = TextureWrap::CLAMP_TO_EDGE; return true; }
+    if (word == "mirror"){ declaration.wrap = TextureWrap::MIRRORED_REPEAT; return true; }
+    return false;
+}
+
 // a hook is defined where its name is followed by its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
@@ -162,7 +176,12 @@ std::vector<editor::ShaderParameterDeclaration> mergeDeclarations(const std::vec
         bool repeated = false;
         for (editor::ShaderParameterDeclaration& existing : merged){
             if (existing.scope == declaration.scope && existing.collection == declaration.collection && existing.name == declaration.name){
-                if (existing.type != declaration.type){
+                if (existing.texture != declaration.texture || (declaration.texture && existing.textureType != declaration.textureType)){
+                    report(errorPrefix(declaration) + " is another kind of parameter in " + existing.sourceName);
+                }else if (declaration.texture && (existing.filter != declaration.filter || existing.wrap != declaration.wrap ||
+                        existing.textureDefault != declaration.textureDefault)){
+                    report(errorPrefix(declaration) + " has another default, filter or wrap in " + existing.sourceName);
+                }else if (!declaration.texture && existing.type != declaration.type){
                     report(errorPrefix(declaration) + " is a " + ShaderParameterParser::getTypeName(declaration.type) +
                         " here but a " + ShaderParameterParser::getTypeName(existing.type) + " in " + existing.sourceName);
                 }else if (existing.description.empty()){
@@ -334,8 +353,16 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         std::istringstream words(rest);
         std::string typeName, name, flag;
         words >> typeName >> name;
-        if (!parseTypeName(typeName, declaration.type)){
-            out.errors.push_back(where + "'" + typeName + "' is not a parameter type (float, vec2-4, int or ivec2-4)");
+        if (typeName == "texture2D" || typeName == "textureCube"){
+            declaration.texture = true;
+            declaration.textureType = typeName == "texture2D" ? TextureType::TEXTURE_2D : TextureType::TEXTURE_CUBE;
+            declaration.textureDefault = typeName == "texture2D" ? ShaderTextureDefault::WHITE : ShaderTextureDefault::BLACK;
+            if (declaration.scope != ShaderParameterScope::OBJECT){
+                out.errors.push_back(where + "a texture is declared with #pragma param");
+                continue;
+            }
+        }else if (!parseTypeName(typeName, declaration.type)){
+            out.errors.push_back(where + "'" + typeName + "' is not a parameter type (float, vec2-4, int, ivec2-4, texture2D or textureCube)");
             continue;
         }
         if (declaration.scope == ShaderParameterScope::OBJECT){
@@ -360,9 +387,11 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         }
         bool badFlag = false;
         while (words >> flag){
-            if (flag == "color"){
+            if (declaration.texture && parseTextureWord(flag, declaration)){
+                continue;
+            }else if (flag == "color" && !declaration.texture){
                 declaration.color = true;
-            }else if (flag == "runtime"){
+            }else if (flag == "runtime" && !declaration.texture){
                 declaration.runtime = true;
             }else{
                 out.errors.push_back(where + "unknown word '" + flag + "'");
@@ -373,6 +402,10 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         if (badFlag)
             continue;
 
+        if (declaration.texture && (!defaults.empty() || declaration.hasRange)){
+            out.errors.push_back(where + "a texture takes white, black or normal, a filter (nearest, linear, trilinear) and a wrap (repeat, clamp, mirror)");
+            continue;
+        }
         if (!defaults.empty()){
             std::vector<float> values;
             const int components = ShaderParameters::getComponentCount(declaration.type);
@@ -469,6 +502,22 @@ std::string editor::ShaderParameterParser::getStageConditions(const std::string&
     return conditions;
 }
 
+std::string editor::ShaderParameterParser::generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define){
+    std::ostringstream names;
+    for (const ShaderTextureInfo& texture : textures){
+        if (texture.stage != stage)
+            continue;
+        if (!define){
+            names << "#undef " << texture.name << "\n#undef " << texture.name << "_sampler\n";
+            continue;
+        }
+        const char* combined = texture.type == TextureType::TEXTURE_CUBE ? " samplerCube(" : " sampler2D(";
+        names << "#define " << texture.name << "_sampler " << texture.getSamplerName() << "\n";
+        names << "#define " << texture.name << combined << texture.getTextureName() << ", " << texture.getSamplerName() << ")\n";
+    }
+    return names.str();
+}
+
 void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){
     mergeDeclarations(declarations, &errors);
 }
@@ -492,7 +541,7 @@ std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::
 
 std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
                                                           bool vertexContext, bool fragmentContext,
-                                                          std::vector<ShaderParameterInfo>& parameters){
+                                                          std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures){
     const std::string suffix = stage == ShaderStageType::VERTEX ? "VS" : "FS";
 
     std::vector<Member> members;
@@ -541,14 +590,35 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     // the object parameters, then each collection, as globals the load fills
     bool hasObject = false;
     for (const ShaderParameterDeclaration& declaration : merged)
-        hasObject = hasObject || declaration.scope == ShaderParameterScope::OBJECT;
+        hasObject = hasObject || (declaration.scope == ShaderParameterScope::OBJECT && !declaration.texture);
     if (hasObject){
         structs << "struct ShaderParamsObject {";
         for (const ShaderParameterDeclaration& declaration : merged){
-            if (declaration.scope == ShaderParameterScope::OBJECT)
+            if (declaration.scope == ShaderParameterScope::OBJECT && !declaration.texture)
                 structs << " " << getTypeName(declaration.type) << " " << declaration.name << ";";
         }
         structs << " };\nShaderParamsObject params;\n";
+    }
+
+    // textures of one filter and wrap share a sampler
+    std::ostringstream textureLines;
+    std::set<std::string> samplers;
+    for (const ShaderParameterDeclaration& declaration : merged){
+        if (!declaration.texture)
+            continue;
+        ShaderTextureInfo info;
+        info.stage = stage;
+        info.name = declaration.name;
+        info.type = declaration.textureType;
+        info.defaultTexture = declaration.textureDefault;
+        info.filter = declaration.filter;
+        info.wrap = declaration.wrap;
+        textures.push_back(info);
+
+        const bool cube = info.type == TextureType::TEXTURE_CUBE;
+        if (samplers.insert(info.getSamplerName()).second)
+            textureLines << "uniform sampler " << info.getSamplerName() << ";\n";
+        textureLines << "uniform " << (cube ? "textureCube " : "texture2D ") << info.getTextureName() << ";\n";
     }
     for (const std::string& collection : collections){
         structs << "struct ShaderParams_" << collection << " {";
@@ -560,6 +630,8 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     }
 
     for (const ShaderParameterDeclaration& declaration : merged){
+        if (declaration.texture)
+            continue;
         ShaderParameterInfo info;
         info.stage = stage;
         info.member = getMemberName(declaration);
@@ -576,24 +648,28 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         members.push_back({packed + " " + info.member + ";", target + " = " + value + ";"});
     }
 
-    if (members.empty())
+    if (members.empty() && samplers.empty())
         return "// no parameters\n";
 
     std::ostringstream header;
     header << "// generated from the parameter annotations of this stage\n";
     header << "#ifndef SHADER_PARAMS_" << suffix << "_GENERATED\n";
     header << "#define SHADER_PARAMS_" << suffix << "_GENERATED\n";
-    header << "#define HAS_SHADER_PARAMS_" << suffix << "\n";
-    header << "#define SHADER_PARAMS_" << suffix << "_MEMBERS";
-    for (const Member& member : members)
-        header << " " << member.declaration;
-    header << "\n";
-    header << structs.str();
-    header << "#define SHADER_PARAMS_" << suffix << "_LOAD(block)";
-    for (const Member& member : members){
-        if (!member.load.empty())
-            header << " " << member.load;
+    header << textureLines.str();
+    if (!members.empty()){
+        header << "#define HAS_SHADER_PARAMS_" << suffix << "\n";
+        header << "#define SHADER_PARAMS_" << suffix << "_MEMBERS";
+        for (const Member& member : members)
+            header << " " << member.declaration;
+        header << "\n";
+        header << structs.str();
+        header << "#define SHADER_PARAMS_" << suffix << "_LOAD(block)";
+        for (const Member& member : members){
+            if (!member.load.empty())
+                header << " " << member.load;
+        }
+        header << "\n";
     }
-    header << "\n#endif\n";
+    header << "#endif\n";
     return header.str();
 }

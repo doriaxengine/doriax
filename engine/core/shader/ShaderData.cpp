@@ -9,6 +9,26 @@
 
 using namespace doriax;
 
+std::string ShaderTextureInfo::getSamplerName() const{
+    std::string sampler = "u_smp_";
+    if (filter == TextureFilter::NEAREST){
+        sampler += "nearest";
+    }else if (filter == TextureFilter::LINEAR){
+        sampler += "linear";
+    }else{
+        sampler += "trilinear";
+    }
+    if (wrap == TextureWrap::REPEAT){
+        sampler += "_repeat";
+    }else if (wrap == TextureWrap::MIRRORED_REPEAT){
+        sampler += "_mirror";
+    }else{
+        sampler += "_clamp";
+    }
+
+    return sampler;
+}
+
 ShaderData::ShaderData(){
 
 }
@@ -23,6 +43,7 @@ ShaderData::ShaderData(const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->textureParameters = d.textureParameters;
     this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){
@@ -39,6 +60,7 @@ ShaderData& ShaderData::operator = (const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->textureParameters = d.textureParameters;
     this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){

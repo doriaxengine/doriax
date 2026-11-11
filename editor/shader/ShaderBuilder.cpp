@@ -126,8 +126,11 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             assetSource = std::move(snapshot->projectBuffers[shaderAsset]);
             snapshot->projectBuffers.erase(shaderAsset);
         }
-        snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"/" + shaderAsset + "\"\n";
-        snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"/" + shaderAsset + "\"\n";
+        // the file between the names of its textures, which are defines the engine's code must not see
+        snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
+            shaderAsset + "\"\n#include \"shader_textures_end_vs.glsl\"\n";
+        snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
+            shaderAsset + "\"\n#include \"shader_textures_end_fs.glsl\"\n";
     }
 
     auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
@@ -229,7 +232,7 @@ void clearCustomSourceCache() {
 
 // parameter headers, hook defines and flags of a custom shader; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, const char* shaderType,
-                           std::vector<ShaderParameterInfo>& parameters, uint32_t& flags) {
+                           editor::ShaderDeclarations& declared) {
     auto file = [&](const std::string& key) -> const std::string* {
         auto it = args.fileBuffers.find(key);
         return it != args.fileBuffers.end() ? &it->second : nullptr;
@@ -290,7 +293,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage of %s does nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
 
     if (useCoverage && fragmentAnnotations.hasCoverageShadows && fragmentAnnotations.coverageShadows)
-        flags |= ShaderFlag_CoverageShadows;
+        declared.flags |= ShaderFlag_CoverageShadows;
 
     // both stages read one value by name, so they are checked together
     std::vector<editor::ShaderParameterDeclaration> declarations = vertexAnnotations.parameters;
@@ -298,9 +301,14 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     editor::ShaderParameterParser::checkDeclarations(declarations, errors);
 
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, parameters);
+        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters);
+        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, declared.parameters, declared.textures);
+
+    for (const auto& [stage, suffix] : {std::pair{ShaderStageType::VERTEX, "vs"}, std::pair{ShaderStageType::FRAGMENT, "fs"}}) {
+        args.fileBuffers[std::string("shader_textures_") + suffix + ".glsl"] = editor::ShaderParameterParser::generateTextureNames(stage, declared.textures, true);
+        args.fileBuffers[std::string("shader_textures_end_") + suffix + ".glsl"] = editor::ShaderParameterParser::generateTextureNames(stage, declared.textures, false);
+    }
 
     // a fork that dropped the call would read zeros
     auto warnMissingLoad = [&](const std::string& file, const char* header) {
@@ -331,13 +339,30 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
 
 // SG_MAX_UNIFORMBLOCK_MEMBERS: on GL, a block of mixed member types declares them one by one
 constexpr size_t maxMixedBlockMembers = 16;
+constexpr size_t maxSamplers = 16;
+constexpr size_t maxStageTextures = 16;
 
 // a shader past what the runtime loads
 std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) {
     if (customId == 0)
         return "";
 
-    const std::string name = ShaderPool::getCustomShaderName(customId);
+    // a shader file alone is named without its separator
+    std::string name = ShaderPool::getCustomShaderName(customId);
+    if (name[0] == '#')
+        name.erase(0, 1);
+    // SG_MAX_SAMPLER_BINDSLOTS for both stages, SG_MAX_PORTABLE_TEXTURE_BINDINGS_PER_STAGE for each
+    size_t samplers = 0;
+    for (const ShaderStage& stage : shaderData.stages) {
+        samplers += stage.samplers.size();
+        if (stage.textures.size() > maxStageTextures)
+            return name + ": this variant reads " + std::to_string(stage.textures.size()) + " textures in one stage, more than the " +
+                std::to_string(maxStageTextures) + " every backend binds";
+    }
+    if (samplers > maxSamplers)
+        return name + ": this variant needs " + std::to_string(samplers) + " samplers, more than the " + std::to_string(maxSamplers) +
+            " the renderer binds; give its textures the same filter and wrap so they share one, or declare fewer";
+
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
             if (shaderData.lang == ShaderLang::GLSL && !block.flattened && block.uniforms.size() > maxMixedBlockMembers)
@@ -943,8 +968,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project,
-                                           std::vector<ShaderParameterInfo>& parameters, uint32_t& flags) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -996,7 +1020,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.frag_file = customPaths.frag;
     }
 
-    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", parameters, flags);
+    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", declarations);
 
     // parsed with its "#pragma stage" lines, compiled with conditions in their place
     for (const auto& [key, content] : sources->projectBuffers)
@@ -1040,10 +1064,9 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     std::string compileLog;
     args.error_output = &compileLog;
 
-    std::vector<ShaderParameterInfo> parameters;
-    uint32_t flags = 0;
+    ShaderDeclarations declarations;
     try {
-        setupBuildArgs(args, shaderKey, project, parameters, flags);
+        setupBuildArgs(args, shaderKey, project, declarations);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1113,8 +1136,9 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     // Use a deterministic basename for stage naming and disk cache
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) + getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
-    shaderData.parameters = std::move(parameters);
-    shaderData.flags = flags;
+    shaderData.parameters = std::move(declarations.parameters);
+    shaderData.textureParameters = std::move(declarations.textures);
+    shaderData.flags = declarations.flags;
 
     const std::string blockError = getShaderDataError(shaderData, customId);
     if (!blockError.empty()) {
@@ -1276,9 +1300,8 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.fileBuffers = editor::shaderMap;
     applyShaderBackend(args, backend);
 
-    std::vector<ShaderParameterInfo> parameters;
-    uint32_t flags = 0;
-    setupBuildArgs(args, shaderKey, project, parameters, flags);
+    ShaderDeclarations declarations;
+    setupBuildArgs(args, shaderKey, project, declarations);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
@@ -1299,8 +1322,9 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
-    shaderData.parameters = std::move(parameters);
-    shaderData.flags = flags;
+    shaderData.parameters = std::move(declarations.parameters);
+    shaderData.textureParameters = std::move(declarations.textures);
+    shaderData.flags = declarations.flags;
 
     const std::string blockError = getShaderDataError(shaderData, customId);
     if (!blockError.empty())

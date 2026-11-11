@@ -26,6 +26,13 @@ namespace shadercompiler {
 
 namespace doriax::editor {
 
+    // what the sources of a shader declare, kept with its compiled stages
+    struct ShaderDeclarations {
+        std::vector<ShaderParameterInfo> parameters;
+        std::vector<ShaderTextureInfo> textures;
+        uint32_t flags = 0;
+    };
+
     class ShaderBuilder {
     private:
         static std::unordered_map<ShaderKey, ShaderData> shaderDataCache;
@@ -66,8 +73,7 @@ namespace doriax::editor {
         // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
         // Throws on failure.
         // parameters takes what the fork and the effect functions declare, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project,
-                            std::vector<ShaderParameterInfo>& parameters, uint32_t& flags);
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
         std::string getShaderDisplayName(ShaderKey key);
