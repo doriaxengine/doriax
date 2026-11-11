@@ -330,7 +330,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
 
 bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
                    const std::string& name, const char* value) {
-    const std::string annotation = std::string("@") + tag + " " + name + " " + value;
+    const std::string annotation = std::string("#pragma ") + tag + " " + name + " " + value;
     for (const auto& file : args.fileBuffers)
         if (file.second.find(annotation) != std::string::npos)
             return true;

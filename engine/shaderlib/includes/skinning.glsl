@@ -3,9 +3,9 @@
     in vec4 a_boneIds;
 
     #ifdef SKINNING_TEXTURE
-        // @image_sample_type u_bonesTexture unfilterable_float
+        #pragma image_sample_type u_bonesTexture unfilterable_float
         uniform texture2D u_bonesTexture;
-        // @sampler_type u_bones_smp nonfiltering
+        #pragma sampler_type u_bones_smp nonfiltering
         uniform sampler u_bones_smp;
     #else
         readonly buffer sbo_skinning {
