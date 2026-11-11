@@ -358,6 +358,10 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("clearSpotMask", &Light::clearSpotMask)
         .addProperty("shadows", &Light::isShadows, &Light::setShadows)
         .addFunction("setShadows", &Light::setShadows)
+        .addProperty("bias", &Light::getBias, &Light::setBias)
+        .addFunction("setBias", &Light::setBias)
+        .addProperty("shadowMapSize", &Light::getShadowMapSize, &Light::setShadowMapSize)
+        .addFunction("setShadowMapSize", &Light::setShadowMapSize)
         .addFunction("setShadowCameraNearFar", &Light::setShadowCameraNearFar)
         .addProperty("cameraNear", &Light::getCameraNear, &Light::setCameraNear)
         .addFunction("setCameraNear", &Light::setCameraNear)
@@ -919,6 +923,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<int, int, int, bool>(&Sprite::startAnimation),
             luabridge::overload<const std::string&, int, bool>(&Sprite::startAnimation))
         .addFunction("pauseAnimation", &Sprite::pauseAnimation)
+        .addFunction("resumeAnimation", &Sprite::resumeAnimation)
         .addFunction("stopAnimation", &Sprite::stopAnimation)
         .addFunction("getSpriteComponent", &Sprite::getComponent<SpriteComponent>)
         .endClass();
