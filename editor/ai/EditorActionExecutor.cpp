@@ -5467,11 +5467,17 @@ void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project
     const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, component, "customShader");
     const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
     warnings = Json::array();
+    std::vector<ShaderEffectAnnotations> sources;
     for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity)) {
-        const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, source, fork);
-        appendParameterMembers(members, annotations, values, inherited);
-        for (const std::string& error : annotations.errors) warnings.push_back(error);
+        sources.push_back(ShaderBuilder::getShaderAnnotations(project, source, fork));
+        appendParameterMembers(members, sources.back(), values, inherited);
+        for (const std::string& error : sources.back().errors) warnings.push_back(error);
     }
+
+    // a clash between two of its files stops the build
+    std::vector<const ShaderEffectAnnotations*> annotations;
+    for (const ShaderEffectAnnotations& source : sources) annotations.push_back(&source);
+    for (const std::string& error : ShaderParameterParser::checkSources(annotations)) warnings.push_back(error);
 }
 
 void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* project, const PostProcessPass& pass, bool& buildFailed) {

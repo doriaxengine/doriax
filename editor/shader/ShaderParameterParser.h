@@ -59,6 +59,8 @@ namespace doriax::editor {
                                           std::vector<ShaderParameterInfo>& parameters);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them
         static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
+        // the clashes between sources, which none of them shows alone
+        static std::vector<std::string> checkSources(const std::vector<const ShaderEffectAnnotations*>& sources);
     };
 
 }

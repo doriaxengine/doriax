@@ -5506,7 +5506,19 @@ void editor::Properties::drawComponentShaderParameters(ComponentType cpType, Sha
     const ShaderUniformValues values = *valuesRef;
     const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(shaderType, *customShader);
     const uint32_t sceneId = sceneProject->id;
-    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, cpType, shaderType, entity)) {
+    const std::vector<std::pair<std::string, bool>> sources = ProjectUtils::getComponentShaderSources(scene, cpType, shaderType, entity);
+
+    // a clash between two of its files stops the build
+    std::vector<const ShaderEffectAnnotations*> annotations;
+    for (const auto& [source, fork] : sources)
+        annotations.push_back(&getShaderAnnotations(source, fork));
+    for (const std::string& error : ShaderParameterParser::checkSources(annotations)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 0.2f, 1.0f));
+        ImGui::TextWrapped("%s", error.c_str());
+        ImGui::PopStyleColor();
+    }
+
+    for (const auto& [source, fork] : sources) {
         // a fork and an effect file can share a title
         ImGui::PushID(source.c_str());
         const std::string title = fork ? shaderForkName(source) : std::filesystem::path(source).stem().string();
