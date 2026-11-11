@@ -1767,7 +1767,9 @@ void Engine::systemKeyDown(int key, bool repeat, int mods){
     }else{
         uiEventReceived = navigateUI(getKeyNavigation(key, mods));
         // a key held since before the menu still lets go in gameplay
-        if (uiEventReceived && !repeat)
+        if (!uiEventReceived)
+            navigationSources.erase({UI_KEYBOARD, key});
+        else if (!repeat)
             navigationSources.insert({UI_KEYBOARD, key});
     }
 
@@ -1833,7 +1835,9 @@ void Engine::systemGamepadButtonDown(int gamepad, int button){
         uiEventReceived = pressSubmit(gamepad, button, false);
     }else{
         uiEventReceived = holdNavigation(getDpadNavigation(button));
-        if (uiEventReceived)
+        if (!uiEventReceived)
+            navigationSources.erase({gamepad, button});
+        else
             navigationSources.insert({gamepad, button});
     }
 
