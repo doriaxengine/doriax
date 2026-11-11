@@ -3624,8 +3624,8 @@ void UISystem::pointerMoveOnUI(Entity entity, float x, float y, Vector2 pointerD
 }
 
 bool UISystem::eventOnPointerMove(float x, float y){
-    // a still pointer can keep sending its position
-    if (Vector2(x, y) != lastPointerPos){
+    // a still pointer can keep sending its position, and the first one is no move
+    if (lastPointerPos != Vector2(-1, -1) && Vector2(x, y) != lastPointerPos){
         setNavigating(false);
     }
 
