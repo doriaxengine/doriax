@@ -26,6 +26,25 @@ std::string trim(const std::string& value){
     return value.substr(begin, end - begin);
 }
 
+// what follows "#pragma" on a line, without a comment after it
+std::string pragmaText(const std::string& line){
+    std::string text = trim(line);
+    if (text.empty() || text[0] != '#')
+        return "";
+    text = trim(text.substr(1));
+    if (text.rfind("pragma", 0) != 0 || text.size() < 7 || !std::isspace((unsigned char)text[6]))
+        return "";
+
+    bool quoted = false;
+    for (size_t i = 6; i + 1 < text.size(); i++){
+        if (text[i] == '"')
+            quoted = !quoted;
+        else if (!quoted && text[i] == '/' && text[i + 1] == '/')
+            return trim(text.substr(6, i - 6));
+    }
+    return trim(text.substr(6));
+}
+
 bool parseNumbers(const std::string& text, std::vector<float>& numbers){
     std::string cleaned;
     for (char c : text){
@@ -198,16 +217,14 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
     scanEngineUses(source, out);
 
+
     std::istringstream stream(source);
     std::string line;
     int lineNumber = 0;
     while (std::getline(stream, line)){
         lineNumber++;
-        std::string text = trim(line);
-        if (text.rfind("//", 0) != 0)
-            continue;
-        text = trim(text.substr(2));
-        if (text.empty() || text[0] != '@')
+        std::string text = pragmaText(line);
+        if (text.empty())
             continue;
 
         const size_t tagEnd = text.find_first_of(" \t");
@@ -215,25 +232,25 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         std::string rest = tagEnd == std::string::npos ? std::string() : trim(text.substr(tagEnd));
         const std::string where = sourceName + ":" + std::to_string(lineNumber) + ": ";
 
-        if (tag == "@coverage_shadows"){
+        if (tag == "coverage_shadows"){
             if (rest == "apply" || rest == "keep"){
                 out.hasCoverageShadows = true;
                 out.coverageShadows = rest == "apply";
             }else{
-                out.errors.push_back(where + "@coverage_shadows takes apply or keep");
+                out.errors.push_back(where + "coverage_shadows takes apply or keep");
             }
             continue;
         }
 
         ShaderParameterDeclaration declaration;
-        if (tag == "@param"){
+        if (tag == "param"){
             declaration.scope = ShaderParameterScope::OBJECT;
-        }else if (tag == "@scene"){
+        }else if (tag == "scene"){
             declaration.scope = ShaderParameterScope::SCENE;
-        }else if (tag == "@view"){
+        }else if (tag == "view"){
             declaration.scope = ShaderParameterScope::VIEW;
         }else{
-            continue; // another tool's annotation, like @image_sample_type
+            continue; // the compiler's own, like optimize
         }
         declaration.sourceName = sourceName;
         declaration.line = lineNumber;

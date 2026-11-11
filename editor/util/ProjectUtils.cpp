@@ -381,8 +381,8 @@ std::string writeEffectFile(const std::filesystem::path& projectRoot, const std:
 std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
     return writeEffectFile(projectRoot, desiredName + "_offset", R"(// Moves each vertex by the returned offset in world units, the same in every pass.
 // The values declared below are the mesh's shader uniforms, read as params.name.
-// @param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
-// @param float waveSpeed = 2 [0, 10] "Waves per second"
+#pragma param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
+#pragma param float waveSpeed = 2 [0, 10] "Waves per second"
 
 vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
     return vec3(0.0, sin(Engine.time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
@@ -393,9 +393,9 @@ vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
 std::string editor::ProjectUtils::writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
     return writeEffectFile(projectRoot, desiredName + "_coverage", R"(// Returns how much of each fragment stays, from 0 (removed) to 1 (kept), the same in every pass.
 // Opaque surfaces dither in between, blended ones fade.
-// @param float cutHeight = 1 "World height above which the mesh is cut away"
-// @param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
-// @coverage_shadows apply
+#pragma param float cutHeight = 1 "World height above which the mesh is cut away"
+#pragma param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
+#pragma coverage_shadows apply
 
 float getCoverage(CoverageContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);

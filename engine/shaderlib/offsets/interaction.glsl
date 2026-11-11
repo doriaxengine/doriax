@@ -1,9 +1,9 @@
 // Bends the mesh away from a point, such as grass a character walks through. A script
 // writes the point into the scene's Interaction parameters every frame.
-// @scene vec3 Interaction.position "World position the meshes bend away from"
-// @scene float Interaction.radius = 0 [0, 20] "Reach of the push; 0 turns it off"
-// @param float pushStrength = 0.5 [0, 5] "How far the top of the mesh moves away, in world units"
-// @param float pushHeight = 1 [0, 50] "Model height of the full push; 0 moves the whole mesh"
+#pragma scene vec3 Interaction.position "World position the meshes bend away from"
+#pragma scene float Interaction.radius = 0 [0, 20] "Reach of the push; 0 turns it off"
+#pragma param float pushStrength = 0.5 [0, 5] "How far the top of the mesh moves away, in world units"
+#pragma param float pushHeight = 1 [0, 50] "Model height of the full push; 0 moves the whole mesh"
 
 vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
     vec3 away = worldPosition - Interaction.position;

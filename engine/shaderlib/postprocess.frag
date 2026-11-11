@@ -9,7 +9,7 @@
 // u_ssaoTexture. Depth and the G-buffer keep the logical orientation of the depth
 // pre-pass, so flip v_texcoord.y on GL when sampling them (see ssr.frag).
 //
-// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
 // params.amount once main() has called loadShaderParameters(); the pass shows them in the
 // scene post-process list. Engine.time and Engine.resolution (xy size, zw 1 / size) come
 // from the engine.

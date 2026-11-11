@@ -5431,7 +5431,7 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
 
 namespace {
 
-// the @param declarations of a shader file, each name once, with the value it reads
+// the #pragma param declarations of a shader file, each name once, with the value it reads
 void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                             const ShaderUniformValues* inherited) {
     for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
@@ -5505,7 +5505,7 @@ std::string shaderUniformSetNote(const Json& members, const std::string& name, b
             return "";
         }
     }
-    return " Note: no shader file declares '// @param <type> " + name + "'; the value is kept and applies once declared.";
+    return " Note: no shader file declares '#pragma param <type> " + name + "'; the value is kept and applies once declared.";
 }
 
 } // namespace

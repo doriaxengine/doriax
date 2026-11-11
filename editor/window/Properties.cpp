@@ -5131,7 +5131,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
 
         propertyHeader("Vertex Offset");
         drawEffectFunctionRow(sceneProject, shaderEntity, false);
-        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow. Its @param values are the parameters below; the engine's offsets/wind.glsl sways the mesh in the scene's Wind.velocity.");
+        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow. Its #pragma param values are the parameters below; the engine's offsets/wind.glsl sways the mesh in the scene's Wind.velocity.");
         if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
             RowSettings maxSettings;
             maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
@@ -5603,7 +5603,7 @@ void editor::Properties::drawSceneShaderParameters(SceneProject* sceneProject){
 
     ImGui::SeparatorText("Shader Parameters");
     ImGui::SameLine();
-    helpMarker("Values of every \"@scene Collection.name\" the scene's shaders declare, like the wind of offsets/wind.glsl. Scripts override them with scene:setShaderParameter.");
+    helpMarker("Values of every \"#pragma scene Collection.name\" the scene's shaders declare, like the wind of offsets/wind.glsl. Scripts override them with scene:setShaderParameter.");
 
     const uint32_t sceneId = sceneProject->id;
     drawParameterTable("scene_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {
@@ -5622,7 +5622,7 @@ void editor::Properties::drawCameraShaderParameters(SceneProject* sceneProject, 
 
     ImGui::SeparatorText("Shader Parameters");
     ImGui::SameLine();
-    helpMarker("Values of every \"@view Collection.name\" the scene's shaders declare, for this camera, like the opening of coverage/see_through.glsl. Scripts override them with camera:setShaderParameter, or scene:setMainViewShaderParameter for whichever camera renders the scene.");
+    helpMarker("Values of every \"#pragma view Collection.name\" the scene's shaders declare, for this camera, like the opening of coverage/see_through.glsl. Scripts override them with camera:setShaderParameter, or scene:setMainViewShaderParameter for whichever camera renders the scene.");
 
     const uint32_t sceneId = sceneProject->id;
     drawParameterTable("camera_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {

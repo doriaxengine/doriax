@@ -2905,10 +2905,10 @@ std::filesystem::path editor::App::getUserCacheBaseDir() {
 std::filesystem::path editor::App::getUserShaderCacheDir(){
     // Bump on any shader source change: the .sdat cache is keyed by shaderType and
     // properties, not by source. Older entries are in git history.
-    // v57: wind sway that grows with the wind and is paced by it.
     // v58: whitecaps filtered under a pixel, repeating where their travel wraps.
     // v59: shadow cascades sampled inside their loop.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v59";
+    // v60: shader parameters declared with #pragma.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v60";
 }
 
 void editor::App::pushTabNotificationStyle(){

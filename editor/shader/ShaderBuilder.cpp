@@ -322,7 +322,7 @@ std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) 
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
             if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams" || block.name == "u_fs_postParams")
-                return name + ": " + block.name + " is no longer filled; fork the built-in shader again and declare its values as // @param annotations";
+                return name + ": " + block.name + " is no longer filled; fork the built-in shader again and declare its values as #pragma param lines";
             if (shaderData.lang == ShaderLang::GLSL && !block.flattened && block.uniforms.size() > maxMixedBlockMembers)
                 return name + ": " + block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
                     " members, more than the " + std::to_string(maxMixedBlockMembers) + " OpenGL loads";

@@ -1,6 +1,6 @@
 #version 450
 
-// Declare values in comments, as "// @param float amount = 0.5 [0, 1]", and read them as
+// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
 // params.amount once main() has called loadShaderParameters(). Engine.time and
 // Engine.resolution (xy size, zw 1 / size) come from the engine.
 

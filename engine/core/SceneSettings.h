@@ -32,7 +32,7 @@ namespace doriax{
     };
 
     // One user post-process pass: a forked fullscreen shader run after the scene color.
-    // Uniforms hold the values of its @param declarations, by name.
+    // Uniforms hold the values of its #pragma param declarations, by name.
     struct PostProcessPass {
         std::string shader; // project-relative fork base, empty = built-in passthrough
         bool enabled = true;

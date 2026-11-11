@@ -322,7 +322,7 @@ namespace doriax::editor{
         // rows keyed by name, or Collection.name when shared; makeCmd stores the new values
         void drawParameterTable(const std::string& id, uint32_t sceneId, const std::vector<ShaderParameterDeclaration>& parameters, const ShaderUniformValues& values,
                                 const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
-        // the @param rows of one shader file and the shared values it reads; false when empty
+        // the #pragma param rows of one shader file and the shared values it reads; false when empty
         bool drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
         // a section per shader file the component is built from, stored by name in shaderUniforms

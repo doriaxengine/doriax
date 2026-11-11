@@ -11,8 +11,8 @@
 
 namespace doriax::editor {
 
-    // one annotation of a shader source, as "// @param float sway = 0.3 [0, 5] color runtime "Bend"",
-    // "// @scene vec3 Wind.velocity" or "// @view float SeeThrough.radius"
+    // one declaration of a shader source, as "#pragma param float sway = 0.3 [0, 5] color runtime "Bend"",
+    // "#pragma scene vec3 Wind.velocity" or "#pragma view float SeeThrough.radius"
     struct ShaderParameterDeclaration {
         ShaderParameterScope scope = ShaderParameterScope::OBJECT;
         std::string collection;  // SCENE and VIEW
@@ -31,7 +31,7 @@ namespace doriax::editor {
 
     struct ShaderEffectAnnotations {
         std::vector<ShaderParameterDeclaration> parameters;
-        // "@coverage_shadows apply|keep"
+        // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;
         // the code reads Engine.time or Engine.resolution

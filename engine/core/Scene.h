@@ -145,7 +145,7 @@ namespace doriax{
         void setSSAODebug(bool debug);
         bool isSSAODebug() const;
 
-        // runtime values of "@scene Collection.name" parameters, over the saved defaults
+        // runtime values of "#pragma scene Collection.name" parameters, over the saved defaults
         void setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);
         void setShaderParameter(const std::string& collection, const std::string& name, const Vector3& value);
         void setShaderParameter(const std::string& collection, const std::string& name, const Vector2& value);
@@ -159,7 +159,7 @@ namespace doriax{
         // drops every runtime scene and view value, and the wind travel
         void resetRuntimeShaderParameters();
 
-        // runtime values of "@view Collection.name" parameters for one camera
+        // runtime values of "#pragma view Collection.name" parameters for one camera
         void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector4& value);
         void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector3& value);
         void setViewShaderParameter(Entity camera, const std::string& collection, const std::string& name, const Vector2& value);
@@ -283,7 +283,7 @@ namespace doriax{
         const std::vector<PostProcessPass>& getPostProcessPasses() const;
         void setPostProcessPasses(const std::vector<PostProcessPass>& passes);
 
-        // one @param value of a pass; rewrites the value without rebuilding the chain
+        // one #pragma param value of a pass; rewrites the value without rebuilding the chain
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector4& value);
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector3& value);
         void setPostProcessUniform(unsigned int index, const std::string& name, const Vector2& value);
