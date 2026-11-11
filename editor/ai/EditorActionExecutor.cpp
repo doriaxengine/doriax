@@ -5195,6 +5195,10 @@ namespace {
 std::string customShaderFilesError(const Project* project, const std::string& shader) {
     const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
     const std::string files = " (" + paths.vert + ", " + paths.frag + ")";
+    // saved as given, and only Windows reads a backslash as a separator
+    if (shader.find('\\') != std::string::npos) {
+        return "must use forward slashes" + files;
+    }
     if (!PathUtils::isSafeRelativePath(fs::path(paths.vert)) || !PathUtils::isSafeRelativePath(fs::path(paths.frag))) {
         return "must use safe project-relative paths" + files;
     }
@@ -5228,9 +5232,10 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         const bool vertexOffset = propertyName == "vertexOffsetShader";
         if (vertexOffset ? ProjectUtils::isEngineVertexOffset(value) : ProjectUtils::isEngineCoverage(value))
             return true;
-        if (fs::path(value).extension() != ".glsl" || !PathUtils::isSafeRelativePath(fs::path(value)) ||
+        if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
+                !PathUtils::isSafeRelativePath(fs::path(value)) ||
                 !fs::exists(project->getProjectPath() / value)) {
-            error = propertyName + " must be an existing project-relative .glsl file, or an engine one such as " +
+            error = propertyName + " must be an existing project-relative .glsl file with forward slashes, or an engine one such as " +
                 (vertexOffset ? "offsets/wind.glsl" : "coverage/see_through.glsl") + ". Write a project one with write_shader_file first.";
             return false;
         }
