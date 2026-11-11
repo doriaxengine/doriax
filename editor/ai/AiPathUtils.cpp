@@ -28,6 +28,28 @@ bool PathUtils::isSafeRelativePath(const fs::path& path) {
     return true;
 }
 
+bool PathUtils::existsExactCase(const fs::path& directory, const fs::path& relative) {
+    fs::path current = directory;
+    for (const auto& part : relative.lexically_normal()) {
+        if (part.empty()) {
+            continue;
+        }
+        bool found = false;
+        std::error_code ec;
+        for (fs::directory_iterator it(current, ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->path().filename() == part) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+        current /= part;
+    }
+    return true;
+}
+
 std::string PathUtils::slugify(const std::string& value, const std::string& fallback) {
     std::string out;
     out.reserve(value.size());

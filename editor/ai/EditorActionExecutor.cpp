@@ -5203,8 +5203,9 @@ std::string customShaderFilesError(const Project* project, const std::string& sh
         return "must use safe project-relative paths" + files;
     }
     const fs::path projectPath = project->getProjectPath();
-    if (!fs::exists(projectPath / paths.vert) || !fs::exists(projectPath / paths.frag)) {
-        return "references missing files" + files;
+    // Web, Android and Linux only find a file under its exact name
+    if (!PathUtils::existsExactCase(projectPath, paths.vert) || !PathUtils::existsExactCase(projectPath, paths.frag)) {
+        return "references missing files, names are case-sensitive" + files;
     }
     return "";
 }
@@ -5234,8 +5235,8 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
             return true;
         if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
                 !PathUtils::isSafeRelativePath(fs::path(value)) ||
-                !fs::exists(project->getProjectPath() / value)) {
-            error = propertyName + " must be an existing project-relative .glsl file with forward slashes, or an engine one such as " +
+                !PathUtils::existsExactCase(project->getProjectPath(), value)) {
+            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as " +
                 (vertexOffset ? "offsets/wind.glsl" : "coverage/see_through.glsl") + ". Write a project one with write_shader_file first.";
             return false;
         }
