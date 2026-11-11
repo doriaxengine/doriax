@@ -81,6 +81,7 @@ NavigationDirection Engine::heldNavigation = NavigationDirection::NONE;
 double Engine::navigationRepeatTime = 0;
 std::unordered_map<int, Engine::StickNavigation> Engine::stickNavigation;
 Engine::SubmitSource Engine::submitSource = {false, UI_KEYBOARD, 0};
+std::set<std::pair<int, int>> Engine::navigationSources;
 
 uint64_t Engine::lastTime = 0;
 double Engine::updateTimeCount = 0;
@@ -1761,10 +1762,14 @@ void Engine::systemKeyDown(int key, bool repeat, int mods){
     if (mods != 0)
         Input::setModifiers(mods);
 
-    if (isSubmitKey(key))
+    if (isSubmitKey(key)){
         uiEventReceived = pressSubmit(UI_KEYBOARD, key, repeat);
-    else
+    }else{
         uiEventReceived = navigateUI(getKeyNavigation(key, mods));
+        // a key held since before the menu still lets go in gameplay
+        if (uiEventReceived && !repeat)
+            navigationSources.insert({UI_KEYBOARD, key});
+    }
 
     if (!ignoreEventsHandledByUI || !uiEventReceived)
         Engine::onKeyDown.call(key, repeat, mods);
@@ -1782,7 +1787,11 @@ void Engine::systemKeyUp(int key, bool repeat, int mods){
     Input::releaseKeyPressed(key);
     Input::setModifiers(mods); // Now it can be 0
 
-    uiEventReceived = isSubmitKey(key) && releaseSubmit(UI_KEYBOARD, key, true);
+    if (isSubmitKey(key))
+        uiEventReceived = releaseSubmit(UI_KEYBOARD, key, true);
+    else
+        uiEventReceived = navigationSources.erase({UI_KEYBOARD, key}) > 0;
+
     if (!ignoreEventsHandledByUI || !uiEventReceived)
         Engine::onKeyUp.call(key, repeat, mods);
     uiEventReceived = false;
@@ -1809,6 +1818,8 @@ void Engine::systemGamepadDisconnect(int gamepad){
     //-----------------
     Input::removeGamepad(gamepad);
     stickNavigation.erase(gamepad);
+    for (int button = D_GAMEPAD_BUTTON_DPAD_UP; button <= D_GAMEPAD_BUTTON_DPAD_LEFT; button++)
+        navigationSources.erase({gamepad, button});
     releaseSubmit(gamepad, D_GAMEPAD_BUTTON_A, false);
     Engine::onGamepadDisconnect.call(gamepad);
     //-----------------
@@ -1818,10 +1829,13 @@ void Engine::systemGamepadButtonDown(int gamepad, int button){
     //-----------------
     Input::addGamepadButtonPressed(gamepad, button);
 
-    if (button == D_GAMEPAD_BUTTON_A)
+    if (button == D_GAMEPAD_BUTTON_A){
         uiEventReceived = pressSubmit(gamepad, button, false);
-    else
+    }else{
         uiEventReceived = holdNavigation(getDpadNavigation(button));
+        if (uiEventReceived)
+            navigationSources.insert({gamepad, button});
+    }
 
     if (!ignoreEventsHandledByUI || !uiEventReceived)
         Engine::onGamepadButtonDown.call(gamepad, button);
@@ -1833,7 +1847,11 @@ void Engine::systemGamepadButtonUp(int gamepad, int button){
     //-----------------
     Input::releaseGamepadButtonPressed(gamepad, button);
 
-    uiEventReceived = (button == D_GAMEPAD_BUTTON_A) && releaseSubmit(gamepad, button, true);
+    if (button == D_GAMEPAD_BUTTON_A)
+        uiEventReceived = releaseSubmit(gamepad, button, true);
+    else
+        uiEventReceived = navigationSources.erase({gamepad, button}) > 0;
+
     if (!ignoreEventsHandledByUI || !uiEventReceived)
         Engine::onGamepadButtonUp.call(gamepad, button);
     uiEventReceived = false;

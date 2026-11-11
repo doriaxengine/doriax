@@ -137,6 +137,7 @@
 #include "texture/Framebuffer.h"
 #include <atomic>
 #include <mutex>
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -270,6 +271,9 @@ namespace doriax {
             int button;
         };
         static SubmitSource submitSource;
+
+        // keys and d-pad buttons whose press moved the UI focus, by gamepad (-1 for the keyboard)
+        static std::set<std::pair<int, int>> navigationSources;
 
         static uint64_t lastTime;
         static double updateTimeCount;
