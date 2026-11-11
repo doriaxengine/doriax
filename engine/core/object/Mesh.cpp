@@ -610,18 +610,6 @@ void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const
     }
 }
 
-void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector3& value){
-    setShaderUniform(submesh, name, Vector4(value.x, value.y, value.z, 0.0f));
-}
-
-void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector2& value){
-    setShaderUniform(submesh, name, Vector4(value.x, value.y, 0.0f, 0.0f));
-}
-
-void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, float value){
-    setShaderUniform(submesh, name, Vector4(value, 0.0f, 0.0f, 0.0f));
-}
-
 Vector4 Mesh::getShaderUniform(const std::string& name) const{
     return getShaderUniform(0, name);
 }

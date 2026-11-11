@@ -379,15 +379,14 @@ std::string writeEffectFile(const std::filesystem::path& projectRoot, const std:
 }
 
 std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName, R"(// A mesh shader: each stage fills the hooks it defines, the same in every pass.
-// The values declared below show in Properties and are read as params.name.
+    return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
 #pragma shader mesh
 
 #pragma stage vertex
 #pragma param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
 #pragma param float waveSpeed = 2 [0, 10] "Waves per second"
 
-// moves each vertex by the returned offset, in world units
+// offset of each vertex, in world units
 vec3 getVertexOffset(VertexContext context){
     return vec3(0.0, sin(Engine.time * params.waveSpeed + context.worldPosition.x) * params.waveHeight, 0.0);
 }
@@ -397,7 +396,7 @@ vec3 getVertexOffset(VertexContext context){
 #pragma param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
 #pragma coverage_shadows apply
 
-// how much of each fragment stays, from 0 (removed) to 1 (kept)
+// share of each fragment that stays, 0 to 1
 float getCoverage(FragmentContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
 }

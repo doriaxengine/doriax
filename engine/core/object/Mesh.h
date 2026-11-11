@@ -117,13 +117,13 @@ namespace doriax{
         void setCustomDepthShader(const std::string& path);
         std::string getCustomDepthShader() const;
 
-        // .glsl shader file whose hooks the material draws with, from the project or the engine
+        // shader file of the materials
         void setShader(const std::string& path);
         void setShader(unsigned int submesh, const std::string& path);
         std::string getShader() const;
         std::string getShader(unsigned int submesh) const;
 
-        // longest getVertexOffset() in world units, which widens the bounds; 0 = no limit
+        // longest vertex offset, widens the bounds; 0 = no limit
         void setVertexOffsetMax(float vertexOffsetMax);
         float getVertexOffsetMax() const;
 
@@ -132,9 +132,6 @@ namespace doriax{
         void setShaderUniform(const std::string& name, const Vector2& value);
         void setShaderUniform(const std::string& name, float value);
         void setShaderUniform(unsigned int submesh, const std::string& name, const Vector4& value);
-        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector3& value);
-        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector2& value);
-        void setShaderUniform(unsigned int submesh, const std::string& name, float value);
         Vector4 getShaderUniform(const std::string& name) const;
         Vector4 getShaderUniform(unsigned int submesh, const std::string& name) const;
         bool removeShaderUniform(const std::string& name);

@@ -306,7 +306,7 @@ namespace doriax::editor{
         // one shader property of that row (customShader, a mesh's customDepthShader or a
         // water's customUnderwaterShader)
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
-        // a material's shader file: one .glsl, from the project or the engine
+        // a material's shader file
         void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
         // annotations of a fork or an effect file, parsed again once a second at most
@@ -327,7 +327,7 @@ namespace doriax::editor{
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
         // a section per shader file the component is built from, stored by name in shaderUniforms
         void drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
-        // the parameters of a material's shader file, stored on the material
+        // and its parameters
         void drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
         // scene or view parameters the scene's shaders declare, and stored ones nothing declares
         std::vector<ShaderParameterDeclaration> collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored);

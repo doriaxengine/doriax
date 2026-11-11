@@ -199,7 +199,7 @@ std::string ShaderPool::getCustomShaderAsset(const std::string& customShader){
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
-    // Filesystem-safe token for .sdat names ("shaders/myMesh#shaders/wind.glsl" -> "shaders_myMesh_shaders_wind_glsl_" and the hash).
+    // Filesystem-safe token for .sdat names ("shaders/myMesh#shaders/wind.glsl" -> "shaders_myMesh_shaders_wind_glsl_7e274965").
     // The FNV-1a of the name keeps apart names that sanitize alike, the same on every platform.
     const std::string name = getCustomShaderName(customId);
     if (name.empty())

@@ -81,7 +81,16 @@ std::string stripComments(const std::string& source){
     return code;
 }
 
-// default, filter or wrap of a texture declaration
+// name of a "#pragma stage" line
+bool readStage(const std::string& line, std::string& name){
+    std::istringstream words(pragmaText(line));
+    std::string tag;
+    name.clear();
+    words >> tag >> name;
+    return tag == "stage";
+}
+
+// default, filter or wrap of a texture
 bool parseTextureWord(const std::string& word, editor::ShaderParameterDeclaration& declaration){
     if (word == "white"){ declaration.textureDefault = ShaderTextureDefault::WHITE; return true; }
     if (word == "black"){ declaration.textureDefault = ShaderTextureDefault::BLACK; return true; }
@@ -95,7 +104,7 @@ bool parseTextureWord(const std::string& word, editor::ShaderParameterDeclaratio
     return false;
 }
 
-// a hook is defined where its name is followed by its context type
+// a hook definition takes its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
         if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
@@ -451,24 +460,15 @@ std::string editor::ShaderParameterParser::getStageSource(const std::string& sou
         return source;
 
     const std::string own = stage == ShaderStageType::VERTEX ? "vertex" : "fragment";
-    std::string staged;
-    staged.reserve(source.size());
+    std::istringstream stream(source);
+    std::string line, name, staged;
     bool skip = false;
-    size_t start = 0;
-    while (start < source.size()){
-        size_t end = source.find('\n', start);
-        end = end == std::string::npos ? source.size() : end;
-        const std::string line = source.substr(start, end - start);
-        const std::string text = pragmaText(line);
-        if (text.rfind("stage", 0) == 0 && (text.size() == 5 || std::isspace((unsigned char)text[5]))){
-            skip = trim(text.substr(5)) != own;
-            staged += line;
-        }else if (!skip){
-            staged += line;
-        }
-        if (end < source.size())
-            staged += '\n';
-        start = end + 1;
+    while (std::getline(stream, line)){
+        if (readStage(line, name))
+            skip = name != own;
+        else if (skip)
+            line.clear();
+        staged += line + "\n";
     }
     return staged;
 }
@@ -477,28 +477,18 @@ std::string editor::ShaderParameterParser::getStageConditions(const std::string&
     if (source.find("stage") == std::string::npos)
         return source;
 
-    std::string conditions;
-    conditions.reserve(source.size() + 64);
+    std::istringstream stream(source);
+    std::string line, name, conditions;
     bool open = false;
-    size_t start = 0;
-    while (start < source.size()){
-        size_t end = source.find('\n', start);
-        end = end == std::string::npos ? source.size() : end;
-        const std::string line = source.substr(start, end - start);
-        const std::string text = pragmaText(line);
-        if (text.rfind("stage", 0) == 0 && (text.size() == 5 || std::isspace((unsigned char)text[5]))){
-            const std::string name = trim(text.substr(5)) == "vertex" ? "SHADER_STAGE_VERTEX" : "SHADER_STAGE_FRAGMENT";
-            conditions += (open ? "#elif defined(" : "#if defined(") + name + ")";
+    while (std::getline(stream, line)){
+        if (readStage(line, name)){
+            line = std::string(open ? "#elif" : "#if") + " defined(SHADER_STAGE_" + (name == "vertex" ? "VERTEX)" : "FRAGMENT)");
             open = true;
-        }else{
-            conditions += line;
         }
-        if (end < source.size())
-            conditions += '\n';
-        start = end + 1;
+        conditions += line + "\n";
     }
     if (open)
-        conditions += "\n#endif\n";
+        conditions += "#endif\n";
     return conditions;
 }
 

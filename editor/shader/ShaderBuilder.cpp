@@ -126,7 +126,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             assetSource = std::move(snapshot->projectBuffers[shaderAsset]);
             snapshot->projectBuffers.erase(shaderAsset);
         }
-        // the file between the names of its textures, which are defines the engine's code must not see
+        // texture names are defines, kept to the file
         snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
             shaderAsset + "\"\n#include \"shader_textures_end_vs.glsl\"\n";
         snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
@@ -230,7 +230,7 @@ void clearCustomSourceCache() {
     customSourceCache.clear();
 }
 
-// parameter headers, hook defines and flags of a custom shader; throws on a bad annotation
+// parameter headers, hook defines and flags; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, const char* shaderType,
                            editor::ShaderDeclarations& declared) {
     auto file = [&](const std::string& key) -> const std::string* {
@@ -238,22 +238,22 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         return it != args.fileBuffers.end() ? &it->second : nullptr;
     };
 
-    // the hooks the shader file defines, so that only those are compiled in
+    // only the hooks the file defines are compiled in
     editor::ShaderEffectAnnotations vertexHooks;
     editor::ShaderEffectAnnotations fragmentHooks;
     if (!shaderAsset.empty()) {
         editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::VERTEX, vertexHooks);
         editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::FRAGMENT, fragmentHooks);
-        const std::string& declared = vertexHooks.shaderType.empty() ? fragmentHooks.shaderType : vertexHooks.shaderType;
-        if (declared.empty())
-            throw std::runtime_error(shaderAsset + " is not a shader file: it has no \"#pragma shader " + shaderType + "\" line");
-        if (declared != shaderType)
-            throw std::runtime_error(shaderAsset + " is a " + declared + " shader, used where a " + shaderType + " shader goes");
+        const std::string& type = vertexHooks.shaderType.empty() ? fragmentHooks.shaderType : vertexHooks.shaderType;
+        if (type.empty())
+            throw std::runtime_error(shaderAsset + " has no \"#pragma shader " + shaderType + "\" line");
+        if (type != shaderType)
+            throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
     }
     const bool useVertexOffset = vertexHooks.vertexOffset;
     const bool useCoverage = fragmentHooks.coverage;
     if (!shaderAsset.empty() && !useVertexOffset && !useCoverage && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
-        throw std::runtime_error(shaderAsset + " defines no hook: getVertexOffset(VertexContext) in the vertex stage or getCoverage(FragmentContext) in the fragment stage");
+        throw std::runtime_error(shaderAsset + " defines no hook function");
     if (useVertexOffset)
         args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
     if (useCoverage)
@@ -278,7 +278,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
 
     std::vector<std::string> errors = vertexAnnotations.errors;
     errors.insert(errors.end(), fragmentAnnotations.errors.begin(), fragmentAnnotations.errors.end());
-    // those of a section no hook reaches
+    // of a section no hook reaches
     for (const editor::ShaderEffectAnnotations* hooks : {&vertexHooks, &fragmentHooks}) {
         for (const std::string& error : hooks->errors) {
             if (std::find(errors.begin(), errors.end(), error) == errors.end())
@@ -305,10 +305,10 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, declared.parameters, declared.textures);
 
-    for (const auto& [stage, suffix] : {std::pair{ShaderStageType::VERTEX, "vs"}, std::pair{ShaderStageType::FRAGMENT, "fs"}}) {
-        args.fileBuffers[std::string("shader_textures_") + suffix + ".glsl"] = editor::ShaderParameterParser::generateTextureNames(stage, declared.textures, true);
-        args.fileBuffers[std::string("shader_textures_end_") + suffix + ".glsl"] = editor::ShaderParameterParser::generateTextureNames(stage, declared.textures, false);
-    }
+    args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
+    args.fileBuffers["shader_textures_end_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, false);
+    args.fileBuffers["shader_textures_fs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::FRAGMENT, declared.textures, true);
+    args.fileBuffers["shader_textures_end_fs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::FRAGMENT, declared.textures, false);
 
     // a fork that dropped the call would read zeros
     auto warnMissingLoad = [&](const std::string& file, const char* header) {
@@ -339,6 +339,7 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
 
 // SG_MAX_UNIFORMBLOCK_MEMBERS: on GL, a block of mixed member types declares them one by one
 constexpr size_t maxMixedBlockMembers = 16;
+// SG_MAX_SAMPLER_BINDSLOTS and SG_MAX_PORTABLE_TEXTURE_BINDINGS_PER_STAGE
 constexpr size_t maxSamplers = 16;
 constexpr size_t maxStageTextures = 16;
 
@@ -347,21 +348,18 @@ std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) 
     if (customId == 0)
         return "";
 
-    // a shader file alone is named without its separator
     std::string name = ShaderPool::getCustomShaderName(customId);
     if (name[0] == '#')
         name.erase(0, 1);
-    // SG_MAX_SAMPLER_BINDSLOTS for both stages, SG_MAX_PORTABLE_TEXTURE_BINDINGS_PER_STAGE for each
     size_t samplers = 0;
     for (const ShaderStage& stage : shaderData.stages) {
         samplers += stage.samplers.size();
         if (stage.textures.size() > maxStageTextures)
-            return name + ": this variant reads " + std::to_string(stage.textures.size()) + " textures in one stage, more than the " +
-                std::to_string(maxStageTextures) + " every backend binds";
+            return name + ": " + std::to_string(stage.textures.size()) + " textures in one stage, the limit is " + std::to_string(maxStageTextures);
     }
     if (samplers > maxSamplers)
-        return name + ": this variant needs " + std::to_string(samplers) + " samplers, more than the " + std::to_string(maxSamplers) +
-            " the renderer binds; give its textures the same filter and wrap so they share one, or declare fewer";
+        return name + ": " + std::to_string(samplers) + " samplers, the limit is " + std::to_string(maxSamplers) +
+            "; textures of one filter and wrap share a sampler";
 
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
@@ -1022,7 +1020,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
 
     setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", declarations);
 
-    // parsed with its "#pragma stage" lines, compiled with conditions in their place
+    // compiled with its stages as conditions
     for (const auto& [key, content] : sources->projectBuffers)
         args.fileBuffers[key] = ShaderParameterParser::getStageConditions(content);
 }

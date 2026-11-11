@@ -4847,7 +4847,7 @@ void editor::Catalog::copyPropertyValue(EntityRegistry* sourceRegistry, Entity s
                 auto* source = Catalog::getPropertyRef<std::vector<Texture>>(sourceRegistry, sourceEntity, compType, property);
                 auto* target = Catalog::getPropertyRef<std::vector<Texture>>(targetRegistry, targetEntity, compType, property);
                 if (source && target) *target = *source;
-            } else if (property == "shaderUniforms" || (property.size() > 15 && property.compare(property.size() - 15, 15, ".shaderUniforms") == 0)) {
+            } else if (property.find("shaderUniforms") != std::string::npos) {
                 auto* source = Catalog::getPropertyRef<ShaderUniformValues>(sourceRegistry, sourceEntity, compType, property);
                 auto* target = Catalog::getPropertyRef<ShaderUniformValues>(targetRegistry, targetEntity, compType, property);
                 if (source && target) *target = *source;

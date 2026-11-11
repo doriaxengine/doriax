@@ -599,10 +599,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, const Vector3&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, const Vector2&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, float>(&Mesh::setShaderUniform),
-            luabridge::overload<unsigned int, const std::string&, const Vector4&>(&Mesh::setShaderUniform),
-            luabridge::overload<unsigned int, const std::string&, const Vector3&>(&Mesh::setShaderUniform),
-            luabridge::overload<unsigned int, const std::string&, const Vector2&>(&Mesh::setShaderUniform),
-            luabridge::overload<unsigned int, const std::string&, float>(&Mesh::setShaderUniform))
+            luabridge::overload<unsigned int, const std::string&, const Vector4&>(&Mesh::setShaderUniform))
         .addFunction("getShaderUniform",
             luabridge::overload<const std::string&>(&Mesh::getShaderUniform),
             luabridge::overload<unsigned int, const std::string&>(&Mesh::getShaderUniform))

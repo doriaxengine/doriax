@@ -101,7 +101,7 @@ namespace doriax {
         NORMAL
     };
 
-    // a texture a shader declares; textures of one filter and wrap share a sampler
+    // a declared texture; those of one filter and wrap share a sampler
     struct ShaderTextureInfo{
         ShaderStageType stage = ShaderStageType::FRAGMENT;
         std::string name;
@@ -110,7 +110,7 @@ namespace doriax {
         TextureFilter filter = TextureFilter::LINEAR;
         TextureWrap wrap = TextureWrap::REPEAT;
 
-        // uniform names of the texture and of its sampler
+        // uniform names
         std::string getTextureName() const { return name + "_texture"; }
         std::string getSamplerName() const;
     };

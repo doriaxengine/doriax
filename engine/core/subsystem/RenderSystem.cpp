@@ -3238,7 +3238,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
         // terrain builds its vertices in the shader and takes no shader file
         const std::string materialShader = terrain ? std::string() : mesh.submeshes[i].material.shader;
-        // a coverage hook reads UV set 1 in every pass; a missing texture binds white
+        // a hook reads UV set 1 in every pass; a missing texture binds white
         const bool p_coverageUV = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
         if (p_coverageUV){
             p_hasTexture1 = true;
@@ -4923,7 +4923,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             bool needUpdateFramebuffer = checkPBRFrabebufferUpdate(mesh.submeshes[i].material);
 
-            // a material assigned whole may bring another shader file
+            // a new material may bring another shader file
             if (mesh.submeshes[i].needUpdateTexture && !terrain &&
                     ShaderPool::getCustomShaderAsset(ShaderPool::getCustomShaderName(mesh.submeshes[i].customShaderId)) != mesh.submeshes[i].material.shader){
                 mesh.needReload = true;
@@ -10614,7 +10614,7 @@ void RenderSystem::update(double dt){
                     if (terrain){
                         transform.needUpdate = true;
                     }
-                    if (mesh.submeshes[s].textureShadow){
+                    if (mesh.submeshes[s].textureShadow || (mesh.submeshes[s].depthShader && !mesh.submeshes[s].depthShader->shaderData.textureParameters.empty())){
                         mesh.submeshes[s].needUpdateDepthTexture = true;
                     }
                     if (mesh.submeshes[s].gbufferShader){

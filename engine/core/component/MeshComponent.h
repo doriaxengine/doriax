@@ -75,8 +75,8 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // resolved ids of MeshComponent::customShader/customDepthShader with the material shader
-        // (0 = built-in); cached here so the matching ShaderPool::remove uses the same key
+        // resolved ids of the mesh forks with the material shader (0 = built-in),
+        // cached here so the matching ShaderPool::remove uses the same key
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
         uint16_t customGBufferShaderId = 0;
@@ -187,8 +187,8 @@ namespace doriax{
         // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
         // vertices or discards keeps its shadows in step.
         std::string customDepthShader;
-        float vertexOffsetMax = 0.0f; // longest getVertexOffset() in world units, widens the bounds; 0 = no limit
-        // values of the fork's parameters, by name; a material's own come first
+        float vertexOffsetMax = 0.0f; // longest vertex offset, widens the bounds; 0 = no limit
+        // fork parameter values, by name; a material's own come first
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
 

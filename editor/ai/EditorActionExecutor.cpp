@@ -1400,8 +1400,7 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
                             material.baseColorTexture.getSvgScale())}};
         }
         case PropertyType::Custom:
-            if (propertyName == "shaderUniforms" || propertyName == "shaderParameters" ||
-                    (propertyName.size() > 15 && propertyName.compare(propertyName.size() - 15, 15, ".shaderUniforms") == 0)) {
+            if (propertyName.find("shaderUniforms") != std::string::npos || propertyName == "shaderParameters") {
                 return shaderUniformValuesJson(*static_cast<ShaderUniformValues*>(property.ref));
             }
             if (propertyName == "bursts") {
@@ -5220,9 +5219,8 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
     };
     // submeshes[N].material.shader
-    const std::string materialShader = ".material.shader";
-    const bool shaderFile = propertyName.size() > materialShader.size() &&
-        propertyName.compare(propertyName.size() - materialShader.size(), materialShader.size(), materialShader) == 0;
+    const size_t field = propertyName.rfind('.');
+    const bool shaderFile = field != std::string::npos && propertyName.compare(field, std::string::npos, ".shader") == 0;
     if (!shaderFile && !shaderPathProperties.count(propertyName)) {
         return true;
     }
@@ -5554,7 +5552,7 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     const std::string effectiveShader = customShader->empty()
         ? sceneProject->scene->getDefaultCustomShader(shaderType) : *customShader;
 
-    // a mesh material's values come before the mesh's own
+    // a material's values come before the mesh's
     ShaderUniformValues values = *valuesRef;
     const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr;
     const int submesh = arguments.value("submesh", 0);
@@ -5728,15 +5726,21 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
     if (!valuesRef) return failResult("Component has no shader uniforms.");
 
     ShaderUniformValues values = *valuesRef;
-    int declaredSubmesh = -1;
-    if (const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
-        // on the materials, which come before the mesh's own values
-        const int submesh = arguments.value("submesh", -1);
+    int submesh = -1;
+    if (const MeshComponent* mesh = (component == ComponentType::MeshComponent) ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
+        // a mesh keeps them on its materials
+        submesh = arguments.value("submesh", -1);
         if (submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
-        declaredSubmesh = std::max(submesh, 0);
-        bool removed = false;
+        const int first = std::max(submesh, 0);
+        const int last = (submesh < 0) ? (int)mesh->numSubmeshes - 1 : submesh;
+        submesh = first;
+
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
-        for (int i = (submesh < 0 ? 0 : submesh); i < (submesh < 0 ? (int)mesh->numSubmeshes : submesh + 1); i++) {
+        bool removed = remove && ShaderUniforms::remove(values, name);
+        if (removed) {
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values);
+        }
+        for (int i = first; i <= last; i++) {
             ShaderUniformValues materialValues = mesh->submeshes[i].material.shaderUniforms;
             if (remove) {
                 if (!ShaderUniforms::remove(materialValues, name)) continue;
@@ -5746,10 +5750,6 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
             }
             multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component,
                 "submeshes[" + std::to_string(i) + "].material.shaderUniforms", materialValues);
-        }
-        if (remove && ShaderUniforms::remove(values, name)) {
-            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values);
-            removed = true;
         }
         if (remove && !removed) {
             delete multiCmd;
@@ -5768,7 +5768,7 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
 
     Json declared = Json::array();
     Json warnings;
-    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values, declaredSubmesh);
+    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values, submesh);
     bool declaredMember = false;
     std::string message = remove ? "Removed shader uniform through the command history."
                                  : "Set shader uniform through the command history.";

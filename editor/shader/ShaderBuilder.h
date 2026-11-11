@@ -26,7 +26,7 @@ namespace shadercompiler {
 
 namespace doriax::editor {
 
-    // what the sources of a shader declare, kept with its compiled stages
+    // what a shader's sources declare
     struct ShaderDeclarations {
         std::vector<ShaderParameterInfo> parameters;
         std::vector<ShaderTextureInfo> textures;

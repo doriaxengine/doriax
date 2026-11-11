@@ -85,7 +85,7 @@ namespace doriax{
         static std::string getCustomShaderName(uint16_t customId);     // project-relative base, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-        // a shader asset rides on the custom shader name, "fork#shader"
+        // a material shader rides on the custom shader name, "fork#shader"
         static std::string getCustomShader(const std::string& fork, const std::string& shader);
         static std::string getCustomShaderFork(const std::string& customShader);
         static std::string getCustomShaderAsset(const std::string& customShader);

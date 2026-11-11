@@ -52,9 +52,9 @@ namespace doriax{
         // material name or file
         std::string name = "";
 
-        // .glsl shader file whose hooks this material draws with, from the project or the engine
+        // .glsl file with the shader hooks, from the project or the engine
         std::string shader;
-        // values of the parameters the shader file declares, by name
+        // its parameter values, by name
         ShaderUniformValues shaderUniforms;
 
         bool operator == (const Material& other) const {

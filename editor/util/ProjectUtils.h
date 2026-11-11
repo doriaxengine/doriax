@@ -150,18 +150,16 @@ public:
     // Removes only files owned by the plan, then prunes the directories it created.
     static void removeShaderFork(const ShaderForkPlan& plan);
 
-    // a starting shader file in the default shader directory; its project path, empty on failure
+    // a starting shader file; its project path, empty on failure
     static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
-    // a project copy of an engine shader file, to change it
+    // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
-    // the engine's ready-made shader files, under shaders/ in its shader library;
-    // a project file of the same path overrides one
+    // the engine's shader files, under shaders/; a project file of the same path wins
     static std::vector<std::string> getEngineShaders();
     static bool isEngineShader(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
-    // the forks (true) a component draws with, as the renderer picks them, and the shader file
-    // (false) of one mesh submesh's material
+    // the forks (true) a component draws with, and the shader file (false) of one submesh
     static std::vector<std::pair<std::string, bool>> getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh = -1);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.
