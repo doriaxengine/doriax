@@ -31,7 +31,7 @@ invariant gl_Position;
 
 in vec3 a_position;
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
     out vec3 v_position;
 #endif
 
@@ -88,8 +88,8 @@ in vec3 a_position;
     out vec4 v_color;
 #endif
 // the UV set as the mesh stores it, before any texture rect, as the depth passes read it
-#if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
-    out vec2 v_coverageUV;
+#if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+    out vec2 v_hookUV;
 #endif
 
 #ifdef HAS_INSTANCING
@@ -184,7 +184,7 @@ void main() {
 
     vec4 worldPos = pbrParams.modelMatrix * pos;
 
-    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
+    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
         v_position = vec3(worldPos.xyz) / worldPos.w;
     #endif
 
@@ -232,8 +232,8 @@ void main() {
         #endif
     #endif
 
-    #if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
-        v_coverageUV = a_texcoord1;
+    #if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+        v_hookUV = a_texcoord1;
     #endif
 
     #ifdef HAS_UV_SET2

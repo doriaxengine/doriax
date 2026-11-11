@@ -127,6 +127,8 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     const std::string code = stripComments(source);
     out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
     out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
+    out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
+    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
     for (size_t at = code.find("Engine"); at != std::string::npos; at = code.find("Engine", at + 6)){
         if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
             continue;

@@ -231,7 +231,7 @@ void clearCustomSourceCache() {
 }
 
 // parameter headers, hook defines and flags; throws on a bad annotation
-void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, const char* shaderType,
+void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, const char* shaderType, bool colorPass,
                            editor::ShaderDeclarations& declared) {
     auto file = [&](const std::string& key) -> const std::string* {
         auto it = args.fileBuffers.find(key);
@@ -252,12 +252,23 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
     const bool useVertexOffset = vertexHooks.vertexOffset;
     const bool useCoverage = fragmentHooks.coverage;
-    if (!shaderAsset.empty() && !useVertexOffset && !useCoverage && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
+    // only the color pass shades
+    const bool useSurface = fragmentHooks.surface && colorPass;
+    const bool useColor = fragmentHooks.color && colorPass;
+    const bool useFragmentHooks = useCoverage || useSurface || useColor;
+    if (!shaderAsset.empty() && !useVertexOffset && !fragmentHooks.coverage && !fragmentHooks.surface && !fragmentHooks.color &&
+            vertexHooks.errors.empty() && fragmentHooks.errors.empty())
         throw std::runtime_error(shaderAsset + " defines no hook function");
     if (useVertexOffset)
         args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
     if (useCoverage)
         args.defines.push_back({"USE_COVERAGE", "1"});
+    if (useSurface)
+        args.defines.push_back({"USE_SURFACE", "1"});
+    if (useColor)
+        args.defines.push_back({"USE_COLOR", "1"});
+    if (useFragmentHooks)
+        args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
 
     // the files each stage reaches; an inactive hook is not read
     std::unordered_set<std::string> vertexFiles;
@@ -265,7 +276,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     auto lookup = [&](std::unordered_set<std::string>& reached) {
         return [&](const std::string& key) -> const std::string* {
             reached.insert(key);
-            if ((key == "includes/vertex_offset.glsl" && !useVertexOffset) || (key == "includes/coverage.glsl" && !useCoverage))
+            if ((key == "includes/vertex_offset.glsl" && !useVertexOffset) || (key == "includes/hooks_fs.glsl" && !useFragmentHooks))
                 return nullptr;
             return file(key);
         };
@@ -289,8 +300,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // a fork from before the hooks existed cannot run them
     if (useVertexOffset && !vertexFiles.count("includes/vertex_offset.glsl"))
         editor::Out::warning("%s does not include includes/vertex_offset.glsl, so the vertex offset of %s does nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
-    if (useCoverage && !fragmentFiles.count("includes/coverage.glsl"))
-        editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage of %s does nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
+    if (useFragmentHooks && !fragmentFiles.count("includes/hooks_fs.glsl"))
+        editor::Out::warning("%s does not include includes/hooks_fs.glsl, so the hooks of %s do nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
 
     if (useCoverage && fragmentAnnotations.hasCoverageShadows && fragmentAnnotations.coverageShadows)
         declared.flags |= ShaderFlag_CoverageShadows;
@@ -303,7 +314,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, declared.parameters, declared.textures);
+        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useFragmentHooks, declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
     args.fileBuffers["shader_textures_end_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, false);
@@ -1018,7 +1029,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.frag_file = customPaths.frag;
     }
 
-    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", declarations);
+    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", shaderType == ShaderType::MESH, declarations);
 
     // compiled with its stages as conditions
     for (const auto& [key, content] : sources->projectBuffers)

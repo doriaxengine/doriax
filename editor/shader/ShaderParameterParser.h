@@ -42,6 +42,8 @@ namespace doriax::editor {
         // hooks the code defines
         bool vertexOffset = false;
         bool coverage = false;
+        bool surface = false;
+        bool color = false;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;

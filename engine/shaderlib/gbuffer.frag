@@ -29,9 +29,9 @@ uniform u_fs_gbufferMaterial {
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
     in vec2 v_uv1;
-    #define COVERAGE_UV v_uv1
+    #define HOOK_UV v_uv1
 #else
-    #define COVERAGE_UV vec2(0.0)
+    #define HOOK_UV vec2(0.0)
 #endif
 #if defined(HAS_BASECOLOR_TEXTURE)
     uniform texture2D u_baseColorTexture;
@@ -55,13 +55,13 @@ uniform u_fs_gbufferMaterial {
 #endif
 #include "includes/parameters_fs.glsl"
 #ifdef USE_COVERAGE
-    #include "includes/coverage.glsl"
+    #include "includes/hooks_fs.glsl"
 #endif
 
 void main() {
     loadShaderParameters();
     #ifdef USE_COVERAGE
-        applyCoverage(v_worldPosition, COVERAGE_UV);
+        applyCoverage(getFragmentContext(v_worldPosition, HOOK_UV));
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)

@@ -8,7 +8,7 @@
 // step with a discard here, fork the depth shader too (Depth Shader in Properties). A
 // getCoverage() in the material's shader file cuts every pass alike without a fork.
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
     in vec3 v_position;
 #endif
 
@@ -50,11 +50,11 @@
 #if defined(HAS_VERTEX_COLOR_VEC4) || defined(HAS_INSTANCING)
     in vec4 v_color;
 #endif
-#if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
-    in vec2 v_coverageUV;
-    #define COVERAGE_UV v_coverageUV
+#if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+    in vec2 v_hookUV;
+    #define HOOK_UV v_hookUV
 #else
-    #define COVERAGE_UV vec2(0.0)
+    #define HOOK_UV vec2(0.0)
 #endif
 
 out vec4 g_finalColor;
@@ -267,15 +267,83 @@ const float M_PI = 3.141592653589793;
 #ifdef HAS_FOG
     #include "includes/fog.glsl"
 #endif
-#ifdef USE_COVERAGE
-    #include "includes/coverage.glsl"
+#ifdef USE_FRAGMENT_HOOKS
+    #include "includes/hooks_fs.glsl"
+
+    FragmentContext getMeshContext(){
+        FragmentContext context = getFragmentContext(v_position, HOOK_UV);
+        #ifdef HAS_NORMALS
+            #ifdef HAS_TANGENTS
+                context.normal = normalize(v_tbn[2]);
+            #else
+                context.normal = normalize(v_normal);
+            #endif
+            if (!gl_FrontFacing)
+                context.normal = -context.normal;
+        #endif
+        #ifdef HAS_UV_SET2
+            context.uv2 = v_uv2;
+        #endif
+        context.color = getVertexColor();
+        return context;
+    }
+
+    // after lighting and fog, linear
+    vec4 getHookColor(FragmentContext context, vec4 color){
+        color.a *= keepHookInputs(context);
+        #ifdef USE_COLOR
+            color = getColor(context, color);
+        #endif
+        return color;
+    }
+#endif
+
+#ifdef USE_SURFACE
+    // what the material gives, for getSurface() to change
+    Surface getMaterialSurface(vec4 baseColor){
+        Surface surface;
+        surface.baseColor = baseColor.rgb;
+        surface.alpha = baseColor.a;
+        surface.normal = vec3(0.0, 1.0, 0.0);
+        surface.metallic = 0.0;
+        surface.roughness = 1.0;
+        surface.occlusion = 1.0;
+        surface.emissive = vec3(0.0);
+        #ifndef MATERIAL_UNLIT
+            MaterialInfo info = {0.0, vec3(0.0), 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0), vec3(0.0)};
+            info = getMetallicRoughnessInfo(info, 0.04);
+            surface.normal = getNormalInfo().n;
+            surface.metallic = info.metallic;
+            surface.roughness = info.perceptualRoughness;
+            surface.emissive = pbrParams.emissiveFactor;
+            #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
+                surface.occlusion = getOcclusionTexture().r;
+                surface.emissive *= sRGBToLinear(getEmissiveTexture().rgb);
+            #endif
+        #endif
+        return surface;
+    }
+
+    #ifndef MATERIAL_UNLIT
+        MaterialInfo getSurfaceInfo(MaterialInfo info, Surface surface, float f0_ior){
+            info.metallic = surface.metallic;
+            info.perceptualRoughness = surface.roughness;
+            vec3 f0 = vec3(f0_ior);
+            info.albedoColor = mix(info.baseColor.rgb * (vec3(1.0) - f0),  vec3(0), info.metallic);
+            info.f0 = mix(f0, info.baseColor.rgb, info.metallic);
+            return info;
+        }
+    #endif
 #endif
 
 void main() {
     loadShaderParameters();
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context = getMeshContext();
+    #endif
     #ifdef USE_COVERAGE
         // before any texture is sampled, so removed fragments cost little
-        float coverageAlpha = applyCoverage(v_position, COVERAGE_UV);
+        float coverageAlpha = applyCoverage(context);
     #endif
 
     vec4 baseColor = getBaseColor();
@@ -297,6 +365,12 @@ void main() {
         baseColor = getTerrainSurface(baseColor, vec3(0.0, 1.0, 0.0), 1.0, 0.0).color;
     #endif
 
+    #ifdef USE_SURFACE
+        Surface surface = getMaterialSurface(baseColor);
+        getSurface(context, surface);
+        baseColor = vec4(surface.baseColor, surface.alpha);
+    #endif
+
     #ifdef ALPHA_MASK
         if (baseColor.a < pbrParams.alphaCutoff) {
             discard;
@@ -315,18 +389,28 @@ void main() {
         #ifdef USE_LIGHT2D
             baseColor.rgb *= getLight2DIntensity(v_position, getNormal2D(), true);
         #endif
+        #ifdef USE_SURFACE
+            baseColor.rgb += surface.emissive;
+        #endif
         #ifdef HAS_FOG
             baseColor.rgb = getFogColor(baseColor.rgb);
+        #endif
+        #ifdef USE_FRAGMENT_HOOKS
+            baseColor = getHookColor(context, baseColor);
         #endif
         g_finalColor = (vec4(linearTosRGB(baseColor.rgb), baseColor.a));
         return;
     #endif
 
     #ifndef MATERIAL_UNLIT
-        NormalInfo normalInfo = getNormalInfo();
-        vec3 n = normalInfo.n;
-        vec3 t = normalInfo.t;
-        vec3 b = normalInfo.b;
+        #ifdef USE_SURFACE
+            vec3 n = surface.normal;
+        #else
+            NormalInfo normalInfo = getNormalInfo();
+            vec3 n = normalInfo.n;
+            vec3 t = normalInfo.t;
+            vec3 b = normalInfo.b;
+        #endif
 
         MaterialInfo materialInfo = {0.0, vec3(0.0), 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0), vec3(0.0)};
         materialInfo.baseColor = baseColor.rgb;
@@ -335,7 +419,11 @@ void main() {
         float ior = 1.5;
         float f0_ior = 0.04;
 
-        materialInfo = getMetallicRoughnessInfo(materialInfo, f0_ior);
+        #ifdef USE_SURFACE
+            materialInfo = getSurfaceInfo(materialInfo, surface, f0_ior);
+        #else
+            materialInfo = getMetallicRoughnessInfo(materialInfo, f0_ior);
+        #endif
 
         #ifdef HAS_TERRAIN_PBR
             // painted layers own the whole surface, so it is evaluated once and applied here
@@ -385,7 +473,10 @@ void main() {
             #endif
         #endif
 
-        #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
+        #ifdef USE_SURFACE
+            f_diffuse *= surface.occlusion;
+            f_specular *= surface.occlusion;
+        #elif defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
             float ao = getOcclusionTexture().r;
             f_diffuse = mix(f_diffuse, f_diffuse * ao, occlusionStrength);
             // apply ambient occlusion too all lighting that is not punctual
@@ -494,9 +585,13 @@ void main() {
             }
         #endif
 
-        f_emissive = pbrParams.emissiveFactor;
-        #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
-            f_emissive *= sRGBToLinear(getEmissiveTexture().rgb);
+        #ifdef USE_SURFACE
+            f_emissive = surface.emissive;
+        #else
+            f_emissive = pbrParams.emissiveFactor;
+            #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
+                f_emissive *= sRGBToLinear(getEmissiveTexture().rgb);
+            #endif
         #endif
 
         vec3 color = f_emissive + f_diffuse + f_specular;
@@ -511,6 +606,11 @@ void main() {
             color.rgb = getFogColor(color.rgb);
         #endif
 
+        #ifdef USE_FRAGMENT_HOOKS
+            vec4 hookColor = getHookColor(context, vec4(color, baseColor.a));
+            color = hookColor.rgb;
+            baseColor.a = hookColor.a;
+        #endif
         g_finalColor = vec4(linearTosRGB(color.rgb), baseColor.a);
     #endif
 }
