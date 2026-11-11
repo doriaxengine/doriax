@@ -1402,6 +1402,7 @@ std::string editor::Factory::createLightComponent(int indentSpaces, EntityRegist
     code << ind << "light.shadowCameraNearFar.x = " << formatFloat(light.shadowCameraNearFar.x) << ";\n";
     code << ind << "light.shadowCameraNearFar.y = " << formatFloat(light.shadowCameraNearFar.y) << ";\n";
     code << ind << "light.numShadowCascades = " << formatUInt(light.numShadowCascades) << ";\n";
+    code << ind << "light.shadowCascadeBlend = " << formatBool(light.shadowCascadeBlend) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "LightComponent", "light", assignExisting);
     return code.str();
 }

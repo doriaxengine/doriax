@@ -62,6 +62,9 @@ namespace doriax{
 
         void setNumCascades(unsigned int numCascades);
         float getNumCascades() const;
+
+        void setCascadeBlend(bool cascadeBlend);
+        bool isCascadeBlend() const;
     };
 }
 

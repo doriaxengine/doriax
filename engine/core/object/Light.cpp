@@ -306,3 +306,19 @@ float Light::getNumCascades() const{
 
     return lightcomp.numShadowCascades;
 }
+
+void Light::setCascadeBlend(bool cascadeBlend){
+    LightComponent& lightcomp = getComponent<LightComponent>();
+
+    if (lightcomp.shadowCascadeBlend != cascadeBlend){
+        lightcomp.shadowCascadeBlend = cascadeBlend;
+
+        lightcomp.needUpdateShadowCamera = true;
+    }
+}
+
+bool Light::isCascadeBlend() const{
+    LightComponent& lightcomp = getComponent<LightComponent>();
+
+    return lightcomp.shadowCascadeBlend;
+}

@@ -6085,6 +6085,7 @@ YAML::Node editor::Stream::encodeLightComponent(const LightComponent& light) {
     node["mapResolution"] = light.mapResolution;
     node["shadowCameraNearFar"] = encodeVector2(light.shadowCameraNearFar);
     node["numShadowCascades"] = light.numShadowCascades;
+    node["shadowCascadeBlend"] = light.shadowCascadeBlend;
 
     return node;
 }
@@ -6112,6 +6113,7 @@ LightComponent editor::Stream::decodeLightComponent(const YAML::Node& node, cons
     if (node["mapResolution"]) light.mapResolution = node["mapResolution"].as<unsigned int>();
     if (node["shadowCameraNearFar"]) light.shadowCameraNearFar = decodeVector2(node["shadowCameraNearFar"]);
     if (node["numShadowCascades"]) light.numShadowCascades = node["numShadowCascades"].as<unsigned int>();
+    if (node["shadowCascadeBlend"]) light.shadowCascadeBlend = node["shadowCascadeBlend"].as<bool>();
 
     return light;
 }

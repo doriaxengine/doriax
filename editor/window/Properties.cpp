@@ -8557,6 +8557,7 @@ void editor::Properties::drawLightComponent(ComponentType cpType, SceneProject* 
     propertyRow(RowPropertyType::Float, cpType, "shadowBias", "Bias", sceneProject, entities, settingsBias);
     propertyRow(RowPropertyType::UIntSlider, cpType, "mapResolution", "Map Resolution", sceneProject, entities, settingsMapRes);
     propertyRow(RowPropertyType::UIntSlider, cpType, "numShadowCascades", "Num Cascades", sceneProject, entities, settingsCascade);
+    propertyRow(RowPropertyType::Bool, cpType, "shadowCascadeBlend", "Cascade Blend", sceneProject, entities);
 
     propertyHeader("Shadow Camera");
     if (ImGui::Button(ICON_FA_GEAR)){

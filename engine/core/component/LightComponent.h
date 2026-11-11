@@ -78,6 +78,8 @@ namespace doriax{
         unsigned int mapResolution = 2048;
         Vector2 shadowCameraNearFar = Vector2(0.1f, 10.0f); // when automatic it gets value from scene camera or light range
         unsigned int numShadowCascades = 3;
+        // fades each cascade into the next
+        bool shadowCascadeBlend = false;
 
         LightCamera cameras[6];
         // base slot in the shadow atlas (projective for directional/spot, point atlas

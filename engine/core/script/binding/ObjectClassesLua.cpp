@@ -366,6 +366,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("automaticShadowCamera", &Light::isAutomaticShadowCamera, &Light::setAutomaticShadowCamera)
         .addProperty("numCascades", &Light::getNumCascades, &Light::setNumCascades)
         .addFunction("setNumCascades", &Light::setNumCascades)
+        .addProperty("cascadeBlend", &Light::isCascadeBlend, &Light::setCascadeBlend)
         .addFunction("getLightComponent", &Light::getComponent<LightComponent>)
         .endClass();
 

@@ -436,6 +436,7 @@ namespace {
         makeCustomProperty("shadowCameraNear", PropertyType::Float, UpdateFlags_LightShadowCamera, &nullPropertyPtr, &getLightShadowNearRef),
         makeCustomProperty("shadowCameraFar", PropertyType::Float, UpdateFlags_LightShadowCamera, &nullPropertyPtr, &getLightShadowFarRef),
         makeFastProperty<LightComponent, unsigned int, &LightComponent::numShadowCascades>("numShadowCascades", PropertyType::UInt, UpdateFlags_LightShadowCamera | UpdateFlags_Scene_Mesh_Reload),
+        makeFastProperty<LightComponent, bool, &LightComponent::shadowCascadeBlend>("shadowCascadeBlend", PropertyType::Bool, UpdateFlags_LightShadowCamera),
     };
 
     static const FastPropertyDescriptor kLight2DProperties[] = {

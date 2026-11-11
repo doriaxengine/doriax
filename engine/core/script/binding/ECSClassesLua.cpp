@@ -913,6 +913,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("mapResolution", &LightComponent::mapResolution, &LightComponent::mapResolution)
         .addProperty("shadowCameraNearFar", &LightComponent::shadowCameraNearFar, &LightComponent::shadowCameraNearFar)
         .addProperty("numShadowCascades", &LightComponent::numShadowCascades, &LightComponent::numShadowCascades)
+        .addProperty("shadowCascadeBlend", &LightComponent::shadowCascadeBlend, &LightComponent::shadowCascadeBlend)
         .addProperty("needUpdateShadowCamera", &LightComponent::needUpdateShadowCamera, &LightComponent::needUpdateShadowCamera)
         .addProperty("needUpdateShadowMap", &LightComponent::needUpdateShadowMap, &LightComponent::needUpdateShadowMap)
         .endClass();
