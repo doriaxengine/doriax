@@ -9730,15 +9730,17 @@ void RenderSystem::updateLightFromScene(LightComponent& light, Transform& transf
 
                 // Get slice bounding sphere and create light ortho
                 for (int ca = 0; ca < light.numShadowCascades; ca++) {
-                    projectionMatrix[ca] = getStableDirLightProjection(viewMatrix, camera.viewMatrix, fov, ratio, splitNear[ca], splitFar[ca] + planeFarOffset, shadowMaxDistance * 0.5f);
+                    // the next cascade fades in over a band past the split
+                    float splitBlend = (ca + 1 < (int)light.numShadowCascades)
+                        ? std::min(planeFarOffset, 0.2f * (splitFar[ca] - splitNear[ca])) : 0.0f;
+
+                    projectionMatrix[ca] = getStableDirLightProjection(viewMatrix, camera.viewMatrix, fov, ratio, splitNear[ca], splitFar[ca] + splitBlend, shadowMaxDistance * 0.5f);
 
                     light.cameras[ca].lightViewMatrix = viewMatrix;
                     light.cameras[ca].lightProjectionMatrix = projectionMatrix[ca];
                     light.cameras[ca].lightViewProjectionMatrix = projectionMatrix[ca] * viewMatrix;
                     light.cameras[ca].nearFar = Vector2(splitNear[ca], splitFar[ca]);
-                    // the next cascade fades in over part of the planeFarOffset this one covers
-                    light.cameras[ca].splitBlend = (ca + 1 < (int)light.numShadowCascades)
-                        ? std::min(planeFarOffset, 0.2f * (splitFar[ca] - splitNear[ca])) : 0.0f;
+                    light.cameras[ca].splitBlend = splitBlend;
                     updateCameraFrustumPlanes(light.cameras[ca].lightViewProjectionMatrix, light.cameras[ca].frustumPlanes);
                 }
 
