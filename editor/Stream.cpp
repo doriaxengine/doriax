@@ -3774,6 +3774,8 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
 
     if (!material.shader.empty())
         node["shader"] = material.shader;
+    if (!material.shaderUniforms.empty())
+        node["shaderUniforms"] = encodeShaderUniforms(material.shaderUniforms);
 
     return node;
 }
@@ -3815,6 +3817,7 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
 
     // Written only when set
     material.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    material.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
 
     return material;
 }

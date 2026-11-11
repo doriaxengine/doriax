@@ -441,7 +441,7 @@ bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& project
     return true;
 }
 
-std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity) {
+std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh) {
     std::vector<std::pair<std::string, bool>> sources;
     auto addFork = [&](const std::string& fork) {
         if (!fork.empty())
@@ -457,8 +457,8 @@ std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShad
         if (const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
             addFork(mesh->customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh->customShader);
             addFork(mesh->customDepthShader);
-            for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
-                addEffect(mesh->submeshes[i].material.shader);
+            if (submesh >= 0 && submesh < (int)mesh->numSubmeshes)
+                addEffect(mesh->submeshes[submesh].material.shader);
         }
         return sources;
     }

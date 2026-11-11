@@ -206,6 +206,7 @@ void Mesh::setMaterial(const Material& material){
         if (mesh->submeshes[0].material != material){
             if (mesh->submeshes[0].material.shader != material.shader)
                 mesh->needReload = true;
+            mesh->needUpdateShaderUniforms = true;
             mesh->submeshes[0].material = material;
             mesh->submeshes[0].needUpdateTexture = true;
         }
@@ -222,6 +223,7 @@ void Mesh::setMaterial(unsigned int submesh, const Material& material){
     if (mesh && mesh->submeshes[submesh].material != material){
         if (mesh->submeshes[submesh].material.shader != material.shader)
             mesh->needReload = true;
+        mesh->needUpdateShaderUniforms = true;
         mesh->submeshes[submesh].material = material;
         mesh->submeshes[submesh].needUpdateTexture = true;
         updateSpriteBatch();
@@ -580,7 +582,9 @@ float Mesh::getVertexOffsetMax() const{
 
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){
     for (MeshComponent* mesh : getMeshes()){
-        ShaderUniforms::set(mesh->shaderUniforms, name, value);
+        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+            ShaderUniforms::set(mesh->submeshes[i].material.shaderUniforms, name, value);
+        }
         mesh->needUpdateShaderUniforms = true;
     }
 }
@@ -597,16 +601,43 @@ void Mesh::setShaderUniform(const std::string& name, float value){
     setShaderUniform(name, Vector4(value, 0.0f, 0.0f, 0.0f));
 }
 
+void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector4& value){
+    MeshComponent* mesh = findSubmesh(submesh);
+
+    if (mesh){
+        ShaderUniforms::set(mesh->submeshes[submesh].material.shaderUniforms, name, value);
+        mesh->needUpdateShaderUniforms = true;
+    }
+}
+
+void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector3& value){
+    setShaderUniform(submesh, name, Vector4(value.x, value.y, value.z, 0.0f));
+}
+
+void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector2& value){
+    setShaderUniform(submesh, name, Vector4(value.x, value.y, 0.0f, 0.0f));
+}
+
+void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, float value){
+    setShaderUniform(submesh, name, Vector4(value, 0.0f, 0.0f, 0.0f));
+}
+
 Vector4 Mesh::getShaderUniform(const std::string& name) const{
-    return ShaderUniforms::get(getMesh().shaderUniforms, name);
+    return getShaderUniform(0, name);
+}
+
+Vector4 Mesh::getShaderUniform(unsigned int submesh, const std::string& name) const{
+    return ShaderUniforms::get(getSubmesh(submesh).material.shaderUniforms, name);
 }
 
 bool Mesh::removeShaderUniform(const std::string& name){
     bool removed = false;
     for (MeshComponent* mesh : getMeshes()){
-        if (ShaderUniforms::remove(mesh->shaderUniforms, name)){
-            mesh->needUpdateShaderUniforms = true;
-            removed = true;
+        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+            if (ShaderUniforms::remove(mesh->submeshes[i].material.shaderUniforms, name)){
+                mesh->needUpdateShaderUniforms = true;
+                removed = true;
+            }
         }
     }
 

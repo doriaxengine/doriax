@@ -1400,7 +1400,8 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
                             material.baseColorTexture.getSvgScale())}};
         }
         case PropertyType::Custom:
-            if (propertyName == "shaderUniforms" || propertyName == "shaderParameters") {
+            if (propertyName == "shaderUniforms" || propertyName == "shaderParameters" ||
+                    (propertyName.size() > 15 && propertyName.compare(propertyName.size() - 15, 15, ".shaderUniforms") == 0)) {
                 return shaderUniformValuesJson(*static_cast<ShaderUniformValues*>(property.ref));
             }
             if (propertyName == "bursts") {
@@ -5469,12 +5470,12 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
 }
 
 void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
-                                          ComponentType component, ShaderType shaderType, const ShaderUniformValues& values) {
+                                          ComponentType component, ShaderType shaderType, const ShaderUniformValues& values, int submesh = -1) {
     const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, component, "customShader");
     const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
     warnings = Json::array();
     std::vector<ShaderEffectAnnotations> sources;
-    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity)) {
+    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity, submesh)) {
         sources.push_back(ShaderBuilder::getShaderAnnotations(project, source, fork));
         appendParameterMembers(members, sources.back(), values, inherited);
         for (const std::string& error : sources.back().errors) warnings.push_back(error);
@@ -5553,8 +5554,18 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     const std::string effectiveShader = customShader->empty()
         ? sceneProject->scene->getDefaultCustomShader(shaderType) : *customShader;
 
+    // a mesh material's values come before the mesh's own
+    ShaderUniformValues values = *valuesRef;
+    const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr;
+    const int submesh = arguments.value("submesh", 0);
+    if (mesh) {
+        if (submesh < 0 || submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
+        for (const auto& value : mesh->submeshes[submesh].material.shaderUniforms)
+            ShaderUniforms::set(values, value.first, value.second);
+    }
+
     Json warnings;
-    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, *valuesRef);
+    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, values, mesh ? submesh : -1);
 
     Json result{{"scene_id", sceneId},
                 {"entity_id", entity},
@@ -5564,9 +5575,12 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
                 {"build_failed", Catalog::isCustomShaderBuildFailed(sceneProject->scene, entity, component)},
                 {"members", members},
                 {"warnings", warnings},
-                {"values", shaderUniformValuesJson(*valuesRef)}};
+                {"values", shaderUniformValuesJson(values)}};
     // a mesh's depth fork can declare values of its own, listed in the same members
     if (component == ComponentType::MeshComponent) {
+        result["submesh"] = submesh;
+        result["submesh_count"] = mesh->numSubmeshes;
+        result["material_shader"] = mesh->submeshes[submesh].material.shader;
         result["custom_depth_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader");
         result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
     }
@@ -5714,17 +5728,47 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
     if (!valuesRef) return failResult("Component has no shader uniforms.");
 
     ShaderUniformValues values = *valuesRef;
-    if (remove) {
-        if (!ShaderUniforms::remove(values, name)) return expectedMissResult("Component has no value named '" + name + "'.");
+    int declaredSubmesh = -1;
+    if (const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
+        // on the materials, which come before the mesh's own values
+        const int submesh = arguments.value("submesh", -1);
+        if (submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
+        declaredSubmesh = std::max(submesh, 0);
+        bool removed = false;
+        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+        for (int i = (submesh < 0 ? 0 : submesh); i < (submesh < 0 ? (int)mesh->numSubmeshes : submesh + 1); i++) {
+            ShaderUniformValues materialValues = mesh->submeshes[i].material.shaderUniforms;
+            if (remove) {
+                if (!ShaderUniforms::remove(materialValues, name)) continue;
+                removed = true;
+            } else {
+                ShaderUniforms::set(materialValues, name, value);
+            }
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component,
+                "submeshes[" + std::to_string(i) + "].material.shaderUniforms", materialValues);
+        }
+        if (remove && ShaderUniforms::remove(values, name)) {
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values);
+            removed = true;
+        }
+        if (remove && !removed) {
+            delete multiCmd;
+            return expectedMissResult("Component has no value named '" + name + "'.");
+        }
+        CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
     } else {
-        ShaderUniforms::set(values, name, value);
+        if (remove) {
+            if (!ShaderUniforms::remove(values, name)) return expectedMissResult("Component has no value named '" + name + "'.");
+        } else {
+            ShaderUniforms::set(values, name, value);
+        }
+        CommandHandle::get(sceneId)->addCommandNoMerge(
+            new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values));
     }
-    CommandHandle::get(sceneId)->addCommandNoMerge(
-        new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values));
 
     Json declared = Json::array();
     Json warnings;
-    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values);
+    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values, declaredSubmesh);
     bool declaredMember = false;
     std::string message = remove ? "Removed shader uniform through the command history."
                                  : "Set shader uniform through the command history.";

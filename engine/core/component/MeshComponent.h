@@ -47,6 +47,7 @@ namespace doriax{
         SubmeshOverride_PrimitiveType            = 1 << 14,
         SubmeshOverride_FoliageTransmission      = 1 << 15,
         SubmeshOverride_Shader                   = 1 << 16,
+        SubmeshOverride_ShaderUniforms           = 1 << 17,
 
         SubmeshOverride_Material = SubmeshOverride_BaseColorFactor | SubmeshOverride_MetallicFactor |
                                    SubmeshOverride_RoughnessFactor | SubmeshOverride_AlphaCutoff |
@@ -54,7 +55,8 @@ namespace doriax{
                                    SubmeshOverride_MaterialName | SubmeshOverride_BaseColorTexture |
                                    SubmeshOverride_EmissiveTexture | SubmeshOverride_MetallicRoughnessTexture |
                                    SubmeshOverride_OcclusionTexture | SubmeshOverride_NormalTexture |
-                                   SubmeshOverride_FoliageTransmission | SubmeshOverride_Shader
+                                   SubmeshOverride_FoliageTransmission | SubmeshOverride_Shader |
+                                   SubmeshOverride_ShaderUniforms
     };
 
     struct DORIAX_API Submesh{
@@ -186,7 +188,7 @@ namespace doriax{
         // vertices or discards keeps its shadows in step.
         std::string customDepthShader;
         float vertexOffsetMax = 0.0f; // longest getVertexOffset() in world units, widens the bounds; 0 = no limit
-        // values of the declared parameters, by name, shared by all submeshes
+        // values of the fork's parameters, by name; a material's own come first
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;
 

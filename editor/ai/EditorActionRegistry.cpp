@@ -995,19 +995,20 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "inspect_shader_uniforms",
-            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), plus annotation errors as warnings. The files are the fork (own or the scene default), a mesh's depth fork and its materials' shader files, and a water's underwater fork. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
+            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), plus annotation errors as warnings. The files are the fork (own or the scene default), a mesh's depth fork and the shader file of one submesh's material (submesh, 0 when omitted; submesh_count says how many there are), and a water's underwater fork. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id of a component with a custom shader")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
                 {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect")},
-                {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")}
+                {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")},
+                {"submesh", integerSchema("Mesh submesh whose material is read. Default 0")}
             }),
             true
         },
         {
             "set_shader_uniform",
-            "Set or remove the value of one #pragma param parameter, by name, as one undoable step and without a shader rebuild. Values live on the component (shaderUniforms) or on the post-process pass, kept as a Vector4: give number_value for float/int, vector2_value/vector3_value/vector4_value for vec2/vec3/vec4 and ivec types (ints truncate). Give entity_id/entity_name (component optional) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Set remove=true to drop the value, so the inherited one or the declared default applies again. Names no shader declares are stored but unused; use inspect_shader_uniforms to see the declared parameters.",
+            "Set or remove the value of one #pragma param parameter, by name, as one undoable step and without a shader rebuild. Values live on the component (shaderUniforms), on a mesh's materials (every submesh, or the one given as submesh) or on the post-process pass, kept as a Vector4: give number_value for float/int, vector2_value/vector3_value/vector4_value for vec2/vec3/vec4 and ivec types (ints truncate). Give entity_id/entity_name (component optional) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Set remove=true to drop the value, so the inherited one or the declared default applies again. Names no shader declares are stored but unused; use inspect_shader_uniforms to see the declared parameters.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"entity_id", integerSchema("Entity id of a component with a custom shader")},
@@ -1019,6 +1020,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"vector2_value", vector2Schema("Value for a vec2 member")},
                 {"vector3_value", vector3Schema("Value for a vec3 member")},
                 {"vector4_value", vector4Schema("Value for a vec4 member")},
+                {"submesh", integerSchema("Mesh submesh whose material takes the value. Omit for every submesh")},
                 {"remove", boolSchema("Remove the stored value instead of setting one")}
             }, {"name"}),
             false

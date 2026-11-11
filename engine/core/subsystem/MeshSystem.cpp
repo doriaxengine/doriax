@@ -265,6 +265,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
     if (fields & SubmeshOverride_AlphaMode)       material.alphaMode       = savedMaterial.alphaMode;
     if (fields & SubmeshOverride_MaterialName)    material.name            = savedMaterial.name;
     if (fields & SubmeshOverride_Shader)          material.shader          = savedMaterial.shader;
+    if (fields & SubmeshOverride_ShaderUniforms)  material.shaderUniforms  = savedMaterial.shaderUniforms;
 
     if (fields & SubmeshOverride_BaseColorTexture) {
         material.baseColorTexture = savedMaterial.baseColorTexture;
@@ -3706,11 +3707,13 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
                 }
             }
             const float swayHeight = mesh.verticesAABB.getMaximum().y;
-            if (ShaderUniforms::get(mesh.shaderUniforms, "windSway").x != layer.windSway ||
-                    ShaderUniforms::get(mesh.shaderUniforms, "windSwayHeight").x != swayHeight){
-                ShaderUniforms::set(mesh.shaderUniforms, "windSway", Vector4(layer.windSway, 0.0f, 0.0f, 0.0f));
-                ShaderUniforms::set(mesh.shaderUniforms, "windSwayHeight", Vector4(swayHeight, 0.0f, 0.0f, 0.0f));
-                mesh.needUpdateShaderUniforms = true;
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                ShaderUniformValues& values = mesh.submeshes[s].material.shaderUniforms;
+                if (ShaderUniforms::get(values, "windSway").x != layer.windSway || ShaderUniforms::get(values, "windSwayHeight").x != swayHeight){
+                    ShaderUniforms::set(values, "windSway", Vector4(layer.windSway, 0.0f, 0.0f, 0.0f));
+                    ShaderUniforms::set(values, "windSwayHeight", Vector4(swayHeight, 0.0f, 0.0f, 0.0f));
+                    mesh.needUpdateShaderUniforms = true;
+                }
             }
             // its reach in 20 m/s of wind
             const float reach = layer.windSway * 4.0f;

@@ -327,6 +327,8 @@ namespace doriax::editor{
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
         // a section per shader file the component is built from, stored by name in shaderUniforms
         void drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
+        // the parameters of a material's shader file, stored on the material
+        void drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
         // scene or view parameters the scene's shaders declare, and stored ones nothing declares
         std::vector<ShaderParameterDeclaration> collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored);
         void drawSceneShaderParameters(SceneProject* sceneProject);

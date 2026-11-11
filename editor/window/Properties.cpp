@@ -5515,6 +5515,29 @@ void editor::Properties::drawComponentShaderParameters(ComponentType cpType, Sha
     }
 }
 
+void editor::Properties::drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged){
+    const MeshComponent* mesh = sceneProject->scene->findComponent<MeshComponent>(entities[0]);
+    if (!mesh || submesh >= mesh->numSubmeshes || mesh->submeshes[submesh].material.shader.empty())
+        return;
+
+    const std::string shader = mesh->submeshes[submesh].material.shader;
+    const std::string propertyName = "submeshes[" + std::to_string(submesh) + "].material.shaderUniforms";
+    const ShaderUniformValues values = mesh->submeshes[submesh].material.shaderUniforms;
+    const uint32_t sceneId = sceneProject->id;
+
+    ImGui::PushID(propertyName.c_str());
+    drawShaderParameters(std::filesystem::path(shader).stem().string(), sceneId, getShaderAnnotations(shader, false), values, &mesh->shaderUniforms,
+            [&](const ShaderUniformValues& newValues) -> Command* {
+        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+        for (const Entity& entity : entities)
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, newValues);
+        if (onChanged)
+            onChanged();
+        return multiCmd;
+    });
+    ImGui::PopID();
+}
+
 std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored){
     std::vector<ShaderParameterDeclaration> result;
     auto add = [&](const ShaderParameterDeclaration& declaration) {
@@ -6500,8 +6523,9 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.normalTexture", "Normal Texture", sceneProject, entities, settingsMaterial);
             propertyHeader("Shader", -1, false, true);
             drawMaterialShaderRow(sceneProject, entities, s, settingsMaterial.onValueChanged);
-            ImGui::SameLine(); helpMarker("A .glsl shader file whose hooks this material draws with: vec3 getVertexOffset(VertexContext context) moves each vertex in world units, float getCoverage(FragmentContext context) says how much of each fragment stays. Every pass runs them, so shadows and reflections follow. Its #pragma param values are the parameters below the Shaders section.");
+            ImGui::SameLine(); helpMarker("A .glsl shader file whose hooks this material draws with: vec3 getVertexOffset(VertexContext context) moves each vertex in world units, float getCoverage(FragmentContext context) says how much of each fragment stays. Every pass runs them, so shadows and reflections follow. Its #pragma param values are the parameters below.");
             endTable();
+            drawMaterialShaderParameters(sceneProject, entities, s, settingsMaterial.onValueChanged);
         }
 
         beginTable(cpType, getLabelSize("Texture Shadow"), "submeshes_settings");

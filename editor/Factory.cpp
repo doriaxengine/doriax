@@ -844,6 +844,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << ind << "mesh.submeshes[" << idx << "].material.name = " << formatString(mesh.submeshes[s].material.name) << ";\n";
         if (!mesh.submeshes[s].material.shader.empty())
             code << ind << "mesh.submeshes[" << idx << "].material.shader = " << formatString(mesh.submeshes[s].material.shader) << ";\n";
+        if (!mesh.submeshes[s].material.shaderUniforms.empty())
+            code << ind << "mesh.submeshes[" << idx << "].material.shaderUniforms = " << formatShaderUniforms(mesh.submeshes[s].material.shaderUniforms) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.baseColorFactor = " << formatVector4(mesh.submeshes[s].material.baseColorFactor) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.metallicFactor = " << formatFloat(mesh.submeshes[s].material.metallicFactor) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.roughnessFactor = " << formatFloat(mesh.submeshes[s].material.roughnessFactor) << ";\n";

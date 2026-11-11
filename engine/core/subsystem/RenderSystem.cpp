@@ -235,12 +235,12 @@ namespace {
         const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
         for (int i = 0; i < mesh.numSubmeshes; i++){
             Submesh& submesh = mesh.submeshes[i];
-            submesh.paramsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.paramsFS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.depthParamsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.depthParamsFS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.gbufferParamsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.gbufferParamsFS.writeObject(mesh.shaderUniforms, inherited);
+            submesh.paramsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            submesh.paramsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            submesh.depthParamsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            submesh.depthParamsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            submesh.gbufferParamsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            submesh.gbufferParamsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
         }
         mesh.needUpdateShaderUniforms = false;
     }
@@ -3289,8 +3289,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
             mesh.submeshes[i].depthParamsVS.resolve(depthShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].depthParamsFS.resolve(depthShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].depthParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].depthParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+            mesh.submeshes[i].depthParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
         }else if (mesh.submeshes[i].depthShader){
             // a reload keeps the handle; release it with the key it was taken with
             mesh.submeshes[i].depthShader.reset();
@@ -3352,8 +3352,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // the fragment stage keeps them in the material block, having no block to spare
         mesh.submeshes[i].paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
         mesh.submeshes[i].paramsFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
-        mesh.submeshes[i].paramsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-        mesh.submeshes[i].paramsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+        mesh.submeshes[i].paramsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
         }
@@ -3633,8 +3633,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -4933,6 +4933,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             if (mesh.submeshes[i].needUpdateTexture || needUpdateFramebuffer){
                 ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
                 if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
+                    // the material may bring other parameter values too
+                    if (mesh.submeshes[i].needUpdateTexture)
+                        mesh.needUpdateShaderUniforms = true;
                     mesh.submeshes[i].needUpdateTexture = false;
                 }
             }

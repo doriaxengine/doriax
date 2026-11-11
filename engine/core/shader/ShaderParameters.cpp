@@ -228,12 +228,14 @@ void ShaderParameterBlock::clear(){
     shared = false;
 }
 
-void ShaderParameterBlock::writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited){
+void ShaderParameterBlock::writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited, const ShaderUniformValues* parent){
     for (const Binding& binding : bindings){
         if (binding.scope != ShaderParameterScope::OBJECT)
             continue;
         if (ShaderUniforms::has(values, binding.name)){
             writeValue(data, binding, ShaderUniforms::get(values, binding.name));
+        }else if (parent && ShaderUniforms::has(*parent, binding.name)){
+            writeValue(data, binding, ShaderUniforms::get(*parent, binding.name));
         }else if (inherited && ShaderUniforms::has(*inherited, binding.name)){
             writeValue(data, binding, ShaderUniforms::get(*inherited, binding.name));
         }else{

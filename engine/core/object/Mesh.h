@@ -131,7 +131,12 @@ namespace doriax{
         void setShaderUniform(const std::string& name, const Vector3& value);
         void setShaderUniform(const std::string& name, const Vector2& value);
         void setShaderUniform(const std::string& name, float value);
+        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector4& value);
+        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector3& value);
+        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector2& value);
+        void setShaderUniform(unsigned int submesh, const std::string& name, float value);
         Vector4 getShaderUniform(const std::string& name) const;
+        Vector4 getShaderUniform(unsigned int submesh, const std::string& name) const;
         bool removeShaderUniform(const std::string& name);
 
         void setAsMirror();

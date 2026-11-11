@@ -6,6 +6,7 @@
 
 #include "math/Vector3.h"
 #include "texture/Texture.h"
+#include "shader/ShaderUniforms.h"
 
 namespace doriax{
 
@@ -53,6 +54,8 @@ namespace doriax{
 
         // .glsl shader file whose hooks this material draws with, from the project or the engine
         std::string shader;
+        // values of the parameters the shader file declares, by name
+        ShaderUniformValues shaderUniforms;
 
         bool operator == (const Material& other) const {
             return baseColorFactor == other.baseColorFactor &&
@@ -73,7 +76,8 @@ namespace doriax{
                    emissiveTexCoord == other.emissiveTexCoord &&
                    normalTexCoord == other.normalTexCoord &&
                    name == other.name &&
-                   shader == other.shader;
+                   shader == other.shader &&
+                   shaderUniforms == other.shaderUniforms;
         }
 
         bool operator != (const Material& other) const {

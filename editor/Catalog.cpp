@@ -132,6 +132,7 @@ namespace {
         {"material", SubmeshOverride_Material},
         {"material.name", SubmeshOverride_MaterialName},
         {"material.shader", SubmeshOverride_Shader},
+        {"material.shaderUniforms", SubmeshOverride_ShaderUniforms},
         {"material.baseColorFactor", SubmeshOverride_BaseColorFactor},
         {"material.metallicFactor", SubmeshOverride_MetallicFactor},
         {"material.roughnessFactor", SubmeshOverride_RoughnessFactor},
@@ -717,7 +718,7 @@ namespace {
         // submeshes[N].material
         if (propertyName.compare(fieldPos, 8, "material") == 0) {
             if (fieldPos + 8 == propertyName.size()) {
-                return {PropertyType::Material, UpdateFlags_Mesh_Texture, (void*)&defSub.material, (void*)&sub.material};
+                return {PropertyType::Material, UpdateFlags_Mesh_Texture | UpdateFlags_Shader_Uniforms, (void*)&defSub.material, (void*)&sub.material};
             }
             if (propertyName[fieldPos + 8] != '.') {
                 return PropertyData();
@@ -728,6 +729,9 @@ namespace {
             }
             if (propertyName.compare(matFieldPos, 6, "shader") == 0 && matFieldPos + 6 == propertyName.size()) {
                 return {PropertyType::String, UpdateFlags_Shader_Reload, (void*)&defSub.material.shader, (void*)&sub.material.shader};
+            }
+            if (propertyName.compare(matFieldPos, 14, "shaderUniforms") == 0 && matFieldPos + 14 == propertyName.size()) {
+                return {PropertyType::Custom, UpdateFlags_Shader_Uniforms, (void*)&defSub.material.shaderUniforms, (void*)&sub.material.shaderUniforms};
             }
             if (propertyName.compare(matFieldPos, 15, "baseColorFactor") == 0 && matFieldPos + 15 == propertyName.size()) {
                 return {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, (void*)&sub.material.baseColorFactor};
@@ -2683,9 +2687,10 @@ namespace {
             Submesh& sub = compRef ? comp->submeshes[s] : def.submeshes[0];
             Submesh& defSub = def.submeshes[0];
 
-            ps["submeshes[" + idx + "].material"] = {PropertyType::Material, UpdateFlags_Mesh_Texture, (void*)&defSub.material, compRef ? (void*)&sub.material : nullptr};
+            ps["submeshes[" + idx + "].material"] = {PropertyType::Material, UpdateFlags_Mesh_Texture | UpdateFlags_Shader_Uniforms, (void*)&defSub.material, compRef ? (void*)&sub.material : nullptr};
             ps["submeshes[" + idx + "].material.name"] = {PropertyType::String, UpdateFlags_None, (void*)&defSub.material.name, compRef ? (void*)&sub.material.name : nullptr};
             ps["submeshes[" + idx + "].material.shader"] = {PropertyType::String, UpdateFlags_Shader_Reload, (void*)&defSub.material.shader, compRef ? (void*)&sub.material.shader : nullptr};
+            ps["submeshes[" + idx + "].material.shaderUniforms"] = {PropertyType::Custom, UpdateFlags_Shader_Uniforms, (void*)&defSub.material.shaderUniforms, compRef ? (void*)&sub.material.shaderUniforms : nullptr};
             ps["submeshes[" + idx + "].material.baseColorFactor"] = {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, compRef ? (void*)&sub.material.baseColorFactor : nullptr};
             ps["submeshes[" + idx + "].material.metallicFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.metallicFactor, compRef ? (void*)&sub.material.metallicFactor : nullptr};
             ps["submeshes[" + idx + "].material.roughnessFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.roughnessFactor, compRef ? (void*)&sub.material.roughnessFactor : nullptr};
@@ -4842,7 +4847,7 @@ void editor::Catalog::copyPropertyValue(EntityRegistry* sourceRegistry, Entity s
                 auto* source = Catalog::getPropertyRef<std::vector<Texture>>(sourceRegistry, sourceEntity, compType, property);
                 auto* target = Catalog::getPropertyRef<std::vector<Texture>>(targetRegistry, targetEntity, compType, property);
                 if (source && target) *target = *source;
-            } else if (property == "shaderUniforms") {
+            } else if (property == "shaderUniforms" || (property.size() > 15 && property.compare(property.size() - 15, 15, ".shaderUniforms") == 0)) {
                 auto* source = Catalog::getPropertyRef<ShaderUniformValues>(sourceRegistry, sourceEntity, compType, property);
                 auto* target = Catalog::getPropertyRef<ShaderUniformValues>(targetRegistry, targetEntity, compType, property);
                 if (source && target) *target = *source;
