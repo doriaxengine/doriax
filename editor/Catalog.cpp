@@ -133,6 +133,7 @@ namespace {
         {"material.name", SubmeshOverride_MaterialName},
         {"material.shader", SubmeshOverride_Shader},
         {"material.shaderUniforms", SubmeshOverride_ShaderUniforms},
+        {"material.shaderTextures", SubmeshOverride_ShaderTextures},
         {"material.baseColorFactor", SubmeshOverride_BaseColorFactor},
         {"material.metallicFactor", SubmeshOverride_MetallicFactor},
         {"material.roughnessFactor", SubmeshOverride_RoughnessFactor},
@@ -162,7 +163,8 @@ namespace {
             return false;
         }
 
-        const std::string field = propertyName.substr(pos + 2);
+        // shaderTextures[name] is one field
+        const std::string field = propertyName.substr(pos + 2, propertyName.find('[', pos + 2) - pos - 2);
         for (const auto& entry : submeshOverrideFields) {
             if (field == entry.name) {
                 fields = entry.fields;
@@ -732,6 +734,18 @@ namespace {
             }
             if (propertyName.compare(matFieldPos, 14, "shaderUniforms") == 0 && matFieldPos + 14 == propertyName.size()) {
                 return {PropertyType::Custom, UpdateFlags_Shader_Uniforms, (void*)&defSub.material.shaderUniforms, (void*)&sub.material.shaderUniforms};
+            }
+            // shaderTextures[name], an empty entry until it is set
+            if (propertyName.compare(matFieldPos, 15, "shaderTextures[") == 0 && propertyName.back() == ']') {
+                static Texture defTexture;
+                const std::string name = propertyName.substr(matFieldPos + 15, propertyName.size() - matFieldPos - 16);
+                for (auto& texture : sub.material.shaderTextures) {
+                    if (texture.first == name) {
+                        return {PropertyType::Texture, UpdateFlags_Mesh_Texture, (void*)&defTexture, (void*)&texture.second};
+                    }
+                }
+                sub.material.shaderTextures.push_back({name, Texture()});
+                return {PropertyType::Texture, UpdateFlags_Mesh_Texture, (void*)&defTexture, (void*)&sub.material.shaderTextures.back().second};
             }
             if (propertyName.compare(matFieldPos, 15, "baseColorFactor") == 0 && matFieldPos + 15 == propertyName.size()) {
                 return {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, (void*)&sub.material.baseColorFactor};
@@ -2691,6 +2705,10 @@ namespace {
             ps["submeshes[" + idx + "].material.name"] = {PropertyType::String, UpdateFlags_None, (void*)&defSub.material.name, compRef ? (void*)&sub.material.name : nullptr};
             ps["submeshes[" + idx + "].material.shader"] = {PropertyType::String, UpdateFlags_Shader_Reload, (void*)&defSub.material.shader, compRef ? (void*)&sub.material.shader : nullptr};
             ps["submeshes[" + idx + "].material.shaderUniforms"] = {PropertyType::Custom, UpdateFlags_Shader_Uniforms, (void*)&defSub.material.shaderUniforms, compRef ? (void*)&sub.material.shaderUniforms : nullptr};
+            static Texture defTexture;
+            for (auto& texture : sub.material.shaderTextures) {
+                ps["submeshes[" + idx + "].material.shaderTextures[" + texture.first + "]"] = {PropertyType::Texture, UpdateFlags_Mesh_Texture, (void*)&defTexture, compRef ? (void*)&texture.second : nullptr};
+            }
             ps["submeshes[" + idx + "].material.baseColorFactor"] = {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, compRef ? (void*)&sub.material.baseColorFactor : nullptr};
             ps["submeshes[" + idx + "].material.metallicFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.metallicFactor, compRef ? (void*)&sub.material.metallicFactor : nullptr};
             ps["submeshes[" + idx + "].material.roughnessFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.roughnessFactor, compRef ? (void*)&sub.material.roughnessFactor : nullptr};

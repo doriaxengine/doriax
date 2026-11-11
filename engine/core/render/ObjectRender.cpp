@@ -58,6 +58,10 @@ void ObjectRender::addTexture(std::pair<int, int> slot, ShaderStageType stage, T
     backend.addTexture(slot, stage, texture);
 }
 
+void ObjectRender::addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture, TextureRender* sampler){
+    backend.addTexture(slot, stage, texture, sampler);
+}
+
 bool ObjectRender::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling){
     return backend.endLoad(pipelines, enableFaceCulling, enableDepthWrite, cullingMode, windingOrder, prepassFaceCulling);
 }

@@ -859,6 +859,12 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.metallicRoughnessTexture, "mesh.submeshes[" + idx + "].material.metallicRoughnessTexture", projectPath);
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.occlusionTexture, "mesh.submeshes[" + idx + "].material.occlusionTexture", projectPath);
         code << formatTexture(indentSpaces, mesh.submeshes[s].material.normalTexture, "mesh.submeshes[" + idx + "].material.normalTexture", projectPath);
+        for (const auto& texture : mesh.submeshes[s].material.shaderTextures){
+            if (texture.second.empty())
+                continue;
+            code << ind << "mesh.submeshes[" << idx << "].material.shaderTextures.push_back({" << formatString(texture.first) << ", Texture()});\n";
+            code << formatTexture(indentSpaces, texture.second, "mesh.submeshes[" + idx + "].material.shaderTextures.back().second", projectPath);
+        }
 
         // The UV set each texture samples: only a model or a linked material sets it, and an
         // overridden texture is put back together with it.

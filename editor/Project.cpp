@@ -650,6 +650,9 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
             submeshChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
             submeshChanged |= visitTexturePaths(material.occlusionTexture, transform);
             submeshChanged |= visitTexturePaths(material.normalTexture, transform);
+            for (auto& texture : material.shaderTextures) {
+                submeshChanged |= visitTexturePaths(texture.second, transform);
+            }
 
             if (submeshChanged) {
                 mesh.submeshes[s].needUpdateTexture = true;
@@ -827,6 +830,9 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
             addTexture(material.metallicRoughnessTexture, false);
             addTexture(material.occlusionTexture, false);
             addTexture(material.normalTexture, false);
+            for (auto& texture : material.shaderTextures) {
+                addTexture(texture.second, false);
+            }
         }
     }
 
@@ -2722,6 +2728,9 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
         materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
         materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
         materialChanged |= visitTexturePaths(material.normalTexture, transform);
+        for (auto& texture : material.shaderTextures){
+            materialChanged |= visitTexturePaths(texture.second, transform);
+        }
         if (!material.shader.empty() && transform(material.shader)){
             materialChanged = true;
         }

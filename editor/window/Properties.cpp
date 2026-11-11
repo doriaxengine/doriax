@@ -5449,6 +5449,8 @@ bool editor::Properties::drawShaderParameters(const std::string& title, uint32_t
     std::vector<ShaderParameterDeclaration> own;
     std::vector<std::string> shared;
     for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (declaration.texture)
+            continue;
         if (declaration.scope == ShaderParameterScope::OBJECT) {
             if (std::none_of(own.begin(), own.end(), [&](const ShaderParameterDeclaration& other) { return other.name == declaration.name; }))
                 own.push_back(declaration);
@@ -5525,8 +5527,26 @@ void editor::Properties::drawMaterialShaderParameters(SceneProject* sceneProject
     const ShaderUniformValues values = mesh->submeshes[submesh].material.shaderUniforms;
     const uint32_t sceneId = sceneProject->id;
 
+    const ShaderEffectAnnotations& annotations = getShaderAnnotations(shader, false);
+    std::set<std::string> drawn;
+    beginTable(ComponentType::MeshComponent, getLabelSize("Met. Roug. Texture"), "submeshes_material_textures");
+    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (!declaration.texture || !drawn.insert(declaration.name).second)
+            continue;
+        RowSettings settings;
+        settings.child = true;
+        settings.help = declaration.description;
+        settings.onValueChanged = onChanged;
+        // the declaration sets the filter and wrap
+        settings.allowTextureSettings = false;
+        const bool cube = declaration.textureType == TextureType::TEXTURE_CUBE;
+        propertyRow(cube ? RowPropertyType::TextureCube : RowPropertyType::Texture, ComponentType::MeshComponent,
+            "submeshes[" + std::to_string(submesh) + "].material.shaderTextures[" + declaration.name + "]", declaration.name, sceneProject, entities, settings);
+    }
+    endTable();
+
     ImGui::PushID(propertyName.c_str());
-    drawShaderParameters(std::filesystem::path(shader).stem().string(), sceneId, getShaderAnnotations(shader, false), values, &mesh->shaderUniforms,
+    drawShaderParameters(std::filesystem::path(shader).stem().string(), sceneId, annotations, values, &mesh->shaderUniforms,
             [&](const ShaderUniformValues& newValues) -> Command* {
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
         for (const Entity& entity : entities)

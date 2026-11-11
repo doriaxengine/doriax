@@ -3262,6 +3262,11 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
         return okResult("Set camera shader parameter through the command history.");
     }
 
+    // a declared texture has no entry until it is set
+    if (propertyName.find(".shaderTextures[") != std::string::npos) {
+        Catalog::findProperty(sceneProject->scene, entity, component, propertyName);
+    }
+
     auto properties = Catalog::findEntityProperties(sceneProject->scene, entity, component);
     auto it = properties.find(propertyName);
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
@@ -5434,7 +5439,7 @@ namespace {
 void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                             const ShaderUniformValues* inherited) {
     for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
-        if (declaration.scope != ShaderParameterScope::OBJECT) continue;
+        if (declaration.scope != ShaderParameterScope::OBJECT || declaration.texture) continue;
         bool listed = false;
         for (const Json& existing : members) {
             if (existing.value("name", "") == declaration.name) {

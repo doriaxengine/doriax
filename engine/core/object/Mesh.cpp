@@ -618,6 +618,28 @@ Vector4 Mesh::getShaderUniform(unsigned int submesh, const std::string& name) co
     return ShaderUniforms::get(getSubmesh(submesh).material.shaderUniforms, name);
 }
 
+void Mesh::setShaderTexture(const std::string& name, const Texture& texture){
+    for (MeshComponent* mesh : getMeshes()){
+        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+            mesh->submeshes[i].material.setShaderTexture(name, texture);
+            mesh->submeshes[i].needUpdateTexture = true;
+        }
+    }
+}
+
+void Mesh::setShaderTexture(unsigned int submesh, const std::string& name, const Texture& texture){
+    MeshComponent* mesh = findSubmesh(submesh);
+
+    if (mesh){
+        mesh->submeshes[submesh].material.setShaderTexture(name, texture);
+        mesh->submeshes[submesh].needUpdateTexture = true;
+    }
+}
+
+Texture Mesh::getShaderTexture(unsigned int submesh, const std::string& name) const{
+    return getSubmesh(submesh).material.getShaderTexture(name);
+}
+
 bool Mesh::removeShaderUniform(const std::string& name){
     bool removed = false;
     for (MeshComponent* mesh : getMeshes()){

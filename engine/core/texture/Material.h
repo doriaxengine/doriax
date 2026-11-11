@@ -7,6 +7,9 @@
 #include "math/Vector3.h"
 #include "texture/Texture.h"
 #include "shader/ShaderUniforms.h"
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace doriax{
 
@@ -56,6 +59,37 @@ namespace doriax{
         std::string shader;
         // its parameter values, by name
         ShaderUniformValues shaderUniforms;
+        // and textures
+        std::vector<std::pair<std::string, Texture>> shaderTextures;
+
+        Texture getShaderTexture(const std::string& name) const {
+            for (const auto& texture : shaderTextures){
+                if (texture.first == name)
+                    return texture.second;
+            }
+
+            return Texture();
+        }
+
+        void setShaderTexture(const std::string& name, const Texture& texture) {
+            for (auto& entry : shaderTextures){
+                if (entry.first == name){
+                    entry.second = texture;
+                    return;
+                }
+            }
+            shaderTextures.push_back({name, texture});
+        }
+
+        // an empty entry counts as none
+        bool hasShaderTextures(const Material& other) const {
+            for (const auto& texture : other.shaderTextures){
+                if (getShaderTexture(texture.first) != texture.second)
+                    return false;
+            }
+
+            return true;
+        }
 
         bool operator == (const Material& other) const {
             return baseColorFactor == other.baseColorFactor &&
@@ -77,7 +111,8 @@ namespace doriax{
                    normalTexCoord == other.normalTexCoord &&
                    name == other.name &&
                    shader == other.shader &&
-                   shaderUniforms == other.shaderUniforms;
+                   shaderUniforms == other.shaderUniforms &&
+                   hasShaderTextures(other) && other.hasShaderTextures(*this);
         }
 
         bool operator != (const Material& other) const {

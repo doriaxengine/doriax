@@ -266,6 +266,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
     if (fields & SubmeshOverride_MaterialName)    material.name            = savedMaterial.name;
     if (fields & SubmeshOverride_Shader)          material.shader          = savedMaterial.shader;
     if (fields & SubmeshOverride_ShaderUniforms)  material.shaderUniforms  = savedMaterial.shaderUniforms;
+    if (fields & SubmeshOverride_ShaderTextures)  material.shaderTextures  = savedMaterial.shaderTextures;
 
     if (fields & SubmeshOverride_BaseColorTexture) {
         material.baseColorTexture = savedMaterial.baseColorTexture;

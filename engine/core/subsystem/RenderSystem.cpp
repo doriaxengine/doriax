@@ -364,6 +364,7 @@ TextureRender RenderSystem::emptyCubeBlack;
 TextureRender RenderSystem::emptyCubeWhite;
 TextureRender RenderSystem::emptyNormal;
 TextureRender RenderSystem::emptyShadowDepth;
+TextureRender RenderSystem::shaderSamplers[9];
 
 bool RenderSystem::emptyTexturesCreated = false;
 
@@ -687,6 +688,18 @@ void RenderSystem::createEmptyTextures(){
         emptyCubeBlack.createTexture(
                 "empty|cube|black", 8, 8, ColorFormat::RGBA, TextureType::TEXTURE_CUBE, 6, data_array, size_array, 
                 TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::REPEAT, TextureWrap::REPEAT);
+
+        data_array[0] = (void*)pixelsWhite;
+        size_array[0] = 4;
+        const TextureFilter filters[3] = {TextureFilter::NEAREST, TextureFilter::LINEAR, TextureFilter::LINEAR_MIPMAP_LINEAR};
+        const TextureWrap wraps[3] = {TextureWrap::REPEAT, TextureWrap::CLAMP_TO_EDGE, TextureWrap::MIRRORED_REPEAT};
+        for (int f = 0; f < 3; f++){
+            for (int w = 0; w < 3; w++){
+                shaderSamplers[f * 3 + w].createTexture(
+                        "sampler|" + std::to_string(f) + "|" + std::to_string(w), 1, 1, ColorFormat::RGBA, TextureType::TEXTURE_2D, 1, data_array, size_array,
+                        filters[f], (f == 0) ? TextureFilter::NEAREST : TextureFilter::LINEAR, wraps[w], wraps[w]);
+            }
+        }
 
         emptyTexturesCreated = true;
     }
@@ -2165,6 +2178,11 @@ Rect RenderSystem::getShadowPointAtlasSlotRect(int slotIndex) const{
 }
 
 bool RenderSystem::checkPBRFrabebufferUpdate(Material& material){
+    for (const auto& texture : material.shaderTextures){
+        if (texture.second.isFramebufferOutdated())
+            return true;
+    }
+
     return (
         material.baseColorTexture.isFramebufferOutdated() ||
         material.metallicRoughnessTexture.isFramebufferOutdated() ||
@@ -2456,6 +2474,45 @@ void RenderSystem::destroyOccluder2DPass(){
     shadow2DSlotParams = -1;
     occluder2DBufferCapacity = 0;
     occluder2DLoaded = false;
+}
+
+TextureRender* RenderSystem::getShaderSampler(TextureFilter filter, TextureWrap wrap){
+    const int f = (filter == TextureFilter::NEAREST) ? 0 : (filter == TextureFilter::LINEAR) ? 1 : 2;
+    const int w = (wrap == TextureWrap::REPEAT) ? 0 : (wrap == TextureWrap::MIRRORED_REPEAT) ? 2 : 1;
+
+    return &shaderSamplers[f * 3 + w];
+}
+
+bool RenderSystem::loadShaderTextures(Material& material, ShaderData& shaderData, ObjectRender& render){
+    for (const ShaderTextureInfo& parameter : shaderData.textureParameters){
+        const std::pair<int, int> slot = shaderData.getTextureParameterIndex(parameter);
+        if (slot.first == -1)
+            continue;
+
+        TextureRender* fallback = &emptyWhite;
+        if (parameter.type == TextureType::TEXTURE_CUBE){
+            fallback = (parameter.defaultTexture == ShaderTextureDefault::WHITE) ? &emptyCubeWhite : &emptyCubeBlack;
+        }else if (parameter.defaultTexture == ShaderTextureDefault::BLACK){
+            fallback = &emptyBlack;
+        }else if (parameter.defaultTexture == ShaderTextureDefault::NORMAL){
+            fallback = &emptyNormal;
+        }
+
+        TextureRender* textureRender = NULL;
+        for (auto& texture : material.shaderTextures){
+            if (texture.first == parameter.name){
+                textureRender = texture.second.getRender(fallback);
+                break;
+            }
+        }
+        if (textureRender && !textureRender->isCreated()){
+            return false;
+        }
+
+        render.addTexture(slot, parameter.stage, textureRender ? textureRender : fallback, getShaderSampler(parameter.filter, parameter.wrap));
+    }
+
+    return true;
 }
 
 bool RenderSystem::loadDepthTexture(Material& material, ShaderData& shaderData, ObjectRender& render){
@@ -3389,6 +3446,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (!loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
             return false;
         }
+        if (!loadShaderTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render)){
+            return false;
+        }
         loadShadowTextures(shaderData, mesh.submeshes[i].render, mesh.receiveLights, p_receiveShadows);
         loadShadow2DTexture(shaderData, mesh.submeshes[i].render, p_shadows2d);
 
@@ -3524,6 +3584,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     return false;
                 }
             }
+            if (!loadShaderTextures(mesh.submeshes[i].material, depthShaderData, depthRender)){
+                return false;
+            }
 
             if (terrain){
                 mesh.submeshes[i].slotVSDepthTerrain = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_TERRAIN_VS_PARAMS);
@@ -3646,6 +3709,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
 
             if (!loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
+                return false;
+            }
+            if (!loadShaderTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
                 return false;
             }
 
@@ -4932,8 +4998,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             if (mesh.submeshes[i].needUpdateTexture || needUpdateFramebuffer){
                 ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
-                if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
-                    // the material may bring other parameter values too
+                if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights) &&
+                        loadShaderTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render)){
+                    // and other parameter values
                     if (mesh.submeshes[i].needUpdateTexture)
                         mesh.needUpdateShaderUniforms = true;
                     mesh.submeshes[i].needUpdateTexture = false;
@@ -5110,14 +5177,13 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             ObjectRender& depthRender = mesh.submeshes[i].depthRender;
 
-            if (mesh.submeshes[i].needUpdateDepthTexture &&
-                (mesh.submeshes[i].depthShaderProperties & (1u << 0))){
+            if (mesh.submeshes[i].needUpdateDepthTexture){
                 ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
-                if (loadDepthTexture(mesh.submeshes[i].material, depthShaderData, mesh.submeshes[i].depthRender)){
+                const bool depthTexture = mesh.submeshes[i].depthShaderProperties & (1u << 0);
+                if ((!depthTexture || loadDepthTexture(mesh.submeshes[i].material, depthShaderData, mesh.submeshes[i].depthRender)) &&
+                        loadShaderTextures(mesh.submeshes[i].material, depthShaderData, mesh.submeshes[i].depthRender)){
                     mesh.submeshes[i].needUpdateDepthTexture = false;
                 }
-            }else if (mesh.submeshes[i].needUpdateDepthTexture){
-                mesh.submeshes[i].needUpdateDepthTexture = false;
             }
 
             if (mesh.submeshes[i].needUpdateDepthTexture)
@@ -5505,7 +5571,8 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
 
         if (mesh.submeshes[i].needUpdateGBufferTexture){
             ShaderData& gbufferShaderData = mesh.submeshes[i].gbufferShader.get()->shaderData;
-            if (loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, mesh.submeshes[i].gbufferRender)){
+            if (loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, mesh.submeshes[i].gbufferRender) &&
+                    loadShaderTextures(mesh.submeshes[i].material, gbufferShaderData, mesh.submeshes[i].gbufferRender)){
                 mesh.submeshes[i].needUpdateGBufferTexture = false;
             }
         }
@@ -9942,6 +10009,10 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
 
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
         const Material& material = mesh.submeshes[i].material;
+        for (const auto& texture : material.shaderTextures){
+            if (texture.second.getFramebuffer() == camera.framebuffer)
+                return true;
+        }
         if (material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
             material.metallicRoughnessTexture.getFramebuffer() == camera.framebuffer ||
             material.normalTexture.getFramebuffer() == camera.framebuffer ||

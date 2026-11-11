@@ -39,6 +39,7 @@ namespace doriax {
         void setIndexBuffer(BufferRender* buffer, size_t byteOffset = 0);
         void resetIndexBuffer();
         void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture);
+        void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture, TextureRender* sampler);
         bool endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling = true);
 
         // same pipeline and bindings apart from the buffers: one draw can render both

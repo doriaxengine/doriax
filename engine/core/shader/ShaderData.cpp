@@ -404,6 +404,29 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
     return getTextureIndexByName(texstr);
 }
 
+std::pair<int, int> ShaderData::getTextureParameterIndex(const ShaderTextureInfo& texture){
+    const std::string textureName = texture.getTextureName();
+    const std::string samplerName = texture.getSamplerName();
+    for (int s = 0; s < stages.size(); s++){
+        if (stages[s].type != texture.stage)
+            continue;
+
+        int texIndex = -1;
+        for (int te = 0; te < stages[s].textures.size(); te++){
+            if (stages[s].textures[te].name == textureName){
+                texIndex = stages[s].textures[te].slot;
+            }
+        }
+        for (int sa = 0; sa < stages[s].samplers.size(); sa++){
+            if (texIndex != -1 && stages[s].samplers[sa].name == samplerName){
+                return std::pair(texIndex, stages[s].samplers[sa].slot);
+            }
+        }
+    }
+
+    return std::pair(-1, -1);
+}
+
 std::pair<int, int> ShaderData::getTextureIndexByName(const std::string& texstr){
     for (int s = 0; s < stages.size(); s++){
         // get texture index

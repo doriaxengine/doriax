@@ -3776,6 +3776,14 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
         node["shader"] = material.shader;
     if (!material.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(material.shaderUniforms);
+    for (const auto& texture : material.shaderTextures) {
+        if (hasTexture(texture.second)) {
+            YAML::Node item;
+            item["name"] = texture.first;
+            item["texture"] = encodeTexture(texture.second, embedTextureData);
+            node["shaderTextures"].push_back(item);
+        }
+    }
 
     return node;
 }
@@ -3818,6 +3826,11 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
     // Written only when set
     material.shader = node["shader"] ? node["shader"].as<std::string>() : "";
     material.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
+    material.shaderTextures.clear();
+    for (const auto& item : node["shaderTextures"]) {
+        if (item["name"] && item["texture"])
+            material.shaderTextures.push_back({item["name"].as<std::string>(), decodeTexture(item["texture"])});
+    }
 
     return material;
 }

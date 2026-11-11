@@ -326,6 +326,8 @@ namespace doriax{
 		static TextureRender emptyCubeWhite;
 		static TextureRender emptyNormal;
 		static TextureRender emptyShadowDepth;
+		// 1x1 textures kept for their samplers
+		static TextureRender shaderSamplers[9];
 
 		static bool emptyTexturesCreated;
 		
@@ -770,6 +772,9 @@ namespace doriax{
 		bool loadPBRTextures(Material& material, ShaderData& shaderData, ObjectRender& render, bool receiveLights);
 		void loadShadowTextures(ShaderData& shaderData, ObjectRender& render, bool receiveLights, bool receiveShadow);
 		void updateShadowBindings();
+		// the textures a shader declares
+		bool loadShaderTextures(Material& material, ShaderData& shaderData, ObjectRender& render);
+		static TextureRender* getShaderSampler(TextureFilter filter, TextureWrap wrap);
 		bool loadDepthTexture(Material& material, ShaderData& shaderData, ObjectRender& render);
 		bool loadGBufferTextures(Material& material, ShaderData& shaderData, ObjectRender& render);
 		// Every map of every layer is a slice of one array texture, so the whole terrain

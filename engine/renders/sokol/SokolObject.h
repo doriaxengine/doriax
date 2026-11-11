@@ -94,6 +94,8 @@ namespace doriax{
         void resetIndexBuffer();
         void addStorageBuffer(int slot, ShaderStageType stage, BufferRender* buffer);
         void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture);
+        // view of one texture, sampler of another
+        void addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture, TextureRender* sampler);
         // prepassFaceCulling applies to the PIP_ZPREPASS pipelines, which must cull like the color pass
         bool endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling = true);
 
