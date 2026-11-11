@@ -4331,10 +4331,10 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     // shader properties first, they rule out lit meshes; an effect function needs its own draw
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
-        mesh.vertexOffsetShader.empty() && mesh.coverageShader.empty() &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        !submesh.needUpdateTexture && !submesh.lodData;
+        !submesh.needUpdateTexture && !submesh.lodData &&
+        mesh.vertexOffsetShader.empty() && mesh.coverageShader.empty();
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -10463,8 +10463,10 @@ void RenderSystem::update(double dt){
 
             TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
 
-            // vertex offsets reach past the bounds by their longest offset
-            const float offsetReach = (mesh.vertexOffsetShader.empty() || terrain) ? 0.0f : mesh.vertexOffsetMax;
+            // vertex offsets reach past the bounds by their longest offset, read only when used
+            auto offsetReach = [&](){
+                return (mesh.vertexOffsetShader.empty() || terrain) ? 0.0f : mesh.vertexOffsetMax;
+            };
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
             if (instmesh){
@@ -10509,7 +10511,7 @@ void RenderSystem::update(double dt){
 
                 instmesh->needUpdateInstances = false;
 
-                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance, offsetReach};
+                InstanceViewSettings viewSettings = {instmesh->cullInstances, mesh.castShadows, mesh.lodEnabled, mesh.lodBias, instmesh->cullDistance, offsetReach()};
                 if (transform.needUpdate || viewSettings != instmesh->viewSettings){
                     instmesh->viewSettings = viewSettings;
                     instanceViewsDirty = true;
@@ -10666,8 +10668,9 @@ void RenderSystem::update(double dt){
                 // a vertex offset moves geometry up to offsetReach past its bounds
                 auto worldBounds = [&](const AABB& box){
                     AABB world = transform.modelMatrix * box;
-                    if (offsetReach > 0.0f && box.isFinite() && box != AABB::ZERO){
-                        const Vector3 reach(offsetReach, offsetReach, offsetReach);
+                    const float offset = offsetReach();
+                    if (offset > 0.0f && box.isFinite() && box != AABB::ZERO){
+                        const Vector3 reach(offset, offset, offset);
                         world.setExtents(world.getMinimum() - reach, world.getMaximum() + reach);
                     }
                     return world;
