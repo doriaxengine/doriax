@@ -2168,7 +2168,7 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
                 continue;
             }
             appendUnresolved();
-            appendScene(sceneProject.filepath.string());
+            appendScene(sceneProject.filepath.generic_string());
         }
         appendUnresolved();
     }
@@ -2458,7 +2458,7 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
     if (hasTabs) {
         for (const TabEntry& tab : workspace.getTabs()) {
             if (tab.type == TabType::SCENE) {
-                openedScenePaths.insert(tab.filepath);
+                openedScenePaths.insert(fs::path(tab.filepath).generic_string());
             }
             project->addTab(tab.type, tab.filepath);
         }
@@ -2472,7 +2472,9 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
                 continue;
             }
 
-            const std::string relStr = sceneNode["filepath"].as<std::string>();
+            // Windows editors up to v0.8.4 listed scenes in folders with backslashes
+            std::string relStr = sceneNode["filepath"].as<std::string>();
+            std::replace(relStr.begin(), relStr.end(), '\\', '/');
             fs::path scenePath = relStr;
             if (scenePath.is_relative()) {
                 scenePath = project->getProjectPath() / scenePath;

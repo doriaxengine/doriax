@@ -5336,7 +5336,10 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
     }
     ImGui::EndDisabled();
 
+    // one button more than the shader rows, which a narrow panel has no room for
     ImGui::SameLine();
+    if (ImGui::GetContentRegionAvail().x < ImGui::GetFrameHeight())
+        ImGui::NewLine();
     ImGui::BeginDisabled(current.empty());
     if (ImGui::Button((std::string(ICON_FA_XMARK "##clear_") + idSuffix).c_str()))
         setFunction("");
