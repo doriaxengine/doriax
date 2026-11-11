@@ -5560,13 +5560,13 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
                 {"warnings", warnings},
                 {"values", shaderUniformValuesJson(*valuesRef)}};
     // a mesh's depth fork can declare values of its own, listed in the same members
-    if (std::string* customDepthShader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader")) {
-        result["custom_depth_shader"] = *customDepthShader;
+    if (component == ComponentType::MeshComponent) {
+        result["custom_depth_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader");
         result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
     }
     // and so does a water's underwater fork
-    if (std::string* customUnderwaterShader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customUnderwaterShader")) {
-        result["custom_underwater_shader"] = *customUnderwaterShader;
+    if (component == ComponentType::WaterComponent) {
+        result["custom_underwater_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customUnderwaterShader");
         result["underwater_build_failed"] = Catalog::isCustomUnderwaterShaderBuildFailed(sceneProject->scene, entity);
     }
 
