@@ -10168,7 +10168,7 @@ void RenderSystem::update(double dt){
     for (int i = 0; i < transforms->size(); i++){
         Transform& transform = transforms->getComponentFromIndex(i);
 
-        transform.visibleInHierarchy = transform.visible;
+        bool visibleInHierarchy = transform.visible;
         if (transform.parent != NULL_ENTITY){
             Transform* transformParent = scene->findComponent<Transform>(transform.parent);
             if (transformParent){
@@ -10176,8 +10176,12 @@ void RenderSystem::update(double dt){
                     transform.needUpdate = true;
                 }
 
-                transform.visibleInHierarchy = transform.visible && transformParent->visibleInHierarchy;
+                visibleInHierarchy = transform.visible && transformParent->visibleInHierarchy;
             }
+        }
+        // a write only on change keeps the cache line clean
+        if (transform.visibleInHierarchy != visibleInHierarchy){
+            transform.visibleInHierarchy = visibleInHierarchy;
         }
 
         if (transform.needUpdate){
