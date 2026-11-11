@@ -378,68 +378,51 @@ std::string writeEffectFile(const std::filesystem::path& projectRoot, const std:
 
 }
 
-std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName + "_offset", R"(// Moves each vertex by the returned offset in world units, the same in every pass.
-// The values declared below are the mesh's shader uniforms, read as params.name.
+std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
+    return writeEffectFile(projectRoot, desiredName, R"(// A mesh shader: each stage fills the hooks it defines, the same in every pass.
+// The values declared below show in Properties and are read as params.name.
+#pragma shader mesh
+
+#pragma stage vertex
 #pragma param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
 #pragma param float waveSpeed = 2 [0, 10] "Waves per second"
 
-vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
-    return vec3(0.0, sin(Engine.time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
-}
-)");
+// moves each vertex by the returned offset, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(0.0, sin(Engine.time * params.waveSpeed + context.worldPosition.x) * params.waveHeight, 0.0);
 }
 
-std::string editor::ProjectUtils::writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName + "_coverage", R"(// Returns how much of each fragment stays, from 0 (removed) to 1 (kept), the same in every pass.
-// Opaque surfaces dither in between, blended ones fade.
-#pragma param float cutHeight = 1 "World height above which the mesh is cut away"
+#pragma stage fragment
+#pragma param float cutHeight = 1000 "World height above which the mesh is cut away"
 #pragma param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
 #pragma coverage_shadows apply
 
-float getCoverage(CoverageContext context){
+// how much of each fragment stays, from 0 (removed) to 1 (kept)
+float getCoverage(FragmentContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
 }
 )");
 }
 
-std::string editor::ProjectUtils::copyEffectFunctionToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
+std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
     auto source = editor::shaderMap.find(enginePath);
     if (source == editor::shaderMap.end())
         return "";
     return writeEffectFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
 }
 
-std::vector<std::string> editor::ProjectUtils::getEngineVertexOffsets() {
-    std::vector<std::string> offsets;
+std::vector<std::string> editor::ProjectUtils::getEngineShaders() {
+    std::vector<std::string> shaders;
     for (const auto& entry : editor::shaderMap) {
-        if (isEngineVertexOffset(entry.first))
-            offsets.push_back(entry.first);
+        if (isEngineShader(entry.first))
+            shaders.push_back(entry.first);
     }
-    std::sort(offsets.begin(), offsets.end());
-    return offsets;
+    std::sort(shaders.begin(), shaders.end());
+    return shaders;
 }
 
-bool editor::ProjectUtils::isEngineVertexOffset(const std::string& path) {
-    return path.rfind("offsets/", 0) == 0 && editor::shaderMap.count(path) > 0;
-}
-
-std::vector<std::string> editor::ProjectUtils::getEngineCoverages() {
-    std::vector<std::string> coverages;
-    for (const auto& entry : editor::shaderMap) {
-        if (isEngineCoverage(entry.first))
-            coverages.push_back(entry.first);
-    }
-    std::sort(coverages.begin(), coverages.end());
-    return coverages;
-}
-
-bool editor::ProjectUtils::isEngineCoverage(const std::string& path) {
-    return path.rfind("coverage/", 0) == 0 && editor::shaderMap.count(path) > 0;
-}
-
-bool editor::ProjectUtils::isEngineEffectFunction(const std::string& path) {
-    return isEngineVertexOffset(path) || isEngineCoverage(path);
+bool editor::ProjectUtils::isEngineShader(const std::string& path) {
+    return path.rfind("shaders/", 0) == 0 && editor::shaderMap.count(path) > 0;
 }
 
 bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source) {
@@ -474,8 +457,8 @@ std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShad
         if (const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
             addFork(mesh->customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh->customShader);
             addFork(mesh->customDepthShader);
-            addEffect(mesh->vertexOffsetShader);
-            addEffect(mesh->coverageShader);
+            for (unsigned int i = 0; i < mesh->numSubmeshes; i++)
+                addEffect(mesh->submeshes[i].material.shader);
         }
         return sources;
     }

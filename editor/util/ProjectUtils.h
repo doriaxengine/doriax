@@ -150,20 +150,14 @@ public:
     // Removes only files owned by the plan, then prunes the directories it created.
     static void removeShaderFork(const ShaderForkPlan& plan);
 
-    // a starting vertex offset in the default shader directory; its project path, empty on failure
-    static std::string writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
-    // a starting coverage function, the same way
-    static std::string writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
-    // a project copy of an engine effect function, to change it
-    static std::string copyEffectFunctionToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
-    // the engine's own vertex offsets, under offsets/ in its shader library
-    static std::vector<std::string> getEngineVertexOffsets();
-    static bool isEngineVertexOffset(const std::string& path);
-    // the engine's own coverage functions, under coverage/
-    static std::vector<std::string> getEngineCoverages();
-    static bool isEngineCoverage(const std::string& path);
-    // either kind; a project file of the same path overrides it
-    static bool isEngineEffectFunction(const std::string& path);
+    // a starting shader file in the default shader directory; its project path, empty on failure
+    static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+    // a project copy of an engine shader file, to change it
+    static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
+    // the engine's ready-made shader files, under shaders/ in its shader library;
+    // a project file of the same path overrides one
+    static std::vector<std::string> getEngineShaders();
+    static bool isEngineShader(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
     // the forks (true) and effect files (false) a component draws with, as the renderer picks them

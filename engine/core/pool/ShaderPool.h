@@ -85,11 +85,10 @@ namespace doriax{
         static std::string getCustomShaderName(uint16_t customId);     // project-relative base, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-        // effect functions ride on the custom shader name, "fork#vertexOffset#coverage"
-        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage);
+        // a shader asset rides on the custom shader name, "fork#shader"
+        static std::string getCustomShader(const std::string& fork, const std::string& shader);
         static std::string getCustomShaderFork(const std::string& customShader);
-        static std::string getCustomShaderVertexOffset(const std::string& customShader);
-        static std::string getCustomShaderCoverage(const std::string& customShader);
+        static std::string getCustomShaderAsset(const std::string& customShader);
 
         // Frees the GPU handle of every cached forked-shader variant so the next get()
         // rebuilds (used by the editor after a shader source is edited). The pool keeps

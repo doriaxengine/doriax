@@ -3772,6 +3772,9 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
     // Encode material name
     node["name"] = material.name;
 
+    if (!material.shader.empty())
+        node["shader"] = material.shader;
+
     return node;
 }
 
@@ -3809,6 +3812,9 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
     if (node["normalTexCoord"]) material.normalTexCoord = node["normalTexCoord"].as<int>();
 
     if (node["name"]) material.name = node["name"].as<std::string>();
+
+    // Written only when set
+    material.shader = node["shader"] ? node["shader"].as<std::string>() : "";
 
     return material;
 }
@@ -4996,14 +5002,8 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
         node["customShader"] = mesh.customShader;
     if (!mesh.customDepthShader.empty())
         node["customDepthShader"] = mesh.customDepthShader;
-    if (!mesh.vertexOffsetShader.empty()){
-        node["vertexOffsetShader"] = mesh.vertexOffsetShader;
+    if (mesh.vertexOffsetMax != 0.0f)
         node["vertexOffsetMax"] = mesh.vertexOffsetMax;
-    }
-    if (!mesh.coverageShader.empty()){
-        node["coverageShader"] = mesh.coverageShader;
-        node["coverageShadows"] = mesh.coverageShadows;
-    }
     if (!mesh.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
 
@@ -5077,10 +5077,7 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     // Written only when set
     mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
     mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
-    mesh.vertexOffsetShader = node["vertexOffsetShader"] ? node["vertexOffsetShader"].as<std::string>() : "";
     mesh.vertexOffsetMax = decodeFinite(node["vertexOffsetMax"], 0.0f);
-    mesh.coverageShader = node["coverageShader"] ? node["coverageShader"].as<std::string>() : "";
-    mesh.coverageShadows = node["coverageShadows"] ? node["coverageShadows"].as<bool>() : false;
     mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     mesh.needUpdateShaderUniforms = true;
 

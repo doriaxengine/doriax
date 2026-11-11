@@ -6,7 +6,7 @@
 //
 // The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
 // step with a discard here, fork the depth shader too (Depth Shader in Properties). A
-// coverage function on the mesh cuts every pass alike without a fork.
+// getCoverage() in the material's shader file cuts every pass alike without a fork.
 
 #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
     in vec3 v_position;

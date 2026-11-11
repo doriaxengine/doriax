@@ -204,6 +204,8 @@ float Mesh::getAlpha() const{
 void Mesh::setMaterial(const Material& material){
     for (MeshComponent* mesh : getMeshes()){
         if (mesh->submeshes[0].material != material){
+            if (mesh->submeshes[0].material.shader != material.shader)
+                mesh->needReload = true;
             mesh->submeshes[0].material = material;
             mesh->submeshes[0].needUpdateTexture = true;
         }
@@ -218,6 +220,8 @@ void Mesh::setMaterial(unsigned int submesh, const Material& material){
     MeshComponent* mesh = findSubmesh(submesh);
 
     if (mesh && mesh->submeshes[submesh].material != material){
+        if (mesh->submeshes[submesh].material.shader != material.shader)
+            mesh->needReload = true;
         mesh->submeshes[submesh].material = material;
         mesh->submeshes[submesh].needUpdateTexture = true;
         updateSpriteBatch();
@@ -533,18 +537,34 @@ std::string Mesh::getCustomDepthShader() const{
     return getMesh().customDepthShader;
 }
 
-void Mesh::setVertexOffsetShader(const std::string& path){
+void Mesh::setShader(const std::string& path){
     for (MeshComponent* mesh : getMeshes()){
-        if (mesh->vertexOffsetShader != path){
-            mesh->vertexOffsetShader = path;
+        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+            if (mesh->submeshes[i].material.shader != path){
+                mesh->submeshes[i].material.shader = path;
 
-            mesh->needReload = true;
+                mesh->needReload = true;
+            }
         }
     }
 }
 
-std::string Mesh::getVertexOffsetShader() const{
-    return getMesh().vertexOffsetShader;
+void Mesh::setShader(unsigned int submesh, const std::string& path){
+    MeshComponent* mesh = findSubmesh(submesh);
+
+    if (mesh && mesh->submeshes[submesh].material.shader != path){
+        mesh->submeshes[submesh].material.shader = path;
+
+        mesh->needReload = true;
+    }
+}
+
+std::string Mesh::getShader() const{
+    return getShader(0);
+}
+
+std::string Mesh::getShader(unsigned int submesh) const{
+    return getSubmesh(submesh).material.shader;
 }
 
 void Mesh::setVertexOffsetMax(float vertexOffsetMax){
@@ -556,30 +576,6 @@ void Mesh::setVertexOffsetMax(float vertexOffsetMax){
 
 float Mesh::getVertexOffsetMax() const{
     return getMesh().vertexOffsetMax;
-}
-
-void Mesh::setCoverageShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->coverageShader != path){
-            mesh->coverageShader = path;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-std::string Mesh::getCoverageShader() const{
-    return getMesh().coverageShader;
-}
-
-void Mesh::setCoverageShadows(bool coverageShadows){
-    for (MeshComponent* mesh : getMeshes()){
-        mesh->coverageShadows = coverageShadows;
-    }
-}
-
-bool Mesh::isCoverageShadows() const{
-    return getMesh().coverageShadows;
 }
 
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){

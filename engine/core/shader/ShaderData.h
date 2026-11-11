@@ -95,6 +95,11 @@ namespace doriax {
         Vector4 defaultValue = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     };
 
+    // what a shader's hooks ask of the renderer
+    enum ShaderFlags : uint32_t {
+        ShaderFlag_CoverageShadows = 1 << 0  // shadow maps follow getCoverage()
+    };
+
     struct ShaderBinSource{
         unsigned char* data = NULL;
         uint32_t size;
@@ -122,7 +127,7 @@ namespace doriax {
         bool es;
         std::vector<ShaderStage> stages;
         std::vector<ShaderParameterInfo> parameters;
-
+        uint32_t flags = 0;
 
         ShaderData();
         virtual ~ShaderData();

@@ -264,6 +264,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
     if (fields & SubmeshOverride_EmissiveFactor)  material.emissiveFactor  = savedMaterial.emissiveFactor;
     if (fields & SubmeshOverride_AlphaMode)       material.alphaMode       = savedMaterial.alphaMode;
     if (fields & SubmeshOverride_MaterialName)    material.name            = savedMaterial.name;
+    if (fields & SubmeshOverride_Shader)          material.shader          = savedMaterial.shader;
 
     if (fields & SubmeshOverride_BaseColorTexture) {
         material.baseColorTexture = savedMaterial.baseColorTexture;
@@ -297,8 +298,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetShader, mesh.vertexOffsetMax,
-            mesh.coverageShader, mesh.coverageShadows, mesh.shaderUniforms};
+            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetMax, mesh.shaderUniforms};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -314,10 +314,7 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.lodBias = settings.lodBias;
     mesh.customShader = settings.customShader;
     mesh.customDepthShader = settings.customDepthShader;
-    mesh.vertexOffsetShader = settings.vertexOffsetShader;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
-    mesh.coverageShader = settings.coverageShader;
-    mesh.coverageShadows = settings.coverageShadows;
     mesh.shaderUniforms = settings.shaderUniforms;
 }
 
@@ -3700,11 +3697,13 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
-            // wind sway runs the engine's wind offset
-            const std::string vertexOffset = (layer.windSway > 0.0f) ? "offsets/wind.glsl" : "";
-            if (mesh.vertexOffsetShader != vertexOffset){
-                mesh.vertexOffsetShader = vertexOffset;
-                mesh.needReload = true;
+            // wind sway runs the engine's wind shader
+            const std::string shader = (layer.windSway > 0.0f) ? "shaders/wind.glsl" : "";
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                if (mesh.submeshes[s].material.shader != shader){
+                    mesh.submeshes[s].material.shader = shader;
+                    mesh.needReload = true;
+                }
             }
             const float swayHeight = mesh.verticesAABB.getMaximum().y;
             if (ShaderUniforms::get(mesh.shaderUniforms, "windSway").x != layer.windSway ||

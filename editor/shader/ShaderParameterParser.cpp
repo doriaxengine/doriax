@@ -81,8 +81,29 @@ std::string stripComments(const std::string& source){
     return code;
 }
 
-void scanEngineUses(const std::string& source, editor::ShaderEffectAnnotations& out){
+// a hook is defined where its name is followed by its context type
+bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
+            continue;
+        size_t i = at + name.size();
+        while (i < code.size() && std::isspace((unsigned char)code[i]))
+            i++;
+        if (i >= code.size() || code[i] != '(')
+            continue;
+        i++;
+        while (i < code.size() && std::isspace((unsigned char)code[i]))
+            i++;
+        if (code.compare(i, contextType.size(), contextType) == 0)
+            return true;
+    }
+    return false;
+}
+
+void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     const std::string code = stripComments(source);
+    out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
+    out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
     for (size_t at = code.find("Engine"); at != std::string::npos; at = code.find("Engine", at + 6)){
         if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
             continue;
@@ -215,9 +236,10 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
 }
 
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
-    scanEngineUses(source, out);
+    scanCode(source, out);
 
 
+    std::set<std::string> stages;
     std::istringstream stream(source);
     std::string line;
     int lineNumber = 0;
@@ -232,6 +254,20 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         std::string rest = tagEnd == std::string::npos ? std::string() : trim(text.substr(tagEnd));
         const std::string where = sourceName + ":" + std::to_string(lineNumber) + ": ";
 
+        if (tag == "shader"){
+            if (rest.empty() || !ShaderParameters::isValidName(rest))
+                out.errors.push_back(where + "shader takes the type it extends, as in \"#pragma shader mesh\"");
+            else
+                out.shaderType = rest;
+            continue;
+        }
+        if (tag == "stage"){
+            if (rest != "vertex" && rest != "fragment")
+                out.errors.push_back(where + "stage takes vertex or fragment");
+            else if (!stages.insert(rest).second)
+                out.errors.push_back(where + "the " + rest + " stage has a section already");
+            continue;
+        }
         if (tag == "coverage_shadows"){
             if (rest == "apply" || rest == "keep"){
                 out.hasCoverageShadows = true;
@@ -360,7 +396,7 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
 }
 
 void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
-                                              ShaderEffectAnnotations& out){
+                                              ShaderStageType stage, ShaderEffectAnnotations& out){
     std::set<std::string> visited;
     std::function<void(const std::string&)> visit = [&](const std::string& key){
         if (!visited.insert(key).second)
@@ -368,12 +404,69 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
         const std::string* source = lookup(key);
         if (!source)
             return;
-        // effect files are keyed with a leading '/'
-        parse(*source, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
-        for (const std::string& include : Util::getShaderIncludeKeys(*source))
+        const std::string staged = getStageSource(*source, stage);
+        // shader files are keyed with a leading '/'
+        parse(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
+        for (const std::string& include : Util::getShaderIncludeKeys(staged))
             visit(include);
     };
     visit(rootKey);
+}
+
+std::string editor::ShaderParameterParser::getStageSource(const std::string& source, ShaderStageType stage){
+    if (source.find("stage") == std::string::npos)
+        return source;
+
+    const std::string own = stage == ShaderStageType::VERTEX ? "vertex" : "fragment";
+    std::string staged;
+    staged.reserve(source.size());
+    bool skip = false;
+    size_t start = 0;
+    while (start < source.size()){
+        size_t end = source.find('\n', start);
+        end = end == std::string::npos ? source.size() : end;
+        const std::string line = source.substr(start, end - start);
+        const std::string text = pragmaText(line);
+        if (text.rfind("stage", 0) == 0 && (text.size() == 5 || std::isspace((unsigned char)text[5]))){
+            skip = trim(text.substr(5)) != own;
+            staged += line;
+        }else if (!skip){
+            staged += line;
+        }
+        if (end < source.size())
+            staged += '\n';
+        start = end + 1;
+    }
+    return staged;
+}
+
+std::string editor::ShaderParameterParser::getStageConditions(const std::string& source){
+    if (source.find("stage") == std::string::npos)
+        return source;
+
+    std::string conditions;
+    conditions.reserve(source.size() + 64);
+    bool open = false;
+    size_t start = 0;
+    while (start < source.size()){
+        size_t end = source.find('\n', start);
+        end = end == std::string::npos ? source.size() : end;
+        const std::string line = source.substr(start, end - start);
+        const std::string text = pragmaText(line);
+        if (text.rfind("stage", 0) == 0 && (text.size() == 5 || std::isspace((unsigned char)text[5]))){
+            const std::string name = trim(text.substr(5)) == "vertex" ? "SHADER_STAGE_VERTEX" : "SHADER_STAGE_FRAGMENT";
+            conditions += (open ? "#elif defined(" : "#if defined(") + name + ")";
+            open = true;
+        }else{
+            conditions += line;
+        }
+        if (end < source.size())
+            conditions += '\n';
+        start = end + 1;
+    }
+    if (open)
+        conditions += "\n#endif\n";
+    return conditions;
 }
 
 void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){

@@ -586,10 +586,14 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("autoTransparency", &Mesh::isAutoTransparency, &Mesh::setAutoTransparency)
         .addProperty("customShader", &Mesh::getCustomShader, &Mesh::setCustomShader)
         .addProperty("customDepthShader", &Mesh::getCustomDepthShader, &Mesh::setCustomDepthShader)
-        .addProperty("vertexOffsetShader", &Mesh::getVertexOffsetShader, &Mesh::setVertexOffsetShader)
+        .addProperty("shader", (std::string(Mesh::*)()const)&Mesh::getShader, (void(Mesh::*)(const std::string&))&Mesh::setShader)
+        .addFunction("setShader",
+            luabridge::overload<const std::string&>(&Mesh::setShader),
+            luabridge::overload<unsigned int, const std::string&>(&Mesh::setShader))
+        .addFunction("getShader",
+            luabridge::overload<>(&Mesh::getShader),
+            luabridge::overload<unsigned int>(&Mesh::getShader))
         .addProperty("vertexOffsetMax", &Mesh::getVertexOffsetMax, &Mesh::setVertexOffsetMax)
-        .addProperty("coverageShader", &Mesh::getCoverageShader, &Mesh::setCoverageShader)
-        .addProperty("coverageShadows", &Mesh::isCoverageShadows, &Mesh::setCoverageShadows)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Mesh::setShaderUniform),

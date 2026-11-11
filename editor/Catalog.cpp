@@ -131,6 +131,7 @@ namespace {
     const SubmeshOverrideField submeshOverrideFields[] = {
         {"material", SubmeshOverride_Material},
         {"material.name", SubmeshOverride_MaterialName},
+        {"material.shader", SubmeshOverride_Shader},
         {"material.baseColorFactor", SubmeshOverride_BaseColorFactor},
         {"material.metallicFactor", SubmeshOverride_MetallicFactor},
         {"material.roughnessFactor", SubmeshOverride_RoughnessFactor},
@@ -665,10 +666,7 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
-        makeFastProperty<MeshComponent, std::string, &MeshComponent::vertexOffsetShader>("vertexOffsetShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_Transform),
-        makeFastProperty<MeshComponent, std::string, &MeshComponent::coverageShader>("coverageShader", PropertyType::String, UpdateFlags_Shader_Reload),
-        makeFastProperty<MeshComponent, bool, &MeshComponent::coverageShadows>("coverageShadows", PropertyType::Bool, UpdateFlags_None),
         makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
     };
@@ -727,6 +725,9 @@ namespace {
             const size_t matFieldPos = fieldPos + 9;
             if (propertyName.compare(matFieldPos, 4, "name") == 0 && matFieldPos + 4 == propertyName.size()) {
                 return {PropertyType::String, UpdateFlags_None, (void*)&defSub.material.name, (void*)&sub.material.name};
+            }
+            if (propertyName.compare(matFieldPos, 6, "shader") == 0 && matFieldPos + 6 == propertyName.size()) {
+                return {PropertyType::String, UpdateFlags_Shader_Reload, (void*)&defSub.material.shader, (void*)&sub.material.shader};
             }
             if (propertyName.compare(matFieldPos, 15, "baseColorFactor") == 0 && matFieldPos + 15 == propertyName.size()) {
                 return {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, (void*)&sub.material.baseColorFactor};
@@ -2684,6 +2685,7 @@ namespace {
 
             ps["submeshes[" + idx + "].material"] = {PropertyType::Material, UpdateFlags_Mesh_Texture, (void*)&defSub.material, compRef ? (void*)&sub.material : nullptr};
             ps["submeshes[" + idx + "].material.name"] = {PropertyType::String, UpdateFlags_None, (void*)&defSub.material.name, compRef ? (void*)&sub.material.name : nullptr};
+            ps["submeshes[" + idx + "].material.shader"] = {PropertyType::String, UpdateFlags_Shader_Reload, (void*)&defSub.material.shader, compRef ? (void*)&sub.material.shader : nullptr};
             ps["submeshes[" + idx + "].material.baseColorFactor"] = {PropertyType::Vector4, UpdateFlags_None, (void*)&defSub.material.baseColorFactor, compRef ? (void*)&sub.material.baseColorFactor : nullptr};
             ps["submeshes[" + idx + "].material.metallicFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.metallicFactor, compRef ? (void*)&sub.material.metallicFactor : nullptr};
             ps["submeshes[" + idx + "].material.roughnessFactor"] = {PropertyType::Float, UpdateFlags_None, (void*)&defSub.material.roughnessFactor, compRef ? (void*)&sub.material.roughnessFactor : nullptr};
@@ -4032,9 +4034,13 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
     switch (component) {
         case ComponentType::MeshComponent:
             // a model root without submeshes is drawn by its parts and builds nothing
-            if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity))
-                return mesh->numSubmeshes > 0 && failed(ShaderPool::getCustomShader(mesh->customShader, mesh->vertexOffsetShader, mesh->coverageShader), ShaderType::MESH,
-                                                        mesh->loaded, mesh->needReload, mesh->submeshes[0].customShaderId);
+            if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
+                for (unsigned int i = 0; i < mesh->numSubmeshes; i++) {
+                    if (failed(ShaderPool::getCustomShader(mesh->customShader, mesh->submeshes[i].material.shader), ShaderType::MESH,
+                               mesh->loaded, mesh->needReload, mesh->submeshes[i].customShaderId))
+                        return true;
+                }
+            }
             break;
         case ComponentType::UIComponent:
             if (UIComponent* ui = scene->findComponent<UIComponent>(entity))

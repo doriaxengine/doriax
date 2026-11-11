@@ -1,7 +1,7 @@
-// The scene wind's bend of a vertex in world units, for vertex offsets
+// The scene wind's bend of a vertex, in world units
 #pragma scene vec3 Wind.velocity "Air velocity in m/s"
 #pragma scene float Wind.travel runtime "Meters of air blown past"
-vec3 getWindSway(vec3 localPosition, vec3 worldPosition, float sway, float swayHeight){
+vec3 windSway(vec3 localPosition, vec3 worldPosition, float sway, float swayHeight){
     float bend = 1.0;
     if (swayHeight > 0.0){
         bend = clamp(localPosition.y / swayHeight, 0.0, 1.0);

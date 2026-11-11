@@ -5086,17 +5086,16 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
                     return false;
                 }
                 if (requireFiles) {
-                    // a fork, then a vertex offset and a coverage function after '#'
+                    // a fork, then a shader file after '#'
                     const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
                     if (!paths.vert.empty() && (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag))) {
                         error = "'" + spec + "' references missing files (" + paths.vert + ", " + paths.frag + ").";
                         return false;
                     }
-                    for (const std::string& effect : {ShaderPool::getCustomShaderVertexOffset(customShader), ShaderPool::getCustomShaderCoverage(customShader)}) {
-                        if (!effect.empty() && !fs::exists(project->getProjectPath() / effect) && !ProjectUtils::isEngineEffectFunction(effect)) {
-                            error = "'" + spec + "' references a missing effect function (" + effect + ").";
-                            return false;
-                        }
+                    const std::string shaderFile = ShaderPool::getCustomShaderAsset(customShader);
+                    if (!shaderFile.empty() && !fs::exists(project->getProjectPath() / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
+                        error = "'" + spec + "' references a missing shader file (" + shaderFile + ").";
+                        return false;
                     }
                 }
                 customId = ShaderPool::registerCustomShader(customShader);
@@ -5217,10 +5216,13 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
     // default) is a project-relative base path; both must reference real files.
     static const std::set<std::string> shaderPathProperties = {
         "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader", "default_ui_shader",
-        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader", "vertexOffsetShader",
-        "coverageShader"
+        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
     };
-    if (!shaderPathProperties.count(propertyName)) {
+    // submeshes[N].material.shader
+    const std::string materialShader = ".material.shader";
+    const bool shaderFile = propertyName.size() > materialShader.size() &&
+        propertyName.compare(propertyName.size() - materialShader.size(), materialShader.size(), materialShader) == 0;
+    if (!shaderFile && !shaderPathProperties.count(propertyName)) {
         return true;
     }
     const std::string value = args.value("string_value", "");
@@ -5228,16 +5230,14 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true; // empty resets to the built-in shader
     }
 
-    // an effect function is one .glsl file, from the project or the engine
-    if (propertyName == "vertexOffsetShader" || propertyName == "coverageShader") {
-        const bool vertexOffset = propertyName == "vertexOffsetShader";
-        if (vertexOffset ? ProjectUtils::isEngineVertexOffset(value) : ProjectUtils::isEngineCoverage(value))
+    // a shader file is one .glsl, from the project or the engine
+    if (shaderFile) {
+        if (ProjectUtils::isEngineShader(value))
             return true;
         if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
                 !PathUtils::isSafeRelativePath(fs::path(value)) ||
                 !PathUtils::existsExactCase(project->getProjectPath(), value)) {
-            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as " +
-                (vertexOffset ? "offsets/wind.glsl" : "coverage/see_through.glsl") + ". Write a project one with write_shader_file first.";
+            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. Write a project one with write_shader_file first.";
             return false;
         }
         return true;

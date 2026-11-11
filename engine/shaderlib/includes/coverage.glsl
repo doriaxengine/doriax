@@ -1,18 +1,18 @@
-// Cuts a fragment by the mesh's coverageShader, the same in every pass
+// Cuts a fragment by the getCoverage() of the mesh's shader, the same in every pass
 #include "includes/parameters_fs.glsl"
 #include "includes/coverage_helpers.glsl"
 
-struct CoverageContext {
+struct FragmentContext {
     vec3 worldPosition;
-    vec2 uv;            // UV set 1 as the mesh stores it, 0 without one
+    vec2 uv1;           // as the mesh stores it, 0 without the set
     vec3 eye;
     vec3 forward;
     bool perspective;
     vec2 pixel;         // from a corner every pass shares
 };
 
-// the mesh's coverage file, mapped in by the shader builder
-#include "coverage_function.glsl"
+// the fragment stage of the mesh's shader, mapped in by the shader builder
+#include "shader_hooks_fs.glsl"
 
 // discards a removed fragment; returns the alpha factor of a blended one
 float applyCoverage(vec3 worldPosition, vec2 uv){
@@ -20,9 +20,9 @@ float applyCoverage(vec3 worldPosition, vec2 uv){
     if (paramsFS.effect_pass.z < 0.5)
         return 1.0;
 
-    CoverageContext context;
+    FragmentContext context;
     context.worldPosition = worldPosition;
-    context.uv = uv;
+    context.uv1 = uv;
     context.eye = paramsFS.effect_eye.xyz;
     context.forward = paramsFS.effect_forward;
     context.perspective = paramsFS.effect_eye.w > 0.5;

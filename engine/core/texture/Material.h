@@ -51,6 +51,9 @@ namespace doriax{
         // material name or file
         std::string name = "";
 
+        // .glsl shader file whose hooks this material draws with, from the project or the engine
+        std::string shader;
+
         bool operator == (const Material& other) const {
             return baseColorFactor == other.baseColorFactor &&
                    metallicFactor == other.metallicFactor &&
@@ -69,7 +72,8 @@ namespace doriax{
                    occlusionTexCoord == other.occlusionTexCoord &&
                    emissiveTexCoord == other.emissiveTexCoord &&
                    normalTexCoord == other.normalTexCoord &&
-                   name == other.name;
+                   name == other.name &&
+                   shader == other.shader;
         }
 
         bool operator != (const Material& other) const {

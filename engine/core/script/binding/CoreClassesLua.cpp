@@ -876,6 +876,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addProperty("metallicRoughnessTexture", &Material::metallicRoughnessTexture)
         .addProperty("occlusionTexture", &Material::occlusionTexture)
         .addProperty("normalTexture", &Material::normalTexture)
+        .addProperty("shader", &Material::shader)
         .endClass();
 
     luabridge::getGlobalNamespace(L)

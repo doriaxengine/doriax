@@ -826,14 +826,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
         code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";
     if (!mesh.customDepthShader.empty())
         code << ind << "mesh.customDepthShader = " << formatString(mesh.customDepthShader) << ";\n";
-    if (!mesh.vertexOffsetShader.empty()){
-        code << ind << "mesh.vertexOffsetShader = " << formatString(mesh.vertexOffsetShader) << ";\n";
+    if (mesh.vertexOffsetMax != 0.0f)
         code << ind << "mesh.vertexOffsetMax = " << formatFloat(mesh.vertexOffsetMax) << ";\n";
-    }
-    if (!mesh.coverageShader.empty()){
-        code << ind << "mesh.coverageShader = " << formatString(mesh.coverageShader) << ";\n";
-        code << ind << "mesh.coverageShadows = " << formatBool(mesh.coverageShadows) << ";\n";
-    }
     if (!mesh.shaderUniforms.empty())
         code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
     code << ind << "mesh.vertexCount = " << formatUInt(mesh.vertexCount) << ";\n";
@@ -848,6 +842,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
 
         std::string idx = std::to_string(s);
         code << ind << "mesh.submeshes[" << idx << "].material.name = " << formatString(mesh.submeshes[s].material.name) << ";\n";
+        if (!mesh.submeshes[s].material.shader.empty())
+            code << ind << "mesh.submeshes[" << idx << "].material.shader = " << formatString(mesh.submeshes[s].material.shader) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.baseColorFactor = " << formatVector4(mesh.submeshes[s].material.baseColorFactor) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.metallicFactor = " << formatFloat(mesh.submeshes[s].material.metallicFactor) << ";\n";
         code << ind << "mesh.submeshes[" << idx << "].material.roughnessFactor = " << formatFloat(mesh.submeshes[s].material.roughnessFactor) << ";\n";

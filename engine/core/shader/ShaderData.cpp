@@ -23,6 +23,7 @@ ShaderData::ShaderData(const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){
@@ -38,6 +39,7 @@ ShaderData& ShaderData::operator = (const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){

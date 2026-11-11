@@ -219,10 +219,7 @@ namespace doriax{
             float lodBias;
             std::string customShader;
             std::string customDepthShader;
-            std::string vertexOffsetShader;
             float vertexOffsetMax;
-            std::string coverageShader;
-            bool coverageShadows;
             ShaderUniformValues shaderUniforms;
         };
         typedef std::map<std::pair<int, std::string>, MeshSettings> MeshSettingsByNode;

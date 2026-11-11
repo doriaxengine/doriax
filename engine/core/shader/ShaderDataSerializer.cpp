@@ -19,8 +19,8 @@ constexpr uint32_t SDAT_MAGIC = 0x54414453; // 'S''D''A''T' little-endian
 // Serialization format version of the .sdat blob. Bump only when the on-disk
 // layout changes. To invalidate caches after a shader *source* change, bump the
 // cache directory version in App::getUserShaderCacheDir() instead.
-// v2 adds the declared shader parameters.
-constexpr uint32_t SDAT_VERSION = 2;
+// v2 adds the declared shader parameters, v3 the shader flags.
+constexpr uint32_t SDAT_VERSION = 3;
 
 // Sanity limits to guard against malformed files
 constexpr uint32_t kMaxString = 32u * 1024u * 1024u; // 32MB
@@ -260,6 +260,7 @@ void ShaderDataSerializerHelper::writeShaderData(Writer& out, uint64_t shaderKey
         writeFloat(out, parameter.defaultValue.z);
         writeFloat(out, parameter.defaultValue.w);
     }
+    writeU32(out, shaderData.flags);
 }
 
 const char* ShaderDataSerializerHelper::shaderLangName(ShaderLang lang) {
@@ -383,6 +384,7 @@ nlohmann::json ShaderDataSerializerHelper::shaderDataToJson(uint64_t shaderKey, 
         root["stages"].push_back(stageJson);
     }
 
+    root["flags"] = shaderData.flags;
     root["parameters"] = nlohmann::json::array();
     for (const auto& parameter : shaderData.parameters) {
         root["parameters"].push_back({
@@ -556,7 +558,7 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
         return setErr(err, "Invalid SDAT magic: " + filepath);
     }
 
-    if (version != SDAT_VERSION && version != 1) {
+    if (version < 1 || version > SDAT_VERSION) {
         return setErr(err, "Unsupported SDAT version: " + filepath);
     }
 
@@ -843,6 +845,9 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
             parameter.type = static_cast<ShaderUniformType>(type);
             tmp.parameters.push_back(parameter);
         }
+    }
+    if (version >= 3 && !readU32(in, tmp.flags)) {
+        return setErr(err, "Failed to read flags: " + filepath);
     }
 
     outShaderData = tmp;

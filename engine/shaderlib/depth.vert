@@ -36,7 +36,7 @@ out vec2 v_projZW;
     in vec4 i_matrix_col4;
 #endif
 
-// the alpha mask texture, or the coverage function reading the UV set
+// the alpha mask texture, or the coverage hook reading the UV set
 #if defined(HAS_TEXTURE) || defined(HAS_UV_SET1)
     in vec2 a_texcoord1;
     out vec2 v_uv1;

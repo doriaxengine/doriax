@@ -31,6 +31,11 @@ namespace doriax::editor {
 
     struct ShaderEffectAnnotations {
         std::vector<ShaderParameterDeclaration> parameters;
+        // "#pragma shader mesh", empty in a file that is not a shader asset
+        std::string shaderType;
+        // hook functions the code defines
+        bool vertexOffset = false;
+        bool coverage = false;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;
@@ -43,9 +48,15 @@ namespace doriax::editor {
     class ShaderParameterParser {
     public:
         static void parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out);
-        // a source and everything it includes, as lookup resolves them
+        // a source and everything it includes, as lookup resolves them and one stage reads them
         static void parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
-                              ShaderEffectAnnotations& out);
+                              ShaderStageType stage, ShaderEffectAnnotations& out);
+
+        // the source as a stage reads it: the lines under the other "#pragma stage" blanked
+        static std::string getStageSource(const std::string& source, ShaderStageType stage);
+        // the source with its "#pragma stage" lines turned into conditions on SHADER_STAGE_VERTEX
+        // and SHADER_STAGE_FRAGMENT, line for line
+        static std::string getStageConditions(const std::string& source);
 
         static std::string getTypeName(ShaderUniformType type);
         static bool parseTypeName(const std::string& name, ShaderUniformType& type);

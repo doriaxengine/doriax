@@ -3236,11 +3236,10 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
-        // terrain builds its vertices in the shader and takes no effect functions
-        const std::string vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
-        const std::string coverage = terrain ? std::string() : mesh.coverageShader;
-        // a coverage function reads UV set 1 in every pass; a missing texture binds white
-        const bool p_coverageUV = !coverage.empty() && mesh.submeshes[i].hasTexCoord1;
+        // terrain builds its vertices in the shader and takes no shader file
+        const std::string materialShader = terrain ? std::string() : mesh.submeshes[i].material.shader;
+        // a coverage hook reads UV set 1 in every pass; a missing texture binds white
+        const bool p_coverageUV = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
         if (p_coverageUV){
             p_hasTexture1 = true;
         }
@@ -3256,7 +3255,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Priority: component customShader > scene default shader > built-in (empty)
         const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
         const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset, coverage));
+        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, materialShader));
         // 'Dlo': built-in shader without the point/spot paths
         if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
@@ -3272,7 +3271,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
                 p_depthAlphaMask, p_instanceFade, p_coverageUV);
-            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
+            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, materialShader));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
                 // same fallback as the main shader below
@@ -3311,7 +3310,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
                 gbufferHasOcclusionTex, gbufferOcclusionUV2, p_coverageUV);
-            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
+            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", materialShader));
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
                 // the color pass reports the failure
@@ -4328,13 +4327,13 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
     constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
 
-    // shader properties first, they rule out lit meshes; an effect function needs its own draw
+    // shader properties first, they rule out lit meshes; a shader file needs its own draw
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
         !submesh.needUpdateTexture && !submesh.lodData &&
-        mesh.vertexOffsetShader.empty() && mesh.coverageShader.empty();
+        submesh.material.shader.empty();
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -4924,6 +4923,13 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             bool needUpdateFramebuffer = checkPBRFrabebufferUpdate(mesh.submeshes[i].material);
 
+            // a material assigned whole may bring another shader file
+            if (mesh.submeshes[i].needUpdateTexture && !terrain &&
+                    ShaderPool::getCustomShaderAsset(ShaderPool::getCustomShaderName(mesh.submeshes[i].customShaderId)) != mesh.submeshes[i].material.shader){
+                mesh.needReload = true;
+                return false;
+            }
+
             if (mesh.submeshes[i].needUpdateTexture || needUpdateFramebuffer){
                 ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
                 if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
@@ -5132,8 +5138,9 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             }
 
             applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, effectView, passResolution);
-            // shadow maps keep the whole silhouette unless the mesh asks
-            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, effectView, passResolution, forSSAO || mesh.coverageShadows);
+            // shadow maps keep the whole silhouette unless the shader asks
+            const bool coverageShadows = mesh.submeshes[i].depthShader->shaderData.flags & ShaderFlag_CoverageShadows;
+            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, effectView, passResolution, forSSAO || coverageShadows);
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
@@ -10467,7 +10474,13 @@ void RenderSystem::update(double dt){
 
             // vertex offsets reach past the bounds by their longest offset, read only when used
             auto offsetReach = [&](){
-                return (mesh.vertexOffsetShader.empty() || terrain) ? 0.0f : mesh.vertexOffsetMax;
+                if (mesh.vertexOffsetMax <= 0.0f || terrain)
+                    return 0.0f;
+                for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                    if (!mesh.submeshes[s].material.shader.empty())
+                        return mesh.vertexOffsetMax;
+                }
+                return 0.0f;
             };
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);

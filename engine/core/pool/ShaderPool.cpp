@@ -179,11 +179,9 @@ std::string ShaderPool::getCustomShaderName(uint16_t customId){
     return "";
 }
 
-std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage){
-    if (!coverage.empty())
-        return fork + '#' + vertexOffset + '#' + coverage;
-    if (!vertexOffset.empty())
-        return fork + '#' + vertexOffset;
+std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& shader){
+    if (!shader.empty())
+        return fork + '#' + shader;
 
     return fork;
 }
@@ -192,21 +190,8 @@ std::string ShaderPool::getCustomShaderFork(const std::string& customShader){
     return customShader.substr(0, customShader.find('#'));
 }
 
-std::string ShaderPool::getCustomShaderVertexOffset(const std::string& customShader){
+std::string ShaderPool::getCustomShaderAsset(const std::string& customShader){
     size_t separator = customShader.find('#');
-    if (separator == std::string::npos)
-        return "";
-
-    size_t end = customShader.find('#', separator + 1);
-    return customShader.substr(separator + 1, end == std::string::npos ? std::string::npos : end - separator - 1);
-}
-
-std::string ShaderPool::getCustomShaderCoverage(const std::string& customShader){
-    size_t separator = customShader.find('#');
-    if (separator == std::string::npos)
-        return "";
-
-    separator = customShader.find('#', separator + 1);
     if (separator == std::string::npos)
         return "";
 
@@ -214,7 +199,7 @@ std::string ShaderPool::getCustomShaderCoverage(const std::string& customShader)
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
-    // Filesystem-safe token for .sdat names ("shaders/myMesh#offsets/wind.glsl" -> "shaders_myMesh_offsets_wind_glsl_7e274965").
+    // Filesystem-safe token for .sdat names ("shaders/myMesh#shaders/wind.glsl" -> "shaders_myMesh_shaders_wind_glsl_" and the hash).
     // The FNV-1a of the name keeps apart names that sanitize alike, the same on every platform.
     const std::string name = getCustomShaderName(customId);
     if (name.empty())

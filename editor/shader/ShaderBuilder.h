@@ -66,7 +66,8 @@ namespace doriax::editor {
         // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
         // Throws on failure.
         // parameters takes what the fork and the effect functions declare, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>& parameters);
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project,
+                            std::vector<ShaderParameterInfo>& parameters, uint32_t& flags);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
         std::string getShaderDisplayName(ShaderKey key);
@@ -82,7 +83,7 @@ namespace doriax::editor {
         virtual ~ShaderBuilder();
 
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
-        // annotations of a fork (its .vert and .frag) or of an effect file, with their includes
+        // annotations of a fork (its .vert and .frag) or of a shader file, with their includes
         static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader, bool fork);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 

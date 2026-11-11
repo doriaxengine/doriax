@@ -46,6 +46,7 @@ namespace doriax{
         SubmeshOverride_TextureShadow            = 1 << 13,
         SubmeshOverride_PrimitiveType            = 1 << 14,
         SubmeshOverride_FoliageTransmission      = 1 << 15,
+        SubmeshOverride_Shader                   = 1 << 16,
 
         SubmeshOverride_Material = SubmeshOverride_BaseColorFactor | SubmeshOverride_MetallicFactor |
                                    SubmeshOverride_RoughnessFactor | SubmeshOverride_AlphaCutoff |
@@ -53,7 +54,7 @@ namespace doriax{
                                    SubmeshOverride_MaterialName | SubmeshOverride_BaseColorTexture |
                                    SubmeshOverride_EmissiveTexture | SubmeshOverride_MetallicRoughnessTexture |
                                    SubmeshOverride_OcclusionTexture | SubmeshOverride_NormalTexture |
-                                   SubmeshOverride_FoliageTransmission
+                                   SubmeshOverride_FoliageTransmission | SubmeshOverride_Shader
     };
 
     struct DORIAX_API Submesh{
@@ -72,7 +73,7 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // resolved ids of MeshComponent::customShader/customDepthShader and the vertex offset
+        // resolved ids of MeshComponent::customShader/customDepthShader with the material shader
         // (0 = built-in); cached here so the matching ShaderPool::remove uses the same key
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
@@ -184,12 +185,7 @@ namespace doriax{
         // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
         // vertices or discards keeps its shadows in step.
         std::string customDepthShader;
-        // .glsl defining getVertexOffset(), from the project or the engine, applied in every pass
-        std::string vertexOffsetShader;
-        float vertexOffsetMax = 0.0f; // longest offset in world units, widens the bounds; 0 = no limit
-        // .glsl defining getCoverage(), from the project or the engine, applied in every pass
-        std::string coverageShader;
-        bool coverageShadows = false; // shadow maps follow the coverage too
+        float vertexOffsetMax = 0.0f; // longest getVertexOffset() in world units, widens the bounds; 0 = no limit
         // values of the declared parameters, by name, shared by all submeshes
         ShaderUniformValues shaderUniforms;
         bool needUpdateShaderUniforms = false;

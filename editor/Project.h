@@ -524,7 +524,7 @@ namespace doriax::editor{
         // Applies a transform to the customShader of every renderable component (Mesh/UI/
         // Points/Lines/Sky) across all scenes and entity bundles, flagging shader reloads
         // and marking affected scenes/bundles modified. The transform mutates the value in
-        // place and returns whether it changed; fileTransform does it for a mesh's vertexOffsetShader.
+        // place and returns whether it changed; fileTransform does it for a material's shader file.
         void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform);
         bool removeMissingChildSceneReferences(SceneProject& sceneProject);
         bool detachChildSceneFromParents(uint32_t childSceneId, const std::set<uint32_t>& skippedSceneIds);

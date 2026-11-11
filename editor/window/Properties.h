@@ -306,8 +306,8 @@ namespace doriax::editor{
         // one shader property of that row (customShader, a mesh's customDepthShader or a
         // water's customUnderwaterShader)
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
-        // a mesh's vertexOffsetShader or coverageShader: one .glsl, from the project or the engine
-        void drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage);
+        // a material's shader file: one .glsl, from the project or the engine
+        void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
         // annotations of a fork or an effect file, parsed again once a second at most
         struct CachedShaderAnnotations {

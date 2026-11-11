@@ -5129,23 +5129,9 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
             ImGui::TextDisabled("Depth shader failed to build");
         }
 
-        propertyHeader("Vertex Offset");
-        drawEffectFunctionRow(sceneProject, shaderEntity, false);
-        ImGui::SameLine(); helpMarker("A .glsl with vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) returning how far each vertex moves, in world units. Every pass applies it, so shadows and reflections follow. Its #pragma param values are the parameters below; the engine's offsets/wind.glsl sways the mesh in the scene's Wind.velocity.");
-        if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "vertexOffsetShader")->empty()) {
-            RowSettings maxSettings;
-            maxSettings.help = "Longest offset in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
-            propertyRow(RowPropertyType::FloatPositive, cpType, "vertexOffsetMax", "Max Offset", sceneProject, {shaderEntity}, maxSettings);
-        }
-
-        propertyHeader("Coverage");
-        drawEffectFunctionRow(sceneProject, shaderEntity, true);
-        ImGui::SameLine(); helpMarker("A .glsl with float getCoverage(CoverageContext context) returning how much of each fragment stays: 1 keeps it, 0 removes it, and opaque surfaces keep a dithered share in between while blended ones fade. The color, depth and G-buffer passes all apply it, so SSAO and reflections agree. The engine's coverage/see_through.glsl opens a view to a target a script sets.");
-        if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "coverageShader")->empty()) {
-            RowSettings shadowSettings;
-            shadowSettings.help = "The shadow maps follow the coverage too. Off keeps the whole shadow, though the material's alpha mask still applies.";
-            propertyRow(RowPropertyType::Bool, cpType, "coverageShadows", "Cut Shadows", sceneProject, {shaderEntity}, shadowSettings);
-        }
+        RowSettings maxSettings;
+        maxSettings.help = "Longest getVertexOffset() of the materials' shaders, in world units. Longer ones are clamped, and culling widens the mesh bounds by it so moved vertices are not cut off. 0 = no limit and no widening.";
+        propertyRow(RowPropertyType::FloatPositive, cpType, "vertexOffsetMax", "Max Offset", sceneProject, {shaderEntity}, maxSettings);
     }
 
     // the fullscreen fade of a camera inside the water, a shader of its own
@@ -5213,25 +5199,23 @@ void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType
 }
 
 // one .glsl file, unlike the .vert/.frag pair of a fork
-void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage){
+void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged){
     const std::filesystem::path projectPath = project->getProjectPath();
-    const char* propertyName = coverage ? "coverageShader" : "vertexOffsetShader";
-    const std::string idSuffix = coverage ? "coverage" : "vertex_offset";
-    const std::string current = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, ComponentType::MeshComponent, propertyName);
+    const std::string propertyName = "submeshes[" + std::to_string(submesh) + "].material.shader";
+    const std::string idSuffix = "material_shader_" + std::to_string(submesh);
+    const std::string* value = Catalog::getPropertyRef<std::string>(sceneProject->scene, entities[0], ComponentType::MeshComponent, propertyName);
+    const std::string current = value ? *value : std::string();
     const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
-    const bool engineFunction = !exists && ProjectUtils::isEngineEffectFunction(current);
+    const bool engineShader = !exists && ProjectUtils::isEngineShader(current);
     const uint32_t sceneId = sceneProject->id;
 
-    // a coverage function suggests its shadow policy, applied in the same step
-    auto setFunction = [&](const std::string& value) {
+    auto setShader = [&](const std::string& path) {
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
-        multiCmd->addPropertyCmd<std::string>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, value);
-        if (coverage && !value.empty()) {
-            const ShaderEffectAnnotations& annotations = getShaderAnnotations(value, false);
-            if (annotations.hasCoverageShadows)
-                multiCmd->addPropertyCmd<bool>(project, sceneId, entity, ComponentType::MeshComponent, "coverageShadows", annotations.coverageShadows);
-        }
+        for (const Entity& entity : entities)
+            multiCmd->addPropertyCmd<std::string>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, path);
         CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
+        if (onChanged)
+            onChanged();
     };
     auto useFile = [&](const std::string& path) {
         std::error_code ec;
@@ -5240,7 +5224,7 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
             Backend::getApp().registerAlert("Error", "Pick a .glsl file inside the project.");
             return;
         }
-        setFunction(rel.generic_string());
+        setShader(rel.generic_string());
     };
     auto openInEditor = [&](const std::string& rel) {
         if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
@@ -5249,7 +5233,7 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
 
     if (current.empty())
         ImGui::TextDisabled("None");
-    else if (engineFunction)
+    else if (engineShader)
         ImGui::TextWrapped("%s (built-in)", current.c_str());
     else
         ImGui::TextWrapped("%s", current.c_str());
@@ -5258,29 +5242,28 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
 
     ImGui::BeginDisabled(!current.empty());
     if (ImGui::Button((std::string(ICON_FA_FILE_CIRCLE_PLUS "##new_") + idSuffix).c_str())) {
-        const std::string name = sceneProject->scene->getEntityName(entity);
-        std::string created = coverage ? ProjectUtils::writeCoverageTemplate(projectPath, name) : ProjectUtils::writeVertexOffsetTemplate(projectPath, name);
+        std::string created = ProjectUtils::writeShaderTemplate(projectPath, sceneProject->scene->getEntityName(entities[0]));
         if (created.empty()) {
-            Backend::getApp().registerAlert("Error", "Could not write the effect function file.");
+            Backend::getApp().registerAlert("Error", "Could not write the shader file.");
         } else {
-            setFunction(created);
+            setShader(created);
             openInEditor(created);
         }
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(coverage ? "Create a coverage function from a template" : "Create a vertex offset from a template");
+        ImGui::SetTooltip("Create a shader file from a template");
     ImGui::EndDisabled();
 
     ImGui::SameLine();
-    const std::string presetsPopup = "engine_effects_" + idSuffix;
-    if (ImGui::Button((std::string(coverage ? ICON_FA_EYE_SLASH : ICON_FA_WIND) + "##engine_" + idSuffix).c_str()))
+    const std::string presetsPopup = "engine_shaders_" + idSuffix;
+    if (ImGui::Button((std::string(ICON_FA_WIND "##engine_") + idSuffix).c_str()))
         ImGui::OpenPopup(presetsPopup.c_str());
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(coverage ? "Use one of the engine's coverage functions" : "Use one of the engine's vertex offsets");
+        ImGui::SetTooltip("Use one of the engine's shaders");
     if (ImGui::BeginPopup(presetsPopup.c_str())) {
-        for (const std::string& preset : coverage ? ProjectUtils::getEngineCoverages() : ProjectUtils::getEngineVertexOffsets()) {
+        for (const std::string& preset : ProjectUtils::getEngineShaders()) {
             if (ImGui::Selectable(preset.c_str(), preset == current))
-                setFunction(preset);
+                setShader(preset);
             // the first line of the file says what it does
             if (ImGui::IsItemHovered()) {
                 std::string source;
@@ -5305,21 +5288,21 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
 
     // a built-in one becomes a project file to change
     ImGui::SameLine();
-    ImGui::BeginDisabled(!engineFunction);
+    ImGui::BeginDisabled(!engineShader);
     if (ImGui::Button((std::string(ICON_FA_CODE_FORK "##copy_") + idSuffix).c_str())) {
         const std::string name = std::filesystem::path(current).stem().string();
-        std::string copied = ProjectUtils::copyEffectFunctionToProject(projectPath, current, name);
+        std::string copied = ProjectUtils::copyEngineShaderToProject(projectPath, current, name);
         if (copied.empty()) {
-            Backend::getApp().registerAlert("Error", "Could not copy the effect function into the project.");
+            Backend::getApp().registerAlert("Error", "Could not copy the shader into the project.");
         } else {
-            setFunction(copied);
+            setShader(copied);
             openInEditor(copied);
             if (ResourcesWindow* resources = Backend::getApp().getResourcesWindow())
                 resources->refreshCurrentDirectory();
         }
     }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Copy the built-in function into the project to change it");
+        ImGui::SetTooltip("Copy the built-in shader into the project to change it");
     ImGui::EndDisabled();
 
     ImGui::SameLine();
@@ -5329,10 +5312,10 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
     if (ImGui::IsItemHovered()) {
         if (exists)
             ImGui::SetTooltip("Open %s", current.c_str());
-        else if (engineFunction)
+        else if (engineShader)
             ImGui::SetTooltip("Built into the engine");
         else
-            ImGui::SetTooltip("Effect function file not found");
+            ImGui::SetTooltip("Shader file not found");
     }
     ImGui::EndDisabled();
 
@@ -5342,9 +5325,9 @@ void editor::Properties::drawEffectFunctionRow(SceneProject* sceneProject, Entit
         ImGui::NewLine();
     ImGui::BeginDisabled(current.empty());
     if (ImGui::Button((std::string(ICON_FA_XMARK "##clear_") + idSuffix).c_str()))
-        setFunction("");
+        setShader("");
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip(coverage ? "Remove the coverage function" : "Remove the vertex offset");
+        ImGui::SetTooltip("Remove the shader");
     ImGui::EndDisabled();
 
     ImGui::PopStyleVar();
@@ -5565,8 +5548,8 @@ std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectShare
     for (size_t i = 0; i < meshes->size(); i++) {
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         addSource(mesh.customDepthShader, true);
-        addSource(mesh.vertexOffsetShader, false);
-        addSource(mesh.coverageShader, false);
+        for (unsigned int s = 0; s < mesh.numSubmeshes; s++)
+            addSource(mesh.submeshes[s].material.shader, false);
     }
     for (size_t i = 0; i < waters->size(); i++)
         addSource(waters->getComponentFromIndex(i).customUnderwaterShader, true);
@@ -5603,7 +5586,7 @@ void editor::Properties::drawSceneShaderParameters(SceneProject* sceneProject){
 
     ImGui::SeparatorText("Shader Parameters");
     ImGui::SameLine();
-    helpMarker("Values of every \"#pragma scene Collection.name\" the scene's shaders declare, like the wind of offsets/wind.glsl. Scripts override them with scene:setShaderParameter.");
+    helpMarker("Values of every \"#pragma scene Collection.name\" the scene's shaders declare, like the wind of shaders/wind.glsl. Scripts override them with scene:setShaderParameter.");
 
     const uint32_t sceneId = sceneProject->id;
     drawParameterTable("scene_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {
@@ -5622,7 +5605,7 @@ void editor::Properties::drawCameraShaderParameters(SceneProject* sceneProject, 
 
     ImGui::SeparatorText("Shader Parameters");
     ImGui::SameLine();
-    helpMarker("Values of every \"#pragma view Collection.name\" the scene's shaders declare, for this camera, like the opening of coverage/see_through.glsl. Scripts override them with camera:setShaderParameter, or scene:setMainViewShaderParameter for whichever camera renders the scene.");
+    helpMarker("Values of every \"#pragma view Collection.name\" the scene's shaders declare, for this camera, like the opening of shaders/see_through.glsl. Scripts override them with camera:setShaderParameter, or scene:setMainViewShaderParameter for whichever camera renders the scene.");
 
     const uint32_t sceneId = sceneProject->id;
     drawParameterTable("camera_shader_parameters", sceneId, parameters, values, nullptr, [&](const ShaderUniformValues& newValues) -> Command* {
@@ -6515,6 +6498,9 @@ void editor::Properties::drawMeshComponent(ComponentType cpType, SceneProject* s
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.emissiveTexture", "Emissive Texture", sceneProject, entities, settingsMaterial);
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.occlusionTexture", "Occlusion Texture", sceneProject, entities, settingsMaterial);
             propertyRow(RowPropertyType::Texture, cpType, "submeshes["+std::to_string(s)+"].material.normalTexture", "Normal Texture", sceneProject, entities, settingsMaterial);
+            propertyHeader("Shader", -1, false, true);
+            drawMaterialShaderRow(sceneProject, entities, s, settingsMaterial.onValueChanged);
+            ImGui::SameLine(); helpMarker("A .glsl shader file whose hooks this material draws with: vec3 getVertexOffset(VertexContext context) moves each vertex in world units, float getCoverage(FragmentContext context) says how much of each fragment stays. Every pass runs them, so shadows and reflections follow. Its #pragma param values are the parameters below the Shaders section.");
             endTable();
         }
 

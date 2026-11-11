@@ -1596,13 +1596,16 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customShader);
         applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader);
 
-        // an effect function is one file, not a .vert/.frag pair
+        // a shader file is one file, not a .vert/.frag pair
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
-            bool meshChanged = !mesh.vertexOffsetShader.empty() && fileTransform(mesh.vertexOffsetShader);
-            if (!mesh.coverageShader.empty() && fileTransform(mesh.coverageShader))
-                meshChanged = true;
+            bool meshChanged = false;
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
+                std::string& shader = mesh.submeshes[s].material.shader;
+                if (!shader.empty() && fileTransform(shader))
+                    meshChanged = true;
+            }
             if (meshChanged) {
                 Catalog::updateEntity(registry, meshes->getEntity(i), UpdateFlags_Shader_Reload);
                 changed = true;
@@ -2719,6 +2722,9 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
         materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
         materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
         materialChanged |= visitTexturePaths(material.normalTexture, transform);
+        if (!material.shader.empty() && transform(material.shader)){
+            materialChanged = true;
+        }
 
         if (!materialChanged){
             continue;
@@ -3949,16 +3955,15 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             if (mesh.loaded || mesh.submeshes[0].shader) {
                 bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
                 // as in RenderSystem::loadMesh
-                const std::string vertexOffset = isTerrain ? std::string() : mesh.vertexOffsetShader;
-                const std::string coverage = isTerrain ? std::string() : mesh.coverageShader;
                 const std::string& meshShader = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
-                uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, vertexOffset, coverage));
-                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
-                uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
                     if (!mesh.loaded && !mesh.submeshes[s].shader) {
                         continue;
                     }
+                    const std::string materialShader = isTerrain ? std::string() : mesh.submeshes[s].material.shader;
+                    uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, materialShader));
+                    uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, materialShader));
+                    uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", materialShader));
                     uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
                     // Saving/exporting can happen before RenderSystem has reloaded
                     // meshes after a probe was added. Derive the required IBL
@@ -3997,7 +4002,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         depthTexture, mesh.submeshes[s].hasSkinning,
                         mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
                         mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, !coverage.empty() && mesh.submeshes[s].hasTexCoord1);
+                        instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1);
                     insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
                     insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
@@ -4145,8 +4150,13 @@ void editor::Project::invalidateCustomShaders() {
         };
 
         flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
-            return sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty() || !mesh.vertexOffsetShader.empty() ||
-                !mesh.coverageShader.empty();
+            if (sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty())
+                return true;
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
+                if (!mesh.submeshes[s].material.shader.empty())
+                    return true;
+            }
+            return false;
         });
         flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
             return sceneUI || !ui.customShader.empty();
@@ -6213,17 +6223,13 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
-    // Except those of deleted forks or effect functions, which exports could not build
+    // Except those of deleted forks or shader files, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
         const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
         const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-        const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
-        const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
-        auto missingEffect = [&](const std::string& path) {
-            return !path.empty() && !fs::exists(projectPath / path) && !ProjectUtils::isEngineEffectFunction(path);
-        };
+        const std::string shaderFile = ShaderPool::getCustomShaderAsset(customShader);
         if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
-                missingEffect(vertexOffset) || missingEffect(coverage)) {
+                (!shaderFile.empty() && !fs::exists(projectPath / shaderFile) && !ProjectUtils::isEngineShader(shaderFile))) {
             it = shaderKeys.erase(it);
         } else {
             ++it;
