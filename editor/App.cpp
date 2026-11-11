@@ -2408,10 +2408,11 @@ void editor::App::tickBenchmark() {
         return;
     }
 
+    // the scene tab decides the selected scene, so bring it to front while another covers it
+    if (sceneWindow && (!benchmarkCameraReady || !selected->isVisible))
+        sceneWindow->requestPlayFocus(benchmarkSceneId);
+
     if (!benchmarkCameraReady) {
-        // the scene tab decides the selected scene, so bring it to front like Play does
-        if (sceneWindow)
-            sceneWindow->requestPlayFocus(benchmarkSceneId);
         Entity camera = selected->scene->getCamera();
         if (camera == NULL_ENTITY)
             camera = selected->mainCamera;
