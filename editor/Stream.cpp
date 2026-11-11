@@ -2458,7 +2458,10 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
     if (hasTabs) {
         for (const TabEntry& tab : workspace.getTabs()) {
             if (tab.type == TabType::SCENE) {
-                openedScenePaths.insert(fs::path(tab.filepath).generic_string());
+                // matched against the scene list, which reads backslashes as separators
+                std::string tabPath = tab.filepath;
+                std::replace(tabPath.begin(), tabPath.end(), '\\', '/');
+                openedScenePaths.insert(tabPath);
             }
             project->addTab(tab.type, tab.filepath);
         }
