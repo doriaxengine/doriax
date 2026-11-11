@@ -84,11 +84,6 @@ namespace doriax::editor {
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
         // annotations of a fork (its .vert and .frag) or of an effect file, with their includes
         static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader, bool fork);
-        // the project's .vert and .frag files that still declare a custom block of v0.8.4.
-        // Deprecated: remove in a few versions, with everything marked "v0.8.4 port"
-        static std::vector<std::string> findLegacyShaders(Project* project);
-        // rewrites those blocks as parameters, in every file or in none; rewritten counts the files changed
-        static bool portLegacyShaders(Project* project, const std::vector<std::string>& files, size_t& rewritten, std::string& error);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 
         // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.
