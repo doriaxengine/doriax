@@ -203,35 +203,30 @@ float shadowCalculationPCF(int shadowMapIndex, float NdotL) {
 
 // Past a split the finer cascade still covers a band (its shadowParams.y) where the next one fades in.
 float shadowCascadedCalculationPCF(int shadowMapIndex, int numShadowCascades, float viewDepth, float NdotL) {
-    int cascade = -1;
     for (int c = 0; c < MAX_SHADOWCASCADES; c++){
         if (c < numShadowCascades){
-            vec2 nearFar = uShadows.bias_texSize_nearFar[shadowMapIndex + c].zw;
+            int index = shadowMapIndex + c;
+            vec2 nearFar = uShadows.bias_texSize_nearFar[index].zw;
             if ((viewDepth >= nearFar.x) && (viewDepth <= nearFar.y)){
-                cascade = c;
-                break;
+                float shadow = shadowCalculationAux(index, getShadow2DConf(index), NdotL);
+
+                #ifdef SHADOW_FRAGMENT_PROJECTION
+                if (c > 0){
+                    float band = uShadowProjection.shadowParams[index - 1].y;
+                    float t = (band > 0.0) ? (viewDepth - nearFar.x) / band : 1.0;
+                    if (t < 1.0){
+                        float finer = shadowCalculationAux(index - 1, getShadow2DConf(index - 1), NdotL);
+                        shadow = mix(finer, shadow, smoothstep(0.0, 1.0, t));
+                    }
+                }
+                #endif
+
+                return shadow;
             }
         }
     }
-    if (cascade < 0){
-        return 0.0;
-    }
 
-    int index = shadowMapIndex + cascade;
-    float shadow = shadowCalculationAux(index, getShadow2DConf(index), NdotL);
-
-    #ifdef SHADOW_FRAGMENT_PROJECTION
-    if (cascade > 0){
-        float band = uShadowProjection.shadowParams[index - 1].y;
-        float t = (band > 0.0) ? (viewDepth - uShadows.bias_texSize_nearFar[index].z) / band : 1.0;
-        if (t < 1.0){
-            float finer = shadowCalculationAux(index - 1, getShadow2DConf(index - 1), NdotL);
-            shadow = mix(finer, shadow, smoothstep(0.0, 1.0, t));
-        }
-    }
-    #endif
-
-    return shadow;
+    return 0.0;
 }
 
 #ifndef DIRECTIONAL_LIGHTS_ONLY
