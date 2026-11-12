@@ -67,7 +67,7 @@ namespace doriax{
         bool underwaterLoaded = false;
         ObjectRender underwaterRender;
         std::shared_ptr<ShaderRender> underwaterShader;
-        std::string customUnderwaterShader; // fork of underwater.frag, built-in when empty
+        // the water's shader file, built for the fade
         uint16_t customUnderwaterShaderId = 0;
         int slotUnderwaterParams = -1;
         ShaderParameterBlock underwaterParamsVS;

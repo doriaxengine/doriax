@@ -495,7 +495,6 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("wakeArea", &Water::getWakeArea, &Water::setWakeArea)
         .addProperty("wakeFade", &Water::getWakeFade, &Water::setWakeFade)
         .addProperty("shader", &Water::getShader, &Water::setShader)
-        .addProperty("customUnderwaterShader", &Water::getCustomUnderwaterShader, &Water::setCustomUnderwaterShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Water::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Water::setShaderUniform),

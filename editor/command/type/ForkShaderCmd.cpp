@@ -21,8 +21,6 @@ editor::ForkShaderCmd::ForkShaderCmd(Project* project, uint32_t sceneId, Entity 
         const char* propertyName = "customShader";
         if (shaderType == ShaderType::DEPTH)
             propertyName = "customDepthShader";
-        else if (shaderType == ShaderType::UNDERWATER)
-            propertyName = "customUnderwaterShader";
         propertyCmd = std::make_unique<PropertyCmd<std::string>>(
             project, sceneId, entity, cpType, propertyName, plan.base);
     }

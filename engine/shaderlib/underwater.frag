@@ -31,6 +31,9 @@ uniform u_fs_underwaterParams {
 #include "includes/depth_util.glsl"
 
 #include "includes/parameters_fs.glsl"
+#ifdef USE_FRAGMENT_HOOKS
+    #include "includes/hooks_water_fs.glsl"
+#endif
 
 void main(){
     loadShaderParameters();
@@ -59,5 +62,15 @@ void main(){
     vec3 scattered = underwater.deepColor.rgb * (underwater.light.rgb + ambient);
     vec3 scene = sRGBToLinear(texture(sampler2D(u_sceneColorTexture, u_sceneColor_smp), underwater.sceneRect.xy + v_texcoord * underwater.sceneRect.zw).rgb);
 
-    frag_color = vec4(linearTosRGB(scene * transmittance + scattered * (1.0 - transmittance)), 1.0);
+    #ifdef USE_FRAGMENT_HOOKS
+        UnderwaterContext context;
+        context.uv = v_texcoord;
+        context.sceneColor = vec4(scene, 1.0);
+        context.pathLength = path;
+        context.pixel = gl_FragCoord.xy;
+        vec4 color = getUnderwaterColor(context, vec4(scene * transmittance + scattered * (1.0 - transmittance), 1.0));
+        frag_color = vec4(linearTosRGB(color.rgb), color.a);
+    #else
+        frag_color = vec4(linearTosRGB(scene * transmittance + scattered * (1.0 - transmittance)), 1.0);
+    #endif
 }

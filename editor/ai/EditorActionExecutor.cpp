@@ -5220,7 +5220,7 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
     // A fork property is a project-relative base path whose .vert and .frag must exist;
     // the other shader properties take one .glsl file
     static const std::set<std::string> forkProperties = {
-        "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader"
+        "customShader", "customDepthShader", "default_mesh_shader"
     };
     static const std::set<std::string> fileProperties = {
         "shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
@@ -5389,18 +5389,13 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
 
     // a mesh's shadow/SSAO depth pass and a water's underwater fade have forks of their own
     std::string propertyName = "customShader";
-    if (component != ComponentType::MeshComponent && lower(shaderTypeArg) != "underwater") {
+    if (component != ComponentType::MeshComponent) {
         return failResult("A " + Catalog::getComponentName(component) + " takes a shader file, not a fork: write one with write_shader_file "
                           "(\"#pragma shader " + ShaderParameterParser::getShaderFileType(shaderType) + "\") and set its shader property to it.");
     }
     if (lower(shaderTypeArg) == "depth") {
-        if (component != ComponentType::MeshComponent) return failResult("Only a MeshComponent has a depth shader.");
         shaderType = ShaderType::DEPTH;
         propertyName = "customDepthShader";
-    }else if (lower(shaderTypeArg) == "underwater") {
-        if (component != ComponentType::WaterComponent) return failResult("Only a WaterComponent has an underwater shader.");
-        shaderType = ShaderType::UNDERWATER;
-        propertyName = "customUnderwaterShader";
     }
 
     // Re-forking would orphan the previous fork's files; require an explicit reset first.
@@ -5603,9 +5598,8 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
         result["custom_depth_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader");
         result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
     }
-    // and so does a water's underwater fork
+    // and a water's shader file builds the underwater fade too
     if (component == ComponentType::WaterComponent) {
-        result["custom_underwater_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customUnderwaterShader");
         result["underwater_build_failed"] = Catalog::isCustomUnderwaterShaderBuildFailed(sceneProject->scene, entity);
     }
 

@@ -175,6 +175,7 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.varyingsHook = out.varyingsHook || definesHook(code, "getVaryings", "VertexContext");
     out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
     out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
+    out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
 
@@ -619,6 +620,8 @@ std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::
 std::string editor::ShaderParameterParser::getShaderFileType(ShaderType shaderType){
     if (shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER)
         return "mesh";
+    if (shaderType == ShaderType::UNDERWATER)
+        return "water";
 
     return ShaderPool::getShaderTypeName(shaderType, true);
 }

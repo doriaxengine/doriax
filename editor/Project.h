@@ -521,10 +521,10 @@ namespace doriax::editor{
         // Runs an asset transform over every scene, entity bundle and material file,
         // marking what changed.
         void applyAssetPathChange(const std::function<bool(std::string&)>& transform);
-        // Applies a transform to the forks of every renderable component (a mesh's, its depth
-        // one, a water's underwater one) across all scenes and entity bundles, flagging shader
-        // reloads and marking affected scenes/bundles modified. The transform mutates the value
-        // in place and returns whether it changed; fileTransform does it for the shader files.
+        // Applies a transform to the forks of every renderable component (a mesh's and its
+        // depth one) across all scenes and entity bundles, flagging shader reloads and marking
+        // affected scenes/bundles modified. The transform mutates the value in place and
+        // returns whether it changed; fileTransform does it for the shader files.
         void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform);
         bool removeMissingChildSceneReferences(SceneProject& sceneProject);
         bool detachChildSceneFromParents(uint32_t childSceneId, const std::set<uint32_t>& skippedSceneIds);

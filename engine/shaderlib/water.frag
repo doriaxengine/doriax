@@ -124,15 +124,7 @@ float clampedDot(vec3 x, vec3 y){
 #include "includes/punctual.glsl"
 
 #ifdef USE_FRAGMENT_HOOKS
-    struct FragmentContext {
-        vec3 worldPosition;
-        vec3 normal;          // the rippled surface, world space
-        vec3 view;            // toward the eye
-        vec2 pixel;
-    };
-
-    // the fragment stage of the shader file, mapped in by the shader builder
-    #include "shader_hooks_fs.glsl"
+    #include "includes/hooks_water_fs.glsl"
 #endif
 #if defined(USE_SCENE_DEPTH) || defined(USE_SHADOWS)
     #include "includes/depth_util.glsl"

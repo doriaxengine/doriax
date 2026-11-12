@@ -594,7 +594,6 @@ namespace {
         makeFastProperty<WaterComponent, float, &WaterComponent::wakeArea>("wakeArea", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<WaterComponent, float, &WaterComponent::wakeFade>("wakeFade", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<WaterComponent, std::string, &WaterComponent::shader>("shader", PropertyType::String, UpdateFlags_Shader_Reload),
-        makeFastProperty<WaterComponent, std::string, &WaterComponent::customUnderwaterShader>("customUnderwaterShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, ShaderUniformValues, &WaterComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
     };
 
@@ -4136,10 +4135,12 @@ bool editor::Catalog::isCustomDepthShaderBuildFailed(Scene* scene, Entity entity
 }
 
 bool editor::Catalog::isCustomUnderwaterShaderBuildFailed(Scene* scene, Entity entity) {
-    // a failed fork reloads on the built-in, which registers no custom id
+    // the fade of a water's shader file; a failed one reloads on the built-in, which registers no custom id
     WaterComponent* water = scene->findComponent<WaterComponent>(entity);
-    return water && !water->customUnderwaterShader.empty() && water->underwaterLoaded &&
-           water->customUnderwaterShaderId == 0;
+    if (!water)
+        return false;
+    const std::string& shader = water->shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water->shader;
+    return !shader.empty() && water->underwaterLoaded && water->customUnderwaterShaderId == 0;
 }
 
 const char* editor::Catalog::getDefaultShaderUniformsProperty(ShaderType type) {

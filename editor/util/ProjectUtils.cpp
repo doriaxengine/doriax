@@ -139,13 +139,7 @@ std::string shaderTypeFileName(ShaderType shaderType) {
     switch (shaderType) {
         case ShaderType::MESH:   return "mesh";
         case ShaderType::DEPTH:  return "depth";
-        case ShaderType::UI:     return "ui";
-        case ShaderType::POINTS: return "points";
-        case ShaderType::LINES:  return "lines";
-        case ShaderType::SKYBOX: return "sky";
         case ShaderType::POSTPROCESS: return "postprocess";
-        case ShaderType::WATER:  return "water";
-        case ShaderType::UNDERWATER: return "underwater";
         default:                 return "";
     }
 }
@@ -267,7 +261,7 @@ editor::ProjectUtils::ShaderForkPlan editor::ProjectUtils::prepareShaderFork(
     std::filesystem::path projectRoot = project->getProjectPath();
 
     // fullscreen passes share one vertex entry point; the fork still gets its own copy
-    std::string vertFile = (shaderType == ShaderType::POSTPROCESS || shaderType == ShaderType::UNDERWATER) ? "fullscreen" : typeFile;
+    std::string vertFile = shaderType == ShaderType::POSTPROCESS ? "fullscreen" : typeFile;
     auto vertIt = editor::shaderMap.find(vertFile + ".vert");
     auto fragIt = editor::shaderMap.find(typeFile + ".frag");
     if (vertIt == editor::shaderMap.end() || fragIt == editor::shaderMap.end()) {
@@ -563,10 +557,6 @@ std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShad
     }
     if (const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader"))
         addEffect(shader->empty() ? scene->getDefaultCustomShader(shaderType) : *shader);
-    if (cpType == ComponentType::WaterComponent) {
-        if (const WaterComponent* water = scene->findComponent<WaterComponent>(entity))
-            addFork(water->customUnderwaterShader);
-    }
     return sources;
 }
 

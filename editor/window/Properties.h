@@ -301,8 +301,7 @@ namespace doriax::editor{
         // "Shaders" section of a component: a mesh's fork (fork, edit files, open .vert/.frag,
         // reset to built-in), the shader file of the other types.
         void drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities);
-        // one shader property of that row (customShader, a mesh's customDepthShader or a
-        // water's customUnderwaterShader)
+        // one fork property of that row, a mesh's customShader or customDepthShader
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
         // a material's shader file
         void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);

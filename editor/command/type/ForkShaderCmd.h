@@ -15,8 +15,7 @@
 namespace doriax::editor {
 
     // Forks a built-in shader and points a mesh's customShader (customDepthShader
-    // for a DEPTH fork, customUnderwaterShader for an UNDERWATER fork, or a scene's default
-    // shader property) at the new fork as a single
+    // for a DEPTH fork, or a scene's default shader property) at the new fork as a single
     // undoable step: execute() writes the .vert/.frag (and optional private include) files
     // and sets the property; undo() restores the property and deletes the forked files.
     class ForkShaderCmd : public Command {

@@ -1577,9 +1577,9 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
 }
 
 void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform) {
-    // forks are a .vert/.frag pair (a mesh's, its depth one, a water's underwater one),
-    // the other shaders one file; visit each array in a registry, apply the transform,
-    // and flag a shader reload on the entities that changed.
+    // forks are a .vert/.frag pair (a mesh's and its depth one), the other shaders one
+    // file; visit each array in a registry, apply the transform, and flag a shader reload
+    // on the entities that changed.
     auto applyToRegistry = [&](EntityRegistry* registry) -> bool {
         bool changed = false;
         auto applyToArray = [&](auto arr, auto shaderField, const std::function<bool(std::string&)>& apply) {
@@ -1595,7 +1595,6 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         };
         applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customShader, transform);
         applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customDepthShader, transform);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader, transform);
         applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::shader, fileTransform);
         applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::shader, fileTransform);
         applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::shader, fileTransform);
@@ -4066,7 +4065,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                 sceneShadows && water.receiveShadows, water.refraction),
                 effectiveShaderId(water.shader, ShaderType::WATER));
             if (water.underwater) {
-                insertKeys(ShaderType::UNDERWATER, 0, ShaderPool::registerCustomShader(water.customUnderwaterShader));
+                insertKeys(ShaderType::UNDERWATER, 0, effectiveShaderId(water.shader, ShaderType::WATER));
             }
         }
     }
@@ -4181,7 +4180,7 @@ void editor::Project::invalidateCustomShaders() {
             return sceneSky || !sky.shader.empty();
         });
         flagComponents(scene->getComponentArray<WaterComponent>(), [&](const WaterComponent& water) {
-            return sceneWater || !water.shader.empty() || !water.customUnderwaterShader.empty();
+            return sceneWater || !water.shader.empty();
         });
 
         // post-process passes hold their shader directly, so the chain is rebuilt whole

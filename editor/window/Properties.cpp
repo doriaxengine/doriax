@@ -5109,8 +5109,6 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
     const char* longestLabel = "Shader";
     if (cpType == ComponentType::MeshComponent)
         longestLabel = "Vertex Offset";
-    else if (cpType == ComponentType::WaterComponent)
-        longestLabel = "Underwater Shader";
     float labelSize = getLabelSize(longestLabel, false);
 
     ImGui::SeparatorText("Shaders");
@@ -5144,16 +5142,11 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
         propertyRow(RowPropertyType::FloatPositive, cpType, "vertexOffsetMax", "Max Offset", sceneProject, {shaderEntity}, maxSettings);
     }
 
-    // the fullscreen fade of a camera inside the water, a shader of its own
-    if (cpType == ComponentType::WaterComponent) {
-        propertyHeader("Underwater Shader");
-        drawComponentShaderRow(cpType, ShaderType::UNDERWATER, sceneProject, shaderEntity, "customUnderwaterShader", "custom_underwater_shader");
-        ImGui::SameLine(); helpMarker("Shader of the fade a camera below the surface sees over the scene. Needs Underwater on.");
-        if (Catalog::isCustomUnderwaterShaderBuildFailed(sceneProject->scene, shaderEntity)) {
-            ImGui::TableNextRow();
-            ImGui::TableSetColumnIndex(1);
-            ImGui::TextDisabled("Underwater shader failed to build");
-        }
+    // its file also fills the fade a camera inside the water sees
+    if (cpType == ComponentType::WaterComponent && Catalog::isCustomUnderwaterShaderBuildFailed(sceneProject->scene, shaderEntity)) {
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(1);
+        ImGui::TextDisabled("Underwater fade failed to build");
     }
 
     // a failed fork keeps rendering, the runtime falls back to the built-in
@@ -5179,8 +5172,6 @@ void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType
     std::string defaultName = sceneProject->scene->getEntityName(entity);
     if (shaderType == ShaderType::DEPTH)
         defaultName += "_depth";
-    else if (shaderType == ShaderType::UNDERWATER)
-        defaultName += "_underwater";
     auto onFork = [this, sceneId, entity, cpType, shaderType, propertyName, defaultName]() {
         shaderForkDialog.open(project, shaderType, defaultName,
             [this, sceneId, entity, cpType, shaderType, propertyName](const std::filesystem::path& directory,
@@ -5629,8 +5620,6 @@ std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectShare
         for (unsigned int s = 0; s < mesh.numSubmeshes; s++)
             addSource(mesh.submeshes[s].material.shader, false);
     }
-    for (size_t i = 0; i < waters->size(); i++)
-        addSource(waters->getComponentFromIndex(i).customUnderwaterShader, true);
     for (const PostProcessPass& pass : scene->getPostProcessPasses())
         addSource(pass.shader, true);
     for (const auto& [source, fork] : sources) {

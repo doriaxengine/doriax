@@ -456,22 +456,6 @@ std::string Water::getShader() const{
     return water.shader;
 }
 
-void Water::setCustomUnderwaterShader(const std::string& path){
-    WaterComponent& water = getComponent<WaterComponent>();
-
-    if (water.customUnderwaterShader != path){
-        water.customUnderwaterShader = path;
-
-        water.needReload = true;
-    }
-}
-
-std::string Water::getCustomUnderwaterShader() const{
-    WaterComponent& water = getComponent<WaterComponent>();
-
-    return water.customUnderwaterShader;
-}
-
 void Water::setShaderUniform(const std::string& name, const Vector4& value){
     WaterComponent& water = getComponent<WaterComponent>();
 

@@ -267,7 +267,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         {"getCoverage", fragmentHooks.coverage, meshPass},
         {"getSurface", fragmentHooks.surface, meshPass},
         {"getColor", fragmentHooks.color, true},
-        {"getDepthOffset", fragmentHooks.depthOffset, meshPass}
+        {"getDepthOffset", fragmentHooks.depthOffset, meshPass},
+        {"getUnderwaterColor", fragmentHooks.underwaterColor, shaderType == "water"}
     };
     bool anyHook = false;
     for (const auto& hook : hooks) {
@@ -283,9 +284,10 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     const bool useCoverage = fragmentHooks.coverage;
     // the depth passes take only the surface alpha, of masked materials
     const bool useSurface = fragmentHooks.surface && (passType != ShaderType::DEPTH || defined("ALPHA_MASK"));
-    const bool useColor = fragmentHooks.color && passType != ShaderType::DEPTH && passType != ShaderType::GBUFFER;
+    const bool useColor = fragmentHooks.color && passType != ShaderType::DEPTH && passType != ShaderType::GBUFFER && passType != ShaderType::UNDERWATER;
     const bool useDepthOffset = fragmentHooks.depthOffset;
-    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset;
+    const bool useUnderwaterColor = fragmentHooks.underwaterColor && passType == ShaderType::UNDERWATER;
+    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset || useUnderwaterColor;
     // only where a fragment hook can read them
     const bool useVaryings = vertexHooks.varyingsHook && useFragmentHooks;
     const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;

@@ -123,12 +123,9 @@ namespace doriax{
         void setWakeFade(float wakeFade);
         float getWakeFade() const;
 
-        // .glsl file with the shader hooks
+        // .glsl file with the shader hooks, of the surface and of the fade seen from below
         void setShader(const std::string& path);
         std::string getShader() const;
-
-        void setCustomUnderwaterShader(const std::string& path);
-        std::string getCustomUnderwaterShader() const;
 
         void setShaderUniform(const std::string& name, const Vector4& value);
         void setShaderUniform(const std::string& name, const Vector3& value);

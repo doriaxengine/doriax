@@ -1146,7 +1146,6 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("aabb", &WaterComponent::aabb)
         .addProperty("worldAABB", &WaterComponent::worldAABB)
         .addProperty("shader", &WaterComponent::shader, &WaterComponent::shader)
-        .addProperty("customUnderwaterShader", &WaterComponent::customUnderwaterShader, &WaterComponent::customUnderwaterShader)
         .addProperty("size", &WaterComponent::size, &WaterComponent::size)
         .addProperty("subdivisions", &WaterComponent::subdivisions, &WaterComponent::subdivisions)
         // linear, unlike the Water setters which convert from sRGB

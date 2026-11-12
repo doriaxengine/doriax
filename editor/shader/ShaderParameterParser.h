@@ -48,6 +48,7 @@ namespace doriax::editor {
         bool varyingsHook = false;
         bool clipPosition = false;
         bool depthOffset = false;
+        bool underwaterColor = false;
         // fields they read of their context
         std::set<std::string> contextReads;
         // "#pragma coverage_shadows apply|keep"
@@ -94,7 +95,7 @@ namespace doriax::editor {
         // member of the generated block: p_name, s_Collection_name, v_Collection_name
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
-        // the "#pragma shader" name of a program; the mesh passes share "mesh"
+        // the "#pragma shader" name of a program; the mesh passes share "mesh", the underwater fade "water"
         static std::string getShaderFileType(ShaderType shaderType);
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,

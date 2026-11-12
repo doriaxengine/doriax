@@ -8488,12 +8488,14 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     if (water.underwaterLoaded)
         return true;
 
-    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(water.customUnderwaterShader);
+    // the water's shader file, which may fill getUnderwaterColor
+    const std::string& waterShader = water.shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.shader;
+    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", waterShader));
     water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId);
     if (!water.underwaterShader->isCreated()){
-        // as in loadWater, a fork that failed to compile falls back to the built-in shader
+        // as in loadWater, a shader that failed to compile falls back to the built-in one
         if (water.customUnderwaterShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId)){
-            Log::error("Custom shader '%s' failed to compile; using the built-in shader", water.customUnderwaterShader.c_str());
+            Log::error("Custom shader '%s' failed to compile; using the built-in shader", waterShader.c_str());
             water.customUnderwaterShaderId = 0;
             water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0);
         }
@@ -8511,6 +8513,8 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.shader);
     water.underwaterParamsVS.writeObject(water.shaderUniforms, inherited);
     water.underwaterParamsFS.writeObject(water.shaderUniforms, inherited);
+    if (!loadShaderTextures(water.shaderTextures, shaderData, water.underwaterRender))
+        return false;
     if (!water.underwaterRender.endLoad(PIP_RTT_NODEPTH, false, true, CullingMode::BACK, WindingOrder::CCW))
         return false;
 
@@ -8558,6 +8562,8 @@ void RenderSystem::drawUnderwater(WaterComponent& water, CameraComponent& camera
     params.sceneRect = currentSceneCopyRect;
 
     ShaderData& shaderData = water.underwaterShader.get()->shaderData;
+    if (ShaderTextures::isFramebufferOutdated(water.shaderTextures))
+        loadShaderTextures(water.shaderTextures, shaderData, render);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE), ShaderStageType::FRAGMENT, currentSceneCopy);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, currentSceneDepthTexture ? currentSceneDepthTexture : &emptyWhite);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::IRRADIANCEMAP), ShaderStageType::FRAGMENT, irradiance);
