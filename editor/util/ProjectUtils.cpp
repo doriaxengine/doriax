@@ -7,6 +7,7 @@
 #include "Catalog.h"
 #include "Stream.h"
 #include "shaders.h"
+#include "graph/Graph.h"
 #include "shader/ShaderParameterParser.h"
 #include "util/Util.h"
 
@@ -147,31 +148,31 @@ std::string sanitizeShaderName(const std::string& desiredName) {
     return name;
 }
 
-// writes a .glsl under a free name in the default shader directory; empty on failure
-std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content) {
+// writes a shader file under a free name in the default shader directory; empty on failure
+std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content, const std::string& extension = ".glsl") {
     const std::filesystem::path dirRel = "shaders";
     const std::string baseName = sanitizeShaderName(desiredName);
     std::string name = baseName;
     int suffix = 2;
-    while (std::filesystem::exists(projectRoot / dirRel / (name + ".glsl")))
+    while (std::filesystem::exists(projectRoot / dirRel / (name + extension)))
         name = baseName + std::to_string(suffix++);
 
     std::error_code ec;
     std::filesystem::create_directories(projectRoot / dirRel, ec);
-    std::ofstream file(projectRoot / dirRel / (name + ".glsl"), std::ios::binary);
+    std::ofstream file(projectRoot / dirRel / (name + extension), std::ios::binary);
     if (ec || !file)
         return "";
 
     file << content;
-    return file ? (dirRel / (name + ".glsl")).generic_string() : "";
+    return file ? (dirRel / (name + extension)).generic_string() : "";
 }
 
 }
 
-std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+std::string editor::ProjectUtils::getShaderTemplate(ShaderType shaderType) {
     switch (shaderType) {
         case ShaderType::UI:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a UI shader. Declared values are read as params.name.
+            return R"(// Hooks of a UI shader. Declared values are read as params.name.
 #pragma shader ui
 
 #pragma stage vertex
@@ -191,9 +192,9 @@ vec4 getColor(FragmentContext context, vec4 color){
     float band = 1.0 - smoothstep(0.0, 0.1, abs(fract(context.uv1.x - Engine.time * params.speed) - 0.5));
     return vec4(mix(color.rgb, params.shine.rgb, band * params.shine.a), color.a);
 }
-)");
+)";
         case ShaderType::POINTS:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a points shader. Declared values are read as params.name.
+            return R"(// Hooks of a points shader. Declared values are read as params.name.
 #pragma shader points
 
 #pragma stage vertex
@@ -212,9 +213,9 @@ vec4 getColor(FragmentContext context, vec4 color){
     float rim = 1.0 - smoothstep(0.5 - params.softness * 0.5, 0.5, length(context.uv1 - 0.5));
     return vec4(color.rgb, color.a * rim);
 }
-)");
+)";
         case ShaderType::LINES:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a lines shader. Declared values are read as params.name.
+            return R"(// Hooks of a lines shader. Declared values are read as params.name.
 #pragma shader lines
 
 #pragma stage fragment
@@ -226,9 +227,9 @@ vec4 getColor(FragmentContext context, vec4 color){
     float wave = 0.5 + 0.5 * sin(6.2832 * (Engine.time * params.speed - length(context.worldPosition) * 0.2));
     return vec4(color.rgb * mix(1.0, wave * 2.0, params.pulse), color.a);
 }
-)");
+)";
         case ShaderType::SKYBOX:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a sky shader. Declared values are read as params.name.
+            return R"(// Hooks of a sky shader. Declared values are read as params.name.
 #pragma shader sky
 
 #pragma stage fragment
@@ -242,9 +243,9 @@ vec4 getColor(FragmentContext context, vec4 color){
     float disk = smoothstep(cos(params.sunSize * 1.2), cos(params.sunSize), facing);
     return vec4(color.rgb + params.sunColor.rgb * params.sunColor.a * disk * 10.0, color.a);
 }
-)");
+)";
         case ShaderType::WATER:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a water shader. Declared values are read as params.name.
+            return R"(// Hooks of a water shader. Declared values are read as params.name.
 #pragma shader water
 
 #pragma stage fragment
@@ -254,9 +255,9 @@ vec4 getColor(FragmentContext context, vec4 color){
 vec4 getColor(FragmentContext context, vec4 color){
     return vec4(color.rgb * params.tint.rgb, color.a);
 }
-)");
+)";
         case ShaderType::POSTPROCESS:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a post-process pass. Declared values are read as params.name.
+            return R"(// Hooks of a post-process pass. Declared values are read as params.name.
 #pragma shader postprocess
 
 #pragma stage fragment
@@ -271,9 +272,9 @@ vec4 getColor(FragmentContext context, vec4 color){
     graded *= 1.0 - params.vignette * smoothstep(0.1, 0.5, dot(fromCenter, fromCenter));
     return vec4(graded, color.a);
 }
-)");
+)";
         default:
-            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
+            return R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
 #pragma shader mesh
 
 #pragma stage vertex
@@ -294,8 +295,25 @@ vec3 getVertexOffset(VertexContext context){
 float getCoverage(FragmentContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
 }
-)");
+)";
     }
+}
+
+std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+    return writeEffectFile(projectRoot, desiredName, getShaderTemplate(shaderType));
+}
+
+std::string editor::ProjectUtils::getShaderGraphTemplate(ShaderType shaderType) {
+    const std::string type = ShaderParameterParser::getShaderFileType(shaderType);
+    GraphDocument graph;
+    graph.kind = "shader";
+    graph.type = type;
+    graph.addNode("output/" + type, Vector2(300.0f, 0.0f));
+    return graph.write();
+}
+
+std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+    return writeEffectFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
 }
 
 std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {

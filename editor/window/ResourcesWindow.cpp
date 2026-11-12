@@ -4,8 +4,10 @@
 #include "ResourcesWindow.h"
 #include "util/BidiText.h"
 #include "util/UIUtils.h"
+#include "util/ProjectUtils.h"
 
 #include "ImageViewerWindow.h"
+#include "GraphEditorWindow.h"
 
 #include "AppSettings.h"
 #include "external/IconsFontAwesome6.h"
@@ -157,10 +159,11 @@ std::string editor::ResourcesWindow::thumbnailRequestKey(const fs::path& filePat
     return filePath.lexically_normal().string();
 }
 
-editor::ResourcesWindow::ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow) {
+editor::ResourcesWindow::ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow, GraphEditorWindow* graphEditorWindow) {
     this->project = project;
     this->codeEditor = codeEditor;
     this->imageViewerWindow = imageViewerWindow;
+    this->graphEditorWindow = graphEditorWindow;
     this->firstOpen = true;
     this->requestSort = true;
     this->iconSize = 32;
@@ -556,6 +559,8 @@ ImU32 editor::ResourcesWindow::fileSeparatorColor(const FileEntry& fe) const{
             return ImGui::GetColorU32(ImVec4(0.12f, 0.62f, 0.39f, 1.0f));
         case FileType::FONT:
             return ImGui::GetColorU32(ImVec4(0.84f, 0.27f, 0.31f, 1.0f));
+        case FileType::GRAPH:
+            return ImGui::GetColorU32(ImVec4(0.95f, 0.50f, 0.20f, 1.0f));
         case FileType::NONE:
         default:
             return ImGui::GetColorU32(ImVec4(0.50f, 0.50f, 0.50f, 1.0f));
@@ -985,6 +990,8 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                     const fs::path filePath = currentPath / file.name;
                     if (file.type == FileType::IMAGE)
                         imageViewerWindow->openFile(filePath);
+                    else if (file.type == FileType::GRAPH)
+                        graphEditorWindow->openFile(filePath);
                     else if (file.type == FileType::SCENE)
                         project->openScene(filePath);
                     else
@@ -1450,6 +1457,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 pathsToDelete.push_back(filePath);
                 codeEditor->closeFile(filePath.string());
                 imageViewerWindow->closeFile(filePath);
+                graphEditorWindow->closeFile(filePath);
             }
 
             project->getProjectCommandHistory()->addCommand(new DeleteFileCmd(project, pathsToDelete, project->getProjectPath()));
@@ -1700,6 +1708,8 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
             }else if (Util::isFontFile(fileEntry.extension)){
                 fileEntry.type = FileType::FONT;
                 fileEntry.icon = fontIconH;
+            }else if (Util::isShaderGraphFile(fileEntry.extension)){
+                fileEntry.type = FileType::GRAPH;
             }
 
             if (fileEntry.type == FileType::IMAGE || fileEntry.type == FileType::MATERIAL || fileEntry.type == FileType::MODEL) {
@@ -1779,9 +1789,10 @@ void editor::ResourcesWindow::handleInternalDragAndDrop(const fs::path& targetDi
     scanDirectory(currentPath);
 }
 
-void editor::ResourcesWindow::startNewItem(NewItemType type, const fs::path& directory){
+void editor::ResourcesWindow::startNewItem(NewItemType type, const fs::path& directory, ShaderType shaderType){
     isCreatingNewItem = true;
     newItemType = type;
+    newItemShaderType = shaderType;
     newItemDirectory = directory;
     memset(nameBuffer, 0, sizeof(nameBuffer));
 }
@@ -1800,6 +1811,22 @@ void editor::ResourcesWindow::renderNewItemMenu(const fs::path& directory){
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Source")) startNewItem(NewItemType::CPP_SOURCE, directory);
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Header")) startNewItem(NewItemType::CPP_HEADER, directory);
 
+    ImGui::Separator();
+
+    // the kinds a shader file can be
+    static const std::pair<const char*, ShaderType> shaderTypes[] = {
+        {"Mesh", ShaderType::MESH}, {"UI", ShaderType::UI}, {"Points", ShaderType::POINTS}, {"Lines", ShaderType::LINES},
+        {"Sky", ShaderType::SKYBOX}, {"Water", ShaderType::WATER}, {"Post-process", ShaderType::POSTPROCESS}};
+    for (NewItemType type : {NewItemType::SHADER, NewItemType::SHADER_GRAPH}) {
+        const bool graph = type == NewItemType::SHADER_GRAPH;
+        if (!ImGui::BeginMenu(graph ? ICON_FA_DIAGRAM_PROJECT " Shader Graph" : ICON_FA_FILE_CODE " Shader"))
+            continue;
+        for (const auto& [label, shaderType] : shaderTypes)
+            if (ImGui::MenuItem(label))
+                startNewItem(type, directory, shaderType);
+        ImGui::EndMenu();
+    }
+
     ImGui::EndMenu();
 }
 
@@ -1809,6 +1836,8 @@ void editor::ResourcesWindow::handleNewItem(){
     if (newItemType == NewItemType::LUA_SCRIPT) popupName = "Create New Lua Script";
     else if (newItemType == NewItemType::CPP_SOURCE) popupName = "Create New C++ Source";
     else if (newItemType == NewItemType::CPP_HEADER) popupName = "Create New C++ Header";
+    else if (newItemType == NewItemType::SHADER) popupName = "Create New Shader";
+    else if (newItemType == NewItemType::SHADER_GRAPH) popupName = "Create New Shader Graph";
 
     // Handle new item creation popup
     if (isCreatingNewItem) {
@@ -1861,6 +1890,12 @@ void editor::ResourcesWindow::handleNewItem(){
                 } else if (newItemType == NewItemType::CPP_HEADER) {
                     if (!Util::isHeaderFile(itemName)) itemName += ".h";
                     content = "#pragma once\n";
+                } else if (newItemType == NewItemType::SHADER) {
+                    if (fs::path(itemName).extension() != ".glsl") itemName += ".glsl";
+                    content = ProjectUtils::getShaderTemplate(newItemShaderType);
+                } else if (newItemType == NewItemType::SHADER_GRAPH) {
+                    if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
+                    content = ProjectUtils::getShaderGraphTemplate(newItemShaderType);
                 }
 
                 try {
@@ -2015,6 +2050,7 @@ void editor::ResourcesWindow::handleRename(){
                         project->getProjectCommandHistory()->addCommand(new RenameFileCmd(project, fileBeingRenamed, newName.string(), currentPath.string()));
                         codeEditor->handleFileRename(oldPath, newPath);
                         imageViewerWindow->handleFileRename(oldPath, newPath);
+                        graphEditorWindow->handleFileRename(oldPath, newPath);
                         scanDirectory(currentPath);
                         isRenaming = false;
                         ImGui::CloseCurrentPopup();

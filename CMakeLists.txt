@@ -586,6 +586,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/window/Structure.cpp
     ${EDITOR_DIR}/window/ResourcesWindow.cpp
     ${EDITOR_DIR}/window/ImageViewerWindow.cpp
+    ${EDITOR_DIR}/window/GraphEditorWindow.cpp
     ${EDITOR_DIR}/window/CodeEditor.cpp
     ${EDITOR_DIR}/window/AnimationWindow.cpp
     ${EDITOR_DIR}/window/TerrainEditWindow.cpp
@@ -603,6 +604,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/window/dialog/AboutWindow.cpp
     ${EDITOR_DIR}/window/dialog/ScenesWindow.cpp
     ${EDITOR_DIR}/window/widget/CustomTextEditor.cpp
+    ${EDITOR_DIR}/window/widget/NodeCanvas.cpp
     ${EDITOR_DIR}/window/widget/InputTextContextMenu.cpp
     ${EDITOR_DIR}/window/widget/SemanticSuggestions.cpp
     ${EDITOR_DIR}/window/widget/SelectableTextView.cpp
@@ -619,6 +621,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/render/gizmo/AnchorGizmo.cpp
     ${EDITOR_DIR}/render/gizmo/ViewportGizmo.cpp
     ${EDITOR_DIR}/render/preview/MaterialRender.cpp
+    ${EDITOR_DIR}/render/preview/ShaderPreviewRender.cpp
     ${EDITOR_DIR}/render/preview/MeshPreviewRender.cpp
     ${EDITOR_DIR}/render/preview/DirectionRender.cpp
     ${EDITOR_DIR}/render/preview/ModelRender.cpp
@@ -648,6 +651,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/command/type/RenameFileCmd.cpp
     ${EDITOR_DIR}/command/type/CreateDirCmd.cpp
     ${EDITOR_DIR}/command/type/CreateFileCmd.cpp
+    ${EDITOR_DIR}/command/type/GraphEditCmd.cpp
     ${EDITOR_DIR}/command/type/DeleteFileCmd.cpp
     ${EDITOR_DIR}/command/type/SetMainCameraCmd.cpp
     ${EDITOR_DIR}/command/type/CreateMaterialFileCmd.cpp

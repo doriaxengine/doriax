@@ -59,7 +59,8 @@ namespace doriax::editor{
     enum class TabType{
         SCENE,
         CODE_EDITOR,
-        IMAGE_VIEWER
+        IMAGE_VIEWER,
+        GRAPH_EDITOR
     };
 
     struct TabEntry{

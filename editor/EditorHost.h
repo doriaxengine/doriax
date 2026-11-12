@@ -10,6 +10,7 @@
 namespace doriax::editor {
 
     class CodeEditor;
+    class GraphEditorWindow;
     class ImageViewerWindow;
     class Properties;
 
@@ -52,6 +53,7 @@ namespace doriax::editor {
         virtual Properties* getPropertiesWindow() const;
         virtual CodeEditor* getCodeEditor() const;
         virtual ImageViewerWindow* getImageViewerWindow() const;
+        virtual GraphEditorWindow* getGraphEditorWindow() const;
     };
 
     void setEditorHost(EditorHost* host);

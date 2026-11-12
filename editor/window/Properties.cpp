@@ -5157,7 +5157,9 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
         setShader(rel.generic_string());
     };
     auto openInEditor = [&](const std::string& rel) {
-        if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
+        if (std::filesystem::path(rel).extension() == ".shader")
+            Backend::getApp().getGraphEditorWindow()->openFile(projectPath / rel);
+        else if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor())
             codeEditor->openFile((projectPath / rel).string(), true);
     };
 
@@ -5174,19 +5176,30 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
 
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(ImGui::GetStyle().FramePadding.x / 3.0, ImGui::GetStyle().FramePadding.y / 2.0));
 
+    const std::string newPopup = "new_shader_" + idSuffix;
     ImGui::BeginDisabled(!current.empty());
-    if (ImGui::Button((std::string(ICON_FA_FILE_CIRCLE_PLUS "##new_") + idSuffix).c_str())) {
-        std::string created = ProjectUtils::writeShaderTemplate(projectPath, defaultName, shaderType);
-        if (created.empty()) {
-            Backend::getApp().registerAlert("Error", "Could not write the shader file.");
-        } else {
-            setShader(created);
-            openInEditor(created);
-        }
-    }
+    if (ImGui::Button((std::string(ICON_FA_FILE_CIRCLE_PLUS "##new_") + idSuffix).c_str()))
+        ImGui::OpenPopup(newPopup.c_str());
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Create a shader file from a template");
+        ImGui::SetTooltip("Create a shader");
     ImGui::EndDisabled();
+    if (ImGui::BeginPopup(newPopup.c_str())) {
+        const bool code = ImGui::Selectable(ICON_FA_FILE_CODE " Shader code");
+        const bool graph = ImGui::Selectable(ICON_FA_DIAGRAM_PROJECT " Shader graph");
+        if (code || graph) {
+            std::string created = code ? ProjectUtils::writeShaderTemplate(projectPath, defaultName, shaderType)
+                                       : ProjectUtils::writeShaderGraphTemplate(projectPath, defaultName, shaderType);
+            if (created.empty()) {
+                Backend::getApp().registerAlert("Error", "Could not write the shader file.");
+            } else {
+                setShader(created);
+                openInEditor(created);
+                if (ResourcesWindow* resources = Backend::getApp().getResourcesWindow())
+                    resources->refreshCurrentDirectory();
+            }
+        }
+        ImGui::EndPopup();
+    }
 
     // the engine's ready-made shaders of this type
     const std::string presetsPopup = "engine_shaders_" + idSuffix;
@@ -5221,7 +5234,7 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
             useFile(selected);
     }
     if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Pick a .glsl file");
+        ImGui::SetTooltip("Pick a .glsl file or a .shader graph");
 
     // a built-in one becomes a project file to change
     ImGui::SameLine();

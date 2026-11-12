@@ -515,9 +515,9 @@ namespace {
                         error(node.id, type.name + " has no texture parameter set");
                         return false;
                     }
-                    const bool cube = type.id == "texture/sampleCube";
-                    if ((parameter->type == "textureCube") != cube) {
-                        error(node.id, type.name + " takes a " + (cube ? "cube map" : "2D texture") + ", " + parameter->name + " is not one");
+                    const NodeSetting* declared = type.findSetting("texture");
+                    if (declared && std::find(declared->options.begin(), declared->options.end(), parameter->type) == declared->options.end()) {
+                        error(node.id, type.name + " takes a " + (parameter->type == "texture2D" ? "cube map" : "2D texture") + ", " + parameter->name + " is not one");
                         return false;
                     }
                     stageOf(body).parameters.insert(parameter->id);
@@ -929,10 +929,16 @@ namespace {
             varyingsBody.assignments.push_back({"    varyings." + v.name + " = " + v.code + ";", v.node});
         if (varyings.size() > 4)
             error(varyings.back().node, "a graph passes at most 4 values from the vertices to the fragments, this one " + std::to_string(varyings.size()));
-        if (bodies.empty() && result.errors.empty())
-            error(output->id, "nothing is connected to the output");
         if (!result.errors.empty())
             return result;
+        // with nothing set it draws as the type does by default, through a color hook that keeps it
+        if (bodies.empty() && varyings.empty()) {
+            Body& body = bodies["getColor"];
+            for (const Hook& hook : hooks)
+                if (std::string(hook.name) == "getColor")
+                    body.hook = &hook;
+            body.assignments.push_back({"    return color;", output->id});
+        }
 
         // the file, in the order a person would write it
         std::vector<Line> lines;

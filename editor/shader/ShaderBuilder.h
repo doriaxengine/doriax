@@ -72,7 +72,7 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key, and for a shader file the exact
         // graph of files it includes. Throws on failure.
         // declarations takes what the shader file declares, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations);
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, bool withEdits = true);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
         std::string getShaderDisplayName(ShaderKey key);
@@ -103,6 +103,12 @@ namespace doriax::editor {
         // Drops cached builds and dependency snapshots for all custom variants so the
         // next get() recompiles. Called after source mutations and project switches.
         static void invalidateCustomShaders();
+        // counts the calls above, for renders outside the project's scenes to reload
+        static uint32_t getCustomShaderGeneration();
+
+        // an open graph's edits, built in place of its file until saved or closed
+        static void setGraphSource(const std::string& shader, const std::string& text);
+        static void clearGraphSource(const std::string& shader);
 
         static void requestShutdown();
 

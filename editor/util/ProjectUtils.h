@@ -103,8 +103,12 @@ public:
     // Fills a Texture with the editor built-in default skybox cubemap.
     static void setDefaultSkyTexture(Texture& outTexture);
 
-    // a starting shader file of the type; its project path, empty on failure
+    // a starting shader file of the type, and the same written under shaders/; its project path, empty on failure
+    static std::string getShaderTemplate(ShaderType shaderType);
     static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
+    // a shader graph with only the type's output node, and the same written under shaders/
+    static std::string getShaderGraphTemplate(ShaderType shaderType);
+    static std::string writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
     // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
     // the engine's shader files of the type, under shaders/; a project file of the same path wins

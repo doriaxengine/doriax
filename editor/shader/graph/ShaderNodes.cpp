@@ -47,6 +47,13 @@ namespace {
         return item;
     }
 
+    // a setting that names a parameter of one of these types
+    editor::NodeSetting parameterSetting(const char* name, const char* label, std::vector<std::string> types) {
+        editor::NodeSetting item = setting(name, label, "parameter");
+        item.options = std::move(types);
+        return item;
+    }
+
     editor::ShaderOutputSlot slot(const char* hook, const char* target, bool vertex = false, bool depthPasses = false) {
         editor::ShaderOutputSlot item;
         item.hook = hook;
@@ -366,7 +373,7 @@ vec3 graphHSVToRGB(vec3 c){
     // ---- parameters and constants
 
     ShaderNodeType& parameter = add("parameter", "Parameter", "Parameter", "A value of the graph, shown in Properties.", {}, {out("out", "Out", "parameter")}, {"%parameter"});
-    parameter.settings = {setting("parameter", "Parameter", "parameter")};
+    parameter.settings = {parameterSetting("parameter", "Parameter", {"float", "vec2", "vec3", "vec4", "int", "color"})};
     parameter.inlined = true;
 
     for (const char* kind : {"scene", "view"}) {
@@ -553,7 +560,7 @@ vec3 graphHSVToRGB(vec3 c){
     ShaderNodeType& sample2D = add("texture/sample2D", "Sample Texture 2D", "Texture",
         "A texture parameter at a UV. Color space turns an image's colors linear; Normal unpacks a normal map to -1 to 1.",
         {in("uv", "UV", "vec2", "@uv1")}, {out("rgba", "RGBA", "vec4")}, {"texture({texture}, {uv})"});
-    sample2D.settings = {choice("space", "Space", {"linear", "color", "normal"}), setting("texture", "Texture", "parameter")};
+    sample2D.settings = {choice("space", "Space", {"linear", "color", "normal"}), parameterSetting("texture", "Texture", {"texture2D"})};
     sample2D.variants["linear"] = {"texture({texture}, {uv})"};
     sample2D.variants["color"] = {"sRGBToLinear(texture({texture}, {uv}))"};
     sample2D.variants["normal"] = {"vec4(texture({texture}, {uv}).xyz * 2.0 - 1.0, 1.0)"};
@@ -561,15 +568,15 @@ vec3 graphHSVToRGB(vec3 c){
 
     ShaderNodeType& sampleLod = add("texture/sample2DLod", "Sample Texture 2D LOD", "Texture", "A texture parameter at a UV and a mip level.",
         {in("uv", "UV", "vec2", "@uv1"), in("lod", "LOD", "float", 0.0f)}, {out("rgba", "RGBA", "vec4")}, {"textureLod({texture}, {uv}, {lod})"});
-    sampleLod.settings = {setting("texture", "Texture", "parameter")};
+    sampleLod.settings = {parameterSetting("texture", "Texture", {"texture2D"})};
 
     ShaderNodeType& sampleCube = add("texture/sampleCube", "Sample Cubemap", "Texture", "A cube map parameter in a direction.",
         {in("direction", "Direction", "vec3", "@normal")}, {out("rgba", "RGBA", "vec4")}, {"texture({texture}, {direction})"});
-    sampleCube.settings = {setting("texture", "Texture", "parameter")};
+    sampleCube.settings = {parameterSetting("texture", "Texture", {"textureCube"})};
 
     ShaderNodeType& size = add("texture/size", "Texture Size", "Texture", "A texture parameter's size in pixels.",
         {}, {out("size", "Size", "vec2")}, {"vec2(textureSize({texture}, 0))"});
-    size.settings = {setting("texture", "Texture", "parameter")};
+    size.settings = {parameterSetting("texture", "Texture", {"texture2D", "textureCube"})};
 
     auto normal = [&](const std::string& id, const std::string& name, const std::string& description, std::vector<NodePin> inputs,
                       const std::string& code) -> ShaderNodeType& {
@@ -688,7 +695,7 @@ vec4 graphTriplanar(texture2D graphTexture, sampler graphSampler, vec3 graphPosi
         {in("position", "Position", "vec3", "@worldPosition"), in("normal", "Normal", "vec3", "@normal"),
          in("scale", "Scale", "float", 1.0f), in("sharpness", "Sharpness", "float", 4.0f)},
         {out("rgba", "RGBA", "vec4")}, {"graphTriplanar({texture}_texture, {texture}_sampler, {position} * {scale}, {normal}, {sharpness})"});
-    triplanar.settings = {setting("texture", "Texture", "parameter")};
+    triplanar.settings = {parameterSetting("texture", "Texture", {"texture2D"})};
     triplanar.functions = {"triplanar"};
     triplanar.stage = ShaderNodeStage::FRAGMENT;
 

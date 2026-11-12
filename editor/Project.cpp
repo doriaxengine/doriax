@@ -11,6 +11,7 @@
 #include "util/TextEncoding.h"
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
+#include "window/GraphEditorWindow.h"
 #include "window/TerrainEditWindow.h"
 
 #include <cctype>
@@ -3203,6 +3204,11 @@ bool editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
     if (ImageViewerWindow* imageViewer = editor::getEditorHost().getImageViewerWindow()){
         for (const auto& [source, destination] : completedMoves){
             imageViewer->handleFileRename(source, destination);
+        }
+    }
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow()){
+        for (const auto& [source, destination] : completedMoves){
+            graphEditor->handleFileRename(source, destination);
         }
     }
 

@@ -15,6 +15,7 @@
 #include "window/SceneWindow.h"
 #include "window/ResourcesWindow.h"
 #include "window/ImageViewerWindow.h"
+#include "window/GraphEditorWindow.h"
 #include "window/CodeEditor.h"
 #include "window/AnimationWindow.h"
 #include "window/TerrainEditWindow.h"
@@ -143,6 +144,7 @@ namespace doriax::editor{
         CodeEditor* codeEditor;
         ResourcesWindow* resourcesWindow;
         ImageViewerWindow* imageViewerWindow;
+        GraphEditorWindow* graphEditorWindow;
         AnimationWindow* animationWindow;
         TerrainEditWindow* terrainEditWindow;
         AiChatWindow* aiChatWindow;
@@ -203,6 +205,7 @@ namespace doriax::editor{
             AnySceneWindow, // Represents any of the scene-related windows (Scene, Properties, Structure)
             Resources,
             Code,
+            Graph,
             AI
         } lastFocusedWindow;
 
@@ -280,6 +283,7 @@ namespace doriax::editor{
         void addNewSceneToDock(uint32_t sceneId) override;
         void addNewCodeWindowToDock(fs::path path, bool force = false);
         void addImageViewerWindowToDock(fs::path path, bool force = false);
+        void addGraphEditorWindowToDock(fs::path path, bool force = false);
         void clearSceneWindowState(uint32_t sceneId) override;
         void prepareForProjectSwitch() override;
 
@@ -349,6 +353,7 @@ namespace doriax::editor{
         Properties* getPropertiesWindow() const override;
         CodeEditor* getCodeEditor() const override;
         ImageViewerWindow* getImageViewerWindow() const override;
+        GraphEditorWindow* getGraphEditorWindow() const override;
         ResourcesWindow* getResourcesWindow() const;
         AnimationWindow* getAnimationWindow() const;
         Structure* getStructureWindow() const;

@@ -21,6 +21,7 @@ const char* tabTypeToString(TabType type) {
     switch (type) {
         case TabType::CODE_EDITOR:  return "codeeditor";
         case TabType::IMAGE_VIEWER: return "imageviewer";
+        case TabType::GRAPH_EDITOR: return "grapheditor";
         case TabType::SCENE:
         default:                    return "scene";
     }
@@ -30,6 +31,7 @@ bool stringToTabType(const std::string& str, TabType& out) {
     if (str == "scene")       { out = TabType::SCENE;        return true; }
     if (str == "codeeditor")  { out = TabType::CODE_EDITOR;  return true; }
     if (str == "imageviewer") { out = TabType::IMAGE_VIEWER; return true; }
+    if (str == "grapheditor") { out = TabType::GRAPH_EDITOR; return true; }
     return false;
 }
 
