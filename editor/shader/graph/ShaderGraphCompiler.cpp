@@ -635,7 +635,10 @@ namespace {
 
         // every word the code can hold, which a texture's name would replace
         std::set<std::string> used;
-        for (const NodeType* base : library.getTypes()) {
+        const bool textures = std::any_of(graph.parameters.begin(), graph.parameters.end(), [](const GraphParameter& parameter) {
+            return parameter.type == "texture2D" || parameter.type == "textureCube";
+        });
+        for (const NodeType* base : textures ? library.getTypes() : std::vector<const NodeType*>()) {
             const ShaderNodeType* type = static_cast<const ShaderNodeType*>(base);
             for (const std::string& code : type->code)
                 collectIdentifiers(code, used);
@@ -849,6 +852,10 @@ namespace {
             const char c = code[i];
             if (c == '{') {
                 const size_t end = code.find('}', i);
+                if (end == std::string::npos) {
+                    error(node.id, type.name + " has a { without its }");
+                    return false;
+                }
                 const std::string name = code.substr(i + 1, end - i - 1);
                 if (name == "T") {
                     out += dynamic.name;
@@ -1132,6 +1139,11 @@ namespace {
             } else {
                 std::string signature = text("signature");
                 const size_t open = signature.find('(');
+                if (open == std::string::npos) {
+                    error(nodeId, "a signature reads like vec3 shade(vec3 color, float amount)");
+                    body.visiting.erase(nodeId);
+                    return false;
+                }
                 std::istringstream words(signature.substr(0, open));
                 std::string returned;
                 words >> returned;
@@ -1294,7 +1306,7 @@ namespace {
             body.assignments.push_back({"    return color;", output->id});
         }
 
-        // the file, in the order a person would write it
+        // the file, in the order one written by hand has
         std::vector<Line> lines;
         lines.push_back({"// generated from " + source + ", edit the graph instead"});
         lines.push_back({"#pragma shader " + graph.type});
@@ -1369,6 +1381,11 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
         return result;
     const std::string type = previewType(graph);
     const bool vertexSlot = ShaderNodes::get().find("output/" + type)->findInput("vertexOffset") != nullptr;
+    // what only one hook has decides where the preview draws
+    auto holds = [&](const char* nodeType) {
+        return std::any_of(graph.nodes.begin(), graph.nodes.end(), [&](const GraphNode& node) { return node.type == nodeType; });
+    };
+    const char* fragmentSlot = holds("input/light") ? "light" : (holds("input/material") ? "emissive" : "color");
     for (size_t i = 0; i < outputs.size(); i++) {
         bool perVertex = false;
         for (const GraphNode& node : graph.nodes) {
@@ -1376,7 +1393,7 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
             if (node.type == "function/output" && settingText(node, "name") == outputs[i].name)
                 perVertex = vertexSlot && fedPerVertex(graph, node.id, seen);
         }
-        ShaderGraphResult drawn = Compiler(graph, source, reader, type, outputs[i].name, perVertex ? "vertexOffset" : "color").run();
+        ShaderGraphResult drawn = Compiler(graph, source, reader, type, outputs[i].name, perVertex ? "vertexOffset" : fragmentSlot).run();
         if (i == 0) {
             result.type = drawn.type;
             result.code = drawn.code;

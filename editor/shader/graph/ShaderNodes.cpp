@@ -119,7 +119,14 @@ bool editor::ShaderNodes::canLink(const std::string& fromType, const std::string
     const bool toTexture = toType == "texture2D" || toType == "textureCube";
     if (fromTexture || toTexture || fromType == "bool" || toType == "bool")
         return fromType == toType;
-    return true;
+    // a vector feeds no scalar, and a vec2 no longer vector; dynamic pins settle on what they get
+    auto size = [](const std::string& type) {
+        return type == "vec2" ? 2 : (type == "vec3" ? 3 : (type == "vec4" || type == "color" ? 4 : (type == "dynamic" || type == "parameter" || type == "mask" ? 0 : 1)));
+    };
+    const int from = size(fromType), to = size(toType);
+    if (from == 0 || to == 0)
+        return true;
+    return from == 1 || from == to || (from > to && to > 1) || (from == 3 && to == 4);
 }
 
 bool editor::ShaderNodes::getPins(const GraphNode& node, const ShaderNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error) {
@@ -151,6 +158,12 @@ bool editor::ShaderNodes::getPins(const GraphNode& node, const ShaderNodeType& t
     // "vec3 shade(vec3 color, float amount)"
     auto setting = node.settings.find("signature");
     std::string signature = setting != node.settings.end() ? setting->second.text : type.settings.front().value.text;
+    const size_t open = signature.find('(');
+    if (open == std::string::npos || signature.find(')', open) == std::string::npos) {
+        if (error)
+            *error = "a signature reads like vec3 shade(vec3 color, float amount)";
+        return false;
+    }
     std::replace(signature.begin(), signature.end(), ',', ' ');
     std::replace(signature.begin(), signature.end(), '(', ' ');
     std::replace(signature.begin(), signature.end(), ')', ' ');
@@ -403,7 +416,8 @@ vec3 graphHSVToRGB(vec3 c){
     input("input/material", "Material", "The surface the material gives: before this graph changes it in the surface outputs, as changed in Light.",
         {out("baseColor", "Base Color", "vec3"), out("alpha", "Alpha", "float"), out("normal", "Normal", "vec3"), out("metallic", "Metallic", "float"),
          out("roughness", "Roughness", "float"), out("occlusion", "Occlusion", "float"), out("emissive", "Emissive", "vec3")},
-        {"%surface.baseColor", "%surface.alpha", "%surface.normal", "%surface.metallic", "%surface.roughness", "%surface.occlusion", "%surface.emissive"}, {"mesh"});
+        {"%surface.baseColor", "%surface.alpha", "%surface.normal", "%surface.metallic", "%surface.roughness", "%surface.occlusion", "%surface.emissive"}, {"mesh"})
+        .inlined = false;   // read before the outputs write the surface
     input("input/color", "Built-in Color", "The color the engine would draw, linear.", {out("color", "Color", "vec4")}, {"%color"});
     input("input/light", "Light", "The light Light answers for, once per light: the direction toward it, its color times intensity and falloff, and its shadow, 1 lit and 0 shadowed.",
         {out("direction", "Direction", "vec3"), out("color", "Color", "vec3"), out("shadow", "Shadow", "float")},
@@ -837,7 +851,7 @@ vec2 graphParallax(texture2D graphTexture, sampler graphSampler, vec2 graphUV, v
         {in("in", "In", "dynamic", 0.0f)}, {out("out", "Out", "dynamic")}, {"{in}"}).shaderTypes = {"mesh"};
     ShaderNodeType& subgraph = add("utility/subgraph", "Subgraph", "Utility",
         "Runs a function graph of the project, a .shader of type function: its Function Inputs are the pins on the left, its Function Outputs those on the right.",
-        {}, {}, {"%subgraph"});
+        {}, {}, {});
     subgraph.settings = {setting("file", "Function", "function")};
 
     // ---- functions: what a function graph takes and gives

@@ -19,7 +19,6 @@ namespace doriax::editor {
 
     class Project;
     class GraphEditCmd;
-    struct NodeType;
 
     // .shader graphs open for editing, each in a docked window with its own undo history
     class GraphEditorWindow {
@@ -43,7 +42,11 @@ namespace doriax::editor {
             std::unique_ptr<ShaderPreviewRender> preview;
             uint32_t previewGeneration = 0;
             bool previewSelection = false;           // the preview draws the selected node
-            std::string nodePreviewText;             // the graph it last drew that node with
+            std::string nodePreviewOf;               // the node and graph text it was last worked out for
+            std::string nodePreviewCode;             // and the code it built
+            std::string builtCode;                   // what the scene was last asked to build
+            uint32_t compiledGeneration = 0;         // the shaders compiled was checked against
+            double checkAt = 0.0;                    // when the file is next looked at
 
             // the add-node search
             bool addRequested = false;
@@ -72,7 +75,7 @@ namespace doriax::editor {
         bool load(Instance& instance);
         bool save(Instance& instance);
         // with the project's function graphs as edited
-        ShaderGraphResult compile(const Instance& instance) const;
+        void compile(Instance& instance);
         // one undoable step: what changed in the document since it was last applied
         void edit(Instance& instance, const std::string& mergeKey = std::string());
         void applyText(Instance& instance, const std::string& text);

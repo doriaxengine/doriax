@@ -138,7 +138,9 @@ ImVec2 editor::NodeCanvas::pinPosition(const CanvasModel& model, int node, const
 
 bool editor::NodeCanvas::pinAt(const CanvasModel& model, const ImVec2& point, int& node, std::string& pin, bool& output) const {
     const float reach = (pinRadius + 5.0f) / std::max(zoom, 0.5f);
-    for (const CanvasNode& item : model.nodes) {
+    // topmost first, as nodeAt
+    for (auto it = model.nodes.rbegin(); it != model.nodes.rend(); ++it) {
+        const CanvasNode& item = *it;
         const NodeLayout* layout = findLayout(item.id);
         if (!layout)
             continue;

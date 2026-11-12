@@ -65,7 +65,8 @@ namespace {
         const std::string id = text.substr(0, dot);
         if (id.empty() || !std::all_of(id.begin(), id.end(), [](char c) { return std::isdigit((unsigned char)c) != 0; }))
             return false;
-        node = std::stoi(id);
+        if (std::from_chars(id.data(), id.data() + id.size(), node).ec != std::errc())
+            return false;
         pin = (dot == std::string::npos) ? std::string() : text.substr(dot + 1);
         return dot == std::string::npos || !pin.empty();
     }

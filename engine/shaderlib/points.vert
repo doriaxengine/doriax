@@ -55,7 +55,7 @@ void main() {
 
     #if defined(USE_VERTEX_HOOKS) || defined(HOOK_FRAGMENT_POSITION)
         vec3 position = a_position;
-        #ifdef USE_VERTEX_HOOKS
+        #ifdef USE_VERTEX_OFFSET
             VertexContext context = getVertexContext(position, (paramsVS.effect_modelToWorld * vec4(position, 1.0)).xyz, mat4(1.0));
             position += getModelOffset(context);
         #endif

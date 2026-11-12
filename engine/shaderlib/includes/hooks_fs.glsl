@@ -115,8 +115,11 @@ FragmentContext getFragmentContext(vec3 worldPosition){
     #ifdef HOOK_FRAGMENT_DEPTH_RANGE
         // the depth terms sceneDepth reads, at the two ends of the depth range
         vec4 terms = paramsFS.effect_projection;
-        context.nearPlane = (terms.w + terms.z) / (terms.x + terms.y);
-        context.farPlane = (terms.w - terms.z) / (terms.y - terms.x);
+        // shadow maps have none
+        if (terms != vec4(0.0)){
+            context.nearPlane = (terms.w + terms.z) / (terms.x + terms.y);
+            context.farPlane = (terms.w - terms.z) / (terms.y - terms.x);
+        }
     #endif
     #ifdef USE_VARYINGS
         loadVaryings();

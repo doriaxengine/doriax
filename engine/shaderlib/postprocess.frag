@@ -1,9 +1,7 @@
 #version 450
 
 // Post-process pass: a passthrough of the scene color, or the getColor() of the pass's
-// shader file. The engine binds the inputs the pass declares: u_sceneColorTexture (the
-// previous pass), u_depthTexture (packed depth), u_gbufferTexture (view-space normal,
-// roughness and metallic, SSR only) and u_ssaoTexture.
+// shader file. The engine binds only the scene textures the file's calls read.
 
 in vec2 v_texcoord;
 out vec4 frag_color;

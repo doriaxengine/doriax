@@ -1,4 +1,4 @@
-// Vertex hooks of the material's shader file, the same in every pass
+// Vertex hooks of a shader file, the same in every pass
 #include "includes/parameters_vs.glsl"
 #include "includes/instance_normal.glsl"
 #include "includes/srgb.glsl"

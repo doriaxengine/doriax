@@ -118,7 +118,7 @@ private:
     ActionResult setShaderUniform(const Json& arguments);
     ActionResult listPostProcessPasses(const Json& arguments);
     ActionResult setPostProcessPass(const Json& arguments);
-    // Rejects a customShader value whose resolved .vert/.frag files do not exist.
+    // Rejects a shader property whose file does not exist.
     bool validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const;
     ActionResult createTerrainHeightmap(const Json& arguments);
     ActionResult importProjectModel(const Json& arguments);

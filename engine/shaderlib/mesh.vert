@@ -95,7 +95,7 @@ in vec3 a_position;
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat out vec4 v_hookInstance;
 #endif
-#ifdef USE_VARYINGS
+#ifdef HOOK_VARYINGS
     #include "shader_varyings_vs.glsl"
 #endif
 

@@ -149,12 +149,17 @@ std::string sanitizeShaderName(const std::string& desiredName) {
 }
 
 // writes a shader file under a free name in the default shader directory; empty on failure
-std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content, const std::string& extension = ".glsl") {
+std::string writeShaderFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content, const std::string& extension = ".glsl") {
     const std::filesystem::path dirRel = "shaders";
     const std::string baseName = sanitizeShaderName(desiredName);
     std::string name = baseName;
     int suffix = 2;
-    while (std::filesystem::exists(projectRoot / dirRel / (name + extension)))
+    // an engine shader's path is taken too, or the file would stand in for it everywhere
+    auto taken = [&](const std::string& candidate) {
+        return std::filesystem::exists(projectRoot / dirRel / (candidate + extension)) ||
+            editor::ProjectUtils::isEngineShader((dirRel / (candidate + extension)).generic_string());
+    };
+    while (taken(name))
         name = baseName + std::to_string(suffix++);
 
     std::error_code ec;
@@ -300,7 +305,7 @@ float getCoverage(FragmentContext context){
 }
 
 std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
-    return writeEffectFile(projectRoot, desiredName, getShaderTemplate(shaderType));
+    return writeShaderFile(projectRoot, desiredName, getShaderTemplate(shaderType));
 }
 
 std::string editor::ProjectUtils::getShaderGraphTemplate(ShaderType shaderType) {
@@ -323,14 +328,14 @@ std::string editor::ProjectUtils::getShaderFunctionTemplate() {
 }
 
 std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
-    return writeEffectFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
+    return writeShaderFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
 }
 
 std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
     auto source = editor::shaderMap.find(enginePath);
     if (source == editor::shaderMap.end())
         return "";
-    return writeEffectFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
+    return writeShaderFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
 }
 
 std::vector<std::string> editor::ProjectUtils::getEngineShaders(ShaderType shaderType) {
@@ -379,7 +384,8 @@ std::string editor::ProjectUtils::getComponentShader(Scene* scene, ComponentType
     // meshes directly, a scene can hold thousands
     if (cpType == ComponentType::MeshComponent) {
         const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
-        if (!mesh || submesh < 0 || submesh >= (int)mesh->numSubmeshes)
+        // terrain takes no shader file
+        if (!mesh || submesh < 0 || submesh >= (int)mesh->numSubmeshes || scene->findComponent<TerrainComponent>(entity))
             return "";
         shader = mesh->submeshes[submesh].material.shader;
     } else if (const std::string* own = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader")) {

@@ -519,6 +519,7 @@ namespace doriax::editor{
         static bool visitLuaPathsInRegistry(EntityRegistry* registry, const std::function<bool(std::string&)>& transform);
         // Unwritten files go in failed
         bool visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed = nullptr);
+        bool visitMaterialFiles(const std::function<bool(Material&)>& visit, std::vector<std::filesystem::path>* failed = nullptr);
         // Runs an asset transform over every scene, entity bundle and material file,
         // marking what changed.
         void applyAssetPathChange(const std::function<bool(std::string&)>& transform);

@@ -585,8 +585,13 @@ void main() {
 
                     float shadow = 1.0;
                     #ifdef USE_SHADOWS
+                        #ifdef USE_LIGHT
+                        // getLight may shade the side facing away too
+                        if (light.shadows){
+                        #else
                         // surfaces facing away from the light only need it for foliage transmission
                         if (light.shadows && (NdotL > 0.0 || pbrParams.foliageTransmission > 0.0)){
+                        #endif
                             if(light.type == LightType_Spot){ 
                                 shadow = 1.0 - shadowCalculationPCF(light.shadowMapIndex, NdotL);
                             }else if(light.type == LightType_Directional){

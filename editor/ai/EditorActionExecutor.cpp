@@ -1880,9 +1880,10 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 }
                 paths.push_back(assetPathFromAi(project, rel));
             }
-            // a cubemap takes one cross-layout image or its six faces
-            const bool cubeMap = propertyName == "texture" &&
-                (component == ComponentType::SkyComponent || component == ComponentType::ReflectionProbeComponent);
+            // a cubemap takes one cross-layout image or its six faces; a shader's takes the six
+            const bool cubeMap = (propertyName == "texture" &&
+                (component == ComponentType::SkyComponent || component == ComponentType::ReflectionProbeComponent)) ||
+                (propertyName.find("shaderTextures[") != std::string::npos && paths.size() == 6);
             if (paths.size() != 1 && !(cubeMap && paths.size() == 6)) {
                 error = "texture_path takes one path, or six faces joined by '|' for a cubemap.";
                 return nullptr;
@@ -3577,7 +3578,7 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
                property == "default_sky_shader" || property == "default_points_shader" ||
                property == "default_lines_shader" || property == "default_water_shader") {
         if (!arguments.contains("string_value") || !arguments["string_value"].is_string()) {
-            return failResult(property + " requires string_value (custom shader base path, empty for built-in).");
+            return failResult(property + " requires string_value (a shader file path, empty for built-in).");
         }
         std::string error;
         if (!validateCustomShaderValue(property, arguments, error)) return failResult(error);
@@ -5193,9 +5194,14 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
 namespace {
 
 // empty when the shader file is an engine one, or a .glsl or .shader graph of the project
-std::string shaderFileError(const Project* project, const std::string& shader) {
+std::string shaderFileError(Project* project, const std::string& shader) {
     if (ProjectUtils::isEngineShader(shader))
         return "";
+    std::string text, readError;
+    GraphDocument graph;
+    if (fs::path(shader).extension() == ".shader" && ShaderBuilder::readGraphSource(project, shader, text) &&
+            graph.read(text, readError) && graph.type == "function")
+        return "is a function graph, which goes in no slot: other graphs call it through Subgraph nodes.";
     const fs::path extension = fs::path(shader).extension();
     if (shader.find('\\') != std::string::npos || (extension != ".glsl" && extension != ".shader") ||
             !PathUtils::isSafeRelativePath(fs::path(shader)) ||
@@ -5236,7 +5242,7 @@ namespace {
 void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                             const ShaderUniformValues* inherited) {
     for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
-        if (declaration.scope != ShaderParameterScope::OBJECT || declaration.texture) continue;
+        if (declaration.scope != ShaderParameterScope::OBJECT) continue;
         bool listed = false;
         for (const Json& existing : members) {
             if (existing.value("name", "") == declaration.name) {
@@ -5245,6 +5251,14 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
             }
         }
         if (listed) continue;
+        // a texture is set through shaderTextures[name], or texture_name on a pass
+        if (declaration.texture) {
+            Json texture = {{"name", declaration.name}, {"texture", true},
+                            {"type", declaration.textureType == TextureType::TEXTURE_CUBE ? "textureCube" : "texture2D"}};
+            if (!declaration.description.empty()) texture["description"] = declaration.description;
+            members.push_back(texture);
+            continue;
+        }
 
         const bool hasValue = ShaderUniforms::has(values, declaration.name);
         Vector4 value = declaration.defaultValue;
@@ -5305,7 +5319,7 @@ void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* pro
 std::string shaderUniformSetNote(const Json& members, const std::string& name, bool& declared) {
     declared = false;
     for (const Json& member : members) {
-        if (member.value("name", "") == name) {
+        if (member.value("name", "") == name && !member.value("texture", false)) {
             declared = true;
             return "";
         }
@@ -5440,6 +5454,8 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
     const std::string textureName = arguments.value("texture_name", "");
     if (arguments.contains("texture_path") && textureName.empty())
         return failResult("texture_path needs texture_name, the name the shader declares.");
+    if (!textureName.empty() && action != "set")
+        return failResult("texture_name goes with action set.");
 
     int passIndex = arguments.value("pass_index", action == "add" ? count : -1);
     if (action == "add") {
@@ -5473,8 +5489,22 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
                 passes[passIndex].textures.clear();
             }
             if (!textureName.empty()) {
+                const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, passes[passIndex].shader);
+                const bool declared = std::any_of(annotations.parameters.begin(), annotations.parameters.end(),
+                    [&](const ShaderParameterDeclaration& declaration) { return declaration.texture && declaration.name == textureName; });
+                if (!declared)
+                    return failResult("texture_name must be a texture the pass's shader declares.");
                 const std::string texturePath = arguments.value("texture_path", "");
-                passes[passIndex].setTexture(textureName, texturePath.empty() ? Texture() : Texture(texturePath));
+                Texture texture;
+                if (!texturePath.empty()) {
+                    const fs::path rel = FileUtils::pathFromUtf8(texturePath);
+                    if (!PathUtils::isSafeRelativePath(rel))
+                        return failResult("texture_path must be a safe project-relative path.");
+                    if (!isInsideAssets(project, rel))
+                        return failResult(outsideAssetsError(project, "texture_path"));
+                    texture = Texture(assetPathFromAi(project, rel));
+                }
+                passes[passIndex].setTexture(textureName, texture);
             }
             passes[passIndex].enabled = arguments.value("enabled", passes[passIndex].enabled);
         }else{
@@ -5539,7 +5569,8 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
     if (const MeshComponent* mesh = (component == ComponentType::MeshComponent) ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
         // a mesh keeps them on its materials
         submesh = arguments.value("submesh", -1);
-        if (submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
+        if (submesh < -1 || submesh >= (int)mesh->numSubmeshes || mesh->numSubmeshes == 0)
+            return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
         const int first = std::max(submesh, 0);
         const int last = (submesh < 0) ? (int)mesh->numSubmeshes - 1 : submesh;
         submesh = first;
@@ -5862,7 +5893,9 @@ private:
             error = "there is no node type \"" + typeId + "\"; list_graph_node_types lists them";
             return false;
         }
-        if (!type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
+        // a function takes any node but an output
+        const bool inFunction = graph.type == "function" && typeId.rfind("output/", 0) != 0;
+        if (!inFunction && !type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
             error = type->name + " does not fit a " + graph.type + " graph";
             return false;
         }
@@ -6093,7 +6126,13 @@ private:
     // the fields add_parameter and set_parameter share
     bool fillParameter(GraphParameter& parameter, const Json& operation, std::string& error) const {
         GraphValue value;
-        if (graphOperationValue(operation, value)) {
+        const bool given = operation.contains("number_value") || operation.contains("vector_value") ||
+            operation.contains("string_value") || operation.contains("bool_value");
+        if (given && !graphOperationValue(operation, value)) {
+            error = "the default is a number, 1 to 4 numbers in vector_value, or a word in string_value";
+            return false;
+        }
+        if (given) {
             if (isTextureType(parameter.type)) {
                 if (value.text != "white" && value.text != "black" && value.text != "normal") {
                     error = "a texture's default is white, black or normal";
@@ -6106,13 +6145,20 @@ private:
                 }
                 // one number fills the vector; a color without alpha is opaque
                 const size_t count = parameter.type == "vec2" ? 2 : (parameter.type == "vec3" ? 3 : (parameter.type == "vec4" || parameter.type == "color" ? 4 : 1));
-                const float last = value.numbers.back();
                 const bool color3 = parameter.type == "color" && value.numbers.size() == 3;
-                value.numbers.resize(count, color3 ? 1.0f : last);
+                if (value.numbers.size() != 1 && value.numbers.size() != count && !color3) {
+                    error = "a " + parameter.type + " default takes 1 or " + std::to_string(count) + " numbers";
+                    return false;
+                }
+                value.numbers.resize(count, color3 ? 1.0f : value.numbers.back());
             }
             parameter.value = value;
         }
         if (operation.contains("min") || operation.contains("max")) {
+            if (!parameter.hasRange && !(operation.contains("min") && operation.contains("max"))) {
+                error = "a range takes both min and max";
+                return false;
+            }
             parameter.hasRange = true;
             parameter.minValue = operation.value("min", parameter.minValue);
             parameter.maxValue = operation.value("max", parameter.maxValue);
@@ -6370,7 +6416,9 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
     GraphOperations operations(graph);
     const Json& list = arguments["operations"];
     for (size_t i = 0; i < list.size(); i++) {
-        if (!list[i].is_object() || !operations.apply(list[i], error))
+        if (!list[i].is_object())
+            return failResult("Operation " + std::to_string(i) + " must be an object. Nothing was changed.");
+        if (!operations.apply(list[i], error))
             return failResult("Operation " + std::to_string(i) + " (" + list[i].value("op", std::string("?")) + "): " + error + ". Nothing was changed.");
     }
     operations.layout();
@@ -6378,10 +6426,7 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
     const std::string text = graph.write();
     if (!(window && window->replaceFileText(rel, text))) {
         fs::create_directories(fullPath.parent_path(), ec);
-        std::ofstream out(fullPath, std::ios::binary | std::ios::trunc);
-        out << text;
-        out.close();
-        if (!out)
+        if (!FileUtils::writeIfChanged(fullPath, text))
             return failResult("Failed to write the graph.");
         project->invalidateCustomShader(key);
     }
@@ -7257,6 +7302,10 @@ ActionResult EditorActionExecutor::setComponentProperties(const Json& arguments)
             return failResult("Each properties entry requires property.");
         }
 
+        // a declared texture has no entry until it is set
+        if (propertyName.rfind("shaderTextures[", 0) == 0 || propertyName.find(".shaderTextures[") != std::string::npos) {
+            Catalog::findProperty(sceneProject->scene, entity, component, propertyName);
+        }
         auto props = Catalog::findEntityProperties(sceneProject->scene, entity, component);
         auto it = props.find(propertyName);
         if (it == props.end()) {

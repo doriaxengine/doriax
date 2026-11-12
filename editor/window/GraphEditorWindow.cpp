@@ -14,6 +14,7 @@
 #include "external/IconsFontAwesome6.h"
 #include "shader/ShaderBuilder.h"
 #include "shader/graph/ShaderNodes.h"
+#include "util/FileUtils.h"
 
 #include "imgui_internal.h"
 
@@ -224,6 +225,7 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     std::error_code ec;
     instance.writeTime = std::filesystem::last_write_time(fullPath, ec);
     instance.changedOnDisk = false;
+    const bool reopened = instance.history != nullptr;
     instance.history = std::make_unique<CommandHistory>();
     instance.lastEdit = nullptr;
     ShaderBuilder::clearGraphSource(key);
@@ -247,28 +249,30 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     }
     instance.loadError.clear();
     instance.text = instance.savedText = instance.document.write();
-    instance.compiled = compile(instance);
+    compile(instance);
+    instance.builtCode = instance.compiled.code;
+    // what the scene built of the graph before is not what the file holds now
+    if (reopened)
+        project->invalidateCustomShader(key);
     return true;
 }
 
-editor::ShaderGraphResult editor::GraphEditorWindow::compile(const Instance& instance) const {
+void editor::GraphEditorWindow::compile(Instance& instance) {
     Project* owner = project;
-    return ShaderGraphCompiler::compile(instance.document, instance.filepath.generic_string(), [owner](const std::string& path, std::string& text) {
+    instance.compiled = ShaderGraphCompiler::compile(instance.document, instance.filepath.generic_string(), [owner](const std::string& path, std::string& text) {
         return ShaderBuilder::readGraphSource(owner, path, text);
     });
+    instance.compiledGeneration = ShaderBuilder::getCustomShaderGeneration();
 }
 
 bool editor::GraphEditorWindow::save(Instance& instance) {
     if (!instance.loadError.empty())
         return false;
     const std::filesystem::path fullPath = project->getProjectPath() / instance.filepath;
-    std::ofstream file(fullPath, std::ios::binary | std::ios::trunc);
-    if (!file) {
+    if (!FileUtils::writeIfChanged(fullPath, instance.text)) {
         Out::error("Could not save %s", instance.filepath.generic_string().c_str());
         return false;
     }
-    file << instance.text;
-    file.close();
     instance.savedText = instance.text;
     std::error_code ec;
     instance.writeTime = std::filesystem::last_write_time(fullPath, ec);
@@ -283,7 +287,7 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
 void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::string& text) {
     const std::string key = instance.filepath.generic_string();
     instance.text = text;
-    instance.compiled = compile(instance);
+    compile(instance);
     // the scene builds what the window shows, saved or not, and keeps the last that compiled
     if (!instance.compiled.success)
         return;
@@ -291,7 +295,11 @@ void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::s
         ShaderBuilder::clearGraphSource(key);
     else
         ShaderBuilder::setGraphSource(key, text);
-    instance.previewAt = ImGui::GetTime() + previewDelay;
+    // moving nodes changes no code; a function's shows one output of several
+    if (instance.document.type == "function" || instance.compiled.code != instance.builtCode) {
+        instance.builtCode = instance.compiled.code;
+        instance.previewAt = ImGui::GetTime() + previewDelay;
+    }
 }
 
 void editor::GraphEditorWindow::applyText(Instance& instance, const std::string& text) {
@@ -429,6 +437,8 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     erase(newKey);
     // unsaved edits follow the file
     ShaderBuilder::clearGraphSource(oldKey);
+    ShaderBuilder::clearGraphSource(nodePreviewKey(oldKey));
+    instance->nodePreviewOf.clear();
     instance->filepath = std::filesystem::path(newKey);
     instance->focusRequested = true;
     if (instance->text != instance->savedText)
@@ -563,8 +573,20 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
         model.nodes.push_back(item);
     }
 
+    // a link whose pin is gone, after a signature or a function changed, is not drawn
+    auto hasPin = [&](int id, const std::string& pin, bool output) {
+        for (const CanvasNode& node : model.nodes) {
+            if (node.id != id)
+                continue;
+            const std::string name = pin.substr(0, pin.find('.'));
+            const std::vector<CanvasPin>& pins = output ? node.outputs : node.inputs;
+            const bool named = std::any_of(pins.begin(), pins.end(), [&](const CanvasPin& item) { return item.name == name; });
+            return named || (output && !pins.empty() && name.find_first_not_of("xyzwrgba") == std::string::npos);
+        }
+        return false;
+    };
     for (const GraphLink& link : document.links) {
-        if (link.fromPin.empty())
+        if (link.fromPin.empty() || !hasPin(link.fromNode, link.fromPin, true) || !hasPin(link.toNode, link.toPin, false))
             continue;
         CanvasLink item;
         item.fromNode = link.fromNode;
@@ -1281,7 +1303,8 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             ImGui::SameLine();
             if (ImGui::Button("Set")) {
                 const std::string valueType = pin.type == "dynamic" ? "float" : pin.type;
-                node->inputs[pin.name] = GraphValue(std::vector<float>(componentCount(valueType), valueType == "color" ? 1.0f : 0.0f));
+                const float start = (valueType == "color" || pin.value.text == "true") ? 1.0f : 0.0f;
+                node->inputs[pin.name] = GraphValue(std::vector<float>(componentCount(valueType), start));
                 changed = true;
             }
         } else {
@@ -1338,11 +1361,19 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     GraphDocument nodeGraph;
     if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph)) {
         shader = nodePreviewKey(instance.filepath);
-        const std::string text = nodeGraph.write();
-        if (text != instance.nodePreviewText) {
-            instance.nodePreviewText = text;
-            ShaderBuilder::setGraphSource(shader, text);
-            project->invalidateCustomShader(shader);
+        // built again once a drag ends, and only when its code changed
+        const std::string of = std::to_string(instance.inspected) + "\n" + instance.text;
+        if (of != instance.nodePreviewOf && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            instance.nodePreviewOf = of;
+            Project* owner = project;
+            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, shader, [owner](const std::string& path, std::string& text) {
+                return ShaderBuilder::readGraphSource(owner, path, text);
+            });
+            if (built.code != instance.nodePreviewCode) {
+                instance.nodePreviewCode = built.code;
+                ShaderBuilder::setGraphSource(shader, nodeGraph.write());
+                project->invalidateCustomShader(shader);
+            }
         }
     }
     preview.setShader(shader);
@@ -1396,11 +1427,14 @@ void editor::GraphEditorWindow::drawErrors(Instance& instance) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextUnformatted(message.text.c_str());
         ImGui::PopTextWrapPos();
-        // a click shows the node
+        // a click shows the node, or the parameter
         if (message.node && ImGui::IsItemClicked()) {
-            instance.canvas.select({message.node});
-            instance.canvas.frame(true);
-            instance.inspected = message.node;
+            if (instance.document.findParameter(message.node)) {
+                instance.parameter = message.node;
+            } else {
+                instance.canvas.select({message.node});
+                instance.canvas.frame(true);
+            }
         }
         ImGui::PopID();
     }
@@ -1408,6 +1442,7 @@ void editor::GraphEditorWindow::drawErrors(Instance& instance) {
 }
 
 void editor::GraphEditorWindow::convertToCode(Instance& instance) {
+    compile(instance);
     if (!instance.compiled.success)
         return;
     std::filesystem::path code = instance.filepath;
@@ -1556,9 +1591,16 @@ void editor::GraphEditorWindow::show() {
             instance.lastEdit = nullptr;
         }
 
-        // a change on disk is taken when nothing here is unsaved
+        // a function it calls changed: its errors and code are of the old one
+        if (!instance.compiled.functions.empty() && instance.compiledGeneration != ShaderBuilder::getCustomShaderGeneration())
+            compile(instance);
+
+        // a change on disk is taken when nothing here is unsaved, looked for once a second
         std::error_code ec;
-        const auto writeTime = std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec);
+        const bool check = ImGui::GetTime() >= instance.checkAt;
+        if (check)
+            instance.checkAt = ImGui::GetTime() + 1.0;
+        const auto writeTime = check ? std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec) : instance.writeTime;
         if (!ec && writeTime != instance.writeTime) {
             instance.writeTime = writeTime;
             if (instance.text == instance.savedText || !instance.loadError.empty())
@@ -1630,7 +1672,7 @@ void editor::GraphEditorWindow::show() {
             continue;
         }
 
-        // kept open while the person decides
+        // kept open until the alert is answered
         instance.isOpen = true;
         const std::string key = it->first;
         const std::string windowId = getWindowId(instance.filepath);

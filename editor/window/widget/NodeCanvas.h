@@ -60,7 +60,7 @@ namespace doriax::editor {
         std::vector<CanvasComment> comments;
     };
 
-    // what the person did, for the window to turn into edits of its document
+    // what was done on the canvas, for the window to turn into edits of its document
     struct CanvasEdit {
         enum class Kind {
             MOVE,            // ids by delta

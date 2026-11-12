@@ -5,7 +5,7 @@
 #include "ShaderParameterParser.h"
 
 #include "ShaderDataSerializer.h"
-#include "graph/ShaderGraphCompiler.h"
+#include "shader/graph/ShaderGraphCompiler.h"
 #include "Generator.h"
 #include "App.h"
 #include "Engine.h"
@@ -20,6 +20,7 @@
 #include "util/SHA1.h"
 #include "util/Util.h"
 #include "util/ProjectUtils.h"
+#include "util/FileUtils.h"
 
 #include <algorithm>
 #include <cstring>
@@ -92,13 +93,9 @@ void appendSignaturePart(std::string& input, const std::string& label, const std
 // the code a graph compiles to, where a person can read it
 void writeGeneratedShader(editor::Project* project, const std::string& shader, const std::string& code) {
     const std::filesystem::path path = editor::Generator::getGeneratedPath(project->getProjectInternalPath()) / "shaders" / (shader + ".glsl");
-    std::string current;
-    if (readTextFile(path, current) && current == code)
-        return;
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream file(path, std::ios::binary | std::ios::trunc);
-    file << code;
+    editor::FileUtils::writeIfChanged(path, code);
 }
 
 std::string customSourceCacheKey(editor::Project* project, const std::string& shader) {
@@ -115,14 +112,21 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     }
 
     std::string cacheKey = customSourceCacheKey(project, shader);
-    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-    auto edited = graphSources.find(shader);
-    // with a graph edited, what the cache holds may have taken it in, as itself or as a function
-    const bool saved = !withEdits && !graphSources.empty();
-    if (saved)
-        edited = graphSources.end();
-    else if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
-        return it->second;
+    // the edits are copied under the lock, the files read and compiled without it
+    std::unordered_map<std::string, std::string> edits;
+    const uint32_t generation = customShaderGeneration;
+    bool saved = false;
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        // with a graph edited, what the cache holds may have taken it in, as itself or as a function
+        saved = !withEdits && !graphSources.empty();
+        if (!saved) {
+            if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
+                return it->second;
+            edits = graphSources;
+        }
+    }
+    auto edited = edits.find(shader);
 
     auto snapshot = std::make_shared<CustomSourceSnapshot>();
     std::filesystem::path projectRoot = project->getProjectPath();
@@ -139,14 +143,14 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             snapshot->error = "Unsafe shader path: " + shader;
             return snapshot;
         }
-        if (edited != graphSources.end()) {
+        if (edited != edits.end()) {
             source = edited->second;
         } else if (!readTextFile(projectRoot / shader, source)) {
             snapshot->error = "Could not open shader file: " + shader;
             return snapshot;
         }
         // a graph stands for the shader file it compiles to
-        if (std::filesystem::path(shader).extension() == ".shader") {
+        if (editor::Util::isShaderGraphFile(shader)) {
             editor::GraphDocument graph;
             std::string error;
             if (!graph.read(source, error)) {
@@ -155,16 +159,18 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             }
             // the functions it calls, as edited unless an export reads the saved files
             auto readFunction = [&](const std::string& path, std::string& text) {
-                auto function = withEdits ? graphSources.find(path) : graphSources.end();
-                if (function != graphSources.end()) {
+                if (auto function = edits.find(path); function != edits.end()) {
                     text = function->second;
                     return true;
                 }
                 return editor::Util::isSafeRelativePath(path) && readTextFile(projectRoot / path, text);
             };
             const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction);
-            for (const std::string& function : compiled.functions)
-                graphDependents[function].insert(shader);
+            {
+                std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+                for (const std::string& function : compiled.functions)
+                    graphDependents[function].insert(shader);
+            }
             if (!compiled.success) {
                 snapshot->error = shader + ": " + compiled.describeErrors();
                 return snapshot;
@@ -246,7 +252,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     snapshot->projectBuffers["/" + shader] = visitSource(source, std::filesystem::path(shader).parent_path());
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
-    if (!saved)
+    // not kept when the shaders were invalidated meanwhile
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    if (!saved && generation == customShaderGeneration)
         customSourceCache[cacheKey] = snapshot;
     return snapshot;
 }
@@ -254,7 +262,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
 // a compiler error on a graph's code names the node the line came from
 std::string nameGraphNodes(editor::Project* project, uint16_t customId, const std::string& log) {
     const std::string shader = ShaderPool::getCustomShaderName(customId);
-    if (customId == 0 || std::filesystem::path(shader).extension() != ".shader")
+    if (customId == 0 || !editor::Util::isShaderGraphFile(shader))
         return log;
     const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader);
     const std::string marker = "/" + shader + ":";
@@ -287,6 +295,7 @@ bool readSourceSignature(const std::filesystem::path& path, std::string& signatu
 void clearCustomSourceCache() {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     customSourceCache.clear();
+    graphDependents.clear();
 }
 
 // parameter headers, hook defines and flags; throws on a bad annotation
@@ -365,6 +374,10 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_CLIP_POSITION", "1"});
     if (useVaryings)
         args.defines.push_back({"USE_VARYINGS", "1"});
+    // getVaryings is compiled with the other vertex hooks even where nothing reads them
+    const bool varyingsType = vertexHooks.varyingsHook && useVertexHooks;
+    if (varyingsType)
+        args.defines.push_back({"HOOK_VARYINGS", "1"});
     if (useDepthOffset)
         args.defines.push_back({"USE_DEPTH_OFFSET", "1"});
     if (useCoverage)
@@ -465,7 +478,6 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         }
     }
 
-
     if (useCoverage && fragmentAnnotations.hasCoverageShadows && fragmentAnnotations.coverageShadows)
         declared.flags |= ShaderFlag_CoverageShadows;
 
@@ -477,7 +489,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // shadow maps and the camera depth share the depth program, the clip position tells them apart
     if (useClipPosition && passType == ShaderType::DEPTH)
         vertexAnnotations.enginePass = true;
-    if (useVaryings) {
+    if (varyingsType) {
         args.fileBuffers["shader_varyings_vs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::VERTEX, vertexHooks.varyings);
         args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
     }
@@ -602,8 +614,10 @@ std::string getShaderDataError(const ShaderData& shaderData) {
 editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Project* project, const std::string& shader) {
     ShaderEffectAnnotations annotations;
     const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader);
-    if (!sources->valid)
+    if (!sources->valid) {
+        annotations.errors.push_back(sources->error);
         return annotations;
+    }
 
     auto lookup = [&](const std::string& key) -> const std::string* {
         auto projectFile = sources->projectBuffers.find(key);
@@ -1485,7 +1499,11 @@ void editor::ShaderBuilder::setGraphSource(const std::string& shader, const std:
 
 void editor::ShaderBuilder::clearGraphSource(const std::string& shader) {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-    graphSources.erase(shader);
+    if (graphSources.erase(shader) == 0)
+        return;
+    // what was resolved with the edits goes with them, so an export never takes it
+    customShaderGeneration++;
+    customSourceCache.clear();
 }
 
 uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {

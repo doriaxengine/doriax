@@ -127,9 +127,11 @@ static bool isDefaultMaterialShaderFailed(Scene* scene) {
     auto meshes = scene->getComponentArray<MeshComponent>();
     for (size_t i = 0; i < meshes->size(); i++) {
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        // terrain takes no shader file
+        if (!mesh.loaded || mesh.needReload || scene->findComponent<TerrainComponent>(meshes->getEntity(i)))
+            continue;
         for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
-            if (mesh.submeshes[s].material.shader.empty() &&
-                    editor::Catalog::isCustomShaderBuildFailed(scene, meshes->getEntity(i), editor::ComponentType::MeshComponent))
+            if (mesh.submeshes[s].material.shader.empty() && mesh.submeshes[s].customShaderId == 0)
                 return true;
         }
     }
@@ -5090,7 +5092,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
     if (!mesh && !shader)
         return;
 
-    ImGui::SeparatorText("Shaders");
+    ImGui::SeparatorText(mesh ? "Vertex Offset" : "Shaders");
     beginTable(cpType, getLabelSize(mesh ? "Max Offset" : "Shader", false), "custom_shader_table");
     if (mesh) {
         RowSettings maxSettings;
@@ -5132,10 +5134,8 @@ void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const
     auto setShader = [&](const std::string& path) {
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
         for (const Entity& entity : entities)
-            multiCmd->addPropertyCmd<std::string>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, path);
+            multiCmd->addPropertyCmd<std::string>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, path, onChanged);
         CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
-        if (onChanged)
-            onChanged();
     };
     drawShaderFileRow(ShaderType::MESH, value ? *value : std::string(), sceneProject->scene->getEntityName(entities[0]), setShader,
                       "material_shader_" + std::to_string(submesh));
@@ -5279,7 +5279,7 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
     }
     ImGui::EndDisabled();
 
-    // one button more than the shader rows, which a narrow panel has no room for
+    // a narrow panel has no room for the last button
     ImGui::SameLine();
     if (ImGui::GetContentRegionAvail().x < ImGui::GetFrameHeight())
         ImGui::NewLine();
@@ -5292,7 +5292,7 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
 
     ImGui::PopStyleVar();
 
-    // a .glsl dragged from the resources window
+    // a shader file dragged from the resources window
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")) {
             std::vector<std::string> files = editor::Util::getStringsFromPayload(payload);
@@ -5473,7 +5473,10 @@ void editor::Properties::drawShaderTextureRows(ComponentType cpType, SceneProjec
     if (textures.empty())
         return;
 
-    beginTable(cpType, getLabelSize("Met. Roug. Texture"), prefix + "shader_textures");
+    float labelSize = prefix.empty() ? 0.0f : getLabelSize("Met. Roug. Texture");
+    for (const ShaderParameterDeclaration* declaration : textures)
+        labelSize = std::max(labelSize, getLabelSize(declaration->name));
+    beginTable(cpType, labelSize, prefix + "shader_textures");
     for (const ShaderParameterDeclaration* declaration : textures) {
         RowSettings settings;
         settings.child = true;
@@ -5507,9 +5510,7 @@ void editor::Properties::drawMaterialShaderParameters(SceneProject* sceneProject
             [&](const ShaderUniformValues& newValues) -> Command* {
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
         for (const Entity& entity : entities)
-            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, newValues);
-        if (onChanged)
-            onChanged();
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, ComponentType::MeshComponent, propertyName, newValues, onChanged);
         return multiCmd;
     });
     ImGui::PopID();
@@ -5855,12 +5856,14 @@ void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector
             ImGui::TextWrapped("%s", path.c_str());
         if (ImGui::Button(ICON_FA_FOLDER_OPEN)) {
             const std::string selected = editor::FileDialogs::openFileDialog(project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
-            std::error_code ec;
-            const std::filesystem::path relative = std::filesystem::relative(std::filesystem::absolute(selected), project->getAssetsPath(), ec);
-            if (!selected.empty() && !ec && !relative.empty() && *relative.begin() != "..")
-                setTexture(declaration->name, Texture(relative.generic_string()));
-            else if (!selected.empty())
-                Backend::getApp().registerAlert("Error", "Pick an image inside the project's assets.");
+            if (!selected.empty()) {
+                std::error_code ec;
+                const std::filesystem::path relative = std::filesystem::relative(std::filesystem::absolute(selected), project->getAssetsPath(), ec);
+                if (!ec && !relative.empty() && *relative.begin() != "..")
+                    setTexture(declaration->name, Texture(relative.generic_string()));
+                else
+                    Backend::getApp().registerAlert("Error", "Pick an image inside the project's assets.");
+            }
         }
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Pick an image");
@@ -14379,17 +14382,17 @@ void editor::Properties::show(){
             }
 
             // Ordered fullscreen passes run after the scene color (and SSR) pass; each one
-            // is a forked shader whose uniforms become rows here.
+            // is a shader file whose parameters become rows here.
             if (sceneProject->sceneType != SceneType::SCENE_UI) {
                 ImGui::SeparatorText("Post-processing");
                 drawScenePostProcess(sceneProject);
             }
 
-            // Scene default shaders: used by components of each type whose customShader is
-            // empty (priority: component shader > scene default > built-in).
+            // Scene default shaders: used by components of each type without a shader of
+            // their own (priority: component shader > scene default > built-in).
             ImGui::SeparatorText("Default Shaders");
 
-            // each shader type, and a forked default's parameters, in a table of its own
+            // each shader type, and its default's parameters, in a table of its own
             bool afterParameters = false;
             auto drawDefaultShader = [&](ShaderType type, const char* propertyName, const char* label) {
                 // a line closes the parameters above

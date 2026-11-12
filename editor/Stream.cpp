@@ -87,6 +87,10 @@ namespace {
                 continue;
             }
 
+            // a v0.8 fork, which nothing builds any more
+            if (keyNode["customShader"]) {
+                continue;
+            }
             // Keyed by name, so this returns the id the scenes resolve for it too
             uint16_t customId = 0;
             if (keyNode["shader"]) {

@@ -20,7 +20,7 @@ namespace doriax::editor {
     struct ShaderGraphResult {
         bool success = false;
         std::string type;                        // what the code fills, as mesh; a function's preview names its own
-        std::string code;                        // a shader file, the same one a person would write
+        std::string code;                        // a shader file, as one written by hand
         std::vector<ShaderGraphMessage> errors;
         std::vector<int> lineNodes;              // the node each line of code came from, 0 for none
         std::vector<std::string> functions;      // the function graphs its Subgraph nodes read

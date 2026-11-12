@@ -318,7 +318,6 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
     scanCode(source, out);
 
-
     std::set<std::string> stages;
     std::istringstream stream(source);
     std::string line;
@@ -580,6 +579,8 @@ std::string editor::ShaderParameterParser::generateVaryings(ShaderStageType stag
     for (const auto& [type, name] : varyings)
         code << " " << type << " " << name << ";";
     code << " };\n";
+    // a pass whose fragment hooks do not run still compiles getVaryings, and passes nothing
+    code << "#ifdef USE_VARYINGS\n";
     for (const auto& [type, name] : varyings)
         code << (vertex ? "out " : "in ") << type << " v_var_" << name << ";\n";
     if (vertex){
@@ -591,7 +592,7 @@ std::string editor::ShaderParameterParser::generateVaryings(ShaderStageType stag
         for (const auto& varying : varyings)
             code << " varyings." << varying.second << " = v_var_" << varying.second << ";";
     }
-    code << " }\n";
+    code << " }\n#endif\n";
     return code.str();
 }
 
@@ -613,23 +614,6 @@ std::string editor::ShaderParameterParser::generateTextureNames(ShaderStageType 
 
 void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){
     mergeDeclarations(declarations, &errors);
-}
-
-std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::vector<const ShaderEffectAnnotations*>& sources){
-    std::vector<ShaderParameterDeclaration> declarations;
-    std::vector<std::string> known;
-    for (const ShaderEffectAnnotations* annotations : sources){
-        declarations.insert(declarations.end(), annotations->parameters.begin(), annotations->parameters.end());
-        known.insert(known.end(), annotations->errors.begin(), annotations->errors.end());
-    }
-
-    std::vector<std::string> errors;
-    checkDeclarations(declarations, errors);
-    errors.erase(std::remove_if(errors.begin(), errors.end(), [&](const std::string& error){
-        return std::find(known.begin(), known.end(), error) != known.end();
-    }), errors.end());
-
-    return errors;
 }
 
 std::string editor::ShaderParameterParser::getShaderFileType(ShaderType shaderType){

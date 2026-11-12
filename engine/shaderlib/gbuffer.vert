@@ -85,7 +85,7 @@ out vec3 v_normal;          // view space
     in vec4 a_tangent;
     out vec4 v_hookTangent;
 #endif
-#ifdef USE_VARYINGS
+#ifdef HOOK_VARYINGS
     #include "shader_varyings_vs.glsl"
 #endif
 

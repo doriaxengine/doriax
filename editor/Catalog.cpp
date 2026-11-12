@@ -4094,8 +4094,8 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
 
     switch (component) {
         case ComponentType::MeshComponent:
-            // a model root without submeshes is drawn by its parts and builds nothing
-            if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
+            // a model root without submeshes is drawn by its parts and builds nothing; terrain takes no shader file
+            if (MeshComponent* mesh = scene->findComponent<TerrainComponent>(entity) ? nullptr : scene->findComponent<MeshComponent>(entity)) {
                 for (unsigned int i = 0; i < mesh->numSubmeshes; i++) {
                     if (failed(mesh->submeshes[i].material.shader, ShaderType::MESH,
                                mesh->loaded, mesh->needReload, mesh->submeshes[i].customShaderId))

@@ -3,7 +3,7 @@
 
 struct FragmentContext {
     vec3 worldPosition;
-    vec2 uv1;             // a point's coordinate after its rotation and rect; 0 on lines
+    vec2 uv1;             // the texture coordinate, a point's after its rotation and rect; 0 on lines
     vec4 color;           // vertex color, 1 without
     vec4 textureColor;    // the texture or font sample, linear; 1 without a texture
     vec4 tint;            // the UI color, 1 on points and lines

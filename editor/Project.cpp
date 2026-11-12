@@ -12,8 +12,8 @@
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
 #include "window/GraphEditorWindow.h"
-#include "graph/Graph.h"
 #include "window/TerrainEditWindow.h"
+#include "graph/Graph.h"
 
 #include <cctype>
 #include <cmath>
@@ -667,7 +667,11 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
-        if (visitTexturePaths(ui.texture, transform)) {
+        bool textureChanged = visitTexturePaths(ui.texture, transform);
+        for (auto& texture : ui.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             ui.needUpdateTexture = true;
             changed = true;
         }
@@ -686,15 +690,24 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     });
 
     visitComponents(registry->getComponentArray<SkyComponent>(), [&](SkyComponent& sky) {
-        if (visitTexturePaths(sky.texture, transform)) {
+        bool textureChanged = visitTexturePaths(sky.texture, transform);
+        for (auto& texture : sky.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             sky.needUpdateTexture = true;
             changed = true;
         }
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
-        if (visitTexturePaths(water.normalTexture, transform)) {
+        bool textureChanged = visitTexturePaths(water.normalTexture, transform);
+        for (auto& texture : water.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             water.needUpdateTexture = true;
+            water.needReload = true;
             changed = true;
         }
     });
@@ -740,7 +753,11 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     });
 
     visitComponents(registry->getComponentArray<PointsComponent>(), [&](PointsComponent& points) {
-        if (visitTexturePaths(points.texture, transform)) {
+        bool textureChanged = visitTexturePaths(points.texture, transform);
+        for (auto& texture : points.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             points.needUpdateTexture = true;
             changed = true;
         }
@@ -840,6 +857,9 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         addTexture(ui.texture, true);
+        for (auto& texture : ui.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<ButtonComponent>(), [&](ButtonComponent& button) {
@@ -851,10 +871,16 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<SkyComponent>(), [&](SkyComponent& sky) {
         addTexture(sky.texture, false);
+        for (auto& texture : sky.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
         addTexture(water.normalTexture, false);
+        for (auto& texture : water.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<TerrainComponent>(), [&](TerrainComponent& terrain) {
@@ -879,6 +905,9 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<PointsComponent>(), [&](PointsComponent& points) {
         addTexture(points.texture, true);
+        for (auto& texture : points.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
@@ -1655,6 +1684,10 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
             saveEntityBundleToDisk(bundlePath);
         }
     }
+
+    visitMaterialFiles([&](Material& material) {
+        return !material.shader.empty() && transform(material.shader);
+    });
 }
 
 void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
@@ -1677,7 +1710,9 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         path = updated;
         return true;
     });
-    remapSubgraphFunctions(oldRelative, newRelative);
+    // only a graph, or a folder that may hold one, is named by Subgraph nodes
+    if (oldRelative.extension().empty() || Util::isShaderGraphFile(oldRelative.string()))
+        remapSubgraphFunctions(oldRelative, newRelative);
 }
 
 // Subgraph nodes name their function by path, in the graph files
@@ -1699,7 +1734,8 @@ void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const 
     std::error_code ec;
     for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, ec);
             !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
-        if (it->path().filename().string().rfind(".", 0) == 0) {
+        const std::string name = it->path().filename().string();
+        if (name.rfind(".", 0) == 0 || (name == "build" && it->is_directory(ec))) {
             if (it->is_directory(ec))
                 it.disable_recursion_pending();
             continue;
@@ -2706,6 +2742,21 @@ static bool isWritableForSave(const std::filesystem::path& file){
 }
 
 bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed){
+    return visitMaterialFiles([&](Material& material) {
+        bool materialChanged = visitTexturePaths(material.baseColorTexture, transform);
+        materialChanged |= visitTexturePaths(material.emissiveTexture, transform);
+        materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
+        materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
+        materialChanged |= visitTexturePaths(material.normalTexture, transform);
+        for (auto& texture : material.shaderTextures){
+            materialChanged |= visitTexturePaths(texture.second, transform);
+        }
+        return materialChanged;
+    }, failed);
+}
+
+// every .material file of the project, written back when visit changes it
+bool editor::Project::visitMaterialFiles(const std::function<bool(Material&)>& visit, std::vector<std::filesystem::path>* failed){
     if (projectPath.empty()){
         return false;
     }
@@ -2738,19 +2789,7 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
             continue;
         }
 
-        bool materialChanged = visitTexturePaths(material.baseColorTexture, transform);
-        materialChanged |= visitTexturePaths(material.emissiveTexture, transform);
-        materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
-        materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
-        materialChanged |= visitTexturePaths(material.normalTexture, transform);
-        for (auto& texture : material.shaderTextures){
-            materialChanged |= visitTexturePaths(texture.second, transform);
-        }
-        if (!material.shader.empty() && transform(material.shader)){
-            materialChanged = true;
-        }
-
-        if (!materialChanged){
+        if (!visit(material)){
             continue;
         }
 
@@ -4031,7 +4070,8 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
                         instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1,
                         !materialShader.empty() && mesh.submeshes[s].hasNormal, !materialShader.empty() && mesh.submeshes[s].hasVertexColor3,
-                        !materialShader.empty() && mesh.submeshes[s].hasVertexColor4);
+                        !materialShader.empty() && mesh.submeshes[s].hasVertexColor4, !materialShader.empty() && mesh.submeshes[s].hasTexCoord2,
+                        !materialShader.empty() && mesh.submeshes[s].hasNormal && mesh.submeshes[s].hasTangent);
                     insertKeys(ShaderType::DEPTH, depthProperties, customShaderId);
                     insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customShaderId);
                     if (mesh.submeshes[s].gbufferShader) {

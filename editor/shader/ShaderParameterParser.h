@@ -101,7 +101,7 @@ namespace doriax::editor {
 
         // the "#pragma shader" name of a program; the mesh passes share "mesh", the underwater fade "water"
         static std::string getShaderFileType(ShaderType shaderType);
-        // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
+        // shader_params_vs.glsl or shader_params_fs.glsl, with the context the hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);
         // the Varyings struct and its outputs or inputs
@@ -110,8 +110,6 @@ namespace doriax::editor {
         static std::string generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them
         static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
-        // the clashes between sources, which none of them shows alone
-        static std::vector<std::string> checkSources(const std::vector<const ShaderEffectAnnotations*>& sources);
     };
 
 }

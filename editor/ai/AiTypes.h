@@ -66,7 +66,7 @@ struct Settings {
     std::vector<CustomEndpoint> customEndpoints;
     ApprovalMode approvalMode = ApprovalMode::PreviewThenApprove;
     int requestTimeoutSeconds = 90;
-    // Large enough to write a whole file (scripts, forked shaders) in one tool call; a low
+    // Large enough to write a whole file (scripts, shader files) in one tool call; a low
     // cap truncates the call mid-JSON and the partial call is dropped (looks like an empty
     // reply). Providers bill generated output, but may reserve this value for TPM rate-limit
     // accounting, so keep it close to the largest response the editor actually needs.

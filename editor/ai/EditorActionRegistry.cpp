@@ -491,7 +491,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_scene_property",
-            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). A saved scene shader parameter is set as shader_parameter:<Collection>.<name> with number_value, vector2_value, vector3_value or vector4_value; every shader declaring #pragma scene <type> <Collection>.<name> reads it, e.g. shader_parameter:Wind.velocity (vector3_value, air velocity in m/s) bends meshes whose material uses shaders/wind.glsl and terrain foliage layers with wind_sway. Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default shader per type as string_value, empty to reset to the built-in: default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader each a .glsl shader file of that type - used by every component of that type without a shader of its own (priority: component > scene default > built-in).",
+            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). A saved scene shader parameter is set as shader_parameter:<Collection>.<name> with number_value, vector2_value, vector3_value or vector4_value; every shader declaring #pragma scene <type> <Collection>.<name> reads it, e.g. shader_parameter:Wind.velocity (vector3_value, air velocity in m/s) bends meshes whose material uses shaders/wind.glsl and terrain foliage layers with wind_sway. Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default shader per type as string_value, empty to reset to the built-in: default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader each a shader file of that type (.glsl or a .shader graph) - used by every component of that type without a shader of its own (priority: component > scene default > built-in).",
             objectSchemaFromProperties(propertyValueFields({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"property", stringSchema("Scene property name")}
@@ -1011,7 +1011,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                         {"op", stringSchema("add_node, remove, move, connect, disconnect, set, add_parameter, set_parameter, remove_parameter, add_group or add_comment")},
                         {"type", stringSchema("Node type id for add_node, as noise/voronoi; parameter type for add_parameter")},
                         {"ref", stringSchema("Name for what an add makes, for later operations of the call")},
-                        {"node", stringSchema("Node id, or the ref of a node added earlier in the call")},
+                        {"node", stringSchema("Node id as text, or the ref of a node added earlier in the call")},
                         {"ids", {
                             {"type", "array"},
                             {"description", "Nodes, groups or comments to remove, by id or ref"},
@@ -1026,7 +1026,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                         {"number_value", numberSchema("A float or int value")},
                         {"vector_value", {
                             {"type", "array"},
-                            {"description", "A vector or color value, 2 to 4 numbers; colors are linear"},
+                            {"description", "A vector or color value, 1 to 4 numbers; colors are linear"},
                             {"items", {{"type", "number"}}}
                         }},
                         {"string_value", stringSchema("A choice, a parameter name, a word such as white, or text")},
@@ -1047,12 +1047,12 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "inspect_shader_uniforms",
-            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), plus annotation errors as warnings. The file is the shader file of one submesh's material (submesh, 0 when omitted; submesh_count says how many there are) or of a UI/Points/Lines/Sky/Water component, its own or the scene default. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
+            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), its declared textures (texture true, set through shaderTextures[name] or a pass's texture_name), plus annotation errors as warnings. The file is the shader file of one submesh's material (submesh, 0 when omitted; submesh_count says how many there are) or of a UI/Points/Lines/Sky/Water component, its own or the scene default. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
-                {"entity_id", integerSchema("Entity id of a component with a custom shader")},
+                {"entity_id", integerSchema("Entity id of a component with a shader file")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
-                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect")},
+                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent, WaterComponent). Omit to auto-detect")},
                 {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")},
                 {"submesh", integerSchema("Mesh submesh whose material is read. Default 0")}
             }),
@@ -1063,9 +1063,9 @@ const std::vector<ToolDefinition>& cachedTools() {
             "Set or remove the value of one #pragma param parameter, by name, as one undoable step and without a shader rebuild. Values live on the component (shaderUniforms), on a mesh's materials (every submesh, or the one given as submesh) or on the post-process pass, kept as a Vector4: give number_value for float/int, vector2_value/vector3_value/vector4_value for vec2/vec3/vec4 and ivec types (ints truncate). Give entity_id/entity_name (component optional) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Set remove=true to drop the value, so the inherited one or the declared default applies again. Names no shader declares are stored but unused; use inspect_shader_uniforms to see the declared parameters.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
-                {"entity_id", integerSchema("Entity id of a component with a custom shader")},
+                {"entity_id", integerSchema("Entity id of a component with a shader file")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
-                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect")},
+                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent, WaterComponent). Omit to auto-detect")},
                 {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")},
                 {"name", stringSchema("Uniform member name as declared in the shader block, e.g. amplitude or tint")},
                 {"number_value", numberSchema("Value for a float or int member")},
@@ -1079,7 +1079,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "list_post_process_passes",
-            "List a scene's post-process chain in the order it runs: each pass with its index, shader (a project-relative .glsl, empty = the built-in passthrough), enabled flag, stored parameter values and textures. Use inspect_shader_uniforms with pass_index to see what a pass's shader declares.",
+            "List a scene's post-process chain in the order it runs: each pass with its index, shader (a project-relative .glsl or .shader graph, empty = the built-in passthrough), enabled flag, stored parameter values and textures. Use inspect_shader_uniforms with pass_index to see what a pass's shader declares.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")}
             }),
@@ -1093,10 +1093,10 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"action", stringSchema("add, remove, move, or set. Defaults to set")},
                 {"pass_index", integerSchema("Pass index (0 = first pass of the chain). Required except for add, which appends when it is omitted")},
                 {"to_index", integerSchema("New index of the pass, for move")},
-                {"shader", stringSchema("Project-relative .glsl shader file starting with \"#pragma shader postprocess\"; empty = the built-in passthrough")},
+                {"shader", stringSchema("Project-relative postprocess shader file, a .glsl starting with \"#pragma shader postprocess\" or a .shader graph; empty = the built-in passthrough")},
                 {"enabled", boolSchema("Whether the pass runs")},
                 {"texture_name", stringSchema("For set: a texture the pass's shader declares with #pragma param texture2D")},
-                {"texture_path", stringSchema("For set with texture_name: the image, relative to the assets directory; empty clears it")}
+                {"texture_path", stringSchema("For set with texture_name: the image, project-relative inside the assets directory; empty clears it")}
             }),
             false
         },
@@ -1938,8 +1938,8 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
             return fail("path must be a safe project-relative path.");
         }
         const std::string ext = path.extension().string();
-        if (ext != ".vert" && ext != ".frag" && ext != ".glsl") {
-            return fail("write_shader_file only supports .vert, .frag, and .glsl files.");
+        if (ext != ".glsl") {
+            return fail("write_shader_file takes a .glsl file.");
         }
         return ok();
     }
