@@ -2973,7 +2973,7 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v61: hooks in shader files with stages, on the material.
     // v62: varyings, clip position and depth offset hooks.
     // v63: shader files on every type, post-process scene inputs.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v68";
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v69";
 }
 
 void editor::App::pushTabNotificationStyle(){

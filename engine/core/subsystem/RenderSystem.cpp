@@ -148,6 +148,30 @@ namespace {
         return mesh.worldAABB != AABB::ZERO && (!instmesh || instmesh->cullInstances);
     }
 
+    // a shader file batches when its hooks see the same with the sprites in world space: not what
+    // stays in the object's space or the scene behind, the stored UVs only where a texture rect
+    // does not change them, and the vertex color only without a material color
+    bool batchesShader(const Submesh& submesh){
+        if (submesh.customShaderId == 0)
+            return true;
+        const uint32_t flags = submesh.shader->shaderData.flags;
+        if (flags & (ShaderFlag_ObjectSpace | ShaderFlag_SceneColor | ShaderFlag_SceneDepth))
+            return false;
+        const Rect& rect = submesh.textureRect;
+        const bool wholeTexture = rect.getX() == 0.0f && rect.getY() == 0.0f && rect.getWidth() == 1.0f && rect.getHeight() == 1.0f;
+        if ((flags & ShaderFlag_VertexUV) && submesh.hasTextureRect && !wholeTexture)
+            return false;
+        return !(flags & ShaderFlag_VertexColor) || submesh.material.baseColorFactor == Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    // a batch draws with the first sprite's values of a shader file
+    bool sharesShaderValues(const MeshComponent& a, const MeshComponent& b){
+        const Material& first = a.submeshes[0].material;
+        const Material& other = b.submeshes[0].material;
+        return a.submeshes[0].customShaderId == 0 ||
+            (first.shader == other.shader && first.shaderUniforms == other.shaderUniforms && a.vertexOffsetMax == b.vertexOffsetMax);
+    }
+
     // nearest band first (one per doubling of the distance), then grouped by render state
     uint64_t opaqueSortKey(const MeshComponent& mesh, float squaredDistance, PipelineType pipType){
         // ilogb is a domain error for zero, NaN and infinity
@@ -4416,19 +4440,18 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
     terrain.views[viewIndex].needUpdateNodesBuffer = false;
 }
 
-// Quads drawn unlit with vertex colors, optionally with Uv1, Txr, Fog, Ams and Aop: nothing else
-// in them is per object. For bigger meshes a draw with shared buffers costs less than moving the vertices
+// Quads drawn unlit with vertex colors, optionally with Uv1, Txr, Fog, Ams, Aop, Hu1 and Hnr: nothing
+// else in them is per object. For bigger meshes a draw with shared buffers costs less than moving the vertices
 bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
-    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
+    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
 
-    // shader properties first, they rule out lit meshes; a shader file needs its own draw
+    // shader properties first, they rule out lit meshes
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        !submesh.needUpdateTexture && !submesh.lodData &&
-        submesh.customShaderId == 0;
+        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh);
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -4443,9 +4466,10 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 
     // an equal pipeline means the same shader, layout and blending
     const bool alphaMask = submesh.shaderProperties & (1u << 24);
-    auto sharesState = [&](const Submesh& other){
-        return other.render.sharesState(submesh.render, spriteBatch.pipType) &&
-            (!alphaMask || other.material.alphaCutoff == submesh.material.alphaCutoff);
+    auto sharesState = [&](const MeshComponent& other){
+        const Submesh& otherSubmesh = other.submeshes[0];
+        return otherSubmesh.render.sharesState(submesh.render, spriteBatch.pipType) &&
+            (!alphaMask || otherSubmesh.material.alphaCutoff == submesh.material.alphaCutoff) && sharesShaderValues(other, mesh);
     };
 
     if (!spriteBatch.items.empty()){
@@ -4455,7 +4479,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 
         MeshComponent& first = *spriteBatch.items[0].mesh;
         const size_t batchVertices = (spriteBatch.items.size() == 1) ? first.buffer.getCount() : spriteBatch.vertices.size() / spriteBatch.layout.stride;
-        if (!sharesState(first.submeshes[0]) || batchVertices + mesh.buffer.getCount() > std::numeric_limits<uint16_t>::max()){
+        if (!sharesState(first) || batchVertices + mesh.buffer.getCount() > std::numeric_limits<uint16_t>::max()){
             flushSpriteItems();
         }
     }
@@ -4463,8 +4487,8 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
     // a sprite unlike the one drawn before it is drawn right away, so a batch starts on
     // the second sprite of a run and changing textures never wait for one
     if (spriteBatch.items.empty()){
-        Submesh* previous = spriteBatch.previous;
-        spriteBatch.previous = &submesh;
+        MeshComponent* previous = spriteBatch.previous;
+        spriteBatch.previous = &mesh;
         if (!previous || !sharesState(*previous))
             return false;
         if (cullsBatch(mesh, nullptr) && !isInsideCamera(camera, mesh.worldAABB))
@@ -4487,8 +4511,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 // checks what an equal pipeline does not tell, and finds the attributes the batch rewrites
 bool RenderSystem::getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const{
     const Submesh& submesh = mesh.submeshes[0];
-    if (submesh.customShaderId != 0 ||
-            submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
+    if (submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
             submesh.material.baseColorTexture.isFramebuffer())
         return false;
 
@@ -4564,8 +4587,9 @@ void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
     }
 }
 
-// what a batch draws with: the color factor is already in the vertices
-void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh){
+// what a batch draws with: the color factor is already in the vertices, and the vertices in world space
+void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh){
+    Submesh& submesh = mesh.submeshes[0];
     if (hasFog){
         render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
@@ -4579,7 +4603,22 @@ void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& subme
     std::memcpy(materialParams, &submesh.material, sizeof(materialParams));
     std::fill(materialParams, materialParams + 4, 1.0f);
     const bool alphaMask = submesh.shaderProperties & (1u << 24);
-    render.applyUniformBlock(submesh.slotFSParams, sizeof(float) * (alphaMask ? 8 : 4), materialParams);
+    const unsigned int paramsSize = sizeof(float) * (alphaMask ? 8 : 4);
+    // a shader file's values follow the material in its block
+    ShaderParameterBlock& paramsFS = submesh.paramsFS;
+    if (paramsFS.slot != -1){
+        std::memcpy(paramsFS.data.data(), materialParams, std::min(paramsSize, paramsFS.firstOffset));
+        paramsFS.writeFragmentContext(effectView, true, submesh.alphaBlend);
+        paramsFS.writeFrame(effectView, passResolution);
+        render.applyUniformBlock(paramsFS.slot, paramsFS.size, paramsFS.data.data());
+    }else{
+        render.applyUniformBlock(submesh.slotFSParams, paramsSize, materialParams);
+    }
+    ShaderParameterBlock& paramsVS = submesh.paramsVS;
+    if (paramsVS.slot != -1){
+        paramsVS.writeVertexContext(effectView, Matrix4(), mesh.vertexOffsetMax);
+        applyParameters(render, paramsVS, effectView, passResolution);
+    }
 
     Matrix4 matrices[3];
     matrices[2] = spriteBatch.camera->viewProjectionMatrix;
@@ -4603,12 +4642,12 @@ bool RenderSystem::drawSpriteBatch(){
         return false;
 
     MeshComponent& mesh = *spriteBatch.items[0].mesh;
-    Submesh& submesh = mesh.submeshes[0];
-    ObjectRender& render = submesh.render;
+    ObjectRender& render = mesh.submeshes[0].render;
     if (!render.beginDraw(spriteBatch.pipType))
         return false;
 
-    applySpriteBatchUniforms(render, submesh);
+    writeParameters(mesh, scene);
+    applySpriteBatchUniforms(render, mesh);
 
     render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset);
     render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset);
@@ -4669,7 +4708,8 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
         if (wait != settleWaits.end() && spriteUpdates < wait->second.until)
             return;
     }
-    if (!canBatchSprite(mesh))
+    // the values of a shader file are compared every frame, so its sprites batch without settling
+    if (!canBatchSprite(mesh) || mesh.submeshes[0].customShaderId != 0)
         return;
 
     const Submesh& submesh = mesh.submeshes[0];
@@ -4917,8 +4957,7 @@ void RenderSystem::flushSpriteSegment(){
         uint32_t previousCutoff = 0;
         for (const SpriteRun& run : spriteSegment.runs){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(run.entity);
-            Submesh& submesh = mesh.submeshes[0];
-            ObjectRender& render = submesh.render;
+            ObjectRender& render = mesh.submeshes[0].render;
             const uint32_t cutoff = spriteStates[run.state].key[0];
 
             // uniforms stay applied while the pipeline does
@@ -4926,7 +4965,7 @@ void RenderSystem::flushSpriteSegment(){
                 previous = nullptr;
                 if (!render.beginDraw(spriteBatch.pipType))
                     continue;
-                applySpriteBatchUniforms(render, submesh);
+                applySpriteBatchUniforms(render, mesh);
             }
             previous = &render;
             previousCutoff = cutoff;

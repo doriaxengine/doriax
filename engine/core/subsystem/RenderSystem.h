@@ -441,7 +441,7 @@ namespace doriax{
 			CameraComponent* camera = nullptr;
 			Transform* cameraTransform = nullptr;
 			std::vector<SpriteBatchItem> items;
-			Submesh* previous = nullptr; // the sprite seen before, to tell when a run starts
+			MeshComponent* previous = nullptr; // the sprite seen before, to tell when a run starts
 			SpriteLayout layout; // of the first sprite, shared by the others
 			std::vector<unsigned char> vertices;
 			std::vector<uint16_t> indices;
@@ -810,7 +810,7 @@ namespace doriax{
 		bool getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const;
 		void bakeSpriteVertices(unsigned char* vertices, unsigned int count, const SpriteLayout& layout, const Submesh& submesh) const;
 		void appendSpriteGeometry(const SpriteBatchItem& item);
-		void applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh);
+		void applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh);
 		bool drawSpriteBatch();
 		void flushSpriteItems();
 		void flushSpriteBatch();

@@ -514,6 +514,17 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // the object's matrix, which the vertex stage has
     if (meshPass && useVertexHooks && (vertexHooks.contextReads.count("objectPosition") || vertexHooks.contextReads.count("objectScale")))
         args.defines.push_back({"HOOK_OBJECT", "1"});
+    // what a batch of sprites drawn in world space would change for the hooks
+    if (passType == ShaderType::MESH) {
+        const std::set<std::string>& vertexReads = vertexHooks.contextReads;
+        const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
+        if (normal || (useVertexHooks && (vertexReads.count("localPosition") || vertexReads.count("objectPosition") || vertexReads.count("objectScale"))))
+            declared.flags |= ShaderFlag_ObjectSpace;
+        if (useVertexHooks && vertexReads.count("uv1"))
+            declared.flags |= ShaderFlag_VertexUV;
+        if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
+            declared.flags |= ShaderFlag_VertexColor;
+    }
 
     // the model matrix of the types whose own blocks lack it
     const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
