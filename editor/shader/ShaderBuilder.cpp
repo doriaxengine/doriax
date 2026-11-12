@@ -5,6 +5,8 @@
 #include "ShaderParameterParser.h"
 
 #include "ShaderDataSerializer.h"
+#include "graph/ShaderGraphCompiler.h"
+#include "Generator.h"
 #include "App.h"
 #include "Engine.h"
 #include "Out.h"
@@ -49,6 +51,7 @@ struct CustomSourceSnapshot {
     std::string error;
     std::unordered_map<std::string, std::string> projectBuffers;
     std::string signature;
+    std::vector<int> graphLines;     // of a graph, the node each line of its code came from
 };
 
 std::mutex customSourceCacheMutex;
@@ -69,6 +72,18 @@ bool readTextFile(const std::filesystem::path& path, std::string& content) {
 void appendSignaturePart(std::string& input, const std::string& label, const std::string& content) {
     input += std::to_string(label.size()) + ':' + label;
     input += ':' + std::to_string(content.size()) + ':' + content + '\n';
+}
+
+// the code a graph compiles to, where a person can read it
+void writeGeneratedShader(editor::Project* project, const std::string& shader, const std::string& code) {
+    const std::filesystem::path path = editor::Generator::getGeneratedPath(project->getProjectInternalPath()) / "shaders" / (shader + ".glsl");
+    std::string current;
+    if (readTextFile(path, current) && current == code)
+        return;
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    std::ofstream file(path, std::ios::binary | std::ios::trunc);
+    file << code;
 }
 
 std::string customSourceCacheKey(editor::Project* project, const std::string& shader) {
@@ -107,6 +122,23 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         if (!readTextFile(projectRoot / shader, source)) {
             snapshot->error = "Could not open shader file: " + shader;
             return snapshot;
+        }
+        // a graph stands for the shader file it compiles to
+        if (std::filesystem::path(shader).extension() == ".shader") {
+            editor::GraphDocument graph;
+            std::string error;
+            if (!graph.read(source, error)) {
+                snapshot->error = shader + ": " + error;
+                return snapshot;
+            }
+            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader);
+            if (!compiled.success) {
+                snapshot->error = shader + ": " + compiled.describeErrors();
+                return snapshot;
+            }
+            source = compiled.code;
+            snapshot->graphLines = compiled.lineNodes;
+            writeGeneratedShader(project, shader, source);
         }
         appendSignaturePart(signatureInput, "entry:" + shader, source);
     }
@@ -182,6 +214,27 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     snapshot->valid = true;
     customSourceCache[cacheKey] = snapshot;
     return snapshot;
+}
+
+// a compiler error on a graph's code names the node the line came from
+std::string nameGraphNodes(editor::Project* project, uint16_t customId, const std::string& log) {
+    const std::string shader = ShaderPool::getCustomShaderName(customId);
+    if (customId == 0 || std::filesystem::path(shader).extension() != ".shader")
+        return log;
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader);
+    const std::string marker = "/" + shader + ":";
+    std::istringstream lines(log);
+    std::string named;
+    for (std::string line; std::getline(lines, line);) {
+        const size_t at = line.find(marker);
+        if (at != std::string::npos) {
+            const int number = std::atoi(line.c_str() + at + marker.size());
+            if (number > 0 && number <= (int)sources->graphLines.size() && sources->graphLines[number - 1] != 0)
+                line += " (node " + std::to_string(sources->graphLines[number - 1]) + ")";
+        }
+        named += line + "\n";
+    }
+    return named;
 }
 
 std::filesystem::path sourceSignaturePath(const std::filesystem::path& shaderCachePath) {
@@ -1211,7 +1264,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
             ResourceProgress::failBuild(shaderKey);
         }
         Out::error("Shader %s failed to compile:\n%s", getShaderDisplayName(shaderKey).c_str(),
-                   compileLog.empty() ? "(no compiler output)" : compileLog.c_str());
+                   compileLog.empty() ? "(no compiler output)" : nameGraphNodes(project, ShaderPool::getCustomIdFromKey(shaderKey), compileLog).c_str());
         throw std::runtime_error("Error compiling to SPIRV");
     }
 

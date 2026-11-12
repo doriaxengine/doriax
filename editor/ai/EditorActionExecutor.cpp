@@ -5187,14 +5187,15 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
 
 namespace {
 
-// empty when the shader file is an engine one or a .glsl of the project
+// empty when the shader file is an engine one, or a .glsl or .shader graph of the project
 std::string shaderFileError(const Project* project, const std::string& shader) {
     if (ProjectUtils::isEngineShader(shader))
         return "";
-    if (shader.find('\\') != std::string::npos || fs::path(shader).extension() != ".glsl" ||
+    const fs::path extension = fs::path(shader).extension();
+    if (shader.find('\\') != std::string::npos || (extension != ".glsl" && extension != ".shader") ||
             !PathUtils::isSafeRelativePath(fs::path(shader)) ||
             !PathUtils::existsExactCase(project->getProjectPath(), shader))
-        return "must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. "
+        return "must be an existing project-relative .glsl file or .shader graph with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. "
                "Write a project one with write_shader_file first, starting it with the \"#pragma shader <type>\" line of what it is for.";
     return "";
 }

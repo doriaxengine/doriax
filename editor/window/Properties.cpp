@@ -5150,8 +5150,8 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
     auto useFile = [&](const std::string& path) {
         std::error_code ec;
         std::filesystem::path rel = std::filesystem::relative(path, projectPath, ec);
-        if (ec || rel.empty() || *rel.begin() == ".." || rel.extension() != ".glsl") {
-            Backend::getApp().registerAlert("Error", "Pick a .glsl file inside the project.");
+        if (ec || rel.empty() || *rel.begin() == ".." || !Util::isShaderFile(rel.string())) {
+            Backend::getApp().registerAlert("Error", "Pick a .glsl file or a .shader graph inside the project.");
             return;
         }
         setShader(rel.generic_string());

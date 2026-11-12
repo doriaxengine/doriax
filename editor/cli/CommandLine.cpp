@@ -12,6 +12,8 @@
 #include "Project.h"
 #include "pool/ShaderPool.h"
 #include "shader/ShaderBuilder.h"
+#include "shader/graph/ShaderNodes.h"
+#include "json.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -266,7 +268,8 @@ static void printMainUsage(const std::string& commandName) {
         << "  " << commandName << "                          Open the editor.\n"
         << "  " << commandName << " export [options]         Export a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
-        << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n\n"
+        << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"
+        << "  " << commandName << " shader-nodes             Print the shader graph node types as JSON.\n\n"
         << "Run a subcommand with --help for its options.\n";
 }
 
@@ -642,6 +645,56 @@ int CommandLine::runBenchmarkHelp(int argc, char** argv, const char* executableN
     printBenchmarkUsage(getCommandName(executableName));
     (void)argc;
     (void)argv;
+    return 0;
+}
+
+int CommandLine::runShaderNodesCommand(int argc, char** argv, const char* executableName) {
+    attachHostConsoleIfNeeded();
+    const std::string commandName = getCommandName(executableName);
+    for (int i = 1; i < argc; i++) {
+        const std::string argument = argv[i];
+        if (argument == "-h" || argument == "--help") {
+            std::cout << "Usage:\n  " << commandName << " shader-nodes\n\n"
+                      << "Prints every shader graph node type as JSON: pins, settings, where it runs and the shaders it fits.\n";
+            return 0;
+        }
+        std::cerr << commandName << " shader-nodes: unknown argument '" << argument << "'\n";
+        return 2;
+    }
+
+    auto value = [](const GraphValue& item) -> nlohmann::json {
+        if (!item.text.empty())
+            return item.text;
+        if (item.numbers.size() == 1)
+            return item.numbers[0];
+        if (item.numbers.empty())
+            return nullptr;
+        return item.numbers;
+    };
+    static const char* stages[] = {"any", "vertex", "fragment"};
+
+    nlohmann::json list = nlohmann::json::array();
+    for (const NodeType* base : ShaderNodes::get().getTypes()) {
+        const ShaderNodeType& type = *static_cast<const ShaderNodeType*>(base);
+        nlohmann::json node = {{"id", type.id}, {"name", type.name}, {"category", type.category}, {"description", type.description},
+                               {"stage", stages[(int)type.stage]}, {"shaderTypes", type.shaderTypes}};
+        node["inputs"] = nlohmann::json::array();
+        for (const NodePin& pin : type.inputs) {
+            nlohmann::json item = {{"name", pin.name}, {"label", pin.label}, {"type", pin.type}, {"default", value(pin.value)}};
+            if (auto slot = type.slots.find(pin.name); slot != type.slots.end())
+                item["fills"] = {{"hook", slot->second.hook}, {"target", slot->second.target}, {"vertex", slot->second.vertex}};
+            node["inputs"].push_back(item);
+        }
+        node["outputs"] = nlohmann::json::array();
+        for (const NodePin& pin : type.outputs)
+            node["outputs"].push_back({{"name", pin.name}, {"label", pin.label}, {"type", pin.type}});
+        node["settings"] = nlohmann::json::array();
+        for (const NodeSetting& setting : type.settings)
+            node["settings"].push_back({{"name", setting.name}, {"label", setting.label}, {"type", setting.type},
+                                        {"options", setting.options}, {"default", value(setting.value)}});
+        list.push_back(node);
+    }
+    std::cout << list.dump(2) << "\n";
     return 0;
 }
 

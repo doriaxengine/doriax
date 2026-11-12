@@ -48,7 +48,7 @@ namespace doriax::editor{
         }
 
         inline static std::string getShaderExtensions() {
-             return "glsl";
+             return "glsl,shader";
         }
 
         inline static std::string getScriptExtensions() {
@@ -109,7 +109,7 @@ namespace doriax::editor{
 
         inline static bool isShaderFile(const std::string& path) {
              static const std::unordered_set<std::string> shaderExtensions = {
-                ".glsl"
+                ".glsl", ".shader"
             };
 
             std::string ext = std::filesystem::path(path).extension().string();

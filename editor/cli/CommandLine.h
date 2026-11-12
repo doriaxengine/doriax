@@ -19,6 +19,9 @@ namespace doriax::editor {
 
         static int runBenchmarkHelp(int argc, char** argv, const char* executableName);
 
+        // Prints the shader graph node types as JSON, for docs and tests.
+        static int runShaderNodesCommand(int argc, char** argv, const char* executableName);
+
         // Prints the top level usage, or reports an unrecognized argument.
         static int runHelpCommand(int argc, char** argv, const char* executableName);
     };

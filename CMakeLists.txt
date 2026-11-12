@@ -575,6 +575,10 @@ set(DORIAX_EDITOR_SOURCES
 
     ${EDITOR_DIR}/shader/ShaderBuilder.cpp
     ${EDITOR_DIR}/shader/ShaderParameterParser.cpp
+    ${EDITOR_DIR}/shader/graph/ShaderNodes.cpp
+    ${EDITOR_DIR}/shader/graph/ShaderGraphCompiler.cpp
+
+    ${EDITOR_DIR}/graph/Graph.cpp
 
     ${EDITOR_DIR}/window/Properties.cpp
     ${EDITOR_DIR}/window/OutputWindow.cpp
