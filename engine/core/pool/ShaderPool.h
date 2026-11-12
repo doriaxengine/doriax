@@ -91,6 +91,8 @@ namespace doriax{
         // the ShaderRender objects, so meshes holding them stay valid and re-bind on
         // their needReload pass.
         static void destroyCustomShaders();
+        // the same for the shaders of one shader file
+        static void destroyCustomShader(uint16_t customId);
 
         static const std::vector<ShaderBackend>& getShaderBackends();
         // backend this runtime was built for

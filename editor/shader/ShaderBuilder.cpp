@@ -1457,6 +1457,28 @@ uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {
     return customShaderGeneration;
 }
 
+void editor::ShaderBuilder::invalidateCustomShader(const std::string& shader) {
+    customShaderGeneration++;
+    auto named = [&](ShaderKey key) {
+        const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
+        return customId != 0 && ShaderPool::getCustomShaderName(customId) == shader;
+    };
+    {
+        std::lock_guard<std::mutex> lock(cacheMutex);
+        for (auto it = shaderDataCache.begin(); it != shaderDataCache.end();)
+            it = named(it->first) ? shaderDataCache.erase(it) : std::next(it);
+        for (auto it = pendingBuilds.begin(); it != pendingBuilds.end();)
+            it = named(it->first) ? pendingBuilds.erase(it) : std::next(it);
+    }
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    const std::string suffix = "\n" + shader;
+    for (auto it = customSourceCache.begin(); it != customSourceCache.end();) {
+        const std::string& key = it->first;
+        const bool match = key.size() >= suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0;
+        it = match ? customSourceCache.erase(it) : std::next(it);
+    }
+}
+
 void editor::ShaderBuilder::invalidateCustomShaders() {
     customShaderGeneration++;
     std::lock_guard<std::mutex> lock(cacheMutex);

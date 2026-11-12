@@ -222,7 +222,7 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
     // the file holds the edits now
     ShaderBuilder::clearGraphSource(instance.filepath.generic_string());
     instance.previewAt = -1.0;
-    project->invalidateCustomShaders();
+    project->invalidateCustomShader(instance.filepath.generic_string());
     return true;
 }
 
@@ -299,7 +299,7 @@ void editor::GraphEditorWindow::erase(const std::string& key) {
         lastFocused = nullptr;
     instances.erase(it);
     if (edited)
-        project->invalidateCustomShaders();
+        project->invalidateCustomShader(key);
 }
 
 void editor::GraphEditorWindow::close(const std::string& key) {
@@ -1468,7 +1468,7 @@ void editor::GraphEditorWindow::show() {
         // the scene builds the edits a moment after the last one
         if (instance.previewAt >= 0.0 && ImGui::GetTime() >= instance.previewAt) {
             instance.previewAt = -1.0;
-            project->invalidateCustomShaders();
+            project->invalidateCustomShader(instance.filepath.generic_string());
         }
 
         if (instance.isOpen) {

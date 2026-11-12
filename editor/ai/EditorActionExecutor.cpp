@@ -6350,7 +6350,7 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         out.close();
         if (!out)
             return failResult("Failed to write the graph.");
-        project->invalidateCustomShaders();
+        project->invalidateCustomShader(key);
     }
     if (create && resourcesWindow)
         resourcesWindow->refreshCurrentDirectory();

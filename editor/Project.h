@@ -573,6 +573,8 @@ namespace doriax::editor{
         // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
         // and cannot compile, so a variant the editor never draws with is missing there.
         void buildStandaloneShaderCache();
+        // flags what draws with the shader for a reload, or with any shader file when null
+        void flagCustomShaderUsers(const std::string* shader);
 
     public:
         // Factory defaults, also used by the settings dialog to restore a value
@@ -851,6 +853,8 @@ namespace doriax::editor{
         // Flushes the compiled shader file caches and flags what uses one for reload,
         // so editing a shader file updates the viewport.
         void invalidateCustomShaders();
+        // the same for one shader file or graph that nothing includes, the other shaders kept
+        void invalidateCustomShader(const std::string& shader);
 
         SceneProject* getScene(uint32_t sceneId);
         const SceneProject* getScene(uint32_t sceneId) const;

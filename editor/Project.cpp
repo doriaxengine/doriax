@@ -4102,18 +4102,26 @@ void editor::Project::invalidateCustomShaders() {
     // flag every renderable that uses one so RenderSystem recompiles it on the next draw.
     editor::ShaderBuilder::invalidateCustomShaders();
     ShaderPool::destroyCustomShaders();
+    flagCustomShaderUsers(nullptr);
+}
 
-    auto invalidate = [](SceneProject& sceneProject) {
+void editor::Project::invalidateCustomShader(const std::string& shader) {
+    editor::ShaderBuilder::invalidateCustomShader(shader);
+    ShaderPool::destroyCustomShader(ShaderPool::registerCustomShader(shader));
+    flagCustomShaderUsers(&shader);
+}
+
+void editor::Project::flagCustomShaderUsers(const std::string* shader) {
+    auto invalidate = [shader](SceneProject& sceneProject) {
         if (!sceneProject.scene)
             return;
         Scene* scene = sceneProject.scene;
-        // a component uses a custom shader of its own or the scene default
-        bool sceneMesh = !scene->getDefaultMeshShader().empty();
-        bool sceneUI = !scene->getDefaultUIShader().empty();
-        bool scenePoints = !scene->getDefaultPointsShader().empty();
-        bool sceneLines = !scene->getDefaultLinesShader().empty();
-        bool sceneSky = !scene->getDefaultSkyShader().empty();
-        bool sceneWater = !scene->getDefaultWaterShader().empty();
+
+        // a slot draws with its own shader, else the scene default
+        auto uses = [shader](const std::string& own, const std::string& sceneDefault) {
+            const std::string& resolved = own.empty() ? sceneDefault : own;
+            return shader ? resolved == *shader : !resolved.empty();
+        };
 
         // needReload is only consumed while the scene draws, and the idle loop skips
         // scenes that are not flagged, so the redraw has to be requested here. Saving a
@@ -4134,33 +4142,35 @@ void editor::Project::invalidateCustomShaders() {
             }
         };
 
+        const std::string sceneMesh = scene->getDefaultMeshShader();
         flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
-            if (sceneMesh)
-                return true;
             for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
-                if (!mesh.submeshes[s].material.shader.empty())
+                if (uses(mesh.submeshes[s].material.shader, sceneMesh))
                     return true;
             }
             return false;
         });
         flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
-            return sceneUI || !ui.shader.empty();
+            return uses(ui.shader, scene->getDefaultUIShader());
         });
         flagComponents(scene->getComponentArray<PointsComponent>(), [&](const PointsComponent& points) {
-            return scenePoints || !points.shader.empty();
+            return uses(points.shader, scene->getDefaultPointsShader());
         });
         flagComponents(scene->getComponentArray<LinesComponent>(), [&](const LinesComponent& lines) {
-            return sceneLines || !lines.shader.empty();
+            return uses(lines.shader, scene->getDefaultLinesShader());
         });
         flagComponents(scene->getComponentArray<SkyComponent>(), [&](const SkyComponent& sky) {
-            return sceneSky || !sky.shader.empty();
+            return uses(sky.shader, scene->getDefaultSkyShader());
         });
         flagComponents(scene->getComponentArray<WaterComponent>(), [&](const WaterComponent& water) {
-            return sceneWater || !water.shader.empty();
+            return uses(water.shader, scene->getDefaultWaterShader());
         });
 
         // post-process passes hold their shader directly, so the chain is rebuilt whole
-        if (!scene->getPostProcessPasses().empty()) {
+        const std::vector<PostProcessPass>& passes = scene->getPostProcessPasses();
+        const bool passUses = shader ? std::any_of(passes.begin(), passes.end(), [&](const PostProcessPass& pass) { return pass.shader == *shader; })
+                                     : !passes.empty();
+        if (passUses) {
             scene->getSystem<RenderSystem>()->needReloadPostProcess();
             sceneProject.needUpdateRender = true;
         }

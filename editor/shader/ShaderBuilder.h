@@ -103,6 +103,8 @@ namespace doriax::editor {
         // Drops cached builds and dependency snapshots for all custom variants so the
         // next get() recompiles. Called after source mutations and project switches.
         static void invalidateCustomShaders();
+        // the same for one shader file or graph, which nothing else includes
+        static void invalidateCustomShader(const std::string& shader);
         // counts the calls above, for renders outside the project's scenes to reload
         static uint32_t getCustomShaderGeneration();
 

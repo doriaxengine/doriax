@@ -768,6 +768,23 @@ void ShaderPool::remove(ShaderType shaderType, uint32_t properties, uint16_t cus
     }
 }
 
+void ShaderPool::destroyCustomShader(uint16_t customId){
+    if (customId == 0)
+        return;
+    for (auto& entry : getMap()){
+        if (getCustomIdFromKey(entry.first) == customId && entry.second && entry.second->isCreated()){
+            entry.second->destroyShader();
+        }
+    }
+    for (auto it = failedShaders().begin(); it != failedShaders().end();){
+        if (getCustomIdFromKey(*it) == customId){
+            it = failedShaders().erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 void ShaderPool::destroyCustomShaders(){
     for (auto& entry : getMap()){
         if (getCustomIdFromKey(entry.first) != 0 && entry.second && entry.second->isCreated()){
