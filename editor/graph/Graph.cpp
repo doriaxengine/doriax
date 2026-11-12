@@ -405,7 +405,7 @@ void editor::GraphDocument::removeParameter(int id) {
     links.erase(std::remove_if(links.begin(), links.end(), [&](const GraphLink& link) { return link.fromPin.empty() && link.fromNode == id; }), links.end());
     for (GraphNode& node : nodes)
         for (auto it = node.settings.begin(); it != node.settings.end();) {
-            const bool named = (it->first == "parameter" || it->first == "texture") && it->second.text.empty() && (int)it->second.number() == id;
+            const bool named = (it->first == "parameter" || it->first == "texture" || it->first == "variable") && it->second.text.empty() && (int)it->second.number() == id;
             it = named ? node.settings.erase(it) : std::next(it);
         }
 }

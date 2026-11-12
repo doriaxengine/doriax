@@ -34,6 +34,7 @@ namespace doriax::editor {
         std::vector<std::string> code;
         LogicFlow flow = LogicFlow::NONE;
         bool atomic = false;         // a call or a name, read without parentheses
+        bool textInputs = false;     // an any input left unset reads as empty text
         int event = -1;              // of the ScriptEvents catalogue, -1 for the script's start
 
         // whether it runs in the order its execution pins are linked
@@ -56,6 +57,15 @@ namespace doriax::editor {
         // the pin type of a variable type, as float gives number
         static std::string getVariablePinType(const std::string& variableType);
         static const std::vector<std::string>& getVariableTypes();
+        // what a new variable of a type holds
+        static GraphValue getVariableDefault(const std::string& variableType);
+        // how many numbers a pin type is made of, 1 for a type that is not a vector
+        static int getComponentCount(const std::string& pinType);
+        // whether a node type stands for a method, a property or a constant of the engine's API
+        static bool isEngineType(const std::string& id);
+        // setPosition as Set Position
+        static std::string getTitle(const std::string& name);
+        static bool isLuaKeyword(const std::string& word);
         // the members of an engine enum, empty for another type
         static const std::vector<std::string>& getEnumMembers(const std::string& type);
         // whether a class is built from a scene and an entity, as Object(self.scene, self.entity)

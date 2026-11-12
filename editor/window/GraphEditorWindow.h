@@ -90,7 +90,6 @@ namespace doriax::editor {
         void drawParameters(Instance& instance);
         void drawInspector(Instance& instance);
         bool drawLayoutInspector(Instance& instance);
-        bool drawLogicConstant(GraphNode& node, const NodePin& pin);
         void drawErrors(Instance& instance);
         void drawAddPopup(Instance& instance);
         void drawCanvas(Instance& instance);

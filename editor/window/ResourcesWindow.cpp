@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ResourcesWindow.h"
+#include "logic/LogicNodes.h"
 #include "util/BidiText.h"
 #include "util/UIUtils.h"
 #include "util/ProjectUtils.h"
@@ -1918,7 +1919,12 @@ void editor::ResourcesWindow::handleNewItem(){
                     fs::path newItemPath = newItemDirectory / FileUtils::pathFromUtf8(itemName);
 
                     // Check if the name is already taken
-                    if (!FileUtils::isNarrowPath(newItemPath)) {
+                    // a logic graph's name is its script's, which Lua must take
+                    const std::string stem = newItemPath.stem().string();
+                    const bool scriptName = newItemType != NewItemType::LOGIC_GRAPH ||
+                        (!std::isdigit((unsigned char)stem[0]) && !LogicNodes::isLuaKeyword(stem) &&
+                         std::all_of(stem.begin(), stem.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }));
+                    if (!FileUtils::isNarrowPath(newItemPath) || !scriptName) {
                         ImGui::OpenPopup("Invalid Name");
                     } else if (fs::exists(newItemPath)) {
                         ImGui::OpenPopup("Name Already Exists");

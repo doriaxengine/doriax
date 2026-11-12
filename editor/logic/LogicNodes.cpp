@@ -86,7 +86,8 @@ namespace {
 
         static const std::set<std::string> numbers = {
             "float", "double", "int", "unsigned int", "unsigned", "long", "unsigned long", "unsigned char", "short", "size_t",
-            "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "wchar_t"};
+            "uint8_t", "uint16_t", "uint32_t", "uint64_t", "int8_t", "int16_t", "int32_t", "int64_t", "wchar_t",
+            "long long", "unsigned long long"};
         if (numbers.count(type))
             return "number";
         if (type == "string" || type == "char")
@@ -96,24 +97,6 @@ namespace {
         if (type.find_first_of("<> ") != std::string::npos)
             return "any";
         return type;
-    }
-
-    // setPosition as Set Position
-    std::string titleCase(const std::string& name) {
-        std::string title;
-        for (size_t i = 0; i < name.size(); i++) {
-            const char c = name[i];
-            if (c == '_') {
-                title += ' ';
-                continue;
-            }
-            const bool upper = std::isupper(static_cast<unsigned char>(c));
-            const bool afterLower = i > 0 && std::islower(static_cast<unsigned char>(name[i - 1]));
-            if (i > 0 && upper && afterLower)
-                title += ' ';
-            title += i == 0 ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
-        }
-        return title;
     }
 
     bool isConstantName(const std::string& name) {
@@ -134,8 +117,6 @@ namespace {
     struct ApiClasses {
         std::map<std::string, std::string> base;                    // by class
         std::map<std::string, std::vector<std::string>> members;    // by enum
-        std::set<std::string> withMethods;
-        std::set<std::string> withFunctions;
     };
 
     const ApiClasses& apiClasses() {
@@ -152,10 +133,6 @@ namespace {
                         base = trim(detail.substr(colon + 3));
                 } else if (kind == "EnumMember") {
                     list.members[symbol.parent].push_back(symbol.name);
-                } else if (kind == "Method") {
-                    list.withMethods.insert(symbol.parent);
-                } else if (kind == "Function") {
-                    list.withFunctions.insert(symbol.parent);
                 }
             }
             return list;
@@ -178,6 +155,53 @@ namespace {
         return false;
     }
 
+}
+
+std::string editor::LogicNodes::getTitle(const std::string& name) {
+    std::string title;
+    for (size_t i = 0; i < name.size(); i++) {
+        const char c = name[i];
+        if (c == '_') {
+            title += ' ';
+            continue;
+        }
+        const bool upper = std::isupper(static_cast<unsigned char>(c));
+        const bool afterLower = i > 0 && std::islower(static_cast<unsigned char>(name[i - 1]));
+        if (i > 0 && upper && afterLower)
+            title += ' ';
+        title += i == 0 ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
+    }
+    return title;
+}
+
+bool editor::LogicNodes::isLuaKeyword(const std::string& word) {
+    static const std::set<std::string> keywords = {
+        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local",
+        "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"};
+    return keywords.count(word) > 0;
+}
+
+bool editor::LogicNodes::isEngineType(const std::string& id) {
+    const std::string group = id.substr(0, id.find('/'));
+    return group == "call" || group == "get" || group == "set" || group == "const";
+}
+
+int editor::LogicNodes::getComponentCount(const std::string& pinType) {
+    if (pinType == "Vector2")
+        return 2;
+    if (pinType == "Vector3" || pinType == "Quaternion")
+        return 3;
+    if (pinType == "Vector4")
+        return 4;
+    return 1;
+}
+
+editor::GraphValue editor::LogicNodes::getVariableDefault(const std::string& variableType) {
+    if (variableType == "string" || variableType == "entity")
+        return GraphValue();
+    // a color starts white, the rest at zero
+    const bool color = variableType.rfind("color", 0) == 0;
+    return GraphValue(std::vector<float>(getComponentCount(getVariablePinType(variableType)), color ? 1.0f : 0.0f));
 }
 
 bool editor::LogicNodeType::runs() const {
@@ -309,11 +333,11 @@ void editor::LogicNodes::addEvents() {
         for (const ScriptEventParam& param : event.params) {
             NodePin pin;
             pin.name = param.name;
-            pin.label = titleCase(param.name);
+            pin.label = editor::LogicNodes::getTitle(param.name);
             pin.type = pinType(param.type);
             outputs.push_back(pin);
         }
-        LogicNodeType& type = add("event/" + sourceId + "." + event.name, titleCase(event.name), std::string("Events: ") + source->label,
+        LogicNodeType& type = add("event/" + sourceId + "." + event.name, editor::LogicNodes::getTitle(event.name), std::string("Events: ") + source->label,
                                   std::string(event.description) + ".", {}, std::move(outputs), {});
         type.flow = LogicFlow::EVENT;
         type.event = static_cast<int>(i);
@@ -347,7 +371,9 @@ void editor::LogicNodes::addEngineApi() {
 
             const bool reads = startsWithWord(name, "get") || startsWithWord(name, "is") || startsWithWord(name, "has") ||
                                startsWithWord(name, "can") || startsWithWord(name, "num") || startsWithWord(name, "find");
-            const bool value = !result.empty() && (reads || (!method && valueClasses.count(parent)));
+            // a getter the table has no type for still gives something
+            const std::string given = result.empty() && reads ? std::string("any") : result;
+            const bool value = !given.empty() && (reads || (!method && valueClasses.count(parent)));
 
             std::vector<NodePin> inputs;
             if (!value)
@@ -379,7 +405,7 @@ void editor::LogicNodes::addEngineApi() {
                 const std::string paramType = space == std::string::npos ? pinType(param) : pinType(param.substr(0, space));
                 NodePin pin;
                 pin.name = paramName;
-                pin.label = titleCase(paramName);
+                pin.label = editor::LogicNodes::getTitle(paramName);
                 pin.type = paramType.empty() ? "any" : paramType;
                 inputs.push_back(pin);
                 call += std::string(count ? ", " : "") + "{" + paramName + "}";
@@ -390,10 +416,10 @@ void editor::LogicNodes::addEngineApi() {
             std::vector<NodePin> outputs;
             if (!value)
                 outputs.push_back(execOut());
-            if (!result.empty())
-                outputs.push_back(out("result", "", result));
+            if (!given.empty())
+                outputs.push_back(out("result", "", given));
 
-            LogicNodeType& type = add("call/" + parent + "." + name, titleCase(name), parent, detail, std::move(inputs), std::move(outputs), {call});
+            LogicNodeType& type = add("call/" + parent + "." + name, editor::LogicNodes::getTitle(name), parent, detail, std::move(inputs), std::move(outputs), {call});
             type.atomic = true;
         } else if (kind == "Property") {
             // a type a class declares, which the table lists with its members
@@ -402,8 +428,8 @@ void editor::LogicNodes::addEngineApi() {
             const size_t arrow = detail.find("->");
             const std::string type = arrow == std::string::npos ? std::string("any") : pinType(detail.substr(arrow + 2));
             const std::string valueType = type.empty() ? std::string("any") : type;
-            // a class of functions alone is never built, so its properties are its own
-            const bool shared = classes.withFunctions.count(parent) && !classes.withMethods.count(parent);
+            static const std::unordered_set<std::string> statics = getEngineStaticProperties();
+            const bool shared = statics.count(parent + "." + name) > 0;
 
             if (isConstantName(name)) {
                 if (parent == "Input" && name.compare(0, 4, "KEY_") == 0) {
@@ -423,13 +449,12 @@ void editor::LogicNodes::addEngineApi() {
             }
             setInputs.push_back(in("value", "Value", valueType));
             // function is a word of Lua, so it is read as a key
-            static const std::set<std::string> words = {"function", "end", "repeat", "until", "local", "in", "and", "or", "not"};
-            const std::string access = (shared ? parent : std::string("{self}")) + (words.count(name) ? "[\"" + name + "\"]" : "." + name);
+            const std::string access = (shared ? parent : std::string("{self}")) + (isLuaKeyword(name) ? "[\"" + name + "\"]" : "." + name);
 
-            LogicNodeType& get = add("get/" + parent + "." + name, "Get " + titleCase(name), parent, "Reads " + parent + "." + name + ".",
+            LogicNodeType& get = add("get/" + parent + "." + name, "Get " + editor::LogicNodes::getTitle(name), parent, "Reads " + parent + "." + name + ".",
                                      std::move(getInputs), {out("value", "", valueType)}, {access});
             get.atomic = true;
-            add("set/" + parent + "." + name, "Set " + titleCase(name), parent, "Sets " + parent + "." + name + ".",
+            add("set/" + parent + "." + name, "Set " + editor::LogicNodes::getTitle(name), parent, "Sets " + parent + "." + name + ".",
                 std::move(setInputs), {execOut()}, {access + " = {value}"});
         } else if (kind == "Constant") {
             LogicNodeType& constant = add("const/" + parent + "." + name, parent + "." + name, parent, detail, {}, {out("value", "", parent)}, {parent + "." + name});
@@ -486,7 +511,8 @@ editor::LogicNodes::LogicNodes() {
             {execIn()}, {execOut("a", "A"), execOut("b", "B"), out("isA", "Is A", "bool")}, {});
         flip.flow = LogicFlow::FLIP_FLOP;
 
-        LogicNodeType& stop = add("flow/return", "Return", "Flow", "Ends the event here.", {execIn()}, {}, {});
+        LogicNodeType& stop = add("flow/return", "Return", "Flow", "Ends the event here. Result answers an event that asks, as Should Collide.",
+            {execIn(), in("value", "Result", "bool", 1.0f)}, {}, {});
         stop.flow = LogicFlow::RETURN;
     }
 
@@ -581,10 +607,10 @@ editor::LogicNodes::LogicNodes() {
         function("clamp", "Clamp", "The value kept between Min and Max.", "math.max({min}, math.min({max}, {a}))",
                  {in("a", "A", "number", 0.0f), in("min", "Min", "number", 0.0f), in("max", "Max", "number", 1.0f)});
         function("random", "Random", "A random number from 0 up to 1.", "math.random()", {});
-        function("randomRange", "Random Range", "A random number between Min and Max.", "({min} + math.random() * ({max} - {min}))",
+        function("randomRange", "Random Range", "A random number between Min and Max.", "randomRange({min}, {max})",
                  {in("min", "Min", "number", 0.0f), in("max", "Max", "number", 1.0f)});
         add("math/lerp", "Lerp", "Math", "A at 0, B at 1, and between them in between.",
-            {in("a", "A", "any", 0.0f), in("b", "B", "any", 1.0f), in("t", "T", "number", 0.5f)}, {out("value", "", "any")}, {"{a} + ({b} - {a}) * {t}"});
+            {in("a", "A", "any", 0.0f), in("b", "B", "any", 1.0f), in("t", "T", "number", 0.5f)}, {out("value", "", "any")}, {"lerp({a}, {b}, {t})"}).atomic = true;
         function("pi", "Pi", "The number pi.", "math.pi", {});
     }
 
@@ -612,19 +638,21 @@ editor::LogicNodes::LogicNodes() {
     // text
     {
         add("text/join", "Join", "Text", "A followed by B.", {in("a", "A", "any", ""), in("b", "B", "any", "")}, {out("value", "", "string")},
-            {"tostring({a}) .. tostring({b})"});
+            {"tostring({a}) .. tostring({b})"}).textInputs = true;
         add("text/toString", "To Text", "Text", "A value as text.", {in("a", "A", "any", 0.0f)}, {out("value", "", "string")}, {"tostring({a})"}).atomic = true;
         add("text/toNumber", "To Number", "Text", "A text as a number, 0 when it is none.", {in("a", "A", "string", "")}, {out("value", "", "number")},
             {"(tonumber({a}) or 0)"}).atomic = true;
-        add("text/length", "Length", "Text", "How many characters a text has, or items a list.", {in("a", "A", "any", "")}, {out("value", "", "number")}, {"#{a}"});
-        add("text/format", "Format", "Text", "A text with %s, %d or %.2f replaced by the values, as string.format.",
+        add("text/length", "Length", "Text", "How many characters a text has, or items a list.", {in("a", "A", "any", "")}, {out("value", "", "number")}, {"#{a}"}).textInputs = true;
+        LogicNodeType& format = add("text/format", "Format", "Text", "A text with %s, %d or %.2f replaced by the values, as string.format.",
             {in("format", "Format", "string", "%s"), in("a", "A", "any", ""), in("b", "B", "any", ""), in("c", "C", "any", "")}, {out("value", "", "string")},
-            {"string.format({format}, {a}, {b}, {c})"}).atomic = true;
+            {"string.format({format}, {a}, {b}, {c})"});
+        format.atomic = true;
+        format.textInputs = true;
     }
 
     // utility
     {
-        add("utility/print", "Print", "Utility", "Writes a line to the log.", {execIn(), in("text", "Text", "any", "")}, {execOut()}, {"Log.print(tostring({text}))"});
+        add("utility/print", "Print", "Utility", "Writes a line to the log.", {execIn(), in("text", "Text", "any", "")}, {execOut()}, {"Log.print(tostring({text}))"}).textInputs = true;
 
         LogicNodeType& expression = add("utility/expression", "Lua Expression", "Utility",
             "A value written in Lua. It reads the inputs as a, b, c and d, and the script as self.",

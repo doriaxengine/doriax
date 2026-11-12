@@ -9,6 +9,7 @@
 #include "Stream.h"
 #include "shaders.h"
 #include "graph/Graph.h"
+#include "logic/LogicGraphCompiler.h"
 #include "shader/ShaderParameterParser.h"
 #include "util/Util.h"
 
@@ -337,29 +338,28 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
     return graph.write();
 }
 
-bool editor::ProjectUtils::writeLogicScript(Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
+bool editor::ProjectUtils::isLogicScriptFree(Project* project, const std::filesystem::path& graph, std::string& error) {
     std::filesystem::path script = graph;
     script.replace_extension(".lua");
-    const std::filesystem::path fullPath = project->getProjectPath() / script;
-
-    // every script a graph writes starts with the same words
-    const std::string header = code.substr(0, code.find(" from "));
-    std::ifstream existing(fullPath, std::ios::binary);
+    std::ifstream existing(project->getProjectPath() / script, std::ios::binary);
     std::string firstLine;
-    if (existing && std::getline(existing, firstLine) && firstLine.rfind(header, 0) != 0) {
+    if (existing && std::getline(existing, firstLine) && !LogicGraphCompiler::isGenerated(firstLine)) {
         error = script.generic_string() + " is not the script of " + graph.filename().string() + "; rename one of them";
         return false;
     }
-    existing.close();
+    return true;
+}
 
-    if (!FileUtils::writeIfChanged(fullPath, code)) {
+bool editor::ProjectUtils::writeLogicScript(Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
+    if (!isLogicScriptFree(project, graph, error))
+        return false;
+    std::filesystem::path script = graph;
+    script.replace_extension(".lua");
+    // the entities that run it take its new properties as those of any script changed on disk
+    if (!FileUtils::writeIfChanged(project->getProjectPath() / script, code)) {
         error = "could not write " + script.generic_string();
         return false;
     }
-    // its variables are the properties of the entities that run it
-    for (SceneProject& sceneProject : project->getScenes())
-        if (sceneProject.scene)
-            project->updateAllScriptsProperties(sceneProject.id);
     return true;
 }
 

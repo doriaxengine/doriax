@@ -6,6 +6,7 @@
 #include "LogicNodes.h"
 #include "util/ScriptEvents.h"
 
+#include "engine_api_suggestions.h"
 #include "lua.hpp"
 
 #include <algorithm>
@@ -22,16 +23,10 @@ namespace {
     using namespace doriax::editor;
 
     const char* indentUnit = "    ";
-
-    bool isKeyword(const std::string& word) {
-        static const std::set<std::string> keywords = {
-            "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto", "if", "in", "local",
-            "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"};
-        return keywords.count(word) > 0;
-    }
+    const std::string scriptHeader = "-- Written by the Doriax editor from ";
 
     bool isIdentifier(const std::string& name) {
-        if (name.empty() || std::isdigit(static_cast<unsigned char>(name[0])) || isKeyword(name))
+        if (name.empty() || std::isdigit(static_cast<unsigned char>(name[0])) || LogicNodes::isLuaKeyword(name))
             return false;
         return std::all_of(name.begin(), name.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '_'; });
     }
@@ -59,22 +54,6 @@ namespace {
         return quoted + "\"";
     }
 
-    // speed as Speed, maxSpeed as Max Speed
-    std::string displayName(const std::string& name) {
-        std::string title;
-        for (size_t i = 0; i < name.size(); i++) {
-            const char c = name[i];
-            if (c == '_') {
-                title += ' ';
-                continue;
-            }
-            if (i > 0 && std::isupper(static_cast<unsigned char>(c)) && std::islower(static_cast<unsigned char>(name[i - 1])))
-                title += ' ';
-            title += i == 0 ? static_cast<char>(std::toupper(static_cast<unsigned char>(c))) : c;
-        }
-        return title;
-    }
-
     // (a + b) as a + b, where nothing around it needs the parentheses
     std::string unwrapped(const std::string& text) {
         if (text.size() < 2 || text.front() != '(' || text.back() != ')')
@@ -96,18 +75,27 @@ namespace {
     }
 
     int vectorSize(const std::string& type) {
-        if (type == "Vector2")
-            return 2;
-        if (type == "Vector3")
-            return 3;
-        if (type == "Vector4")
-            return 4;
-        return 0;
+        return type == "Quaternion" ? 0 : (LogicNodes::getComponentCount(type) > 1 ? LogicNodes::getComponentCount(type) : 0);
+    }
+
+    // a number where it stands beside an operator: -1 as (-1)
+    std::string operand(float value) {
+        const std::string text = formatNumber(value);
+        return text[0] == '-' ? "(" + text + ")" : text;
+    }
+
+    // the functions some nodes call, written once above the script
+    const std::vector<std::pair<std::string, std::vector<std::string>>>& helperFunctions() {
+        static const std::vector<std::pair<std::string, std::vector<std::string>>> list = {
+            {"choose", {"local function choose(condition, a, b)", "    if condition then return a end", "    return b", "end"}},
+            {"lerp", {"local function lerp(a, b, t)", "    return a + (b - a) * t", "end"}},
+            {"randomRange", {"local function randomRange(min, max)", "    return min + math.random() * (max - min)", "end"}}};
+        return list;
     }
 
     class Compiler {
     public:
-        Compiler(const GraphDocument& graph, const std::string& source, const std::string& module): graph(graph), source(source), module(module) {}
+        Compiler(const GraphDocument& graph, const std::string& source, const std::string& name): graph(graph), source(source), module(tableName(name)) {}
 
         GraphResult run() {
             if (graph.kind != "logic") {
@@ -149,6 +137,7 @@ namespace {
                     for (const ScriptEventParam& param : event.params)
                         function.params.push_back(param.name);
                     function.registration = ScriptEvents::getLuaRegistration(event, function.name);
+                    function.returnsBool = event.returnsBool;
                 }
                 if (type.event >= 0 && !taken.insert(function.name).second) {
                     error(node->id, type.name + " is in the graph twice; a Sequence runs several things from one");
@@ -190,24 +179,41 @@ namespace {
             std::string registration;
             std::vector<Line> body;
             std::vector<std::string> locals;
+            bool returnsBool = false;    // an event the engine asks, which a script answers true unless it says otherwise
         };
 
         const GraphDocument& graph;
         const std::string& source;
-        const std::string& module;
+        const std::string module;            // the local the script's table is kept in
         GraphResult result;
 
         // of the function being written
         Function* function = nullptr;
         std::set<int> ran;                   // the nodes written so far
         std::vector<int> running;            // the nodes whose statements are being written, outermost first
+        std::vector<int> bodies;             // the loops whose body is being written
+        bool overflow = false;               // the function grew past what a graph should make
         std::vector<int> reading;            // the value nodes being read
         std::set<std::string> kept;          // its locals
 
         std::vector<std::string> state;      // lines of init: what Do Once and Flip Flop remember
         std::vector<std::string> objects;    // lines of init: the entity as the classes the graph uses
         std::vector<Line> helpers;           // the functions of Lua Expression and Lua Code nodes
-        bool usesChoose = false;
+        std::set<std::string> usedHelpers;
+
+        // the file's name, unless the script calls something by that name: Camera as CameraScript
+        static std::string tableName(const std::string& name) {
+            static const std::set<std::string> globals = {
+                "math", "string", "table", "os", "io", "coroutine", "utf8", "debug", "package", "tostring", "tonumber", "ipairs", "pairs",
+                "select", "type", "print", "require", "error", "assert", "pcall", "next", "self", "RegisterEvent", "RegisterEngineEvent"};
+            static const std::unordered_set<std::string> types = getEngineTypeNames();
+            static const std::unordered_set<std::string> builtins = getEngineBuiltinNames();
+            const auto& helpers = helperFunctions();
+            const bool helper = std::any_of(helpers.begin(), helpers.end(), [&](const auto& item) { return item.first == name; }) ||
+                                name.rfind("expression", 0) == 0 || name.rfind("code", 0) == 0;
+            const bool taken = globals.count(name) || types.count(name) || builtins.count(name) || helper;
+            return taken ? name + "Script" : name;
+        }
 
         void error(int node, const std::string& text) {
             for (const GraphMessage& message : result.errors)
@@ -262,7 +268,7 @@ namespace {
             if (type == "bool")
                 return value.text.empty() ? (value.number() != 0.0f ? "true" : "false") : (value.text == "true" ? "true" : "false");
             if (type == "number")
-                return formatNumber(value.number());
+                return operand(value.number());
             if (type == "string")
                 return quote(value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text);
             if (int size = vectorSize(type)) {
@@ -279,7 +285,7 @@ namespace {
                 if (!value.text.empty())
                     return quote(value.text);
                 if (!value.numbers.empty())
-                    return formatNumber(value.number());
+                    return operand(value.number());
             }
             return "nil";
         }
@@ -291,13 +297,17 @@ namespace {
             if (variable.type == "entity")
                 return "nil";
             // the properties table lists a vector's numbers, a script holds the vector
+            GraphValue value = variable.value;
+            // a color given without alpha is opaque
+            if (variable.type == "color4" && value.numbers.size() == 3)
+                value.numbers.push_back(1.0f);
             if (int size = vectorSize(type); size && property) {
                 std::string text = "{";
                 for (int i = 0; i < size; i++)
-                    text += (i ? ", " : "") + formatNumber(variable.value.number(i));
+                    text += (i ? ", " : "") + formatNumber(value.number(i));
                 return text + "}";
             }
-            return literal(type, variable.value);
+            return literal(type, value);
         }
 
         // what an input reads: its link, else its constant
@@ -306,6 +316,9 @@ namespace {
                 return output(*link, node.id);
             auto constant = node.inputs.find(pin.name);
             const GraphValue& value = constant != node.inputs.end() ? constant->second : pin.value;
+            const LogicNodeType* type = LogicNodes::get().find(node.type);
+            if (value.empty() && pin.type == "any" && type && type->textInputs)
+                return "\"\"";
             if (pin.name == "self" && value.empty()) {
                 // the script's own entity, or the script
                 if (LogicNodes::isEntityClass(pin.type))
@@ -342,7 +355,7 @@ namespace {
             if (!type->runs())
                 return value(*node, *type, link.fromPin);
 
-            const bool inside = std::find(running.begin(), running.end(), node->id) != running.end();
+            const bool inside = std::find(bodies.begin(), bodies.end(), node->id) != bodies.end();
             switch (type->flow) {
                 case LogicFlow::EVENT:
                     if (!function || function->node != node->id) {
@@ -431,12 +444,17 @@ namespace {
                 } else if (node.type == "value/string") {
                     text += quote(value.text);
                 } else if (setting->type == "number") {
-                    text += formatNumber(value.number());
+                    text += operand(value.number());
+                } else if (setting->type == "choice") {
+                    const std::string chosen = value.text.empty() ? formatNumber(value.number()) : value.text;
+                    if (std::find(setting->options.begin(), setting->options.end(), chosen) == setting->options.end())
+                        error(node.id, setting->label + " of " + type.name + " is not one of its choices");
+                    text += chosen;
                 } else {
-                    // a choice is one of the type's own words, a text names a class or a method
+                    // a text names a class or a method
                     if (value.text.empty() && value.numbers.empty())
                         error(node.id, type.name + " needs its " + setting->label);
-                    else if (setting->type != "choice" && !isIdentifier(value.text))
+                    else if (!isIdentifier(value.text))
                         error(node.id, setting->label + " of " + type.name + " is a name: letters, digits and _");
                     text += value.text.empty() ? formatNumber(value.number()) : value.text;
                 }
@@ -457,20 +475,17 @@ namespace {
             const bool written = std::any_of(helpers.begin(), helpers.end(), [&](const Line& line) { return line.node == node.id; });
             if (!written) {
                 helpers.push_back({"local function " + name + "(self, a, b, c, d)", node.id});
-                if (expression) {
-                    helpers.push_back({std::string(indentUnit) + "return " + code, node.id});
-                } else {
-                    size_t begin = 0;
-                    while (begin <= code.size()) {
-                        size_t end = code.find('\n', begin);
-                        if (end == std::string::npos)
-                            end = code.size();
-                        std::string line = code.substr(begin, end - begin);
-                        if (!line.empty() && line.back() == '\r')
-                            line.pop_back();
-                        helpers.push_back({line.empty() ? line : indentUnit + line, node.id});
-                        begin = end + 1;
-                    }
+                // one entry for each line, so an error names the node it is in
+                const std::string body = expression ? "return " + code : code;
+                for (size_t begin = 0; begin <= body.size();) {
+                    size_t end = body.find('\n', begin);
+                    if (end == std::string::npos)
+                        end = body.size();
+                    std::string text = body.substr(begin, end - begin);
+                    if (!text.empty() && text.back() == '\r')
+                        text.pop_back();
+                    helpers.push_back({text.empty() ? text : indentUnit + text, node.id});
+                    begin = end + 1;
                 }
                 helpers.push_back({"end", node.id});
                 helpers.push_back({"", 0});
@@ -504,8 +519,9 @@ namespace {
                     if (type.outputs[i].name == pin)
                         index = i;
                 const std::string& code = index < type.code.size() ? type.code[index] : type.code.front();
-                if (code.compare(0, 7, "choose(") == 0)
-                    usesChoose = true;
+                for (const auto& helper : helperFunctions())
+                    if (code.compare(0, helper.first.size() + 1, helper.first + "(") == 0)
+                        usedHelpers.insert(helper.first);
                 text = fill(node, type, code);
                 if (!type.atomic)
                     text = "(" + text + ")";
@@ -515,6 +531,14 @@ namespace {
         }
 
         void line(int indent, const std::string& text, int node) {
+            // paths that meet are written once for each way in, which doubles at every meeting
+            constexpr size_t limit = 5000;
+            if (function->body.size() >= limit) {
+                if (!overflow)
+                    error(function->node, "Too much runs from this event: where paths meet, what follows is written for each of them. Let them meet less, or move the shared part into a Lua Code node");
+                overflow = true;
+                return;
+            }
             std::string spaces;
             for (int i = 0; i < indent; i++)
                 spaces += indentUnit;
@@ -532,6 +556,20 @@ namespace {
                 write(link->toNode, indent);
         }
 
+        // a side that may not run: what it keeps is not there for what comes after it
+        void block(const GraphNode& node, const std::string& pin, int indent) {
+            const std::set<int> before = ran;
+            follow(node, pin, indent);
+            ran = before;
+        }
+
+        // the body of a loop, where its index and item are read
+        void loop(const GraphNode& node, int indent) {
+            bodies.push_back(node.id);
+            block(node, "body", indent);
+            bodies.pop_back();
+        }
+
         void write(int id, int indent) {
             const GraphNode* node = graph.findNode(id);
             const LogicNodeType* type = node ? LogicNodes::get().find(node->type) : nullptr;
@@ -545,6 +583,8 @@ namespace {
                 error(id, "Too many nodes run one after another");
                 return;
             }
+            if (overflow)
+                return;
             running.push_back(id);
             const std::string tag = std::to_string(id);
 
@@ -560,10 +600,10 @@ namespace {
             switch (type->flow) {
                 case LogicFlow::BRANCH: {
                     line(indent, "if " + unwrapped(input(*node, pin("condition"))) + " then", id);
-                    follow(*node, "true", indent + 1);
+                    block(*node, "true", indent + 1);
                     if (linkFrom(id, "false")) {
                         line(indent, "else", id);
-                        follow(*node, "false", indent + 1);
+                        block(*node, "false", indent + 1);
                     }
                     line(indent, "end", id);
                     break;
@@ -575,21 +615,23 @@ namespace {
                 }
                 case LogicFlow::FOR: {
                     line(indent, "for index" + tag + " = " + unwrapped(input(*node, pin("first"))) + ", " + unwrapped(input(*node, pin("last"))) + " do", id);
-                    follow(*node, "body", indent + 1);
+                    loop(*node, indent + 1);
                     line(indent, "end", id);
                     follow(*node, "out", indent);
                     break;
                 }
                 case LogicFlow::FOR_EACH: {
-                    line(indent, "for index" + tag + ", item" + tag + " in ipairs(" + input(*node, pin("list")) + ") do", id);
-                    follow(*node, "body", indent + 1);
+                    if (!graph.findLinkInto(id, "list"))
+                        error(id, "For Each has no list linked");
+                    line(indent, "for index" + tag + ", item" + tag + " in ipairs(" + unwrapped(input(*node, pin("list"))) + ") do", id);
+                    loop(*node, indent + 1);
                     line(indent, "end", id);
                     follow(*node, "out", indent);
                     break;
                 }
                 case LogicFlow::WHILE: {
                     line(indent, "while " + unwrapped(input(*node, pin("condition"))) + " do", id);
-                    follow(*node, "body", indent + 1);
+                    loop(*node, indent + 1);
                     line(indent, "end", id);
                     follow(*node, "out", indent);
                     break;
@@ -597,7 +639,7 @@ namespace {
                 case LogicFlow::ONCE: {
                     line(indent, "if not self._once" + tag + " then", id);
                     line(indent + 1, "self._once" + tag + " = true", id);
-                    follow(*node, "out", indent + 1);
+                    block(*node, "out", indent + 1);
                     line(indent, "end", id);
                     break;
                 }
@@ -607,17 +649,17 @@ namespace {
                         state.push_back(field + " = false");
                     line(indent, field + " = not " + field, id);
                     line(indent, "if " + field + " then", id);
-                    follow(*node, "a", indent + 1);
+                    block(*node, "a", indent + 1);
                     if (linkFrom(id, "b")) {
                         line(indent, "else", id);
-                        follow(*node, "b", indent + 1);
+                        block(*node, "b", indent + 1);
                     }
                     line(indent, "end", id);
                     break;
                 }
                 case LogicFlow::RETURN: {
                     // Lua takes a return only at the end of a block
-                    line(indent, "do return end", id);
+                    line(indent, function->returnsBool ? "do return " + unwrapped(input(*node, pin("value"))) + " end" : "do return end", id);
                     break;
                 }
                 default: {
@@ -644,6 +686,8 @@ namespace {
             function = &target;
             ran.clear();
             running.clear();
+            bodies.clear();
+            overflow = false;
             reading.clear();
             kept.clear();
             follow(event, "out", 1);
@@ -689,17 +733,19 @@ namespace {
             }
             for (const Line& body : item.body)
                 emit(body.text, body.node);
+            if (item.returnsBool)
+                emit(std::string(indentUnit) + "return true", item.node);
         }
 
         void write(const Function& start, const std::vector<Function>& functions) {
-            emit("-- Written by the Doriax editor from " + source + ". Edit the graph: saving it writes this file again.");
+            emit(scriptHeader + source + ". Edit the graph: saving it writes this file again.");
             emit("");
 
-            if (usesChoose) {
-                emit("local function choose(condition, a, b)");
-                emit(std::string(indentUnit) + "if condition then return a end");
-                emit(std::string(indentUnit) + "return b");
-                emit("end");
+            for (const auto& helper : helperFunctions()) {
+                if (!usedHelpers.count(helper.first))
+                    continue;
+                for (const std::string& text : helper.second)
+                    emit(text);
                 emit("");
             }
             for (const Line& helper : helpers)
@@ -718,7 +764,7 @@ namespace {
                 for (size_t i = 0; i < shown.size(); i++) {
                     const GraphParameter& variable = *shown[i];
                     const std::string type = variable.type == "entity" ? "Object" : variable.type;
-                    emit(std::string(indentUnit) + indentUnit + "{name = " + quote(variable.name) + ", displayName = " + quote(displayName(variable.name)) +
+                    emit(std::string(indentUnit) + indentUnit + "{name = " + quote(variable.name) + ", displayName = " + quote(LogicNodes::getTitle(variable.name)) +
                          ", type = " + quote(type) + ", default = " + variableDefault(variable, true) + "}" + (i + 1 < shown.size() ? "," : ""));
                 }
                 emit(std::string(indentUnit) + "}");
@@ -754,6 +800,10 @@ namespace {
         }
     };
 
+}
+
+bool editor::LogicGraphCompiler::isGenerated(const std::string& firstLine) {
+    return firstLine.rfind(scriptHeader, 0) == 0;
 }
 
 std::string editor::LogicGraphCompiler::getModuleName(const std::string& path) {

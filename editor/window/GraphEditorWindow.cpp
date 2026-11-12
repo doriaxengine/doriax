@@ -11,6 +11,7 @@
 #include "Theme.h"
 #include "Widgets.h"
 #include "command/type/GraphEditCmd.h"
+#include "graph/GraphNodes.h"
 #include "external/IconsFontAwesome6.h"
 #include "logic/LogicGraphCompiler.h"
 #include "logic/LogicNodes.h"
@@ -18,6 +19,7 @@
 #include "shader/graph/ShaderNodes.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
+#include "util/Util.h"
 
 #include "imgui_internal.h"
 
@@ -28,6 +30,7 @@
 #include <map>
 #include <set>
 #include <sstream>
+#include <tuple>
 
 using namespace doriax;
 
@@ -53,7 +56,11 @@ namespace {
         return it != colors.end() ? it->second : IM_COL32(80, 80, 80, 255);
     }
 
-    ImU32 logicCategoryColor(const std::string& category) {
+    ImU32 logicNodeColor(const NodeType& type) {
+        // the engine's classes, which may be named as a category of the graph's own
+        if (LogicNodes::isEngineType(type.id))
+            return IM_COL32(45, 95, 135, 255);
+        const std::string& category = type.category;
         static const std::map<std::string, ImU32> colors = {
             {"Flow", IM_COL32(95, 95, 100, 255)}, {"Variables", IM_COL32(60, 120, 60, 255)}, {"Values", IM_COL32(50, 80, 140, 255)},
             {"Math", IM_COL32(60, 75, 100, 255)}, {"Logic", IM_COL32(130, 60, 90, 255)}, {"Text", IM_COL32(150, 95, 40, 255)},
@@ -62,8 +69,7 @@ namespace {
         if (category.rfind("Events", 0) == 0)
             return IM_COL32(140, 50, 50, 255);
         auto it = colors.find(category);
-        // the engine's classes
-        return it != colors.end() ? it->second : IM_COL32(45, 95, 135, 255);
+        return it != colors.end() ? it->second : IM_COL32(80, 80, 80, 255);
     }
 
     ImU32 typeColor(const std::string& type) {
@@ -76,10 +82,8 @@ namespace {
         return IM_COL32(170, 170, 170, 255);
     }
 
-    const char* executionType = "execution";
-
     ImU32 logicTypeColor(const std::string& type) {
-        if (type == executionType) return IM_COL32(240, 240, 240, 255);
+        if (type == GraphNodes::executionType) return IM_COL32(240, 240, 240, 255);
         if (type == "number") return IM_COL32(120, 200, 120, 255);
         if (type == "bool") return IM_COL32(220, 90, 90, 255);
         if (type == "string") return IM_COL32(230, 120, 190, 255);
@@ -96,13 +100,6 @@ namespace {
         if (type == "vec2") return 2;
         if (type == "vec3") return 3;
         if (type == "vec4" || type == "color") return 4;
-        return 1;
-    }
-
-    int logicComponentCount(const std::string& type) {
-        if (type == "Vector2") return 2;
-        if (type == "Vector3" || type == "Quaternion") return 3;
-        if (type == "Vector4") return 4;
         return 1;
     }
 
@@ -131,68 +128,13 @@ namespace {
         return it != node.settings.end() && it->second.text.empty() ? document.findParameter((int)it->second.number()) : nullptr;
     }
 
-    bool isLogic(const GraphDocument& document) {
-        return document.kind == "logic";
-    }
-
-    const NodeRegistry& registry(const GraphDocument& document) {
-        if (isLogic(document))
-            return LogicNodes::get();
-        return ShaderNodes::get();
-    }
-
-    bool nodePins(const GraphDocument& document, const GraphNode& node, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, const NodeType** found = nullptr) {
-        const NodeType* type = registry(document).findType(node.type);
-        if (found)
-            *found = type;
-        if (!type)
-            return false;
-        if (isLogic(document)) {
-            LogicNodes::getPins(document, node, *static_cast<const LogicNodeType*>(type), inputs, outputs);
-            return true;
-        }
-        // a bad signature leaves the type's own pins
-        if (!ShaderNodes::getPins(node, *static_cast<const ShaderNodeType*>(type), inputs, outputs)) {
-            inputs = type->inputs;
-            outputs = type->outputs;
-        }
-        return true;
-    }
-
-    // the type a pin carries in this node
-    std::string pinType(const GraphDocument& document, const GraphNode& node, const NodePin& pin) {
-        if (pin.kind == PinKind::EXECUTION)
-            return executionType;
-        return isLogic(document) ? pin.type : ShaderNodes::getPinType(document, node, pin);
-    }
-
-    bool canLink(const GraphDocument& document, const std::string& fromType, const std::string& toType) {
-        if (fromType == executionType || toType == executionType)
-            return fromType == toType;
-        return isLogic(document) ? LogicNodes::canLink(fromType, toType) : ShaderNodes::canLink(fromType, toType);
-    }
-
     ImU32 pinColor(const GraphDocument& document, const std::string& type) {
-        return isLogic(document) ? logicTypeColor(type) : typeColor(type);
+        return GraphNodes::isLogic(document) ? logicTypeColor(type) : typeColor(type);
     }
 
     // an output a shader graph leaves to the shader when nothing is set
     bool isSlot(const GraphDocument& document, const NodeType& type, const std::string& pin) {
-        return !isLogic(document) && static_cast<const ShaderNodeType&>(type).slots.count(pin) > 0;
-    }
-
-    bool isExecutionOutput(const GraphDocument& document, int node, const std::string& pin) {
-        const GraphNode* from = document.findNode(node);
-        const NodeType* type = from ? registry(document).findType(from->type) : nullptr;
-        const NodePin* output = type ? type->findOutput(pin) : nullptr;
-        return output && output->kind == PinKind::EXECUTION;
-    }
-
-    void connect(GraphDocument& document, int fromNode, const std::string& fromPin, int toNode, const std::string& toPin) {
-        if (isExecutionOutput(document, fromNode, fromPin))
-            document.connectExecution(fromNode, fromPin, toNode, toPin);
-        else
-            document.connect(fromNode, fromPin, toNode, toPin);
+        return !GraphNodes::isLogic(document) && static_cast<const ShaderNodeType&>(type).slots.count(pin) > 0;
     }
 
     // a string typed into a buffer with room to grow, as Properties does
@@ -282,6 +224,65 @@ namespace {
                std::any_of(document.comments.begin(), document.comments.end(), [&](const GraphComment& comment) { return comment.id == id; });
     }
 
+    // the constant of a logic input nothing feeds, by its type
+    bool drawLogicConstant(GraphNode& node, const NodePin& pin) {
+        auto constant = node.inputs.find(pin.name);
+        const GraphValue current = constant != node.inputs.end() ? constant->second : pin.value;
+        const std::vector<std::string>& members = LogicNodes::getEnumMembers(pin.type);
+        bool changed = false;
+
+        if (pin.type == "bool") {
+            bool on = current.text.empty() ? current.number() != 0.0f : current.text == "true";
+            if (ImGui::Checkbox(pin.label.c_str(), &on)) {
+                node.inputs[pin.name] = GraphValue(on ? 1.0f : 0.0f);
+                changed = true;
+            }
+        } else if (pin.type == "number" || LogicNodes::getComponentCount(pin.type) > 1) {
+            std::vector<float> numbers = current.numbers;
+            numbers.resize(LogicNodes::getComponentCount(pin.type), 0.0f);
+            if (ImGui::DragScalarN(pin.label.c_str(), ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f)) {
+                node.inputs[pin.name] = GraphValue(numbers);
+                changed = true;
+            }
+        } else if (!members.empty()) {
+            if (ImGui::BeginCombo(pin.label.c_str(), current.text.empty() ? "(none)" : current.text.c_str())) {
+                for (const std::string& member : members) {
+                    if (ImGui::Selectable(member.c_str(), member == current.text)) {
+                        node.inputs[pin.name] = GraphValue(member);
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+        } else if (pin.type == "string" || pin.type == "any") {
+            // a number typed into an any input stays a number
+            std::string text = current.text.empty() && !current.numbers.empty() ? formatNumber(current.number()) : current.text;
+            if (editText(pin.label.c_str(), text)) {
+                float number = 0.0f;
+                const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
+                const bool numeric = pin.type == "any" && !text.empty() && parsed.ec == std::errc() && parsed.ptr == text.data() + text.size();
+                if (text.empty())
+                    node.inputs.erase(pin.name);
+                else
+                    node.inputs[pin.name] = numeric ? GraphValue(number) : GraphValue(text);
+                changed = true;
+            }
+        } else {
+            // an engine object comes through a link
+            const bool self = pin.name == "self" && LogicNodes::isEntityClass(pin.type);
+            ImGui::TextDisabled("%s: %s", pin.label.c_str(), self ? "the script's entity" : (pin.type == "Scene" ? "the script's scene" : "not linked"));
+            return false;
+        }
+        if (!changed && constant != node.inputs.end()) {
+            if (inlineIcon(ICON_FA_ROTATE_LEFT)) {
+                node.inputs.erase(pin.name);
+                changed = true;
+            }
+            ImGui::SetItemTooltip("Back to the default");
+        }
+        return changed;
+    }
+
 }
 
 editor::GraphEditorWindow::GraphEditorWindow(Project* project): project(project) {
@@ -329,8 +330,9 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
         instance.loadError = error;
         return false;
     }
-    if (instance.document.kind != "shader" && instance.document.kind != "logic") {
-        instance.loadError = "This is not a shader or logic graph.";
+    const bool logicFile = Util::isLogicGraphFile(instance.filepath.string());
+    if (instance.document.kind != (logicFile ? "logic" : "shader")) {
+        instance.loadError = logicFile ? "This is not a logic graph." : "This is not a shader graph.";
         return false;
     }
     instance.loadError.clear();
@@ -338,20 +340,20 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     compile(instance);
     instance.builtCode = instance.compiled.code;
     // a new logic graph gets its script
-    if (isLogic(instance.document)) {
+    if (GraphNodes::isLogic(instance.document)) {
         std::filesystem::path script = fullPath;
         script.replace_extension(".lua");
         if (!std::filesystem::exists(script, ec))
             writeScript(instance);
     }
     // what the scene built of the graph before is not what the file holds now
-    if (reopened && !isLogic(instance.document))
+    if (reopened && !GraphNodes::isLogic(instance.document))
         project->invalidateCustomShader(key);
     return true;
 }
 
 void editor::GraphEditorWindow::compile(Instance& instance) {
-    if (isLogic(instance.document)) {
+    if (GraphNodes::isLogic(instance.document)) {
         const std::string name = instance.filepath.filename().string();
         static_cast<GraphResult&>(instance.compiled) = LogicGraphCompiler::compile(instance.document, name, LogicGraphCompiler::getModuleName(name));
         return;
@@ -375,7 +377,7 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
     std::error_code ec;
     instance.writeTime = std::filesystem::last_write_time(fullPath, ec);
     instance.changedOnDisk = false;
-    if (isLogic(instance.document)) {
+    if (GraphNodes::isLogic(instance.document)) {
         writeScript(instance);
         return true;
     }
@@ -405,7 +407,7 @@ void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::s
     instance.text = text;
     compile(instance);
     // a script is written when the graph is saved
-    if (isLogic(instance.document))
+    if (GraphNodes::isLogic(instance.document))
         return;
     // the scene builds what the window shows, saved or not, and keeps the last that compiled
     if (!instance.compiled.success)
@@ -470,7 +472,8 @@ void editor::GraphEditorWindow::erase(const std::string& key) {
     if (it == instances.end())
         return;
     Instance* instance = it->second.get();
-    const bool edited = instance->text != instance->savedText;
+    // a shader graph's unsaved edits were what the scene drew
+    const bool edited = !GraphNodes::isLogic(instance->document) && instance->text != instance->savedText;
     ShaderBuilder::clearGraphSource(key);
     ShaderBuilder::clearGraphSource(nodePreviewKey(instance->filepath));
     if (instance->preview)
@@ -560,8 +563,12 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     instance->nodePreviewOf.clear();
     instance->filepath = std::filesystem::path(newKey);
     instance->focusRequested = true;
-    if (instance->text != instance->savedText)
+    if (GraphNodes::isLogic(instance->document)) {
+        // the file's name is the script's
+        compile(*instance);
+    } else if (instance->text != instance->savedText) {
         ShaderBuilder::setGraphSource(newKey, instance->text);
+    }
     instances[newKey] = std::move(instance);
 
     project->removeTab(TabType::GRAPH_EDITOR, oldKey);
@@ -632,7 +639,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
 
         std::vector<NodePin> inputs, outputs;
         const NodeType* type = nullptr;
-        if (!nodePins(document, node, inputs, outputs, &type)) {
+        if (!GraphNodes::getPins(document, node, inputs, outputs, &type)) {
             item.title = node.type;
             item.error = "There is no " + node.type + " node.";
             model.nodes.push_back(item);
@@ -644,7 +651,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             if (file != node.settings.end() && !file->second.text.empty())
                 item.title = std::filesystem::path(file->second.text).stem().string();
         }
-        item.color = isLogic(document) ? logicCategoryColor(type->category) : categoryColor(type->category);
+        item.color = GraphNodes::isLogic(document) ? logicNodeColor(*type) : categoryColor(type->category);
 
         // what tells nodes of one type apart
         for (const NodeSetting& setting : type->settings) {
@@ -669,7 +676,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             CanvasPin canvasPin;
             canvasPin.name = pin.name;
             canvasPin.label = pin.label;
-            canvasPin.color = pinColor(document, pinType(document, node, pin));
+            canvasPin.color = pinColor(document, GraphNodes::getPinType(document, node, pin));
             canvasPin.execution = pin.kind == PinKind::EXECUTION;
             const GraphLink* link = document.findLinkInto(node.id, pin.name);
             canvasPin.connected = link && !link->fromPin.empty();
@@ -687,7 +694,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             CanvasPin canvasPin;
             canvasPin.name = pin.name;
             canvasPin.label = pin.label;
-            canvasPin.color = pinColor(document, pinType(document, node, pin));
+            canvasPin.color = pinColor(document, GraphNodes::getPinType(document, node, pin));
             canvasPin.execution = pin.kind == PinKind::EXECUTION;
             for (const GraphLink& link : document.links)
                 if (link.fromNode == node.id && !link.fromPin.empty() && link.fromPin.substr(0, link.fromPin.find('.')) == pin.name)
@@ -718,7 +725,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
         item.toNode = link.toNode;
         item.toPin = link.toPin;
         item.color = IM_COL32(170, 170, 170, 200);
-        if (isExecutionOutput(document, link.fromNode, link.fromPin)) {
+        if (GraphNodes::isExecutionOutput(document, link.fromNode, link.fromPin)) {
             item.color = IM_COL32(235, 235, 235, 230);
             item.thickness = 3.0f;
         }
@@ -764,15 +771,15 @@ void editor::GraphEditorWindow::addNode(Instance& instance, const NodeType& type
         // the node takes the link that was dropped, on its first pin that fits
         std::vector<NodePin> inputs, outputs;
         const GraphNode& node = *document.findNode(id);
-        if (instance.addFromNode && nodePins(document, node, inputs, outputs)) {
+        if (instance.addFromNode && GraphNodes::getPins(document, node, inputs, outputs)) {
             for (const NodePin& pin : instance.addFromOutput ? inputs : outputs) {
-                const std::string type = pinType(document, node, pin);
-                if (instance.addFromOutput ? !canLink(document, instance.addFromType, type) : !canLink(document, type, instance.addFromType))
+                const std::string type = GraphNodes::getPinType(document, node, pin);
+                if (instance.addFromOutput ? !GraphNodes::canLink(document, instance.addFromType, type) : !GraphNodes::canLink(document, type, instance.addFromType))
                     continue;
                 if (instance.addFromOutput)
-                    connect(document, instance.addFromNode, instance.addFromPin, id, pin.name);
+                    GraphNodes::connect(document, instance.addFromNode, instance.addFromPin, id, pin.name);
                 else
-                    connect(document, id, pin.name, instance.addFromNode, instance.addFromPin);
+                    GraphNodes::connect(document, id, pin.name, instance.addFromNode, instance.addFromPin);
                 break;
             }
         }
@@ -845,7 +852,7 @@ void editor::GraphEditorWindow::paste(Instance& instance, const std::string& tex
         ids[node.id] = document.takeId();
         node.id = ids[node.id];
         node.position = node.position + offset;
-        const NodeType* type = registry(document).findType(node.type);
+        const NodeType* type = GraphNodes::getRegistry(document).findType(node.type);
         for (auto it = node.settings.begin(); it != node.settings.end();) {
             const NodeSetting* setting = type ? type->findSetting(it->first) : nullptr;
             if (setting && setting->type == "parameter" && it->second.text.empty()) {
@@ -868,7 +875,7 @@ void editor::GraphEditorWindow::paste(Instance& instance, const std::string& tex
             if (const int mapped = parameterFor(link.fromNode))
                 document.connect(mapped, "", ids[link.toNode], link.toPin);
         } else if (ids.count(link.fromNode)) {
-            connect(document, ids[link.fromNode], link.fromPin, ids[link.toNode], link.toPin);
+            GraphNodes::connect(document, ids[link.fromNode], link.fromPin, ids[link.toNode], link.toPin);
         }
     }
     for (GraphComment comment : copy.comments) {
@@ -926,24 +933,24 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                 const GraphNode* from = document.findNode(change.fromNode);
                 const GraphNode* to = document.findNode(change.toNode);
                 std::vector<NodePin> fromInputs, fromOutputs, toInputs, toOutputs;
-                if (!from || !to || !nodePins(document, *from, fromInputs, fromOutputs) || !nodePins(document, *to, toInputs, toOutputs))
+                if (!from || !to || !GraphNodes::getPins(document, *from, fromInputs, fromOutputs) || !GraphNodes::getPins(document, *to, toInputs, toOutputs))
                     break;
                 std::string fromType, toType;
                 for (const NodePin& pin : fromOutputs)
                     if (pin.name == change.fromPin.substr(0, change.fromPin.find('.')))
-                        fromType = pinType(document, *from, pin);
+                        fromType = GraphNodes::getPinType(document, *from, pin);
                 for (const NodePin& pin : toInputs)
                     if (pin.name == change.toPin)
-                        toType = pinType(document, *to, pin);
-                if (fromType.empty() || toType.empty() || !canLink(document, fromType, toType)) {
-                    Out::warning("%s does not go into %s %s input", fromType.c_str(), toType == executionType ? "an" : "a", toType.c_str());
+                        toType = GraphNodes::getPinType(document, *to, pin);
+                if (fromType.empty() || toType.empty() || !GraphNodes::canLink(document, fromType, toType)) {
+                    Out::warning("%s does not go into %s %s input", fromType.c_str(), toType == GraphNodes::executionType ? "an" : "a", toType.c_str());
                     break;
                 }
                 if (document.feeds(change.toNode, change.fromNode)) {
                     Out::warning("That link would make the graph loop");
                     break;
                 }
-                connect(document, change.fromNode, change.fromPin, change.toNode, change.toPin);
+                GraphNodes::connect(document, change.fromNode, change.fromPin, change.toNode, change.toPin);
                 break;
             }
             case CanvasEdit::Kind::DISCONNECT:
@@ -961,15 +968,15 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                 instance.addFromType.clear();
                 const GraphNode* node = document.findNode(change.fromNode);
                 std::vector<NodePin> inputs, outputs;
-                if (node && nodePins(document, *node, inputs, outputs))
+                if (node && GraphNodes::getPins(document, *node, inputs, outputs))
                     for (const NodePin& pin : change.fromOutput ? outputs : inputs)
                         if (pin.name == change.fromPin.substr(0, change.fromPin.find('.')))
-                            instance.addFromType = pinType(document, *node, pin);
+                            instance.addFromType = GraphNodes::getPinType(document, *node, pin);
                 break;
             }
             case CanvasEdit::Kind::REROUTE: {
                 // shader graphs have the node for it
-                const GraphLink* link = isLogic(document) ? nullptr : document.findLinkInto(change.toNode, change.toPin);
+                const GraphLink* link = GraphNodes::isLogic(document) ? nullptr : document.findLinkInto(change.toNode, change.toPin);
                 if (!link)
                     break;
                 const int fromNode = link->fromNode;
@@ -1060,11 +1067,14 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
 
     // what fits this graph, and the dropped link when there is one
     const GraphDocument& document = instance.document;
+    const bool logic = GraphNodes::isLogic(document);
+    // the engine's classes apart: some are named as a category of the graph's own, as Input
     std::map<std::string, std::vector<const NodeType*>> categories;
-    for (const NodeType* type : registry(document).getTypes()) {
+    std::map<std::string, std::vector<const NodeType*>> engineCategories;
+    for (const NodeType* type : GraphNodes::getRegistry(document).getTypes()) {
         if (type->id.rfind("output/", 0) == 0 || !matches(*type))
             continue;
-        if (!isLogic(document)) {
+        if (!logic) {
             const ShaderNodeType* shaderType = static_cast<const ShaderNodeType*>(type);
             // a function takes any node, the graph calling it decides where it runs
             const bool function = document.type == "function";
@@ -1075,13 +1085,13 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
         if (instance.addFromNode && !instance.addFromType.empty() && type->id != "utility/customFunction") {
             const std::vector<NodePin>& pins = instance.addFromOutput ? type->inputs : type->outputs;
             const bool fits = std::any_of(pins.begin(), pins.end(), [&](const NodePin& pin) {
-                const std::string kind = pin.kind == PinKind::EXECUTION ? std::string(executionType) : pin.type;
-                return instance.addFromOutput ? canLink(document, instance.addFromType, kind) : canLink(document, kind, instance.addFromType);
+                const std::string kind = pin.kind == PinKind::EXECUTION ? std::string(GraphNodes::executionType) : pin.type;
+                return instance.addFromOutput ? GraphNodes::canLink(document, instance.addFromType, kind) : GraphNodes::canLink(document, kind, instance.addFromType);
             });
             if (!fits)
                 continue;
         }
-        categories[type->category].push_back(type);
+        (logic && LogicNodes::isEngineType(type->id) ? engineCategories : categories)[type->category].push_back(type);
     }
     static const NodeType group = [] {
         NodeType type;
@@ -1125,54 +1135,50 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
                 ImGui::SetItemTooltip("%s", type->description.c_str());
         }
     };
-    ImGui::BeginChild("##nodes", Theme::dpi(ImVec2(isLogic(document) ? 340.0f : 260.0f, 320.0f)));
+    ImGui::BeginChild("##nodes", Theme::dpi(ImVec2(logic ? 340.0f : 260.0f, 320.0f)));
     if (!words.empty()) {
-        // the names that start with what was typed come first, the short ones before the long
-        std::vector<const NodeType*> found;
-        for (const auto& [category, types] : categories)
-            found.insert(found.end(), types.begin(), types.end());
-        auto rank = [&](const NodeType* type) {
-            const std::string name = lower(type->name);
-            return name == search ? 0 : (name.rfind(words.front(), 0) == 0 ? 1 : (name.find(words.front()) != std::string::npos ? 2 : 3));
+        // the names that start with what was typed come first, the short ones before the long,
+        // and a graph's own node before one of an engine class with its name
+        struct Found {
+            int rank;
+            size_t length;
+            bool engine;
+            const NodeType* type;
         };
-        // a graph's own node before one of an engine class with its name
-        auto engine = [&](const NodeType* type) {
-            return isLogic(document) && logicCategoryColor(type->category) == logicCategoryColor(std::string());
-        };
-        std::stable_sort(found.begin(), found.end(), [&](const NodeType* a, const NodeType* b) {
-            const int rankA = rank(a), rankB = rank(b);
-            if (rankA != rankB)
-                return rankA < rankB;
-            if (a->name.size() != b->name.size())
-                return a->name.size() < b->name.size();
-            return !engine(a) && engine(b);
+        std::vector<Found> found;
+        for (const auto* group : {&categories, &engineCategories}) {
+            for (const auto& [category, types] : *group) {
+                for (const NodeType* type : types) {
+                    const std::string name = lower(type->name);
+                    const int rank = name == search ? 0 : (name.rfind(words.front(), 0) == 0 ? 1 : (name.find(words.front()) != std::string::npos ? 2 : 3));
+                    found.push_back({rank, name.size(), group == &engineCategories, type});
+                }
+            }
+        }
+        std::stable_sort(found.begin(), found.end(), [](const Found& a, const Found& b) {
+            return std::tie(a.rank, a.length, a.engine) < std::tie(b.rank, b.length, b.engine);
         });
-        list(found, isLogic(document));
+        std::vector<const NodeType*> ordered;
+        for (const Found& item : found)
+            ordered.push_back(item.type);
+        list(ordered, logic);
         if (listed > searchLimit)
             ImGui::TextDisabled("More match; type more to narrow them");
     } else {
-        // the engine's classes fold into one entry, after the graph's own categories
-        bool engineOpen = false;
-        bool engineShown = false;
-        for (int pass = 0; pass < 2; pass++) {
-            for (const auto& [category, types] : categories) {
-                const bool engine = isLogic(document) && logicCategoryColor(category) == logicCategoryColor(std::string());
-                if (engine != (pass == 1))
-                    continue;
-                if (engine && !engineShown) {
-                    engineShown = true;
-                    engineOpen = ImGui::TreeNode("Engine");
-                }
-                if (engine && !engineOpen)
-                    continue;
+        auto tree = [&](const std::map<std::string, std::vector<const NodeType*>>& group) {
+            for (const auto& [category, types] : group) {
                 if (ImGui::TreeNode(category.c_str())) {
                     list(types, false);
                     ImGui::TreePop();
                 }
             }
-        }
-        if (engineOpen)
+        };
+        tree(categories);
+        // the engine's classes fold into one entry
+        if (!engineCategories.empty() && ImGui::TreeNode("Engine")) {
+            tree(engineCategories);
             ImGui::TreePop();
+        }
     }
     ImGui::EndChild();
     if (enter && first)
@@ -1188,7 +1194,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
     GraphDocument& document = instance.document;
     bool changed = false;
 
-    const bool logic = isLogic(document);
+    const bool logic = GraphNodes::isLogic(document);
     if (!ImGui::CollapsingHeader(logic ? "Variables" : "Parameters", ImGuiTreeNodeFlags_DefaultOpen))
         return;
     if (ImGui::Button(logic ? ICON_FA_PLUS " Variable" : ICON_FA_PLUS " Parameter"))
@@ -1201,7 +1207,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         instance.parameter = 0;
         changed = true;
     }
-    ImGui::SetItemTooltip(logic ? "Remove the variable, and what reads it" : "Remove the parameter, and the links from it");
+    ImGui::SetItemTooltip(logic ? "Remove the variable; the nodes that name it lose it" : "Remove the parameter, and the links from it");
     ImGui::EndDisabled();
 
     if (ImGui::BeginPopup("##parameterTypes")) {
@@ -1221,11 +1227,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                 if (!document.findParameter(base + std::to_string(n)))
                     parameter.name = base + std::to_string(n);
             if (logic) {
-                const std::string valueType = LogicNodes::getVariablePinType(parameter.type);
-                if (parameter.type == "string")
-                    parameter.value = GraphValue();
-                else if (parameter.type != "entity")
-                    parameter.value = GraphValue(std::vector<float>(logicComponentCount(valueType), parameter.type.rfind("color", 0) == 0 ? 1.0f : 0.0f));
+                parameter.value = LogicNodes::getVariableDefault(parameter.type);
             } else if (isTexture(type)) {
                 parameter.value = GraphValue("white");
                 parameter.filter = "linear";
@@ -1265,7 +1267,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         ImGui::Separator();
         ImGui::PushID(parameter->id);
 
-        // a name keeps to what GLSL allows, and is taken once typed
+        // a name keeps to what GLSL and Lua allow, and is taken once typed
         const ImGuiID nameId = ImGui::GetID("##name");
         if (ImGui::GetActiveID() != nameId)
             instance.parameterName = parameter->name;
@@ -1291,7 +1293,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                 ImGui::TextDisabled("Set on the script in Properties");
             } else {
                 std::vector<float> values = parameter->value.numbers;
-                values.resize(logicComponentCount(valueType), 0.0f);
+                values.resize(LogicNodes::getComponentCount(valueType), 0.0f);
                 bool set = false;
                 if (parameter->type == "bool") {
                     bool on = values[0] != 0.0f;
@@ -1419,11 +1421,11 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
     }
     std::vector<NodePin> inputs, outputs;
     const NodeType* type = nullptr;
-    if (!nodePins(document, *node, inputs, outputs, &type)) {
+    if (!GraphNodes::getPins(document, *node, inputs, outputs, &type)) {
         ImGui::TextColored(errorColor, "There is no %s node.", node->type.c_str());
         return;
     }
-    const bool logic = isLogic(document);
+    const bool logic = GraphNodes::isLogic(document);
 
     ImGui::TextUnformatted(type->name.c_str());
     ImGui::PushTextWrapPos(0.0f);
@@ -1596,65 +1598,6 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         edit(instance, "node" + std::to_string(instance.inspected));
 }
 
-// the constant of a logic input nothing feeds, by its type
-bool editor::GraphEditorWindow::drawLogicConstant(GraphNode& node, const NodePin& pin) {
-    auto constant = node.inputs.find(pin.name);
-    const GraphValue current = constant != node.inputs.end() ? constant->second : pin.value;
-    const std::vector<std::string>& members = LogicNodes::getEnumMembers(pin.type);
-    bool changed = false;
-
-    if (pin.type == "bool") {
-        bool on = current.text.empty() ? current.number() != 0.0f : current.text == "true";
-        if (ImGui::Checkbox(pin.label.c_str(), &on)) {
-            node.inputs[pin.name] = GraphValue(on ? 1.0f : 0.0f);
-            changed = true;
-        }
-    } else if (pin.type == "number" || logicComponentCount(pin.type) > 1) {
-        std::vector<float> numbers = current.numbers;
-        numbers.resize(logicComponentCount(pin.type), 0.0f);
-        if (ImGui::DragScalarN(pin.label.c_str(), ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f)) {
-            node.inputs[pin.name] = GraphValue(numbers);
-            changed = true;
-        }
-    } else if (!members.empty()) {
-        if (ImGui::BeginCombo(pin.label.c_str(), current.text.empty() ? "(none)" : current.text.c_str())) {
-            for (const std::string& member : members) {
-                if (ImGui::Selectable(member.c_str(), member == current.text)) {
-                    node.inputs[pin.name] = GraphValue(member);
-                    changed = true;
-                }
-            }
-            ImGui::EndCombo();
-        }
-    } else if (pin.type == "string" || pin.type == "any") {
-        // a number typed into an any input stays a number
-        std::string text = current.text.empty() && !current.numbers.empty() ? formatNumber(current.number()) : current.text;
-        if (editText(pin.label.c_str(), text)) {
-            float number = 0.0f;
-            const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
-            const bool numeric = pin.type == "any" && !text.empty() && parsed.ec == std::errc() && parsed.ptr == text.data() + text.size();
-            if (text.empty())
-                node.inputs.erase(pin.name);
-            else
-                node.inputs[pin.name] = numeric ? GraphValue(number) : GraphValue(text);
-            changed = true;
-        }
-    } else {
-        // an engine object comes through a link
-        const bool self = pin.name == "self" && LogicNodes::isEntityClass(pin.type);
-        ImGui::TextDisabled("%s: %s", pin.label.c_str(), self ? "the script's entity" : (pin.type == "Scene" ? "the script's scene" : "not linked"));
-        return false;
-    }
-    if (constant != node.inputs.end() && !changed) {
-        if (inlineIcon(ICON_FA_ROTATE_LEFT)) {
-            node.inputs.erase(pin.name);
-            changed = true;
-        }
-        ImGui::SetItemTooltip("Back to the default");
-    }
-    return changed;
-}
-
 void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     // the scene shows the other types where they draw; a function, its first output on a mesh
     const bool mesh = instance.document.type == "mesh" || (instance.document.type == "function" && instance.compiled.type == "mesh");
@@ -1801,25 +1744,22 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     ImGui::SameLine();
     if (ImGui::Button(instance.showCode ? ICON_FA_DIAGRAM_PROJECT " Graph" : ICON_FA_CODE " Code"))
         instance.showCode = !instance.showCode;
-    const bool logic = isLogic(instance.document);
+    const bool logic = GraphNodes::isLogic(instance.document);
     ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : (logic ? "The Lua script the graph makes" : "The shader code the graph makes"));
     ImGui::SameLine();
-    if (logic) {
-        // the script is the .lua saved beside the graph
-        if (instance.compiled.success)
-            ImGui::TextDisabled(ICON_FA_CHECK " script");
-        else
-            ImGui::TextColored(errorColor, ICON_FA_TRIANGLE_EXCLAMATION " %d error%s", (int)instance.compiled.errors.size(), instance.compiled.errors.size() == 1 ? "" : "s");
-        return;
-    }
     const bool function = instance.document.type == "function";
-    ImGui::BeginDisabled(!instance.compiled.success || function);
-    if (ImGui::Button(ICON_FA_FILE_CODE " Convert"))
-        convertToCode(instance);
-    ImGui::SetItemTooltip(function ? "A function is used through Subgraph nodes" : "Write the code to a .glsl beside the graph, and use it where the graph is used");
-    ImGui::EndDisabled();
-    ImGui::SameLine();
-    if (instance.compiled.success && function)
+    // a logic graph's script is the .lua saved beside it already
+    if (!logic) {
+        ImGui::BeginDisabled(!instance.compiled.success || function);
+        if (ImGui::Button(ICON_FA_FILE_CODE " Convert"))
+            convertToCode(instance);
+        ImGui::SetItemTooltip(function ? "A function is used through Subgraph nodes" : "Write the code to a .glsl beside the graph, and use it where the graph is used");
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+    }
+    if (instance.compiled.success && logic)
+        ImGui::TextDisabled(ICON_FA_CHECK " script");
+    else if (instance.compiled.success && function)
         ImGui::TextDisabled(ICON_FA_CHECK " function");
     else if (instance.compiled.success)
         ImGui::TextDisabled(ICON_FA_CHECK " %s shader", instance.document.type.c_str());
@@ -1853,7 +1793,7 @@ void editor::GraphEditorWindow::drawCanvas(Instance& instance) {
             if (const GraphParameter* parameter = instance.document.findParameter(id)) {
                 std::string nodeType = "parameter";
                 std::string setting = "parameter";
-                if (isLogic(instance.document)) {
+                if (GraphNodes::isLogic(instance.document)) {
                     nodeType = "variable/get";
                     setting = "variable";
                 } else if (isTexture(parameter->type)) {
@@ -1873,7 +1813,7 @@ void editor::GraphEditorWindow::drawCanvas(Instance& instance) {
             for (size_t offset = 0; offset < (size_t)payload->DataSize;) {
                 const std::string path(data + offset);
                 offset += path.size() + 1;
-                if (isLogic(instance.document) || !isFunctionGraph(path))
+                if (GraphNodes::isLogic(instance.document) || !isFunctionGraph(path))
                     continue;
                 const int node = instance.document.addNode("utility/subgraph", snapped(position));
                 instance.document.findNode(node)->settings["file"] = GraphValue(toRelativePath(path));

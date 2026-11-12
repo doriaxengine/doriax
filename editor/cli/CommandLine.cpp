@@ -730,6 +730,11 @@ int CommandLine::runLogicNodesCommand(int argc, char** argv, const char* executa
                     graph.findNode(source)->settings["code"] = GraphValue("self");
                     graph.connect(source, "value", node, "self");
                 }
+                if (type.flow == LogicFlow::FOR_EACH) {
+                    const int list = graph.addNode("utility/expression", Vector2(0.0f, 200.0f));
+                    graph.findNode(list)->settings["code"] = GraphValue("{}");
+                    graph.connect(list, "value", node, "list");
+                }
                 const int print = graph.addNode("utility/print", Vector2(400.0f, 0.0f));
                 if (type.flow == LogicFlow::EVENT) {
                     graph.connectExecution(node, "out", print, "in");

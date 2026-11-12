@@ -119,6 +119,15 @@ const editor::NodeCanvas::NodeLayout* editor::NodeCanvas::findLayout(int id) con
     return nullptr;
 }
 
+static bool isExecutionInput(const editor::CanvasModel& model, int node, const std::string& pin) {
+    for (const editor::CanvasNode& item : model.nodes)
+        if (item.id == node)
+            for (const editor::CanvasPin& input : item.inputs)
+                if (input.name == pin)
+                    return input.execution;
+    return false;
+}
+
 ImVec2 editor::NodeCanvas::pinPosition(const CanvasModel& model, int node, const std::string& pin, bool output) const {
     const NodeLayout* layout = findLayout(node);
     for (const CanvasNode& item : model.nodes) {
@@ -391,8 +400,8 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             pinName = pin;
             pinOutput = output;
             detachedLink.clear();
-            // a fed input gives up its link, to be dropped elsewhere
-            if (!output) {
+            // a fed input gives up its link, to be dropped elsewhere; an execution input takes more
+            if (!output && !isExecutionInput(model, node, pin)) {
                 for (const CanvasLink& existing : model.links) {
                     if (existing.toNode == node && existing.toPin == pin) {
                         detachedLink.set(existing);

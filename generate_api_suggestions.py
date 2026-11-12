@@ -65,9 +65,9 @@ EXCLUDED_HEADER_METHODS = {
 
 class APISymbol:
     """Represents one symbol in the engine API."""
-    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound')
+    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared')
 
-    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None):
+    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False):
         self.name = name
         self.kind = kind
         self.detail = detail
@@ -75,6 +75,7 @@ class APISymbol:
         self.getter = getter  # getter of a writable property
         self.signature = signature  # (params, return) of a lambda binding
         self.bound = bound  # parameter types of the overload Lua gets, None when the binding names none
+        self.shared = shared  # a static property, read on the class
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -222,7 +223,8 @@ def parse_binding_file(filepath):
                     kind = 'Constant'
                 symbols.append(APISymbol(
                     pname, kind,
-                    f'{current_lua_name}.{pname}', current_lua_name
+                    f'{current_lua_name}.{pname}', current_lua_name,
+                    shared=True
                 ))
             continue
 
@@ -421,8 +423,8 @@ def _split_types(text):
 def _bound_types(text):
     """Parameter types of the overload a binding gives Lua, or None when it names none.
 
-    Of several, the one that takes a single value (a vector rather than its
-    numbers) is preferred, else the first.
+    Of several, the one without parameters is preferred, then the one that
+    takes a single value (a vector rather than its numbers), else the first.
     """
     found = []
     marker = 'luabridge::overload<'
@@ -441,7 +443,11 @@ def _bound_types(text):
     if not found:
         m = RE_BOUND_CAST.search(text)
         return _split_types(m.group(1)) if m else None
-    return next((types for types in found if len(types) == 1), found[0])
+    for count in (0, 1):
+        for types in found:
+            if len(types) == count:
+                return types
+    return found[0]
 
 
 def _param_type(param):
@@ -659,6 +665,15 @@ def generate_header(symbols, output_path):
     lines.append('    const char* parent; // owning class/enum')
     lines.append('};')
     lines.append('')
+    # ── Static properties, as "Class.name" ───────────────────────────────
+    lines.append('inline std::unordered_set<std::string> getEngineStaticProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.shared and s.kind == 'Property')):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
     lines.append('inline const std::vector<EngineAPISymbol>& getEngineAPISymbols() {')
     lines.append('    static const std::vector<EngineAPISymbol> symbols = {')
 

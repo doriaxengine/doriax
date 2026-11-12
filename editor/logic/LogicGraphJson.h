@@ -4,7 +4,7 @@
 #pragma once
 
 #include "LogicNodes.h"
-#include "shader/graph/ShaderGraphJson.h"
+#include "graph/GraphJson.h"
 
 namespace doriax::editor {
 
