@@ -125,6 +125,19 @@ namespace {
         return changed;
     }
 
+    // an icon beside a value, as Properties draws its reset arrow
+    bool inlineIcon(const char* label) {
+        ImGui::SameLine(0.0f, 2.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2.0f, ImGui::GetStyle().FramePadding.y));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        const bool pressed = ImGui::Button(label);
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(2);
+        return pressed;
+    }
+
     bool editTextMultiline(const char* label, std::string& text, const ImVec2& size, ImGuiInputTextFlags flags = 0) {
         std::vector<char> buffer = textBuffer(text);
         const bool changed = ImGui::InputTextMultiline(label, buffer.data(), buffer.size(), size, flags);
@@ -960,17 +973,14 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
     GraphDocument& document = instance.document;
     bool changed = false;
 
-    const ImGuiStyle& style = ImGui::GetStyle();
-    const float right = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-    const float buttons = ImGui::CalcTextSize(ICON_FA_PLUS).x + ImGui::CalcTextSize(ICON_FA_MINUS).x + style.FramePadding.x * 4.0f + style.ItemSpacing.x;
-    ImGui::TextDisabled("Parameters");
-    ImGui::SameLine(right - buttons);
-    if (ImGui::SmallButton(ICON_FA_PLUS "##addParameter"))
+    if (!ImGui::CollapsingHeader("Parameters", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    if (ImGui::Button(ICON_FA_PLUS " Parameter"))
         ImGui::OpenPopup("##parameterTypes");
     ImGui::SetItemTooltip("Add a parameter");
     ImGui::SameLine();
     ImGui::BeginDisabled(!document.findParameter(instance.parameter));
-    if (ImGui::SmallButton(ICON_FA_MINUS "##removeParameter")) {
+    if (ImGui::Button(ICON_FA_TRASH_CAN "##removeParameter")) {
         document.removeParameter(instance.parameter);
         instance.parameter = 0;
         changed = true;
@@ -1260,8 +1270,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             // fed by a parameter straight
             const GraphParameter* parameter = document.findParameter(link->fromNode);
             ImGui::TextDisabled("%s: %s", pin.label.c_str(), parameter ? parameter->name.c_str() : "?");
-            ImGui::SameLine();
-            if (ImGui::SmallButton(ICON_FA_XMARK)) {
+            if (inlineIcon(ICON_FA_XMARK)) {
                 document.disconnect(node->id, pin.name);
                 changed = true;
             }
@@ -1270,7 +1279,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             // an output left to the shader, or a context default
             ImGui::TextDisabled("%s: %s", pin.label.c_str(), slot ? "not set" : describeValue(pin.value).c_str());
             ImGui::SameLine();
-            if (ImGui::SmallButton("Set")) {
+            if (ImGui::Button("Set")) {
                 const std::string valueType = pin.type == "dynamic" ? "float" : pin.type;
                 node->inputs[pin.name] = GraphValue(std::vector<float>(componentCount(valueType), valueType == "color" ? 1.0f : 0.0f));
                 changed = true;
@@ -1299,8 +1308,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
                 changed = true;
             }
             if (constant != node->inputs.end()) {
-                ImGui::SameLine();
-                if (ImGui::SmallButton(ICON_FA_ROTATE_LEFT)) {
+                if (inlineIcon(ICON_FA_ROTATE_LEFT)) {
                     node->inputs.erase(pin.name);
                     changed = true;
                 }
@@ -1348,26 +1356,27 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
 
     const float width = ImGui::GetContentRegionAvail().x;
     Widgets::image(Backend::getImGuiTexture(preview.getTexture().getRender()), ImVec2(width, width));
-    static const std::pair<const char*, ShaderPreviewRender::ShapeType> shapes[] = {
-        {ICON_FA_CIRCLE "##sphere", ShaderPreviewRender::ShapeType::SPHERE},
-        {ICON_FA_CUBE "##cube", ShaderPreviewRender::ShapeType::CUBE},
-        {ICON_FA_SQUARE "##plane", ShaderPreviewRender::ShapeType::PLANE}};
-    for (const auto& [label, shape] : shapes) {
-        if (shape != ShaderPreviewRender::ShapeType::SPHERE)
+    // the shapes as the scene toolbar shows its modes: the one in use is disabled
+    static const struct { const char* label; ShaderPreviewRender::ShapeType shape; const char* tooltip; } shapes[] = {
+        {ICON_FA_CIRCLE "##sphere", ShaderPreviewRender::ShapeType::SPHERE, "Sphere"},
+        {ICON_FA_CUBE "##cube", ShaderPreviewRender::ShapeType::CUBE, "Cube"},
+        {ICON_FA_SQUARE "##plane", ShaderPreviewRender::ShapeType::PLANE, "Plane"}};
+    for (const auto& item : shapes) {
+        if (item.shape != ShaderPreviewRender::ShapeType::SPHERE)
             ImGui::SameLine();
-        const bool current = preview.getShape() == shape;
-        if (current)
-            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-        if (ImGui::SmallButton(label))
-            preview.setShape(shape);
-        if (current)
-            ImGui::PopStyleColor();
+        ImGui::BeginDisabled(preview.getShape() == item.shape);
+        if (ImGui::Button(item.label))
+            preview.setShape(item.shape);
+        ImGui::SetItemTooltip("%s", item.tooltip);
+        ImGui::EndDisabled();
     }
-    ImGui::SameLine();
+    ImGui::SameLine(0.0f, Theme::dpi(10.0f));
+    ImGui::Dummy(ImVec2(1.0f, Theme::dpi(20.0f)));
+    ImGui::SameLine(0.0f, Theme::dpi(10.0f));
     const bool selection = instance.previewSelection;
     if (selection)
-        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
-    if (ImGui::SmallButton(ICON_FA_CROSSHAIRS "##node"))
+        ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::ButtonActivated);
+    if (ImGui::Button(ICON_FA_CROSSHAIRS "##node"))
         instance.previewSelection = !instance.previewSelection;
     if (selection)
         ImGui::PopStyleColor();
@@ -1578,10 +1587,10 @@ void editor::GraphEditorWindow::show() {
             if (instance.changedOnDisk) {
                 ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION " The file changed on disk.");
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Reload"))
+                if (ImGui::Button("Reload"))
                     load(instance);
                 ImGui::SameLine();
-                if (ImGui::SmallButton("Keep mine"))
+                if (ImGui::Button("Keep mine"))
                     instance.changedOnDisk = false;
             }
             drawToolbar(instance);
