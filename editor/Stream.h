@@ -128,6 +128,8 @@ namespace doriax::editor {
 
         static YAML::Node encodeShaderUniforms(const ShaderUniformValues& uniforms);
         static ShaderUniformValues decodeShaderUniforms(const YAML::Node& node);
+        static YAML::Node encodeShaderTextures(const ShaderTextureValues& textures, bool embedTextureData = true);
+        static ShaderTextureValues decodeShaderTextures(const YAML::Node& node);
 
         static YAML::Node encodeRect(const Rect& rect);
         static Rect decodeRect(const YAML::Node& node);

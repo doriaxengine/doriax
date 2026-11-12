@@ -725,6 +725,7 @@ namespace doriax{
 
 		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
 		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
+		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		void updateSwapchainRedirect();
@@ -775,7 +776,7 @@ namespace doriax{
 		void loadShadowTextures(ShaderData& shaderData, ObjectRender& render, bool receiveLights, bool receiveShadow);
 		void updateShadowBindings();
 		// the textures a shader declares
-		bool loadShaderTextures(Material& material, ShaderData& shaderData, ObjectRender& render);
+		bool loadShaderTextures(ShaderTextureValues& textures, ShaderData& shaderData, ObjectRender& render);
 		static TextureRender* getShaderSampler(TextureFilter filter, TextureWrap wrap);
 		bool loadDepthTexture(Material& material, ShaderData& shaderData, ObjectRender& render);
 		bool loadGBufferTextures(Material& material, ShaderData& shaderData, ObjectRender& render);

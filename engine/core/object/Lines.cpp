@@ -210,20 +210,20 @@ void Lines::clearLines(){
     }
 }
 
-void Lines::setCustomShader(const std::string& path){
+void Lines::setShader(const std::string& path){
     LinesComponent& lines = getComponent<LinesComponent>();
 
-    if (lines.customShader != path){
-        lines.customShader = path;
+    if (lines.shader != path){
+        lines.shader = path;
 
         lines.needReload = true;
     }
 }
 
-std::string Lines::getCustomShader() const{
+std::string Lines::getShader() const{
     LinesComponent& lines = getComponent<LinesComponent>();
 
-    return lines.customShader;
+    return lines.shader;
 }
 
 void Lines::setShaderUniform(const std::string& name, const Vector4& value){
@@ -259,4 +259,17 @@ bool Lines::removeShaderUniform(const std::string& name){
 
     lines.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Lines::setShaderTexture(const std::string& name, const Texture& texture){
+    LinesComponent& lines = getComponent<LinesComponent>();
+
+    ShaderTextures::set(lines.shaderTextures, name, texture);
+    lines.needReload = true;
+}
+
+Texture Lines::getShaderTexture(const std::string& name) const{
+    LinesComponent& lines = getComponent<LinesComponent>();
+
+    return ShaderTextures::get(lines.shaderTextures, name);
 }

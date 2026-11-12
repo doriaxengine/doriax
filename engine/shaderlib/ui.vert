@@ -20,14 +20,23 @@ in vec3 a_position;
     out vec4 v_color;
 #endif
 
-#if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE)
+// every UI buffer has UVs, the hooks read them without a texture too
+#if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE) || defined(HOOK_UV1)
     in vec2 a_texcoord1;
+#endif
+#if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     out vec2 v_uv1;
+#endif
+#ifdef HOOK_FRAGMENT_POSITION
+    out vec3 v_hookPosition;
 #endif
 
 
 
 #include "includes/parameters_vs.glsl"
+#ifdef USE_VERTEX_HOOKS
+    #include "includes/hooks_vs.glsl"
+#endif
 
 void main() {
     loadShaderParameters();
@@ -36,11 +45,23 @@ void main() {
         v_color = a_color;
     #endif
 
-    #if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE)
+    #if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
         v_uv1 = a_texcoord1;
     #endif
 
-    gl_Position = uiParams.mvpMatrix * vec4(a_position, 1.0);
+    #if defined(USE_VERTEX_HOOKS) || defined(HOOK_FRAGMENT_POSITION)
+        vec3 position = a_position;
+        #ifdef USE_VERTEX_HOOKS
+            VertexContext context = getVertexContext(position, (paramsVS.effect_modelToWorld * vec4(position, 1.0)).xyz, mat4(1.0));
+            position += getModelOffset(context);
+        #endif
+        #ifdef HOOK_FRAGMENT_POSITION
+            v_hookPosition = (paramsVS.effect_modelToWorld * vec4(position, 1.0)).xyz;
+        #endif
+        gl_Position = uiParams.mvpMatrix * vec4(position, 1.0);
+    #else
+        gl_Position = uiParams.mvpMatrix * vec4(a_position, 1.0);
+    #endif
     #ifdef IS_VULKAN
         // GL [-1,1] to Vulkan [0,1] depth range (spirv-cross fixup_clipspace equivalent)
         gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;

@@ -105,6 +105,7 @@ namespace doriax{
         int worldToView = -1;
         int projection = -1;
         int flipY = -1;
+        int modelToWorld = -1;
         bool shared = false;     // has SCENE or VIEW members
 
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);

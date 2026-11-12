@@ -3,6 +3,7 @@
 
 #include "ShaderParameterParser.h"
 #include "shader/ShaderParameters.h"
+#include "pool/ShaderPool.h"
 #include "util/Util.h"
 
 #include <algorithm>
@@ -615,6 +616,13 @@ std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::
     return errors;
 }
 
+std::string editor::ShaderParameterParser::getShaderFileType(ShaderType shaderType){
+    if (shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER)
+        return "mesh";
+
+    return ShaderPool::getShaderTypeName(shaderType, true);
+}
+
 std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures){
     const std::string suffix = stage == ShaderStageType::VERTEX ? "VS" : "FS";
@@ -648,6 +656,9 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     }
     if (context & HookContext_Clip){
         addEngine(ShaderUniformType::FLOAT, "effect_flipY", "flipY", "");
+    }
+    if (context & HookContext_Model){
+        addEngine(ShaderUniformType::MAT4, "effect_modelToWorld", "modelToWorld", "");
     }
     // Engine.time and Engine.resolution, only where the code reads them
     std::string engineStruct;

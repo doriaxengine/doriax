@@ -123,8 +123,9 @@ namespace doriax{
         void setWakeFade(float wakeFade);
         float getWakeFade() const;
 
-        void setCustomShader(const std::string& path);
-        std::string getCustomShader() const;
+        // .glsl file with the shader hooks
+        void setShader(const std::string& path);
+        std::string getShader() const;
 
         void setCustomUnderwaterShader(const std::string& path);
         std::string getCustomUnderwaterShader() const;
@@ -135,6 +136,9 @@ namespace doriax{
         void setShaderUniform(const std::string& name, float value);
         Vector4 getShaderUniform(const std::string& name) const;
         bool removeShaderUniform(const std::string& name);
+
+        void setShaderTexture(const std::string& name, const Texture& texture);
+        Texture getShaderTexture(const std::string& name) const;
 
         // surface at the world point (x, z), waves included
         float getHeight(float x, float z) const;

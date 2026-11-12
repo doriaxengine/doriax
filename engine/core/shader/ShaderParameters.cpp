@@ -187,6 +187,8 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
                 projection = index;
             }else if (info->name == "flipY"){
                 flipY = index;
+            }else if (info->name == "modelToWorld" && member.type == ShaderUniformType::MAT4){
+                modelToWorld = index;
             }else{
                 continue;
             }
@@ -237,6 +239,7 @@ void ShaderParameterBlock::clear(){
     worldToView = -1;
     projection = -1;
     flipY = -1;
+    modelToWorld = -1;
     shared = false;
 }
 
@@ -294,6 +297,9 @@ void ShaderParameterBlock::writeVertexContext(const ShaderEffectView& view, cons
     }
     if (flipY != -1){
         writeValue(data, bindings[flipY], Vector4(view.flipY ? -1.0f : 1.0f, 0.0f, 0.0f, 0.0f));
+    }
+    if (modelToWorld != -1){
+        writeFloats(data, bindings[modelToWorld].offset, &modelMatrix[0][0], 16);
     }
 }
 

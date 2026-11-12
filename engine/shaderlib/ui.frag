@@ -20,12 +20,20 @@ out vec4 g_finalColor;
 #if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE)
     uniform texture2D u_uiTexture;
     uniform sampler u_ui_smp;
+#endif
+#if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     in vec2 v_uv1;
+#endif
+#ifdef HOOK_FRAGMENT_POSITION
+    in vec3 v_hookPosition;
 #endif
 
 #include "includes/srgb.glsl"
 
 #include "includes/parameters_fs.glsl"
+#ifdef USE_FRAGMENT_HOOKS
+    #include "includes/hooks_color_fs.glsl"
+#endif
 
 vec4 getVertexColor(){
    vec4 color = vec4(1.0, 1.0, 1.0, 1.0);
@@ -51,10 +59,43 @@ vec4 getBaseColor(){
     return baseColor * getVertexColor();
 }
 
+#ifdef USE_FRAGMENT_HOOKS
+    // the parts of the built-in color, sampled once
+    FragmentContext getUIContext(){
+        FragmentContext context;
+        context.worldPosition = vec3(0.0);
+        context.uv1 = vec2(0.0);
+        #ifdef HOOK_FRAGMENT_POSITION
+            context.worldPosition = v_hookPosition;
+        #endif
+        #if defined(HAS_TEXTURE) || defined(HAS_FONTATLAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
+            context.uv1 = v_uv1;
+        #endif
+        context.color = getVertexColor();
+        context.textureColor = vec4(1.0);
+        #ifdef HAS_TEXTURE
+            context.textureColor = sRGBToLinear(texture(sampler2D(u_uiTexture, u_ui_smp), v_uv1));
+        #endif
+        #ifdef HAS_FONTATLAS_TEXTURE
+            context.textureColor.a = texture(sampler2D(u_uiTexture, u_ui_smp), v_uv1).r;
+        #endif
+        context.tint = uiParams.color;
+        context.pixel = gl_FragCoord.xy;
+        return context;
+    }
+#endif
+
 void main() {  
     loadShaderParameters();
 
-    vec4 color = getBaseColor();
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context = getUIContext();
+        vec4 color = context.tint * context.textureColor * context.color;
+        color.a *= keepHookInputs(context);
+        color = getColor(context, color);
+    #else
+        vec4 color = getBaseColor();
+    #endif
 
     g_finalColor = (vec4(linearTosRGB(color.rgb), color.a));
 }

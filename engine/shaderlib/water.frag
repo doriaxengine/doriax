@@ -122,6 +122,18 @@ float clampedDot(vec3 x, vec3 y){
 #include "includes/srgb.glsl"
 #include "includes/brdf.glsl"
 #include "includes/punctual.glsl"
+
+#ifdef USE_FRAGMENT_HOOKS
+    struct FragmentContext {
+        vec3 worldPosition;
+        vec3 normal;          // the rippled surface, world space
+        vec3 view;            // toward the eye
+        vec2 pixel;
+    };
+
+    // the fragment stage of the shader file, mapped in by the shader builder
+    #include "shader_hooks_fs.glsl"
+#endif
 #if defined(USE_SCENE_DEPTH) || defined(USE_SHADOWS)
     #include "includes/depth_util.glsl"
 #endif
@@ -628,5 +640,15 @@ void main(){
         discard;
     }
 
-    g_finalColor = vec4(linearTosRGB(color + transmitted), alpha);
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context;
+        context.worldPosition = v_position;
+        context.normal = n;
+        context.view = v;
+        context.pixel = gl_FragCoord.xy;
+        vec4 hooked = getColor(context, vec4(color + transmitted, alpha));
+        g_finalColor = vec4(linearTosRGB(hooked.rgb), hooked.a);
+    #else
+        g_finalColor = vec4(linearTosRGB(color + transmitted), alpha);
+    #endif
 }

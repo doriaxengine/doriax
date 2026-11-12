@@ -114,12 +114,12 @@ static std::string shaderForkName(const std::string& shader) {
     return std::filesystem::path(editor::Util::resolveCustomShaderPaths(shader).frag).stem().string();
 }
 
-// a component rendering with its scene default fork fell back to the built-in
-template<typename T>
-static bool isDefaultShaderFailed(Scene* scene, editor::ComponentType cpType) {
+// a component rendering with its scene default shader fell back to the built-in
+template<typename T, typename Field>
+static bool isDefaultShaderFailed(Scene* scene, editor::ComponentType cpType, Field shader) {
     auto components = scene->getComponentArray<T>();
     for (size_t i = 0; i < components->size(); i++) {
-        if (components->getComponentFromIndex(i).customShader.empty() &&
+        if ((components->getComponentFromIndex(i).*shader).empty() &&
                 editor::Catalog::isCustomShaderBuildFailed(scene, components->getEntity(i), cpType))
             return true;
     }
@@ -128,12 +128,12 @@ static bool isDefaultShaderFailed(Scene* scene, editor::ComponentType cpType) {
 
 static bool isSceneDefaultShaderFailed(Scene* scene, ShaderType type) {
     switch (type) {
-        case ShaderType::MESH:   return isDefaultShaderFailed<MeshComponent>(scene, editor::ComponentType::MeshComponent);
-        case ShaderType::UI:     return isDefaultShaderFailed<UIComponent>(scene, editor::ComponentType::UIComponent);
-        case ShaderType::SKYBOX: return isDefaultShaderFailed<SkyComponent>(scene, editor::ComponentType::SkyComponent);
-        case ShaderType::POINTS: return isDefaultShaderFailed<PointsComponent>(scene, editor::ComponentType::PointsComponent);
-        case ShaderType::LINES:  return isDefaultShaderFailed<LinesComponent>(scene, editor::ComponentType::LinesComponent);
-        case ShaderType::WATER:  return isDefaultShaderFailed<WaterComponent>(scene, editor::ComponentType::WaterComponent);
+        case ShaderType::MESH:   return isDefaultShaderFailed<MeshComponent>(scene, editor::ComponentType::MeshComponent, &MeshComponent::customShader);
+        case ShaderType::UI:     return isDefaultShaderFailed<UIComponent>(scene, editor::ComponentType::UIComponent, &UIComponent::shader);
+        case ShaderType::SKYBOX: return isDefaultShaderFailed<SkyComponent>(scene, editor::ComponentType::SkyComponent, &SkyComponent::shader);
+        case ShaderType::POINTS: return isDefaultShaderFailed<PointsComponent>(scene, editor::ComponentType::PointsComponent, &PointsComponent::shader);
+        case ShaderType::LINES:  return isDefaultShaderFailed<LinesComponent>(scene, editor::ComponentType::LinesComponent, &LinesComponent::shader);
+        case ShaderType::WATER:  return isDefaultShaderFailed<WaterComponent>(scene, editor::ComponentType::WaterComponent, &WaterComponent::shader);
         default:                 return false;
     }
 }
@@ -5095,14 +5095,15 @@ void editor::Properties::commitShaderFork(uint32_t sceneId, std::unique_ptr<Fork
 }
 
 void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities){
-    // The custom shader is per-component. The fork dialog chooses its project-relative
-    // destination; engine includes still resolve through the embedded library unless the
-    // user creates private copies. Shown only for a single selection.
+    // The custom shader is per-component: a mesh's fork, one shader file for the others.
+    // Shown only for a single selection.
     if (entities.size() != 1)
         return;
 
     Entity shaderEntity = entities[0];
-    if (!Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, "customShader"))
+    const bool fork = cpType == ComponentType::MeshComponent;
+    const std::string* shader = Catalog::getPropertyRef<std::string>(sceneProject->scene, shaderEntity, cpType, fork ? "customShader" : "shader");
+    if (!shader)
         return;
 
     const char* longestLabel = "Shader";
@@ -5115,7 +5116,16 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
     ImGui::SeparatorText("Shaders");
     beginTable(cpType, labelSize, "custom_shader_table");
     propertyHeader("Shader");
-    drawComponentShaderRow(cpType, shaderType, sceneProject, shaderEntity, "customShader", "custom_shader");
+    if (fork) {
+        drawComponentShaderRow(cpType, shaderType, sceneProject, shaderEntity, "customShader", "custom_shader");
+    } else {
+        const uint32_t sceneId = sceneProject->id;
+        auto setShader = [&](const std::string& path) {
+            CommandHandle::get(sceneId)->addCommandNoMerge(new PropertyCmd<std::string>(project, sceneId, shaderEntity, cpType, "shader", path));
+        };
+        drawShaderFileRow(shaderType, *shader, sceneProject->scene->getEntityName(shaderEntity), setShader, "custom_shader",
+                          shader->empty() ? sceneProject->scene->getDefaultCustomShader(shaderType) : std::string());
+    }
 
     // shadow maps and the depth pre-pass have their own fork, so a mesh fork that displaces
     // vertices or discards can keep its shadows in step
@@ -5198,15 +5208,9 @@ void editor::Properties::drawComponentShaderRow(ComponentType cpType, ShaderType
                           currentShader.empty() ? sceneProject->scene->getDefaultCustomShader(shaderType) : std::string());
 }
 
-// one .glsl file, unlike the .vert/.frag pair of a fork
 void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged){
-    const std::filesystem::path projectPath = project->getProjectPath();
     const std::string propertyName = "submeshes[" + std::to_string(submesh) + "].material.shader";
-    const std::string idSuffix = "material_shader_" + std::to_string(submesh);
     const std::string* value = Catalog::getPropertyRef<std::string>(sceneProject->scene, entities[0], ComponentType::MeshComponent, propertyName);
-    const std::string current = value ? *value : std::string();
-    const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
-    const bool engineShader = !exists && ProjectUtils::isEngineShader(current);
     const uint32_t sceneId = sceneProject->id;
 
     auto setShader = [&](const std::string& path) {
@@ -5217,6 +5221,18 @@ void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const
         if (onChanged)
             onChanged();
     };
+    drawShaderFileRow(ShaderType::MESH, value ? *value : std::string(), sceneProject->scene->getEntityName(entities[0]), setShader,
+                      "material_shader_" + std::to_string(submesh));
+}
+
+// one .glsl file, unlike the .vert/.frag pair of a fork
+void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::string& current, const std::string& defaultName,
+                                           const std::function<void(const std::string&)>& setShader, const std::string& idSuffix,
+                                           const std::string& inheritedShader){
+    const std::filesystem::path projectPath = project->getProjectPath();
+    const bool exists = !current.empty() && std::filesystem::exists(projectPath / current);
+    const bool engineShader = !exists && ProjectUtils::isEngineShader(current);
+    const std::vector<std::string> presets = ProjectUtils::getEngineShaders(shaderType);
     auto useFile = [&](const std::string& path) {
         std::error_code ec;
         std::filesystem::path rel = std::filesystem::relative(path, projectPath, ec);
@@ -5231,7 +5247,11 @@ void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const
             codeEditor->openFile((projectPath / rel).string(), true);
     };
 
-    if (current.empty())
+    if (current.empty() && !inheritedShader.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::TextWrapped("%s (scene default)", inheritedShader.c_str());
+        ImGui::PopStyleColor();
+    } else if (current.empty())
         ImGui::TextDisabled("None");
     else if (engineShader)
         ImGui::TextWrapped("%s (built-in)", current.c_str());
@@ -5242,7 +5262,7 @@ void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const
 
     ImGui::BeginDisabled(!current.empty());
     if (ImGui::Button((std::string(ICON_FA_FILE_CIRCLE_PLUS "##new_") + idSuffix).c_str())) {
-        std::string created = ProjectUtils::writeShaderTemplate(projectPath, sceneProject->scene->getEntityName(entities[0]));
+        std::string created = ProjectUtils::writeShaderTemplate(projectPath, defaultName, shaderType);
         if (created.empty()) {
             Backend::getApp().registerAlert("Error", "Could not write the shader file.");
         } else {
@@ -5254,14 +5274,17 @@ void editor::Properties::drawMaterialShaderRow(SceneProject* sceneProject, const
         ImGui::SetTooltip("Create a shader file from a template");
     ImGui::EndDisabled();
 
-    ImGui::SameLine();
+    // the engine's ready-made shaders of this type
     const std::string presetsPopup = "engine_shaders_" + idSuffix;
-    if (ImGui::Button((std::string(ICON_FA_WIND "##engine_") + idSuffix).c_str()))
-        ImGui::OpenPopup(presetsPopup.c_str());
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("Use one of the engine's shaders");
+    if (!presets.empty()) {
+        ImGui::SameLine();
+        if (ImGui::Button((std::string(ICON_FA_WIND "##engine_") + idSuffix).c_str()))
+            ImGui::OpenPopup(presetsPopup.c_str());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Use one of the engine's shaders");
+    }
     if (ImGui::BeginPopup(presetsPopup.c_str())) {
-        for (const std::string& preset : ProjectUtils::getEngineShaders()) {
+        for (const std::string& preset : presets) {
             if (ImGui::Selectable(preset.c_str(), preset == current))
                 setShader(preset);
             // the first line of the file says what it does
@@ -5487,12 +5510,12 @@ bool editor::Properties::drawShaderParameters(const std::string& title, uint32_t
 void editor::Properties::drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity){
     Scene* scene = sceneProject->scene;
     const ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(scene, entity, cpType, "shaderUniforms");
-    const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "customShader");
-    if (!valuesRef || !customShader)
+    const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, cpType == ComponentType::MeshComponent ? "customShader" : "shader");
+    if (!valuesRef || !shader)
         return;
 
     const ShaderUniformValues values = *valuesRef;
-    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(shaderType, *customShader);
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(shaderType, *shader);
     const uint32_t sceneId = sceneProject->id;
     const std::vector<std::pair<std::string, bool>> sources = ProjectUtils::getComponentShaderSources(scene, cpType, shaderType, entity);
 
@@ -5510,11 +5533,38 @@ void editor::Properties::drawComponentShaderParameters(ComponentType cpType, Sha
         // a fork and an effect file can share a title
         ImGui::PushID(source.c_str());
         const std::string title = fork ? shaderForkName(source) : std::filesystem::path(source).stem().string();
+        if (!fork)
+            drawShaderTextureRows(cpType, sceneProject, {entity}, getShaderAnnotations(source, false), "", nullptr);
         drawShaderParameters(title, sceneId, getShaderAnnotations(source, fork), values, inherited, [&](const ShaderUniformValues& newValues) -> Command* {
             return new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, cpType, "shaderUniforms", newValues);
         });
         ImGui::PopID();
     }
+}
+
+// the declaration sets the filter and wrap of each
+void editor::Properties::drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, const std::vector<Entity>& entities,
+                                               const ShaderEffectAnnotations& annotations, const std::string& prefix, const std::function<void()>& onChanged){
+    std::vector<const ShaderParameterDeclaration*> textures;
+    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (declaration.texture && std::none_of(textures.begin(), textures.end(), [&](const ShaderParameterDeclaration* other) { return other->name == declaration.name; }))
+            textures.push_back(&declaration);
+    }
+    if (textures.empty())
+        return;
+
+    beginTable(cpType, getLabelSize("Met. Roug. Texture"), prefix + "shader_textures");
+    for (const ShaderParameterDeclaration* declaration : textures) {
+        RowSettings settings;
+        settings.child = true;
+        settings.help = declaration->description;
+        settings.onValueChanged = onChanged;
+        settings.allowTextureSettings = false;
+        const bool cube = declaration->textureType == TextureType::TEXTURE_CUBE;
+        propertyRow(cube ? RowPropertyType::TextureCube : RowPropertyType::Texture, cpType,
+            prefix + "shaderTextures[" + declaration->name + "]", declaration->name, sceneProject, entities, settings);
+    }
+    endTable();
 }
 
 void editor::Properties::drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged){
@@ -5528,22 +5578,7 @@ void editor::Properties::drawMaterialShaderParameters(SceneProject* sceneProject
     const uint32_t sceneId = sceneProject->id;
 
     const ShaderEffectAnnotations& annotations = getShaderAnnotations(shader, false);
-    std::set<std::string> drawn;
-    beginTable(ComponentType::MeshComponent, getLabelSize("Met. Roug. Texture"), "submeshes_material_textures");
-    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
-        if (!declaration.texture || !drawn.insert(declaration.name).second)
-            continue;
-        RowSettings settings;
-        settings.child = true;
-        settings.help = declaration.description;
-        settings.onValueChanged = onChanged;
-        // the declaration sets the filter and wrap
-        settings.allowTextureSettings = false;
-        const bool cube = declaration.textureType == TextureType::TEXTURE_CUBE;
-        propertyRow(cube ? RowPropertyType::TextureCube : RowPropertyType::Texture, ComponentType::MeshComponent,
-            "submeshes[" + std::to_string(submesh) + "].material.shaderTextures[" + declaration.name + "]", declaration.name, sceneProject, entities, settings);
-    }
-    endTable();
+    drawShaderTextureRows(ComponentType::MeshComponent, sceneProject, entities, annotations, "submeshes[" + std::to_string(submesh) + "].material.", onChanged);
 
     ImGui::PushID(propertyName.c_str());
     drawShaderParameters(std::filesystem::path(shader).stem().string(), sceneId, annotations, values, &mesh->shaderUniforms,
@@ -5568,26 +5603,26 @@ std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectShare
         result.push_back(declaration);
     };
 
-    // every shader file of the scene: forks (true) and effect files (false)
+    // every shader of the scene: forks (true) and shader files (false)
     Scene* scene = sceneProject->scene;
     std::set<std::pair<std::string, bool>> sources;
     auto addSource = [&](const std::string& shader, bool fork) {
         if (!shader.empty())
             sources.insert({shader, fork});
     };
-    auto addForks = [&](const auto& components, ShaderType type) {
-        addSource(scene->getDefaultCustomShader(type), true);
+    auto addShaders = [&](const auto& components, ShaderType type, auto shader, bool fork) {
+        addSource(scene->getDefaultCustomShader(type), fork);
         for (size_t i = 0; i < components->size(); i++)
-            addSource(components->getComponentFromIndex(i).customShader, true);
+            addSource(components->getComponentFromIndex(i).*shader, fork);
     };
     auto meshes = scene->getComponentArray<MeshComponent>();
     auto waters = scene->getComponentArray<WaterComponent>();
-    addForks(meshes, ShaderType::MESH);
-    addForks(scene->getComponentArray<UIComponent>(), ShaderType::UI);
-    addForks(scene->getComponentArray<PointsComponent>(), ShaderType::POINTS);
-    addForks(scene->getComponentArray<LinesComponent>(), ShaderType::LINES);
-    addForks(scene->getComponentArray<SkyComponent>(), ShaderType::SKYBOX);
-    addForks(waters, ShaderType::WATER);
+    addShaders(meshes, ShaderType::MESH, &MeshComponent::customShader, true);
+    addShaders(scene->getComponentArray<UIComponent>(), ShaderType::UI, &UIComponent::shader, false);
+    addShaders(scene->getComponentArray<PointsComponent>(), ShaderType::POINTS, &PointsComponent::shader, false);
+    addShaders(scene->getComponentArray<LinesComponent>(), ShaderType::LINES, &LinesComponent::shader, false);
+    addShaders(scene->getComponentArray<SkyComponent>(), ShaderType::SKYBOX, &SkyComponent::shader, false);
+    addShaders(waters, ShaderType::WATER, &WaterComponent::shader, false);
     for (size_t i = 0; i < meshes->size(); i++) {
         const MeshComponent& mesh = meshes->getComponentFromIndex(i);
         addSource(mesh.customDepthShader, true);
@@ -5657,8 +5692,8 @@ void editor::Properties::drawCameraShaderParameters(SceneProject* sceneProject, 
 }
 
 void editor::Properties::drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label){
-    // Scene default shader: used by every component of this type whose customShader is
-    // empty (priority: component shader > scene default > built-in).
+    // Scene default shader: used by every component of this type without a shader of
+    // its own (priority: component shader > scene default > built-in).
     const std::string currentShader = Catalog::getSceneProperty<std::string>(sceneProject->scene, scenePropertyName);
 
     auto setShader = [&](const std::string& value) {
@@ -5692,7 +5727,10 @@ void editor::Properties::drawSceneShaderRow(SceneProject* sceneProject, ShaderTy
     ImGui::Text("%s", label);
     ImGui::TableSetColumnIndex(1);
 
-    drawShaderRowContents(shaderType, currentShader, setShader, onFork, scenePropertyName);
+    if (shaderType == ShaderType::MESH)
+        drawShaderRowContents(shaderType, currentShader, setShader, onFork, scenePropertyName);
+    else
+        drawShaderFileRow(shaderType, currentShader, defaultName, setShader, scenePropertyName);
 }
 
 void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
@@ -14635,12 +14673,13 @@ void editor::Properties::show(){
                     ImGui::Separator();
                 afterParameters = false;
 
-                const std::string fork = sceneProject->scene->getDefaultCustomShader(type);
+                const std::string shader = sceneProject->scene->getDefaultCustomShader(type);
+                const bool fork = type == ShaderType::MESH;
                 if (ImGui::BeginTable((std::string(propertyName) + "_table").c_str(), 2, tableFlags)) {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("Points").x);
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
                     drawSceneShaderRow(sceneProject, type, propertyName, label);
-                    if (!fork.empty() && isSceneDefaultShaderFailed(sceneProject->scene, type)) {
+                    if (!shader.empty() && isSceneDefaultShaderFailed(sceneProject->scene, type)) {
                         ImGui::TableNextRow();
                         ImGui::TableSetColumnIndex(1);
                         ImGui::TextDisabled("Shader failed to build");
@@ -14648,13 +14687,14 @@ void editor::Properties::show(){
                     ImGui::EndTable();
                 }
 
-                // what the fork declares, inherited by the components using it
-                if (!fork.empty()) {
+                // what the shader declares, inherited by the components using it
+                if (!shader.empty()) {
                     const uint32_t sceneId = sceneProject->id;
                     const char* uniformsProperty = Catalog::getDefaultShaderUniformsProperty(type);
                     const ShaderUniformValues values = Catalog::getSceneProperty<ShaderUniformValues>(sceneProject->scene, uniformsProperty);
+                    const std::string title = fork ? shaderForkName(shader) : std::filesystem::path(shader).stem().string();
                     ImGui::PushID(propertyName);
-                    afterParameters = drawShaderParameters(shaderForkName(fork), sceneId, getShaderAnnotations(fork, true), values, nullptr,
+                    afterParameters = drawShaderParameters(title, sceneId, getShaderAnnotations(shader, fork), values, nullptr,
                         [&](const ShaderUniformValues& newValues) -> Command* {
                             return new ScenePropertyCmd<ShaderUniformValues>(project, sceneId, uniformsProperty, newValues);
                         });

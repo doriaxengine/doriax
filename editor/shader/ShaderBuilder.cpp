@@ -234,7 +234,10 @@ void clearCustomSourceCache() {
 // parameter headers, hook defines and flags; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
                            editor::ShaderDeclarations& declared) {
-    const char* shaderType = "mesh";
+    const std::string shaderType = editor::ShaderParameterParser::getShaderFileType(passType);
+    const bool meshPass = shaderType == "mesh";
+    // UI, points and lines move vertices and color pixels
+    const bool primitive = passType == ShaderType::UI || passType == ShaderType::POINTS || passType == ShaderType::LINES;
     auto defined = [&](const char* name) {
         return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
     };
@@ -256,21 +259,36 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         if (type != shaderType)
             throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
     }
+    // the hooks each type runs
+    const struct { const char* name; bool defined; bool runs; } hooks[] = {
+        {"getVertexOffset", vertexHooks.vertexOffset, meshPass || primitive},
+        {"getVaryings", vertexHooks.varyingsHook, meshPass},
+        {"getClipPosition", vertexHooks.clipPosition, meshPass},
+        {"getCoverage", fragmentHooks.coverage, meshPass},
+        {"getSurface", fragmentHooks.surface, meshPass},
+        {"getColor", fragmentHooks.color, true},
+        {"getDepthOffset", fragmentHooks.depthOffset, meshPass}
+    };
+    bool anyHook = false;
+    for (const auto& hook : hooks) {
+        if (hook.defined && !hook.runs)
+            throw std::runtime_error(shaderAsset + " defines " + hook.name + "(), which " + shaderType + " shaders do not have");
+        anyHook = anyHook || hook.defined;
+    }
+    if (!shaderAsset.empty() && !anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
+        throw std::runtime_error(shaderAsset + " defines no hook function");
+
     const bool useVertexOffset = vertexHooks.vertexOffset;
     const bool useClipPosition = vertexHooks.clipPosition;
     const bool useCoverage = fragmentHooks.coverage;
     // the depth passes take only the surface alpha, of masked materials
     const bool useSurface = fragmentHooks.surface && (passType != ShaderType::DEPTH || defined("ALPHA_MASK"));
-    const bool useColor = fragmentHooks.color && passType == ShaderType::MESH;
+    const bool useColor = fragmentHooks.color && passType != ShaderType::DEPTH && passType != ShaderType::GBUFFER;
     const bool useDepthOffset = fragmentHooks.depthOffset;
     const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset;
     // only where a fragment hook can read them
     const bool useVaryings = vertexHooks.varyingsHook && useFragmentHooks;
     const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;
-    const bool anyHook = vertexHooks.vertexOffset || vertexHooks.clipPosition || vertexHooks.varyingsHook || fragmentHooks.coverage ||
-        fragmentHooks.surface || fragmentHooks.color || fragmentHooks.depthOffset;
-    if (!shaderAsset.empty() && !anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
-        throw std::runtime_error(shaderAsset + " defines no hook function");
     if (vertexHooks.varyingsHook && vertexHooks.varyings.empty())
         throw std::runtime_error(shaderAsset + " fills varyings without declaring any with #pragma varying");
     // GLES3 guarantees 15 vectors between the stages, the engine's own take most of them
@@ -294,7 +312,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_COLOR", "1"});
     if (useFragmentHooks)
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
-    if (!shaderAsset.empty())
+    if (!shaderAsset.empty() && meshPass)
         args.defines.push_back({passType == ShaderType::DEPTH ? "IN_DEPTH_PASS" : passType == ShaderType::GBUFFER ? "IN_GBUFFER_PASS" : "IN_COLOR_PASS", "1"});
 
     // the material maps a surface hook makes unnecessary
@@ -326,11 +344,13 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         declared.flags |= ShaderFlag_Unlit;
     }
 
-    // what the hooks read of the mesh, where this pass has it
+    // what the hooks read of the vertices, where this pass has it; a UI always has UVs,
+    // and the other types compute what they give in place
     const struct { const char* field; const char* name; bool available; } inputs[] = {
-        {"uv1", "UV1", (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN")},
-        {"normal", "NORMAL", defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS")},
-        {"color", "COLOR", defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING")}
+        {"uv1", "UV1", passType == ShaderType::UI || (meshPass && (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN"))},
+        {"normal", "NORMAL", meshPass && (defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS"))},
+        {"color", "COLOR", (meshPass || primitive) && (defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING"))},
+        {"worldPosition", "POSITION", primitive}
     };
     for (const auto& input : inputs) {
         const bool vertex = useVertexHooks && vertexHooks.contextReads.count(input.field);
@@ -347,8 +367,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     auto lookup = [&](std::unordered_set<std::string>& reached) {
         return [&](const std::string& key) -> const std::string* {
             reached.insert(key);
-            if ((key == "shader_hooks_vs.glsl" && !useVertexHooks) || (key == "includes/hooks_vs.glsl" && !useVertexHooks && !useFragmentHooks) ||
-                    (key == "includes/hooks_fs.glsl" && !useFragmentHooks))
+            if ((key == "shader_hooks_vs.glsl" && !useVertexHooks) || (key == "shader_hooks_fs.glsl" && !useFragmentHooks))
                 return nullptr;
             return file(key);
         };
@@ -370,9 +389,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
 
     // a fork from before the hooks existed cannot run them
-    if (useVertexHooks && !vertexFiles.count("includes/hooks_vs.glsl"))
+    if (useVertexHooks && !vertexFiles.count("shader_hooks_vs.glsl"))
         editor::Out::warning("%s does not include includes/hooks_vs.glsl, so the vertex hooks of %s do nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
-    if (useFragmentHooks && !fragmentFiles.count("includes/hooks_fs.glsl"))
+    if (useFragmentHooks && !fragmentFiles.count("shader_hooks_fs.glsl"))
         editor::Out::warning("%s does not include includes/hooks_fs.glsl, so the hooks of %s do nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
 
     if (useCoverage && fragmentAnnotations.hasCoverageShadows && fragmentAnnotations.coverageShadows)
@@ -391,11 +410,13 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
     }
 
+    // the model matrix of the types whose own blocks lack it
+    const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, (useVertexOffset ? editor::HookContext_Vertex : 0) | (useClipPosition ? editor::HookContext_Clip : 0),
-        declared.parameters, declared.textures);
+        ShaderStageType::VERTEX, vertexAnnotations, (useVertexOffset ? editor::HookContext_Vertex : 0) | (useClipPosition ? editor::HookContext_Clip : 0) |
+        (modelMatrix ? editor::HookContext_Model : 0), declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, (useFragmentHooks ? editor::HookContext_Fragment : 0) |
+        ShaderStageType::FRAGMENT, fragmentAnnotations, ((useFragmentHooks && meshPass) ? editor::HookContext_Fragment : 0) |
         ((useSurface && passType == ShaderType::GBUFFER) ? editor::HookContext_View : 0) | (useDepthOffset ? editor::HookContext_Projection : 0),
         declared.parameters, declared.textures);
 

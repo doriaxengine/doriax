@@ -47,7 +47,7 @@ namespace doriax::editor{
         UpdateFlags_Lines_Reload        = 1 << 29,
         UpdateFlags_Points_Texture      = 1 << 30,
         // Generic "reload the renderable's shader" flag, used by the per-component
-        // customShader property of Mesh/UI/Points/Lines/Sky.
+        // shader property of Mesh/UI/Points/Lines/Sky/Water.
         UpdateFlags_Shader_Reload       = (uint64_t)1 << 31,
         UpdateFlags_Reflection_Probe_Capture  = (uint64_t)1 << 32,
         UpdateFlags_Reflection_Probe_Sampling = (uint64_t)1 << 33,

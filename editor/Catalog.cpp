@@ -175,6 +175,29 @@ namespace {
         return false;
     }
 
+    // shaderTextures[name] of a component, an empty entry until it is set
+    PropertyData resolveShaderTexture(ShaderTextureValues& textures, const std::string& propertyName) {
+        static Texture defTexture;
+        if (propertyName.compare(0, 15, "shaderTextures[") != 0 || propertyName.back() != ']')
+            return PropertyData();
+
+        const std::string name = propertyName.substr(15, propertyName.size() - 16);
+        for (auto& texture : textures) {
+            if (texture.first == name)
+                return {PropertyType::Texture, UpdateFlags_Shader_Reload, (void*)&defTexture, (void*)&texture.second};
+        }
+        textures.push_back({name, Texture()});
+        return {PropertyType::Texture, UpdateFlags_Shader_Reload, (void*)&defTexture, (void*)&textures.back().second};
+    }
+
+    void enumerateShaderTextures(ShaderTextureValues* textures, std::map<std::string, PropertyData>& ps) {
+        static Texture defTexture;
+        if (!textures)
+            return;
+        for (auto& texture : *textures)
+            ps["shaderTextures[" + texture.first + "]"] = {PropertyType::Texture, UpdateFlags_Shader_Reload, (void*)&defTexture, (void*)&texture.second};
+    }
+
     void* getLightShadowNearRef(void* comp) {
         return &static_cast<LightComponent*>(comp)->shadowCameraNearFar.x;
     }
@@ -197,7 +220,7 @@ namespace {
     static const FastPropertyDescriptor kUIProperties[] = {
         makeFastProperty<UIComponent, Vector4, &UIComponent::color>("color", PropertyType::Vector4, UpdateFlags_None),
         makeFastProperty<UIComponent, Texture, &UIComponent::texture>("texture", PropertyType::Texture, UpdateFlags_UI_Texture),
-        makeFastProperty<UIComponent, std::string, &UIComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<UIComponent, std::string, &UIComponent::shader>("shader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<UIComponent, ShaderUniformValues, &UIComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
     };
 
@@ -570,7 +593,7 @@ namespace {
         makeFastProperty<WaterComponent, float, &WaterComponent::buoyancyDepth>("buoyancyDepth", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<WaterComponent, float, &WaterComponent::wakeArea>("wakeArea", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<WaterComponent, float, &WaterComponent::wakeFade>("wakeFade", PropertyType::Float, UpdateFlags_None),
-        makeFastProperty<WaterComponent, std::string, &WaterComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<WaterComponent, std::string, &WaterComponent::shader>("shader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, std::string, &WaterComponent::customUnderwaterShader>("customUnderwaterShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<WaterComponent, ShaderUniformValues, &WaterComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
     };
@@ -588,7 +611,7 @@ namespace {
         makeFastProperty<SkyComponent, Vector4, &SkyComponent::color>("color", PropertyType::Vector4, UpdateFlags_None),
         makeFastProperty<SkyComponent, float, &SkyComponent::rotation>("rotation", PropertyType::Float, UpdateFlags_Sky),
         makeFastProperty<SkyComponent, bool, &SkyComponent::visible>("visible", PropertyType::Bool, UpdateFlags_None),
-        makeFastProperty<SkyComponent, std::string, &SkyComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
+        makeFastProperty<SkyComponent, std::string, &SkyComponent::shader>("shader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<SkyComponent, ShaderUniformValues, &SkyComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
     };
 
@@ -1212,6 +1235,8 @@ namespace {
     }
 
     PropertyData resolveUIPropertyFast(void* comp, const std::string& propertyName) {
+        if (comp && propertyName.compare(0, 15, "shaderTextures[") == 0)
+            return resolveShaderTexture(static_cast<UIComponent*>(comp)->shaderTextures, propertyName);
         return resolveDirectProperties(static_cast<UIComponent*>(comp), propertyName, kUIProperties);
     }
 
@@ -1560,6 +1585,8 @@ namespace {
     }
 
     PropertyData resolveWaterPropertyFast(void* comp, const std::string& propertyName) {
+        if (comp && propertyName.compare(0, 15, "shaderTextures[") == 0)
+            return resolveShaderTexture(static_cast<WaterComponent*>(comp)->shaderTextures, propertyName);
         return resolveDirectProperties(static_cast<WaterComponent*>(comp), propertyName, kWaterProperties);
     }
 
@@ -1568,6 +1595,8 @@ namespace {
     }
 
     PropertyData resolveSkyPropertyFast(void* comp, const std::string& propertyName) {
+        if (comp && propertyName.compare(0, 15, "shaderTextures[") == 0)
+            return resolveShaderTexture(static_cast<SkyComponent*>(comp)->shaderTextures, propertyName);
         return resolveDirectProperties(static_cast<SkyComponent*>(comp), propertyName, kSkyProperties);
     }
 
@@ -2378,6 +2407,7 @@ namespace {
 
     void enumerateUIProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kUIProperties);
+        enumerateShaderTextures(comp ? &static_cast<UIComponent*>(comp)->shaderTextures : nullptr, ps);
     }
 
     void enumerateUILayoutProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2570,6 +2600,7 @@ namespace {
 
     void enumerateWaterProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kWaterProperties);
+        enumerateShaderTextures(comp ? &static_cast<WaterComponent*>(comp)->shaderTextures : nullptr, ps);
     }
 
     void enumerateWaterExclusionProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2578,6 +2609,7 @@ namespace {
 
     void enumerateSkyProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kSkyProperties);
+        enumerateShaderTextures(comp ? &static_cast<SkyComponent*>(comp)->shaderTextures : nullptr, ps);
     }
 
     void enumerateTextProperties(void* comp, std::map<std::string, PropertyData>& ps) {
@@ -2930,8 +2962,9 @@ namespace {
         if (propertyName == "transparent") return {PropertyType::Bool, UpdateFlags_None, &def.transparent, &comp->transparent};
         if (propertyName == "autoTransparency") return {PropertyType::Bool, UpdateFlags_None, &def.autoTransparency, &comp->autoTransparency};
         if (propertyName == "texture") return {PropertyType::Texture, UpdateFlags_Points_Texture, &def.texture, &comp->texture};
-        if (propertyName == "customShader") return {PropertyType::String, UpdateFlags_Shader_Reload, &def.customShader, &comp->customShader};
+        if (propertyName == "shader") return {PropertyType::String, UpdateFlags_Shader_Reload, &def.shader, &comp->shader};
         if (propertyName == "shaderUniforms") return {PropertyType::Custom, UpdateFlags_Shader_Uniforms, &def.shaderUniforms, &comp->shaderUniforms};
+        if (propertyName.compare(0, 15, "shaderTextures[") == 0) return resolveShaderTexture(comp->shaderTextures, propertyName);
 
         if (propertyName == "numFramesRect") {
             return {PropertyType::UInt, UpdateFlags_None, (void*)&def.numFramesRect, (void*)&comp->numFramesRect};
@@ -3013,8 +3046,9 @@ namespace {
         ps["transparent"] = {PropertyType::Bool, UpdateFlags_None, &def.transparent, comp ? &comp->transparent : nullptr};
         ps["autoTransparency"] = {PropertyType::Bool, UpdateFlags_None, &def.autoTransparency, comp ? &comp->autoTransparency : nullptr};
         ps["texture"] = {PropertyType::Texture, UpdateFlags_Points_Texture, &def.texture, comp ? &comp->texture : nullptr};
-        ps["customShader"] = {PropertyType::String, UpdateFlags_Shader_Reload, &def.customShader, comp ? &comp->customShader : nullptr};
+        ps["shader"] = {PropertyType::String, UpdateFlags_Shader_Reload, &def.shader, comp ? &comp->shader : nullptr};
         ps["shaderUniforms"] = {PropertyType::Custom, UpdateFlags_Shader_Uniforms, &def.shaderUniforms, comp ? &comp->shaderUniforms : nullptr};
+        enumerateShaderTextures(comp ? &comp->shaderTextures : nullptr, ps);
 
         static std::vector<PointData> defPoints;
         ps["points"] = {PropertyType::Custom, UpdateFlags_Points, (void*)&defPoints, comp ? (void*)&comp->points : nullptr};
@@ -3049,8 +3083,9 @@ namespace {
         if (!comp) return PropertyData();
 
         if (propertyName == "maxLines") return {PropertyType::UInt, UpdateFlags_Lines_Reload, &def.maxLines, &comp->maxLines};
-        if (propertyName == "customShader") return {PropertyType::String, UpdateFlags_Shader_Reload, &def.customShader, &comp->customShader};
+        if (propertyName == "shader") return {PropertyType::String, UpdateFlags_Shader_Reload, &def.shader, &comp->shader};
         if (propertyName == "shaderUniforms") return {PropertyType::Custom, UpdateFlags_Shader_Uniforms, &def.shaderUniforms, &comp->shaderUniforms};
+        if (propertyName.compare(0, 15, "shaderTextures[") == 0) return resolveShaderTexture(comp->shaderTextures, propertyName);
 
         if (propertyName == "lines") {
             static std::vector<LineData> defLines;
@@ -3095,8 +3130,9 @@ namespace {
         LinesComponent& def = getDefaultComponent<LinesComponent>();
 
         ps["maxLines"] = {PropertyType::UInt, UpdateFlags_Lines_Reload, &def.maxLines, comp ? &comp->maxLines : nullptr};
-        ps["customShader"] = {PropertyType::String, UpdateFlags_Shader_Reload, &def.customShader, comp ? &comp->customShader : nullptr};
+        ps["shader"] = {PropertyType::String, UpdateFlags_Shader_Reload, &def.shader, comp ? &comp->shader : nullptr};
         ps["shaderUniforms"] = {PropertyType::Custom, UpdateFlags_Shader_Uniforms, &def.shaderUniforms, comp ? &comp->shaderUniforms : nullptr};
+        enumerateShaderTextures(comp ? &comp->shaderTextures : nullptr, ps);
 
         static std::vector<LineData> defLines;
         ps["lines"] = {PropertyType::Custom, UpdateFlags_Lines, (void*)&defLines, comp ? (void*)&comp->lines : nullptr};
@@ -4047,10 +4083,10 @@ uint32_t* editor::Catalog::getSubmeshOverrideMask(EntityRegistry* registry, Enti
 }
 
 bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, ComponentType component) {
-    // a failed fork reloads on the built-in, which registers no custom id; a pending
+    // a failed shader reloads on the built-in, which registers no custom id; a pending
     // reload still carries the previous id
-    auto failed = [scene](const std::string& customShader, ShaderType shaderType, bool loaded, bool needReload, uint16_t customShaderId) {
-        const std::string& effective = customShader.empty() ? scene->getDefaultCustomShader(shaderType) : customShader;
+    auto failed = [scene](const std::string& shader, ShaderType shaderType, bool loaded, bool needReload, uint16_t customShaderId) {
+        const std::string& effective = shader.empty() ? scene->getDefaultCustomShader(shaderType) : shader;
         return !effective.empty() && loaded && !needReload && customShaderId == 0;
     };
 
@@ -4067,23 +4103,23 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
             break;
         case ComponentType::UIComponent:
             if (UIComponent* ui = scene->findComponent<UIComponent>(entity))
-                return failed(ui->customShader, ShaderType::UI, ui->loaded, ui->needReload, ui->customShaderId);
+                return failed(ui->shader, ShaderType::UI, ui->loaded, ui->needReload, ui->customShaderId);
             break;
         case ComponentType::PointsComponent:
             if (PointsComponent* points = scene->findComponent<PointsComponent>(entity))
-                return failed(points->customShader, ShaderType::POINTS, points->loaded, points->needReload, points->customShaderId);
+                return failed(points->shader, ShaderType::POINTS, points->loaded, points->needReload, points->customShaderId);
             break;
         case ComponentType::LinesComponent:
             if (LinesComponent* lines = scene->findComponent<LinesComponent>(entity))
-                return failed(lines->customShader, ShaderType::LINES, lines->loaded, lines->needReload, lines->customShaderId);
+                return failed(lines->shader, ShaderType::LINES, lines->loaded, lines->needReload, lines->customShaderId);
             break;
         case ComponentType::SkyComponent:
             if (SkyComponent* sky = scene->findComponent<SkyComponent>(entity))
-                return failed(sky->customShader, ShaderType::SKYBOX, sky->loaded, sky->needReload, sky->customShaderId);
+                return failed(sky->shader, ShaderType::SKYBOX, sky->loaded, sky->needReload, sky->customShaderId);
             break;
         case ComponentType::WaterComponent:
             if (WaterComponent* water = scene->findComponent<WaterComponent>(entity))
-                return failed(water->customShader, ShaderType::WATER, water->loaded, water->needReload, water->customShaderId);
+                return failed(water->shader, ShaderType::WATER, water->loaded, water->needReload, water->customShaderId);
             break;
         default:
             break;

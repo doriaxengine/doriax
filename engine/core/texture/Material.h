@@ -7,6 +7,7 @@
 #include "math/Vector3.h"
 #include "texture/Texture.h"
 #include "shader/ShaderUniforms.h"
+#include "shader/ShaderTextures.h"
 #include <string>
 #include <utility>
 #include <vector>
@@ -60,35 +61,14 @@ namespace doriax{
         // its parameter values, by name
         ShaderUniformValues shaderUniforms;
         // and textures
-        std::vector<std::pair<std::string, Texture>> shaderTextures;
+        ShaderTextureValues shaderTextures;
 
         Texture getShaderTexture(const std::string& name) const {
-            for (const auto& texture : shaderTextures){
-                if (texture.first == name)
-                    return texture.second;
-            }
-
-            return Texture();
+            return ShaderTextures::get(shaderTextures, name);
         }
 
         void setShaderTexture(const std::string& name, const Texture& texture) {
-            for (auto& entry : shaderTextures){
-                if (entry.first == name){
-                    entry.second = texture;
-                    return;
-                }
-            }
-            shaderTextures.push_back({name, texture});
-        }
-
-        // an empty entry counts as none
-        bool hasShaderTextures(const Material& other) const {
-            for (const auto& texture : other.shaderTextures){
-                if (getShaderTexture(texture.first) != texture.second)
-                    return false;
-            }
-
-            return true;
+            ShaderTextures::set(shaderTextures, name, texture);
         }
 
         bool operator == (const Material& other) const {
@@ -112,7 +92,7 @@ namespace doriax{
                    name == other.name &&
                    shader == other.shader &&
                    shaderUniforms == other.shaderUniforms &&
-                   hasShaderTextures(other) && other.hasShaderTextures(*this);
+                   ShaderTextures::equals(shaderTextures, other.shaderTextures);
         }
 
         bool operator != (const Material& other) const {

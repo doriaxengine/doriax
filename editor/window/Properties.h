@@ -298,16 +298,21 @@ namespace doriax::editor{
         void setParticleBursts(ComponentType cpType, SceneProject* sceneProject, Entity entity, const std::vector<ParticleBurst>& bursts);
         void setParticleColorGradient(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ParticleColorGradient& gradient);
         void drawParticleFrameList(ComponentType cpType, const std::string& propertyId, const std::string& tableId, SceneProject* sceneProject, const std::vector<Entity>& entities);
-        // Shared "Shader" row for components that support forking a built-in shader
-        // (Mesh/UI/Points/Lines/Sky): fork, edit files, open .vert/.frag, reset to built-in,
-        // plus .vert/.frag drag-drop. The .vert/.frag entry points may share a base name or
-        // live in separate files (see Util::resolveCustomShaderPaths).
+        // "Shaders" section of a component: a mesh's fork (fork, edit files, open .vert/.frag,
+        // reset to built-in), the shader file of the other types.
         void drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities);
         // one shader property of that row (customShader, a mesh's customDepthShader or a
         // water's customUnderwaterShader)
         void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
         // a material's shader file
         void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
+        // a shader file slot: new from a template, the engine's ones, pick, copy, open, clear
+        void drawShaderFileRow(ShaderType shaderType, const std::string& current, const std::string& defaultName,
+                               const std::function<void(const std::string&)>& setShader, const std::string& idSuffix,
+                               const std::string& inheritedShader = std::string());
+        // the texture parameters of a shader file, at prefix + "shaderTextures[name]"
+        void drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, const std::vector<Entity>& entities,
+                                   const ShaderEffectAnnotations& annotations, const std::string& prefix, const std::function<void()>& onChanged);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
         // annotations of a fork or an effect file, parsed again once a second at most
         struct CachedShaderAnnotations {
@@ -334,7 +339,7 @@ namespace doriax::editor{
         void drawSceneShaderParameters(SceneProject* sceneProject);
         void drawCameraShaderParameters(SceneProject* sceneProject, Entity entity);
         // Scene-level variant: edits a scene default shader property (e.g. "default_mesh_shader"),
-        // used by every component of that type whose customShader is empty.
+        // used by every component of that type without a shader of its own.
         void drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label);
 
         // Ordered user post-process chain: per-pass enable, shader fork/pick, reorder

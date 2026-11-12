@@ -65,8 +65,9 @@ namespace doriax{
         void setAutoTransparency(bool autoTransparency);
         bool isAutoTransparency() const;
 
-        void setCustomShader(const std::string& path);
-        std::string getCustomShader() const;
+        // .glsl file with the shader hooks
+        void setShader(const std::string& path);
+        std::string getShader() const;
 
         void setShaderUniform(const std::string& name, const Vector4& value);
         void setShaderUniform(const std::string& name, const Vector3& value);
@@ -74,6 +75,9 @@ namespace doriax{
         void setShaderUniform(const std::string& name, float value);
         Vector4 getShaderUniform(const std::string& name) const;
         bool removeShaderUniform(const std::string& name);
+
+        void setShaderTexture(const std::string& name, const Texture& texture);
+        Texture getShaderTexture(const std::string& name) const;
     };
 }
 

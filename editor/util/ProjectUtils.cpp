@@ -7,6 +7,7 @@
 #include "Catalog.h"
 #include "Stream.h"
 #include "shaders.h"
+#include "shader/ShaderParameterParser.h"
 #include "util/Util.h"
 
 #include <algorithm>
@@ -378,8 +379,95 @@ std::string writeEffectFile(const std::filesystem::path& projectRoot, const std:
 
 }
 
-std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
+std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+    switch (shaderType) {
+        case ShaderType::UI:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a UI shader. Declared values are read as params.name.
+#pragma shader ui
+
+#pragma stage vertex
+#pragma param float sway = 0 [0, 20] "Sideways sway of the vertices, in world units"
+
+// offset of each vertex, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(sin(Engine.time * 3.0 + context.worldPosition.y * 0.05) * params.sway, 0.0, 0.0);
+}
+
+#pragma stage fragment
+#pragma param vec4 shine = 1, 1, 1, 0.6 color "Color of the band that sweeps across"
+#pragma param float speed = 0.5 [0, 4] "Sweeps per second"
+
+// final color, linear: the tint times the texture and the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float band = 1.0 - smoothstep(0.0, 0.1, abs(fract(context.uv1.x - Engine.time * params.speed) - 0.5));
+    return vec4(mix(color.rgb, params.shine.rgb, band * params.shine.a), color.a);
+}
+)");
+        case ShaderType::POINTS:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a points shader. Declared values are read as params.name.
+#pragma shader points
+
+#pragma stage vertex
+#pragma param float rise = 0 [0, 5] "Height the points drift up, in world units"
+
+// offset of each point, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(0.0, fract(Engine.time * 0.2 + context.worldPosition.x) * params.rise, 0.0);
+}
+
+#pragma stage fragment
+#pragma param float softness = 0.3 [0, 1] "Width of the faded rim"
+
+// final color, linear: the texture times the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float rim = 1.0 - smoothstep(0.5 - params.softness * 0.5, 0.5, length(context.uv1 - 0.5));
+    return vec4(color.rgb, color.a * rim);
+}
+)");
+        case ShaderType::LINES:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a lines shader. Declared values are read as params.name.
+#pragma shader lines
+
+#pragma stage fragment
+#pragma param float pulse = 0.5 [0, 1] "Strength of the light running along the lines"
+#pragma param float speed = 1 [0, 10] "Pulses per second"
+
+// final color, linear: the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float wave = 0.5 + 0.5 * sin(6.2832 * (Engine.time * params.speed - length(context.worldPosition) * 0.2));
+    return vec4(color.rgb * mix(1.0, wave * 2.0, params.pulse), color.a);
+}
+)");
+        case ShaderType::SKYBOX:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a sky shader. Declared values are read as params.name.
+#pragma shader sky
+
+#pragma stage fragment
+#pragma param vec3 sunDirection = 0.3, 0.5, -0.8 "Direction to the sun, in the sky's space"
+#pragma param vec4 sunColor = 1, 0.9, 0.7, 1 color "Color of the sun disk"
+#pragma param float sunSize = 0.02 [0, 0.2] "Angular radius of the disk"
+
+// final color, linear: the cube map times the sky color
+vec4 getColor(FragmentContext context, vec4 color){
+    float facing = dot(normalize(context.direction), normalize(params.sunDirection));
+    float disk = smoothstep(cos(params.sunSize * 1.2), cos(params.sunSize), facing);
+    return vec4(color.rgb + params.sunColor.rgb * params.sunColor.a * disk * 10.0, color.a);
+}
+)");
+        case ShaderType::WATER:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a water shader. Declared values are read as params.name.
+#pragma shader water
+
+#pragma stage fragment
+#pragma param vec4 tint = 0.8, 1, 0.9, 1 color "Color the water is multiplied by"
+
+// final color, linear, after lighting and fog
+vec4 getColor(FragmentContext context, vec4 color){
+    return vec4(color.rgb * params.tint.rgb, color.a);
+}
+)");
+        default:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
 #pragma shader mesh
 
 #pragma stage vertex
@@ -401,6 +489,7 @@ float getCoverage(FragmentContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
 }
 )");
+    }
 }
 
 std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
@@ -410,10 +499,21 @@ std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesyste
     return writeEffectFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
 }
 
-std::vector<std::string> editor::ProjectUtils::getEngineShaders() {
-    std::vector<std::string> shaders;
+std::vector<std::string> editor::ProjectUtils::getEngineShaders(ShaderType shaderType) {
+    // the embedded files never change, so each type is parsed once
+    static std::map<std::string, std::vector<std::string>> byType;
+    const std::string type = ShaderParameterParser::getShaderFileType(shaderType);
+    auto cached = byType.find(type);
+    if (cached != byType.end())
+        return cached->second;
+
+    std::vector<std::string>& shaders = byType[type];
     for (const auto& entry : editor::shaderMap) {
-        if (isEngineShader(entry.first))
+        if (!isEngineShader(entry.first))
+            continue;
+        ShaderEffectAnnotations annotations;
+        ShaderParameterParser::parse(entry.second, entry.first, annotations);
+        if (annotations.shaderType == type)
             shaders.push_back(entry.first);
     }
     std::sort(shaders.begin(), shaders.end());
@@ -461,8 +561,8 @@ std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShad
         }
         return sources;
     }
-    if (const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "customShader"))
-        addFork(customShader->empty() ? scene->getDefaultCustomShader(shaderType) : *customShader);
+    if (const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader"))
+        addEffect(shader->empty() ? scene->getDefaultCustomShader(shaderType) : *shader);
     if (cpType == ComponentType::WaterComponent) {
         if (const WaterComponent* water = scene->findComponent<WaterComponent>(entity))
             addFork(water->customUnderwaterShader);

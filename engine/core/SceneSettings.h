@@ -103,8 +103,8 @@ namespace doriax{
         unsigned int fixedResolutionHeight = 360;
         TextureFilter fixedResolutionFilter = TextureFilter::NEAREST;
 
-        // scene-wide custom shaders, used when a component's customShader is empty
-        // (project-relative base or "a.vert|b.frag"; empty = engine built-in)
+        // scene-wide custom shaders, used by components without one; empty = engine built-in.
+        // The mesh one is a fork (project-relative base or "a.vert|b.frag"), the others .glsl files
         std::string defaultMeshShader;
         std::string defaultUIShader;
         std::string defaultSkyShader;

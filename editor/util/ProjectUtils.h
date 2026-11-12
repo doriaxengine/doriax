@@ -150,16 +150,16 @@ public:
     // Removes only files owned by the plan, then prunes the directories it created.
     static void removeShaderFork(const ShaderForkPlan& plan);
 
-    // a starting shader file; its project path, empty on failure
-    static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName);
+    // a starting shader file of the type; its project path, empty on failure
+    static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
     // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
-    // the engine's shader files, under shaders/; a project file of the same path wins
-    static std::vector<std::string> getEngineShaders();
+    // the engine's shader files of the type, under shaders/; a project file of the same path wins
+    static std::vector<std::string> getEngineShaders(ShaderType shaderType);
     static bool isEngineShader(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
-    // the forks (true) a component draws with, and the shader file (false) of one submesh
+    // the forks (true) and shader files (false) a component draws with; a mesh's of one submesh
     static std::vector<std::pair<std::string, bool>> getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh = -1);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.

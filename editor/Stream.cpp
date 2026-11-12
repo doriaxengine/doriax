@@ -1515,6 +1515,29 @@ Texture editor::Stream::decodeTexture(const YAML::Node& node) {
     return texture;
 }
 
+// set textures only, an empty entry is not saved
+YAML::Node editor::Stream::encodeShaderTextures(const ShaderTextureValues& textures, bool embedTextureData) {
+    YAML::Node node;
+    for (const auto& texture : textures) {
+        if (!hasTexture(texture.second))
+            continue;
+        YAML::Node item;
+        item["name"] = texture.first;
+        item["texture"] = encodeTexture(texture.second, embedTextureData);
+        node.push_back(item);
+    }
+    return node;
+}
+
+ShaderTextureValues editor::Stream::decodeShaderTextures(const YAML::Node& node) {
+    ShaderTextureValues textures;
+    for (const auto& item : node) {
+        if (item["name"] && item["texture"])
+            textures.push_back({item["name"].as<std::string>(), decodeTexture(item["texture"])});
+    }
+    return textures;
+}
+
 YAML::Node editor::Stream::encodeBuffer(const Buffer& buffer) {
     YAML::Node node;
 
@@ -3776,14 +3799,8 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
         node["shader"] = material.shader;
     if (!material.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(material.shaderUniforms);
-    for (const auto& texture : material.shaderTextures) {
-        if (hasTexture(texture.second)) {
-            YAML::Node item;
-            item["name"] = texture.first;
-            item["texture"] = encodeTexture(texture.second, embedTextureData);
-            node["shaderTextures"].push_back(item);
-        }
-    }
+    if (YAML::Node textures = encodeShaderTextures(material.shaderTextures, embedTextureData))
+        node["shaderTextures"] = textures;
 
     return node;
 }
@@ -3826,11 +3843,7 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
     // Written only when set
     material.shader = node["shader"] ? node["shader"].as<std::string>() : "";
     material.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
-    material.shaderTextures.clear();
-    for (const auto& item : node["shaderTextures"]) {
-        if (item["name"] && item["texture"])
-            material.shaderTextures.push_back({item["name"].as<std::string>(), decodeTexture(item["texture"])});
-    }
+    material.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
 
     return material;
 }
@@ -5136,8 +5149,10 @@ YAML::Node editor::Stream::encodeUIComponent(const UIComponent& ui, bool encodeB
     node["pointerMoved"] = ui.pointerMoved;
     node["focused"] = ui.focused;
 
-    if (!ui.customShader.empty())
-        node["customShader"] = ui.customShader;
+    if (!ui.shader.empty())
+        node["shader"] = ui.shader;
+    if (YAML::Node textures = encodeShaderTextures(ui.shaderTextures, embedTextureData))
+        node["shaderTextures"] = textures;
     if (!ui.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(ui.shaderUniforms);
 
@@ -5186,7 +5201,8 @@ UIComponent editor::Stream::decodeUIComponent(const YAML::Node& node, const UICo
     if (node["focused"]) ui.focused = node["focused"].as<bool>();
 
     // Written only when set
-    ui.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    ui.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    ui.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     ui.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     ui.needUpdateShaderUniforms = true;
 
@@ -6542,8 +6558,10 @@ YAML::Node editor::Stream::encodeSkyComponent(const SkyComponent& sky) {
     node["rotation"] = sky.rotation;
     node["visible"] = sky.visible;
 
-    if (!sky.customShader.empty())
-        node["customShader"] = sky.customShader;
+    if (!sky.shader.empty())
+        node["shader"] = sky.shader;
+    if (YAML::Node textures = encodeShaderTextures(sky.shaderTextures))
+        node["shaderTextures"] = textures;
     if (!sky.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(sky.shaderUniforms);
 
@@ -6579,7 +6597,8 @@ SkyComponent editor::Stream::decodeSkyComponent(const YAML::Node& node, const Sk
     if (node["visible"]) sky.visible = node["visible"].as<bool>();
 
     // Written only when set
-    sky.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    sky.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    sky.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     sky.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     sky.needUpdateShaderUniforms = true;
 
@@ -6623,8 +6642,10 @@ YAML::Node editor::Stream::encodeWaterComponent(const WaterComponent& water) {
     node["wakeArea"] = water.wakeArea;
     node["wakeFade"] = water.wakeFade;
 
-    if (!water.customShader.empty())
-        node["customShader"] = water.customShader;
+    if (!water.shader.empty())
+        node["shader"] = water.shader;
+    if (YAML::Node textures = encodeShaderTextures(water.shaderTextures))
+        node["shaderTextures"] = textures;
     if (!water.customUnderwaterShader.empty())
         node["customUnderwaterShader"] = water.customUnderwaterShader;
     if (!water.shaderUniforms.empty())
@@ -6675,7 +6696,8 @@ WaterComponent editor::Stream::decodeWaterComponent(const YAML::Node& node, cons
     if (node["wakeFade"]) water.wakeFade = node["wakeFade"].as<float>();
 
     // Written only when set
-    water.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    water.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    water.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     water.customUnderwaterShader = node["customUnderwaterShader"] ? node["customUnderwaterShader"].as<std::string>() : "";
     water.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     water.needUpdateShaderUniforms = true;
@@ -8384,8 +8406,10 @@ YAML::Node editor::Stream::encodePointsComponent(const PointsComponent& points) 
     }
     node["points"] = pointsNode;
 
-    if (!points.customShader.empty())
-        node["customShader"] = points.customShader;
+    if (!points.shader.empty())
+        node["shader"] = points.shader;
+    if (YAML::Node textures = encodeShaderTextures(points.shaderTextures))
+        node["shaderTextures"] = textures;
     if (!points.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(points.shaderUniforms);
 
@@ -8426,7 +8450,8 @@ PointsComponent editor::Stream::decodePointsComponent(const YAML::Node& node, co
         }
     }
 
-    points.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    points.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    points.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     points.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     points.needUpdateShaderUniforms = true;
 
@@ -8457,8 +8482,10 @@ YAML::Node editor::Stream::encodeLinesComponent(const LinesComponent& lines) {
     }
     node["lines"] = linesNode;
 
-    if (!lines.customShader.empty())
-        node["customShader"] = lines.customShader;
+    if (!lines.shader.empty())
+        node["shader"] = lines.shader;
+    if (YAML::Node textures = encodeShaderTextures(lines.shaderTextures))
+        node["shaderTextures"] = textures;
     if (!lines.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(lines.shaderUniforms);
 
@@ -8488,7 +8515,8 @@ LinesComponent editor::Stream::decodeLinesComponent(const YAML::Node& node, cons
     }
 
     // Written only when set
-    lines.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    lines.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    lines.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     lines.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     lines.needUpdateShaderUniforms = true;
 

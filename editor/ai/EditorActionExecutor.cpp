@@ -3263,7 +3263,7 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
     }
 
     // a declared texture has no entry until it is set
-    if (propertyName.find(".shaderTextures[") != std::string::npos) {
+    if (propertyName.rfind("shaderTextures[", 0) == 0 || propertyName.find(".shaderTextures[") != std::string::npos) {
         Catalog::findProperty(sceneProject->scene, entity, component, propertyName);
     }
 
@@ -5217,16 +5217,19 @@ std::string customShaderFilesError(const Project* project, const std::string& sh
 } // namespace
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
-    // Every shader-path property (per-component customShader, or a scene's per-type
-    // default) is a project-relative base path; both must reference real files.
-    static const std::set<std::string> shaderPathProperties = {
-        "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader", "default_ui_shader",
-        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
+    // A fork property is a project-relative base path whose .vert and .frag must exist;
+    // the other shader properties take one .glsl file
+    static const std::set<std::string> forkProperties = {
+        "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader"
     };
-    // submeshes[N].material.shader
+    static const std::set<std::string> fileProperties = {
+        "shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
+    };
+    // or submeshes[N].material.shader
     const size_t field = propertyName.rfind('.');
-    const bool shaderFile = field != std::string::npos && propertyName.compare(field, std::string::npos, ".shader") == 0;
-    if (!shaderFile && !shaderPathProperties.count(propertyName)) {
+    const bool shaderFile = fileProperties.count(propertyName) ||
+        (field != std::string::npos && propertyName.compare(field, std::string::npos, ".shader") == 0);
+    if (!shaderFile && !forkProperties.count(propertyName)) {
         return true;
     }
     const std::string value = args.value("string_value", "");
@@ -5241,7 +5244,7 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
                 !PathUtils::isSafeRelativePath(fs::path(value)) ||
                 !PathUtils::existsExactCase(project->getProjectPath(), value)) {
-            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. Write a project one with write_shader_file first.";
+            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. Write a project one with write_shader_file first, starting it with the \"#pragma shader <type>\" line of the component.";
             return false;
         }
         return true;
@@ -5329,8 +5332,12 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
     if (!hasEntity) {
         ShaderType shaderType;
         if (!parseShaderTypeName(shaderTypeArg, shaderType)) {
-            return failResult("fork_shader requires entity_id/entity_name, or shader_type "
-                              "(mesh, ui, sky, points, lines, or water) to fork a scene default.");
+            return failResult("fork_shader requires entity_id/entity_name, or shader_type mesh to fork the scene's default mesh shader.");
+        }
+        if (shaderType != ShaderType::MESH) {
+            return failResult("A scene's default " + shaderTypeArg + " shader is a shader file, not a fork: write one with write_shader_file "
+                              "(\"#pragma shader " + ShaderParameterParser::getShaderFileType(shaderType) + "\") and set " +
+                              scenePropertyNameForShaderType(shaderType) + " to it.");
         }
         const std::string scenePropertyName = scenePropertyNameForShaderType(shaderType);
 
@@ -5382,6 +5389,10 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
 
     // a mesh's shadow/SSAO depth pass and a water's underwater fade have forks of their own
     std::string propertyName = "customShader";
+    if (component != ComponentType::MeshComponent && lower(shaderTypeArg) != "underwater") {
+        return failResult("A " + Catalog::getComponentName(component) + " takes a shader file, not a fork: write one with write_shader_file "
+                          "(\"#pragma shader " + ShaderParameterParser::getShaderFileType(shaderType) + "\") and set its shader property to it.");
+    }
     if (lower(shaderTypeArg) == "depth") {
         if (component != ComponentType::MeshComponent) return failResult("Only a MeshComponent has a depth shader.");
         shaderType = ShaderType::DEPTH;
@@ -5472,10 +5483,15 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
     }
 }
 
+// a mesh's fork, the shader file of the other components
+const char* componentShaderProperty(ComponentType component) {
+    return component == ComponentType::MeshComponent ? "customShader" : "shader";
+}
+
 void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
                                           ComponentType component, ShaderType shaderType, const ShaderUniformValues& values, int submesh = -1) {
-    const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, component, "customShader");
-    const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
+    const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, component, componentShaderProperty(component));
+    const ShaderUniformValues* inherited = shader ? scene->getInheritedShaderUniforms(shaderType, *shader) : nullptr;
     warnings = Json::array();
     std::vector<ShaderEffectAnnotations> sources;
     for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity, submesh)) {
@@ -5551,11 +5567,11 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return expectedMissResult(error);
 
     ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
-    std::string* customShader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customShader");
-    if (!valuesRef || !customShader) return failResult("Component has no shader uniforms.");
+    std::string* shader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, componentShaderProperty(component));
+    if (!valuesRef || !shader) return failResult("Component has no shader uniforms.");
 
-    const std::string effectiveShader = customShader->empty()
-        ? sceneProject->scene->getDefaultCustomShader(shaderType) : *customShader;
+    const std::string effectiveShader = shader->empty()
+        ? sceneProject->scene->getDefaultCustomShader(shaderType) : *shader;
 
     // a material's values come before the mesh's
     ShaderUniformValues values = *valuesRef;
@@ -5573,7 +5589,7 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     Json result{{"scene_id", sceneId},
                 {"entity_id", entity},
                 {"component", Catalog::getComponentName(component)},
-                {"custom_shader", *customShader},
+                {component == ComponentType::MeshComponent ? "custom_shader" : "shader", *shader},
                 {"effective_shader", effectiveShader},
                 {"build_failed", Catalog::isCustomShaderBuildFailed(sceneProject->scene, entity, component)},
                 {"members", members},

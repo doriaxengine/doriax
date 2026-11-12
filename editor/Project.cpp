@@ -1577,32 +1577,31 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
 }
 
 void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform) {
-    // customShader lives on every renderable component type (a mesh also has its depth
-    // fork, a water its underwater one); visit each array in a registry, apply the
-    // transform, and flag a shader reload on the entities that changed.
+    // forks are a .vert/.frag pair (a mesh's, its depth one, a water's underwater one),
+    // the other shaders one file; visit each array in a registry, apply the transform,
+    // and flag a shader reload on the entities that changed.
     auto applyToRegistry = [&](EntityRegistry* registry) -> bool {
         bool changed = false;
-        auto applyToArray = [&](auto arr, auto shaderField) {
+        auto applyToArray = [&](auto arr, auto shaderField, const std::function<bool(std::string&)>& apply) {
             for (size_t i = 0; i < arr->size(); ++i) {
-                std::string& customShader = arr->getComponentFromIndex(i).*shaderField;
-                if (customShader.empty())
+                std::string& shader = arr->getComponentFromIndex(i).*shaderField;
+                if (shader.empty())
                     continue;
-                if (transform(customShader)) {
+                if (apply(shader)) {
                     Catalog::updateEntity(registry, arr->getEntity(i), UpdateFlags_Shader_Reload);
                     changed = true;
                 }
             }
         };
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customShader);
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customDepthShader);
-        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::customShader);
-        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::customShader);
-        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::customShader);
-        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::customShader);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customShader);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader);
+        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customShader, transform);
+        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customDepthShader, transform);
+        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader, transform);
+        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::shader, fileTransform);
+        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::shader, fileTransform);
+        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::shader, fileTransform);
+        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::shader, fileTransform);
+        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::shader, fileTransform);
 
-        // a shader file is one file, not a .vert/.frag pair
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
@@ -1625,7 +1624,7 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         bool changed = false;
         for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX, ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
             std::string defaultShader = scene->getDefaultCustomShader(type);
-            if (!defaultShader.empty() && transform(defaultShader)) {
+            if (!defaultShader.empty() && (type == ShaderType::MESH ? transform(defaultShader) : fileTransform(defaultShader))) {
                 scene->setDefaultCustomShader(type, defaultShader);
                 changed = true;
             }
@@ -3923,8 +3922,8 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     // resolve the effective custom shader (component > scene default > built-in) from the
     // strings rather than the cached customShaderId, which lags a reload frame after a
     // scene-default change and is zeroed by the build-fail fallback
-    auto effectiveShaderId = [&](const std::string& customShader, ShaderType type) -> uint16_t {
-        return ShaderPool::registerCustomShader(customShader.empty() ? scene->getDefaultCustomShader(type) : customShader);
+    auto effectiveShaderId = [&](const std::string& shader, ShaderType type) -> uint16_t {
+        return ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", shader.empty() ? scene->getDefaultCustomShader(type) : shader));
     };
 
     // the runtime falls back to the built-in variant when a custom shader fails to build,
@@ -4025,29 +4024,29 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<UIComponent>())) {
             const UIComponent& ui = scene->getComponent<UIComponent>(entity);
-            if (ui.loaded || ui.shader) {
-                insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.customShader, ShaderType::UI));
+            if (ui.loaded || ui.shaderRender) {
+                insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.shader, ShaderType::UI));
             }
         }
 
         if (signature.test(scene->getComponentId<PointsComponent>())) {
             const PointsComponent& pts = scene->getComponent<PointsComponent>(entity);
-            if (pts.loaded || pts.shader) {
-                insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.customShader, ShaderType::POINTS));
+            if (pts.loaded || pts.shaderRender) {
+                insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.shader, ShaderType::POINTS));
             }
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>())) {
             const LinesComponent& ln = scene->getComponent<LinesComponent>(entity);
-            if (ln.loaded || ln.shader) {
-                insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.customShader, ShaderType::LINES));
+            if (ln.loaded || ln.shaderRender) {
+                insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.shader, ShaderType::LINES));
             }
         }
 
         if (signature.test(scene->getComponentId<SkyComponent>())) {
             const SkyComponent& sky = scene->getComponent<SkyComponent>(entity);
             if (sky.loaded) {
-                insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.customShader, ShaderType::SKYBOX));
+                insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.shader, ShaderType::SKYBOX));
             }
         }
 
@@ -4065,7 +4064,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             }
             insertKeys(ShaderType::WATER, ShaderPool::getWaterProperties(sceneFog, water.depthEffects, water.planarReflection,
                 sceneShadows && water.receiveShadows, water.refraction),
-                effectiveShaderId(water.customShader, ShaderType::WATER));
+                effectiveShaderId(water.shader, ShaderType::WATER));
             if (water.underwater) {
                 insertKeys(ShaderType::UNDERWATER, 0, ShaderPool::registerCustomShader(water.customUnderwaterShader));
             }
@@ -4133,7 +4132,7 @@ void editor::Project::invalidateCustomShaders() {
         if (!sceneProject.scene)
             return;
         Scene* scene = sceneProject.scene;
-        // a component rides on a fork either via its own customShader or the scene default
+        // a component uses a custom shader of its own or the scene default
         bool sceneMesh = !scene->getDefaultMeshShader().empty();
         bool sceneUI = !scene->getDefaultUIShader().empty();
         bool scenePoints = !scene->getDefaultPointsShader().empty();
@@ -4170,19 +4169,19 @@ void editor::Project::invalidateCustomShaders() {
             return false;
         });
         flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
-            return sceneUI || !ui.customShader.empty();
+            return sceneUI || !ui.shader.empty();
         });
         flagComponents(scene->getComponentArray<PointsComponent>(), [&](const PointsComponent& points) {
-            return scenePoints || !points.customShader.empty();
+            return scenePoints || !points.shader.empty();
         });
         flagComponents(scene->getComponentArray<LinesComponent>(), [&](const LinesComponent& lines) {
-            return sceneLines || !lines.customShader.empty();
+            return sceneLines || !lines.shader.empty();
         });
         flagComponents(scene->getComponentArray<SkyComponent>(), [&](const SkyComponent& sky) {
-            return sceneSky || !sky.customShader.empty();
+            return sceneSky || !sky.shader.empty();
         });
         flagComponents(scene->getComponentArray<WaterComponent>(), [&](const WaterComponent& water) {
-            return sceneWater || !water.customShader.empty() || !water.customUnderwaterShader.empty();
+            return sceneWater || !water.shader.empty() || !water.customUnderwaterShader.empty();
         });
 
         // post-process passes hold their shader directly, so the chain is rebuilt whole

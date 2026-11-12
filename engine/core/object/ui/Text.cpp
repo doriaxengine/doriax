@@ -326,20 +326,20 @@ AABB Text::getWorldAABB() const{
     return ui.worldAABB;
 }
 
-void Text::setCustomShader(const std::string& path){
+void Text::setShader(const std::string& path){
     UIComponent& ui = getComponent<UIComponent>();
 
-    if (ui.customShader != path){
-        ui.customShader = path;
+    if (ui.shader != path){
+        ui.shader = path;
 
         ui.needReload = true;
     }
 }
 
-std::string Text::getCustomShader() const{
+std::string Text::getShader() const{
     UIComponent& ui = getComponent<UIComponent>();
 
-    return ui.customShader;
+    return ui.shader;
 }
 
 void Text::setShaderUniform(const std::string& name, const Vector4& value){
@@ -375,4 +375,17 @@ bool Text::removeShaderUniform(const std::string& name){
 
     ui.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Text::setShaderTexture(const std::string& name, const Texture& texture){
+    UIComponent& ui = getComponent<UIComponent>();
+
+    ShaderTextures::set(ui.shaderTextures, name, texture);
+    ui.needReload = true;
+}
+
+Texture Text::getShaderTexture(const std::string& name) const{
+    UIComponent& ui = getComponent<UIComponent>();
+
+    return ShaderTextures::get(ui.shaderTextures, name);
 }

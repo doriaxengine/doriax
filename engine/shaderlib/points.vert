@@ -32,9 +32,15 @@ in float a_pointsize;
     in vec4 a_texturerect;
     out vec4 v_texturerect;
 #endif
+#ifdef HOOK_FRAGMENT_POSITION
+    out vec3 v_hookPosition;
+#endif
 
 
 #include "includes/parameters_vs.glsl"
+#ifdef USE_VERTEX_HOOKS
+    #include "includes/hooks_vs.glsl"
+#endif
 
 void main() {
     loadShaderParameters();
@@ -51,7 +57,19 @@ void main() {
         v_texturerect = a_texturerect;
     #endif
 
-    gl_Position = pointsParams.mvpMatrix * vec4(a_position, 1.0);
+    #if defined(USE_VERTEX_HOOKS) || defined(HOOK_FRAGMENT_POSITION)
+        vec3 position = a_position;
+        #ifdef USE_VERTEX_HOOKS
+            VertexContext context = getVertexContext(position, (paramsVS.effect_modelToWorld * vec4(position, 1.0)).xyz, mat4(1.0));
+            position += getModelOffset(context);
+        #endif
+        #ifdef HOOK_FRAGMENT_POSITION
+            v_hookPosition = (paramsVS.effect_modelToWorld * vec4(position, 1.0)).xyz;
+        #endif
+        gl_Position = pointsParams.mvpMatrix * vec4(position, 1.0);
+    #else
+        gl_Position = pointsParams.mvpMatrix * vec4(a_position, 1.0);
+    #endif
 
     // gl_Position.w is the eye-space depth for perspective and exactly 1.0 for
     // ortho/UI, so this single expression gives world-space sizing in both cases.

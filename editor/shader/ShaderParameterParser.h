@@ -72,7 +72,8 @@ namespace doriax::editor {
         HookContext_Fragment = 1 << 1,   // eye, forward and pass
         HookContext_View = 1 << 2,       // the camera's view matrix
         HookContext_Projection = 1 << 3, // the depth terms of the projection
-        HookContext_Clip = 1 << 4        // the y flip of the clip position
+        HookContext_Clip = 1 << 4,       // the y flip of the clip position
+        HookContext_Model = 1 << 5       // the model matrix
     };
 
     class ShaderParameterParser {
@@ -93,6 +94,8 @@ namespace doriax::editor {
         // member of the generated block: p_name, s_Collection_name, v_Collection_name
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
+        // the "#pragma shader" name of a program; the mesh passes share "mesh"
+        static std::string getShaderFileType(ShaderType shaderType);
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);

@@ -139,20 +139,20 @@ AABB Polygon::getWorldAABB() const{
     return ui.worldAABB;
 }
 
-void Polygon::setCustomShader(const std::string& path){
+void Polygon::setShader(const std::string& path){
     UIComponent& ui = getComponent<UIComponent>();
 
-    if (ui.customShader != path){
-        ui.customShader = path;
+    if (ui.shader != path){
+        ui.shader = path;
 
         ui.needReload = true;
     }
 }
 
-std::string Polygon::getCustomShader() const{
+std::string Polygon::getShader() const{
     UIComponent& ui = getComponent<UIComponent>();
 
-    return ui.customShader;
+    return ui.shader;
 }
 
 void Polygon::setShaderUniform(const std::string& name, const Vector4& value){
@@ -188,4 +188,17 @@ bool Polygon::removeShaderUniform(const std::string& name){
 
     ui.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Polygon::setShaderTexture(const std::string& name, const Texture& texture){
+    UIComponent& ui = getComponent<UIComponent>();
+
+    ShaderTextures::set(ui.shaderTextures, name, texture);
+    ui.needReload = true;
+}
+
+Texture Polygon::getShaderTexture(const std::string& name) const{
+    UIComponent& ui = getComponent<UIComponent>();
+
+    return ShaderTextures::get(ui.shaderTextures, name);
 }

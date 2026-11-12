@@ -785,8 +785,8 @@ bool Scene::removeDefaultShaderUniform(ShaderType type, const std::string& name)
     return true;
 }
 
-const ShaderUniformValues* Scene::getInheritedShaderUniforms(ShaderType type, const std::string& customShader) const{
-    if (!customShader.empty() || getDefaultCustomShader(type).empty())
+const ShaderUniformValues* Scene::getInheritedShaderUniforms(ShaderType type, const std::string& shader) const{
+    if (!shader.empty() || getDefaultCustomShader(type).empty())
         return nullptr;
 
     return &getDefaultShaderUniforms(type);
