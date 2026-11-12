@@ -63,11 +63,17 @@ namespace {
         return item;
     }
 
+    editor::ShaderNodes::FunctionPins functionPins;
+
 }
 
 const editor::ShaderNodes& editor::ShaderNodes::get() {
     static ShaderNodes instance;
     return instance;
+}
+
+void editor::ShaderNodes::setFunctionPins(FunctionPins lookup) {
+    functionPins = std::move(lookup);
 }
 
 const editor::NodeType* editor::ShaderNodes::findType(const std::string& id) const {
@@ -119,6 +125,26 @@ bool editor::ShaderNodes::canLink(const std::string& fromType, const std::string
 bool editor::ShaderNodes::getPins(const GraphNode& node, const ShaderNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error) {
     inputs = type.inputs;
     outputs = type.outputs;
+    if (type.id == "function/input" || type.id == "function/output") {
+        auto valueType = node.settings.find("valueType");
+        const std::string pinType = valueType != node.settings.end() ? valueType->second.text : type.findSetting("valueType")->value.text;
+        for (NodePin& pin : inputs)
+            pin.type = pinType;
+        for (NodePin& pin : outputs)
+            pin.type = pinType;
+        return true;
+    }
+    if (type.id == "utility/subgraph") {
+        auto file = node.settings.find("file");
+        if (file == node.settings.end() || file->second.text.empty() || !functionPins)
+            return true;
+        if (!functionPins(file->second.text, inputs, outputs)) {
+            if (error)
+                *error = file->second.text + " is not a function graph of the project";
+            return false;
+        }
+        return true;
+    }
     if (type.id != "utility/customFunction")
         return true;
 
@@ -804,4 +830,23 @@ vec2 graphParallax(texture2D graphTexture, sampler graphSampler, vec2 graphUV, v
     add("utility/vertexToFragment", "Vertex to Fragment", "Utility",
         "Works its input out per vertex and passes it to the fragments, interpolated, where it costs less.",
         {in("in", "In", "dynamic", 0.0f)}, {out("out", "Out", "dynamic")}, {"{in}"}).shaderTypes = {"mesh"};
+    ShaderNodeType& subgraph = add("utility/subgraph", "Subgraph", "Utility",
+        "Runs a function graph of the project, a .shader of type function: its Function Inputs are the pins on the left, its Function Outputs those on the right.",
+        {}, {}, {"%subgraph"});
+    subgraph.settings = {setting("file", "Function", "function")};
+
+    // ---- functions: what a function graph takes and gives
+
+    const std::vector<std::string> valueTypes = {"float", "vec2", "vec3", "vec4", "color", "int", "bool"};
+    ShaderNodeType& functionInput = add("function/input", "Function Input", "Function",
+        "A value the calling graph passes in, a pin of its Subgraph node. Default is used when it passes none.",
+        {in("default", "Default", "float", 0.0f)}, {out("out", "Out", "float")}, {"{default}"});
+    functionInput.settings = {setting("name", "Name", "text", "value"), choice("valueType", "Type", valueTypes)};
+    functionInput.shaderTypes = {"function"};
+    functionInput.inlined = true;
+    ShaderNodeType& functionOutput = add("function/output", "Function Output", "Function",
+        "A value the function gives back, a pin on the right of its Subgraph node.",
+        {in("value", "Value", "float", 0.0f)}, {}, {});
+    functionOutput.settings = {setting("name", "Name", "text", "result"), choice("valueType", "Type", valueTypes)};
+    functionOutput.shaderTypes = {"function"};
 }

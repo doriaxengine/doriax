@@ -84,6 +84,91 @@ namespace {
         return std::all_of(name.begin(), name.end(), [](char c) { return std::isalnum((unsigned char)c) || c == '_'; });
     }
 
+    // a setting's text, the type's default when the node leaves it
+    std::string settingText(const GraphNode& node, const char* name) {
+        auto it = node.settings.find(name);
+        if (it != node.settings.end())
+            return it->second.text;
+        const ShaderNodeType* type = ShaderNodes::get().find(node.type);
+        const NodeSetting* declared = type ? type->findSetting(name) : nullptr;
+        return declared ? declared->value.text : std::string();
+    }
+
+    // a function's Function Inputs and Outputs as the pins of a Subgraph node calling it, top to bottom
+    bool checkFunction(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::vector<ShaderGraphMessage>& errors) {
+        if (function.kind != "shader" || function.type != "function") {
+            errors.push_back({0, "not a function graph (type: " + function.type + ")"});
+            return false;
+        }
+        std::vector<const GraphNode*> ordered;
+        for (const GraphNode& node : function.nodes) {
+            if (node.type == "function/input" || node.type == "function/output")
+                ordered.push_back(&node);
+            else if (node.type.rfind("output/", 0) == 0)
+                errors.push_back({node.id, "a function graph gives its values through Function Output nodes"});
+        }
+        std::sort(ordered.begin(), ordered.end(), [](const GraphNode* a, const GraphNode* b) {
+            if (a->position.y != b->position.y)
+                return a->position.y < b->position.y;
+            return a->position.x != b->position.x ? a->position.x < b->position.x : a->id < b->id;
+        });
+        static const std::set<std::string> valueTypes = {"float", "vec2", "vec3", "vec4", "color", "int", "bool"};
+        std::set<std::string> inputNames, outputNames;
+        for (const GraphNode* node : ordered) {
+            const bool input = node->type == "function/input";
+            const std::string label = input ? "Function Input" : "Function Output";
+            const std::string name = settingText(*node, "name");
+            const std::string type = settingText(*node, "valueType");
+            if (!isIdentifier(name)) {
+                errors.push_back({node->id, label + " name " + name + " is not a name of letters, digits and _"});
+            } else if (!valueTypes.count(type)) {
+                errors.push_back({node->id, label + " has an unknown type " + type});
+            } else if (!(input ? inputNames : outputNames).insert(name).second) {
+                errors.push_back({node->id, "two " + label + "s are called " + name});
+            } else if (input) {
+                NodePin pin{name, name, type, GraphValue(0.0f), PinKind::DATA};
+                if (auto value = node->inputs.find("default"); value != node->inputs.end())
+                    pin.value = value->second;
+                inputs.push_back(pin);
+            } else {
+                outputs.push_back(NodePin{name, name, type, GraphValue(), PinKind::DATA});
+            }
+        }
+        if (outputs.empty() && errors.empty())
+            errors.push_back({0, "a function graph needs a Function Output"});
+        return errors.empty();
+    }
+
+    // the first shader type all of a function's nodes fit, which its preview draws in
+    std::string previewType(const GraphDocument& function) {
+        for (const char* candidate : {"mesh", "ui", "points", "lines", "sky", "water", "postprocess"}) {
+            const bool fits = std::all_of(function.nodes.begin(), function.nodes.end(), [&](const GraphNode& node) {
+                const ShaderNodeType* type = ShaderNodes::get().find(node.type);
+                if (!type || type->shaderTypes.empty() || node.type.rfind("function/", 0) == 0)
+                    return true;
+                return std::find(type->shaderTypes.begin(), type->shaderTypes.end(), candidate) != type->shaderTypes.end();
+            });
+            if (fits)
+                return candidate;
+        }
+        return "mesh";
+    }
+
+    // whether a node that works per vertex feeds this one
+    bool fedPerVertex(const GraphDocument& function, int node, std::set<int>& seen) {
+        if (!seen.insert(node).second)
+            return false;
+        for (const GraphLink& link : function.links) {
+            if (link.toNode != node || link.fromPin.empty())
+                continue;
+            const GraphNode* from = function.findNode(link.fromNode);
+            const ShaderNodeType* type = from ? ShaderNodes::get().find(from->type) : nullptr;
+            if ((type && type->stage == ShaderNodeStage::VERTEX) || fedPerVertex(function, link.fromNode, seen))
+                return true;
+        }
+        return false;
+    }
+
     // "rgba.xyz" is a swizzle of output rgba, "xyz" one of the first output
     void splitSwizzle(const std::string& pin, std::string& output, std::string& swizzle) {
         const size_t dot = pin.find('.');
@@ -250,7 +335,10 @@ namespace {
 
     class Compiler {
     public:
-        Compiler(const GraphDocument& graph, const std::string& source): graph(graph), source(source) {}
+        Compiler(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader): graph(graph), source(source), reader(reader) {}
+        // a function's preview: a graph of that type calling it once, with one output into slot
+        Compiler(const GraphDocument& function, const std::string& source, const ShaderGraphReader& reader,
+                 const std::string& type, const std::string& output, const std::string& slot);
 
         ShaderGraphResult run();
 
@@ -265,8 +353,15 @@ namespace {
             std::set<int> visiting;
         };
 
-        const GraphDocument& graph;
+        GraphDocument graph;                      // with every Subgraph node replaced by its function
         const std::string source;
+        const ShaderGraphReader& reader;
+        const GraphDocument* previewed = nullptr;   // the function a preview calls, as edited
+        int previewCall = 0;
+        std::map<int, int> origin;                // what came in through a Subgraph, to what its errors point at
+        std::map<int, std::string> originFile;    // and the function it came from
+        std::map<int, std::vector<std::string>> callers;    // the functions a Subgraph node sits in
+        std::set<std::string> functions;
         const ShaderNodes& library = ShaderNodes::get();
         ShaderGraphResult result;
         Stage vertex;
@@ -284,6 +379,10 @@ namespace {
 
         Stage& stageOf(const Body& body) { return body.hook->vertex ? vertex : fragment; }
 
+        void inlineSubgraphs();
+        bool inlineCall(const GraphNode& call);
+        void build();
+        void reportOrigins();
         bool checkGraph(const GraphNode*& output);
         bool evaluate(Body& body, int nodeId, const std::string& pin, Value& value);
         bool inputValue(Body& body, const GraphNode& node, const ShaderNodeType& type, const NodePin& pin, Value& value);
@@ -297,6 +396,234 @@ namespace {
         void writeFunctions(std::vector<Line>& out, const std::set<std::string>& names, const std::function<bool(const std::string&)>& here);
         std::string parameterLine(const GraphParameter& parameter);
     };
+
+    Compiler::Compiler(const GraphDocument& function, const std::string& source, const ShaderGraphReader& reader,
+                       const std::string& type, const std::string& output, const std::string& slot): source(source), reader(reader), previewed(&function) {
+        graph.kind = "shader";
+        graph.type = type;
+        const int draw = graph.addNode("output/" + type, Vector2());
+        previewCall = graph.addNode("utility/subgraph", Vector2());
+        graph.findNode(previewCall)->settings["file"] = GraphValue(source);
+        graph.connect(previewCall, output, draw, slot);
+    }
+
+    ShaderGraphResult Compiler::run() {
+        inlineSubgraphs();
+        build();
+        reportOrigins();
+        result.type = graph.type;
+        result.functions.assign(functions.begin(), functions.end());
+        return result;
+    }
+
+    void Compiler::inlineSubgraphs() {
+        auto isCall = [](const GraphNode& node) { return node.type == "utility/subgraph"; };
+        for (auto call = std::find_if(graph.nodes.begin(), graph.nodes.end(), isCall); call != graph.nodes.end();
+                call = std::find_if(graph.nodes.begin(), graph.nodes.end(), isCall)) {
+            const GraphNode node = *call;
+            // a call that failed leaves its error and nothing else
+            if (!inlineCall(node))
+                graph.removeNodes({node.id});
+            if (graph.nodes.size() > 4096) {
+                error(node.id, "Subgraph functions call each other too many times");
+                graph.nodes.erase(std::remove_if(graph.nodes.begin(), graph.nodes.end(), isCall), graph.nodes.end());
+            }
+        }
+    }
+
+    // a copy of the function takes the call's place: what fed the call feeds its Function
+    // Inputs, and what read the call reads its Function Outputs
+    bool Compiler::inlineCall(const GraphNode& call) {
+        const bool preview = call.id == previewCall;
+        const std::string file = settingText(call, "file");
+        const std::vector<std::string> outer = callers[call.id];
+        if (file.empty()) {
+            error(call.id, "Subgraph has no function set");
+            return false;
+        }
+        if (std::find(outer.begin(), outer.end(), file) != outer.end()) {
+            error(call.id, "Subgraph " + file + " calls itself");
+            return false;
+        }
+
+        GraphDocument function;
+        if (preview) {
+            function = *previewed;
+        } else {
+            std::string text, readError;
+            if (!reader || !reader(file, text)) {
+                error(call.id, "Subgraph cannot read " + file);
+                return false;
+            }
+            if (!function.read(text, readError)) {
+                error(call.id, file + ": " + readError);
+                return false;
+            }
+            functions.insert(file);
+        }
+        std::vector<NodePin> inputs, outputs;
+        std::vector<ShaderGraphMessage> problems;
+        if (!checkFunction(function, inputs, outputs, problems)) {
+            for (const ShaderGraphMessage& problem : problems)
+                error(call.id, file + ": " + problem.text);
+            return false;
+        }
+        for (const GraphLink& link : graph.links) {
+            if (link.toNode == call.id && std::none_of(inputs.begin(), inputs.end(), [&](const NodePin& pin) { return pin.name == link.toPin; })) {
+                error(call.id, file + " has no input " + link.toPin);
+                return false;
+            }
+        }
+
+        // a preview reports on the function's own nodes, a call on the Subgraph node
+        const int target = origin.count(call.id) ? origin[call.id] : call.id;
+        auto cameFrom = [&](int id, int own) {
+            origin[id] = preview ? own : target;
+            originFile[id] = preview ? std::string() : file;
+        };
+
+        // new ids; parameters join the graph's of the same name
+        std::map<int, int> ids;
+        for (const GraphParameter& parameter : function.parameters) {
+            if (const GraphParameter* existing = graph.findParameter(parameter.name)) {
+                if (existing->type != parameter.type) {
+                    error(call.id, file + " has a " + parameter.type + " parameter " + parameter.name + ", the graph a " + existing->type + " one");
+                    return false;
+                }
+                ids[parameter.id] = existing->id;
+                continue;
+            }
+            GraphParameter copy = parameter;
+            copy.id = graph.takeId();
+            ids[parameter.id] = copy.id;
+            cameFrom(copy.id, parameter.id);
+            graph.parameters.push_back(copy);
+        }
+        for (const GraphNode& node : function.nodes)
+            ids[node.id] = graph.takeId();
+        for (GraphNode node : function.nodes) {
+            const int own = node.id;
+            node.id = ids[own];
+            if (const ShaderNodeType* type = library.find(node.type)) {
+                for (const NodeSetting& declared : type->settings) {
+                    auto value = node.settings.find(declared.name);
+                    if (declared.type == "parameter" && value != node.settings.end() && value->second.text.empty()) {
+                        auto mapped = ids.find((int)value->second.number());
+                        value->second = GraphValue((float)(mapped != ids.end() ? mapped->second : 0));
+                    }
+                }
+            }
+            if (node.type == "utility/subgraph") {
+                callers[node.id] = outer;
+                callers[node.id].push_back(file);
+            }
+            cameFrom(node.id, own);
+            graph.nodes.push_back(node);
+        }
+        for (GraphLink link : function.links) {
+            auto from = ids.find(link.fromNode);
+            auto to = ids.find(link.toNode);
+            if (from == ids.end() || to == ids.end())
+                continue;
+            link.fromNode = from->second;
+            link.toNode = to->second;
+            graph.links.push_back(link);
+        }
+
+        for (const GraphNode& node : function.nodes) {
+            if (node.type != "function/input")
+                continue;
+            const std::string name = settingText(node, "name");
+            const int input = ids[node.id];
+            const GraphLink* fed = graph.findLinkInto(call.id, name);
+            auto constant = call.inputs.find(name);
+            if (!fed && constant == call.inputs.end())
+                continue;
+            const GraphLink link = fed ? *fed : GraphLink();
+            graph.disconnect(input, "default");
+            GraphNode* copy = graph.findNode(input);
+            copy->inputs.erase("default");
+            if (fed)
+                graph.links.push_back({link.fromNode, link.fromPin, input, "default"});
+            else
+                copy->inputs["default"] = constant->second;
+        }
+
+        // each output passes through an input node that turns its value to the output's type
+        std::set<int> sinks;
+        for (const GraphNode& node : function.nodes) {
+            if (node.type != "function/output")
+                continue;
+            const std::string name = settingText(node, "name");
+            const int sink = ids[node.id];
+            sinks.insert(sink);
+            GraphNode relay;
+            relay.id = graph.takeId();
+            relay.type = "function/input";
+            relay.settings["name"] = GraphValue(name);
+            relay.settings["valueType"] = GraphValue(settingText(node, "valueType"));
+            if (auto value = node.inputs.find("value"); value != node.inputs.end())
+                relay.inputs["default"] = value->second;
+            origin[relay.id] = origin[sink];
+            originFile[relay.id] = originFile[sink];
+            for (GraphLink& link : graph.links) {
+                if (link.toNode == sink) {
+                    link.toNode = relay.id;
+                    link.toPin = "default";
+                }
+                if (link.fromNode != call.id || link.fromPin.empty())
+                    continue;
+                std::string pin, swizzle;
+                splitSwizzle(link.fromPin, pin, swizzle);
+                // a bare swizzle reads the first output
+                const bool named = std::any_of(outputs.begin(), outputs.end(), [&](const NodePin& output) { return output.name == pin; });
+                if (!named && swizzle.empty() && isSwizzle(pin) && name == outputs.front().name) {
+                    swizzle = pin;
+                    pin = name;
+                }
+                if (pin != name)
+                    continue;
+                link.fromNode = relay.id;
+                link.fromPin = swizzle.empty() ? "out" : "out." + swizzle;
+            }
+            graph.nodes.push_back(relay);
+        }
+        for (const GraphLink& link : graph.links) {
+            if (link.fromNode == call.id && !link.fromPin.empty()) {
+                error(call.id, file + " has no output " + link.fromPin);
+                return false;
+            }
+        }
+
+        graph.links.erase(std::remove_if(graph.links.begin(), graph.links.end(), [&](const GraphLink& link) { return link.toNode == call.id; }), graph.links.end());
+        graph.nodes.erase(std::remove_if(graph.nodes.begin(), graph.nodes.end(), [&](const GraphNode& node) {
+            return node.id == call.id || sinks.count(node.id);
+        }), graph.nodes.end());
+        return true;
+    }
+
+    void Compiler::reportOrigins() {
+        std::vector<ShaderGraphMessage> errors;
+        std::set<std::string> seen;
+        for (ShaderGraphMessage message : result.errors) {
+            if (auto it = origin.find(message.node); it != origin.end()) {
+                const std::string& file = originFile[message.node];
+                if (!file.empty())
+                    message.text = file + ": " + message.text;
+                message.node = it->second;
+            } else if (previewed) {
+                // the preview's own output and call
+                message.node = 0;
+            }
+            if (seen.insert(std::to_string(message.node) + ":" + message.text).second)
+                errors.push_back(message);
+        }
+        result.errors = errors;
+        for (int& node : result.lineNodes) {
+            auto it = origin.find(node);
+            node = it != origin.end() ? it->second : (previewed ? 0 : node);
+        }
+    }
 
     bool Compiler::checkGraph(const GraphNode*& output) {
         static const std::set<std::string> fileTypes = {"mesh", "ui", "points", "lines", "sky", "water", "postprocess"};
@@ -348,6 +675,8 @@ namespace {
             std::string pinError;
             if (!ShaderNodes::getPins(node, *type, inputs, outputs, &pinError))
                 error(node.id, type->name + ": " + pinError);
+            if (type->id.rfind("function/", 0) == 0 && !origin.count(node.id))
+                error(node.id, type->name + " only works in a function graph");
             if (type->id.rfind("output/", 0) == 0) {
                 if (type->id != "output/" + graph.type)
                     error(node.id, type->name + " does not fit a " + graph.type + " shader");
@@ -682,7 +1011,8 @@ namespace {
             return true;
         }
 
-        if (!type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
+        if (!type->shaderTypes.empty() && type->id.rfind("function/", 0) != 0 &&
+                std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
             error(nodeId, type->name + " does not work in a " + graph.type + " shader");
             return false;
         }
@@ -904,10 +1234,10 @@ namespace {
         }
     }
 
-    ShaderGraphResult Compiler::run() {
+    void Compiler::build() {
         const GraphNode* output = nullptr;
         if (!checkGraph(output))
-            return result;
+            return;
 
         const ShaderNodeType* outputType = library.find(output->type);
         varyingsBody.hook = &hooks[1];
@@ -947,7 +1277,7 @@ namespace {
         if (varyings.size() > 4)
             error(varyings.back().node, "a graph passes at most 4 values from the vertices to the fragments, this one " + std::to_string(varyings.size()));
         if (!result.errors.empty())
-            return result;
+            return;
         // with nothing set it draws as the type does by default, through a color hook that keeps it
         if (bodies.empty() && varyings.empty()) {
             Body& body = bodies["getColor"];
@@ -1010,7 +1340,6 @@ namespace {
         }
         result.code = code;
         result.success = true;
-        return result;
     }
 
 }
@@ -1022,6 +1351,50 @@ std::string editor::ShaderGraphResult::describeErrors() const {
     return text;
 }
 
-editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source) {
-    return Compiler(graph, source).run();
+editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader) {
+    if (graph.kind != "shader" || graph.type != "function")
+        return Compiler(graph, source, reader).run();
+
+    // a function draws each output in turn, and shows the first
+    ShaderGraphResult result;
+    std::vector<NodePin> inputs, outputs;
+    if (!checkFunction(graph, inputs, outputs, result.errors))
+        return result;
+    const std::string type = previewType(graph);
+    const bool vertexSlot = ShaderNodes::get().find("output/" + type)->findInput("vertexOffset") != nullptr;
+    for (size_t i = 0; i < outputs.size(); i++) {
+        bool perVertex = false;
+        for (const GraphNode& node : graph.nodes) {
+            std::set<int> seen;
+            if (node.type == "function/output" && settingText(node, "name") == outputs[i].name)
+                perVertex = vertexSlot && fedPerVertex(graph, node.id, seen);
+        }
+        ShaderGraphResult drawn = Compiler(graph, source, reader, type, outputs[i].name, perVertex ? "vertexOffset" : "color").run();
+        if (i == 0) {
+            result.type = drawn.type;
+            result.code = drawn.code;
+            result.lineNodes = drawn.lineNodes;
+        }
+        for (const ShaderGraphMessage& message : drawn.errors) {
+            if (std::none_of(result.errors.begin(), result.errors.end(), [&](const ShaderGraphMessage& known) { return known.node == message.node && known.text == message.text; }))
+                result.errors.push_back(message);
+        }
+        for (const std::string& file : drawn.functions) {
+            if (std::find(result.functions.begin(), result.functions.end(), file) == result.functions.end())
+                result.functions.push_back(file);
+        }
+    }
+    result.success = result.errors.empty();
+    return result;
+}
+
+bool editor::ShaderGraphCompiler::getFunctionPins(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error) {
+    std::vector<ShaderGraphMessage> problems;
+    inputs.clear();
+    outputs.clear();
+    if (checkFunction(function, inputs, outputs, problems))
+        return true;
+    if (error)
+        *error = problems.front().text;
+    return false;
 }

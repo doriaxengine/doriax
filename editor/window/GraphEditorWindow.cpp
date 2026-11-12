@@ -142,6 +142,35 @@ namespace {
         return node.type.rfind("output/", 0) == 0;
     }
 
+    bool isFunctionGraph(const std::filesystem::path& path) {
+        if (path.extension() != ".shader")
+            return false;
+        std::ifstream file(path, std::ios::binary);
+        std::stringstream text;
+        text << file.rdbuf();
+        GraphDocument document;
+        std::string error;
+        return document.read(text.str(), error) && document.kind == "shader" && document.type == "function";
+    }
+
+    // the function graphs of a project, by path, past hidden folders such as .doriax
+    std::vector<std::string> findFunctionGraphs(const std::filesystem::path& root) {
+        std::vector<std::string> found;
+        std::error_code ec;
+        for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
+                !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+            if (it->path().filename().string().rfind(".", 0) == 0) {
+                if (it->is_directory(ec))
+                    it.disable_recursion_pending();
+                continue;
+            }
+            if (isFunctionGraph(it->path()))
+                found.push_back(std::filesystem::relative(it->path(), root, ec).generic_string());
+        }
+        std::sort(found.begin(), found.end());
+        return found;
+    }
+
     // a node, group or comment by its id
     bool exists(const GraphDocument& document, int id) {
         return document.findNode(id) ||
@@ -200,8 +229,15 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     }
     instance.loadError.clear();
     instance.text = instance.savedText = instance.document.write();
-    instance.compiled = ShaderGraphCompiler::compile(instance.document, key);
+    instance.compiled = compile(instance);
     return true;
+}
+
+editor::ShaderGraphResult editor::GraphEditorWindow::compile(const Instance& instance) const {
+    Project* owner = project;
+    return ShaderGraphCompiler::compile(instance.document, instance.filepath.generic_string(), [owner](const std::string& path, std::string& text) {
+        return ShaderBuilder::readGraphSource(owner, path, text);
+    });
 }
 
 bool editor::GraphEditorWindow::save(Instance& instance) {
@@ -229,7 +265,7 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
 void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::string& text) {
     const std::string key = instance.filepath.generic_string();
     instance.text = text;
-    instance.compiled = ShaderGraphCompiler::compile(instance.document, key);
+    instance.compiled = compile(instance);
     // the scene builds what the window shows, saved or not, and keeps the last that compiled
     if (!instance.compiled.success)
         return;
@@ -332,6 +368,14 @@ bool editor::GraphEditorWindow::isFileOpen(const std::filesystem::path& path) co
 bool editor::GraphEditorWindow::isFileModified(const std::filesystem::path& path) const {
     auto it = instances.find(toRelativePath(path));
     return it != instances.end() && it->second->loadError.empty() && it->second->text != it->second->savedText;
+}
+
+void editor::GraphEditorWindow::remapEditedGraphs(const std::function<bool(GraphDocument&)>& remap) {
+    for (auto& entry : instances) {
+        Instance& instance = *entry.second;
+        if (instance.loadError.empty() && instance.text != instance.savedText && remap(instance.document))
+            edit(instance);
+    }
 }
 
 bool editor::GraphEditorWindow::replaceFileText(const std::filesystem::path& path, const std::string& text) {
@@ -446,6 +490,11 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             continue;
         }
         item.title = type->name;
+        if (type->id == "utility/subgraph") {
+            auto file = node.settings.find("file");
+            if (file != node.settings.end() && !file->second.text.empty())
+                item.title = std::filesystem::path(file->second.text).stem().string();
+        }
         item.color = categoryColor(type->category);
 
         // what tells nodes of one type apart
@@ -790,6 +839,15 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                     }
                 }
                 break;
+            case CanvasEdit::Kind::OPEN: {
+                const GraphNode* node = change.ids.empty() ? nullptr : document.findNode(change.ids.front());
+                if (node && node->type == "utility/subgraph") {
+                    auto file = node->settings.find("file");
+                    if (file != node->settings.end() && !file->second.text.empty())
+                        openRequested = project->getProjectPath() / file->second.text;
+                }
+                break;
+            }
         }
     }
     if (!document.findNode(instance.inspected))
@@ -827,7 +885,9 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
         const ShaderNodeType* type = static_cast<const ShaderNodeType*>(base);
         if (type->id.rfind("output/", 0) == 0 || !matches(*type))
             continue;
-        if (!type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), instance.document.type) == type->shaderTypes.end())
+        // a function takes any node, the graph calling it decides where it runs
+        const bool function = instance.document.type == "function";
+        if (!type->shaderTypes.empty() && !function && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), instance.document.type) == type->shaderTypes.end())
             continue;
         if (instance.addFromNode && !instance.addFromType.empty() && type->id != "utility/customFunction") {
             const std::vector<NodePin>& pins = instance.addFromOutput ? type->inputs : type->outputs;
@@ -1124,6 +1184,31 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
                 }
                 ImGui::EndCombo();
             }
+        } else if (setting.type == "function") {
+            const std::string current = value.text;
+            const float openWidth = ImGui::CalcTextSize(ICON_FA_UP_RIGHT_FROM_SQUARE).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+            ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - openWidth - ImGui::GetStyle().ItemInnerSpacing.x);
+            if (ImGui::BeginCombo("##function", current.empty() ? "(none)" : current.c_str())) {
+                if (ImGui::IsWindowAppearing())
+                    functionGraphs = findFunctionGraphs(project->getProjectPath());
+                if (functionGraphs.empty())
+                    ImGui::TextDisabled("No function graph in the project");
+                for (const std::string& path : functionGraphs) {
+                    if (ImGui::Selectable(path.c_str(), path == current)) {
+                        node->settings[setting.name] = GraphValue(path);
+                        changed = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::BeginDisabled(current.empty());
+            if (ImGui::Button(ICON_FA_UP_RIGHT_FROM_SQUARE))
+                openRequested = project->getProjectPath() / current;
+            ImGui::SetItemTooltip("Open the function");
+            ImGui::EndDisabled();
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::TextUnformatted(setting.label.c_str());
         } else if (setting.type == "number") {
             // a constant, by the type of what it gives
             const std::string outType = outputs.empty() ? "float" : outputs.front().type;
@@ -1224,8 +1309,9 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
 }
 
 void editor::GraphEditorWindow::drawPreview(Instance& instance) {
-    // the scene shows the other types where they draw
-    if (instance.document.type != "mesh" || !ImGui::CollapsingHeader("Preview", ImGuiTreeNodeFlags_DefaultOpen))
+    // the scene shows the other types where they draw; a function, its first output on a mesh
+    const bool mesh = instance.document.type == "mesh" || (instance.document.type == "function" && instance.compiled.type == "mesh");
+    if (!mesh || !ImGui::CollapsingHeader("Preview", ImGuiTreeNodeFlags_DefaultOpen))
         return;
     if (!instance.preview) {
         instance.preview = std::make_unique<ShaderPreviewRender>(previewSize);
@@ -1336,13 +1422,16 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
         instance.showCode = !instance.showCode;
     ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : "The shader code the graph makes");
     ImGui::SameLine();
-    ImGui::BeginDisabled(!instance.compiled.success);
+    const bool function = instance.document.type == "function";
+    ImGui::BeginDisabled(!instance.compiled.success || function);
     if (ImGui::Button(ICON_FA_FILE_CODE " Convert"))
         convertToCode(instance);
-    ImGui::SetItemTooltip("Write the code to a .glsl beside the graph, and use it where the graph is used");
+    ImGui::SetItemTooltip(function ? "A function is used through Subgraph nodes" : "Write the code to a .glsl beside the graph, and use it where the graph is used");
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (instance.compiled.success)
+    if (instance.compiled.success && function)
+        ImGui::TextDisabled(ICON_FA_CHECK " function");
+    else if (instance.compiled.success)
         ImGui::TextDisabled(ICON_FA_CHECK " %s shader", instance.document.type.c_str());
     else
         ImGui::TextColored(errorColor, ICON_FA_TRIANGLE_EXCLAMATION " %d error%s", (int)instance.compiled.errors.size(), instance.compiled.errors.size() == 1 ? "" : "s");
@@ -1381,6 +1470,25 @@ void editor::GraphEditorWindow::drawCanvas(Instance& instance) {
                 const int node = instance.document.addNode(nodeType, snapped(instance.canvas.getMousePosition()));
                 instance.document.findNode(node)->settings[setting] = GraphValue((float)id);
                 instance.canvas.select({node});
+                edit(instance);
+            }
+        }
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")) {
+            std::set<int> added;
+            ImVec2 position = instance.canvas.getMousePosition();
+            const char* data = (const char*)payload->Data;
+            for (size_t offset = 0; offset < (size_t)payload->DataSize;) {
+                const std::string path(data + offset);
+                offset += path.size() + 1;
+                if (!isFunctionGraph(path))
+                    continue;
+                const int node = instance.document.addNode("utility/subgraph", snapped(position));
+                instance.document.findNode(node)->settings["file"] = GraphValue(toRelativePath(path));
+                added.insert(node);
+                position.y += 80.0f;
+            }
+            if (!added.empty()) {
+                instance.canvas.select(added);
                 edit(instance);
             }
         }
@@ -1504,4 +1612,9 @@ void editor::GraphEditorWindow::show() {
 
     if (tabsChanged)
         project->saveWorkspaceFile();
+    // opened once the loop over the open graphs is done
+    if (!openRequested.empty()) {
+        openFile(openRequested);
+        openRequested.clear();
+    }
 }

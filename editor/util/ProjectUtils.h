@@ -108,6 +108,8 @@ public:
     static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
     // a shader graph with only the type's output node, and the same written under shaders/
     static std::string getShaderGraphTemplate(ShaderType shaderType);
+    // a function graph passing one value through, for Subgraph nodes to call
+    static std::string getShaderFunctionTemplate();
     static std::string writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
     // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);

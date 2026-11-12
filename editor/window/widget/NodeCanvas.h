@@ -73,7 +73,8 @@ namespace doriax::editor {
             CUT,
             PASTE,           // at position
             DUPLICATE,
-            RESIZE_GROUP     // id to size
+            RESIZE_GROUP,    // id to size
+            OPEN             // a double click on node id
         };
 
         Kind kind = Kind::MOVE;

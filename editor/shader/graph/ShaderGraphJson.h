@@ -67,6 +67,16 @@ namespace doriax::editor {
                 item["settings"][name] = graphValueJson(value);
             for (const auto& [name, value] : node.inputs)
                 item["inputs"][name] = graphValueJson(value);
+            // a Subgraph's pins are its function's
+            const ShaderNodeType* type = ShaderNodes::get().find(node.type);
+            std::vector<NodePin> inputs, outputs;
+            if (node.type == "utility/subgraph" && type && ShaderNodes::getPins(node, *type, inputs, outputs)) {
+                item["pins"] = {{"inputs", nlohmann::json::array()}, {"outputs", nlohmann::json::array()}};
+                for (const NodePin& pin : inputs)
+                    item["pins"]["inputs"].push_back({{"name", pin.name}, {"type", pin.type}});
+                for (const NodePin& pin : outputs)
+                    item["pins"]["outputs"].push_back({{"name", pin.name}, {"type", pin.type}});
+            }
             out["nodes"].push_back(item);
         }
         out["links"] = nlohmann::json::array();

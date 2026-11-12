@@ -10,6 +10,7 @@
 #include "widget/NodeCanvas.h"
 
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -62,10 +63,14 @@ namespace doriax::editor {
         std::vector<std::unique_ptr<ShaderPreviewRender>> retiredPreviews;
         Instance* focused = nullptr;                 // this frame
         Instance* lastFocused = nullptr;             // what save and undo act on, while a menu has the focus
+        std::vector<std::string> functionGraphs;     // what a Subgraph's picker lists, found as it opens
+        std::filesystem::path openRequested;         // a function a Subgraph node asked to open
 
         std::string toRelativePath(const std::filesystem::path& path) const;
         bool load(Instance& instance);
         bool save(Instance& instance);
+        // with the project's function graphs as edited
+        ShaderGraphResult compile(const Instance& instance) const;
         // one undoable step: what changed in the document since it was last applied
         void edit(Instance& instance, const std::string& mergeKey = std::string());
         void applyText(Instance& instance, const std::string& text);
@@ -101,6 +106,8 @@ namespace doriax::editor {
         bool isFileModified(const std::filesystem::path& path) const;
         // an outside edit of an open graph, taken as one undoable step and saved; false when not open
         bool replaceFileText(const std::filesystem::path& path, const std::string& text);
+        // changes the graphs with unsaved edits, as an undoable step each; the others change on disk
+        void remapEditedGraphs(const std::function<bool(GraphDocument&)>& remap);
         bool isFocused() const;
         bool handleFileRename(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
 

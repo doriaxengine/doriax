@@ -5683,10 +5683,10 @@ class GraphOperations {
 public:
     std::map<std::string, int> refs;
 
-    // the output node answers to output
+    // the output node answers to output, in a function the first Function Output
     explicit GraphOperations(GraphDocument& graph): graph(graph) {
         for (const GraphNode& node : graph.nodes)
-            if (node.type.rfind("output/", 0) == 0)
+            if (isSink(node) && !refs.count("output"))
                 refs["output"] = node.id;
     }
 
@@ -5711,15 +5711,29 @@ public:
         layoutNotes();
     }
 
-    // nodes added without a position, in columns by their links' distance from the output
+    // nodes added without a position, in columns by their links' distance from the outputs
     void layoutNodes() {
-        const GraphNode* output = nullptr;
+        std::vector<const GraphNode*> sinks;
         for (const GraphNode& node : graph.nodes)
-            if (node.type.rfind("output/", 0) == 0)
-                output = &node;
-        if (placed.empty() || !output)
+            if (isSink(node))
+                sinks.push_back(&node);
+        if (placed.empty() || sinks.empty())
             return;
-        std::map<int, int> depth = {{output->id, 0}};
+        auto added = [&](int id) { return std::find(placed.begin(), placed.end(), id) != placed.end(); };
+        // the first one already there holds the place of the columns
+        const GraphNode* output = sinks.front();
+        for (const GraphNode* sink : sinks) {
+            if (!added(sink->id)) {
+                output = sink;
+                break;
+            }
+        }
+        std::map<int, int> depth;
+        std::map<int, int> rows;
+        for (const GraphNode* sink : sinks) {
+            depth[sink->id] = 0;
+            rows[0] += added(sink->id) ? 0 : 1;
+        }
         for (size_t pass = 0; pass <= graph.nodes.size(); pass++) {
             bool changed = false;
             for (const GraphLink& link : graph.links) {
@@ -5738,7 +5752,6 @@ public:
         int deepest = 0;
         for (const auto& entry : depth)
             deepest = std::max(deepest, entry.second);
-        std::map<int, int> rows;
         for (int id : placed) {
             GraphNode* node = graph.findNode(id);
             if (!node)
@@ -5784,6 +5797,10 @@ private:
     GraphDocument& graph;
     std::vector<int> placed;
     std::vector<int> notes;
+
+    bool isSink(const GraphNode& node) const {
+        return node.type.rfind("output/", 0) == 0 || (graph.type == "function" && node.type == "function/output");
+    }
 
     // an id, or the ref of something added earlier in the call
     int resolve(const Json& value) const {
@@ -6023,6 +6040,15 @@ private:
                     return false;
                 }
                 node->settings[name] = GraphValue((float)parameter->id);
+            } else if (setting->type == "function") {
+                GraphNode call = *node;
+                call.settings[name] = value;
+                std::vector<NodePin> functionInputs, functionOutputs;
+                if (value.text.empty() || !ShaderNodes::getPins(call, *type, functionInputs, functionOutputs)) {
+                    error = setting->label + " takes the path of a function graph of the project (a .shader of type function), in string_value";
+                    return false;
+                }
+                node->settings[name] = value;
             } else if (setting->type == "choice") {
                 const std::string chosen = value.text.empty() ? std::to_string((int)value.number()) : value.text;
                 if (std::find(setting->options.begin(), setting->options.end(), chosen) == setting->options.end()) {
@@ -6229,6 +6255,11 @@ bool graphPath(Project* project, const Json& arguments, fs::path& rel, std::stri
     return true;
 }
 
+// the function graphs Subgraph nodes call, as the editor holds them
+ShaderGraphReader graphReader(Project* project) {
+    return [project](const std::string& path, std::string& text) { return ShaderBuilder::readGraphSource(project, path, text); };
+}
+
 bool readGraphFile(const fs::path& path, GraphDocument& graph, std::string& error) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -6257,7 +6288,9 @@ ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
     Json list = Json::array();
     for (const NodeType* base : ShaderNodes::get().getTypes()) {
         const ShaderNodeType& type = *static_cast<const ShaderNodeType*>(base);
-        if (!graphType.empty() && !type.shaderTypes.empty() && std::find(type.shaderTypes.begin(), type.shaderTypes.end(), graphType) == type.shaderTypes.end())
+        // a function takes any node; the graph calling it decides where it runs
+        const bool function = graphType == "function" && type.id.rfind("output/", 0) != 0;
+        if (!graphType.empty() && !function && !type.shaderTypes.empty() && std::find(type.shaderTypes.begin(), type.shaderTypes.end(), graphType) == type.shaderTypes.end())
             continue;
         if (!category.empty() && lower(type.category) != category)
             continue;
@@ -6295,7 +6328,7 @@ ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
         return failResult(error);
 
     const std::string key = FileUtils::pathToGenericUtf8(rel);
-    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key);
+    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
     Json data = shaderGraphJson(graph, compiled);
     data["path"] = key;
     if (arguments.value("include_code", false) && compiled.success)
@@ -6325,11 +6358,11 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (fs::exists(fullPath, ec))
             return failResult(key + " already exists.");
         const std::string type = arguments.value("graph_type", "");
-        if (!ShaderNodes::get().find("output/" + type))
-            return failResult("graph_type must be mesh, ui, points, lines, sky, water or postprocess.");
+        if (type != "function" && !ShaderNodes::get().find("output/" + type))
+            return failResult("graph_type must be mesh, ui, points, lines, sky, water, postprocess or function.");
         graph.kind = "shader";
         graph.type = type;
-        graph.addNode("output/" + type, Vector2(300.0f, 0.0f));
+        graph.addNode(type == "function" ? "function/output" : "output/" + type, Vector2(300.0f, 0.0f));
     } else if (!readGraphFile(fullPath, graph, error)) {
         return failResult(error);
     }
@@ -6356,7 +6389,7 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         resourcesWindow->refreshCurrentDirectory();
     Out::info("AI %s graph: %s", create ? "created" : "edited", key.c_str());
 
-    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key);
+    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
     Json data = shaderGraphJson(graph, compiled);
     data["path"] = key;
     data["refs"] = operations.refs;

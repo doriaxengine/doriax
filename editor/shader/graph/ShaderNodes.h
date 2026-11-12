@@ -5,6 +5,7 @@
 
 #include "graph/NodeRegistry.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <string>
@@ -51,7 +52,12 @@ namespace doriax::editor {
 
     class ShaderNodes : public NodeRegistry {
     public:
+        // the inputs and outputs of a function graph by its path, which Subgraph nodes show
+        using FunctionPins = std::function<bool(const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs)>;
+
         static const ShaderNodes& get();
+        // the editor answers it from the project's files
+        static void setFunctionPins(FunctionPins lookup);
 
         const NodeType* findType(const std::string& id) const override;
         std::vector<const NodeType*> getTypes() const override;
@@ -59,7 +65,8 @@ namespace doriax::editor {
         const ShaderNodeType* find(const std::string& id) const;
         const ShaderFunction* findFunction(const std::string& name) const;
 
-        // the pins of one node, which a Custom Function takes from its signature; false on a bad signature
+        // the pins of one node: a Custom Function's come from its signature, a Subgraph's from its
+        // function and a Function Input's or Output's from its type; false on a bad signature or function
         static bool getPins(const GraphNode& node, const ShaderNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error = nullptr);
         // the type a pin carries in this node: a parameter's own, a mask's size
         static std::string getPinType(const GraphDocument& graph, const GraphNode& node, const NodePin& pin);

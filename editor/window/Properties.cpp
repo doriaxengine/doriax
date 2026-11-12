@@ -29,6 +29,8 @@
 #include "command/type/ComponentToBundleLocalCmd.h"
 #include "command/type/ScenePropertyCmd.h"
 #include "render/SceneRender2D.h"
+#include "shader/ShaderBuilder.h"
+#include "graph/Graph.h"
 #include "window/ResourcesWindow.h"
 #include "window/Structure.h"
 #include "App.h"
@@ -5152,6 +5154,14 @@ void editor::Properties::drawShaderFileRow(ShaderType shaderType, const std::str
         std::filesystem::path rel = std::filesystem::relative(path, projectPath, ec);
         if (ec || rel.empty() || *rel.begin() == ".." || !Util::isShaderFile(rel.string())) {
             Backend::getApp().registerAlert("Error", "Pick a .glsl file or a .shader graph inside the project.");
+            return;
+        }
+        std::string text;
+        GraphDocument graph;
+        std::string error;
+        if (rel.extension() == ".shader" && ShaderBuilder::readGraphSource(project, rel.generic_string(), text) &&
+                graph.read(text, error) && graph.type == "function") {
+            Backend::getApp().registerAlert("Error", "A function graph goes in no slot: other graphs call it through Subgraph nodes.");
             return;
         }
         setShader(rel.generic_string());

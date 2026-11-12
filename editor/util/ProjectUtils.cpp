@@ -312,6 +312,16 @@ std::string editor::ProjectUtils::getShaderGraphTemplate(ShaderType shaderType) 
     return graph.write();
 }
 
+std::string editor::ProjectUtils::getShaderFunctionTemplate() {
+    GraphDocument graph;
+    graph.kind = "shader";
+    graph.type = "function";
+    const int input = graph.addNode("function/input", Vector2(0.0f, 0.0f));
+    const int output = graph.addNode("function/output", Vector2(300.0f, 0.0f));
+    graph.connect(input, "out", output, "value");
+    return graph.write();
+}
+
 std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
     return writeEffectFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
 }

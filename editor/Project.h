@@ -527,6 +527,7 @@ namespace doriax::editor{
         // and marking affected scenes/bundles modified. The transform mutates the path in place
         // and returns whether it changed.
         void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform);
+        void remapSubgraphFunctions(const fs::path& oldRelative, const fs::path& newRelative);
         bool removeMissingChildSceneReferences(SceneProject& sceneProject);
         bool detachChildSceneFromParents(uint32_t childSceneId, const std::set<uint32_t>& skippedSceneIds);
 

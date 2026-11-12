@@ -492,10 +492,15 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
         gesture = Gesture::NONE;
     }
 
-    // a double click on a link puts a reroute on it
+    // a double click on a link puts a reroute on it, one on a node opens what it stands for
     if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         const CanvasLink* link = nullptr;
-        if (nodeAt(mouse) == 0 && linkAt(model, mouse, link)) {
+        if (const int node = nodeAt(mouse)) {
+            CanvasEdit edit;
+            edit.kind = CanvasEdit::Kind::OPEN;
+            edit.ids = {node};
+            edits.push_back(edit);
+        } else if (linkAt(model, mouse, link)) {
             CanvasEdit edit;
             edit.kind = CanvasEdit::Kind::REROUTE;
             edit.toNode = link->toNode;

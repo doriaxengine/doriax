@@ -34,6 +34,7 @@
 #include "util/DefaultFontArabic.h"
 
 #include "shader/ShaderBuilder.h"
+#include "shader/graph/ShaderNodes.h"
 #include "subsystem/MeshSystem.h"
 #include "subsystem/RenderSystem.h"
 #include "subsystem/UISystem.h"
@@ -116,6 +117,10 @@ editor::App::App(){
     terrainEditWindow = new TerrainEditWindow(&project);
     aiChatWindow = new AiChatWindow(&project, resourcesWindow);
     mcpServer = new ai::McpServer(&project, resourcesWindow);
+    // Subgraph nodes show the pins of the project's function graphs
+    ShaderNodes::setFunctionPins([this](const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs) {
+        return ShaderBuilder::getFunctionPins(&project, path, inputs, outputs);
+    });
 
     isInitialized = false;
     dockspaceNeedsRebuild = false;

@@ -12,6 +12,7 @@
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
 #include "window/GraphEditorWindow.h"
+#include "graph/Graph.h"
 #include "window/TerrainEditWindow.h"
 
 #include <cctype>
@@ -1676,6 +1677,49 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         path = updated;
         return true;
     });
+    remapSubgraphFunctions(oldRelative, newRelative);
+}
+
+// Subgraph nodes name their function by path, in the graph files
+void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const fs::path& newRelative) {
+    auto remap = [&](GraphDocument& graph) {
+        bool changed = false;
+        for (GraphNode& node : graph.nodes) {
+            auto file = node.settings.find("file");
+            std::string updated;
+            if (node.type == "utility/subgraph" && file != node.settings.end() && remapRelativeString(oldRelative, newRelative, file->second.text, updated)) {
+                file->second = GraphValue(updated);
+                changed = true;
+            }
+        }
+        return changed;
+    };
+
+    GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow();
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, ec);
+            !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (it->path().filename().string().rfind(".", 0) == 0) {
+            if (it->is_directory(ec))
+                it.disable_recursion_pending();
+            continue;
+        }
+        // one with unsaved edits takes it in its window
+        if (it->path().extension() != ".shader" || (graphEditor && graphEditor->isFileModified(it->path())))
+            continue;
+        std::ifstream in(it->path(), std::ios::binary);
+        std::stringstream text;
+        text << in.rdbuf();
+        in.close();
+        GraphDocument graph;
+        std::string error;
+        if (!graph.read(text.str(), error) || !remap(graph))
+            continue;
+        std::ofstream out(it->path(), std::ios::binary | std::ios::trunc);
+        out << graph.write();
+    }
+    if (graphEditor)
+        graphEditor->remapEditedGraphs(remap);
 }
 
 void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deletedPath) {
@@ -4106,9 +4150,11 @@ void editor::Project::invalidateCustomShaders() {
 }
 
 void editor::Project::invalidateCustomShader(const std::string& shader) {
-    editor::ShaderBuilder::invalidateCustomShader(shader);
-    ShaderPool::destroyCustomShader(ShaderPool::registerCustomShader(shader));
-    flagCustomShaderUsers(&shader);
+    // with the graphs that call it as a function
+    for (const std::string& changed : editor::ShaderBuilder::invalidateCustomShader(shader)) {
+        ShaderPool::destroyCustomShader(ShaderPool::registerCustomShader(changed));
+        flagCustomShaderUsers(&changed);
+    }
 }
 
 void editor::Project::flagCustomShaderUsers(const std::string* shader) {

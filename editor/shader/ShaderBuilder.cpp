@@ -58,7 +58,19 @@ std::mutex customSourceCacheMutex;
 std::unordered_map<std::string, std::shared_ptr<const CustomSourceSnapshot>> customSourceCache;
 // graphs edited in the editor, by path, until saved
 std::unordered_map<std::string, std::string> graphSources;
+// the graphs each function graph is inlined into
+std::unordered_map<std::string, std::unordered_set<std::string>> graphDependents;
 std::atomic<uint32_t> customShaderGeneration{0};
+
+// the pins Subgraph nodes show, read again once shaders were invalidated
+struct FunctionPinsEntry {
+    uint32_t generation = 0;
+    bool valid = false;
+    std::vector<editor::NodePin> inputs;
+    std::vector<editor::NodePin> outputs;
+};
+std::mutex functionPinsMutex;
+std::unordered_map<std::string, FunctionPinsEntry> functionPinsCache;
 
 bool readTextFile(const std::filesystem::path& path, std::string& content) {
     std::ifstream file(path, std::ios::binary);
@@ -105,7 +117,8 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     std::string cacheKey = customSourceCacheKey(project, shader);
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     auto edited = graphSources.find(shader);
-    const bool saved = !withEdits && edited != graphSources.end();
+    // with a graph edited, what the cache holds may have taken it in, as itself or as a function
+    const bool saved = !withEdits && !graphSources.empty();
     if (saved)
         edited = graphSources.end();
     else if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
@@ -140,7 +153,18 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 snapshot->error = shader + ": " + error;
                 return snapshot;
             }
-            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader);
+            // the functions it calls, as edited unless an export reads the saved files
+            auto readFunction = [&](const std::string& path, std::string& text) {
+                auto function = withEdits ? graphSources.find(path) : graphSources.end();
+                if (function != graphSources.end()) {
+                    text = function->second;
+                    return true;
+                }
+                return editor::Util::isSafeRelativePath(path) && readTextFile(projectRoot / path, text);
+            };
+            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction);
+            for (const std::string& function : compiled.functions)
+                graphDependents[function].insert(shader);
             if (!compiled.success) {
                 snapshot->error = shader + ": " + compiled.describeErrors();
                 return snapshot;
@@ -1457,26 +1481,70 @@ uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {
     return customShaderGeneration;
 }
 
-void editor::ShaderBuilder::invalidateCustomShader(const std::string& shader) {
+std::vector<std::string> editor::ShaderBuilder::invalidateCustomShader(const std::string& shader) {
     customShaderGeneration++;
+    // the graphs that inline it, and the graphs that inline those
+    std::vector<std::string> shaders = {shader};
+    auto listed = [&](const std::string& name) { return std::find(shaders.begin(), shaders.end(), name) != shaders.end(); };
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        for (size_t i = 0; i < shaders.size(); i++) {
+            auto dependents = graphDependents.find(shaders[i]);
+            if (dependents == graphDependents.end())
+                continue;
+            for (const std::string& dependent : dependents->second)
+                if (!listed(dependent))
+                    shaders.push_back(dependent);
+        }
+        for (auto it = customSourceCache.begin(); it != customSourceCache.end();)
+            it = listed(it->first.substr(it->first.find('\n') + 1)) ? customSourceCache.erase(it) : std::next(it);
+    }
     auto named = [&](ShaderKey key) {
         const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
-        return customId != 0 && ShaderPool::getCustomShaderName(customId) == shader;
+        return customId != 0 && listed(ShaderPool::getCustomShaderName(customId));
     };
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    for (auto it = shaderDataCache.begin(); it != shaderDataCache.end();)
+        it = named(it->first) ? shaderDataCache.erase(it) : std::next(it);
+    for (auto it = pendingBuilds.begin(); it != pendingBuilds.end();)
+        it = named(it->first) ? pendingBuilds.erase(it) : std::next(it);
+    return shaders;
+}
+
+bool editor::ShaderBuilder::readGraphSource(Project* project, const std::string& path, std::string& text) {
     {
-        std::lock_guard<std::mutex> lock(cacheMutex);
-        for (auto it = shaderDataCache.begin(); it != shaderDataCache.end();)
-            it = named(it->first) ? shaderDataCache.erase(it) : std::next(it);
-        for (auto it = pendingBuilds.begin(); it != pendingBuilds.end();)
-            it = named(it->first) ? pendingBuilds.erase(it) : std::next(it);
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        if (auto edited = graphSources.find(path); edited != graphSources.end()) {
+            text = edited->second;
+            return true;
+        }
     }
-    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-    const std::string suffix = "\n" + shader;
-    for (auto it = customSourceCache.begin(); it != customSourceCache.end();) {
-        const std::string& key = it->first;
-        const bool match = key.size() >= suffix.size() && key.compare(key.size() - suffix.size(), suffix.size(), suffix) == 0;
-        it = match ? customSourceCache.erase(it) : std::next(it);
+    return project && editor::Util::isSafeRelativePath(path) && readTextFile(project->getProjectPath() / path, text);
+}
+
+bool editor::ShaderBuilder::getFunctionPins(Project* project, const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs) {
+    const uint32_t generation = customShaderGeneration;
+    {
+        std::lock_guard<std::mutex> lock(functionPinsMutex);
+        auto cached = functionPinsCache.find(path);
+        if (cached != functionPinsCache.end() && cached->second.generation == generation) {
+            inputs = cached->second.inputs;
+            outputs = cached->second.outputs;
+            return cached->second.valid;
+        }
     }
+    std::string text;
+    FunctionPinsEntry entry;
+    entry.generation = generation;
+    GraphDocument function;
+    std::string error;
+    entry.valid = readGraphSource(project, path, text) && function.read(text, error) && ShaderGraphCompiler::getFunctionPins(function, entry.inputs, entry.outputs);
+    const bool valid = entry.valid;
+    inputs = entry.inputs;
+    outputs = entry.outputs;
+    std::lock_guard<std::mutex> lock(functionPinsMutex);
+    functionPinsCache[path] = std::move(entry);
+    return valid;
 }
 
 void editor::ShaderBuilder::invalidateCustomShaders() {

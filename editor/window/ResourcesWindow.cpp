@@ -1824,6 +1824,12 @@ void editor::ResourcesWindow::renderNewItemMenu(const fs::path& directory){
         for (const auto& [label, shaderType] : shaderTypes)
             if (ImGui::MenuItem(label))
                 startNewItem(type, directory, shaderType);
+        if (graph) {
+            ImGui::Separator();
+            if (ImGui::MenuItem("Function"))
+                startNewItem(NewItemType::SHADER_FUNCTION, directory);
+            ImGui::SetItemTooltip("A part other graphs use through Subgraph nodes");
+        }
         ImGui::EndMenu();
     }
 
@@ -1838,6 +1844,7 @@ void editor::ResourcesWindow::handleNewItem(){
     else if (newItemType == NewItemType::CPP_HEADER) popupName = "Create New C++ Header";
     else if (newItemType == NewItemType::SHADER) popupName = "Create New Shader";
     else if (newItemType == NewItemType::SHADER_GRAPH) popupName = "Create New Shader Graph";
+    else if (newItemType == NewItemType::SHADER_FUNCTION) popupName = "Create New Shader Function";
 
     // Handle new item creation popup
     if (isCreatingNewItem) {
@@ -1896,6 +1903,9 @@ void editor::ResourcesWindow::handleNewItem(){
                 } else if (newItemType == NewItemType::SHADER_GRAPH) {
                     if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
                     content = ProjectUtils::getShaderGraphTemplate(newItemShaderType);
+                } else if (newItemType == NewItemType::SHADER_FUNCTION) {
+                    if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
+                    content = ProjectUtils::getShaderFunctionTemplate();
                 }
 
                 try {
