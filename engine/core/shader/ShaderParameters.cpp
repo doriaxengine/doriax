@@ -179,6 +179,8 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
                 forward = index;
             }else if (info->name == "pass"){
                 pass = index;
+            }else if (info->name == "worldToView" && member.type == ShaderUniformType::MAT4){
+                worldToView = index;
             }else{
                 continue;
             }
@@ -225,6 +227,7 @@ void ShaderParameterBlock::clear(){
     eye = -1;
     forward = -1;
     pass = -1;
+    worldToView = -1;
     shared = false;
 }
 
@@ -288,6 +291,9 @@ void ShaderParameterBlock::writeFragmentContext(const ShaderEffectView& view, bo
     }
     if (pass != -1){
         writeValue(data, bindings[pass], Vector4(view.ditherOrigin.x, view.ditherOrigin.y, coverage ? 1.0f : 0.0f, fade ? 1.0f : 0.0f));
+    }
+    if (worldToView != -1){
+        writeFloats(data, bindings[worldToView].offset, &view.viewMatrix[0][0], 16);
     }
 }
 

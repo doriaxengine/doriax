@@ -1,6 +1,7 @@
 // Fragment hooks of the material's shader file, the same in every pass
 #include "includes/parameters_fs.glsl"
 #include "includes/coverage_helpers.glsl"
+#include "includes/srgb.glsl"
 
 struct FragmentContext {
     vec3 worldPosition;

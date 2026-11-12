@@ -28,6 +28,9 @@ in vec2 v_projZW;
 #if defined(ALPHA_MASK)
     uniform u_fs_depthMaterial {
         vec4 alphaParams; // x = baseColorFactor.a, y = alphaCutoff
+        #ifdef USE_SURFACE
+            vec4 baseColorFactor;
+        #endif
     } depthMaterial;
 #endif
 
@@ -53,8 +56,11 @@ in vec2 v_projZW;
 
 void main() {
     loadShaderParameters();
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context = getDepthContext();
+    #endif
     #ifdef USE_COVERAGE
-        applyCoverage(getDepthContext());
+        applyCoverage(context);
     #endif
     #if defined(ALPHA_MASK)
         float alpha = depthMaterial.alphaParams.x;
@@ -65,6 +71,22 @@ void main() {
         #if defined(ALPHA_MASK)
             alpha *= texColor.a;
         #endif
+    #endif
+    #ifdef USE_SURFACE
+        // only its alpha cuts here, as in the color pass
+        Surface surface;
+        surface.baseColor = depthMaterial.baseColorFactor.rgb;
+        #if defined(HAS_TEXTURE)
+            surface.baseColor *= sRGBToLinear(texColor).rgb;
+        #endif
+        surface.alpha = alpha;
+        surface.normal = context.normal;
+        surface.metallic = 0.0;
+        surface.roughness = 1.0;
+        surface.occlusion = 1.0;
+        surface.emissive = vec3(0.0);
+        getSurface(context, surface);
+        alpha = surface.alpha * keepHookInputs(context);
     #endif
     #if defined(ALPHA_MASK)
         if (alpha < depthMaterial.alphaParams.y) {

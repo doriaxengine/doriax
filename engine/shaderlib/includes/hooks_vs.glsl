@@ -1,6 +1,7 @@
 // Vertex hooks of the material's shader file, the same in every pass
 #include "includes/parameters_vs.glsl"
 #include "includes/instance_normal.glsl"
+#include "includes/srgb.glsl"
 
 struct VertexContext {
     vec3 localPosition;   // after morph, skin and terrain

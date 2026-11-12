@@ -3565,6 +3565,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             depthShaderData.getUniformBlockMembers("u_vs_depthParams", mesh.submeshes[i].sizeVSDepthParams);
             if (p_depthAlphaMask){
                 mesh.submeshes[i].slotFSDepthMaterial = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_FS_MATERIAL);
+                depthShaderData.getUniformBlockMembers("u_fs_depthMaterial", mesh.submeshes[i].sizeFSDepthMaterial);
             }
             if (p_instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
@@ -5214,8 +5215,9 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
-                Vector4 alphaParams(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f);
-                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, sizeof(Vector4), &alphaParams);
+                // the base color only for a surface hook
+                Vector4 depthMaterial[2] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor};
+                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, std::min((unsigned int)sizeof(depthMaterial), mesh.submeshes[i].sizeFSDepthMaterial), depthMaterial);
             }
 
             if (mesh.submeshes[i].hasSkinning){
@@ -9380,6 +9382,7 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     // worldDirection is the camera's backward axis
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+    effectView.viewMatrix = camera.viewMatrix;
     // depth targets start at the corner, the color pass moves this to its own
     effectView.ditherOrigin = Vector2(0.0f, 0.0f);
     effectView.time = (float)animationTime;

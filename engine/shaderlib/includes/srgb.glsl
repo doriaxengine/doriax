@@ -1,3 +1,6 @@
+#ifndef SRGB_FUNCTIONS
+#define SRGB_FUNCTIONS
+
 const float GAMMA = 2.2;
 const float INV_GAMMA = 1.0 / GAMMA;
 
@@ -16,3 +19,5 @@ vec3 sRGBToLinear(vec3 srgbIn){
 vec4 sRGBToLinear(vec4 srgbIn){
     return vec4(sRGBToLinear(srgbIn.xyz), srgbIn.w);
 }
+
+#endif

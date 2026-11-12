@@ -77,17 +77,22 @@ uniform u_fs_gbufferMaterial {
 
 void main() {
     loadShaderParameters();
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context = getGBufferContext();
+    #endif
     #ifdef USE_COVERAGE
-        applyCoverage(getGBufferContext());
+        applyCoverage(context);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)
         vec4 texColor = texture(sampler2D(u_baseColorTexture, u_baseColor_smp), v_uv1);
         baseColor *= sRGBToLinear(texColor);
     #endif
-    if (gbufferMaterial.params.w >= 0.0 && baseColor.a < gbufferMaterial.params.w) {
-        discard;
-    }
+    #ifndef USE_SURFACE
+        if (gbufferMaterial.params.w >= 0.0 && baseColor.a < gbufferMaterial.params.w) {
+            discard;
+        }
+    #endif
 
     float roughness = gbufferMaterial.params.x;
     float metallic  = gbufferMaterial.params.y;
@@ -117,6 +122,27 @@ void main() {
         metallic = terrainSurface.metallic;
         n = terrainSurface.normal;
         occlusion = terrainSurface.occlusion;
+    #endif
+
+    #ifdef USE_SURFACE
+        // as the color pass shades it, with the normal turned to world space and back
+        Surface surface;
+        surface.baseColor = baseColor.rgb;
+        surface.alpha = baseColor.a;
+        surface.normal = n * mat3(paramsFS.effect_worldToView);
+        surface.metallic = metallic;
+        surface.roughness = roughness;
+        surface.occlusion = occlusion;
+        surface.emissive = vec3(0.0);
+        getSurface(context, surface);
+        if (gbufferMaterial.params.w >= 0.0 && surface.alpha * keepHookInputs(context) < gbufferMaterial.params.w) {
+            discard;
+        }
+        baseColor.rgb = surface.baseColor;
+        n = normalize(mat3(paramsFS.effect_worldToView) * surface.normal);
+        roughness = surface.roughness;
+        metallic = surface.metallic;
+        occlusion = surface.occlusion;
     #endif
 
     frag_gbuffer = vec4(octEncode(n), clamp(roughness, 0.0, 1.0), clamp(metallic, 0.0, 1.0));

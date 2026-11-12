@@ -58,6 +58,7 @@ namespace doriax{
         // pixel the coverage dither counts from
         Vector2 ditherOrigin = Vector2(0.0f, 0.0f);
         float time = 0.0f;
+        Matrix4 viewMatrix;
         const ShaderParameterTable* scene = nullptr;
         const ShaderParameterTable* view = nullptr;
     };
@@ -87,6 +88,7 @@ namespace doriax{
         int eye = -1;
         int forward = -1;
         int pass = -1;
+        int worldToView = -1;
         bool shared = false;     // has SCENE or VIEW members
 
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);

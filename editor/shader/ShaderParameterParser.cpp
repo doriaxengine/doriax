@@ -571,8 +571,7 @@ std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::
     return errors;
 }
 
-std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
-                                                          bool vertexContext, bool fragmentContext,
+std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures){
     const std::string suffix = stage == ShaderStageType::VERTEX ? "VS" : "FS";
 
@@ -587,15 +586,18 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         parameters.push_back(info);
         members.push_back({(type == ShaderUniformType::MAT4 ? "mat4" : getTypeName(type)) + " " + member + ";", load});
     };
-    // the context of the effect hooks
-    if (vertexContext){
+    // the context of the hooks
+    if (context & HookContext_Vertex){
         addEngine(ShaderUniformType::MAT4, "effect_worldToModel", "worldToModel", "");
         addEngine(ShaderUniformType::FLOAT, "effect_offsetMax", "offsetMax", "");
     }
-    if (fragmentContext){
+    if (context & HookContext_Fragment){
         addEngine(ShaderUniformType::FLOAT4, "effect_eye", "eye", "");
         addEngine(ShaderUniformType::FLOAT3, "effect_forward", "forward", "");
         addEngine(ShaderUniformType::FLOAT4, "effect_pass", "pass", "");
+    }
+    if (context & HookContext_View){
+        addEngine(ShaderUniformType::MAT4, "effect_worldToView", "worldToView", "");
     }
     // Engine.time and Engine.resolution, only where the code reads them
     std::string engineStruct;

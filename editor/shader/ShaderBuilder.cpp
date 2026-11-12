@@ -232,8 +232,13 @@ void clearCustomSourceCache() {
 }
 
 // parameter headers, hook defines and flags; throws on a bad annotation
-void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, const char* shaderType, bool colorPass,
+void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
                            editor::ShaderDeclarations& declared) {
+    const char* shaderType = "mesh";
+    auto defined = [&](const char* name) {
+        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
+    };
+
     auto file = [&](const std::string& key) -> const std::string* {
         auto it = args.fileBuffers.find(key);
         return it != args.fileBuffers.end() ? &it->second : nullptr;
@@ -253,9 +258,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
     const bool useVertexOffset = vertexHooks.vertexOffset;
     const bool useCoverage = fragmentHooks.coverage;
-    // only the color pass shades
-    const bool useSurface = fragmentHooks.surface && colorPass;
-    const bool useColor = fragmentHooks.color && colorPass;
+    // the depth passes take only the surface alpha, of masked materials
+    const bool useSurface = fragmentHooks.surface && (passType != ShaderType::DEPTH || defined("ALPHA_MASK"));
+    const bool useColor = fragmentHooks.color && passType == ShaderType::MESH;
     const bool useFragmentHooks = useCoverage || useSurface || useColor;
     if (!shaderAsset.empty() && !useVertexOffset && !fragmentHooks.coverage && !fragmentHooks.surface && !fragmentHooks.color &&
             vertexHooks.errors.empty() && fragmentHooks.errors.empty())
@@ -272,9 +277,6 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
 
     // what the hooks read of the mesh, where this pass has it
-    auto defined = [&](const char* name) {
-        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
-    };
     const struct { const char* field; const char* name; bool available; } inputs[] = {
         {"uv1", "UV1", (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN")},
         {"normal", "NORMAL", defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS")},
@@ -332,9 +334,10 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     editor::ShaderParameterParser::checkDeclarations(declarations, errors);
 
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, declared.parameters, declared.textures);
+        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset ? editor::HookContext_Vertex : 0, declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useFragmentHooks, declared.parameters, declared.textures);
+        ShaderStageType::FRAGMENT, fragmentAnnotations, (useFragmentHooks ? editor::HookContext_Fragment : 0) |
+        ((useSurface && passType == ShaderType::GBUFFER) ? editor::HookContext_View : 0), declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
     args.fileBuffers["shader_textures_end_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, false);
@@ -1056,7 +1059,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         args.frag_file = customPaths.frag;
     }
 
-    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), "mesh", shaderType == ShaderType::MESH, declarations);
+    setupShaderParameters(args, ShaderPool::getCustomShaderAsset(customShader), shaderType, declarations);
 
     // compiled with its stages as conditions
     for (const auto& [key, content] : sources->projectBuffers)

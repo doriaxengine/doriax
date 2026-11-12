@@ -56,6 +56,13 @@ namespace doriax::editor {
         std::vector<std::string> errors;
     };
 
+    // engine values a stage's hooks read
+    enum HookContext : uint32_t {
+        HookContext_Vertex = 1 << 0,    // worldToModel and offsetMax
+        HookContext_Fragment = 1 << 1,  // eye, forward and pass
+        HookContext_View = 1 << 2       // the camera's view matrix
+    };
+
     class ShaderParameterParser {
     public:
         static void parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out);
@@ -75,8 +82,7 @@ namespace doriax::editor {
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
-        static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
-                                          bool vertexContext, bool fragmentContext,
+        static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);
         // defines of the texture names, or their undefs
         static std::string generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define);
