@@ -98,6 +98,9 @@ namespace doriax::editor {
         void show();
 
         bool isFileOpen(const std::filesystem::path& path) const;
+        bool isFileModified(const std::filesystem::path& path) const;
+        // an outside edit of an open graph, taken as one undoable step and saved; false when not open
+        bool replaceFileText(const std::filesystem::path& path, const std::string& text);
         bool isFocused() const;
         bool handleFileRename(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
 

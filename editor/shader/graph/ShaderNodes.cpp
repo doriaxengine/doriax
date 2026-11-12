@@ -91,6 +91,31 @@ const editor::ShaderFunction* editor::ShaderNodes::findFunction(const std::strin
     return it != functions.end() ? &it->second : nullptr;
 }
 
+std::string editor::ShaderNodes::getPinType(const GraphDocument& graph, const GraphNode& node, const NodePin& pin) {
+    if (pin.type == "parameter") {
+        auto setting = node.settings.find("parameter");
+        if (setting != node.settings.end() && setting->second.text.empty())
+            if (const GraphParameter* parameter = graph.findParameter((int)setting->second.number()))
+                return parameter->type;
+        auto valueType = node.settings.find("valueType");
+        return valueType != node.settings.end() ? valueType->second.text : "float";
+    }
+    if (pin.type == "mask") {
+        auto mask = node.settings.find("mask");
+        static const char* types[] = {"float", "float", "vec2", "vec3", "vec4"};
+        return types[std::min<size_t>(mask != node.settings.end() ? mask->second.text.size() : 3, 4)];
+    }
+    return pin.type;
+}
+
+bool editor::ShaderNodes::canLink(const std::string& fromType, const std::string& toType) {
+    const bool fromTexture = fromType == "texture2D" || fromType == "textureCube";
+    const bool toTexture = toType == "texture2D" || toType == "textureCube";
+    if (fromTexture || toTexture || fromType == "bool" || toType == "bool")
+        return fromType == toType;
+    return true;
+}
+
 bool editor::ShaderNodes::getPins(const GraphNode& node, const ShaderNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error) {
     inputs = type.inputs;
     outputs = type.outputs;

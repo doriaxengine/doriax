@@ -70,15 +70,6 @@ namespace {
         return 1;
     }
 
-    // whether a value of one type reaches a pin of another; numbers convert, the rest does not
-    bool compatible(const std::string& from, const std::string& to) {
-        if (isTexture(from) || isTexture(to))
-            return from == to;
-        if (from == "bool" || to == "bool")
-            return from == to;
-        return true;
-    }
-
     std::string formatNumber(float value) {
         char buffer[32];
         auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
@@ -104,22 +95,6 @@ namespace {
         return it != node.settings.end() && it->second.text.empty() ? document.findParameter((int)it->second.number()) : nullptr;
     }
 
-    // the type a pin carries in this node: a parameter's own, a mask's size
-    std::string pinType(const GraphDocument& document, const GraphNode& node, const NodePin& pin) {
-        if (pin.type == "parameter") {
-            if (const GraphParameter* parameter = namedParameter(document, node, "parameter"))
-                return parameter->type;
-            auto valueType = node.settings.find("valueType");
-            return valueType != node.settings.end() ? valueType->second.text : "float";
-        }
-        if (pin.type == "mask") {
-            auto mask = node.settings.find("mask");
-            static const char* types[] = {"float", "float", "vec2", "vec3", "vec4"};
-            return types[std::min<size_t>(mask != node.settings.end() ? mask->second.text.size() : 3, 4)];
-        }
-        return pin.type;
-    }
-
     bool nodePins(const GraphNode& node, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, const ShaderNodeType** found = nullptr) {
         const ShaderNodeType* type = ShaderNodes::get().find(node.type);
         if (found)
@@ -132,24 +107,6 @@ namespace {
             outputs = type->outputs;
         }
         return true;
-    }
-
-    // whether from feeds to, so a link from to into from would close a loop
-    bool feeds(const GraphDocument& document, int from, int to) {
-        std::vector<int> open = {from};
-        std::set<int> seen;
-        while (!open.empty()) {
-            const int node = open.back();
-            open.pop_back();
-            if (node == to)
-                return true;
-            if (!seen.insert(node).second)
-                continue;
-            for (const GraphLink& link : document.links)
-                if (!link.fromPin.empty() && link.fromNode == node)
-                    open.push_back(link.toNode);
-        }
-        return false;
     }
 
     // a string typed into a buffer with room to grow, as Properties does
@@ -372,6 +329,26 @@ bool editor::GraphEditorWindow::isFileOpen(const std::filesystem::path& path) co
     return instances.count(toRelativePath(path)) > 0;
 }
 
+bool editor::GraphEditorWindow::isFileModified(const std::filesystem::path& path) const {
+    auto it = instances.find(toRelativePath(path));
+    return it != instances.end() && it->second->loadError.empty() && it->second->text != it->second->savedText;
+}
+
+bool editor::GraphEditorWindow::replaceFileText(const std::filesystem::path& path, const std::string& text) {
+    auto it = instances.find(toRelativePath(path));
+    if (it == instances.end() || !it->second->loadError.empty())
+        return false;
+    GraphDocument document;
+    std::string error;
+    if (!document.read(text, error))
+        return false;
+    Instance& instance = *it->second;
+    instance.document = document;
+    instance.lastEdit = nullptr;
+    edit(instance);
+    return save(instance);
+}
+
 bool editor::GraphEditorWindow::isFocused() const {
     return focused != nullptr;
 }
@@ -491,7 +468,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             CanvasPin canvasPin;
             canvasPin.name = pin.name;
             canvasPin.label = pin.label;
-            canvasPin.color = typeColor(pinType(document, node, pin));
+            canvasPin.color = typeColor(ShaderNodes::getPinType(document, node, pin));
             const GraphLink* link = document.findLinkInto(node.id, pin.name);
             canvasPin.connected = link && !link->fromPin.empty();
             if (link && link->fromPin.empty()) {
@@ -508,7 +485,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
             CanvasPin canvasPin;
             canvasPin.name = pin.name;
             canvasPin.label = pin.label;
-            canvasPin.color = typeColor(pinType(document, node, pin));
+            canvasPin.color = typeColor(ShaderNodes::getPinType(document, node, pin));
             for (const GraphLink& link : document.links)
                 if (link.fromNode == node.id && !link.fromPin.empty() && link.fromPin.substr(0, link.fromPin.find('.')) == pin.name)
                     canvasPin.connected = true;
@@ -570,8 +547,8 @@ void editor::GraphEditorWindow::addNode(Instance& instance, const NodeType& type
         const GraphNode& node = *document.findNode(id);
         if (instance.addFromNode && nodePins(node, inputs, outputs)) {
             for (const NodePin& pin : instance.addFromOutput ? inputs : outputs) {
-                const std::string pinKind = pinType(document, node, pin);
-                if (instance.addFromOutput ? !compatible(instance.addFromType, pinKind) : !compatible(pinKind, instance.addFromType))
+                const std::string pinKind = ShaderNodes::getPinType(document, node, pin);
+                if (instance.addFromOutput ? !ShaderNodes::canLink(instance.addFromType, pinKind) : !ShaderNodes::canLink(pinKind, instance.addFromType))
                     continue;
                 if (instance.addFromOutput)
                     document.connect(instance.addFromNode, instance.addFromPin, id, pin.name);
@@ -735,15 +712,15 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                 std::string fromType, toType;
                 for (const NodePin& pin : fromOutputs)
                     if (pin.name == change.fromPin.substr(0, change.fromPin.find('.')))
-                        fromType = pinType(document, *from, pin);
+                        fromType = ShaderNodes::getPinType(document, *from, pin);
                 for (const NodePin& pin : toInputs)
                     if (pin.name == change.toPin)
-                        toType = pinType(document, *to, pin);
-                if (fromType.empty() || toType.empty() || !compatible(fromType, toType)) {
+                        toType = ShaderNodes::getPinType(document, *to, pin);
+                if (fromType.empty() || toType.empty() || !ShaderNodes::canLink(fromType, toType)) {
                     Out::warning("A %s output does not go into a %s input", fromType.c_str(), toType.c_str());
                     break;
                 }
-                if (feeds(document, change.toNode, change.fromNode)) {
+                if (document.feeds(change.toNode, change.fromNode)) {
                     Out::warning("That link would make the graph loop");
                     break;
                 }
@@ -768,7 +745,7 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                 if (node && nodePins(*node, inputs, outputs))
                     for (const NodePin& pin : change.fromOutput ? outputs : inputs)
                         if (pin.name == change.fromPin.substr(0, change.fromPin.find('.')))
-                            instance.addFromType = pinType(document, *node, pin);
+                            instance.addFromType = ShaderNodes::getPinType(document, *node, pin);
                 break;
             }
             case CanvasEdit::Kind::REROUTE: {
@@ -855,7 +832,7 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
         if (instance.addFromNode && !instance.addFromType.empty() && type->id != "utility/customFunction") {
             const std::vector<NodePin>& pins = instance.addFromOutput ? type->inputs : type->outputs;
             const bool fits = std::any_of(pins.begin(), pins.end(), [&](const NodePin& pin) {
-                return instance.addFromOutput ? compatible(instance.addFromType, pin.type) : compatible(pin.type, instance.addFromType);
+                return instance.addFromOutput ? ShaderNodes::canLink(instance.addFromType, pin.type) : ShaderNodes::canLink(pin.type, instance.addFromType);
             });
             if (!fits)
                 continue;

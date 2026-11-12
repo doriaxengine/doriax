@@ -424,6 +424,23 @@ const editor::GraphParameter* editor::GraphDocument::findParameter(const std::st
     return nullptr;
 }
 
+bool editor::GraphDocument::feeds(int from, int to) const {
+    std::vector<int> open = {from};
+    std::set<int> seen;
+    while (!open.empty()) {
+        const int node = open.back();
+        open.pop_back();
+        if (node == to)
+            return true;
+        if (!seen.insert(node).second)
+            continue;
+        for (const GraphLink& link : links)
+            if (!link.fromPin.empty() && link.fromNode == node)
+                open.push_back(link.toNode);
+    }
+    return false;
+}
+
 const editor::GraphLink* editor::GraphDocument::findLinkInto(int node, const std::string& pin) const {
     for (const GraphLink& link : links)
         if (link.toNode == node && link.toPin == pin)

@@ -17,6 +17,8 @@
 #include "Exporter.h"
 #include "Stream.h"
 #include "render/SceneRender.h"
+#include "shader/graph/ShaderGraphJson.h"
+#include "window/GraphEditorWindow.h"
 #include "util/CxxStandards.h"
 #include "util/ProjectUtils.h"
 #include "util/FileUtils.h"
@@ -2515,6 +2517,9 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "set_export_shaders") return setExportShaders(arguments);
     if (name == "generate_shaders") return generateShaders(arguments, cancel);
     if (name == "write_shader_file") return writeShaderFile(arguments);
+    if (name == "list_graph_node_types") return listGraphNodeTypes(arguments);
+    if (name == "read_graph") return readGraph(arguments);
+    if (name == "edit_graph") return editGraph(arguments);
     if (name == "inspect_shader_uniforms") return inspectShaderUniforms(arguments);
     if (name == "set_shader_uniform") return setShaderUniform(arguments);
     if (name == "list_post_process_passes") return listPostProcessPasses(arguments);
@@ -5629,6 +5634,734 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
                          {"bytes", content.size()}});
 }
 
+
+namespace {
+
+// the typed value fields of a graph operation
+bool graphOperationValue(const Json& operation, GraphValue& value) {
+    if (operation.contains("number_value") && operation["number_value"].is_number()) {
+        value = GraphValue(operation["number_value"].get<float>());
+        return true;
+    }
+    if (operation.contains("vector_value") && operation["vector_value"].is_array()) {
+        std::vector<float> numbers;
+        for (const Json& number : operation["vector_value"]) {
+            if (!number.is_number())
+                return false;
+            numbers.push_back(number.get<float>());
+        }
+        value = GraphValue(numbers);
+        return !numbers.empty() && numbers.size() <= 4;
+    }
+    if (operation.contains("string_value") && operation["string_value"].is_string()) {
+        value = GraphValue(operation["string_value"].get<std::string>());
+        return true;
+    }
+    if (operation.contains("bool_value") && operation["bool_value"].is_boolean()) {
+        value = GraphValue(operation["bool_value"].get<bool>() ? 1.0f : 0.0f);
+        return true;
+    }
+    return false;
+}
+
+std::string joinWords(const std::vector<std::string>& words) {
+    std::string text;
+    for (const std::string& word : words)
+        text += (text.empty() ? "" : ", ") + word;
+    return text;
+}
+
+std::string pinNames(const std::vector<NodePin>& pins) {
+    std::vector<std::string> names;
+    for (const NodePin& pin : pins)
+        names.push_back(pin.name);
+    return names.empty() ? std::string("none") : joinWords(names);
+}
+
+// edit_graph's operations on a graph; refs name what the call added
+class GraphOperations {
+public:
+    std::map<std::string, int> refs;
+
+    // the output node answers to output
+    explicit GraphOperations(GraphDocument& graph): graph(graph) {
+        for (const GraphNode& node : graph.nodes)
+            if (node.type.rfind("output/", 0) == 0)
+                refs["output"] = node.id;
+    }
+
+    bool apply(const Json& operation, std::string& error) {
+        const std::string op = operation.value("op", "");
+        if (op == "add_node") return addNode(operation, error);
+        if (op == "remove") return remove(operation, error);
+        if (op == "move") return move(operation, error);
+        if (op == "connect") return connect(operation, error);
+        if (op == "disconnect") return disconnect(operation, error);
+        if (op == "set") return set(operation, error);
+        if (op == "add_parameter") return addParameter(operation, error);
+        if (op == "set_parameter") return setParameter(operation, error);
+        if (op == "remove_parameter") return removeParameter(operation, error);
+        if (op == "add_group" || op == "add_comment") return addLayout(operation, op == "add_group", error);
+        error = "there is no op \"" + op + "\"";
+        return false;
+    }
+
+    void layout() {
+        layoutNodes();
+        layoutNotes();
+    }
+
+    // nodes added without a position, in columns by their links' distance from the output
+    void layoutNodes() {
+        const GraphNode* output = nullptr;
+        for (const GraphNode& node : graph.nodes)
+            if (node.type.rfind("output/", 0) == 0)
+                output = &node;
+        if (placed.empty() || !output)
+            return;
+        std::map<int, int> depth = {{output->id, 0}};
+        for (size_t pass = 0; pass <= graph.nodes.size(); pass++) {
+            bool changed = false;
+            for (const GraphLink& link : graph.links) {
+                auto to = depth.find(link.toNode);
+                if (link.fromPin.empty() || to == depth.end())
+                    continue;
+                auto from = depth.find(link.fromNode);
+                if (from == depth.end() || from->second < to->second + 1) {
+                    depth[link.fromNode] = to->second + 1;
+                    changed = true;
+                }
+            }
+            if (!changed)
+                break;
+        }
+        int deepest = 0;
+        for (const auto& entry : depth)
+            deepest = std::max(deepest, entry.second);
+        std::map<int, int> rows;
+        for (int id : placed) {
+            GraphNode* node = graph.findNode(id);
+            if (!node)
+                continue;
+            auto found = depth.find(id);
+            const int column = found != depth.end() ? found->second : deepest + 1;
+            node->position = Vector2(output->position.x - 280.0f * column, output->position.y + 150.0f * rows[column]++);
+        }
+    }
+
+    // groups without a position frame what the call added, or the whole graph; comments go above it
+    void layoutNotes() {
+        if (notes.empty())
+            return;
+        float left = 1e9f, top = 1e9f, right = -1e9f, bottom = -1e9f;
+        for (const GraphNode& node : graph.nodes) {
+            if (!placed.empty() && std::find(placed.begin(), placed.end(), node.id) == placed.end())
+                continue;
+            const ShaderNodeType* type = ShaderNodes::get().find(node.type);
+            const size_t rows = type ? std::max(type->inputs.size(), type->outputs.size()) : 1;
+            left = std::min(left, node.position.x - 30.0f);
+            top = std::min(top, node.position.y - 50.0f);
+            right = std::max(right, node.position.x + 250.0f);
+            bottom = std::max(bottom, node.position.y + 60.0f + 20.0f * rows);
+        }
+        if (left > right)
+            return;
+        float above = top - 40.0f;
+        for (int id : notes) {
+            for (GraphGroup& group : graph.groups)
+                if (group.id == id)
+                    group.rect = Vector4(left, top, right - left, bottom - top);
+            for (GraphComment& comment : graph.comments) {
+                if (comment.id == id) {
+                    comment.position = Vector2(left, above);
+                    above -= 30.0f;
+                }
+            }
+        }
+    }
+
+private:
+    GraphDocument& graph;
+    std::vector<int> placed;
+    std::vector<int> notes;
+
+    // an id, or the ref of something added earlier in the call
+    int resolve(const Json& value) const {
+        if (value.is_number_integer())
+            return value.get<int>();
+        if (!value.is_string())
+            return 0;
+        const std::string text = value.get<std::string>();
+        if (auto ref = refs.find(text); ref != refs.end())
+            return ref->second;
+        const bool digits = !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isdigit(c); });
+        return digits ? std::atoi(text.c_str()) : 0;
+    }
+
+    void keep(const Json& operation, int id) {
+        if (operation.contains("ref") && operation["ref"].is_string())
+            refs[operation["ref"].get<std::string>()] = id;
+    }
+
+    // node.pin, with the node by id or ref
+    bool pinRef(const std::string& text, int& node, std::string& pin) const {
+        const size_t dot = text.find('.');
+        if (dot == std::string::npos)
+            return false;
+        node = resolve(Json(text.substr(0, dot)));
+        pin = text.substr(dot + 1);
+        return node && !pin.empty();
+    }
+
+    GraphNode* findNode(const Json& operation, std::string& error) {
+        GraphNode* node = operation.contains("node") ? graph.findNode(resolve(operation["node"])) : nullptr;
+        if (!node)
+            error = operation.contains("node") ? "there is no node " + operation["node"].dump() : "node is required";
+        return node;
+    }
+
+    bool pins(const GraphNode& node, const ShaderNodeType*& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string& error) const {
+        type = ShaderNodes::get().find(node.type);
+        if (!type) {
+            error = "node " + std::to_string(node.id) + " has the unknown type " + node.type;
+            return false;
+        }
+        if (!ShaderNodes::getPins(node, *type, inputs, outputs)) {
+            inputs = type->inputs;
+            outputs = type->outputs;
+        }
+        return true;
+    }
+
+    Vector2 position(const Json& operation) const {
+        const Json& at = operation["position"];
+        return Vector2(at.value("x", 0.0f), at.value("y", 0.0f));
+    }
+
+    bool addNode(const Json& operation, std::string& error) {
+        const std::string typeId = operation.value("type", "");
+        const ShaderNodeType* type = ShaderNodes::get().find(typeId);
+        if (!type) {
+            error = "there is no node type \"" + typeId + "\"; list_graph_node_types lists them";
+            return false;
+        }
+        if (!type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
+            error = type->name + " does not fit a " + graph.type + " graph";
+            return false;
+        }
+        if (typeId.rfind("output/", 0) == 0 && std::any_of(graph.nodes.begin(), graph.nodes.end(), [](const GraphNode& node) { return node.type.rfind("output/", 0) == 0; })) {
+            error = "the graph has its output node already";
+            return false;
+        }
+        const bool given = operation.contains("position") && operation["position"].is_object();
+        const int id = graph.addNode(typeId, given ? position(operation) : Vector2(0.0f, 0.0f));
+        if (!given)
+            placed.push_back(id);
+        keep(operation, id);
+        return true;
+    }
+
+    bool isLayout(int id) const {
+        return std::any_of(graph.groups.begin(), graph.groups.end(), [&](const GraphGroup& group) { return group.id == id; }) ||
+               std::any_of(graph.comments.begin(), graph.comments.end(), [&](const GraphComment& comment) { return comment.id == id; });
+    }
+
+    bool remove(const Json& operation, std::string& error) {
+        std::vector<int> ids;
+        if (operation.contains("ids") && operation["ids"].is_array()) {
+            for (const Json& id : operation["ids"])
+                ids.push_back(resolve(id));
+        } else if (operation.contains("node")) {
+            ids.push_back(resolve(operation["node"]));
+        }
+        if (ids.empty()) {
+            error = "remove needs node or ids";
+            return false;
+        }
+        for (int id : ids) {
+            const GraphNode* node = graph.findNode(id);
+            if (!node && !isLayout(id)) {
+                error = "there is no node, group or comment " + std::to_string(id);
+                return false;
+            }
+            if (node && node->type.rfind("output/", 0) == 0) {
+                error = "the output node stays, a graph needs it";
+                return false;
+            }
+        }
+        graph.removeNodes(ids);
+        return true;
+    }
+
+    bool move(const Json& operation, std::string& error) {
+        if (!operation.contains("position") || !operation["position"].is_object()) {
+            error = "move needs position";
+            return false;
+        }
+        const int id = operation.contains("node") ? resolve(operation["node"]) : 0;
+        const Vector2 at = position(operation);
+        if (GraphNode* node = graph.findNode(id)) {
+            node->position = at;
+            return true;
+        }
+        for (GraphGroup& group : graph.groups) {
+            if (group.id == id) {
+                group.rect.x = at.x;
+                group.rect.y = at.y;
+                return true;
+            }
+        }
+        for (GraphComment& comment : graph.comments) {
+            if (comment.id == id) {
+                comment.position = at;
+                return true;
+            }
+        }
+        error = "there is no node, group or comment " + std::to_string(id);
+        return false;
+    }
+
+    bool connect(const Json& operation, std::string& error) {
+        int fromId = 0;
+        int toId = 0;
+        std::string fromPin;
+        std::string toPin;
+        if (!pinRef(operation.value("from", ""), fromId, fromPin) || !pinRef(operation.value("to", ""), toId, toPin)) {
+            error = "connect needs from and to as node.pin";
+            return false;
+        }
+        const GraphNode* from = graph.findNode(fromId);
+        const GraphNode* to = graph.findNode(toId);
+        if (!from || !to) {
+            error = "there is no node " + std::to_string(from ? toId : fromId);
+            return false;
+        }
+        const ShaderNodeType* fromType = nullptr;
+        const ShaderNodeType* toType = nullptr;
+        std::vector<NodePin> fromInputs, fromOutputs, toInputs, toOutputs;
+        if (!pins(*from, fromType, fromInputs, fromOutputs, error) || !pins(*to, toType, toInputs, toOutputs, error))
+            return false;
+
+        const std::string base = fromPin.substr(0, fromPin.find('.'));
+        const NodePin* output = nullptr;
+        for (const NodePin& pin : fromOutputs)
+            if (pin.name == base)
+                output = &pin;
+        // node.xyz swizzles the first output
+        const bool swizzle = fromPin.find('.') == std::string::npos && fromPin.size() <= 4 && fromPin.find_first_not_of("xyzwrgba") == std::string::npos;
+        if (!output && swizzle && !fromOutputs.empty())
+            output = &fromOutputs.front();
+        if (!output) {
+            error = fromType->name + " has no output " + base + " (" + pinNames(fromOutputs) + ")";
+            return false;
+        }
+        const NodePin* input = nullptr;
+        for (const NodePin& pin : toInputs)
+            if (pin.name == toPin)
+                input = &pin;
+        if (!input) {
+            error = toType->name + " has no input " + toPin + " (" + pinNames(toInputs) + ")";
+            return false;
+        }
+        const std::string outType = ShaderNodes::getPinType(graph, *from, *output);
+        const std::string inType = ShaderNodes::getPinType(graph, *to, *input);
+        if (!ShaderNodes::canLink(outType, inType)) {
+            error = "a " + outType + " output does not go into a " + inType + " input";
+            return false;
+        }
+        if (graph.feeds(toId, fromId)) {
+            error = "that link would make the graph loop";
+            return false;
+        }
+        graph.connect(fromId, fromPin, toId, toPin);
+        return true;
+    }
+
+    bool disconnect(const Json& operation, std::string& error) {
+        int toId = 0;
+        std::string toPin;
+        if (!pinRef(operation.value("to", ""), toId, toPin) || !graph.findLinkInto(toId, toPin)) {
+            error = "nothing feeds " + operation.value("to", std::string("that input"));
+            return false;
+        }
+        graph.disconnect(toId, toPin);
+        return true;
+    }
+
+    const GraphParameter* findParameter(const Json& value) const {
+        if (!value.is_string())
+            return nullptr;
+        if (const GraphParameter* parameter = graph.findParameter(value.get<std::string>()))
+            return parameter;
+        auto ref = refs.find(value.get<std::string>());
+        return ref != refs.end() ? graph.findParameter(ref->second) : nullptr;
+    }
+
+    bool set(const Json& operation, std::string& error) {
+        GraphNode* node = findNode(operation, error);
+        const ShaderNodeType* type = nullptr;
+        std::vector<NodePin> inputs, outputs;
+        if (!node || !pins(*node, type, inputs, outputs, error))
+            return false;
+        const std::string name = operation.value("name", "");
+        GraphValue value;
+        const bool hasValue = graphOperationValue(operation, value);
+
+        if (const NodeSetting* setting = type->findSetting(name)) {
+            if (!hasValue) {
+                error = "set " + name + " needs a value";
+                return false;
+            }
+            if (setting->type == "parameter") {
+                const GraphParameter* parameter = findParameter(operation.value("string_value", Json()));
+                if (!parameter) {
+                    error = setting->label + " takes a parameter by name, in string_value";
+                    return false;
+                }
+                if (!setting->options.empty() && std::find(setting->options.begin(), setting->options.end(), parameter->type) == setting->options.end()) {
+                    error = setting->label + " takes a " + joinWords(setting->options) + " parameter, and " + parameter->name + " is a " + parameter->type;
+                    return false;
+                }
+                node->settings[name] = GraphValue((float)parameter->id);
+            } else if (setting->type == "choice") {
+                const std::string chosen = value.text.empty() ? std::to_string((int)value.number()) : value.text;
+                if (std::find(setting->options.begin(), setting->options.end(), chosen) == setting->options.end()) {
+                    error = setting->label + " is one of " + joinWords(setting->options);
+                    return false;
+                }
+                // a number stays a number, as the file writes it
+                const bool digits = std::all_of(chosen.begin(), chosen.end(), [](unsigned char c) { return std::isdigit(c); });
+                node->settings[name] = digits ? GraphValue((float)std::atoi(chosen.c_str())) : GraphValue(chosen);
+            } else {
+                node->settings[name] = value;
+            }
+            return true;
+        }
+
+        for (const NodePin& pin : inputs) {
+            if (pin.name != name)
+                continue;
+            if (operation.value("reset", false)) {
+                node->inputs.erase(name);
+                return true;
+            }
+            if (!hasValue) {
+                error = "set " + name + " needs a value, or reset";
+                return false;
+            }
+            node->inputs[name] = value;
+            return true;
+        }
+        std::vector<std::string> names;
+        for (const NodeSetting& setting : type->settings)
+            names.push_back(setting.name);
+        error = type->name + " has no setting or input " + name + " (settings: " + (names.empty() ? std::string("none") : joinWords(names)) +
+                "; inputs: " + pinNames(inputs) + ")";
+        return false;
+    }
+
+    static bool isTextureType(const std::string& type) {
+        return type == "texture2D" || type == "textureCube";
+    }
+
+    // the fields add_parameter and set_parameter share
+    bool fillParameter(GraphParameter& parameter, const Json& operation, std::string& error) const {
+        GraphValue value;
+        if (graphOperationValue(operation, value)) {
+            if (isTextureType(parameter.type)) {
+                if (value.text != "white" && value.text != "black" && value.text != "normal") {
+                    error = "a texture's default is white, black or normal";
+                    return false;
+                }
+            } else {
+                if (!value.text.empty()) {
+                    error = "a " + parameter.type + " parameter takes a number or vector default";
+                    return false;
+                }
+                // one number fills the vector; a color without alpha is opaque
+                const size_t count = parameter.type == "vec2" ? 2 : (parameter.type == "vec3" ? 3 : (parameter.type == "vec4" || parameter.type == "color" ? 4 : 1));
+                const float last = value.numbers.back();
+                const bool color3 = parameter.type == "color" && value.numbers.size() == 3;
+                value.numbers.resize(count, color3 ? 1.0f : last);
+            }
+            parameter.value = value;
+        }
+        if (operation.contains("min") || operation.contains("max")) {
+            parameter.hasRange = true;
+            parameter.minValue = operation.value("min", parameter.minValue);
+            parameter.maxValue = operation.value("max", parameter.maxValue);
+        }
+        if (operation.contains("runtime"))
+            parameter.runtime = operation.value("runtime", false);
+        if (operation.contains("description"))
+            parameter.description = operation.value("description", "");
+        if (operation.contains("filter")) {
+            const std::string filter = operation.value("filter", "");
+            if (filter != "nearest" && filter != "linear" && filter != "trilinear") {
+                error = "filter is nearest, linear or trilinear";
+                return false;
+            }
+            parameter.filter = filter;
+        }
+        if (operation.contains("wrap")) {
+            const std::string wrap = operation.value("wrap", "");
+            if (wrap != "repeat" && wrap != "clamp" && wrap != "mirror") {
+                error = "wrap is repeat, clamp or mirror";
+                return false;
+            }
+            parameter.wrap = wrap;
+        }
+        return true;
+    }
+
+    bool freeName(const std::string& name, std::string& error) const {
+        const bool identifier = !name.empty() && !std::isdigit((unsigned char)name[0]) &&
+                                std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+        if (graph.findParameter(name)) {
+            error = "there is a parameter " + name + " already";
+            return false;
+        }
+        if (!identifier) {
+            error = "\"" + name + "\" is not a parameter name: letters, digits and _, not starting with a digit";
+            return false;
+        }
+        return true;
+    }
+
+    bool addParameter(const Json& operation, std::string& error) {
+        static const std::vector<std::string> types = {"float", "vec2", "vec3", "vec4", "int", "color", "texture2D", "textureCube"};
+        GraphParameter parameter;
+        parameter.name = operation.value("name", "");
+        parameter.type = operation.value("type", "");
+        if (std::find(types.begin(), types.end(), parameter.type) == types.end()) {
+            error = "a parameter's type is one of " + joinWords(types);
+            return false;
+        }
+        if (!freeName(parameter.name, error))
+            return false;
+        if (isTextureType(parameter.type)) {
+            parameter.value = GraphValue("white");
+            parameter.filter = "linear";
+            parameter.wrap = "repeat";
+        } else {
+            const size_t count = parameter.type == "vec2" ? 2 : (parameter.type == "vec3" ? 3 : (parameter.type == "vec4" || parameter.type == "color" ? 4 : 1));
+            parameter.value = GraphValue(std::vector<float>(count, parameter.type == "color" ? 1.0f : 0.0f));
+        }
+        if (!fillParameter(parameter, operation, error))
+            return false;
+        keep(operation, graph.addParameter(parameter));
+        return true;
+    }
+
+    bool setParameter(const Json& operation, std::string& error) {
+        const GraphParameter* found = findParameter(operation.value("name", Json()));
+        if (!found) {
+            error = "there is no parameter " + operation.value("name", std::string());
+            return false;
+        }
+        for (GraphParameter& parameter : graph.parameters) {
+            if (parameter.id != found->id)
+                continue;
+            GraphParameter changed = parameter;
+            if (operation.contains("new_name")) {
+                const std::string name = operation.value("new_name", "");
+                if (name != changed.name && !freeName(name, error))
+                    return false;
+                changed.name = name;
+            }
+            if (!fillParameter(changed, operation, error))
+                return false;
+            parameter = changed;
+        }
+        return true;
+    }
+
+    bool removeParameter(const Json& operation, std::string& error) {
+        const GraphParameter* parameter = findParameter(operation.value("name", Json()));
+        if (!parameter) {
+            error = "there is no parameter " + operation.value("name", std::string());
+            return false;
+        }
+        graph.removeParameter(parameter->id);
+        return true;
+    }
+
+    bool addLayout(const Json& operation, bool group, std::string& error) {
+        const std::string text = operation.value("text", "");
+        const bool given = operation.contains("position") && operation["position"].is_object();
+        const Vector2 at = given ? position(operation) : Vector2(0.0f, 0.0f);
+        if (group) {
+            GraphGroup item;
+            item.id = graph.takeId();
+            item.title = text.empty() ? "Group" : text;
+            const bool sized = operation.contains("size") && operation["size"].is_object();
+            item.rect = Vector4(at.x, at.y, sized ? operation["size"].value("x", 300.0f) : 300.0f, sized ? operation["size"].value("y", 200.0f) : 200.0f);
+            graph.groups.push_back(item);
+            keep(operation, item.id);
+            if (!given)
+                notes.push_back(item.id);
+        } else {
+            if (text.empty()) {
+                error = "add_comment needs text";
+                return false;
+            }
+            GraphComment item;
+            item.id = graph.takeId();
+            item.text = text;
+            item.position = at;
+            graph.comments.push_back(item);
+            keep(operation, item.id);
+            if (!given)
+                notes.push_back(item.id);
+        }
+        return true;
+    }
+};
+
+// a .shader path of the project
+bool graphPath(Project* project, const Json& arguments, fs::path& rel, std::string& error) {
+    if (!safeRelativePath(project, arguments, "path", rel, error))
+        return false;
+    if (lower(rel.extension().string()) != ".shader") {
+        error = "path must point to a .shader graph.";
+        return false;
+    }
+    return true;
+}
+
+bool readGraphFile(const fs::path& path, GraphDocument& graph, std::string& error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        error = "The graph could not be opened.";
+        return false;
+    }
+    std::stringstream text;
+    text << file.rdbuf();
+    if (!graph.read(text.str(), error))
+        return false;
+    if (graph.kind != "shader") {
+        error = "Not a shader graph.";
+        return false;
+    }
+    return true;
+}
+
+}
+
+ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
+    const std::string graphType = arguments.value("graph_type", "");
+    const std::string category = lower(arguments.value("category", ""));
+    const std::string search = lower(arguments.value("search", ""));
+    const bool detail = !search.empty() || !category.empty();
+
+    Json list = Json::array();
+    for (const NodeType* base : ShaderNodes::get().getTypes()) {
+        const ShaderNodeType& type = *static_cast<const ShaderNodeType*>(base);
+        if (!graphType.empty() && !type.shaderTypes.empty() && std::find(type.shaderTypes.begin(), type.shaderTypes.end(), graphType) == type.shaderTypes.end())
+            continue;
+        if (!category.empty() && lower(type.category) != category)
+            continue;
+        if (!search.empty() && lower(type.id + " " + type.name + " " + type.category + " " + type.description).find(search) == std::string::npos)
+            continue;
+        if (detail) {
+            list.push_back(shaderNodeTypeJson(type));
+            continue;
+        }
+        auto pins = [](const std::vector<NodePin>& items) {
+            std::string text;
+            for (const NodePin& pin : items)
+                text += (text.empty() ? "" : ", ") + pin.name + ":" + pin.type;
+            return text;
+        };
+        Json item = {{"id", type.id}, {"name", type.name}, {"category", type.category}, {"in", pins(type.inputs)}, {"out", pins(type.outputs)}};
+        if (!type.settings.empty()) {
+            std::vector<std::string> settings;
+            for (const NodeSetting& setting : type.settings)
+                settings.push_back(setting.name);
+            item["settings"] = settings;
+        }
+        list.push_back(item);
+    }
+    return okResult(std::to_string(list.size()) + " node types.", Json{{"node_types", list}, {"complete", detail}});
+}
+
+ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
+    std::string error;
+    fs::path rel;
+    if (!graphPath(project, arguments, rel, error))
+        return failResult(error);
+    GraphDocument graph;
+    if (!readGraphFile(project->getProjectPath() / rel, graph, error))
+        return failResult(error);
+
+    const std::string key = FileUtils::pathToGenericUtf8(rel);
+    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key);
+    Json data = shaderGraphJson(graph, compiled);
+    data["path"] = key;
+    if (arguments.value("include_code", false) && compiled.success)
+        data["code"] = compiled.code;
+    GraphEditorWindow* window = editor::getEditorHost().getGraphEditorWindow();
+    if (window && window->isFileModified(rel))
+        data["unsaved_in_editor"] = true;
+    return okResult("Read graph.", data);
+}
+
+ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
+    std::string error;
+    fs::path rel;
+    if (!graphPath(project, arguments, rel, error))
+        return failResult(error);
+    const std::string key = FileUtils::pathToGenericUtf8(rel);
+    const fs::path fullPath = project->getProjectPath() / rel;
+
+    GraphEditorWindow* window = editor::getEditorHost().getGraphEditorWindow();
+    if (window && window->isFileModified(rel))
+        return failResult(key + " has unsaved changes in the editor. Save or close it first.");
+
+    GraphDocument graph;
+    std::error_code ec;
+    const bool create = arguments.value("create", false);
+    if (create) {
+        if (fs::exists(fullPath, ec))
+            return failResult(key + " already exists.");
+        const std::string type = arguments.value("graph_type", "");
+        if (!ShaderNodes::get().find("output/" + type))
+            return failResult("graph_type must be mesh, ui, points, lines, sky, water or postprocess.");
+        graph.kind = "shader";
+        graph.type = type;
+        graph.addNode("output/" + type, Vector2(300.0f, 0.0f));
+    } else if (!readGraphFile(fullPath, graph, error)) {
+        return failResult(error);
+    }
+
+    GraphOperations operations(graph);
+    const Json& list = arguments["operations"];
+    for (size_t i = 0; i < list.size(); i++) {
+        if (!list[i].is_object() || !operations.apply(list[i], error))
+            return failResult("Operation " + std::to_string(i) + " (" + list[i].value("op", std::string("?")) + "): " + error + ". Nothing was changed.");
+    }
+    operations.layout();
+
+    const std::string text = graph.write();
+    if (!(window && window->replaceFileText(rel, text))) {
+        fs::create_directories(fullPath.parent_path(), ec);
+        std::ofstream out(fullPath, std::ios::binary | std::ios::trunc);
+        out << text;
+        out.close();
+        if (!out)
+            return failResult("Failed to write the graph.");
+        project->invalidateCustomShaders();
+    }
+    if (create && resourcesWindow)
+        resourcesWindow->refreshCurrentDirectory();
+    Out::info("AI %s graph: %s", create ? "created" : "edited", key.c_str());
+
+    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key);
+    Json data = shaderGraphJson(graph, compiled);
+    data["path"] = key;
+    data["refs"] = operations.refs;
+    return okResult(compiled.success ? "Graph written." : "Graph written; it does not compile yet, see errors.", data);
+}
 
 ActionResult EditorActionExecutor::createTerrainHeightmap(const Json& arguments) {
     uint32_t sceneId = resolveSceneId(project, arguments);

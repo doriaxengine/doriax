@@ -112,6 +112,8 @@ namespace doriax::editor {
         const GraphParameter* findParameter(const std::string& name) const;
         // what feeds an input, null when nothing does
         const GraphLink* findLinkInto(int node, const std::string& pin) const;
+        // whether a node's outputs reach another, so a link back would close a loop
+        bool feeds(int from, int to) const;
     };
 
 }

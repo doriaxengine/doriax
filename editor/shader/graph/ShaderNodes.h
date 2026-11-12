@@ -61,6 +61,10 @@ namespace doriax::editor {
 
         // the pins of one node, which a Custom Function takes from its signature; false on a bad signature
         static bool getPins(const GraphNode& node, const ShaderNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error = nullptr);
+        // the type a pin carries in this node: a parameter's own, a mask's size
+        static std::string getPinType(const GraphDocument& graph, const GraphNode& node, const NodePin& pin);
+        // numbers convert into each other; textures and bools only into their own type
+        static bool canLink(const std::string& fromType, const std::string& toType);
 
     private:
         ShaderNodes();

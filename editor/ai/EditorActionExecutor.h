@@ -111,6 +111,9 @@ private:
     ActionResult setExportShaders(const Json& arguments);
     ActionResult generateShaders(const Json& arguments, const std::atomic<bool>* cancel);
     ActionResult writeShaderFile(const Json& arguments);
+    ActionResult listGraphNodeTypes(const Json& arguments);
+    ActionResult readGraph(const Json& arguments);
+    ActionResult editGraph(const Json& arguments);
     ActionResult inspectShaderUniforms(const Json& arguments);
     ActionResult setShaderUniform(const Json& arguments);
     ActionResult listPostProcessPasses(const Json& arguments);
