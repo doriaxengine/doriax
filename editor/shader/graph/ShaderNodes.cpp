@@ -319,8 +319,8 @@ vec3 graphHSVToRGB(vec3 c){
     ShaderNodeType& mesh = add("output/mesh", "Mesh Output", "Output", "What the mesh's material draws with.",
         {in("vertexOffset", "Vertex Offset", "vec3"), in("baseColor", "Base Color", "vec3"), in("alpha", "Alpha", "float"),
          in("normal", "Normal", "vec3"), in("metallic", "Metallic", "float"), in("roughness", "Roughness", "float"),
-         in("occlusion", "Occlusion", "float"), in("emissive", "Emissive", "vec3"), in("coverage", "Coverage", "float"),
-         in("depthOffset", "Depth Offset", "float"), in("color", "Final Color", "color")},
+         in("occlusion", "Occlusion", "float"), in("emissive", "Emissive", "vec3"), in("light", "Light", "vec3"),
+         in("coverage", "Coverage", "float"), in("depthOffset", "Depth Offset", "float"), in("color", "Final Color", "color")},
         {}, {});
     mesh.shaderTypes = {"mesh"};
     mesh.slots["vertexOffset"] = slot("getVertexOffset", "", true, true);
@@ -331,6 +331,8 @@ vec3 graphHSVToRGB(vec3 c){
     mesh.slots["roughness"] = slot("getSurface", "surface.roughness");
     mesh.slots["occlusion"] = slot("getSurface", "surface.occlusion");
     mesh.slots["emissive"] = slot("getSurface", "surface.emissive");
+    // what each light adds, in place of the built-in shading
+    mesh.slots["light"] = slot("getLight", "");
     mesh.slots["coverage"] = slot("getCoverage", "", false, true);
     mesh.slots["depthOffset"] = slot("getDepthOffset", "", false, true);
     mesh.slots["color"] = slot("getColor", "");
@@ -398,11 +400,14 @@ vec3 graphHSVToRGB(vec3 c){
     input("input/instance", "Instance", "The instance's custom value, set per instance.", {out("value", "Value", "vec4")}, {"@instance"}, {"mesh"});
     input("input/frontFacing", "Front Facing", "Whether the fragment is on a front face.", {out("frontFacing", "Front Facing", "bool")}, {"@frontFacing"}, {"mesh"})
         .stage = ShaderNodeStage::FRAGMENT;
-    input("input/material", "Material", "The surface the material gives, before this graph changes it.",
+    input("input/material", "Material", "The surface the material gives: before this graph changes it in the surface outputs, as changed in Light.",
         {out("baseColor", "Base Color", "vec3"), out("alpha", "Alpha", "float"), out("normal", "Normal", "vec3"), out("metallic", "Metallic", "float"),
          out("roughness", "Roughness", "float"), out("occlusion", "Occlusion", "float"), out("emissive", "Emissive", "vec3")},
         {"%surface.baseColor", "%surface.alpha", "%surface.normal", "%surface.metallic", "%surface.roughness", "%surface.occlusion", "%surface.emissive"}, {"mesh"});
     input("input/color", "Built-in Color", "The color the engine would draw, linear.", {out("color", "Color", "vec4")}, {"%color"});
+    input("input/light", "Light", "The light Light answers for, once per light: the direction toward it, its color times intensity and falloff, and its shadow, 1 lit and 0 shadowed.",
+        {out("direction", "Direction", "vec3"), out("color", "Color", "vec3"), out("shadow", "Shadow", "float")},
+        {"%light.direction", "%light.color", "%light.shadow"}, {"mesh"});
     input("input/texture", "Built-in Texture", "The texture sample and the tint the engine multiplies, linear.",
         {out("color", "Texture Color", "vec4"), out("tint", "Tint", "vec4")}, {"@textureColor", "@tint"}, {"ui", "points", "lines", "sky"});
     input("input/skyDirection", "Sky Direction", "The cube map direction, in the sky's own space.", {out("direction", "Direction", "vec3")}, {"@direction"}, {"sky"});

@@ -302,6 +302,7 @@ namespace {
         {"getVaryings", "void getVaryings(VertexContext context, out Varyings varyings)", true},
         {"getCoverage", "float getCoverage(FragmentContext context)", false},
         {"getSurface", "void getSurface(FragmentContext context, inout Surface surface)", false},
+        {"getLight", "vec3 getLight(FragmentContext context, Surface surface, LightContext light)", false},
         {"getDepthOffset", "float getDepthOffset(FragmentContext context)", false},
         {"getColor", "vec4 getColor(FragmentContext context, vec4 color)", false},
         {"getUnderwaterColor", "vec4 getUnderwaterColor(UnderwaterContext context, vec4 color)", false},
@@ -647,7 +648,7 @@ namespace {
                 if (const ShaderFunction* helper = library.findFunction(function))
                     collectIdentifiers(helper->code, used);
         }
-        for (const char* hook : {"getVertexOffset", "getVaryings", "getCoverage", "getSurface", "getDepthOffset", "getColor", "getUnderwaterColor"})
+        for (const char* hook : {"getVertexOffset", "getVaryings", "getCoverage", "getSurface", "getLight", "getDepthOffset", "getColor", "getUnderwaterColor"})
             for (const auto& field : contextFields(graph.type, hook))
                 used.insert(field.first);
 
@@ -898,8 +899,14 @@ namespace {
                         return false;
                     }
                 } else if (name.rfind("surface.", 0) == 0) {
-                    if (std::string(body.hook->name) != "getSurface") {
-                        error(node.id, type.name + " only feeds the surface outputs");
+                    if (std::string(body.hook->name) != "getSurface" && std::string(body.hook->name) != "getLight") {
+                        error(node.id, type.name + " only feeds the surface outputs and Light");
+                        return false;
+                    }
+                    out += name;
+                } else if (name.rfind("light.", 0) == 0) {
+                    if (std::string(body.hook->name) != "getLight") {
+                        error(node.id, type.name + " only feeds Light");
                         return false;
                     }
                     out += name;
