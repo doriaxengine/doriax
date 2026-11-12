@@ -183,6 +183,10 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
                 pass = index;
             }else if (info->name == "worldToView" && member.type == ShaderUniformType::MAT4){
                 worldToView = index;
+            }else if (info->name == "projection"){
+                projection = index;
+            }else if (info->name == "flipY"){
+                flipY = index;
             }else{
                 continue;
             }
@@ -231,6 +235,8 @@ void ShaderParameterBlock::clear(){
     forward = -1;
     pass = -1;
     worldToView = -1;
+    projection = -1;
+    flipY = -1;
     shared = false;
 }
 
@@ -278,13 +284,16 @@ void ShaderParameterBlock::writeFrame(const ShaderEffectView& view, const Vector
     }
 }
 
-void ShaderParameterBlock::writeVertexContext(const Matrix4& modelMatrix, float maxOffset){
+void ShaderParameterBlock::writeVertexContext(const ShaderEffectView& view, const Matrix4& modelMatrix, float maxOffset){
     if (worldToModel != -1){
         const Matrix4 inverse = modelMatrix.inverse();
         writeFloats(data, bindings[worldToModel].offset, &inverse[0][0], 16);
     }
     if (offsetMax != -1){
         writeValue(data, bindings[offsetMax], Vector4(maxOffset, 0.0f, 0.0f, 0.0f));
+    }
+    if (flipY != -1){
+        writeValue(data, bindings[flipY], Vector4(view.flipY ? -1.0f : 1.0f, 0.0f, 0.0f, 0.0f));
     }
 }
 
@@ -300,6 +309,9 @@ void ShaderParameterBlock::writeFragmentContext(const ShaderEffectView& view, bo
     }
     if (worldToView != -1){
         writeFloats(data, bindings[worldToView].offset, &view.viewMatrix[0][0], 16);
+    }
+    if (projection != -1){
+        writeValue(data, bindings[projection], Vector4(view.depthProjection.x, view.depthProjection.y, 0.0f, 0.0f));
     }
 }
 

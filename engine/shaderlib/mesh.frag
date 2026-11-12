@@ -56,6 +56,9 @@
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     in vec3 v_hookNormal;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_fs.glsl"
+#endif
 
 out vec4 g_finalColor;
 
@@ -351,6 +354,9 @@ void main() {
     loadShaderParameters();
     #ifdef USE_FRAGMENT_HOOKS
         FragmentContext context = getMeshContext();
+    #endif
+    #ifdef USE_DEPTH_OFFSET
+        gl_FragDepth = getHookDepth(context);
     #endif
     #ifdef USE_COVERAGE
         // before any texture is sampled, so removed fragments cost little

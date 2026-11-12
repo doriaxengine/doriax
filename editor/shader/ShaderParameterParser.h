@@ -45,6 +45,9 @@ namespace doriax::editor {
         bool coverage = false;
         bool surface = false;
         bool color = false;
+        bool varyingsHook = false;
+        bool clipPosition = false;
+        bool depthOffset = false;
         // fields they read of their context
         std::set<std::string> contextReads;
         // "#pragma coverage_shadows apply|keep"
@@ -52,6 +55,8 @@ namespace doriax::editor {
         bool coverageShadows = false;
         // "#pragma shading unlit"
         bool unlit = false;
+        // "#pragma varying vec3 tipColor", type and name
+        std::vector<std::pair<std::string, std::string>> varyings;
         // "#pragma surface_replaces baseColor alpha", fields the surface hook sets from scratch
         std::set<std::string> surfaceReplaces;
         // the code reads Engine.time or Engine.resolution
@@ -63,9 +68,11 @@ namespace doriax::editor {
 
     // engine values a stage's hooks read
     enum HookContext : uint32_t {
-        HookContext_Vertex = 1 << 0,    // worldToModel and offsetMax
-        HookContext_Fragment = 1 << 1,  // eye, forward and pass
-        HookContext_View = 1 << 2       // the camera's view matrix
+        HookContext_Vertex = 1 << 0,     // worldToModel and offsetMax
+        HookContext_Fragment = 1 << 1,   // eye, forward and pass
+        HookContext_View = 1 << 2,       // the camera's view matrix
+        HookContext_Projection = 1 << 3, // the depth terms of the projection
+        HookContext_Clip = 1 << 4        // the y flip of the clip position
     };
 
     class ShaderParameterParser {
@@ -89,6 +96,8 @@ namespace doriax::editor {
         // shader_params_vs.glsl or shader_params_fs.glsl, with the context the effect hooks read
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);
+        // the Varyings struct and its outputs or inputs
+        static std::string generateVaryings(ShaderStageType stage, const std::vector<std::pair<std::string, std::string>>& varyings);
         // defines of the texture names, or their undefs
         static std::string generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them

@@ -42,6 +42,9 @@ FragmentContext getFragmentContext(vec3 worldPosition){
     context.view = context.perspective ? normalize(context.eye - worldPosition) : -context.forward;
     context.pixel = abs(gl_FragCoord.xy - paramsFS.effect_pass.xy);
     context.frontFacing = gl_FrontFacing;
+    #ifdef USE_VARYINGS
+        loadVaryings();
+    #endif
     return context;
 }
 
@@ -50,6 +53,17 @@ float keepHookInputs(FragmentContext context){
     return (context.worldPosition.x < -3.0e38 || context.uv1.x < -3.0e38 || context.normal.x < -3.0e38 ||
         context.color.x < -3.0e38) ? 0.0 : 1.0;
 }
+
+#ifdef USE_DEPTH_OFFSET
+    // pushed away from the eye; from gl_FragCoord, so every pass agrees
+    float getHookDepth(FragmentContext context){
+        float offset = max(getDepthOffset(context), 0.0);
+        float w = 1.0 / gl_FragCoord.w;
+        float z = (gl_FragCoord.z * 2.0 - 1.0) * w - paramsFS.effect_projection.x * offset;
+        w -= paramsFS.effect_projection.y * offset;
+        return clamp(0.5 * z / w + 0.5, 0.0, 1.0);
+    }
+#endif
 
 #ifdef USE_COVERAGE
 // discards a removed fragment; returns the alpha factor of a blended one

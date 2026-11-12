@@ -94,6 +94,9 @@ in vec3 a_position;
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     out vec3 v_hookNormal;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_vs.glsl"
+#endif
 
 #ifdef HAS_INSTANCING
     in vec4 i_matrix_col1;
@@ -113,7 +116,7 @@ in vec3 a_position;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#if defined(USE_VERTEX_OFFSET) || defined(USE_FRAGMENT_HOOKS)
+#if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX pbrParams.normalMatrix
     #include "includes/hooks_vs.glsl"
 #endif
@@ -168,9 +171,17 @@ void main() {
         vec4 pos = localPos;
     #endif
 
+    #ifdef USE_VERTEX_HOOKS
+        VertexContext context = getVertexContext(localPos.xyz, (pbrParams.modelMatrix * pos).xyz, boneTransform);
+    #endif
     // before the fade, so a faded instance still shrinks to nothing
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(getVertexContext(localPos.xyz, (pbrParams.modelMatrix * pos).xyz, boneTransform));
+        pos.xyz += getModelOffset(context);
+    #endif
+    #ifdef USE_VARYINGS
+        Varyings varyings;
+        getVaryings(context, varyings);
+        writeVaryings(varyings);
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -268,6 +279,9 @@ void main() {
     #endif
 
     gl_Position = pbrParams.mvpMatrix * pos;
+    #ifdef USE_CLIP_POSITION
+        gl_Position = getHookClipPosition(context, gl_Position);
+    #endif
     #ifdef IS_VULKAN
         // GL [-1,1] to Vulkan [0,1] depth range (spirv-cross fixup_clipspace equivalent)
         gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;

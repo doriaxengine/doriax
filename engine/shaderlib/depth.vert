@@ -66,6 +66,9 @@ out vec2 v_projZW;
 #ifdef HOOK_FRAGMENT_COLOR
     out vec4 v_hookColor;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_vs.glsl"
+#endif
 
 #include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
@@ -73,7 +76,7 @@ out vec2 v_projZW;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#if defined(USE_VERTEX_OFFSET) || defined(USE_FRAGMENT_HOOKS)
+#if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX depthParams.normalMatrix
     #include "includes/hooks_vs.glsl"
 #endif
@@ -107,9 +110,17 @@ void main() {
         v_uv1 = a_texcoord1;
     #endif
 
+    #ifdef USE_VERTEX_HOOKS
+        VertexContext context = getVertexContext(localPos.xyz, (depthParams.modelMatrix * pos).xyz, boneTransform);
+    #endif
     // before the fade, so a faded instance still shrinks to nothing
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(getVertexContext(localPos.xyz, (depthParams.modelMatrix * pos).xyz, boneTransform));
+        pos.xyz += getModelOffset(context);
+    #endif
+    #ifdef USE_VARYINGS
+        Varyings varyings;
+        getVaryings(context, varyings);
+        writeVaryings(varyings);
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -125,6 +136,11 @@ void main() {
     #endif
 
     gl_Position = depthParams.mvpMatrix * pos;
+    // in the camera's depth, not in shadow maps
+    #ifdef USE_CLIP_POSITION
+        if (Engine.pass != PASS_SHADOW)
+            gl_Position = getHookClipPosition(context, gl_Position);
+    #endif
 
     v_projZW = gl_Position.zw;
     #ifdef USE_FRAGMENT_HOOKS

@@ -68,6 +68,10 @@ namespace doriax{
         float time = 0.0f;
         ShaderPass pass = ShaderPass::COLOR;
         Matrix4 viewMatrix;
+        // the projection's z and w terms of view depth, 0 where depth offsets do not apply
+        Vector2 depthProjection = Vector2(0.0f, 0.0f);
+        // drawn with the y-flipped matrix of GL offscreen targets
+        bool flipY = false;
         const ShaderParameterTable* scene = nullptr;
         const ShaderParameterTable* view = nullptr;
     };
@@ -99,6 +103,8 @@ namespace doriax{
         int forward = -1;
         int pass = -1;
         int worldToView = -1;
+        int projection = -1;
+        int flipY = -1;
         bool shared = false;     // has SCENE or VIEW members
 
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);
@@ -108,7 +114,7 @@ namespace doriax{
         void writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited = nullptr, const ShaderUniformValues* parent = nullptr);
         // the engine clock and target size, then the scene and view values
         void writeFrame(const ShaderEffectView& view, const Vector2& resolution);
-        void writeVertexContext(const Matrix4& modelMatrix, float maxOffset);
+        void writeVertexContext(const ShaderEffectView& view, const Matrix4& modelMatrix, float maxOffset);
         // coverage false bypasses the effect, fade blends instead of dithering
         void writeFragmentContext(const ShaderEffectView& view, bool coverage, bool fade);
     };

@@ -49,6 +49,9 @@ uniform u_fs_gbufferMaterial {
 #ifdef HOOK_FRAGMENT_COLOR
     in vec4 v_hookColor;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_fs.glsl"
+#endif
 
 #include "includes/depth_util.glsl"
 #include "includes/octahedral.glsl"
@@ -104,7 +107,13 @@ void main() {
     #endif
 
     // Higher precision equivalent of gl_FragCoord.z (see depth.frag).
-    frag_depth = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #ifdef USE_DEPTH_OFFSET
+        float depth = getHookDepth(context);
+        gl_FragDepth = depth;
+        frag_depth = encodeDepth(depth);
+    #else
+        frag_depth = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #endif
 
     vec3 n = normalize(v_normal);
     if (!gl_FrontFacing) n = -n;

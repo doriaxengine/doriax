@@ -171,6 +171,9 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
     out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
     out.color = out.color || definesHook(code, "getColor", "FragmentContext");
+    out.varyingsHook = out.varyingsHook || definesHook(code, "getVaryings", "VertexContext");
+    out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
+    out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
 
@@ -342,6 +345,16 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
                 out.unlit = out.unlit || rest == "unlit";
             else
                 out.errors.push_back(where + "shading takes lit or unlit");
+            continue;
+        }
+        if (tag == "varying"){
+            std::istringstream words(rest);
+            std::string type, name, extra;
+            words >> type >> name;
+            if ((type != "float" && type != "vec2" && type != "vec3" && type != "vec4") || !ShaderParameters::isValidName(name) || (words >> extra))
+                out.errors.push_back(where + "a varying is written \"#pragma varying vec3 name\", of float or vec2-4");
+            else if (std::none_of(out.varyings.begin(), out.varyings.end(), [&](const auto& varying) { return varying.second == name; }))
+                out.varyings.push_back({type, name});
             continue;
         }
         if (tag == "surface_replaces"){
@@ -543,6 +556,28 @@ std::string editor::ShaderParameterParser::getStageConditions(const std::string&
     return conditions;
 }
 
+std::string editor::ShaderParameterParser::generateVaryings(ShaderStageType stage, const std::vector<std::pair<std::string, std::string>>& varyings){
+    const bool vertex = stage == ShaderStageType::VERTEX;
+    std::ostringstream code;
+    code << "struct Varyings {";
+    for (const auto& [type, name] : varyings)
+        code << " " << type << " " << name << ";";
+    code << " };\n";
+    for (const auto& [type, name] : varyings)
+        code << (vertex ? "out " : "in ") << type << " v_var_" << name << ";\n";
+    if (vertex){
+        code << "void writeVaryings(Varyings varyings){";
+        for (const auto& varying : varyings)
+            code << " v_var_" << varying.second << " = varyings." << varying.second << ";";
+    }else{
+        code << "Varyings varyings;\nvoid loadVaryings(){";
+        for (const auto& varying : varyings)
+            code << " varyings." << varying.second << " = v_var_" << varying.second << ";";
+    }
+    code << " }\n";
+    return code.str();
+}
+
 std::string editor::ShaderParameterParser::generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define){
     std::ostringstream names;
     for (const ShaderTextureInfo& texture : textures){
@@ -607,6 +642,12 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     }
     if (context & HookContext_View){
         addEngine(ShaderUniformType::MAT4, "effect_worldToView", "worldToView", "");
+    }
+    if (context & HookContext_Projection){
+        addEngine(ShaderUniformType::FLOAT2, "effect_projection", "projection", "");
+    }
+    if (context & HookContext_Clip){
+        addEngine(ShaderUniformType::FLOAT, "effect_flipY", "flipY", "");
     }
     // Engine.time and Engine.resolution, only where the code reads them
     std::string engineStruct;

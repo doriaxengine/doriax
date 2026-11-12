@@ -257,16 +257,35 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
             throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
     }
     const bool useVertexOffset = vertexHooks.vertexOffset;
+    const bool useClipPosition = vertexHooks.clipPosition;
     const bool useCoverage = fragmentHooks.coverage;
     // the depth passes take only the surface alpha, of masked materials
     const bool useSurface = fragmentHooks.surface && (passType != ShaderType::DEPTH || defined("ALPHA_MASK"));
     const bool useColor = fragmentHooks.color && passType == ShaderType::MESH;
-    const bool useFragmentHooks = useCoverage || useSurface || useColor;
-    if (!shaderAsset.empty() && !useVertexOffset && !fragmentHooks.coverage && !fragmentHooks.surface && !fragmentHooks.color &&
-            vertexHooks.errors.empty() && fragmentHooks.errors.empty())
+    const bool useDepthOffset = fragmentHooks.depthOffset;
+    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset;
+    // only where a fragment hook can read them
+    const bool useVaryings = vertexHooks.varyingsHook && useFragmentHooks;
+    const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;
+    const bool anyHook = vertexHooks.vertexOffset || vertexHooks.clipPosition || vertexHooks.varyingsHook || fragmentHooks.coverage ||
+        fragmentHooks.surface || fragmentHooks.color || fragmentHooks.depthOffset;
+    if (!shaderAsset.empty() && !anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
         throw std::runtime_error(shaderAsset + " defines no hook function");
+    if (vertexHooks.varyingsHook && vertexHooks.varyings.empty())
+        throw std::runtime_error(shaderAsset + " fills varyings without declaring any with #pragma varying");
+    // GLES3 guarantees 15 vectors between the stages, the engine's own take most of them
+    if (vertexHooks.varyings.size() > 4)
+        throw std::runtime_error(shaderAsset + " declares " + std::to_string(vertexHooks.varyings.size()) + " varyings, the limit is 4");
+    if (useVertexHooks)
+        args.defines.push_back({"USE_VERTEX_HOOKS", "1"});
     if (useVertexOffset)
         args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
+    if (useClipPosition)
+        args.defines.push_back({"USE_CLIP_POSITION", "1"});
+    if (useVaryings)
+        args.defines.push_back({"USE_VARYINGS", "1"});
+    if (useDepthOffset)
+        args.defines.push_back({"USE_DEPTH_OFFSET", "1"});
     if (useCoverage)
         args.defines.push_back({"USE_COVERAGE", "1"});
     if (useSurface)
@@ -314,7 +333,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         {"color", "COLOR", defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING")}
     };
     for (const auto& input : inputs) {
-        const bool vertex = useVertexOffset && vertexHooks.contextReads.count(input.field);
+        const bool vertex = useVertexHooks && vertexHooks.contextReads.count(input.field);
         const bool fragment = useFragmentHooks && fragmentHooks.contextReads.count(input.field);
         if (input.available && (vertex || fragment))
             args.defines.push_back({std::string("HOOK_") + input.name, "1"});
@@ -328,7 +347,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     auto lookup = [&](std::unordered_set<std::string>& reached) {
         return [&](const std::string& key) -> const std::string* {
             reached.insert(key);
-            if ((key == "shader_hooks_vs.glsl" && !useVertexOffset) || (key == "includes/hooks_vs.glsl" && !useVertexOffset && !useFragmentHooks) ||
+            if ((key == "shader_hooks_vs.glsl" && !useVertexHooks) || (key == "includes/hooks_vs.glsl" && !useVertexHooks && !useFragmentHooks) ||
                     (key == "includes/hooks_fs.glsl" && !useFragmentHooks))
                 return nullptr;
             return file(key);
@@ -351,8 +370,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
 
     // a fork from before the hooks existed cannot run them
-    if (useVertexOffset && !vertexFiles.count("includes/hooks_vs.glsl"))
-        editor::Out::warning("%s does not include includes/hooks_vs.glsl, so the vertex offset of %s does nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
+    if (useVertexHooks && !vertexFiles.count("includes/hooks_vs.glsl"))
+        editor::Out::warning("%s does not include includes/hooks_vs.glsl, so the vertex hooks of %s do nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
     if (useFragmentHooks && !fragmentFiles.count("includes/hooks_fs.glsl"))
         editor::Out::warning("%s does not include includes/hooks_fs.glsl, so the hooks of %s do nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
 
@@ -364,11 +383,21 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     declarations.insert(declarations.end(), fragmentAnnotations.parameters.begin(), fragmentAnnotations.parameters.end());
     editor::ShaderParameterParser::checkDeclarations(declarations, errors);
 
+    // shadow maps and the camera depth share the depth program, the clip position tells them apart
+    if (useClipPosition && passType == ShaderType::DEPTH)
+        vertexAnnotations.enginePass = true;
+    if (useVaryings) {
+        args.fileBuffers["shader_varyings_vs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::VERTEX, vertexHooks.varyings);
+        args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
+    }
+
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset ? editor::HookContext_Vertex : 0, declared.parameters, declared.textures);
+        ShaderStageType::VERTEX, vertexAnnotations, (useVertexOffset ? editor::HookContext_Vertex : 0) | (useClipPosition ? editor::HookContext_Clip : 0),
+        declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, (useFragmentHooks ? editor::HookContext_Fragment : 0) |
-        ((useSurface && passType == ShaderType::GBUFFER) ? editor::HookContext_View : 0), declared.parameters, declared.textures);
+        ((useSurface && passType == ShaderType::GBUFFER) ? editor::HookContext_View : 0) | (useDepthOffset ? editor::HookContext_Projection : 0),
+        declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
     args.fileBuffers["shader_textures_end_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, false);

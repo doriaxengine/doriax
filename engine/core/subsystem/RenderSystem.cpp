@@ -201,7 +201,7 @@ namespace {
         if (block.slot == -1)
             return;
 
-        block.writeVertexContext(transform.modelMatrix, mesh.vertexOffsetMax);
+        block.writeVertexContext(view, transform.modelMatrix, mesh.vertexOffsetMax);
         applyParameters(render, block, view, resolution);
     }
 
@@ -5151,6 +5151,12 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
     if (mesh.loaded && !mesh.needReload && (mesh.castShadows || forSSAO)){
         ShaderEffectView passView = effectView;
         passView.pass = forSSAO ? ShaderPass::DEPTH : ShaderPass::SHADOW;
+        // depth offsets move what the camera sees, not the shadows
+        if (!forSSAO)
+            passView.depthProjection = Vector2(0.0f, 0.0f);
+        // only the prepass draws with the color pass's matrix
+        if (pipelineType != PIP_ZPREPASS && pipelineType != PIP_ZPREPASS_RTT)
+            passView.flipY = false;
 
         if (terrain && terrain->needUpdateTexture){
             return false;
@@ -5542,6 +5548,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
 
     ShaderEffectView passView = effectView;
     passView.pass = ShaderPass::GBUFFER;
+    passView.flipY = false;
 
     if (terrain && terrain->needUpdateTexture){
         return false;
@@ -9392,6 +9399,8 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
     effectView.viewMatrix = camera.viewMatrix;
+    effectView.depthProjection = Vector2(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3]);
+    effectView.flipY = isRenderingFlipped(camera);
     // depth targets start at the corner, the color pass moves this to its own
     effectView.ditherOrigin = Vector2(0.0f, 0.0f);
     effectView.time = (float)animationTime;

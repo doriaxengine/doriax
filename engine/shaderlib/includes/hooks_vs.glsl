@@ -37,7 +37,7 @@ struct VertexContext {
     }
 #endif
 
-#ifdef USE_VERTEX_OFFSET
+#ifdef USE_VERTEX_HOOKS
     // the vertex stage of the shader file, mapped in by the shader builder
     #include "shader_hooks_vs.glsl"
 
@@ -59,7 +59,17 @@ struct VertexContext {
         #endif
         return context;
     }
+#endif
 
+#ifdef USE_CLIP_POSITION
+    // GL offscreen targets render with y flipped, the hook always sees y up
+    vec4 getHookClipPosition(VertexContext context, vec4 clipPosition){
+        vec4 flip = vec4(1.0, paramsVS.effect_flipY, 1.0, 1.0);
+        return getClipPosition(context, clipPosition * flip) * flip;
+    }
+#endif
+
+#ifdef USE_VERTEX_OFFSET
     vec3 getModelOffset(VertexContext context){
         vec3 offset = getVertexOffset(context);
         float limit = paramsVS.effect_offsetMax;

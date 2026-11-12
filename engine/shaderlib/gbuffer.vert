@@ -71,6 +71,9 @@ out vec3 v_normal;          // view space
 #ifdef HOOK_FRAGMENT_COLOR
     out vec4 v_hookColor;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_vs.glsl"
+#endif
 
 #include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
@@ -78,7 +81,7 @@ out vec3 v_normal;          // view space
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#if defined(USE_VERTEX_OFFSET) || defined(USE_FRAGMENT_HOOKS)
+#if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX gbufferParams.worldNormalMatrix
     #include "includes/hooks_vs.glsl"
 #endif
@@ -158,11 +161,22 @@ void main() {
         #endif
     #endif
 
+    #ifdef USE_VERTEX_HOOKS
+        VertexContext context = getVertexContext(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz, boneTransform);
+    #endif
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(getVertexContext(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz, boneTransform));
+        pos.xyz += getModelOffset(context);
+    #endif
+    #ifdef USE_VARYINGS
+        Varyings varyings;
+        getVaryings(context, varyings);
+        writeVaryings(varyings);
     #endif
 
     gl_Position = mvpMatrix * pos;
+    #ifdef USE_CLIP_POSITION
+        gl_Position = getHookClipPosition(context, gl_Position);
+    #endif
 
     v_projZW = gl_Position.zw;
     #ifdef USE_FRAGMENT_HOOKS

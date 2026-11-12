@@ -24,6 +24,9 @@ in vec2 v_projZW;
 #ifdef HOOK_FRAGMENT_COLOR
     in vec4 v_hookColor;
 #endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_fs.glsl"
+#endif
 
 #if defined(ALPHA_MASK)
     uniform u_fs_depthMaterial {
@@ -98,5 +101,11 @@ void main() {
     //frag_color = encodeDepth(gl_FragCoord.z);
 
     // Higher precision equivalent of gl_FragCoord.z in some platforms. See Three.js depth_frag.glsl.js
-	frag_color = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #ifdef USE_DEPTH_OFFSET
+        float depth = getHookDepth(context);
+        gl_FragDepth = depth;
+        frag_color = encodeDepth(depth);
+    #else
+        frag_color = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #endif
 }
