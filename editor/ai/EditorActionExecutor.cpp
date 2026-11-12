@@ -1909,9 +1909,13 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
             }
             EntityReference ref;
             ref.entity = static_cast<Entity>(std::max(0, args["entity_value"].get<int>()));
-            // the same scene is stored as 0, like the Properties panel does
-            int refSceneId = args.value("entity_scene_id", 0);
-            ref.sceneId = (refSceneId == static_cast<int>(sceneId)) ? 0 : static_cast<uint32_t>(std::max(0, refSceneId));
+            // the same scene is stored as 0, like the Properties panel does; scene ids use all 32 bits
+            uint32_t refSceneId = 0;
+            if (args.contains("entity_scene_id") && args["entity_scene_id"].is_number_integer()) {
+                int64_t value = args["entity_scene_id"].get<int64_t>();
+                if (value > 0 && value <= UINT32_MAX) refSceneId = static_cast<uint32_t>(value);
+            }
+            ref.sceneId = (refSceneId == sceneId) ? 0 : refSceneId;
             return new PropertyCmd<EntityReference>(project, sceneId, entity, component, propertyName, ref, onChanged);
         }
         case PropertyType::Material:
