@@ -24,6 +24,12 @@ int main(int argc, char* argv[]) {
     if (argc >= 2 && std::strcmp(argv[1], "shader-nodes") == 0) {
         return editor::CommandLine::runShaderNodesCommand(argc - 1, argv + 1, argv[0]);
     }
+    if (argc >= 2 && std::strcmp(argv[1], "logic-nodes") == 0) {
+        return editor::CommandLine::runLogicNodesCommand(argc - 1, argv + 1, argv[0]);
+    }
+    if (argc >= 2 && std::strcmp(argv[1], "logic") == 0) {
+        return editor::CommandLine::runLogicCommand(argc - 1, argv + 1, argv[0]);
+    }
     if (argc >= 2 && std::strcmp(argv[1], "benchmark") == 0) {
         if (argc >= 3 && (std::strcmp(argv[2], "-h") == 0 || std::strcmp(argv[2], "--help") == 0 || std::strcmp(argv[2], "help") == 0)) {
             return editor::CommandLine::runBenchmarkHelp(argc - 1, argv + 1, argv[0]);

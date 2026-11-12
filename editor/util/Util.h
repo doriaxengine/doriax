@@ -129,6 +129,19 @@ namespace doriax::editor{
             return ext == ".shader";
         }
 
+        inline static bool isLogicGraphFile(const std::string& path) {
+            std::string ext = std::filesystem::path(path).extension().string();
+            if (ext.empty() && !path.empty() && path[0] == '.') {
+                ext = path;
+            }
+            std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+            return ext == ".logic";
+        }
+
+        inline static bool isGraphFile(const std::string& path) {
+            return isShaderGraphFile(path) || isLogicGraphFile(path);
+        }
+
         // True for a relative path that cannot escape the directory it is resolved
         // against. Guards every project-relative path that reaches the filesystem.
         inline static bool isSafeRelativePath(const std::filesystem::path& path) {

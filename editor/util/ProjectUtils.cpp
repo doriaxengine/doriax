@@ -327,6 +327,15 @@ std::string editor::ProjectUtils::getShaderFunctionTemplate() {
     return graph.write();
 }
 
+std::string editor::ProjectUtils::getLogicGraphTemplate() {
+    GraphDocument graph;
+    graph.kind = "logic";
+    graph.type = "script";
+    graph.addNode("event/start", Vector2(0.0f, 0.0f));
+    graph.addNode("event/Engine.onUpdate", Vector2(0.0f, 160.0f));
+    return graph.write();
+}
+
 std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
     return writeShaderFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
 }

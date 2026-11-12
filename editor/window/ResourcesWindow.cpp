@@ -1708,7 +1708,7 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
             }else if (Util::isFontFile(fileEntry.extension)){
                 fileEntry.type = FileType::FONT;
                 fileEntry.icon = fontIconH;
-            }else if (Util::isShaderGraphFile(fileEntry.extension)){
+            }else if (Util::isGraphFile(fileEntry.extension)){
                 fileEntry.type = FileType::GRAPH;
             }
 
@@ -1807,6 +1807,8 @@ void editor::ResourcesWindow::renderNewItemMenu(const fs::path& directory){
     bool inLuaDir = Util::isInsidePath(directory, project->getLuaPath());
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " Lua Script", nullptr, false, inLuaDir)) startNewItem(NewItemType::LUA_SCRIPT, directory);
     if (!inLuaDir) ImGui::SetItemTooltip("Lua scripts must be inside the Lua directory");
+    if (ImGui::MenuItem(ICON_FA_DIAGRAM_PROJECT " Logic Graph", nullptr, false, inLuaDir)) startNewItem(NewItemType::LOGIC_GRAPH, directory);
+    ImGui::SetItemTooltip(inLuaDir ? "A script made of nodes, saved with its Lua beside it" : "Logic graphs must be inside the Lua directory");
 
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Source")) startNewItem(NewItemType::CPP_SOURCE, directory);
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Header")) startNewItem(NewItemType::CPP_HEADER, directory);
@@ -1845,6 +1847,7 @@ void editor::ResourcesWindow::handleNewItem(){
     else if (newItemType == NewItemType::SHADER) popupName = "Create New Shader";
     else if (newItemType == NewItemType::SHADER_GRAPH) popupName = "Create New Shader Graph";
     else if (newItemType == NewItemType::SHADER_FUNCTION) popupName = "Create New Shader Function";
+    else if (newItemType == NewItemType::LOGIC_GRAPH) popupName = "Create New Logic Graph";
 
     // Handle new item creation popup
     if (isCreatingNewItem) {
@@ -1906,6 +1909,9 @@ void editor::ResourcesWindow::handleNewItem(){
                 } else if (newItemType == NewItemType::SHADER_FUNCTION) {
                     if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
                     content = ProjectUtils::getShaderFunctionTemplate();
+                } else if (newItemType == NewItemType::LOGIC_GRAPH) {
+                    if (!Util::isLogicGraphFile(itemName)) itemName += ".logic";
+                    content = ProjectUtils::getLogicGraphTemplate();
                 }
 
                 try {

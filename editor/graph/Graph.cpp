@@ -374,6 +374,19 @@ void editor::GraphDocument::connect(int fromNode, const std::string& fromPin, in
     links.push_back({fromNode, fromPin, toNode, toPin});
 }
 
+void editor::GraphDocument::connectExecution(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin) {
+    links.erase(std::remove_if(links.begin(), links.end(), [&](const GraphLink& link) {
+        return link.fromNode == fromNode && link.fromPin == fromPin;
+    }), links.end());
+    links.push_back({fromNode, fromPin, toNode, toPin});
+}
+
+void editor::GraphDocument::disconnect(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin) {
+    links.erase(std::remove_if(links.begin(), links.end(), [&](const GraphLink& link) {
+        return link.fromNode == fromNode && link.fromPin == fromPin && link.toNode == toNode && link.toPin == toPin;
+    }), links.end());
+}
+
 void editor::GraphDocument::disconnect(int toNode, const std::string& toPin) {
     links.erase(std::remove_if(links.begin(), links.end(), [&](const GraphLink& link) {
         return link.toNode == toNode && link.toPin == toPin;

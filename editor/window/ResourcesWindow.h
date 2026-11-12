@@ -149,7 +149,8 @@ namespace doriax::editor {
             CPP_HEADER,
             SHADER,
             SHADER_GRAPH,
-            SHADER_FUNCTION
+            SHADER_FUNCTION,
+            LOGIC_GRAPH
         };
         bool isCreatingNewItem;
         NewItemType newItemType = NewItemType::FOLDER;

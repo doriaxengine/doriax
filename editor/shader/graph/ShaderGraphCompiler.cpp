@@ -95,7 +95,7 @@ namespace {
     }
 
     // a function's Function Inputs and Outputs as the pins of a Subgraph node calling it, top to bottom
-    bool checkFunction(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::vector<ShaderGraphMessage>& errors) {
+    bool checkFunction(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::vector<GraphMessage>& errors) {
         if (function.kind != "shader" || function.type != "function") {
             errors.push_back({0, "not a function graph (type: " + function.type + ")"});
             return false;
@@ -463,9 +463,9 @@ namespace {
             functions.insert(file);
         }
         std::vector<NodePin> inputs, outputs;
-        std::vector<ShaderGraphMessage> problems;
+        std::vector<GraphMessage> problems;
         if (!checkFunction(function, inputs, outputs, problems)) {
-            for (const ShaderGraphMessage& problem : problems)
+            for (const GraphMessage& problem : problems)
                 error(call.id, file + ": " + problem.text);
             return false;
         }
@@ -604,9 +604,9 @@ namespace {
     }
 
     void Compiler::reportOrigins() {
-        std::vector<ShaderGraphMessage> errors;
+        std::vector<GraphMessage> errors;
         std::set<std::string> seen;
-        for (ShaderGraphMessage message : result.errors) {
+        for (GraphMessage message : result.errors) {
             if (auto it = origin.find(message.node); it != origin.end()) {
                 const std::string& file = originFile[message.node];
                 if (!file.empty())
@@ -1363,13 +1363,6 @@ namespace {
 
 }
 
-std::string editor::ShaderGraphResult::describeErrors() const {
-    std::string text;
-    for (const ShaderGraphMessage& message : errors)
-        text += (text.empty() ? "" : "\n") + (message.node ? "node " + std::to_string(message.node) + ": " : std::string()) + message.text;
-    return text;
-}
-
 editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader) {
     if (graph.kind != "shader" || graph.type != "function")
         return Compiler(graph, source, reader).run();
@@ -1399,8 +1392,8 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
             result.code = drawn.code;
             result.lineNodes = drawn.lineNodes;
         }
-        for (const ShaderGraphMessage& message : drawn.errors) {
-            if (std::none_of(result.errors.begin(), result.errors.end(), [&](const ShaderGraphMessage& known) { return known.node == message.node && known.text == message.text; }))
+        for (const GraphMessage& message : drawn.errors) {
+            if (std::none_of(result.errors.begin(), result.errors.end(), [&](const GraphMessage& known) { return known.node == message.node && known.text == message.text; }))
                 result.errors.push_back(message);
         }
         for (const std::string& file : drawn.functions) {
@@ -1413,7 +1406,7 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
 }
 
 bool editor::ShaderGraphCompiler::getFunctionPins(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error) {
-    std::vector<ShaderGraphMessage> problems;
+    std::vector<GraphMessage> problems;
     inputs.clear();
     outputs.clear();
     if (checkFunction(function, inputs, outputs, problems))

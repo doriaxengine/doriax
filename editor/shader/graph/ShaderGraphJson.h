@@ -98,7 +98,7 @@ namespace doriax::editor {
             out["comments"].push_back({{"id", comment.id}, {"text", comment.text}, {"position", {comment.position.x, comment.position.y}}});
         out["valid"] = compiled.success;
         out["errors"] = nlohmann::json::array();
-        for (const ShaderGraphMessage& message : compiled.errors)
+        for (const GraphMessage& message : compiled.errors)
             out["errors"].push_back(message.node ? nlohmann::json{{"node", message.node}, {"message", message.text}} : nlohmann::json{{"message", message.text}});
         return out;
     }

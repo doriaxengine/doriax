@@ -16,6 +16,7 @@ namespace doriax::editor {
         std::string label;
         ImU32 color = IM_COL32(200, 200, 200, 255);
         bool connected = false;
+        bool execution = false;      // drawn as an arrow
         std::string value;           // shown beside an input nothing feeds
     };
 
@@ -36,6 +37,7 @@ namespace doriax::editor {
         int toNode = 0;
         std::string toPin;
         ImU32 color = IM_COL32(200, 200, 200, 255);
+        float thickness = 2.0f;
     };
 
     struct CanvasGroup {
@@ -65,7 +67,7 @@ namespace doriax::editor {
         enum class Kind {
             MOVE,            // ids by delta
             CONNECT,         // from node.pin to node.pin
-            DISCONNECT,      // the input toNode.toPin
+            DISCONNECT,      // the link from node.pin to node.pin
             REMOVE,          // ids, with the links they hold
             ADD,             // a node wanted at position; from node.pin when a link was dropped on nothing
             REROUTE,         // a reroute node on the link into toNode.toPin, at position
@@ -111,6 +113,35 @@ namespace doriax::editor {
             RESIZE
         };
 
+        // a link by its ends; none while toNode is 0
+        struct LinkEnds {
+            int fromNode = 0;
+            std::string fromPin;
+            int toNode = 0;
+            std::string toPin;
+
+            bool empty() const { return toNode == 0; }
+            void clear() { *this = LinkEnds(); }
+            void set(const CanvasLink& link) {
+                fromNode = link.fromNode;
+                fromPin = link.fromPin;
+                toNode = link.toNode;
+                toPin = link.toPin;
+            }
+            bool is(const CanvasLink& link) const {
+                return toNode == link.toNode && toPin == link.toPin && fromNode == link.fromNode && fromPin == link.fromPin;
+            }
+            CanvasEdit disconnect() const {
+                CanvasEdit edit;
+                edit.kind = CanvasEdit::Kind::DISCONNECT;
+                edit.fromNode = fromNode;
+                edit.fromPin = fromPin;
+                edit.toNode = toNode;
+                edit.toPin = toPin;
+                return edit;
+            }
+        };
+
         struct NodeLayout {
             int id = 0;
             ImVec2 min;              // graph space
@@ -128,7 +159,7 @@ namespace doriax::editor {
         ImVec2 framedSize;           // framing goes on while the window settles its size
 
         std::set<int> selection;
-        std::string selectedLink;    // "toNode.toPin"
+        LinkEnds selectedLink;
 
         Gesture gesture = Gesture::NONE;
         ImVec2 gestureStart;         // graph space
@@ -137,7 +168,7 @@ namespace doriax::editor {
         int pinNode = 0;
         std::string pinName;
         bool pinOutput = true;
-        std::string detachedLink;    // the link taken off an input to be dropped elsewhere
+        LinkEnds detachedLink;       // the link taken off an input to be dropped elsewhere
         int resizeGroup = 0;
         ImVec2 resizeSize;
         bool rightDragged = false;

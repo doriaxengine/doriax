@@ -9306,6 +9306,17 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
             }
             ImGui::EndDisabled();
 
+            // a script written by a logic graph opens its graph
+            std::filesystem::path graphPath = srcPath;
+            graphPath.replace_extension(".logic");
+            if (script.type == ScriptType::LUA && srcExists && std::filesystem::exists(graphPath)) {
+                ImGui::SameLine();
+                if (ImGui::Button((ICON_FA_DIAGRAM_PROJECT "##open_graph_" + std::to_string(scriptIdx)).c_str())) {
+                    Backend::getApp().getGraphEditorWindow()->openFile(graphPath);
+                }
+                ImGui::SetItemTooltip("Graph: %s", graphPath.filename().string().c_str());
+            }
+
             ImGui::PopStyleVar();
 
             endTable();

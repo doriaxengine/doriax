@@ -4,6 +4,7 @@
 #pragma once
 
 #include "graph/Graph.h"
+#include "graph/GraphResult.h"
 #include "graph/NodeRegistry.h"
 
 #include <functional>
@@ -12,20 +13,10 @@
 
 namespace doriax::editor {
 
-    struct ShaderGraphMessage {
-        int node = 0;                // 0 for the graph as a whole
-        std::string text;
-    };
-
-    struct ShaderGraphResult {
-        bool success = false;
+    // a shader file, as one written by hand
+    struct ShaderGraphResult : GraphResult {
         std::string type;                        // what the code fills, as mesh; a function's preview names its own
-        std::string code;                        // a shader file, as one written by hand
-        std::vector<ShaderGraphMessage> errors;
-        std::vector<int> lineNodes;              // the node each line of code came from, 0 for none
         std::vector<std::string> functions;      // the function graphs its Subgraph nodes read
-
-        std::string describeErrors() const;
     };
 
     // reads the graph file a Subgraph node names, by its path in the project

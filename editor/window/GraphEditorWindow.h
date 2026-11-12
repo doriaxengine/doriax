@@ -20,7 +20,7 @@ namespace doriax::editor {
     class Project;
     class GraphEditCmd;
 
-    // .shader graphs open for editing, each in a docked window with its own undo history
+    // .shader and .logic graphs open for editing, each in a docked window with its own undo history
     class GraphEditorWindow {
     private:
         struct Instance {
@@ -74,6 +74,8 @@ namespace doriax::editor {
         std::string toRelativePath(const std::filesystem::path& path) const;
         bool load(Instance& instance);
         bool save(Instance& instance);
+        // the Lua script of a logic graph, beside it
+        void writeScript(Instance& instance);
         // with the project's function graphs as edited
         void compile(Instance& instance);
         // one undoable step: what changed in the document since it was last applied
@@ -88,6 +90,7 @@ namespace doriax::editor {
         void drawParameters(Instance& instance);
         void drawInspector(Instance& instance);
         bool drawLayoutInspector(Instance& instance);
+        bool drawLogicConstant(GraphNode& node, const NodePin& pin);
         void drawErrors(Instance& instance);
         void drawAddPopup(Instance& instance);
         void drawCanvas(Instance& instance);

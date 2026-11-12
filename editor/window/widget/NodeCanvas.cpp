@@ -266,12 +266,28 @@ void editor::NodeCanvas::drawNode(ImDrawList* drawList, const CanvasNode& node, 
     const ImU32 border = !node.error.empty() ? IM_COL32(230, 70, 60, 255) : (selected ? highlight : IM_COL32(15, 15, 15, 255));
     drawList->AddRect(min, max, border, rounding, 0, (selected || !node.error.empty() ? 2.0f : 1.0f) * Theme::dpiScale());
 
+    // a data pin is a circle, an execution pin an arrow; filled when linked
+    auto drawPin = [&](const CanvasPin& pin, const ImVec2& at, bool filled) {
+        const float radius = pinRadius * scale;
+        if (pin.execution) {
+            const ImVec2 points[3] = {ImVec2(at.x - radius, at.y - radius), ImVec2(at.x + radius, at.y), ImVec2(at.x - radius, at.y + radius)};
+            if (filled)
+                drawList->AddTriangleFilled(points[0], points[1], points[2], pin.color);
+            else
+                drawList->AddTriangle(points[0], points[1], points[2], pin.color, 1.5f * Theme::dpiScale());
+        } else if (filled) {
+            drawList->AddCircleFilled(at, radius, pin.color);
+        } else {
+            drawList->AddCircle(at, radius, pin.color, 0, 1.5f * Theme::dpiScale());
+        }
+    };
+
     // far out, the boxes are enough
     if (zoom <= 0.35f) {
         for (size_t i = 0; i < node.inputs.size(); i++)
-            drawList->AddCircleFilled(toScreen(layout.inputs[i]), pinRadius * scale, node.inputs[i].color);
+            drawPin(node.inputs[i], toScreen(layout.inputs[i]), true);
         for (size_t i = 0; i < node.outputs.size(); i++)
-            drawList->AddCircleFilled(toScreen(layout.outputs[i]), pinRadius * scale, node.outputs[i].color);
+            drawPin(node.outputs[i], toScreen(layout.outputs[i]), true);
         return;
     }
 
@@ -283,10 +299,7 @@ void editor::NodeCanvas::drawNode(ImDrawList* drawList, const CanvasNode& node, 
     for (size_t i = 0; i < node.inputs.size(); i++) {
         const CanvasPin& pin = node.inputs[i];
         const ImVec2 at = toScreen(layout.inputs[i]);
-        if (pin.connected)
-            drawList->AddCircleFilled(at, pinRadius * scale, pin.color);
-        else
-            drawList->AddCircle(at, pinRadius * scale, pin.color, 0, 1.5f * Theme::dpiScale());
+        drawPin(pin, at, pin.connected);
         const ImVec2 labelAt(at.x + (pinRadius + 5.0f) * scale, at.y - lineHeight * 0.5f);
         drawList->AddText(labelAt, IM_COL32(215, 215, 215, 255), pin.label.c_str());
         if (!pin.connected && !pin.value.empty())
@@ -295,10 +308,7 @@ void editor::NodeCanvas::drawNode(ImDrawList* drawList, const CanvasNode& node, 
     for (size_t i = 0; i < node.outputs.size(); i++) {
         const CanvasPin& pin = node.outputs[i];
         const ImVec2 at = toScreen(layout.outputs[i]);
-        if (pin.connected)
-            drawList->AddCircleFilled(at, pinRadius * scale, pin.color);
-        else
-            drawList->AddCircle(at, pinRadius * scale, pin.color, 0, 1.5f * Theme::dpiScale());
+        drawPin(pin, at, pin.connected);
         const float width = ImGui::CalcTextSize(pin.label.c_str()).x;
         drawList->AddText(ImVec2(at.x - (pinRadius + 5.0f) * scale - width, at.y - lineHeight * 0.5f), IM_COL32(215, 215, 215, 255), pin.label.c_str());
     }
@@ -385,7 +395,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             if (!output) {
                 for (const CanvasLink& existing : model.links) {
                     if (existing.toNode == node && existing.toPin == pin) {
-                        detachedLink = std::to_string(node) + "." + pin;
+                        detachedLink.set(existing);
                         pinNode = existing.fromNode;
                         pinName = existing.fromPin;
                         pinOutput = true;
@@ -404,7 +414,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             startMove(model, mouse);
         } else if (linkAt(model, mouse, link)) {
             selection.clear();
-            selectedLink = std::to_string(link->toNode) + "." + link->toPin;
+            selectedLink.set(*link);
         } else {
             for (const CanvasGroup& item : model.groups) {
                 const ImVec2 corner(item.position.x + item.size.x, item.position.y + item.size.y);
@@ -452,15 +462,10 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             std::string pin;
             bool output = true;
             const bool onPin = pinAt(model, mouse, node, pin, output);
-            const bool backHome = onPin && !output && std::to_string(node) + "." + pin == detachedLink;
+            const bool backHome = onPin && !output && node == detachedLink.toNode && pin == detachedLink.toPin;
             // a link taken off an input and dropped anywhere else leaves it
             if (!detachedLink.empty() && !backHome) {
-                const size_t dot = detachedLink.find('.');
-                CanvasEdit edit;
-                edit.kind = CanvasEdit::Kind::DISCONNECT;
-                edit.toNode = std::stoi(detachedLink.substr(0, dot));
-                edit.toPin = detachedLink.substr(dot + 1);
-                edits.push_back(edit);
+                edits.push_back(detachedLink.disconnect());
             }
             if (onPin && !backHome && output != pinOutput && node != pinNode) {
                 CanvasEdit edit;
@@ -522,12 +527,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
                 edits.push_back(edit);
                 selection.clear();
             } else if (!selectedLink.empty()) {
-                CanvasEdit edit;
-                edit.kind = CanvasEdit::Kind::DISCONNECT;
-                const size_t dot = selectedLink.find('.');
-                edit.toNode = std::stoi(selectedLink.substr(0, dot));
-                edit.toPin = selectedLink.substr(dot + 1);
-                edits.push_back(edit);
+                edits.push_back(selectedLink.disconnect());
                 selectedLink.clear();
             }
         }
@@ -603,11 +603,11 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
     }
 
     for (const CanvasLink& link : model.links) {
-        const std::string key = std::to_string(link.toNode) + "." + link.toPin;
-        if (key == detachedLink)
+        if (detachedLink.is(link))
             continue;
+        const bool picked = selectedLink.is(link);
         drawLink(drawList, pinPosition(model, link.fromNode, link.fromPin, true), pinPosition(model, link.toNode, link.toPin, false),
-                 key == selectedLink ? highlight : link.color, key == selectedLink ? 3.0f : 2.0f);
+                 picked ? highlight : link.color, picked ? 3.0f : link.thickness);
     }
     if (gesture == Gesture::CONNECT) {
         const ImVec2 start = pinPosition(model, pinNode, pinName, pinOutput);

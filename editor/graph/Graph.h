@@ -79,8 +79,8 @@ namespace doriax::editor {
         static constexpr int formatVersion = 1;
 
         int version = formatVersion;
-        std::string kind;            // shader; logic later
-        std::string type;            // what it fills, as mesh
+        std::string kind;            // shader or logic
+        std::string type;            // what it fills, as mesh; script for a logic graph
         int nextId = 1;              // ids are shared by parameters, nodes, groups and comments, never reused
         std::vector<GraphParameter> parameters;
         std::vector<GraphNode> nodes;
@@ -101,7 +101,10 @@ namespace doriax::editor {
         void moveNodes(const std::vector<int>& ids, const Vector2& delta);
         // an input takes one link, so this replaces the one there
         void connect(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
+        // execution leaves an output one way, and enters an input from any number
+        void connectExecution(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
         void disconnect(int toNode, const std::string& toPin);
+        void disconnect(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
         int addParameter(const GraphParameter& parameter);
         // with its links and the nodes' settings that name it cleared
         void removeParameter(int id);
