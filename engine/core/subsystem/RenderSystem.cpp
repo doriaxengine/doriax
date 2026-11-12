@@ -10630,10 +10630,11 @@ void RenderSystem::update(double dt){
 
             // vertex offsets reach past the bounds by their longest offset, read only when used
             auto offsetReach = [&](){
-                if (mesh.vertexOffsetMax <= 0.0f || terrain)
+                if (mesh.vertexOffsetMax <= 0.0f)
                     return 0.0f;
+                // the loaded shader file, the scene default included
                 for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
-                    if (!mesh.submeshes[s].material.shader.empty())
+                    if (mesh.submeshes[s].customShaderId != 0)
                         return mesh.vertexOffsetMax;
                 }
                 return 0.0f;
