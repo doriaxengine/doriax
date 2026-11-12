@@ -212,8 +212,9 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         endif()
         if(NOT DORIAX_WEB_PORTAL STREQUAL "none")
             string(TOUPPER "${DORIAX_WEB_PORTAL}" WEB_PORTAL_NAME)
-            add_definitions("-DDORIAX_WEB_PORTAL_${WEB_PORTAL_NAME}")
-            add_definitions("-DDORIAX_WEB_PORTAL_GAME_ID=\"${DORIAX_WEB_PORTAL_GAME_ID}\"")
+            # only WebPortals.cpp reads them, so switching portals rebuilds that file alone
+            set_property(SOURCE ${DORIAX_ROOT}/platform/emscripten/WebPortals.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                "DORIAX_WEB_PORTAL_${WEB_PORTAL_NAME}" "DORIAX_WEB_PORTAL_GAME_ID=\"${DORIAX_WEB_PORTAL_GAME_ID}\"")
         endif()
 
         set(CMAKE_EXECUTABLE_SUFFIX ".html")
