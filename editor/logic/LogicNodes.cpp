@@ -370,7 +370,8 @@ void editor::LogicNodes::addEngineApi() {
                     continue;
                 std::string param = trim(list.substr(begin, i - begin));
                 begin = i + 1;
-                if (param.empty())
+                // what follows a format's text is not a pin
+                if (param.empty() || param.find("...") != std::string::npos)
                     continue;
                 param = trim(param.substr(0, param.find('=')));
                 const size_t space = param.rfind(' ');

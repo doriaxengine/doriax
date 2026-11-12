@@ -1135,9 +1135,17 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
             const std::string name = lower(type->name);
             return name == search ? 0 : (name.rfind(words.front(), 0) == 0 ? 1 : (name.find(words.front()) != std::string::npos ? 2 : 3));
         };
+        // a graph's own node before one of an engine class with its name
+        auto engine = [&](const NodeType* type) {
+            return isLogic(document) && logicCategoryColor(type->category) == logicCategoryColor(std::string());
+        };
         std::stable_sort(found.begin(), found.end(), [&](const NodeType* a, const NodeType* b) {
             const int rankA = rank(a), rankB = rank(b);
-            return rankA != rankB ? rankA < rankB : a->name.size() < b->name.size();
+            if (rankA != rankB)
+                return rankA < rankB;
+            if (a->name.size() != b->name.size())
+                return a->name.size() < b->name.size();
+            return !engine(a) && engine(b);
         });
         list(found, isLogic(document));
         if (listed > searchLimit)
