@@ -128,9 +128,22 @@ namespace {
         return out + code.substr(std::min(at, code.size()));
     }
 
+    // the words a template leaves in the code: comments go before macros expand, and
+    // {input}, @field and %value are replaced
     void collectIdentifiers(const std::string& code, std::set<std::string>& names) {
         for (size_t i = 0; i < code.size();) {
-            if (std::isalpha((unsigned char)code[i]) || code[i] == '_') {
+            if (code.compare(i, 2, "//") == 0) {
+                i = std::min(code.find('\n', i), code.size());
+            } else if (code.compare(i, 2, "/*") == 0) {
+                const size_t end = code.find("*/", i + 2);
+                i = end == std::string::npos ? code.size() : end + 2;
+            } else if (code[i] == '{' && code.find('}', i) != std::string::npos && code.find('\n', i) > code.find('}', i)) {
+                i = code.find('}', i) + 1;
+            } else if (code[i] == '@' || code[i] == '%') {
+                i++;
+                while (i < code.size() && (std::isalnum((unsigned char)code[i]) || code[i] == '_'))
+                    i++;
+            } else if (std::isalpha((unsigned char)code[i]) || code[i] == '_') {
                 size_t end = i;
                 while (end < code.size() && (std::isalnum((unsigned char)code[end]) || code[end] == '_'))
                     end++;

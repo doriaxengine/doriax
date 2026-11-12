@@ -706,6 +706,21 @@ vec3 graphHSVToRGB(vec3 c){
     dither.stage = ShaderNodeStage::FRAGMENT;
     dither.shaderTypes = {"mesh"};
 
+    functions["intersectionFoam"] = {{"valueNoise"}, R"(// 1 in a band where a surface meets what is behind it, the edge broken by moving noise
+float graphIntersectionFoam(float gap, vec2 position, float time, float width, float scale, float speed, float breakup){
+    float noise = graphValueNoise(position * scale + vec2(time * speed, time * speed * 0.7));
+    return 1.0 - smoothstep(0.0, width, gap + (noise - 0.5) * breakup * width);
+}
+)"};
+    ShaderNodeType& foam = add("effect/intersectionFoam", "Intersection Foam", "Effect",
+        "1 in a band where the mesh meets what is behind it, its edge broken by moving noise, as foam where water meets rocks.",
+        {in("width", "Width", "float", 0.4f), in("scale", "Scale", "float", 3.0f), in("speed", "Speed", "float", 0.4f), in("breakup", "Breakup", "float", 1.0f)},
+        {out("out", "Out", "float")},
+        {"graphIntersectionFoam(sceneDepth(@screenUV) - dot(@worldPosition - @eye, @forward), @worldPosition.xz, Engine.time, {width}, {scale}, {speed}, {breakup})"});
+    foam.functions = {"intersectionFoam"};
+    foam.stage = ShaderNodeStage::FRAGMENT;
+    foam.shaderTypes = {"mesh"};
+
     functions["triplanar"] = {{}, R"(// a texture seen from the three axes, blended by how the normal faces them
 vec4 graphTriplanar(texture2D graphTexture, sampler graphSampler, vec3 graphPosition, vec3 graphNormal, float graphSharpness){
     vec3 weights = pow(abs(graphNormal), vec3(graphSharpness));
@@ -723,6 +738,37 @@ vec4 graphTriplanar(texture2D graphTexture, sampler graphSampler, vec3 graphPosi
     triplanar.settings = {parameterSetting("texture", "Texture", {"texture2D"})};
     triplanar.functions = {"triplanar"};
     triplanar.stage = ShaderNodeStage::FRAGMENT;
+
+    functions["parallax"] = {{}, R"(// the uv a height map moves away from the eye, in steps down to where the view meets it
+vec2 graphParallax(texture2D graphTexture, sampler graphSampler, vec2 graphUV, vec3 graphView, vec3 graphTangent, vec3 graphBitangent, vec3 graphNormal, float graphScale, float graphSteps){
+    vec3 toEye = vec3(dot(graphView, graphTangent), dot(graphView, graphBitangent), dot(graphView, graphNormal));
+    float count = clamp(graphSteps, 1.0, 32.0);
+    vec2 shift = toEye.xy / max(toEye.z, 0.1) * graphScale / count;
+    // one gradient for every step, so the loop needs none of its own
+    vec2 dx = dFdx(graphUV);
+    vec2 dy = dFdy(graphUV);
+    vec2 uv = graphUV;
+    float layer = 0.0;
+    float depth = 1.0 - textureGrad(sampler2D(graphTexture, graphSampler), uv, dx, dy).r;
+    for (int i = 0; i < 32; i++) {
+        if (float(i) >= count || layer >= depth)
+            break;
+        uv -= shift;
+        layer += 1.0 / count;
+        depth = 1.0 - textureGrad(sampler2D(graphTexture, graphSampler), uv, dx, dy).r;
+    }
+    return uv;
+}
+)"};
+    ShaderNodeType& parallax = add("uv/parallax", "Parallax", "UV",
+        "UV moved by a height map as the view slants, so a flat surface looks deep. White in the map is high.",
+        {in("uv", "UV", "vec2", "@uv1"), in("scale", "Scale", "float", 0.05f), in("steps", "Steps", "float", 12.0f)},
+        {out("uv", "UV", "vec2")},
+        {"graphParallax({texture}_texture, {texture}_sampler, {uv}, @view, @tangent, @bitangent, @normal, {scale}, {steps})"});
+    parallax.settings = {parameterSetting("texture", "Height Map", {"texture2D"})};
+    parallax.functions = {"parallax"};
+    parallax.stage = ShaderNodeStage::FRAGMENT;
+    parallax.shaderTypes = {"mesh"};
 
     ShaderNodeType& swizzle = add("vector/swizzle", "Swizzle", "Vector", "Components picked and reordered, as zyx or xxy.",
         {in("in", "In", "vec4")}, {out("out", "Out", "mask")}, {"{in}.{mask}"});
