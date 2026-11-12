@@ -65,15 +65,16 @@ EXCLUDED_HEADER_METHODS = {
 
 class APISymbol:
     """Represents one symbol in the engine API."""
-    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature')
+    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound')
 
-    def __init__(self, name, kind, detail='', parent='', getter='', signature=None):
+    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None):
         self.name = name
         self.kind = kind
         self.detail = detail
         self.parent = parent
         self.getter = getter  # getter of a writable property
         self.signature = signature  # (params, return) of a lambda binding
+        self.bound = bound  # parameter types of the overload Lua gets, None when the binding names none
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -119,7 +120,7 @@ def parse_binding_file(filepath):
     current_constructors = []
     pending_constructor = None
 
-    for line in lines:
+    for index, line in enumerate(lines):
         stripped = line.strip()
 
         if pending_constructor is not None:
@@ -189,7 +190,8 @@ def parse_binding_file(filepath):
             if not fname.startswith('__'):
                 symbols.append(APISymbol(
                     fname, 'StaticMethod',
-                    f'{current_lua_name}.{fname}()', current_lua_name
+                    f'{current_lua_name}.{fname}()', current_lua_name,
+                    bound=_bound_types(_binding_text(lines, index))
                 ))
             continue
 
@@ -201,7 +203,8 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     fname, 'Method',
                     f'{current_lua_name}:{fname}()', current_lua_name,
-                    signature=_lambda_signature(stripped[m.end():])
+                    signature=_lambda_signature(stripped[m.end():]),
+                    bound=_bound_types(_binding_text(lines, index))
                 ))
             continue
 
@@ -380,6 +383,81 @@ def _lambda_signature(text):
     # Lua passes neither self nor the lua_State
     params = [p for p in m.group(1).split(',')[1:] if 'lua_State' not in p]
     return _simplify_params(','.join(params)), m.group(2)
+
+
+def _binding_text(lines, index):
+    """An add call with the lines it runs over, up to the next call of the chain."""
+    text = lines[index].strip()
+    for following in lines[index + 1:index + 12]:
+        s = following.strip()
+        if s.startswith('.') or s.startswith('//') or not s:
+            break
+        text += ' ' + s
+        if ';' in s:
+            break
+    return text
+
+
+RE_BOUND_CAST = re.compile(r'\(\s*[\w:<>\s&*]+\(\s*(?:\w+::)?\*\s*\)\s*\(([^()]*)\)')
+
+
+def _split_types(text):
+    """A parameter list split at the commas outside templates."""
+    parts, depth, current = [], 0, ''
+    for c in text:
+        if c == '<':
+            depth += 1
+        elif c == '>':
+            depth -= 1
+        if c == ',' and depth == 0:
+            parts.append(current)
+            current = ''
+        else:
+            current += c
+    parts.append(current)
+    return [_simplify_param(p) for p in parts if p.strip() and p.strip() != 'void']
+
+
+def _bound_types(text):
+    """Parameter types of the overload a binding gives Lua, or None when it names none.
+
+    Of several, the one that takes a single value (a vector rather than its
+    numbers) is preferred, else the first.
+    """
+    found = []
+    marker = 'luabridge::overload<'
+    start = text.find(marker)
+    while start >= 0:
+        # templates nest, as overload<std::vector<int>>
+        begin = start + len(marker)
+        depth, end = 1, begin
+        while end < len(text) and depth:
+            depth += 1 if text[end] == '<' else (-1 if text[end] == '>' else 0)
+            end += 1
+        if depth:
+            break
+        found.append(_split_types(text[begin:end - 1]))
+        start = text.find(marker, end)
+    if not found:
+        m = RE_BOUND_CAST.search(text)
+        return _split_types(m.group(1)) if m else None
+    return next((types for types in found if len(types) == 1), found[0])
+
+
+def _param_type(param):
+    """The type of a simplified 'Type name' parameter."""
+    param = param.split('=')[0].strip()
+    parts = param.rsplit(' ', 1)
+    return parts[0] if len(parts) == 2 else param
+
+
+def _bound_overload(overloads, types):
+    """The header overload Lua calls, with its parameter names; made of the types alone when none matches."""
+    for params, ret in overloads:
+        if [_param_type(p) for p in _split_types(params)] == types:
+            return params, ret
+    returns = overloads[0][1] if overloads else ''
+    return ', '.join(f'{t} value{i + 1}' for i, t in enumerate(types)), returns
 
 
 def _simplify_params(params_str):
@@ -658,6 +736,9 @@ def main():
     for s in all_symbols:
         if s.kind in ('Method', 'StaticMethod') and s.parent:
             sig = s.signature or cpp_signatures.get((s.parent, s.name))
+            # the header's shortest overload is not always the one bound
+            if s.signature is None and s.bound is not None:
+                sig = _bound_overload(cpp_methods.get(s.parent, {}).get(s.name, []), s.bound)
             if sig is not None:
                 sep = '.' if s.kind == 'StaticMethod' else ':'
                 s.detail = _format_detail(s.parent, s.name, sep, sig)
