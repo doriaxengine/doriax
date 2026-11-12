@@ -456,34 +456,34 @@ constexpr size_t maxMixedBlockMembers = 16;
 // SG_MAX_SAMPLER_BINDSLOTS and SG_MAX_PORTABLE_TEXTURE_BINDINGS_PER_STAGE
 constexpr size_t maxSamplers = 16;
 constexpr size_t maxStageTextures = 16;
+// D3D11 and Metal bind 8 blocks a stage; GL flattens them
+constexpr size_t maxStageBlocks = 8;
 
-// a shader past what the runtime loads
-std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) {
-    if (customId == 0)
-        return "";
-
-    const std::string name = ShaderPool::getCustomShaderName(customId);
+// a shader past what the runtime loads, engine shaders included
+std::string getShaderDataError(const ShaderData& shaderData) {
     size_t samplers = 0;
     for (const ShaderStage& stage : shaderData.stages) {
         samplers += stage.samplers.size();
         if (stage.textures.size() > maxStageTextures)
-            return name + ": " + std::to_string(stage.textures.size()) + " textures in one stage, the limit is " + std::to_string(maxStageTextures);
+            return std::to_string(stage.textures.size()) + " textures in one stage, the limit is " + std::to_string(maxStageTextures);
+        if (shaderData.lang != ShaderLang::GLSL && stage.uniformblocks.size() > maxStageBlocks)
+            return std::to_string(stage.uniformblocks.size()) + " uniform blocks in one stage, the limit is " + std::to_string(maxStageBlocks);
     }
     if (samplers > maxSamplers)
-        return name + ": " + std::to_string(samplers) + " samplers, the limit is " + std::to_string(maxSamplers) +
+        return std::to_string(samplers) + " samplers, the limit is " + std::to_string(maxSamplers) +
             "; textures of one filter and wrap share a sampler";
 
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
             if (shaderData.lang == ShaderLang::GLSL && !block.flattened && block.uniforms.size() > maxMixedBlockMembers)
-                return name + ": " + block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
+                return block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
                     " members, more than the " + std::to_string(maxMixedBlockMembers) + " OpenGL loads";
         }
     }
 
     std::string error;
     if (!ShaderDataSerializer::validate(shaderData, &error))
-        return name + ": " + error;
+        return error;
     return "";
 }
 
@@ -1247,7 +1247,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     shaderData.textureParameters = std::move(declarations.textures);
     shaderData.flags = declarations.flags;
 
-    const std::string blockError = getShaderDataError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty()) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1433,7 +1433,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     shaderData.textureParameters = std::move(declarations.textures);
     shaderData.flags = declarations.flags;
 
-    const std::string blockError = getShaderDataError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty())
         throw std::runtime_error(blockError);
 

@@ -1183,18 +1183,18 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
 
                 for (int c = 0; c < (int)numMaps; c++){
                     if (light.type == LightType::POINT){
-                        fs_point_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
+                        fs_shadows.pointBias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
                             light.shadowBias,
                             (float)shadowPointAtlasSlotResolution,
                             light.cameras[c].nearFar.x,
                             light.cameras[c].nearFar.y);
                     }else{
-                        shadowProjection.lightViewProjectionMatrix[light.shadowMapIndex+c] = light.cameras[c].lightViewProjectionMatrix;
+                        fs_shadows.lightViewProjectionMatrix[light.shadowMapIndex+c] = light.cameras[c].lightViewProjectionMatrix;
 
                         float projScale = std::max(std::abs(light.cameras[c].lightProjectionMatrix[0][0]),
                                                    std::abs(light.cameras[c].lightProjectionMatrix[1][1]));
                         float texelSizeWorld = (projScale > 0.0f) ? 2.0f / (projScale * (float)shadowAtlasSlotResolution) : 0.0f;
-                        shadowProjection.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, light.cameras[c].splitBlend, 0.0, 0.0);
+                        fs_shadows.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, light.cameras[c].splitBlend, 0.0, 0.0);
 
                         fs_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
                             light.shadowBias,
@@ -2015,7 +2015,7 @@ void RenderSystem::initShadowPointAtlasRects(){
     for (int s = 0; s < MAX_POINT_SHADOW_ATLAS_SLOTS; s++){
         int col = s % SHADOW_POINT_ATLAS_COLS;
         int row = s / SHADOW_POINT_ATLAS_COLS;
-        fs_point_shadows.atlasRect[s] = Vector4(
+        fs_shadows.pointAtlasRect[s] = Vector4(
             (float)col / (float)SHADOW_POINT_ATLAS_COLS,
             (float)row / (float)SHADOW_POINT_ATLAS_ROWS,
             1.0f / (float)SHADOW_POINT_ATLAS_COLS,
@@ -2871,8 +2871,9 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
     slotTex = shaderData.getTextureIndex(TextureShaderType::TERRAINDETAIL);
     render.addTexture(slotTex, ShaderStageType::FRAGMENT, arrayCreated ? &detail->render : &emptyArrayWhite);
 
-    // The rest bind black, which weights none of their layers
+    // The rest bind black, which weights none of their layers. They share the first map's sampler.
     const int coveredMaps = arrayCreated ? detail->colorSlices / 3 : 0;
+    TextureRender* blendSampler = &emptyBlack;
     for (int m = 0; m < MAX_TERRAIN_BLENDMAPS; m++){
         const bool covered = m < coveredMaps && m < static_cast<int>(terrain.blendMaps.size());
         textureRender = covered ? terrain.blendMaps[m].getRender(&emptyBlack) : NULL;
@@ -2881,9 +2882,11 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
             if (!textureRender->isCreated()){
                 return false;
             }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
+            if (m == 0)
+                blendSampler = textureRender;
+            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender, blendSampler);
         }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyBlack);
+            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyBlack, blendSampler);
         }
     }
 
@@ -3437,10 +3440,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].slotFSReflectionProbe = shaderData.getUniformBlockIndex(UniformBlockType::FS_REFLECTION_PROBE);
             }
             if (p_receiveShadows){
-                mesh.submeshes[i].slotVSShadows = shaderData.getUniformBlockIndex(UniformBlockType::VS_SHADOWS);
                 mesh.submeshes[i].slotFSShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOWS);
-                mesh.submeshes[i].slotFSShadowProjection = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOW_PROJECTION);
-                mesh.submeshes[i].slotFSPointShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_POINT_SHADOWS);
+                shaderData.getUniformBlockMembers("u_fs_shadows", mesh.submeshes[i].sizeFSShadows);
             }
         }
         if (p_light2d){
@@ -5077,10 +5078,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 loadSpotMaskTexture(lightingShaderData, render);
                 render.applyUniformBlock(mesh.submeshes[i].slotFSLighting, sizeof(fs_lighting_t), &fs_lighting);
                 if (hasShadows && (mesh.submeshes[i].shaderProperties & (1u << 4))){
-                    render.applyUniformBlock(mesh.submeshes[i].slotVSShadows, sizeof(shadow_projection_t), &shadowProjection);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadowProjection, sizeof(shadow_projection_t), &shadowProjection);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSPointShadows, sizeof(fs_point_shadows_t), &fs_point_shadows);
+                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, mesh.submeshes[i].sizeFSShadows, &fs_shadows);
                 }
                 // USE_SSAO (property bit 21): bind the screen-space AO texture for
                 // this view (blurred AO for the main camera, empty white otherwise)
@@ -6461,10 +6459,8 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
         submesh.slotVSSprite = -1;
-        submesh.slotVSShadows = -1;
         submesh.slotFSShadows = -1;
-        submesh.slotFSShadowProjection = -1;
-        submesh.slotFSPointShadows = -1;
+        submesh.sizeFSShadows = 0;
         submesh.slotVSSkinning = -1;
         submesh.slotVSMorphTarget = -1;
         submesh.slotVSTerrain = -1;
@@ -7815,10 +7811,7 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
     water.slotFSLighting = shaderData.getUniformBlockIndex(UniformBlockType::FS_LIGHTING);
     water.slotFSFog = hasFog ? shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG) : -1;
     if (receiveShadows){
-        water.slotVSShadows = shaderData.getUniformBlockIndex(UniformBlockType::VS_SHADOWS);
         water.slotFSShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOWS);
-        water.slotFSShadowProjection = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOW_PROJECTION);
-        water.slotFSPointShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_POINT_SHADOWS);
     }
     water.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     water.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
@@ -8102,10 +8095,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (water.slotFSFog != -1){
         render.applyUniformBlock(water.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
-    render.applyUniformBlock(water.slotVSShadows, sizeof(shadow_projection_t), &shadowProjection);
-    render.applyUniformBlock(water.slotFSShadowProjection, sizeof(shadow_projection_t), &shadowProjection);
     render.applyUniformBlock(water.slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
-    render.applyUniformBlock(water.slotFSPointShadows, sizeof(fs_point_shadows_t), &fs_point_shadows);
     writeParameters(water, scene);
     applyParameters(render, water.paramsVS, effectView, passResolution);
     applyParameters(render, water.paramsFS, effectView, passResolution);
@@ -8163,10 +8153,7 @@ void RenderSystem::destroyWater(Entity entity, WaterComponent& water){
     water.slotFSParams = -1;
     water.slotFSLighting = -1;
     water.slotFSFog = -1;
-    water.slotVSShadows = -1;
     water.slotFSShadows = -1;
-    water.slotFSShadowProjection = -1;
-    water.slotFSPointShadows = -1;
     water.paramsVS.clear();
     water.paramsFS.clear();
     water.slotUnderwaterParams = -1;

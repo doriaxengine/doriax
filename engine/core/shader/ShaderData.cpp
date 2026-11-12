@@ -189,14 +189,8 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_fog";
     }else if (type == UniformBlockType::FS_MIRROR){
         ustr = "u_fs_mirror";
-    }else if (type == UniformBlockType::VS_SHADOWS){
-        ustr = "u_vs_shadows";
     }else if (type == UniformBlockType::FS_SHADOWS){
         ustr = "u_fs_shadows";
-    }else if (type == UniformBlockType::FS_SHADOW_PROJECTION){
-        ustr = "u_fs_shadow_projection";
-    }else if (type == UniformBlockType::FS_POINT_SHADOWS){
-        ustr = "u_fs_point_shadows";
     }else if (type == UniformBlockType::SKY_VS_PARAMS){
         ustr = "u_vs_skyParams";
     }else if (type == UniformBlockType::SKY_FS_PARAMS){

@@ -92,10 +92,8 @@ namespace doriax{
         int slotFSFog = -1;
         int slotFSMirror = -1;
         int slotVSSprite = -1;
-        int slotVSShadows = -1;
         int slotFSShadows = -1;
-        int slotFSShadowProjection = -1;
-        int slotFSPointShadows = -1;
+        unsigned int sizeFSShadows = 0; // without the point lights in a directional-only variant
         int slotVSSkinning = -1;
         int slotVSMorphTarget = -1;
         int slotVSTerrain = -1;

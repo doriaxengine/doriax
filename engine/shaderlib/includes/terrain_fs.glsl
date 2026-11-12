@@ -2,9 +2,8 @@ uniform texture2D u_blendMap;
 uniform texture2D u_blendMap1;
 uniform texture2D u_blendMap2;
 uniform texture2DArray u_terrainDetail;
+// the three blend maps share a sampler, the terrain has no slot to spare
 uniform sampler u_blendMap_smp;
-uniform sampler u_blendMap1_smp;
-uniform sampler u_blendMap2_smp;
 uniform sampler u_terrainDetail_smp;
 
 in vec2 v_terrainTextureCoords;
@@ -143,8 +142,8 @@ vec4 getTerrainColor(vec4 color){
 
     vec3 blend[TERRAIN_BLENDMAPS];
     blend[0] = texture(sampler2D(u_blendMap, u_blendMap_smp), v_terrainTextureCoords).rgb;
-    blend[1] = texture(sampler2D(u_blendMap1, u_blendMap1_smp), v_terrainTextureCoords).rgb;
-    blend[2] = texture(sampler2D(u_blendMap2, u_blendMap2_smp), v_terrainTextureCoords).rgb;
+    blend[1] = texture(sampler2D(u_blendMap1, u_blendMap_smp), v_terrainTextureCoords).rgb;
+    blend[2] = texture(sampler2D(u_blendMap2, u_blendMap_smp), v_terrainTextureCoords).rgb;
 
     // The base holds whatever weight the layers leave unclaimed, and stands as solid as an
     // opaque detail
@@ -229,8 +228,8 @@ TerrainSurface getTerrainSurface(vec4 baseColor, vec3 baseNormal, float baseRoug
 
     vec3 blend[TERRAIN_BLENDMAPS];
     blend[0] = texture(sampler2D(u_blendMap, u_blendMap_smp), v_terrainTextureCoords).rgb;
-    blend[1] = texture(sampler2D(u_blendMap1, u_blendMap1_smp), v_terrainTextureCoords).rgb;
-    blend[2] = texture(sampler2D(u_blendMap2, u_blendMap2_smp), v_terrainTextureCoords).rgb;
+    blend[1] = texture(sampler2D(u_blendMap1, u_blendMap_smp), v_terrainTextureCoords).rgb;
+    blend[2] = texture(sampler2D(u_blendMap2, u_blendMap_smp), v_terrainTextureCoords).rgb;
 
     float weightBase = 1.0;
     vec4 sumColor = vec4(0.0);

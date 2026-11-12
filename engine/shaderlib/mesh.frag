@@ -178,16 +178,18 @@ uniform u_fs_pbrParams {
 
 #ifdef USE_SHADOWS
 
-    uniform u_fs_shadows {
-        vec4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
-        vec4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
-    } uShadows;
-
+    // one block for every shadow, the point lights last so a variant without them takes the start;
     // shadows.glsl projects v_position here, so no per-slot varyings are interpolated
-    uniform u_fs_shadow_projection {
+    uniform u_fs_shadows {
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
         vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
-    } uShadowProjection;
+        vec4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
+        vec4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
+        #ifndef DIRECTIONAL_LIGHTS_ONLY
+            vec4 pointBias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
+            vec4 pointAtlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
+        #endif
+    } uShadows;
     #ifdef HAS_NORMALS
         #ifdef HAS_TANGENTS
             #define SHADOW_OFFSET_NORMAL v_tbn[2]
@@ -200,11 +202,6 @@ uniform u_fs_pbrParams {
     uniform samplerShadow u_shadowAtlas_smp;
 
     #ifndef DIRECTIONAL_LIGHTS_ONLY
-        uniform u_fs_point_shadows {
-            vec4 bias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
-            vec4 atlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
-        } uPointShadows;
-
         uniform texture2D u_shadowPointAtlas;
         uniform sampler u_shadowPointAtlas_smp;
     #endif

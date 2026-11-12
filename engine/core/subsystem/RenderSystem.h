@@ -90,23 +90,17 @@ namespace doriax{
 		Vector4 density_start_end;
 	} fs_fog_t;
 
-	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
-	typedef struct shadow_projection_t {
+	// every shadow of the frame; the point lights last, so a variant without them takes the start
+	typedef struct fs_shadows_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
 	    Vector4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
-	} shadow_projection_t;
-
-	typedef struct fs_shadows_t {
         Vector4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
         // xy = atlas origin, zw = atlas scale (directional/spot)
         Vector4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
-	} fs_shadows_t;
-
-	typedef struct fs_point_shadows_t {
-        Vector4 bias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
+        Vector4 pointBias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
         // xy = atlas origin, zw = atlas scale (point cube faces)
-        Vector4 atlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
-	} fs_point_shadows_t;
+        Vector4 pointAtlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
+	} fs_shadows_t;
 
 	typedef struct vs_depth_t {
 		Matrix4 modelMatrix;
@@ -606,9 +600,7 @@ namespace doriax{
 
 		fs_lighting_t fs_lighting;
 		fs_lighting2d_t fs_lighting2d;
-		shadow_projection_t shadowProjection;
 		fs_shadows_t fs_shadows;
-		fs_point_shadows_t fs_point_shadows;
 		fs_fog_t fs_fog;
 		// the camera effect functions see in the pass being drawn
 		ShaderEffectView effectView;

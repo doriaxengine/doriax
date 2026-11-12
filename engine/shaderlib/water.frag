@@ -80,22 +80,16 @@ uniform sampler u_waterWake_smp;
 #endif
 
 #ifdef USE_SHADOWS
+    // as in mesh.frag; shadows.glsl projects v_position here
     uniform u_fs_shadows {
-        vec4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
-        vec4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
-    } uShadows;
-
-    // shadows.glsl projects v_position here, so no per-slot varyings are interpolated
-    uniform u_fs_shadow_projection {
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
         vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
-    } uShadowProjection;
+        vec4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
+        vec4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
+        vec4 pointBias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
+        vec4 pointAtlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
+    } uShadows;
     #define SHADOW_OFFSET_NORMAL v_normal
-
-    uniform u_fs_point_shadows {
-        vec4 bias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
-        vec4 atlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
-    } uPointShadows;
 
     uniform texture2D u_shadowAtlas;
     uniform samplerShadow u_shadowAtlas_smp;
