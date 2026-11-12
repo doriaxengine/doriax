@@ -494,6 +494,10 @@ bool Water::removeShaderUniform(const std::string& name){
 void Water::setShaderTexture(const std::string& name, const Texture& texture){
     WaterComponent& water = getComponent<WaterComponent>();
 
+    const Texture* current = ShaderTextures::find(water.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
     ShaderTextures::set(water.shaderTextures, name, texture);
     water.needReload = true;
 }

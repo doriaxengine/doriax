@@ -608,6 +608,10 @@ void Mesh::setShaderTexture(unsigned int submesh, const std::string& name, const
     }
 }
 
+Texture Mesh::getShaderTexture(const std::string& name) const{
+    return getShaderTexture(0, name);
+}
+
 Texture Mesh::getShaderTexture(unsigned int submesh, const std::string& name) const{
     return getSubmesh(submesh).material.getShaderTexture(name);
 }

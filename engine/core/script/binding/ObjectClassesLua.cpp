@@ -608,7 +608,9 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("setShaderTexture",
             luabridge::overload<const std::string&, const Texture&>(&Mesh::setShaderTexture),
             luabridge::overload<unsigned int, const std::string&, const Texture&>(&Mesh::setShaderTexture))
-        .addFunction("getShaderTexture", &Mesh::getShaderTexture)
+        .addFunction("getShaderTexture",
+            luabridge::overload<const std::string&>(&Mesh::getShaderTexture),
+            luabridge::overload<unsigned int, const std::string&>(&Mesh::getShaderTexture))
         .addFunction("setAsMirror",
             luabridge::overload<>(&Mesh::setAsMirror),
             luabridge::overload<Vector3>(&Mesh::setAsMirror))

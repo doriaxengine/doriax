@@ -265,8 +265,12 @@ bool Image::removeShaderUniform(const std::string& name){
 void Image::setShaderTexture(const std::string& name, const Texture& texture){
     UIComponent& ui = getComponent<UIComponent>();
 
+    const Texture* current = ShaderTextures::find(ui.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
     ShaderTextures::set(ui.shaderTextures, name, texture);
-    ui.needReload = true;
+    ui.needUpdateTexture = true;
 }
 
 Texture Image::getShaderTexture(const std::string& name) const{

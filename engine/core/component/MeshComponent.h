@@ -78,6 +78,7 @@ namespace doriax{
 
         // the shader file's id each pass was taken with (0 = built-in), so the
         // matching ShaderPool::remove uses the same key
+        uint16_t shaderFileId = 0;   // the file asked for; customShaderId is 0 once it failed to build
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
         uint16_t customGBufferShaderId = 0;

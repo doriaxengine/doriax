@@ -26,23 +26,33 @@ namespace doriax{
             textures.push_back({name, texture});
         }
 
-        static Texture get(const ShaderTextureValues& textures, const std::string& name){
+        // null when it has no entry
+        static const Texture* find(const ShaderTextureValues& textures, const std::string& name){
             for (const auto& entry : textures){
                 if (entry.first == name)
-                    return entry.second;
+                    return &entry.second;
             }
 
-            return Texture();
+            return nullptr;
         }
 
-        // the same textures in any order
+        static Texture get(const ShaderTextureValues& textures, const std::string& name){
+            const Texture* texture = find(textures, name);
+
+            return texture ? *texture : Texture();
+        }
+
+        // the same textures in any order, an empty entry being none
         static bool equals(const ShaderTextureValues& a, const ShaderTextureValues& b){
+            static const Texture none;
             for (const auto& entry : a){
-                if (get(b, entry.first) != entry.second)
+                const Texture* other = find(b, entry.first);
+                if ((other ? *other : none) != entry.second)
                     return false;
             }
             for (const auto& entry : b){
-                if (get(a, entry.first) != entry.second)
+                const Texture* other = find(a, entry.first);
+                if ((other ? *other : none) != entry.second)
                     return false;
             }
 

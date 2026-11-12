@@ -61,7 +61,7 @@ namespace doriax{
         // Key used to validate a serialized .sdat/header blob. The customShaderId is a
         // session-local registry value (assigned in registration order) and is NOT
         // stable between the editor that exported the shader and the standalone runtime
-        // that loads it. The unique filename already identifies the forked source, so
+        // that loads it. The unique filename already identifies the shader file, so
         // the on-disk validation key drops customId and keeps only type+properties.
         static ShaderKey getStorageKey(ShaderKey key);
 
@@ -85,8 +85,7 @@ namespace doriax{
         static std::string getCustomShaderName(uint16_t customId);     // project-relative path, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-
-        // Frees the GPU handle of every cached forked-shader variant so the next get()
+        // Frees the GPU handle of every cached shader file variant so the next get()
         // rebuilds (used by the editor after a shader source is edited). The pool keeps
         // the ShaderRender objects, so meshes holding them stay valid and re-bind on
         // their needReload pass.

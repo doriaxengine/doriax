@@ -144,7 +144,7 @@ static std::set<ShaderKey>& failedShaders(){
     return *set;
 };
 
-// Custom shader registry: index = customId-1, value = project-relative base path.
+// Custom shader registry: index = customId-1, value = project-relative shader file.
 static std::mutex& customShaderMutex(){
     static std::mutex* m = new std::mutex();
     return *m;
@@ -180,7 +180,7 @@ std::string ShaderPool::getCustomShaderName(uint16_t customId){
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){
-    // Filesystem-safe token for .sdat names ("shaders/myMesh#shaders/wind.glsl" -> "shaders_myMesh_shaders_wind_glsl_7e274965").
+    // Filesystem-safe token for .sdat names ("shaders/wind.glsl" -> "shaders_wind_glsl_" and a hash of the path).
     // The FNV-1a of the name keeps apart names that sanitize alike, the same on every platform.
     const std::string name = getCustomShaderName(customId);
     if (name.empty())
@@ -588,7 +588,7 @@ std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties,
     std::string str = getShaderTypeName(shaderType, true);
     std::string propOut;
 
-    // Custom (forked) shaders get a unique basename so their compiled .sdat does not
+    // Shader files get a unique basename so their compiled .sdat does not
     // collide with the built-in shader of the same type/variant.
     if (customId != 0) {
         std::string customBase = getCustomShaderBasename(customId);
@@ -620,7 +620,7 @@ bool ShaderPool::loadPrecompiled(ShaderType shaderType, uint32_t properties, uin
     std::string base64Shd = getBase64Shader(getShaderName(shaderStr));
 
     // Validate against the storage key (customId stripped): the unique shaderStr
-    // already selected the forked source; the embedded key only checks type+props.
+    // already selected the shader file; the embedded key only checks type+props.
     ShaderKey storageKey = getStorageKey(getShaderKey(shaderType, properties, customId));
 
     if (!base64Shd.empty() && ShaderDataSerializer::readFromBytes(Base64::decode(base64Shd), storageKey, shaderData)){

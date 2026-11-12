@@ -264,6 +264,10 @@ bool Lines::removeShaderUniform(const std::string& name){
 void Lines::setShaderTexture(const std::string& name, const Texture& texture){
     LinesComponent& lines = getComponent<LinesComponent>();
 
+    const Texture* current = ShaderTextures::find(lines.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
     ShaderTextures::set(lines.shaderTextures, name, texture);
     lines.needReload = true;
 }

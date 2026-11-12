@@ -387,8 +387,12 @@ bool Points::removeShaderUniform(const std::string& name){
 void Points::setShaderTexture(const std::string& name, const Texture& texture){
     PointsComponent& points = getComponent<PointsComponent>();
 
+    const Texture* current = ShaderTextures::find(points.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
     ShaderTextures::set(points.shaderTextures, name, texture);
-    points.needReload = true;
+    points.needUpdateTexture = true;
 }
 
 Texture Points::getShaderTexture(const std::string& name) const{

@@ -120,7 +120,7 @@ namespace doriax {
         ShaderFlag_CoverageShadows = 1 << 0, // shadow maps follow getCoverage()
         ShaderFlag_Unlit = 1 << 1,           // compiled unlit whatever its key says
         ShaderFlag_SceneColor = 1 << 2,      // samples the scene drawn before it
-        ShaderFlag_SceneDepth = 1 << 3,
+        ShaderFlag_SceneDepth = 1 << 3,      // samples the depth of the scene drawn before it
         ShaderFlag_ObjectSpace = 1 << 4,     // reads the local position, the object's position or scale, or the normal
         ShaderFlag_VertexUV = 1 << 5,        // the vertex stage reads uv1 as the mesh stores it
         ShaderFlag_VertexColor = 1 << 6      // reads the vertex color

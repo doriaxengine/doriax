@@ -3696,16 +3696,16 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
-            // wind sway runs the engine's wind shader
-            const std::string shader = (layer.windSway > 0.0f) ? "shaders/wind.glsl" : "";
-            for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
-                if (mesh.submeshes[s].material.shader != shader){
-                    mesh.submeshes[s].material.shader = shader;
-                    mesh.needReload = true;
-                }
-            }
+            // wind sway runs the engine's wind shader, where the material has none of its own
+            static const std::string windShader = "shaders/wind.glsl";
+            const bool sway = layer.windSway > 0.0f;
             const float swayHeight = mesh.verticesAABB.getMaximum().y;
             for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                std::string& shader = mesh.submeshes[s].material.shader;
+                if (sway ? shader.empty() : shader == windShader){
+                    shader = sway ? windShader : std::string();
+                    mesh.needReload = true;
+                }
                 ShaderUniformValues& values = mesh.submeshes[s].material.shaderUniforms;
                 if (ShaderUniforms::get(values, "windSway").x != layer.windSway || ShaderUniforms::get(values, "windSwayHeight").x != swayHeight){
                     ShaderUniforms::set(values, "windSway", Vector4(layer.windSway, 0.0f, 0.0f, 0.0f));

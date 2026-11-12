@@ -207,8 +207,12 @@ bool SkyBox::removeShaderUniform(const std::string& name){
 void SkyBox::setShaderTexture(const std::string& name, const Texture& texture){
     SkyComponent& sky = getComponent<SkyComponent>();
 
+    const Texture* current = ShaderTextures::find(sky.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
     ShaderTextures::set(sky.shaderTextures, name, texture);
-    sky.needReload = true;
+    sky.needUpdateTexture = true;
 }
 
 Texture SkyBox::getShaderTexture(const std::string& name) const{
