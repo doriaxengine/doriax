@@ -311,7 +311,7 @@ vec3 graphHSVToRGB(vec3 c){
 
     for (const char* type : {"ui", "points", "lines"}) {
         const std::string label = std::string(type) == "ui" ? "UI" : (std::string(type) == "points" ? "Points" : "Lines");
-        ShaderNodeType& primitive = add(std::string("output/") + type, label + " Output", "Output", "What the " + label + " draws with.",
+        ShaderNodeType& primitive = add(std::string("output/") + type, label + " Output", "Output", "What a " + label + " component draws with.",
             {in("vertexOffset", "Vertex Offset", "vec3"), in("color", "Color", "color")}, {}, {});
         primitive.shaderTypes = {type};
         primitive.slots["vertexOffset"] = slot("getVertexOffset", "", true);
