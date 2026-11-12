@@ -51,6 +51,8 @@ namespace doriax::editor {
         bool underwaterColor = false;
         // fields they read of their context
         std::set<std::string> contextReads;
+        // post-process inputs they sample: sceneDepth, sceneNormal, sceneOcclusion
+        std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;

@@ -5621,7 +5621,7 @@ std::vector<editor::ShaderParameterDeclaration> editor::Properties::collectShare
             addSource(mesh.submeshes[s].material.shader, false);
     }
     for (const PostProcessPass& pass : scene->getPostProcessPasses())
-        addSource(pass.shader, true);
+        addSource(pass.shader, false);
     for (const auto& [source, fork] : sources) {
         for (const ShaderParameterDeclaration& declaration : getShaderAnnotations(source, fork).parameters) {
             if (declaration.scope == scope)
@@ -5748,7 +5748,7 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
                                    buttonWidth(ICON_FA_TRASH_CAN) + spacing * 2.0f;
 
         // a narrow panel drops the position, so the name stays clear of the buttons
-        const std::string passName = passes[i].shader.empty() ? "Built-in" : shaderForkName(passes[i].shader);
+        const std::string passName = passes[i].shader.empty() ? "Built-in" : std::filesystem::path(passes[i].shader).stem().string();
         std::string label = ICON_FA_WAND_MAGIC_SPARKLES " " + passName;
         const std::string position = " [Pass " + std::to_string(i + 1) + "]";
         const float labelRoom = ImGui::GetContentRegionAvail().x - ImGui::GetFontSize() - ImGui::GetStyle().FramePadding.x * 3.0f - spacing - buttonsWidth;
@@ -5870,39 +5870,17 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
             auto setShader = [&](const std::string& value){
                 std::vector<PostProcessPass> newPasses = passes;
                 newPasses[i].shader = value;
-                newPasses[i].uniforms.clear(); // another shader has other members
+                // another shader has other members
+                newPasses[i].uniforms.clear();
+                newPasses[i].textures.clear();
                 setPasses(newPasses);
             };
-            std::string defaultName = sceneProject->name + " Post " + std::to_string(i + 1);
-            auto onFork = [this, sceneId, i, defaultName](){
-                shaderForkDialog.open(project, ShaderType::POSTPROCESS, defaultName,
-                    [this, sceneId, i](const std::filesystem::path& directory, const std::string& name, bool forkIncludes){
-                        SceneProject* currentScene = project->getScene(sceneId);
-                        if (!currentScene || !currentScene->scene){
-                            Backend::getApp().registerAlert("Error", "The scene is no longer available.");
-                            return;
-                        }
-                        std::vector<PostProcessPass> newPasses = Catalog::getSceneProperty<std::vector<PostProcessPass>>(currentScene->scene, "post_process");
-                        if (i >= newPasses.size() || !newPasses[i].shader.empty()){
-                            Backend::getApp().registerAlert("Error", "The pass no longer uses the built-in shader.");
-                            return;
-                        }
-                        // the fork writes the files and points the pass at them in one step
-                        auto makePropertyCmd = [this, sceneId, i, newPasses](const std::string& forkBase) mutable {
-                            newPasses[i].shader = forkBase;
-                            return std::make_unique<ScenePropertyCmd<std::vector<PostProcessPass>>>(
-                                project, sceneId, "post_process", newPasses);
-                        };
-                        commitShaderFork(sceneId, std::make_unique<ForkShaderCmd>(
-                            project, ShaderType::POSTPROCESS, makePropertyCmd, directory, name, forkIncludes));
-                    });
-            };
+            drawShaderFileRow(ShaderType::POSTPROCESS, passes[i].shader, sceneProject->name + " Post " + std::to_string(i + 1), setShader,
+                              "post_process_" + std::to_string(i));
 
-            drawShaderRowContents(ShaderType::POSTPROCESS, passes[i].shader, setShader, onFork, "post_process_" + std::to_string(i));
-
-            // a failed fork keeps rendering, the runtime falls back to the built-in
+            // a failed shader keeps rendering, the runtime falls back to the built-in
             if (!passes[i].shader.empty() &&
-                    ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(passes[i].shader))){
+                    ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", passes[i].shader)))){
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextDisabled("Shader failed to build");
@@ -5912,7 +5890,9 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
         }
 
         if (!passes[i].shader.empty()){
-            drawShaderParameters(shaderForkName(passes[i].shader), sceneId, getShaderAnnotations(passes[i].shader, true), passes[i].uniforms, nullptr,
+            const ShaderEffectAnnotations& annotations = getShaderAnnotations(passes[i].shader, false);
+            drawPassTextureRows(sceneId, passes, i, annotations);
+            drawShaderParameters(std::filesystem::path(passes[i].shader).stem().string(), sceneId, annotations, passes[i].uniforms, nullptr,
                 [&](const ShaderUniformValues& newValues) -> Command* {
                     std::vector<PostProcessPass> newPasses = passes;
                     newPasses[i].uniforms = newValues;
@@ -5929,6 +5909,81 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
         newPasses.push_back(PostProcessPass());
         setPasses(newPasses);
     }
+}
+
+// a pass lives in the scene's chain, not on an entity, so its textures have rows of their own
+void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const ShaderEffectAnnotations& annotations){
+    std::vector<const ShaderParameterDeclaration*> textures;
+    for (const ShaderParameterDeclaration& declaration : annotations.parameters) {
+        if (declaration.texture && std::none_of(textures.begin(), textures.end(), [&](const ShaderParameterDeclaration* other) { return other->name == declaration.name; }))
+            textures.push_back(&declaration);
+    }
+    if (textures.empty() || !ImGui::BeginTable("pass_textures", 2, ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable))
+        return;
+
+    auto setTexture = [&](const std::string& name, const Texture& texture) {
+        std::vector<PostProcessPass> newPasses = passes;
+        ShaderTextures::set(newPasses[index].textures, name, texture);
+        CommandHandle::get(sceneId)->addCommandNoMerge(new ScenePropertyCmd<std::vector<PostProcessPass>>(project, sceneId, "post_process", newPasses));
+    };
+
+    float labelSize = 0.0f;
+    for (const ShaderParameterDeclaration* declaration : textures)
+        labelSize = std::max(labelSize, getLabelSize(declaration->name, true));
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, labelSize);
+    ImGui::TableSetupColumn("Value");
+
+    for (const ShaderParameterDeclaration* declaration : textures) {
+        const std::string path = ShaderTextures::get(passes[index].textures, declaration->name).getPath();
+        ImGui::PushID(declaration->name.c_str());
+        ImGui::TableNextRow();
+        ImGui::TableSetColumnIndex(0);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%s", declaration->name.c_str());
+        if (ImGui::IsItemHovered() && !declaration->description.empty())
+            ImGui::SetTooltip("%s", declaration->description.c_str());
+
+        ImGui::TableSetColumnIndex(1);
+        ImGui::BeginGroup();
+        if (path.empty())
+            ImGui::TextDisabled("< Not set >");
+        else
+            ImGui::TextWrapped("%s", path.c_str());
+        if (ImGui::Button(ICON_FA_FOLDER_OPEN)) {
+            const std::string selected = editor::FileDialogs::openFileDialog(project->getAssetsPath().string(), FILE_DIALOG_IMAGE);
+            std::error_code ec;
+            const std::filesystem::path relative = std::filesystem::relative(std::filesystem::absolute(selected), project->getAssetsPath(), ec);
+            if (!selected.empty() && !ec && !relative.empty() && *relative.begin() != "..")
+                setTexture(declaration->name, Texture(relative.generic_string()));
+            else if (!selected.empty())
+                Backend::getApp().registerAlert("Error", "Pick an image inside the project's assets.");
+        }
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Pick an image");
+        ImGui::SameLine();
+        ImGui::BeginDisabled(path.empty());
+        if (ImGui::Button(ICON_FA_XMARK))
+            setTexture(declaration->name, Texture());
+        if (ImGui::IsItemHovered())
+            ImGui::SetTooltip("Use the declared default");
+        ImGui::EndDisabled();
+        ImGui::EndGroup();
+
+        // an image dragged from the resources window
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("resource_files")) {
+                std::vector<std::string> files = editor::Util::getStringsFromPayload(payload);
+                if (!files.empty() && project->isInsideAssetsPath(files[0])) {
+                    const std::string relative = droppedAssetPath(project, files[0], true);
+                    if (Util::isImageFile(relative))
+                        setTexture(declaration->name, Texture(relative));
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndTable();
 }
 
 void editor::Properties::drawShaderRowContents(ShaderType shaderType, const std::string& currentShader,

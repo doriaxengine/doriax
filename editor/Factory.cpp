@@ -2790,6 +2790,7 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
             out << ind3 << "postProcess.push_back({" << formatString(pass.shader) << ", " << formatBool(pass.enabled) << ", "
                 << formatShaderUniforms(pass.uniforms) << "});\n";
+            out << formatShaderTextures(indentSpaces + 8, pass.textures, "postProcess.back().textures", projectPath);
         }
         out << ind3 << "scene->setPostProcessPasses(postProcess);\n";
         out << ind2 << "}\n";

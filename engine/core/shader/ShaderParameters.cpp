@@ -317,7 +317,7 @@ void ShaderParameterBlock::writeFragmentContext(const ShaderEffectView& view, bo
         writeFloats(data, bindings[worldToView].offset, &view.viewMatrix[0][0], 16);
     }
     if (projection != -1){
-        writeValue(data, bindings[projection], Vector4(view.depthProjection.x, view.depthProjection.y, 0.0f, 0.0f));
+        writeValue(data, bindings[projection], view.depthProjection);
     }
 }
 

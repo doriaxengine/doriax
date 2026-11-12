@@ -5155,7 +5155,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
         passView.pass = forSSAO ? ShaderPass::DEPTH : ShaderPass::SHADOW;
         // depth offsets move what the camera sees, not the shadows
         if (!forSSAO)
-            passView.depthProjection = Vector2(0.0f, 0.0f);
+            passView.depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         // only the prepass draws with the color pass's matrix
         if (pipelineType != PIP_ZPREPASS && pipelineType != PIP_ZPREPASS_RTT)
             passView.flipY = false;
@@ -6166,8 +6166,8 @@ void RenderSystem::loadPostProcess(){
         PostProcessRuntime pass;
         pass.passIndex = i;
 
-        // an empty path is the built-in passthrough, also the fallback of a failed fork
-        pass.customId = ShaderPool::registerCustomShader(passes[i].shader);
+        // an empty path is the built-in passthrough, also the fallback of a failed shader
+        pass.customId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", passes[i].shader));
         pass.shader = ShaderPool::get(ShaderType::POSTPROCESS, 0, pass.customId);
         if (pass.customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, pass.customId)){
             // the pool already logged the failure; the panel marks the pass
@@ -6178,13 +6178,16 @@ void RenderSystem::loadPostProcess(){
         if (!pass.shader || !pass.shader->isCreated())
             return;
 
+        ShaderData& sd = pass.shader.get()->shaderData;
         pass.render.beginLoad(PrimitiveType::TRIANGLES);
         pass.render.setShader(pass.shader.get());
+        pass.textures = passes[i].textures;
+        if (!loadShaderTextures(pass.textures, sd, pass.render))
+            return;
         // the chain never targets the swapchain directly, renderPostProcess blits for that
         if (!pass.render.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
             return;
 
-        ShaderData& sd = pass.shader.get()->shaderData;
         pass.slotSceneColor = sd.getTextureIndexByName("u_sceneColorTexture");
         pass.slotDepth = sd.getTextureIndexByName("u_depthTexture");
         pass.slotGBuffer = sd.getTextureIndexByName("u_gbufferTexture");
@@ -6304,13 +6307,15 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
         }
 
         if (pass.render.beginDraw(PIP_RTT)){
+            if (ShaderTextures::isFramebufferOutdated(pass.textures))
+                loadShaderTextures(pass.textures, pass.shader.get()->shaderData, pass.render);
             pass.render.addTexture(pass.slotSceneColor, ShaderStageType::FRAGMENT, input);
             pass.render.addTexture(pass.slotDepth, ShaderStageType::FRAGMENT, depthTexture);
             pass.render.addTexture(pass.slotGBuffer, ShaderStageType::FRAGMENT, gbufferTexture);
             pass.render.addTexture(pass.slotSSAO, ShaderStageType::FRAGMENT, ssaoTexture);
             const Vector2 resolution((float)postProcessWidth, (float)postProcessHeight);
             applyParameters(pass.render, pass.paramsVS, effectView, resolution);
-            applyParameters(pass.render, pass.paramsFS, effectView, resolution);
+            applyFragmentParameters(pass.render, pass.paramsFS, effectView, resolution, false);
             pass.render.draw(0, 3, 1);
         }
         postProcessPassRender.endRenderPass();
@@ -9418,7 +9423,8 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
     effectView.viewMatrix = camera.viewMatrix;
-    effectView.depthProjection = Vector2(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3]);
+    effectView.depthProjection = Vector4(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3],
+                                         camera.projectionMatrix[3][2], camera.projectionMatrix[3][3]);
     effectView.flipY = isRenderingFlipped(camera);
     // depth targets start at the corner, the color pass moves this to its own
     effectView.ditherOrigin = Vector2(0.0f, 0.0f);

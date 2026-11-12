@@ -36,13 +36,6 @@ namespace doriax::editor {
                       const std::filesystem::path& targetDirRel,
                       const std::string& baseName, bool forkIncludes = false);
 
-        // generic variant: the caller builds the command that points a property at the
-        // fork, given its base path (the post-process shader lives inside a list value)
-        ForkShaderCmd(Project* project, ShaderType shaderType,
-                      const std::function<std::unique_ptr<Command>(const std::string&)>& makePropertyCmd,
-                      const std::filesystem::path& targetDirRel,
-                      const std::string& baseName, bool forkIncludes = false);
-
         bool isValid() const { return plan.valid; }
         const std::string& getBase() const { return plan.base; }
         const std::string& getError() const { return plan.error; }

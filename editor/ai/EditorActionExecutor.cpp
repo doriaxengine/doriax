@@ -5214,6 +5214,18 @@ std::string customShaderFilesError(const Project* project, const std::string& sh
     return "";
 }
 
+// empty when the shader file is an engine one or a .glsl of the project
+std::string shaderFileError(const Project* project, const std::string& shader) {
+    if (ProjectUtils::isEngineShader(shader))
+        return "";
+    if (shader.find('\\') != std::string::npos || fs::path(shader).extension() != ".glsl" ||
+            !PathUtils::isSafeRelativePath(fs::path(shader)) ||
+            !PathUtils::existsExactCase(project->getProjectPath(), shader))
+        return "must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. "
+               "Write a project one with write_shader_file first, starting it with the \"#pragma shader <type>\" line of what it is for.";
+    return "";
+}
+
 } // namespace
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
@@ -5239,12 +5251,9 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
 
     // a shader file is one .glsl, from the project or the engine
     if (shaderFile) {
-        if (ProjectUtils::isEngineShader(value))
-            return true;
-        if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
-                !PathUtils::isSafeRelativePath(fs::path(value)) ||
-                !PathUtils::existsExactCase(project->getProjectPath(), value)) {
-            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. Write a project one with write_shader_file first, starting it with the \"#pragma shader <type>\" line of the component.";
+        const std::string fileError = shaderFileError(project, value);
+        if (!fileError.empty()) {
+            error = propertyName + " " + fileError;
             return false;
         }
         return true;
@@ -5277,54 +5286,10 @@ ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
         return failResult("directory is in the project trash.");
     }
 
-    // a new post-process pass, or a passthrough one at pass_index
+    // a pass runs a shader file
     if (!hasEntity && lower(shaderTypeArg) == "postprocess") {
-        std::vector<PostProcessPass> passes = sceneProject->scene->getPostProcessPasses();
-        const int passIndex = arguments.value("pass_index", (int)passes.size());
-        if (passIndex < 0 || passIndex > (int)passes.size()) {
-            return failResult("Post-process pass not found; the scene has " + std::to_string(passes.size()) + " pass(es).");
-        }
-        if (passIndex == (int)passes.size()) {
-            passes.push_back(PostProcessPass());
-        }else if (!passes[passIndex].shader.empty()) {
-            return failResult("Pass already uses a custom shader (" + passes[passIndex].shader +
-                              "). Edit it with write_shader_file, or reset it with set_post_process_pass before forking again.");
-        }
-
-        const std::string desiredName = sceneProject->name + " Post " + std::to_string(passIndex + 1);
-        const std::string forkName = ProjectUtils::makeUniqueShaderName(
-            project->getProjectPath() / targetDirectory, ShaderType::POSTPROCESS, desiredName);
-        auto makePropertyCmd = [this, sceneId, passIndex, passes](const std::string& forkBase) mutable {
-            passes[passIndex].shader = forkBase;
-            return std::make_unique<ScenePropertyCmd<std::vector<PostProcessPass>>>(
-                project, sceneId, "post_process", passes);
-        };
-        auto* forkCmd = new ForkShaderCmd(project, ShaderType::POSTPROCESS, makePropertyCmd,
-                                          targetDirectory, forkName, forkIncludes);
-        if (!forkCmd->isValid()) {
-            const std::string error = forkCmd->getError();
-            delete forkCmd;
-            return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-        }
-
-        const std::string base = forkCmd->getBase();
-        CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-        if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-            !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-            return failResult("Shader fork did not write its source files.");
-        }
-
-        if (resourcesWindow) {
-            resourcesWindow->refreshCurrentDirectory();
-        }
-        Out::info("AI forked post-process shader: %s", base.c_str());
-
-        return okResult("Forked post-process pass shader through the command history.",
-                        Json{{"custom_shader", base},
-                             {"vert_path", base + ".vert"},
-                             {"frag_path", base + ".frag"},
-                             {"pass_index", passIndex}});
+        return failResult("A post-process pass takes a shader file, not a fork: write one with write_shader_file "
+                          "(\"#pragma shader postprocess\" and a getColor hook) and add it with set_post_process_pass.");
     }
 
     // No entity selector: fork a scene-wide default shader for the given type instead of a
@@ -5502,11 +5467,11 @@ void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project
 }
 
 void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* project, const PostProcessPass& pass, bool& buildFailed) {
-    const uint16_t customId = ShaderPool::registerCustomShader(pass.shader);
+    const uint16_t customId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", pass.shader));
     buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
     warnings = Json::array();
     if (pass.shader.empty()) return;
-    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader, true);
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader, false);
     appendParameterMembers(members, annotations, pass.uniforms, nullptr);
     for (const std::string& error : annotations.errors) warnings.push_back(error);
 }
@@ -5611,10 +5576,16 @@ namespace {
 Json postProcessPassesJson(const std::vector<PostProcessPass>& passes) {
     Json list = Json::array();
     for (size_t i = 0; i < passes.size(); i++) {
+        Json textures = Json::object();
+        for (const auto& texture : passes[i].textures) {
+            if (!texture.second.empty())
+                textures[texture.first] = texture.second.getPath();
+        }
         list.push_back(Json{{"pass_index", i},
                             {"shader", passes[i].shader},
                             {"enabled", passes[i].enabled},
-                            {"values", shaderUniformValuesJson(passes[i].uniforms)}});
+                            {"values", shaderUniformValuesJson(passes[i].uniforms)},
+                            {"textures", textures}});
     }
     return list;
 }
@@ -5644,11 +5615,14 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
     const bool hasShader = arguments.contains("shader");
     const std::string shader = arguments.value("shader", "");
     if (!shader.empty()) {
-        const std::string filesError = customShaderFilesError(project, shader);
-        if (!filesError.empty()) {
-            return failResult("shader " + filesError + ". Use fork_shader with shader_type postprocess to create a pass with its fork.");
-        }
+        const std::string fileError = shaderFileError(project, shader);
+        if (!fileError.empty())
+            return failResult("shader " + fileError);
     }
+    // one texture of the pass, an empty path clears it
+    const std::string textureName = arguments.value("texture_name", "");
+    if (arguments.contains("texture_path") && textureName.empty())
+        return failResult("texture_path needs texture_name, the name the shader declares.");
 
     int passIndex = arguments.value("pass_index", action == "add" ? count : -1);
     if (action == "add") {
@@ -5677,7 +5651,13 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
         }else if (action == "set") {
             if (hasShader && passes[passIndex].shader != shader) {
                 passes[passIndex].shader = shader;
-                passes[passIndex].uniforms.clear(); // another shader has other members
+                // another shader has other members
+                passes[passIndex].uniforms.clear();
+                passes[passIndex].textures.clear();
+            }
+            if (!textureName.empty()) {
+                const std::string texturePath = arguments.value("texture_path", "");
+                passes[passIndex].setTexture(textureName, texturePath.empty() ? Texture() : Texture(texturePath));
             }
             passes[passIndex].enabled = arguments.value("enabled", passes[passIndex].enabled);
         }else{

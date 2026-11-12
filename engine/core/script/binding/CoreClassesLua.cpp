@@ -476,6 +476,8 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&PostProcessPass::setUniform))
         .addFunction("getUniform", &PostProcessPass::getUniform)
         .addFunction("removeUniform", &PostProcessPass::removeUniform)
+        .addFunction("setTexture", &PostProcessPass::setTexture)
+        .addFunction("getTexture", &PostProcessPass::getTexture)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
@@ -1037,6 +1039,8 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             luabridge::overload<unsigned int, const std::string&, float>(&Scene::setPostProcessUniform))
         .addFunction("getPostProcessUniform", &Scene::getPostProcessUniform)
         .addFunction("removePostProcessUniform", &Scene::removePostProcessUniform)
+        .addFunction("setPostProcessTexture", &Scene::setPostProcessTexture)
+        .addFunction("getPostProcessTexture", &Scene::getPostProcessTexture)
         .addFunction("setPostProcessPassEnabled", &Scene::setPostProcessPassEnabled)
         .addFunction("isPostProcessPassEnabled", &Scene::isPostProcessPassEnabled)
         .addFunction("canReceiveUIEvents", &Scene::canReceiveUIEvents)

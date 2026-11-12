@@ -129,6 +129,16 @@ std::string readIdentifier(const std::string& code, size_t& i){
     return code.substr(start, i - start);
 }
 
+// a call anywhere in the code
+bool callsFunction(const std::string& code, const std::string& name){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        size_t i = at + name.size();
+        if (isWordAt(code, at, name.size()) && nextChar(code, i) == '(')
+            return true;
+    }
+    return false;
+}
+
 // a hook definition takes its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
@@ -178,6 +188,10 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
+    for (const char* input : {"sceneDepth", "sceneNormal", "sceneOcclusion"}){
+        if (callsFunction(code, input))
+            out.sceneReads.insert(input);
+    }
 
     std::set<std::string> engine;
     scanMemberReads(code, "Engine", engine);
@@ -655,7 +669,7 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         addEngine(ShaderUniformType::MAT4, "effect_worldToView", "worldToView", "");
     }
     if (context & HookContext_Projection){
-        addEngine(ShaderUniformType::FLOAT2, "effect_projection", "projection", "");
+        addEngine(ShaderUniformType::FLOAT4, "effect_projection", "projection", "");
     }
     if (context & HookContext_Clip){
         addEngine(ShaderUniformType::FLOAT, "effect_flipY", "flipY", "");

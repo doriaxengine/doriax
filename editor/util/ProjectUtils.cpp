@@ -139,7 +139,6 @@ std::string shaderTypeFileName(ShaderType shaderType) {
     switch (shaderType) {
         case ShaderType::MESH:   return "mesh";
         case ShaderType::DEPTH:  return "depth";
-        case ShaderType::POSTPROCESS: return "postprocess";
         default:                 return "";
     }
 }
@@ -260,9 +259,7 @@ editor::ProjectUtils::ShaderForkPlan editor::ProjectUtils::prepareShaderFork(
 
     std::filesystem::path projectRoot = project->getProjectPath();
 
-    // fullscreen passes share one vertex entry point; the fork still gets its own copy
-    std::string vertFile = shaderType == ShaderType::POSTPROCESS ? "fullscreen" : typeFile;
-    auto vertIt = editor::shaderMap.find(vertFile + ".vert");
+    auto vertIt = editor::shaderMap.find(typeFile + ".vert");
     auto fragIt = editor::shaderMap.find(typeFile + ".frag");
     if (vertIt == editor::shaderMap.end() || fragIt == editor::shaderMap.end()) {
         plan.error = "The built-in shader source is unavailable.";
@@ -458,6 +455,23 @@ vec4 getColor(FragmentContext context, vec4 color){
 // final color, linear, after lighting and fog
 vec4 getColor(FragmentContext context, vec4 color){
     return vec4(color.rgb * params.tint.rgb, color.a);
+}
+)");
+        case ShaderType::POSTPROCESS:
+            return writeEffectFile(projectRoot, desiredName, R"(// Hooks of a post-process pass. Declared values are read as params.name.
+#pragma shader postprocess
+
+#pragma stage fragment
+#pragma param float vignette = 0.3 [0, 1] "Darkening toward the corners"
+#pragma param float saturation = 1.1 [0, 2] "Color strength"
+
+// the new color of the pixel, linear; color is the scene there
+vec4 getColor(FragmentContext context, vec4 color){
+    float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 graded = mix(vec3(luma), color.rgb, params.saturation);
+    vec2 fromCenter = context.uv - 0.5;
+    graded *= 1.0 - params.vignette * smoothstep(0.1, 0.5, dot(fromCenter, fromCenter));
+    return vec4(graded, color.a);
 }
 )");
         default:

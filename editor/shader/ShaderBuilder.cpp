@@ -412,6 +412,16 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
     }
 
+    // the scene inputs a post-process pass samples
+    const bool sceneDepth = useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneDepth");
+    const bool sceneNormal = useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneNormal");
+    if (sceneDepth)
+        args.defines.push_back({"HOOK_SCENE_DEPTH", "1"});
+    if (sceneNormal)
+        args.defines.push_back({"HOOK_SCENE_NORMAL", "1"});
+    if (useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneOcclusion"))
+        args.defines.push_back({"HOOK_SCENE_OCCLUSION", "1"});
+
     // the model matrix of the types whose own blocks lack it
     const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
     args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
@@ -419,7 +429,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         (modelMatrix ? editor::HookContext_Model : 0), declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, ((useFragmentHooks && meshPass) ? editor::HookContext_Fragment : 0) |
-        ((useSurface && passType == ShaderType::GBUFFER) ? editor::HookContext_View : 0) | (useDepthOffset ? editor::HookContext_Projection : 0),
+        ((useSurface && passType == ShaderType::GBUFFER) || sceneNormal ? editor::HookContext_View : 0) |
+        (useDepthOffset || sceneDepth ? editor::HookContext_Projection : 0),
         declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);

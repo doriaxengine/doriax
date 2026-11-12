@@ -4087,7 +4087,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
     // disabled passes ship too: the generated scene carries the whole chain
     for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
-        insertKeys(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(pass.shader));
+        insertKeys(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", pass.shader)));
     }
 
     // fixed resolution upscales with it and a scene stack is presented with it

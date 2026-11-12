@@ -699,6 +699,7 @@ namespace doriax{
 			ObjectRender render;
 			int passIndex;                         // index in the scene chain (disabled passes skipped)
 			uint16_t customId;                     // 0 = built-in passthrough
+			ShaderTextureValues textures;
 			ShaderParameterBlock paramsVS;         // slot -1 when the pass declares none
 			ShaderParameterBlock paramsFS;
 			std::pair<int, int> slotSceneColor;

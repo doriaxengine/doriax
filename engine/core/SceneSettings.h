@@ -6,6 +6,7 @@
 
 #include "render/Render.h"
 #include "shader/ShaderUniforms.h"
+#include "shader/ShaderTextures.h"
 #include "math/Vector2.h"
 #include "math/Vector3.h"
 #include "math/Vector4.h"
@@ -31,12 +32,13 @@ namespace doriax{
         HIGH
     };
 
-    // One user post-process pass: a forked fullscreen shader run after the scene color.
-    // Uniforms hold the values of its #pragma param declarations, by name.
+    // One user post-process pass: a shader file whose getColor runs over the scene color.
+    // Uniforms and textures hold the values of its #pragma param declarations, by name.
     struct PostProcessPass {
-        std::string shader; // project-relative fork base, empty = built-in passthrough
+        std::string shader; // project-relative .glsl, empty = built-in passthrough
         bool enabled = true;
         ShaderUniformValues uniforms;
+        ShaderTextureValues textures;
 
         // applied by Scene::setPostProcessPasses (Scene::setPostProcessUniform edits a live pass)
         void setUniform(const std::string& name, const Vector4& value) { ShaderUniforms::set(uniforms, name, value); }
@@ -45,6 +47,8 @@ namespace doriax{
         void setUniform(const std::string& name, float value) { setUniform(name, Vector4(value, 0.0f, 0.0f, 0.0f)); }
         Vector4 getUniform(const std::string& name) const { return ShaderUniforms::get(uniforms, name); }
         bool removeUniform(const std::string& name) { return ShaderUniforms::remove(uniforms, name); }
+        void setTexture(const std::string& name, const Texture& texture) { ShaderTextures::set(textures, name, texture); }
+        Texture getTexture(const std::string& name) const { return ShaderTextures::get(textures, name); }
     };
 
     // Plain-data scene configuration whose member initializers are the engine's factory

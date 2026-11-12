@@ -26,7 +26,6 @@ const char* ShaderForkDialog::shaderTypeName(ShaderType shaderType) {
     switch (shaderType) {
         case ShaderType::MESH:   return "Mesh";
         case ShaderType::DEPTH:  return "Depth";
-        case ShaderType::POSTPROCESS: return "Post-process";
         default:                 return "Unknown";
     }
 }

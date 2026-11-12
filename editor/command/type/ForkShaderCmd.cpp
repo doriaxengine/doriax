@@ -43,18 +43,6 @@ editor::ForkShaderCmd::ForkShaderCmd(Project* project, SceneProject* sceneProjec
     }
 }
 
-editor::ForkShaderCmd::ForkShaderCmd(Project* project, ShaderType shaderType,
-                                     const std::function<std::unique_ptr<Command>(const std::string&)>& makePropertyCmd,
-                                     const std::filesystem::path& targetDirRel,
-                                     const std::string& baseName, bool forkIncludes) {
-    this->project = project;
-    this->plan = ProjectUtils::prepareShaderFork(project, shaderType, targetDirRel, baseName, forkIncludes);
-
-    if (plan.valid && makePropertyCmd) {
-        this->propertyCmd = makePropertyCmd(plan.base);
-    }
-}
-
 bool editor::ForkShaderCmd::execute() {
     executed = false;
     if (!plan.valid)

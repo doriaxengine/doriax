@@ -341,9 +341,10 @@ namespace doriax::editor{
         // used by every component of that type without a shader of its own.
         void drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label);
 
-        // Ordered user post-process chain: per-pass enable, shader fork/pick, reorder
-        // and remove, then the parameters each pass shader declares.
+        // Ordered user post-process chain: per-pass enable, shader file, reorder and
+        // remove, then the textures and parameters each pass shader declares.
         void drawScenePostProcess(SceneProject* sceneProject);
+        void drawPassTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const ShaderEffectAnnotations& annotations);
 
         // Commits a planned fork as one undoable step and opens the new .vert/.frag in the
         // code editor. Alerts instead when the plan is invalid or the files cannot be written.
