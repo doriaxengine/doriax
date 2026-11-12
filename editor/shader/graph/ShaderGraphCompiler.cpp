@@ -1405,3 +1405,24 @@ bool editor::ShaderGraphCompiler::getFunctionPins(const GraphDocument& function,
         *error = problems.front().text;
     return false;
 }
+
+bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int node, GraphDocument& preview) {
+    const GraphNode* shown = graph.findNode(node);
+    const ShaderNodeType* type = shown ? ShaderNodes::get().find(shown->type) : nullptr;
+    if (graph.type != "mesh" || !type || type->id.rfind("output/", 0) == 0)
+        return false;
+    std::vector<NodePin> inputs, outputs;
+    if (!ShaderNodes::getPins(*shown, *type, inputs, outputs) || outputs.empty())
+        return false;
+    preview = graph;
+    auto output = std::find_if(preview.nodes.begin(), preview.nodes.end(), [](const GraphNode& item) { return item.type == "output/mesh"; });
+    if (output == preview.nodes.end())
+        return false;
+    output->inputs.clear();
+    const int draw = output->id;
+    preview.links.erase(std::remove_if(preview.links.begin(), preview.links.end(), [&](const GraphLink& link) { return link.toNode == draw; }), preview.links.end());
+    std::set<int> seen;
+    const bool perVertex = type->stage == ShaderNodeStage::VERTEX || fedPerVertex(graph, node, seen);
+    preview.connect(node, outputs.front().name, draw, perVertex ? "vertexOffset" : "color");
+    return true;
+}

@@ -40,6 +40,10 @@ namespace doriax::editor {
 
         // the pins of a Subgraph node calling this function, in the order its nodes stand
         static bool getFunctionPins(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error = nullptr);
+
+        // a mesh graph that draws one node's first output in place of what it draws, as Final
+        // Color or, from nodes that work per vertex, Vertex Offset; false for a node with none
+        static bool previewNode(const GraphDocument& graph, int node, GraphDocument& preview);
     };
 
 }

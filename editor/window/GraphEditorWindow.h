@@ -42,6 +42,8 @@ namespace doriax::editor {
             double previewAt = -1.0;                 // when the scene builds the edits, -1 for none
             std::unique_ptr<ShaderPreviewRender> preview;
             uint32_t previewGeneration = 0;
+            bool previewSelection = false;           // the preview draws the selected node
+            std::string nodePreviewText;             // the graph it last drew that node with
 
             // the add-node search
             bool addRequested = false;

@@ -171,6 +171,11 @@ namespace {
         return found;
     }
 
+    // where the preview of the selected node builds from, beside the graph it shows
+    std::string nodePreviewKey(const std::filesystem::path& graph) {
+        return graph.generic_string() + ".node.shader";
+    }
+
     // a node, group or comment by its id
     bool exists(const GraphDocument& document, int id) {
         return document.findNode(id) ||
@@ -327,6 +332,7 @@ void editor::GraphEditorWindow::erase(const std::string& key) {
     Instance* instance = it->second.get();
     const bool edited = instance->text != instance->savedText;
     ShaderBuilder::clearGraphSource(key);
+    ShaderBuilder::clearGraphSource(nodePreviewKey(instance->filepath));
     if (instance->preview)
         retiredPreviews.push_back(std::move(instance->preview));
     if (focused == instance)
@@ -353,6 +359,7 @@ void editor::GraphEditorWindow::closeFile(const std::filesystem::path& path) {
 void editor::GraphEditorWindow::closeAll() {
     for (auto& entry : instances) {
         ShaderBuilder::clearGraphSource(entry.first);
+        ShaderBuilder::clearGraphSource(nodePreviewKey(entry.second->filepath));
         if (entry.second->preview)
             retiredPreviews.push_back(std::move(entry.second->preview));
     }
@@ -1318,7 +1325,19 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
         instance.previewGeneration = ShaderBuilder::getCustomShaderGeneration();
     }
     ShaderPreviewRender& preview = *instance.preview;
-    preview.setShader(instance.filepath.generic_string());
+    // the selected node's value, through a graph of its own
+    std::string shader = instance.filepath.generic_string();
+    GraphDocument nodeGraph;
+    if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph)) {
+        shader = nodePreviewKey(instance.filepath);
+        const std::string text = nodeGraph.write();
+        if (text != instance.nodePreviewText) {
+            instance.nodePreviewText = text;
+            ShaderBuilder::setGraphSource(shader, text);
+            project->invalidateCustomShader(shader);
+        }
+    }
+    preview.setShader(shader);
     // the project's shaders were built anew, this one too
     const uint32_t generation = ShaderBuilder::getCustomShaderGeneration();
     if (generation != instance.previewGeneration) {
@@ -1344,6 +1363,15 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
         if (current)
             ImGui::PopStyleColor();
     }
+    ImGui::SameLine();
+    const bool selection = instance.previewSelection;
+    if (selection)
+        ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+    if (ImGui::SmallButton(ICON_FA_CROSSHAIRS "##node"))
+        instance.previewSelection = !instance.previewSelection;
+    if (selection)
+        ImGui::PopStyleColor();
+    ImGui::SetItemTooltip("Draw the selected node's value instead of the graph");
     ImGui::Spacing();
 }
 
