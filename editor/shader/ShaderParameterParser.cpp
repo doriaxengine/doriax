@@ -141,6 +141,17 @@ bool definesHook(const std::string& code, const std::string& name, const std::st
     return false;
 }
 
+// the members read of a variable
+void scanMemberReads(const std::string& code, const std::string& name, std::set<std::string>& reads){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        size_t i = at + name.size();
+        if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
+            continue;
+        i++;
+        reads.insert(readIdentifier(code, i));
+    }
+}
+
 // the fields read of a context, by whatever name it is given
 void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
     std::set<std::string> names;
@@ -150,15 +161,8 @@ void scanContextReads(const std::string& code, const std::string& contextType, s
             names.insert(readIdentifier(code, i));
     }
     names.erase("");
-    for (const std::string& name : names){
-        for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-            size_t i = at + name.size();
-            if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
-                continue;
-            i++;
-            reads.insert(readIdentifier(code, i));
-        }
-    }
+    for (const std::string& name : names)
+        scanMemberReads(code, name, reads);
 }
 
 void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
@@ -166,29 +170,15 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
     out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
     out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
+    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
-    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
-    for (size_t at = code.find("Engine"); at != std::string::npos; at = code.find("Engine", at + 6)){
-        if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
-            continue;
-        size_t i = at + 6;
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        if (i >= code.size() || code[i] != '.')
-            continue;
-        i++;
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        size_t end = i;
-        while (end < code.size() && (std::isalnum((unsigned char)code[end]) || code[end] == '_'))
-            end++;
-        const std::string member = code.substr(i, end - i);
-        if (member == "time")
-            out.engineTime = true;
-        else if (member == "resolution")
-            out.engineResolution = true;
-    }
+
+    std::set<std::string> engine;
+    scanMemberReads(code, "Engine", engine);
+    out.engineTime = out.engineTime || engine.count("time");
+    out.engineResolution = out.engineResolution || engine.count("resolution");
+    out.enginePass = out.enginePass || engine.count("pass");
 }
 
 // ints are packed as floats in the block
@@ -609,6 +599,10 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         addEngine(ShaderUniformType::FLOAT4, "engine_resolution", "resolution", "Engine.resolution = block.engine_resolution;");
         engineStruct += " vec4 resolution;";
     }
+    if (annotations.enginePass){
+        addEngine(ShaderUniformType::FLOAT, "engine_pass", "passType", "Engine.pass = int(block.engine_pass);");
+        engineStruct += " int pass;";
+    }
 
     const std::vector<ShaderParameterDeclaration> merged = mergeDeclarations(annotations.parameters, nullptr);
     std::set<std::string> collections;
@@ -620,6 +614,8 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     std::ostringstream structs;
     if (!engineStruct.empty())
         structs << "struct ShaderParams_Engine {" << engineStruct << " };\nShaderParams_Engine Engine;\n";
+    if (annotations.enginePass)
+        structs << "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n";
 
     // the object parameters, then each collection, as globals the load fills
     bool hasObject = false;

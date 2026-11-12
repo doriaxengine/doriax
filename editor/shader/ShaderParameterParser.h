@@ -53,6 +53,7 @@ namespace doriax::editor {
         // the code reads Engine.time or Engine.resolution
         bool engineTime = false;
         bool engineResolution = false;
+        bool enginePass = false;
         std::vector<std::string> errors;
     };
 

@@ -5148,6 +5148,8 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_depth_t vsDepthParams, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, bool forSSAO, PipelineType pipelineType, int instanceView, const LodView* lodView){
     // shadow passes only draw casters; the SSAO depth pre-pass draws every opaque mesh
     if (mesh.loaded && !mesh.needReload && (mesh.castShadows || forSSAO)){
+        ShaderEffectView passView = effectView;
+        passView.pass = forSSAO ? ShaderPass::DEPTH : ShaderPass::SHADOW;
 
         if (terrain && terrain->needUpdateTexture){
             return false;
@@ -5211,10 +5213,10 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
 
-            applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, effectView, passResolution);
+            applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, passView, passResolution);
             // shadow maps keep the whole silhouette unless the shader asks
             const bool coverageShadows = mesh.submeshes[i].depthShader->shaderData.flags & ShaderFlag_CoverageShadows;
-            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, effectView, passResolution, forSSAO || coverageShadows);
+            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, passView, passResolution, forSSAO || coverageShadows);
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
@@ -5537,6 +5539,9 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
     if (!mesh.loaded || mesh.needReload)
         return true;
 
+    ShaderEffectView passView = effectView;
+    passView.pass = ShaderPass::GBUFFER;
+
     if (terrain && terrain->needUpdateTexture){
         return false;
     }
@@ -5604,7 +5609,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
-        applyFragmentParameters(gbufferRender, mesh.submeshes[i].gbufferParamsFS, effectView, passResolution, true);
+        applyFragmentParameters(gbufferRender, mesh.submeshes[i].gbufferParamsFS, passView, passResolution, true);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -5616,7 +5621,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
             }
         }
-        applyVertexParameters(gbufferRender, mesh.submeshes[i].gbufferParamsVS, mesh, transform, effectView, passResolution);
+        applyVertexParameters(gbufferRender, mesh.submeshes[i].gbufferParamsVS, mesh, transform, passView, passResolution);
 
         if (terrain){
             terrain->eyePos = terrain->views[0].nodesEyePos;

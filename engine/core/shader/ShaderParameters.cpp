@@ -167,6 +167,8 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
             const int index = (int)bindings.size();
             if (info->name == "time"){
                 engineTime = index;
+            }else if (info->name == "passType"){
+                enginePass = index;
             }else if (info->name == "resolution"){
                 engineResolution = index;
             }else if (info->name == "worldToModel" && member.type == ShaderUniformType::MAT4){
@@ -222,6 +224,7 @@ void ShaderParameterBlock::clear(){
     bindings.clear();
     engineTime = -1;
     engineResolution = -1;
+    enginePass = -1;
     worldToModel = -1;
     offsetMax = -1;
     eye = -1;
@@ -255,6 +258,9 @@ void ShaderParameterBlock::writeFrame(const ShaderEffectView& view, const Vector
         const float invWidth = resolution.x > 0.0f ? 1.0f / resolution.x : 0.0f;
         const float invHeight = resolution.y > 0.0f ? 1.0f / resolution.y : 0.0f;
         writeValue(data, bindings[engineResolution], Vector4(resolution.x, resolution.y, invWidth, invHeight));
+    }
+    if (enginePass != -1){
+        writeValue(data, bindings[enginePass], Vector4((float)view.pass, 0.0f, 0.0f, 0.0f));
     }
     if (!shared)
         return;

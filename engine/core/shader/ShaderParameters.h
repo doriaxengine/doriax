@@ -50,6 +50,14 @@ namespace doriax{
         static int getComponentCount(ShaderUniformType type);
     };
 
+    // what a pass draws, as Engine.pass tells shaders
+    enum class ShaderPass{
+        COLOR,
+        DEPTH,
+        SHADOW,
+        GBUFFER
+    };
+
     // the camera a pass draws for, as effect functions see it
     struct ShaderEffectView{
         Vector3 eye = Vector3(0.0f, 0.0f, 0.0f);
@@ -58,6 +66,7 @@ namespace doriax{
         // pixel the coverage dither counts from
         Vector2 ditherOrigin = Vector2(0.0f, 0.0f);
         float time = 0.0f;
+        ShaderPass pass = ShaderPass::COLOR;
         Matrix4 viewMatrix;
         const ShaderParameterTable* scene = nullptr;
         const ShaderParameterTable* view = nullptr;
@@ -83,6 +92,7 @@ namespace doriax{
         // engine value bindings, -1 when not declared
         int engineTime = -1;
         int engineResolution = -1;
+        int enginePass = -1;
         int worldToModel = -1;
         int offsetMax = -1;
         int eye = -1;

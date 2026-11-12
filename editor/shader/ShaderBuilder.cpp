@@ -275,6 +275,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_COLOR", "1"});
     if (useFragmentHooks)
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
+    if (!shaderAsset.empty())
+        args.defines.push_back({passType == ShaderType::DEPTH ? "IN_DEPTH_PASS" : passType == ShaderType::GBUFFER ? "IN_GBUFFER_PASS" : "IN_COLOR_PASS", "1"});
 
     // what the hooks read of the mesh, where this pass has it
     const struct { const char* field; const char* name; bool available; } inputs[] = {
