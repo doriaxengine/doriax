@@ -153,6 +153,34 @@ namespace {
         return changed;
     }
 
+    // rows of a name and its field, as Properties lays them out
+    bool beginFields(const char* id) {
+        if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV))
+            return false;
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, Theme::dpi(84.0f));
+        ImGui::TableSetupColumn("Value");
+        return true;
+    }
+
+    // the next row: its name, then the hidden label of the field that follows, which fills
+    // the row but for what trails it
+    const char* field(const std::string& label, float trailing = 0.0f) {
+        static std::string id;
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label.c_str());
+        ImGui::TableNextColumn();
+        ImGui::SetNextItemWidth(trailing > 0.0f ? -trailing : -FLT_MIN);
+        id = "##" + label;
+        return id.c_str();
+    }
+
+    // the room an icon beside a field takes
+    float iconWidth() {
+        return ImGui::CalcTextSize(ICON_FA_ROTATE_LEFT).x + 6.0f;
+    }
+
     // an icon beside a value, as Properties draws its reset arrow
     bool inlineIcon(const char* label) {
         ImGui::SameLine(0.0f, 2.0f);
@@ -230,22 +258,23 @@ namespace {
         const GraphValue current = constant != node.inputs.end() ? constant->second : pin.value;
         const std::vector<std::string>& members = LogicNodes::getEnumMembers(pin.type);
         bool changed = false;
+        const char* id = field(pin.label, constant != node.inputs.end() ? iconWidth() : 0.0f);
 
         if (pin.type == "bool") {
             bool on = current.text.empty() ? current.number() != 0.0f : current.text == "true";
-            if (ImGui::Checkbox(pin.label.c_str(), &on)) {
+            if (ImGui::Checkbox(id, &on)) {
                 node.inputs[pin.name] = GraphValue(on ? 1.0f : 0.0f);
                 changed = true;
             }
         } else if (pin.type == "number" || LogicNodes::getComponentCount(pin.type) > 1) {
             std::vector<float> numbers = current.numbers;
             numbers.resize(LogicNodes::getComponentCount(pin.type), 0.0f);
-            if (ImGui::DragScalarN(pin.label.c_str(), ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f)) {
+            if (ImGui::DragScalarN(id, ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f)) {
                 node.inputs[pin.name] = GraphValue(numbers);
                 changed = true;
             }
         } else if (!members.empty()) {
-            if (ImGui::BeginCombo(pin.label.c_str(), current.text.empty() ? "(none)" : current.text.c_str())) {
+            if (ImGui::BeginCombo(id, current.text.empty() ? "(none)" : current.text.c_str())) {
                 for (const std::string& member : members) {
                     if (ImGui::Selectable(member.c_str(), member == current.text)) {
                         node.inputs[pin.name] = GraphValue(member);
@@ -257,7 +286,7 @@ namespace {
         } else if (pin.type == "string" || pin.type == "any") {
             // a number typed into an any input stays a number
             std::string text = current.text.empty() && !current.numbers.empty() ? formatNumber(current.number()) : current.text;
-            if (editText(pin.label.c_str(), text)) {
+            if (editText(id, text)) {
                 float number = 0.0f;
                 const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
                 const bool numeric = pin.type == "any" && !text.empty() && parsed.ec == std::errc() && parsed.ptr == text.data() + text.size();
@@ -270,7 +299,7 @@ namespace {
         } else {
             // an engine object comes through a link
             const bool self = pin.name == "self" && LogicNodes::isEntityClass(pin.type);
-            ImGui::TextDisabled("%s: %s", pin.label.c_str(), self ? "the script's entity" : (pin.type == "Scene" ? "the script's scene" : "not linked"));
+            ImGui::TextDisabled("%s", self ? "the script's entity" : (pin.type == "Scene" ? "the script's scene" : "not linked"));
             return false;
         }
         if (!changed && constant != node.inputs.end()) {
@@ -339,13 +368,6 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     instance.text = instance.savedText = instance.document.write();
     compile(instance);
     instance.builtCode = instance.compiled.code;
-    // a new logic graph gets its script
-    if (GraphNodes::isLogic(instance.document)) {
-        std::filesystem::path script = fullPath;
-        script.replace_extension(".lua");
-        if (!std::filesystem::exists(script, ec))
-            writeScript(instance);
-    }
     // what the scene built of the graph before is not what the file holds now
     if (reopened && !GraphNodes::isLogic(instance.document))
         project->invalidateCustomShader(key);
@@ -394,12 +416,8 @@ void editor::GraphEditorWindow::writeScript(Instance& instance) {
         return;
     }
     std::string error;
-    if (!ProjectUtils::writeLogicScript(project, instance.filepath, instance.compiled.code, error)) {
+    if (!ProjectUtils::writeLogicScript(project, project->getProjectPath() / instance.filepath, instance.compiled.code, error))
         Out::error("%s", error.c_str());
-        return;
-    }
-    if (ResourcesWindow* resources = Backend::getApp().getResourcesWindow())
-        resources->refreshCurrentDirectory();
 }
 
 void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::string& text) {
@@ -1241,19 +1259,26 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         ImGui::EndPopup();
     }
 
-    for (const GraphParameter& parameter : document.parameters) {
-        ImGui::PushID(parameter.id);
-        if (ImGui::Selectable(parameter.name.c_str(), parameter.id == instance.parameter))
-            instance.parameter = parameter.id;
-        // dropped on the canvas, it becomes a node
-        if (ImGui::BeginDragDropSource()) {
-            ImGui::SetDragDropPayload("graph_parameter", &parameter.id, sizeof(int));
-            ImGui::TextUnformatted(parameter.name.c_str());
-            ImGui::EndDragDropSource();
+    if (!document.parameters.empty() && ImGui::BeginTable("##list", 2, ImGuiTableFlags_PadOuterX)) {
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed);
+        for (const GraphParameter& parameter : document.parameters) {
+            ImGui::PushID(parameter.id);
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn();
+            if (ImGui::Selectable(parameter.name.c_str(), parameter.id == instance.parameter, ImGuiSelectableFlags_SpanAllColumns))
+                instance.parameter = parameter.id;
+            // dropped on the canvas, it becomes a node
+            if (ImGui::BeginDragDropSource()) {
+                ImGui::SetDragDropPayload("graph_parameter", &parameter.id, sizeof(int));
+                ImGui::TextUnformatted(parameter.name.c_str());
+                ImGui::EndDragDropSource();
+            }
+            ImGui::TableNextColumn();
+            ImGui::TextDisabled("%s", parameter.type.c_str());
+            ImGui::PopID();
         }
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(parameter.type.c_str()).x);
-        ImGui::TextDisabled("%s", parameter.type.c_str());
-        ImGui::PopID();
+        ImGui::EndTable();
     }
     if (document.parameters.empty())
         ImGui::TextDisabled(logic ? "None yet. They show on the script in Properties." : "None yet. They show in Properties.");
@@ -1263,16 +1288,14 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         if (item.id == instance.parameter)
             parameter = &item;
 
-    if (parameter) {
-        ImGui::Separator();
+    if (parameter && beginFields("##parameter")) {
         ImGui::PushID(parameter->id);
 
         // a name keeps to what GLSL and Lua allow, and is taken once typed
-        const ImGuiID nameId = ImGui::GetID("##name");
-        if (ImGui::GetActiveID() != nameId)
+        const char* nameLabel = field("Name");
+        if (ImGui::GetActiveID() != ImGui::GetID(nameLabel))
             instance.parameterName = parameter->name;
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        editText("##name", instance.parameterName, nullptr, ImGuiInputTextFlags_CallbackCharFilter, identifierFilter);
+        editText(nameLabel, instance.parameterName, nullptr, ImGuiInputTextFlags_CallbackCharFilter, identifierFilter);
         if (ImGui::IsItemDeactivatedAfterEdit()) {
             const std::string& name = instance.parameterName;
             if (!name.empty() && !std::isdigit((unsigned char)name[0]) && !document.findParameter(name)) {
@@ -1285,30 +1308,31 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
             const std::string valueType = LogicNodes::getVariablePinType(parameter->type);
             if (parameter->type == "string") {
                 std::string text = parameter->value.text;
-                if (editText("Default", text)) {
+                if (editText(field("Default"), text)) {
                     parameter->value = text.empty() ? GraphValue() : GraphValue(text);
                     changed = true;
                 }
             } else if (parameter->type == "entity") {
-                ImGui::TextDisabled("Set on the script in Properties");
+                field("Default");
+                ImGui::TextDisabled("Set in Properties");
             } else {
                 std::vector<float> values = parameter->value.numbers;
                 values.resize(LogicNodes::getComponentCount(valueType), 0.0f);
                 bool set = false;
                 if (parameter->type == "bool") {
                     bool on = values[0] != 0.0f;
-                    if ((set = ImGui::Checkbox("Default", &on)))
+                    if ((set = ImGui::Checkbox(field("Default"), &on)))
                         values[0] = on ? 1.0f : 0.0f;
                 } else if (parameter->type == "int") {
                     int value = (int)std::lround(values[0]);
-                    if ((set = ImGui::DragInt("Default", &value)))
+                    if ((set = ImGui::DragInt(field("Default"), &value)))
                         values[0] = (float)value;
                 } else if (parameter->type == "color3") {
-                    set = ImGui::ColorEdit3("Default", values.data(), ImGuiColorEditFlags_Float);
+                    set = ImGui::ColorEdit3(field("Default"), values.data(), ImGuiColorEditFlags_Float);
                 } else if (parameter->type == "color4") {
-                    set = ImGui::ColorEdit4("Default", values.data(), ImGuiColorEditFlags_Float);
+                    set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
                 } else {
-                    set = ImGui::DragScalarN("Default", ImGuiDataType_Float, values.data(), (int)values.size(), 0.01f);
+                    set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), (int)values.size(), 0.01f);
                 }
                 if (set) {
                     parameter->value = GraphValue(values);
@@ -1316,7 +1340,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                 }
             }
             if (parameter->type != "entity") {
-                changed |= ImGui::Checkbox("Private", &parameter->runtime);
+                changed |= ImGui::Checkbox(field("Private"), &parameter->runtime);
                 ImGui::SetItemTooltip("Kept by the script, not shown in Properties");
             }
         } else if (isTexture(parameter->type)) {
@@ -1332,48 +1356,48 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                 ImGui::EndCombo();
             };
             std::string defaultTexture = parameter->value.text.empty() ? std::string("white") : parameter->value.text;
-            combo("Default", defaultTexture, {"white", "black", "normal"});
+            combo(field("Default"), defaultTexture, {"white", "black", "normal"});
             if (defaultTexture != parameter->value.text)
                 parameter->value = GraphValue(defaultTexture);
-            combo("Filter", parameter->filter, {"nearest", "linear", "trilinear"});
-            combo("Wrap", parameter->wrap, {"repeat", "clamp", "mirror"});
+            combo(field("Filter"), parameter->filter, {"nearest", "linear", "trilinear"});
+            combo(field("Wrap"), parameter->wrap, {"repeat", "clamp", "mirror"});
         } else {
             const int count = componentCount(parameter->type);
             std::vector<float> values = parameter->value.numbers;
             values.resize(count, parameter->type == "color" ? 1.0f : 0.0f);
             bool set = false;
             if (parameter->type == "color") {
-                set = ImGui::ColorEdit4("Default", values.data(), ImGuiColorEditFlags_Float);
+                set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
             } else if (parameter->type == "int") {
                 int value = (int)std::lround(values[0]);
-                if ((set = ImGui::DragInt("Default", &value)))
+                if ((set = ImGui::DragInt(field("Default"), &value)))
                     values[0] = (float)value;
             } else if (parameter->hasRange && count == 1) {
-                set = ImGui::SliderFloat("Default", values.data(), parameter->minValue, parameter->maxValue);
+                set = ImGui::SliderFloat(field("Default"), values.data(), parameter->minValue, parameter->maxValue);
             } else {
-                set = ImGui::DragScalarN("Default", ImGuiDataType_Float, values.data(), count, 0.01f);
+                set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), count, 0.01f);
             }
             if (set) {
                 parameter->value = GraphValue(values);
                 changed = true;
             }
             if (parameter->type == "float" || parameter->type == "int") {
-                changed |= ImGui::Checkbox("Range", &parameter->hasRange);
+                changed |= ImGui::Checkbox(field("Range"), &parameter->hasRange);
                 if (parameter->hasRange) {
                     float range[2] = {parameter->minValue, parameter->maxValue};
-                    if (ImGui::DragFloat2("##range", range, 0.01f)) {
+                    if (ImGui::DragFloat2(field("Limits"), range, 0.01f)) {
                         parameter->minValue = range[0];
                         parameter->maxValue = range[1];
                         changed = true;
                     }
                 }
             }
-            changed |= ImGui::Checkbox("Set by scripts", &parameter->runtime);
+            changed |= ImGui::Checkbox(field("Set by scripts"), &parameter->runtime);
             ImGui::SetItemTooltip("Hidden in Properties; scripts set it");
         }
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        changed |= editText("##description", parameter->description, "Description");
+        changed |= editText(field("Description"), parameter->description);
         ImGui::PopID();
+        ImGui::EndTable();
     }
 
     if (changed)
@@ -1390,13 +1414,15 @@ bool editor::GraphEditorWindow::drawLayoutInspector(Instance& instance) {
         shown = true;
         ImGui::TextUnformatted("Group");
         ImGui::Separator();
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        changed |= editText("##title", group.title);
+        if (!beginFields("##group"))
+            continue;
+        changed |= editText(field("Title"), group.title);
         float color[4] = {group.color.x, group.color.y, group.color.z, group.color.w};
-        if (ImGui::ColorEdit4("Color", color, ImGuiColorEditFlags_AlphaBar)) {
+        if (ImGui::ColorEdit4(field("Color"), color, ImGuiColorEditFlags_AlphaBar)) {
             group.color = Vector4(color[0], color[1], color[2], color[3]);
             changed = true;
         }
+        ImGui::EndTable();
     }
     for (GraphComment& comment : document.comments) {
         if (comment.id != instance.inspected)
@@ -1434,14 +1460,17 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
     ImGui::Separator();
 
     bool changed = false;
+    if (!beginFields("##node"))
+        return;
     ImGui::PushID(node->id);
     for (const NodeSetting& setting : type->settings) {
         auto stored = node->settings.find(setting.name);
         const GraphValue value = stored != node->settings.end() ? stored->second : setting.value;
         ImGui::PushID(setting.name.c_str());
+        const char* id = field(setting.label);
         if (setting.type == "choice") {
             const std::string current = describeValue(value);
-            if (ImGui::BeginCombo(setting.label.c_str(), current.c_str())) {
+            if (ImGui::BeginCombo(id, current.c_str())) {
                 for (const std::string& option : setting.options) {
                     if (ImGui::Selectable(option.c_str(), option == current)) {
                         // a number stays a number, as the file writes it
@@ -1456,7 +1485,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             }
         } else if (setting.type == "parameter") {
             const GraphParameter* current = namedParameter(document, *node, setting.name);
-            if (ImGui::BeginCombo(setting.label.c_str(), current ? current->name.c_str() : "(none)")) {
+            if (ImGui::BeginCombo(id, current ? current->name.c_str() : "(none)")) {
                 for (const GraphParameter& parameter : document.parameters) {
                     if (std::find(setting.options.begin(), setting.options.end(), parameter.type) == setting.options.end())
                         continue;
@@ -1470,8 +1499,8 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         } else if (setting.type == "function") {
             const std::string current = value.text;
             const float openWidth = ImGui::CalcTextSize(ICON_FA_UP_RIGHT_FROM_SQUARE).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-            ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - openWidth - ImGui::GetStyle().ItemInnerSpacing.x);
-            if (ImGui::BeginCombo("##function", current.empty() ? "(none)" : current.c_str())) {
+            ImGui::SetNextItemWidth(-(openWidth + ImGui::GetStyle().ItemInnerSpacing.x));
+            if (ImGui::BeginCombo(id, current.empty() ? "(none)" : current.c_str())) {
                 if (ImGui::IsWindowAppearing())
                     functionGraphs = findFunctionGraphs(project->getProjectPath());
                 if (functionGraphs.empty())
@@ -1490,11 +1519,9 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
                 openRequested = project->getProjectPath() / current;
             ImGui::SetItemTooltip("Open the function");
             ImGui::EndDisabled();
-            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            ImGui::TextUnformatted(setting.label.c_str());
         } else if (setting.type == "number" && logic) {
             float number = value.number();
-            if (ImGui::DragFloat(setting.label.c_str(), &number, 0.01f)) {
+            if (ImGui::DragFloat(id, &number, 0.01f)) {
                 node->settings[setting.name] = GraphValue(number);
                 changed = true;
             }
@@ -1505,13 +1532,13 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             numbers.resize(componentCount(outType), outType == "color" ? 1.0f : 0.0f);
             bool set = false;
             if (outType == "color") {
-                set = ImGui::ColorEdit4(setting.label.c_str(), numbers.data(), ImGuiColorEditFlags_Float);
+                set = ImGui::ColorEdit4(id, numbers.data(), ImGuiColorEditFlags_Float);
             } else if (outType == "int") {
                 int number = (int)std::lround(numbers[0]);
-                if ((set = ImGui::DragInt(setting.label.c_str(), &number)))
+                if ((set = ImGui::DragInt(id, &number)))
                     numbers[0] = (float)number;
             } else {
-                set = ImGui::DragScalarN(setting.label.c_str(), ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f);
+                set = ImGui::DragScalarN(id, ImGuiDataType_Float, numbers.data(), (int)numbers.size(), 0.01f);
             }
             if (set) {
                 node->settings[setting.name] = GraphValue(numbers);
@@ -1520,8 +1547,8 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         } else {
             std::string text = value.text;
             const bool set = setting.name == "body"
-                ? editTextMultiline(setting.label.c_str(), text, ImVec2(-FLT_MIN, Theme::dpi(140.0f)), ImGuiInputTextFlags_AllowTabInput)
-                : editText(setting.label.c_str(), text);
+                ? editTextMultiline(id, text, ImVec2(-FLT_MIN, Theme::dpi(140.0f)), ImGuiInputTextFlags_AllowTabInput)
+                : editText(id, text);
             if (set) {
                 node->settings[setting.name] = GraphValue(text);
                 changed = true;
@@ -1541,7 +1568,9 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         if (link) {
             // fed by a parameter straight
             const GraphParameter* parameter = document.findParameter(link->fromNode);
-            ImGui::TextDisabled("%s: %s", pin.label.c_str(), parameter ? parameter->name.c_str() : "?");
+            field(pin.label);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", parameter ? parameter->name.c_str() : "?");
             if (inlineIcon(ICON_FA_XMARK)) {
                 document.disconnect(node->id, pin.name);
                 changed = true;
@@ -1551,7 +1580,9 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             changed |= drawLogicConstant(*node, pin);
         } else if (constant == node->inputs.end() && (slot || !pin.value.text.empty())) {
             // an output left to the shader, or a context default
-            ImGui::TextDisabled("%s: %s", pin.label.c_str(), slot ? "not set" : describeValue(pin.value).c_str());
+            field(pin.label);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", slot ? "not set" : describeValue(pin.value).c_str());
             ImGui::SameLine();
             if (ImGui::Button("Set")) {
                 const std::string valueType = pin.type == "dynamic" ? "float" : pin.type;
@@ -1564,19 +1595,20 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             std::vector<float> numbers = current.numbers;
             const int count = pin.type == "dynamic" ? std::max(1, (int)numbers.size()) : componentCount(pin.type);
             numbers.resize(count, pin.type == "color" ? 1.0f : 0.0f);
+            const char* id = field(pin.label, constant != node->inputs.end() ? iconWidth() : 0.0f);
             bool set = false;
             if (pin.type == "color") {
-                set = ImGui::ColorEdit4(pin.label.c_str(), numbers.data(), ImGuiColorEditFlags_Float);
+                set = ImGui::ColorEdit4(id, numbers.data(), ImGuiColorEditFlags_Float);
             } else if (pin.type == "bool") {
                 bool on = numbers[0] != 0.0f;
-                if ((set = ImGui::Checkbox(pin.label.c_str(), &on)))
+                if ((set = ImGui::Checkbox(id, &on)))
                     numbers[0] = on ? 1.0f : 0.0f;
             } else if (pin.type == "int") {
                 int number = (int)std::lround(numbers[0]);
-                if ((set = ImGui::DragInt(pin.label.c_str(), &number)))
+                if ((set = ImGui::DragInt(id, &number)))
                     numbers[0] = (float)number;
             } else {
-                set = ImGui::DragScalarN(pin.label.c_str(), ImGuiDataType_Float, numbers.data(), count, 0.01f);
+                set = ImGui::DragScalarN(id, ImGuiDataType_Float, numbers.data(), count, 0.01f);
             }
             if (set) {
                 node->inputs[pin.name] = GraphValue(numbers);
@@ -1593,6 +1625,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         ImGui::PopID();
     }
     ImGui::PopID();
+    ImGui::EndTable();
 
     if (changed)
         edit(instance, "node" + std::to_string(instance.inspected));
@@ -1723,13 +1756,6 @@ void editor::GraphEditorWindow::convertToCode(Instance& instance) {
 }
 
 void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
-    const bool modified = instance.text != instance.savedText;
-    ImGui::BeginDisabled(!modified);
-    if (ImGui::Button(ICON_FA_FLOPPY_DISK "##save"))
-        save(instance);
-    ImGui::SetItemTooltip("Save (Ctrl+S)");
-    ImGui::EndDisabled();
-    ImGui::SameLine();
     if (ImGui::Button(ICON_FA_PLUS " Node")) {
         instance.addRequested = true;
         instance.addPosition = instance.canvas.getViewCenter();
@@ -1898,7 +1924,10 @@ void editor::GraphEditorWindow::show() {
             }
             drawToolbar(instance);
 
-            ImGui::BeginChild("##side", ImVec2(Theme::dpi(270.0f), 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX);
+            // room between the panel's fields and its edges, where the resize line is
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Theme::dpi(ImVec2(8.0f, 8.0f)));
+            ImGui::BeginChild("##side", ImVec2(Theme::dpi(290.0f), 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX | ImGuiChildFlags_AlwaysUseWindowPadding);
+            ImGui::PopStyleVar();
             drawPreview(instance);
             drawParameters(instance);
             ImGui::Spacing();

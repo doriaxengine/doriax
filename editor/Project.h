@@ -677,6 +677,10 @@ namespace doriax::editor{
         // False for files the assets root only reaches with "..", which the runtime cannot resolve.
         bool isInsideAssetsPath(const std::filesystem::path& path) const;
         std::filesystem::path resolveLuaPath(const std::filesystem::path& luaRelative) const;
+        // the Lua a script entry runs: its file, or the script written from a logic graph
+        std::filesystem::path resolveLuaSource(const std::filesystem::path& luaRelative) const;
+        // while a scene plays, its logic graphs run the scripts written from them
+        void useLogicScripts(Scene* scene) const;
         std::filesystem::path normalizeToLuaRelative(const std::filesystem::path& path) const;
 
         // Applies new roots: referenced files outside them are moved in keeping their

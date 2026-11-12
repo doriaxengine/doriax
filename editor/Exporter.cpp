@@ -10,6 +10,8 @@
 #include "util/Base64.h"
 #include "util/FbxImporter.h"
 #include "util/FileUtils.h"
+#include "util/ProjectUtils.h"
+#include "util/Util.h"
 #include "util/MsBuildProgress.h"
 #include "util/ShaderHeaderBuilder.h"
 #include "pool/ShaderPool.h"
@@ -1922,6 +1924,9 @@ bool editor::Exporter::copyAssets() try {
             continue;
         }
 
+        // Graphs are what the editor builds shaders and scripts from
+        if (Util::isGraphFile(entry.path().string())) continue;
+
         // Skip Lua sources already shipped in the lua tree
         if (isLuaSourceFile(entry.path()) && luaCopiedSources.count(entry.path().lexically_normal())) continue;
 
@@ -1992,6 +1997,19 @@ bool editor::Exporter::copyLua() try {
 
         // Skip C++ source/header files; registered scripts ship via copyCppScripts
         if (!entry.is_regular_file() || isCppSourceFile(entry.path())) continue;
+
+        // A logic graph ships as the script written from it, in the graph's place
+        if (Util::isLogicGraphFile(entry.path().string())) {
+            const fs::path script = ProjectUtils::buildLogicScript(project, entry.path());
+            fs::path destPath = luaDst / relPath;
+            destPath.replace_extension(".lua");
+            if (fs::exists(script)) {
+                fs::create_directories(destPath.parent_path());
+                fs::copy_file(script, destPath, fs::copy_options::overwrite_existing);
+                luaExportedPaths.insert(fs::relative(destPath, luaDst).lexically_normal());
+            }
+            continue;
+        }
 
         if (luaRootIsAssetsRoot && !isLuaSourceFile(entry.path())) continue;
         if (luaRootIsProjectRoot && !isLuaExportFile(entry.path())) continue;

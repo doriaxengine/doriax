@@ -21,6 +21,7 @@
 #include <filesystem>
 
 #include "util/FileUtils.h"
+#include "util/Util.h"
 
 #include "resources/sky/Daylight_Box_Back_png.h"
 #include "resources/sky/Daylight_Box_Bottom_png.h"
@@ -1574,7 +1575,11 @@ std::string editor::Factory::createScriptComponent(int indentSpaces, EntityRegis
         std::string idx = std::to_string(i);
         code << ind << "script.scripts.push_back(ScriptEntry());\n";
         code << ind << "script.scripts[" << idx << "].type = " << formatScriptType(script.scripts[i].type) << ";\n";
-        code << ind << "script.scripts[" << idx << "].path = " << formatString(script.scripts[i].path) << ";\n";
+        // a logic graph ships as the script written from it, under the graph's name
+        std::filesystem::path scriptPath = script.scripts[i].path;
+        if (Util::isLogicGraphFile(script.scripts[i].path))
+            scriptPath.replace_extension(".lua");
+        code << ind << "script.scripts[" << idx << "].path = " << formatString(scriptPath.generic_string()) << ";\n";
         code << ind << "script.scripts[" << idx << "].headerPath = " << formatString(script.scripts[i].headerPath) << ";\n";
         code << ind << "script.scripts[" << idx << "].className = " << formatString(script.scripts[i].className) << ";\n";
         code << ind << "script.scripts[" << idx << "].enabled = " << formatBool(script.scripts[i].enabled) << ";\n";

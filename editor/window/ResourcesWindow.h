@@ -107,6 +107,8 @@ namespace doriax::editor {
         Texture sourceIcon;
         Texture headerIcon;
         Texture luaIcon;
+        Texture logicIcon;
+        Texture shaderIcon;
         Texture audioIcon;
         Texture fontIcon;
         // Bounded cache of GPU thumbnail textures; must stay well below the

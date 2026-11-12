@@ -52,7 +52,7 @@ namespace doriax::editor{
         }
 
         inline static std::string getScriptExtensions() {
-             return "lua,cpp,cc,cxx,h,hh,hpp,hxx";
+             return "lua,logic,cpp,cc,cxx,h,hh,hpp,hxx";
         }
 
         inline static bool isImageFile(const std::string& path) {

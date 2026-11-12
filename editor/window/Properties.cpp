@@ -8851,6 +8851,17 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
     if (ImGui::BeginPopup("script_add_menu")) {
         bool addLua = ImGui::MenuItem("Lua Script");
         bool addCpp = ImGui::MenuItem("C++ Script");
+        // a graph is picked at once: it runs as the Lua script written from it
+        std::filesystem::path graph;
+        if (ImGui::MenuItem("Logic Graph")) {
+            const std::string selected = FileDialogs::openFileDialog(project->getLuaPath().string(), FILE_DIALOG_SCRIPT);
+            if (!selected.empty() && !(Util::isLogicGraphFile(selected) && Util::isInsidePath(selected, project->getLuaPath()))) {
+                Backend::getApp().registerAlert("Error", "Select a logic graph (.logic) inside the Lua directory.");
+            } else if (!selected.empty()) {
+                graph = project->normalizeToLuaRelative(selected);
+                addLua = true;
+            }
+        }
         if (addLua || addCpp) {
             MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
             for (const Entity& entity : entities) {
@@ -8859,6 +8870,14 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                 ScriptEntry entry;
                 entry.type = addLua ? ScriptType::LUA : ScriptType::CPP;
                 entry.enabled = true;
+                if (!graph.empty()) {
+                    entry.path = graph.generic_string();
+                    entry.className = graph.stem().string();
+                    newScripts.push_back(entry);
+                    project->updateScriptProperties(sceneProject, entity, newScripts);
+                    multiCmd->addPropertyCmd<std::vector<ScriptEntry>>(project, sceneProject->id, entity, ComponentType::ScriptComponent, "scripts", newScripts);
+                    continue;
+                }
                 newScripts.push_back(entry);
                 multiCmd->addPropertyCmd<std::vector<ScriptEntry>>(project, sceneProject->id, entity, ComponentType::ScriptComponent, "scripts", newScripts);
             }
@@ -8890,7 +8909,7 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
         if (script.type == ScriptType::CPP) {
             typeLabel = " [C++]";
         } else if (script.type == ScriptType::LUA) {
-            typeLabel = " [Lua]";
+            typeLabel = Util::isLogicGraphFile(script.path) ? " [Logic]" : " [Lua]";
         }
 
         const float indentation = 10.0f;
@@ -9170,11 +9189,11 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                     if (!selected.empty()) {
                         std::filesystem::path p(selected);
                         const bool validType = script.type == ScriptType::LUA
-                            ? Util::isLuaFile(p.string())
+                            ? (Util::isLuaFile(p.string()) || Util::isLogicGraphFile(p.string()))
                             : Util::isSourceFile(p.string());
                         if (!validType) {
                             Backend::getApp().registerAlert("Error", script.type == ScriptType::LUA
-                                ? "Select a Lua script file."
+                                ? "Select a Lua script file or a logic graph."
                                 : "Select a C++ source file.");
                         } else {
                             // Lua sources are stored relative to the Lua root ("lua://")
@@ -9293,9 +9312,14 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                 ? project->resolveLuaPath(script.path) : std::filesystem::path(script.path);
             if (srcPath.is_relative()) srcPath = projectPath / srcPath;
             bool srcExists = !script.path.empty() && std::filesystem::exists(srcPath);
+            // a logic graph opens in the graph window
+            const bool graph = Util::isLogicGraphFile(script.path);
             ImGui::BeginDisabled(!srcExists);
-            if (ImGui::Button((ICON_FA_FILE_CODE "##open_src_" + std::to_string(scriptIdx)).c_str())) {
-                Backend::getApp().getCodeEditor()->openFile(srcPath.string(), true);
+            if (ImGui::Button(((graph ? ICON_FA_DIAGRAM_PROJECT "##open_src_" : ICON_FA_FILE_CODE "##open_src_") + std::to_string(scriptIdx)).c_str())) {
+                if (graph)
+                    Backend::getApp().getGraphEditorWindow()->openFile(srcPath);
+                else
+                    Backend::getApp().getCodeEditor()->openFile(srcPath.string(), true);
             }
             if (ImGui::IsItemHovered()) {
                 if (srcExists){
@@ -9305,17 +9329,6 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                 }
             }
             ImGui::EndDisabled();
-
-            // a script written by a logic graph opens its graph
-            std::filesystem::path graphPath = srcPath;
-            graphPath.replace_extension(".logic");
-            if (script.type == ScriptType::LUA && srcExists && std::filesystem::exists(graphPath)) {
-                ImGui::SameLine();
-                if (ImGui::Button((ICON_FA_DIAGRAM_PROJECT "##open_graph_" + std::to_string(scriptIdx)).c_str())) {
-                    Backend::getApp().getGraphEditorWindow()->openFile(graphPath);
-                }
-                ImGui::SetItemTooltip("Graph: %s", graphPath.filename().string().c_str());
-            }
 
             ImGui::PopStyleVar();
 
@@ -13953,6 +13966,9 @@ void editor::Properties::show(){
 
                     multiCmd->setNoMerge();
                     CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
+
+                    if (Util::isLogicGraphFile(sourcePath.string()))
+                        Backend::getApp().getGraphEditorWindow()->openFile(project->resolveLuaPath(sourcePath));
                 },
                 [](){}
             );

@@ -2624,6 +2624,20 @@ std::filesystem::path editor::Project::resolveLuaPath(const std::filesystem::pat
     return resolveAgainstRoot(getLuaPath(), luaRelative);
 }
 
+std::filesystem::path editor::Project::resolveLuaSource(const std::filesystem::path& luaRelative) const{
+    if (Util::isLogicGraphFile(luaRelative.string()))
+        return ProjectUtils::buildLogicScript(this, resolveLuaPath(luaRelative));
+    return resolveLuaPath(luaRelative);
+}
+
+void editor::Project::useLogicScripts(Scene* scene) const{
+    auto scripts = scene->getComponentArray<ScriptComponent>();
+    for (size_t i = 0; i < scripts->size(); i++)
+        for (ScriptEntry& entry : scripts->getComponentFromIndex(i).scripts)
+            if (entry.type == ScriptType::LUA && Util::isLogicGraphFile(entry.path))
+                entry.path = resolveLuaSource(entry.path).generic_string();
+}
+
 std::filesystem::path editor::Project::normalizeToLuaRelative(const std::filesystem::path& path) const{
     return normalizeAgainstRoot(getLuaPath(), path);
 }
@@ -7499,7 +7513,7 @@ bool editor::Project::updateScriptProperties(SceneProject* sceneProject, Entity 
         if (scriptEntry.type == ScriptType::LUA) {
             if (scriptEntry.path.empty()) continue;
 
-            fs::path fullPath = resolveLuaPath(scriptEntry.path);
+            fs::path fullPath = resolveLuaSource(scriptEntry.path);
 
             ScriptEntry parsedEntry = scriptEntry;
 
@@ -10074,6 +10088,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                     entry.initializing = true;
 
                     Scene* scene = entry.runtime->scene;
+                    useLogicScripts(scene);
                     if (hasCppScripts) {
                         conector.init(scene);
                     } else {
@@ -10155,6 +10170,7 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
         entry.initializing = true;
 
         Scene* scene = entry.runtime->scene;
+        useLogicScripts(scene);
         if (conector.isLibraryConnected()) {
             conector.init(scene);
         }else{
@@ -10401,6 +10417,7 @@ void editor::Project::registerBundleManager() {
     // spawned instances run their scripts like the scene does
     BundleManager::setScriptCallbacks(
         [this](Scene* scene) {
+            useLogicScripts(scene);
             if (conector.isLibraryConnected()) {
                 conector.init(scene);
             } else {

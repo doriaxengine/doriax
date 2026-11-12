@@ -19,6 +19,8 @@
 #include "resources/icons/source-icon_png.h"
 #include "resources/icons/header-icon_png.h"
 #include "resources/icons/lua-icon_png.h"
+#include "resources/icons/logic-icon_png.h"
+#include "resources/icons/shader-icon_png.h"
 #include "resources/icons/audio-icon_png.h"
 #include "resources/icons/font-icon_png.h"
 
@@ -1641,6 +1643,8 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
     TextureRender* sourceIconH = sourceIcon.getRender();
     TextureRender* headerIconH = headerIcon.getRender();
     TextureRender* luaIconH = luaIcon.getRender();
+    TextureRender* logicIconH = logicIcon.getRender();
+    TextureRender* shaderIconH = shaderIcon.getRender();
     TextureRender* audioIconH = audioIcon.getRender();
     TextureRender* fontIconH = fontIcon.getRender();
 
@@ -1711,6 +1715,7 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
                 fileEntry.icon = fontIconH;
             }else if (Util::isGraphFile(fileEntry.extension)){
                 fileEntry.type = FileType::GRAPH;
+                fileEntry.icon = Util::isLogicGraphFile(fileEntry.extension) ? logicIconH : shaderIconH;
             }
 
             if (fileEntry.type == FileType::IMAGE || fileEntry.type == FileType::MATERIAL || fileEntry.type == FileType::MODEL) {
@@ -2691,6 +2696,14 @@ void editor::ResourcesWindow::show() {
         data.loadTextureFromMemory(lua_icon_png, lua_icon_png_len);
         luaIcon.setData("editor:resources:lua_icon", data);
         luaIcon.load();
+
+        data.loadTextureFromMemory(logic_icon_png, logic_icon_png_len);
+        logicIcon.setData("editor:resources:logic_icon", data);
+        logicIcon.load();
+
+        data.loadTextureFromMemory(shader_icon_png, shader_icon_png_len);
+        shaderIcon.setData("editor:resources:shader_icon", data);
+        shaderIcon.load();
 
         data.loadTextureFromMemory(audio_icon_png, audio_icon_png_len);
         audioIcon.setData("editor:resources:audio_icon", data);

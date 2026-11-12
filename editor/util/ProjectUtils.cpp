@@ -338,29 +338,55 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
     return graph.write();
 }
 
-bool editor::ProjectUtils::isLogicScriptFree(Project* project, const std::filesystem::path& graph, std::string& error) {
-    std::filesystem::path script = graph;
+std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph) {
+    std::filesystem::path script = project->normalizeToLuaRelative(graph);
     script.replace_extension(".lua");
-    std::ifstream existing(project->getProjectPath() / script, std::ios::binary);
-    std::string firstLine;
-    if (existing && std::getline(existing, firstLine) && !LogicGraphCompiler::isGenerated(firstLine)) {
-        error = script.generic_string() + " is not the script of " + graph.filename().string() + "; rename one of them";
+    return project->getProjectInternalPath() / "generated" / "logic" / script;
+}
+
+bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    std::error_code ec;
+    std::filesystem::create_directories(script.parent_path(), ec);
+    // the entities that run it take its new properties as those of any script changed on disk
+    if (!FileUtils::writeIfChanged(script, code)) {
+        error = "could not write the script of " + graph.filename().string();
         return false;
     }
     return true;
 }
 
-bool editor::ProjectUtils::writeLogicScript(Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
-    if (!isLogicScriptFree(project, graph, error))
-        return false;
-    std::filesystem::path script = graph;
-    script.replace_extension(".lua");
-    // the entities that run it take its new properties as those of any script changed on disk
-    if (!FileUtils::writeIfChanged(project->getProjectPath() / script, code)) {
-        error = "could not write " + script.generic_string();
-        return false;
+std::filesystem::path editor::ProjectUtils::buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error) {
+    const std::filesystem::path fullPath = project->resolveLuaPath(project->normalizeToLuaRelative(graph));
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    std::error_code ec;
+    const auto graphTime = std::filesystem::last_write_time(fullPath, ec);
+    if (ec)
+        return script;
+    const auto scriptTime = std::filesystem::last_write_time(script, ec);
+    if (!ec && scriptTime >= graphTime)
+        return script;
+
+    std::ifstream file(fullPath, std::ios::binary);
+    std::stringstream text;
+    text << file.rdbuf();
+    GraphDocument document;
+    std::string problem;
+    if (document.read(text.str(), problem)) {
+        const std::string name = fullPath.filename().string();
+        const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name));
+        if (compiled.success)
+            writeLogicScript(project, graph, compiled.code, problem);
+        else
+            problem = compiled.describeErrors();
     }
-    return true;
+    if (!problem.empty()) {
+        if (error)
+            *error = problem;
+        else
+            Out::error("%s: %s", fullPath.filename().string().c_str(), problem.c_str());
+    }
+    return script;
 }
 
 std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {

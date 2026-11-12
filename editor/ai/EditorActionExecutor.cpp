@@ -6656,10 +6656,6 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         return failResult(error);
     }
 
-    // a script written by hand under the graph's name stays, and the graph is not written over it
-    if (graph.kind == "logic" && !ProjectUtils::isLogicScriptFree(project, rel, error))
-        return failResult(error + ". Nothing was changed.");
-
     GraphOperations operations(graph);
     const Json& list = arguments["operations"];
     for (size_t i = 0; i < list.size(); i++) {
@@ -6683,7 +6679,7 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (graph.kind == "logic") {
             // the script the entities run, written when the graph compiles
             std::string scriptError;
-            if (compiled.success && !ProjectUtils::writeLogicScript(project, rel, compiled.code, scriptError))
+            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, compiled.code, scriptError))
                 return failResult("Graph written, but not its script: " + scriptError);
         } else {
             project->invalidateCustomShader(key);
@@ -6693,11 +6689,10 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         resourcesWindow->refreshCurrentDirectory();
     Out::info("AI %s graph: %s", create ? "created" : "edited", key.c_str());
 
-    // written with the graph, unless it has errors
-    if (graph.kind == "logic" && compiled.success) {
-        fs::path script = rel;
-        script.replace_extension(".lua");
-        data["script"] = FileUtils::pathToGenericUtf8(script);
+    // what attach_script takes: the graph itself
+    if (graph.kind == "logic") {
+        data["script"] = key;
+        data["class_name"] = LogicGraphCompiler::getModuleName(key);
     }
     return okResult(compiled.success ? "Graph written." : "Graph written; it does not compile yet, see errors.", data);
 }

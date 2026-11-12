@@ -709,7 +709,9 @@ void LuaBinding::initializeLuaScripts(Scene* scene) {
         const std::string path = entry->path;
         const std::string className = entry->className;
 
-        std::string luaFile = std::string("lua://") + path;
+        // a path with a root or a scheme of its own is read as it is
+        const bool rooted = path.find("://") != std::string::npos || path.rfind("/", 0) == 0 || (path.length() > 1 && path[1] == ':');
+        std::string luaFile = rooted ? path : std::string("lua://") + path;
         Data filedata;
         if (filedata.open(luaFile.c_str()) != FileErrors::FILEDATA_OK) {
             Log::error("Lua script file not found: %s", path.c_str());

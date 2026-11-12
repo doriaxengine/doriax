@@ -113,10 +113,11 @@ public:
     static std::string getShaderFunctionTemplate();
     // a script graph with the two events most scripts start from
     static std::string getLogicGraphTemplate();
-    // whether a logic graph may write the .lua beside it: none is there, or one a graph wrote
-    static bool isLogicScriptFree(Project* project, const std::filesystem::path& graph, std::string& error);
-    // the Lua script of a logic graph, beside it; a .lua written by hand is left alone
-    static bool writeLogicScript(Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error);
+    // where the Lua script of a logic graph is kept, out of the project's own files
+    static std::filesystem::path getLogicScriptPath(const Project* project, const std::filesystem::path& graph);
+    static bool writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error);
+    // the script of a graph, written again when the graph is newer; what stops it goes to error, or to the log
+    static std::filesystem::path buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error = nullptr);
     // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
     // the engine's shader files of the type, under shaders/; a project file of the same path wins
