@@ -11,6 +11,8 @@ struct VertexContext {
     vec2 uv2;
     vec4 color;           // vertex color times instance color, 1 without either
     vec4 instance;        // the instance's custom value, 0 without instancing
+    vec3 objectPosition;  // the object's origin in world space, an instance's own with instancing
+    vec3 objectScale;
 };
 
 #ifdef HOOK_NORMAL
@@ -32,6 +34,16 @@ struct VertexContext {
             tangent = mat3(i_matrix_col1.xyz, i_matrix_col2.xyz, i_matrix_col3.xyz) * tangent;
         #endif
         return vec4(normalize(mat3(HOOK_MODEL_MATRIX) * tangent), a_tangent.w);
+    }
+#endif
+
+#ifdef HOOK_OBJECT
+    mat4 getHookObjectMatrix(){
+        #ifdef HAS_INSTANCING
+            return HOOK_MODEL_MATRIX * getInstanceMatrix();
+        #else
+            return HOOK_MODEL_MATRIX;
+        #endif
     }
 #endif
 
@@ -63,6 +75,13 @@ struct VertexContext {
         context.uv2 = vec2(0.0);
         context.color = vec4(1.0);
         context.instance = vec4(0.0);
+        context.objectPosition = vec3(0.0);
+        context.objectScale = vec3(1.0);
+        #ifdef HOOK_OBJECT
+            mat4 objectMatrix = getHookObjectMatrix();
+            context.objectPosition = objectMatrix[3].xyz;
+            context.objectScale = vec3(length(objectMatrix[0].xyz), length(objectMatrix[1].xyz), length(objectMatrix[2].xyz));
+        #endif
         #ifdef HOOK_NORMAL
             context.normal = getHookNormal(boneTransform);
         #endif

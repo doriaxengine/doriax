@@ -358,9 +358,12 @@ vec3 graphHSVToRGB(vec3 c){
         {out("tangent", "Tangent", "vec3"), out("bitangent", "Bitangent", "vec3")}, {"@tangent", "@bitangent"}, {"mesh"});
     input("input/vertexColor", "Vertex Color", "The vertex color times the instance color.", {out("color", "Color", "vec4")}, {"@color"}, {"mesh", "ui", "points", "lines"});
     input("input/viewDirection", "View Direction", "Unit vector from the surface to the eye.", {out("view", "View", "vec3")}, {"@view"}, {"mesh", "water"});
-    input("input/camera", "Camera", "The camera's position and forward axis, and whether it is orthographic.",
-        {out("position", "Position", "vec3"), out("forward", "Forward", "vec3"), out("orthographic", "Orthographic", "float")},
-        {"@eye", "@forward", "(@perspective ? 0.0 : 1.0)"}, {"mesh"});
+    input("input/camera", "Camera", "The camera's position and forward axis, whether it is orthographic, and its clip planes as distances.",
+        {out("position", "Position", "vec3"), out("forward", "Forward", "vec3"), out("orthographic", "Orthographic", "float"),
+         out("near", "Near", "float"), out("far", "Far", "float")},
+        {"@eye", "@forward", "(@perspective ? 0.0 : 1.0)", "@nearPlane", "@farPlane"}, {"mesh"});
+    input("input/object", "Object", "Where the object is in the world, and its scale; an instance's own with instancing.",
+        {out("position", "Position", "vec3"), out("scale", "Scale", "vec3")}, {"@objectPosition", "@objectScale"}, {"mesh"});
     input("input/screen", "Screen Position", "Where the fragment is in the view, 0 at the top left, and its pixel.",
         {out("uv", "UV", "vec2"), out("pixel", "Pixel", "vec2")}, {"@screenUV", "@pixel"});
     input("input/time", "Time", "Seconds of the scene clock.", {out("time", "Time", "float")}, {"Engine.time"});
@@ -769,6 +772,19 @@ vec2 graphParallax(texture2D graphTexture, sampler graphSampler, vec2 graphUV, v
     parallax.functions = {"parallax"};
     parallax.stage = ShaderNodeStage::FRAGMENT;
     parallax.shaderTypes = {"mesh"};
+
+    // tangent space runs along the UV set's u and v and the normal; view space is the camera's, z toward the eye
+    ShaderNodeType& transform = add("vector/transform", "Transform", "Vector", "A direction taken from one space to another: world, tangent or view.",
+        {in("in", "In", "vec3", std::vector<float>{0.0f, 0.0f, 1.0f})}, {out("out", "Out", "vec3")}, {"{in}"});
+    transform.settings = {choice("spaces", "Spaces", {"tangentToWorld", "worldToTangent", "worldToView", "viewToWorld", "tangentToView", "viewToTangent"})};
+    transform.variants["tangentToWorld"] = {"({in}.x * @tangent + {in}.y * @bitangent + {in}.z * @normal)"};
+    transform.variants["worldToTangent"] = {"vec3(dot({in}, @tangent), dot({in}, @bitangent), dot({in}, @normal))"};
+    transform.variants["worldToView"] = {"(@worldToView * {in})"};
+    transform.variants["viewToWorld"] = {"({in} * @worldToView)"};
+    transform.variants["tangentToView"] = {"(@worldToView * ({in}.x * @tangent + {in}.y * @bitangent + {in}.z * @normal))"};
+    transform.variants["viewToTangent"] = {"vec3(dot({in} * @worldToView, @tangent), dot({in} * @worldToView, @bitangent), dot({in} * @worldToView, @normal))"};
+    transform.stage = ShaderNodeStage::FRAGMENT;
+    transform.shaderTypes = {"mesh"};
 
     ShaderNodeType& swizzle = add("vector/swizzle", "Swizzle", "Vector", "Components picked and reordered, as zyx or xxy.",
         {in("in", "In", "vec4")}, {out("out", "Out", "mask")}, {"{in}.{mask}"});

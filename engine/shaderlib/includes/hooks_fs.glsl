@@ -19,6 +19,9 @@ struct FragmentContext {
     vec2 pixel;         // from a corner every pass shares
     vec2 screenUV;      // in the camera's view, 0 at the top left; 0 unless read
     bool frontFacing;
+    float nearPlane;    // the camera's clip planes, as distances from the eye; 0 unless read
+    float farPlane;
+    mat3 worldToView;   // turns a world direction into the camera's space; identity unless read
 };
 
 // one light reaching the surface, for getLight()
@@ -103,6 +106,18 @@ FragmentContext getFragmentContext(vec3 worldPosition){
         context.screenUV = vec2(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
     #endif
     context.frontFacing = gl_FrontFacing;
+    context.nearPlane = 0.0;
+    context.farPlane = 0.0;
+    context.worldToView = mat3(1.0);
+    #ifdef HOOK_FRAGMENT_VIEW
+        context.worldToView = mat3(paramsFS.effect_worldToView);
+    #endif
+    #ifdef HOOK_FRAGMENT_DEPTH_RANGE
+        // the depth terms sceneDepth reads, at the two ends of the depth range
+        vec4 terms = paramsFS.effect_projection;
+        context.nearPlane = (terms.w + terms.z) / (terms.x + terms.y);
+        context.farPlane = (terms.w - terms.z) / (terms.y - terms.x);
+    #endif
     #ifdef USE_VARYINGS
         loadVaryings();
     #endif

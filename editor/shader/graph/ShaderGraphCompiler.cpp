@@ -182,11 +182,15 @@ namespace {
         if (hook == "getVertexOffset" || hook == "getVaryings") {
             add("localPosition", "vec3"); add("worldPosition", "vec3"); add("normal", "vec3");
             add("uv1", "vec2"); add("uv2", "vec2"); add("color", "vec4"); add("instance", "vec4");
+            if (shaderType == "mesh") {
+                add("objectPosition", "vec3"); add("objectScale", "vec3");
+            }
         } else if (shaderType == "mesh") {
             add("worldPosition", "vec3"); add("normal", "vec3"); add("tangent", "vec3"); add("bitangent", "vec3");
             add("uv1", "vec2"); add("uv2", "vec2"); add("color", "vec4"); add("instance", "vec4");
             add("view", "vec3"); add("eye", "vec3"); add("forward", "vec3"); add("perspective", "bool");
             add("pixel", "vec2"); add("screenUV", "vec2"); add("frontFacing", "bool");
+            add("nearPlane", "float"); add("farPlane", "float"); add("worldToView", "mat3");
         } else if (shaderType == "ui" || shaderType == "points" || shaderType == "lines") {
             add("worldPosition", "vec3"); add("uv1", "vec2"); add("color", "vec4");
             add("textureColor", "vec4"); add("tint", "vec4"); add("pixel", "vec2");

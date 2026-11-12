@@ -120,6 +120,7 @@ in vec3 a_position;
 #endif
 #if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX pbrParams.normalMatrix
+    #define HOOK_MODEL_MATRIX pbrParams.modelMatrix
     #include "includes/hooks_vs.glsl"
 #endif
 

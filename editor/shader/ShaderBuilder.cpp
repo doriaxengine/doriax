@@ -481,6 +481,15 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     const bool screenUV = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("screenUV");
     if (screenUV)
         args.defines.push_back({"HOOK_FRAGMENT_SCREEN", "1"});
+    const bool depthRange = meshPass && useFragmentHooks && (fragmentHooks.contextReads.count("nearPlane") || fragmentHooks.contextReads.count("farPlane"));
+    if (depthRange)
+        args.defines.push_back({"HOOK_FRAGMENT_DEPTH_RANGE", "1"});
+    const bool viewMatrix = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("worldToView");
+    if (viewMatrix)
+        args.defines.push_back({"HOOK_FRAGMENT_VIEW", "1"});
+    // the object's matrix, which the vertex stage has
+    if (meshPass && useVertexHooks && (vertexHooks.contextReads.count("objectPosition") || vertexHooks.contextReads.count("objectScale")))
+        args.defines.push_back({"HOOK_OBJECT", "1"});
 
     // the model matrix of the types whose own blocks lack it
     const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
@@ -489,8 +498,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         (modelMatrix ? editor::HookContext_Model : 0), declared.parameters, declared.textures);
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, ((useFragmentHooks && meshPass) ? editor::HookContext_Fragment : 0) |
-        ((useSurface && passType == ShaderType::GBUFFER) || sceneNormal ? editor::HookContext_View : 0) |
-        (useDepthOffset || sceneDepth ? editor::HookContext_Projection : 0) | (screenUV || sceneColor ? editor::HookContext_Screen : 0),
+        ((useSurface && passType == ShaderType::GBUFFER) || sceneNormal || viewMatrix ? editor::HookContext_View : 0) |
+        (useDepthOffset || sceneDepth || depthRange ? editor::HookContext_Projection : 0) | (screenUV || sceneColor ? editor::HookContext_Screen : 0),
         declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
