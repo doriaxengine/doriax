@@ -340,8 +340,11 @@ namespace doriax{
 		bool hasFog;
 		bool hasIBL;
 		bool hasReflectionProbes;
-		// a water samples the scene depth, so meshes need their depth shaders
+		// a water or a mesh samples the scene depth, so meshes need their depth shaders
 		bool hasWaterDepth;
+		// meshes whose shader files sample the opaque scene
+		std::set<Entity> sceneColorReaders;
+		std::set<Entity> sceneDepthReaders;
 		bool hasMultipleCameras;
 		// extra cameras the last frame drew, to catch the switch back to main only
 		bool lastMultiCameraDraw;

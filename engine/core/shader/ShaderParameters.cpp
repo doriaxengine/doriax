@@ -189,6 +189,10 @@ bool ShaderParameterBlock::resolve(ShaderData& shaderData, const std::string& bl
                 flipY = index;
             }else if (info->name == "modelToWorld" && member.type == ShaderUniformType::MAT4){
                 modelToWorld = index;
+            }else if (info->name == "viewProjection" && member.type == ShaderUniformType::MAT4){
+                viewProjection = index;
+            }else if (info->name == "sceneRect"){
+                sceneRect = index;
             }else{
                 continue;
             }
@@ -240,6 +244,8 @@ void ShaderParameterBlock::clear(){
     projection = -1;
     flipY = -1;
     modelToWorld = -1;
+    viewProjection = -1;
+    sceneRect = -1;
     shared = false;
 }
 
@@ -316,6 +322,12 @@ void ShaderParameterBlock::writeFragmentContext(const ShaderEffectView& view, bo
     }
     if (projection != -1){
         writeValue(data, bindings[projection], view.depthProjection);
+    }
+    if (viewProjection != -1){
+        writeFloats(data, bindings[viewProjection].offset, &view.viewProjection[0][0], 16);
+    }
+    if (sceneRect != -1){
+        writeValue(data, bindings[sceneRect], view.sceneRect);
     }
 }
 

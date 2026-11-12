@@ -13,6 +13,7 @@ struct FragmentContext {
     vec3 forward;
     bool perspective;
     vec2 pixel;         // from a corner every pass shares
+    vec2 screenUV;      // in the camera's view, 0 at the top left; 0 unless read
     bool frontFacing;
 };
 
@@ -38,6 +39,41 @@ struct Surface {
     vec3 emissive;      // linear
 };
 
+// the scene drawn before the mesh, in 3D its opaque part; black where there is none
+#ifdef HOOK_SCENE_COLOR
+    uniform texture2D u_sceneColorTexture;
+    uniform sampler u_sceneColor_smp;
+
+    // linear
+    vec4 sceneColor(vec2 screenUV){
+        vec4 rect = paramsFS.effect_sceneRect;
+        return vec4(sRGBToLinear(texture(sampler2D(u_sceneColorTexture, u_sceneColor_smp), rect.xy + screenUV * rect.zw).rgb), 1.0);
+    }
+#else
+    vec4 sceneColor(vec2 screenUV){
+        return vec4(0.0, 0.0, 0.0, 1.0);
+    }
+#endif
+
+#ifdef HOOK_SCENE_DEPTH
+    #include "includes/depth_util.glsl"
+
+    uniform texture2D u_depthTexture;
+    uniform sampler u_depth_smp;
+
+    // distance from the eye along the view, in world units; the far plane where nothing was drawn
+    float sceneDepth(vec2 screenUV){
+        float depth = decodeDepth(texture(sampler2D(u_depthTexture, u_depth_smp), vec2(screenUV.x, ndcYToDepthUV(1.0 - screenUV.y * 2.0))));
+        depth = min(depth, 1.0) * 2.0 - 1.0;
+        vec4 terms = paramsFS.effect_projection;
+        return (depth * terms.w - terms.z) / (depth * terms.y - terms.x);
+    }
+#else
+    float sceneDepth(vec2 screenUV){
+        return 1.0e4;
+    }
+#endif
+
 // the fragment stage of the shader file, mapped in by the shader builder
 #include "shader_hooks_fs.glsl"
 
@@ -53,6 +89,11 @@ FragmentContext getFragmentContext(vec3 worldPosition){
     context.perspective = paramsFS.effect_eye.w > 0.5;
     context.view = context.perspective ? normalize(context.eye - worldPosition) : -context.forward;
     context.pixel = abs(gl_FragCoord.xy - paramsFS.effect_pass.xy);
+    context.screenUV = vec2(0.0);
+    #ifdef HOOK_FRAGMENT_SCREEN
+        vec4 clip = paramsFS.effect_viewProjection * vec4(worldPosition, 1.0);
+        context.screenUV = vec2(clip.x / clip.w * 0.5 + 0.5, 0.5 - clip.y / clip.w * 0.5);
+    #endif
     context.frontFacing = gl_FrontFacing;
     #ifdef USE_VARYINGS
         loadVaryings();

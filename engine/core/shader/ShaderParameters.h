@@ -72,6 +72,10 @@ namespace doriax{
         Vector4 depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         // drawn with the y-flipped matrix of GL offscreen targets
         bool flipY = false;
+        // the camera's, unflipped
+        Matrix4 viewProjection;
+        // where the view sits in the scene copy
+        Vector4 sceneRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
         const ShaderParameterTable* scene = nullptr;
         const ShaderParameterTable* view = nullptr;
     };
@@ -106,6 +110,8 @@ namespace doriax{
         int projection = -1;
         int flipY = -1;
         int modelToWorld = -1;
+        int viewProjection = -1;
+        int sceneRect = -1;
         bool shared = false;     // has SCENE or VIEW members
 
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);

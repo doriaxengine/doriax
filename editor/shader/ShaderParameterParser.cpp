@@ -189,7 +189,7 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.light = out.light || definesHook(code, "getLight", "FragmentContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
-    for (const char* input : {"sceneDepth", "sceneNormal", "sceneOcclusion"}){
+    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
         if (callsFunction(code, input))
             out.sceneReads.insert(input);
     }
@@ -677,6 +677,10 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     }
     if (context & HookContext_Model){
         addEngine(ShaderUniformType::MAT4, "effect_modelToWorld", "modelToWorld", "");
+    }
+    if (context & HookContext_Screen){
+        addEngine(ShaderUniformType::MAT4, "effect_viewProjection", "viewProjection", "");
+        addEngine(ShaderUniformType::FLOAT4, "effect_sceneRect", "sceneRect", "");
     }
     // Engine.time and Engine.resolution, only where the code reads them
     std::string engineStruct;

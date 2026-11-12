@@ -3406,6 +3406,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         render.setShader(mesh.submeshes[i].shader.get());
         ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
+        mesh.submeshes[i].slotSceneColor = (shaderData.flags & ShaderFlag_SceneColor) ? shaderData.getTextureIndexByName("u_sceneColorTexture") : std::make_pair(-1, -1);
+        mesh.submeshes[i].slotSceneDepth = (shaderData.flags & ShaderFlag_SceneDepth) ? shaderData.getTextureIndexByName("u_depthTexture") : std::make_pair(-1, -1);
 
         mesh.submeshes[i].slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_PARAMS);
         mesh.submeshes[i].slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_PARAMS);
@@ -3829,6 +3831,15 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
     mesh.needUpdateShaderUniforms = false;
     mesh.needUpdateAABB = true;
     mesh.loadCalled = true;
+
+    mesh.readsSceneColor = false;
+    mesh.readsSceneDepth = false;
+    for (int i = 0; i < mesh.numSubmeshes; i++){
+        mesh.readsSceneColor = mesh.readsSceneColor || mesh.submeshes[i].slotSceneColor.first != -1;
+        mesh.readsSceneDepth = mesh.readsSceneDepth || mesh.submeshes[i].slotSceneDepth.first != -1;
+    }
+    if (mesh.readsSceneColor) sceneColorReaders.insert(entity); else sceneColorReaders.erase(entity);
+    if (mesh.readsSceneDepth) sceneDepthReaders.insert(entity); else sceneDepthReaders.erase(entity);
 
     // A reload recreates the terrain's per-view CDLOD node buffers empty; force a
     // re-selection next frame (the main-camera cut at view 0 is otherwise only
@@ -4413,7 +4424,7 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
         !submesh.needUpdateTexture && !submesh.lodData &&
-        submesh.material.shader.empty();
+        submesh.customShaderId == 0;
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -5076,6 +5087,11 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                                       currentSSAOTexture ? currentSSAOTexture : &emptyWhite);
                 }
             }
+            // the scene behind it, neutral where this camera has none
+            if (mesh.submeshes[i].slotSceneColor.first != -1)
+                render.addTexture(mesh.submeshes[i].slotSceneColor, ShaderStageType::FRAGMENT, currentSceneCopy ? currentSceneCopy : &emptyBlack);
+            if (mesh.submeshes[i].slotSceneDepth.first != -1)
+                render.addTexture(mesh.submeshes[i].slotSceneDepth, ShaderStageType::FRAGMENT, currentSceneDepthTexture ? currentSceneDepthTexture : &emptyWhite);
 
             // USE_LIGHT2D (property bit 22): dedicated 2D light path; composes with
             // both unlit (sprites) and lit submeshes, so it is applied independently
@@ -5511,7 +5527,7 @@ void RenderSystem::renderDepthPrePass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visibleInHierarchy || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent || mesh.readsSceneColor || mesh.readsSceneDepth)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
@@ -5689,7 +5705,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visibleInHierarchy || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent || mesh.readsSceneColor || mesh.readsSceneDepth)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
@@ -6356,6 +6372,8 @@ void RenderSystem::presentFramebufferToSwapchain(Framebuffer* source){
 
 void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAssets){
     unsettleSprite(entity);
+    sceneColorReaders.erase(entity);
+    sceneDepthReaders.erase(entity);
     InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
     TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
     const bool preserveAssets = mesh.needReload && !clearAssets;
@@ -9434,6 +9452,8 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     effectView.depthProjection = Vector4(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3],
                                          camera.projectionMatrix[3][2], camera.projectionMatrix[3][3]);
     effectView.flipY = isRenderingFlipped(camera);
+    effectView.viewProjection = camera.viewProjectionMatrix;
+    effectView.sceneRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
     // depth targets start at the corner, the color pass moves this to its own
     effectView.ditherOrigin = Vector2(0.0f, 0.0f);
     effectView.time = (float)animationTime;
@@ -10117,7 +10137,7 @@ bool RenderSystem::isFixedResolutionActive() const{
 }
 
 void RenderSystem::updateSwapchainRedirect(){
-    // SSR, the post-process chain and the scene copy of a water need the scene in an offscreen
+    // SSR, the post-process chain and the scene copy of a water or a mesh need the scene in an offscreen
     // color buffer. Without a framebuffer destination (exported builds) the color pass is redirected
     // into it and the last pass targets the swapchain. Main scene only: a layer scene
     // composites over the scene below, and its own pass would clear it.
@@ -10141,13 +10161,13 @@ void RenderSystem::updateSwapchainRedirect(){
                     && ensurePostProcessFramebuffers(w, h);
         }
 
-        bool copyingWater = false;
+        bool copiesScene = !sceneColorReaders.empty();
         auto waters = scene->getComponentArray<WaterComponent>();
         for (int i = 0; i < waters->size(); i++){
             const WaterComponent& water = waters->getComponentFromIndex(i);
-            copyingWater = copyingWater || water.refraction || water.underwater;
+            copiesScene = copiesScene || water.refraction || water.underwater;
         }
-        if (!redirect && copyingWater){
+        if (!redirect && copiesScene){
             loadBlit();
             redirect = blitLoaded && ensureSceneColorFramebuffer(w, h);
         }
@@ -10556,6 +10576,7 @@ void RenderSystem::update(double dt){
         }
         updateWater(entity, water, *transform, pipelines, dt);
     }
+    newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty();
 
     if (hasWaterDepth != newHasWaterDepth){
         hasWaterDepth = newHasWaterDepth;
@@ -11502,9 +11523,16 @@ void RenderSystem::draw(){
         PipelineType colorPip = colorPipeline(camera, offscreenTarget);
         bool distanceSort = sortsByDistance(camera);
 
+        // a mesh sampling the scene draws after a copy of it
+        bool sceneColorMeshes = false;
+        for (Entity reader : sceneColorReaders){
+            const Transform* readerTransform = scene->findComponent<Transform>(reader);
+            sceneColorMeshes = sceneColorMeshes || (readerTransform && readerTransform->visibleInHierarchy);
+        }
+
         // the main camera copies its scene before the water: refraction and the underwater fade
         // sample the copy, and SSR composites into it first so the reflections stay under the water
-        bool copyScene = isMainCamera && offscreenTarget && (refractingWater || currentUnderwater || (useSSR && !passWaters.empty()));
+        bool copyScene = isMainCamera && offscreenTarget && (refractingWater || currentUnderwater || (useSSR && !passWaters.empty()) || sceneColorMeshes);
         if (copyScene){
             loadBlit();
             copyScene = blitLoaded;
@@ -11638,7 +11666,7 @@ void RenderSystem::draw(){
                 }
                 TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
-                if (!mesh.transparent){
+                if (!mesh.transparent && !mesh.readsSceneColor && !mesh.readsSceneDepth){
                     // culled before the sort
                     if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera, mesh.worldAABB))
                         continue;
@@ -11706,6 +11734,59 @@ void RenderSystem::draw(){
                 drawMesh(opaque.entity, *opaque.mesh, *opaque.transform, camera, cameraTransform, colorPip, opaque.instmesh, opaque.terrain, opaque.tilemap, terrainView, instanceView, lodView);
             }
         }
+
+        // the scene copy: an SSR composite or the underwater fade replace the pass content,
+        // a plain copy keeps it. A pass in transform order takes it at its first mesh sampling it
+        CameraRender* passRender = &camera.render;
+        bool sceneCopied = false;
+        auto takeSceneCopy = [&](){
+            sceneCopied = true;
+            flushSpriteBatch();
+            // ended first: creating the copy framebuffer runs a clear pass, and passes can't nest
+            camera.render.endRenderPass();
+            const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
+            if (copied){
+                if (useSSR){
+                    renderSSR(camera, &sceneCopyFramebuffer.getRender());
+                }else{
+                    renderSceneCopy(colorTarget);
+                }
+
+                // view rects are centered, so the gap above the view matches the one below
+                const float copyWidth = (float)colorTarget->getWidth();
+                const float copyHeight = (float)colorTarget->getHeight();
+                currentSceneCopy = &sceneCopyFramebuffer.getRender().getColorTexture();
+                currentSceneCopyRect = Vector4(colorPassViewport.getX() / copyWidth, colorPassViewport.getY() / copyHeight,
+                        colorPassViewport.getWidth() / copyWidth, colorPassViewport.getHeight() / copyHeight);
+                effectView.sceneRect = currentSceneCopyRect;
+            }
+
+            passRender = &resumePassRender;
+            // kept for another copy between overlapping waters, or a water and a mesh sampling the scene
+            resumePassRender.setStoreDepth(passWaters.size() > 1 || (!passWaters.empty() && sceneColorMeshes));
+            resumePassRender.startRenderPass(&colorTarget->getRender());
+            resumePassRender.applyViewport(colorPassViewport);
+            if (copied){
+                if (currentUnderwater){
+                    drawUnderwater(*currentUnderwater, camera, cameraTransform);
+                }else if (useSSR){
+                    drawBlit(&sceneCopyFramebuffer.getRender().getColorTexture(), PIP_RTT_NODEPTH, false);
+                }
+            }
+        };
+
+        // a new copy, for what was drawn after the last: a refracting water would miss it, or a
+        // mesh sampling the scene would miss a water
+        bool copyOutdated = false;
+        bool waterSinceCopy = false;
+        auto refreshSceneCopy = [&](){
+            resumePassRender.endRenderPass();
+            renderSceneCopy(colorTarget);
+            resumePassRender.startRenderPass(&colorTarget->getRender());
+            resumePassRender.applyViewport(colorPassViewport);
+            copyOutdated = false;
+            waterSinceCopy = false;
+        };
 
         // in transform order, the order the batch keeps
         const bool drawSettled = !distanceSort && !depthPrepass && passWaters.empty();
@@ -11822,6 +11903,9 @@ void RenderSystem::draw(){
                     if (mesh.transparent && !passWaters.empty() && !isBehindWater(passWaters, mesh.worldAABB)){
                         afterWaterRenders.push_back({TransparentRenderType::MESH, entity, &mesh, nullptr, instmesh, terrain, tilemap, &transform, transform.distanceToCamera});
                     }else{
+                        if (mesh.readsSceneColor && copyScene && !sceneCopied){
+                            takeSceneCopy();
+                        }
                         drawMesh(entity, mesh, transform, camera, cameraTransform, colorPip, instmesh, terrain, tilemap, terrainView, instanceView, lodView);
                     }
                 }
@@ -11876,8 +11960,19 @@ void RenderSystem::draw(){
             }
         }
 
+        // drawn after the copy a mesh took
+        copyOutdated = currentSceneCopy != NULL;
+
         auto drawTransparent = [&](const TransparentRenderData& renderData){
             if (renderData.type == TransparentRenderType::MESH){
+                // the meshes sampling the scene share a copy, taken at the first and renewed after a water
+                if (renderData.mesh->readsSceneColor && copyScene){
+                    if (!sceneCopied){
+                        takeSceneCopy();
+                    }else if (waterSinceCopy){
+                        refreshSceneCopy();
+                    }
+                }
                 drawMesh(renderData.entity, *renderData.mesh, *renderData.transform, camera, cameraTransform, colorPip, renderData.instmesh, renderData.terrain, renderData.tilemap, terrainView, instanceView, lodView);
             }else if (renderData.type == TransparentRenderType::POINTS){
                 drawPoints(*renderData.points, *renderData.transform, camera, cameraTransform, colorPip);
@@ -11888,43 +11983,11 @@ void RenderSystem::draw(){
         while (!behindWaterRenders.empty()){
             drawTransparent(behindWaterRenders.top());
             behindWaterRenders.pop();
+            copyOutdated = currentSceneCopy != NULL;
         }
 
-        // the scene copy: an SSR composite or the underwater fade replace the pass content,
-        // a plain copy keeps it
-        CameraRender* passRender = &camera.render;
-        if (copyScene){
-            flushSpriteBatch();
-            // ended first: creating the copy framebuffer runs a clear pass, and passes can't nest
-            camera.render.endRenderPass();
-            const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
-            if (copied){
-                if (useSSR){
-                    renderSSR(camera, &sceneCopyFramebuffer.getRender());
-                }else{
-                    renderSceneCopy(colorTarget);
-                }
-
-                // view rects are centered, so the gap above the view matches the one below
-                const float copyWidth = (float)colorTarget->getWidth();
-                const float copyHeight = (float)colorTarget->getHeight();
-                currentSceneCopy = &sceneCopyFramebuffer.getRender().getColorTexture();
-                currentSceneCopyRect = Vector4(colorPassViewport.getX() / copyWidth, colorPassViewport.getY() / copyHeight,
-                        colorPassViewport.getWidth() / copyWidth, colorPassViewport.getHeight() / copyHeight);
-            }
-
-            passRender = &resumePassRender;
-            // kept for another copy between overlapping waters
-            resumePassRender.setStoreDepth(passWaters.size() > 1);
-            resumePassRender.startRenderPass(&colorTarget->getRender());
-            resumePassRender.applyViewport(colorPassViewport);
-            if (copied){
-                if (currentUnderwater){
-                    drawUnderwater(*currentUnderwater, camera, cameraTransform);
-                }else if (useSSR){
-                    drawBlit(&sceneCopyFramebuffer.getRender().getColorTexture(), PIP_RTT_NODEPTH, false);
-                }
-            }
+        if (copyScene && !sceneCopied){
+            takeSceneCopy();
         }
 
         //---------Draw water----------
@@ -11933,17 +11996,13 @@ void RenderSystem::draw(){
         std::sort(passWaters.begin(), passWaters.end(), [eyeY](const WaterRenderData& a, const WaterRenderData& b){
             return std::abs(eyeY - a.transform->worldPosition.y) > std::abs(eyeY - b.transform->worldPosition.y);
         });
-        bool copyOutdated = false;
         for (const WaterRenderData& waterData : passWaters){
             if (copyOutdated && waterData.water->refraction){
-                resumePassRender.endRenderPass();
-                renderSceneCopy(colorTarget);
-                resumePassRender.startRenderPass(&colorTarget->getRender());
-                resumePassRender.applyViewport(colorPassViewport);
-                copyOutdated = false;
+                refreshSceneCopy();
             }
             if (drawWater(waterData.entity, *waterData.water, *waterData.transform, camera, cameraTransform, colorPip, isMainCamera) && currentSceneCopy){
                 copyOutdated = true;
+                waterSinceCopy = true;
             }
         }
 

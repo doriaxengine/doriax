@@ -52,7 +52,7 @@ namespace doriax::editor {
         bool light = false;
         // fields they read of their context
         std::set<std::string> contextReads;
-        // post-process inputs they sample: sceneDepth, sceneNormal, sceneOcclusion
+        // scene inputs they sample: sceneColor, sceneDepth, sceneNormal, sceneOcclusion
         std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
@@ -77,7 +77,8 @@ namespace doriax::editor {
         HookContext_View = 1 << 2,       // the camera's view matrix
         HookContext_Projection = 1 << 3, // the depth terms of the projection
         HookContext_Clip = 1 << 4,       // the y flip of the clip position
-        HookContext_Model = 1 << 5       // the model matrix
+        HookContext_Model = 1 << 5,      // the model matrix
+        HookContext_Screen = 1 << 6      // the camera's view projection and the scene copy rect
     };
 
     class ShaderParameterParser {

@@ -377,15 +377,29 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
     }
 
-    // the scene inputs a post-process pass samples
-    const bool sceneDepth = useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneDepth");
-    const bool sceneNormal = useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneNormal");
+    // the scene inputs a post-process pass or a mesh's color pass samples; a mesh's other
+    // passes draw before the scene exists and get neutral values
+    const bool postProcess = useColor && passType == ShaderType::POSTPROCESS;
+    const bool colorPass = useFragmentHooks && passType == ShaderType::MESH;
+    const bool sceneColor = colorPass && fragmentHooks.sceneReads.count("sceneColor");
+    const bool sceneDepth = (postProcess || colorPass) && fragmentHooks.sceneReads.count("sceneDepth");
+    const bool sceneNormal = postProcess && fragmentHooks.sceneReads.count("sceneNormal");
+    if (sceneColor)
+        args.defines.push_back({"HOOK_SCENE_COLOR", "1"});
     if (sceneDepth)
         args.defines.push_back({"HOOK_SCENE_DEPTH", "1"});
     if (sceneNormal)
         args.defines.push_back({"HOOK_SCENE_NORMAL", "1"});
-    if (useColor && passType == ShaderType::POSTPROCESS && fragmentHooks.sceneReads.count("sceneOcclusion"))
+    if (postProcess && fragmentHooks.sceneReads.count("sceneOcclusion"))
         args.defines.push_back({"HOOK_SCENE_OCCLUSION", "1"});
+    if (sceneColor)
+        declared.flags |= ShaderFlag_SceneColor;
+    if (sceneDepth && colorPass)
+        declared.flags |= ShaderFlag_SceneDepth;
+    // where the camera sees the fragment
+    const bool screenUV = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("screenUV");
+    if (screenUV)
+        args.defines.push_back({"HOOK_FRAGMENT_SCREEN", "1"});
 
     // the model matrix of the types whose own blocks lack it
     const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
@@ -395,7 +409,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
         ShaderStageType::FRAGMENT, fragmentAnnotations, ((useFragmentHooks && meshPass) ? editor::HookContext_Fragment : 0) |
         ((useSurface && passType == ShaderType::GBUFFER) || sceneNormal ? editor::HookContext_View : 0) |
-        (useDepthOffset || sceneDepth ? editor::HookContext_Projection : 0),
+        (useDepthOffset || sceneDepth ? editor::HookContext_Projection : 0) | (screenUV || sceneColor ? editor::HookContext_Screen : 0),
         declared.parameters, declared.textures);
 
     args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);

@@ -100,6 +100,9 @@ namespace doriax{
         int slotVSMorphTarget = -1;
         int slotVSTerrain = -1;
         int slotFSTerrainLayers = -1;
+        // the scene its shader file samples
+        std::pair<int, int> slotSceneColor = {-1, -1};
+        std::pair<int, int> slotSceneDepth = {-1, -1};
 
         int slotVSDepthParams = -1;
         unsigned int sizeVSDepthParams = 0; // reflected: the normal matrix is there only when a hook reads normals
@@ -210,6 +213,9 @@ namespace doriax{
 
         bool transparent = false;
         bool autoTransparency = true;
+        // a material's shader file samples the scene, so the mesh draws after what it samples
+        bool readsSceneColor = false;
+        bool readsSceneDepth = false;
 
         // opt-out of the scene's detail levels (Scene::setMeshLodEnabled); bias above 1 keeps detail longer
         bool lodEnabled = true;
