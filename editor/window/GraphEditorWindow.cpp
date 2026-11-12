@@ -17,6 +17,7 @@
 #include "shader/ShaderBuilder.h"
 #include "shader/graph/ShaderNodes.h"
 #include "util/FileUtils.h"
+#include "util/ProjectUtils.h"
 
 #include "imgui_internal.h"
 
@@ -40,8 +41,6 @@ namespace {
     constexpr unsigned int previewSize = 256;
 
     const ImVec4 errorColor(0.9f, 0.45f, 0.4f, 1.0f);
-    // how the script of a logic graph starts
-    const char* scriptHeader = "-- Written by the Doriax editor from ";
 
     ImU32 categoryColor(const std::string& category) {
         static const std::map<std::string, ImU32> colors = {
@@ -388,29 +387,15 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
 }
 
 void editor::GraphEditorWindow::writeScript(Instance& instance) {
-    std::filesystem::path script = instance.filepath;
-    script.replace_extension(".lua");
     if (!instance.compiled.success) {
-        Out::warning("%s has errors, so %s keeps what it had", instance.filepath.generic_string().c_str(), script.filename().string().c_str());
+        Out::warning("%s has errors, so its script keeps what it had", instance.filepath.generic_string().c_str());
         return;
     }
-    // a script written by hand keeps its file
-    const std::filesystem::path fullPath = project->getProjectPath() / script;
-    std::ifstream existing(fullPath, std::ios::binary);
-    std::string firstLine;
-    if (existing && std::getline(existing, firstLine) && firstLine.rfind(scriptHeader, 0) != 0) {
-        Out::error("%s is not the script of %s; rename one of them", script.generic_string().c_str(), instance.filepath.filename().string().c_str());
+    std::string error;
+    if (!ProjectUtils::writeLogicScript(project, instance.filepath, instance.compiled.code, error)) {
+        Out::error("%s", error.c_str());
         return;
     }
-    existing.close();
-    if (!FileUtils::writeIfChanged(fullPath, instance.compiled.code)) {
-        Out::error("Could not write %s", script.generic_string().c_str());
-        return;
-    }
-    // its variables are the properties of the entities that run it
-    for (SceneProject& sceneProject : project->getScenes())
-        if (sceneProject.scene)
-            project->updateAllScriptsProperties(sceneProject.id);
     if (ResourcesWindow* resources = Backend::getApp().getResourcesWindow())
         resources->refreshCurrentDirectory();
 }
@@ -951,7 +936,7 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                     if (pin.name == change.toPin)
                         toType = pinType(document, *to, pin);
                 if (fromType.empty() || toType.empty() || !canLink(document, fromType, toType)) {
-                    Out::warning("A %s output does not go into a %s input", fromType.c_str(), toType.c_str());
+                    Out::warning("%s does not go into %s %s input", fromType.c_str(), toType == executionType ? "an" : "a", toType.c_str());
                     break;
                 }
                 if (document.feeds(change.toNode, change.fromNode)) {
@@ -1061,8 +1046,16 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
         return text;
     };
     const std::string search = lower(instance.search);
+    std::vector<std::string> words;
+    std::istringstream typed(search);
+    for (std::string word; typed >> word;)
+        words.push_back(word);
+    // every word typed, in the name, the category or the id
     auto matches = [&](const NodeType& type) {
-        return search.empty() || lower(type.name + " " + type.category + " " + type.id).find(search) != std::string::npos;
+        if (words.empty())
+            return true;
+        const std::string text = lower(type.name + " " + type.category + " " + type.id);
+        return std::all_of(words.begin(), words.end(), [&](const std::string& word) { return text.find(word) != std::string::npos; });
     };
 
     // what fits this graph, and the dropped link when there is one
@@ -1119,11 +1112,13 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
     int listed = 0;
     auto list = [&](const std::vector<const NodeType*>& types, bool labelled) {
         for (const NodeType* type : types) {
-            if (!search.empty() && ++listed > searchLimit)
+            if (!words.empty() && ++listed > searchLimit)
                 return;
             if (!first)
                 first = type;
-            const std::string label = labelled ? type->name + "  (" + type->category + ")##" + type->id : type->name + "##" + type->id;
+            // a property and a method can share a name, as Set Position
+            const bool property = type->id.rfind("get/", 0) == 0 || type->id.rfind("set/", 0) == 0;
+            const std::string label = labelled ? type->name + "  (" + type->category + (property ? " property" : "") + ")##" + type->id : type->name + "##" + type->id;
             if (ImGui::Selectable(label.c_str()))
                 chosen = type;
             if (!type->description.empty())
@@ -1131,9 +1126,20 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
         }
     };
     ImGui::BeginChild("##nodes", Theme::dpi(ImVec2(isLogic(document) ? 340.0f : 260.0f, 320.0f)));
-    if (!search.empty()) {
+    if (!words.empty()) {
+        // the names that start with what was typed come first, the short ones before the long
+        std::vector<const NodeType*> found;
         for (const auto& [category, types] : categories)
-            list(types, isLogic(document));
+            found.insert(found.end(), types.begin(), types.end());
+        auto rank = [&](const NodeType* type) {
+            const std::string name = lower(type->name);
+            return name == search ? 0 : (name.rfind(words.front(), 0) == 0 ? 1 : (name.find(words.front()) != std::string::npos ? 2 : 3));
+        };
+        std::stable_sort(found.begin(), found.end(), [&](const NodeType* a, const NodeType* b) {
+            const int rankA = rank(a), rankB = rank(b);
+            return rankA != rankB ? rankA < rankB : a->name.size() < b->name.size();
+        });
+        list(found, isLogic(document));
         if (listed > searchLimit)
             ImGui::TextDisabled("More match; type more to narrow them");
     } else {

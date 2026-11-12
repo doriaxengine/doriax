@@ -112,6 +112,7 @@ private:
     ActionResult generateShaders(const Json& arguments, const std::atomic<bool>* cancel);
     ActionResult writeShaderFile(const Json& arguments);
     ActionResult listGraphNodeTypes(const Json& arguments);
+    ActionResult listLogicNodeTypes(const std::string& category, const std::string& search);
     ActionResult readGraph(const Json& arguments);
     ActionResult editGraph(const Json& arguments);
     ActionResult inspectShaderUniforms(const Json& arguments);

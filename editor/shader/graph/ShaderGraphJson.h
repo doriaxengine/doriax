@@ -43,7 +43,7 @@ namespace doriax::editor {
     }
 
     // a graph and what it compiles to; links name their ends as node.pin, or a parameter by name
-    inline nlohmann::json shaderGraphJson(const GraphDocument& graph, const ShaderGraphResult& compiled) {
+    inline nlohmann::json shaderGraphJson(const GraphDocument& graph, const GraphResult& compiled) {
         nlohmann::json out = {{"kind", graph.kind}, {"type", graph.type}};
         out["parameters"] = nlohmann::json::array();
         for (const GraphParameter& parameter : graph.parameters) {

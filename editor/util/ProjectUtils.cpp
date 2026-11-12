@@ -3,6 +3,7 @@
 
 #include "ProjectUtils.h"
 
+#include "FileUtils.h"
 #include "Out.h"
 #include "Catalog.h"
 #include "Stream.h"
@@ -334,6 +335,32 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
     graph.addNode("event/start", Vector2(0.0f, 0.0f));
     graph.addNode("event/Engine.onUpdate", Vector2(0.0f, 160.0f));
     return graph.write();
+}
+
+bool editor::ProjectUtils::writeLogicScript(Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
+    std::filesystem::path script = graph;
+    script.replace_extension(".lua");
+    const std::filesystem::path fullPath = project->getProjectPath() / script;
+
+    // every script a graph writes starts with the same words
+    const std::string header = code.substr(0, code.find(" from "));
+    std::ifstream existing(fullPath, std::ios::binary);
+    std::string firstLine;
+    if (existing && std::getline(existing, firstLine) && firstLine.rfind(header, 0) != 0) {
+        error = script.generic_string() + " is not the script of " + graph.filename().string() + "; rename one of them";
+        return false;
+    }
+    existing.close();
+
+    if (!FileUtils::writeIfChanged(fullPath, code)) {
+        error = "could not write " + script.generic_string();
+        return false;
+    }
+    // its variables are the properties of the entities that run it
+    for (SceneProject& sceneProject : project->getScenes())
+        if (sceneProject.scene)
+            project->updateAllScriptsProperties(sceneProject.id);
+    return true;
 }
 
 std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {

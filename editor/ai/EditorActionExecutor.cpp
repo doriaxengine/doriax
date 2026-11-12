@@ -18,6 +18,8 @@
 #include "Stream.h"
 #include "render/SceneRender.h"
 #include "shader/graph/ShaderGraphJson.h"
+#include "logic/LogicGraphCompiler.h"
+#include "logic/LogicGraphJson.h"
 #include "window/GraphEditorWindow.h"
 #include "util/CxxStandards.h"
 #include "util/ProjectUtils.h"
@@ -5715,7 +5717,7 @@ public:
     std::map<std::string, int> refs;
 
     // the output node answers to output, in a function the first Function Output
-    explicit GraphOperations(GraphDocument& graph): graph(graph) {
+    explicit GraphOperations(GraphDocument& graph): graph(graph), logic(graph.kind == "logic") {
         for (const GraphNode& node : graph.nodes)
             if (isSink(node) && !refs.count("output"))
                 refs["output"] = node.id;
@@ -5738,8 +5740,86 @@ public:
     }
 
     void layout() {
-        layoutNodes();
+        if (logic)
+            layoutLogicNodes();
+        else
+            layoutNodes();
         layoutNotes();
+    }
+
+    // nodes added without a position, a lane for each event: what it runs in a row,
+    // and the values a node reads below it, to its left
+    void layoutLogicNodes() {
+        if (placed.empty())
+            return;
+        auto added = [&](int id) { return std::find(placed.begin(), placed.end(), id) != placed.end(); };
+        // below what the graph held
+        float top = 0.0f;
+        bool any = false;
+        for (const GraphNode& node : graph.nodes) {
+            if (added(node.id))
+                continue;
+            top = any ? std::max(top, node.position.y + 220.0f) : node.position.y + 220.0f;
+            any = true;
+        }
+
+        std::set<int> done;
+        std::map<int, int> rows;
+        Vector2 origin;
+        int deepest = 0;
+        auto place = [&](GraphNode& node, int column) {
+            const int row = rows[column]++;
+            deepest = std::max(deepest, row);
+            if (added(node.id))
+                node.position = Vector2(origin.x + 300.0f * column, origin.y + 150.0f * row);
+        };
+        // what runs, in the order it is linked
+        std::vector<std::pair<int, int>> chain;
+        std::function<void(int, int)> walk = [&](int id, int column) {
+            GraphNode* node = graph.findNode(id);
+            if (!node || !done.insert(id).second)
+                return;
+            place(*node, column);
+            chain.push_back({id, column});
+            for (const GraphLink& link : graph.links)
+                if (link.fromNode == id && isExecutionLink(link))
+                    walk(link.toNode, column + 1);
+        };
+        std::function<void(int, int)> values = [&](int id, int column) {
+            for (const GraphLink& link : graph.links) {
+                GraphNode* from = link.toNode == id && !link.fromPin.empty() ? graph.findNode(link.fromNode) : nullptr;
+                if (!from || runsNode(from->id) || !done.insert(from->id).second)
+                    continue;
+                place(*from, column - 1);
+                values(from->id, column - 1);
+            }
+        };
+        auto lane = [&](GraphNode& first) {
+            rows.clear();
+            chain.clear();
+            deepest = 0;
+            // an event that had its place keeps the lane there
+            origin = added(first.id) ? Vector2(0.0f, top) : first.position;
+            walk(first.id, 0);
+            for (const auto& [id, column] : chain)
+                values(id, column);
+            if (added(first.id))
+                top += 150.0f * (deepest + 1) + 70.0f;
+        };
+        for (GraphNode& node : graph.nodes) {
+            const NodeType* type = findType(node.type);
+            if (type && static_cast<const LogicNodeType*>(type)->flow == LogicFlow::EVENT)
+                lane(node);
+        }
+        // what no event reaches yet
+        for (GraphNode& node : graph.nodes)
+            if (!done.count(node.id) && added(node.id) && runsNode(node.id))
+                lane(node);
+        rows.clear();
+        origin = Vector2(0.0f, top);
+        for (GraphNode& node : graph.nodes)
+            if (!done.count(node.id) && added(node.id))
+                place(node, rows.size() < 6 ? (int)rows.size() : 0);
     }
 
     // nodes added without a position, in columns by their links' distance from the outputs
@@ -5801,7 +5881,7 @@ public:
         for (const GraphNode& node : graph.nodes) {
             if (!placed.empty() && std::find(placed.begin(), placed.end(), node.id) == placed.end())
                 continue;
-            const ShaderNodeType* type = ShaderNodes::get().find(node.type);
+            const NodeType* type = findType(node.type);
             const size_t rows = type ? std::max(type->inputs.size(), type->outputs.size()) : 1;
             left = std::min(left, node.position.x - 30.0f);
             top = std::min(top, node.position.y - 50.0f);
@@ -5826,11 +5906,46 @@ public:
 
 private:
     GraphDocument& graph;
+    const bool logic;
     std::vector<int> placed;
     std::vector<int> notes;
 
+    const NodeType* findType(const std::string& id) const {
+        if (logic)
+            return LogicNodes::get().findType(id);
+        return ShaderNodes::get().findType(id);
+    }
+
     bool isSink(const GraphNode& node) const {
+        if (logic)
+            return false;
         return node.type.rfind("output/", 0) == 0 || (graph.type == "function" && node.type == "function/output");
+    }
+
+    bool runsNode(int id) const {
+        const GraphNode* node = graph.findNode(id);
+        const NodeType* type = node ? findType(node->type) : nullptr;
+        return logic && type && static_cast<const LogicNodeType*>(type)->runs();
+    }
+
+    bool isExecutionLink(const GraphLink& link) const {
+        const GraphNode* from = graph.findNode(link.fromNode);
+        const NodeType* type = from ? findType(from->type) : nullptr;
+        const NodePin* output = type ? type->findOutput(link.fromPin) : nullptr;
+        return output && output->kind == PinKind::EXECUTION;
+    }
+
+    // the type a pin carries in this node, execution for a pin that orders what runs
+    std::string pinType(const GraphNode& node, const NodePin& pin) const {
+        if (pin.kind == PinKind::EXECUTION)
+            return "execution";
+        return logic ? pin.type : ShaderNodes::getPinType(graph, node, pin);
+    }
+
+    bool canLink(const std::string& fromType, const std::string& toType) const {
+        if (fromType == "execution" || toType == "execution")
+            return fromType == toType;
+        return logic ? LogicNodes::canLink(fromType, toType) : ShaderNodes::canLink(fromType, toType);
     }
 
     // an id, or the ref of something added earlier in the call
@@ -5868,13 +5983,17 @@ private:
         return node;
     }
 
-    bool pins(const GraphNode& node, const ShaderNodeType*& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string& error) const {
-        type = ShaderNodes::get().find(node.type);
+    bool pins(const GraphNode& node, const NodeType*& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string& error) const {
+        type = findType(node.type);
         if (!type) {
             error = "node " + std::to_string(node.id) + " has the unknown type " + node.type;
             return false;
         }
-        if (!ShaderNodes::getPins(node, *type, inputs, outputs)) {
+        if (logic) {
+            LogicNodes::getPins(graph, node, *static_cast<const LogicNodeType*>(type), inputs, outputs);
+            return true;
+        }
+        if (!ShaderNodes::getPins(node, *static_cast<const ShaderNodeType*>(type), inputs, outputs)) {
             inputs = type->inputs;
             outputs = type->outputs;
         }
@@ -5888,14 +6007,16 @@ private:
 
     bool addNode(const Json& operation, std::string& error) {
         const std::string typeId = operation.value("type", "");
-        const ShaderNodeType* type = ShaderNodes::get().find(typeId);
+        const NodeType* type = findType(typeId);
         if (!type) {
             error = "there is no node type \"" + typeId + "\"; list_graph_node_types lists them";
             return false;
         }
         // a function takes any node but an output
         const bool inFunction = graph.type == "function" && typeId.rfind("output/", 0) != 0;
-        if (!inFunction && !type->shaderTypes.empty() && std::find(type->shaderTypes.begin(), type->shaderTypes.end(), graph.type) == type->shaderTypes.end()) {
+        static const std::vector<std::string> anyShader;
+        const std::vector<std::string>& shaderTypes = logic ? anyShader : static_cast<const ShaderNodeType*>(type)->shaderTypes;
+        if (!inFunction && !shaderTypes.empty() && std::find(shaderTypes.begin(), shaderTypes.end(), graph.type) == shaderTypes.end()) {
             error = type->name + " does not fit a " + graph.type + " graph";
             return false;
         }
@@ -5986,8 +6107,8 @@ private:
             error = "there is no node " + std::to_string(from ? toId : fromId);
             return false;
         }
-        const ShaderNodeType* fromType = nullptr;
-        const ShaderNodeType* toType = nullptr;
+        const NodeType* fromType = nullptr;
+        const NodeType* toType = nullptr;
         std::vector<NodePin> fromInputs, fromOutputs, toInputs, toOutputs;
         if (!pins(*from, fromType, fromInputs, fromOutputs, error) || !pins(*to, toType, toInputs, toOutputs, error))
             return false;
@@ -5998,7 +6119,7 @@ private:
             if (pin.name == base)
                 output = &pin;
         // node.xyz swizzles the first output
-        const bool swizzle = fromPin.find('.') == std::string::npos && fromPin.size() <= 4 && fromPin.find_first_not_of("xyzwrgba") == std::string::npos;
+        const bool swizzle = !logic && fromPin.find('.') == std::string::npos && fromPin.size() <= 4 && fromPin.find_first_not_of("xyzwrgba") == std::string::npos;
         if (!output && swizzle && !fromOutputs.empty())
             output = &fromOutputs.front();
         if (!output) {
@@ -6013,17 +6134,21 @@ private:
             error = toType->name + " has no input " + toPin + " (" + pinNames(toInputs) + ")";
             return false;
         }
-        const std::string outType = ShaderNodes::getPinType(graph, *from, *output);
-        const std::string inType = ShaderNodes::getPinType(graph, *to, *input);
-        if (!ShaderNodes::canLink(outType, inType)) {
-            error = "a " + outType + " output does not go into a " + inType + " input";
+        const std::string outType = pinType(*from, *output);
+        const std::string inType = pinType(*to, *input);
+        if (!canLink(outType, inType)) {
+            error = outType + " does not go into " + (inType == "execution" ? "an " : "a ") + inType + " input";
             return false;
         }
         if (graph.feeds(toId, fromId)) {
             error = "that link would make the graph loop";
             return false;
         }
-        graph.connect(fromId, fromPin, toId, toPin);
+        // execution leaves an output one way; a value input takes one link
+        if (output->kind == PinKind::EXECUTION)
+            graph.connectExecution(fromId, fromPin, toId, toPin);
+        else
+            graph.connect(fromId, fromPin, toId, toPin);
         return true;
     }
 
@@ -6034,7 +6159,13 @@ private:
             error = "nothing feeds " + operation.value("to", std::string("that input"));
             return false;
         }
-        graph.disconnect(toId, toPin);
+        // from picks one of the links into an execution input
+        int fromId = 0;
+        std::string fromPin;
+        if (pinRef(operation.value("from", ""), fromId, fromPin))
+            graph.disconnect(fromId, fromPin, toId, toPin);
+        else
+            graph.disconnect(toId, toPin);
         return true;
     }
 
@@ -6049,7 +6180,7 @@ private:
 
     bool set(const Json& operation, std::string& error) {
         GraphNode* node = findNode(operation, error);
-        const ShaderNodeType* type = nullptr;
+        const NodeType* type = nullptr;
         std::vector<NodePin> inputs, outputs;
         if (!node || !pins(*node, type, inputs, outputs, error))
             return false;
@@ -6077,7 +6208,7 @@ private:
                 GraphNode call = *node;
                 call.settings[name] = value;
                 std::vector<NodePin> functionInputs, functionOutputs;
-                if (value.text.empty() || !ShaderNodes::getPins(call, *type, functionInputs, functionOutputs)) {
+                if (value.text.empty() || logic || !ShaderNodes::getPins(call, *static_cast<const ShaderNodeType*>(type), functionInputs, functionOutputs)) {
                     error = setting->label + " takes the path of a function graph of the project (a .shader of type function), in string_value";
                     return false;
                 }
@@ -6108,6 +6239,10 @@ private:
                 error = "set " + name + " needs a value, or reset";
                 return false;
             }
+            if (pin.kind == PinKind::EXECUTION) {
+                error = name + " orders what runs; connect it";
+                return false;
+            }
             node->inputs[name] = value;
             return true;
         }
@@ -6132,7 +6267,27 @@ private:
             error = "the default is a number, 1 to 4 numbers in vector_value, or a word in string_value";
             return false;
         }
-        if (given) {
+        if (given && logic) {
+            const std::string pin = LogicNodes::getVariablePinType(parameter.type);
+            const size_t count = pin == "Vector2" ? 2 : (pin == "Vector3" ? 3 : (pin == "Vector4" ? 4 : 1));
+            if (parameter.type == "entity") {
+                error = "an entity variable is set on the script in Properties";
+                return false;
+            }
+            if (parameter.type == "string") {
+                if (value.text.empty() && !value.numbers.empty()) {
+                    error = "a string variable takes its default in string_value";
+                    return false;
+                }
+            } else {
+                if (!value.text.empty() || (value.numbers.size() != 1 && value.numbers.size() != count)) {
+                    error = "a " + parameter.type + " default takes " + (count > 1 ? "1 or " + std::to_string(count) + " numbers" : std::string("a number, or bool_value"));
+                    return false;
+                }
+                value.numbers.resize(count, value.numbers.back());
+            }
+            parameter.value = value;
+        } else if (given) {
             if (isTextureType(parameter.type)) {
                 if (value.text != "white" && value.text != "black" && value.text != "normal") {
                     error = "a texture's default is white, black or normal";
@@ -6201,17 +6356,23 @@ private:
     }
 
     bool addParameter(const Json& operation, std::string& error) {
-        static const std::vector<std::string> types = {"float", "vec2", "vec3", "vec4", "int", "color", "texture2D", "textureCube"};
+        static const std::vector<std::string> shaderTypes = {"float", "vec2", "vec3", "vec4", "int", "color", "texture2D", "textureCube"};
+        const std::vector<std::string>& types = logic ? LogicNodes::getVariableTypes() : shaderTypes;
         GraphParameter parameter;
         parameter.name = operation.value("name", "");
         parameter.type = operation.value("type", "");
         if (std::find(types.begin(), types.end(), parameter.type) == types.end()) {
-            error = "a parameter's type is one of " + joinWords(types);
+            error = std::string(logic ? "a variable's" : "a parameter's") + " type is one of " + joinWords(types);
             return false;
         }
         if (!freeName(parameter.name, error))
             return false;
-        if (isTextureType(parameter.type)) {
+        if (logic) {
+            const std::string pin = LogicNodes::getVariablePinType(parameter.type);
+            const size_t count = pin == "Vector2" ? 2 : (pin == "Vector3" ? 3 : (pin == "Vector4" ? 4 : 1));
+            if (parameter.type != "string" && parameter.type != "entity")
+                parameter.value = GraphValue(std::vector<float>(count, parameter.type.rfind("color", 0) == 0 ? 1.0f : 0.0f));
+        } else if (isTextureType(parameter.type)) {
             parameter.value = GraphValue("white");
             parameter.filter = "linear";
             parameter.wrap = "repeat";
@@ -6290,12 +6451,13 @@ private:
     }
 };
 
-// a .shader path of the project
+// a .shader or .logic path of the project
 bool graphPath(Project* project, const Json& arguments, fs::path& rel, std::string& error) {
     if (!safeRelativePath(project, arguments, "path", rel, error))
         return false;
-    if (lower(rel.extension().string()) != ".shader") {
-        error = "path must point to a .shader graph.";
+    const std::string extension = lower(rel.extension().string());
+    if (extension != ".shader" && extension != ".logic") {
+        error = "path must point to a .shader or .logic graph.";
         return false;
     }
     return true;
@@ -6316,11 +6478,21 @@ bool readGraphFile(const fs::path& path, GraphDocument& graph, std::string& erro
     text << file.rdbuf();
     if (!graph.read(text.str(), error))
         return false;
-    if (graph.kind != "shader") {
-        error = "Not a shader graph.";
+    if (graph.kind != (path.extension() == ".logic" ? "logic" : "shader")) {
+        error = path.extension() == ".logic" ? "Not a logic graph." : "Not a shader graph.";
         return false;
     }
     return true;
+}
+
+// what a graph compiles to, as JSON with its nodes
+Json compiledGraphJson(Project* project, const GraphDocument& graph, const std::string& key, GraphResult& compiled) {
+    if (graph.kind == "logic") {
+        compiled = LogicGraphCompiler::compile(graph, fs::path(key).filename().string(), LogicGraphCompiler::getModuleName(key));
+    } else {
+        compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
+    }
+    return shaderGraphJson(graph, compiled);
 }
 
 }
@@ -6330,6 +6502,9 @@ ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
     const std::string category = lower(arguments.value("category", ""));
     const std::string search = lower(arguments.value("search", ""));
     const bool detail = !search.empty() || !category.empty();
+
+    if (graphType == "script")
+        return listLogicNodeTypes(category, search);
 
     Json list = Json::array();
     for (const NodeType* base : ShaderNodes::get().getTypes()) {
@@ -6364,6 +6539,72 @@ ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
     return okResult(std::to_string(list.size()) + " node types.", Json{{"node_types", list}, {"complete", detail}});
 }
 
+// the engine's classes give thousands of nodes, so they are listed by search or by class
+ActionResult EditorActionExecutor::listLogicNodeTypes(const std::string& category, const std::string& search) {
+    constexpr size_t limit = 120;
+    const bool detail = !search.empty() || !category.empty();
+    auto engine = [](const NodeType& type) {
+        const std::string group = type.id.substr(0, type.id.find('/'));
+        return group == "call" || group == "get" || group == "set" || group == "const";
+    };
+    auto pins = [](const std::vector<NodePin>& items) {
+        std::string text;
+        for (const NodePin& pin : items)
+            text += (text.empty() ? "" : ", ") + pin.name + ":" + (pin.kind == PinKind::EXECUTION ? std::string("execution") : pin.type);
+        return text;
+    };
+
+    Json list = Json::array();
+    std::map<std::string, int> classes;
+    size_t matched = 0;
+    for (const NodeType* base : LogicNodes::get().getTypes()) {
+        const LogicNodeType& type = *static_cast<const LogicNodeType*>(base);
+        if (!detail && engine(type)) {
+            classes[type.category]++;
+            continue;
+        }
+        if (!category.empty() && lower(type.category) != category)
+            continue;
+        if (!search.empty()) {
+            // every word, in the id, the name, the category or the description
+            const std::string text = lower(type.id + " " + type.name + " " + type.category + " " + type.description);
+            std::istringstream words(search);
+            std::string word;
+            bool all = true;
+            while (words >> word)
+                all &= text.find(word) != std::string::npos;
+            if (!all)
+                continue;
+        }
+        // the short list is the graph's own nodes, few enough to give whole
+        if (detail && ++matched > limit)
+            continue;
+        if (detail) {
+            list.push_back(logicNodeTypeJson(type));
+            continue;
+        }
+        Json item = {{"id", type.id}, {"name", type.name}, {"category", type.category}, {"in", pins(type.inputs)}, {"out", pins(type.outputs)}};
+        if (!type.settings.empty()) {
+            std::vector<std::string> settings;
+            for (const NodeSetting& setting : type.settings)
+                settings.push_back(setting.name);
+            item["settings"] = settings;
+        }
+        list.push_back(item);
+    }
+    Json data = {{"node_types", list}, {"complete", detail}};
+    if (matched > limit)
+        data["more"] = std::to_string(matched - limit) + " more match; narrow the search";
+    if (!detail) {
+        Json names = Json::object();
+        for (const auto& [name, count] : classes)
+            names[name] = count;
+        data["engine_classes"] = names;
+        data["note"] = "The engine's classes are listed by name with their node count: pass one as category, or search, to see its call/, get/ and set/ nodes.";
+    }
+    return okResult(std::to_string(list.size()) + " node types.", data);
+}
+
 ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
     std::string error;
     fs::path rel;
@@ -6374,8 +6615,8 @@ ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
         return failResult(error);
 
     const std::string key = FileUtils::pathToGenericUtf8(rel);
-    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
-    Json data = shaderGraphJson(graph, compiled);
+    GraphResult compiled;
+    Json data = compiledGraphJson(project, graph, key, compiled);
     data["path"] = key;
     if (arguments.value("include_code", false) && compiled.success)
         data["code"] = compiled.code;
@@ -6404,11 +6645,20 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (fs::exists(fullPath, ec))
             return failResult(key + " already exists.");
         const std::string type = arguments.value("graph_type", "");
-        if (type != "function" && !ShaderNodes::get().find("output/" + type))
-            return failResult("graph_type must be mesh, ui, points, lines, sky, water, postprocess or function.");
-        graph.kind = "shader";
-        graph.type = type;
-        graph.addNode(type == "function" ? "function/output" : "output/" + type, Vector2(300.0f, 0.0f));
+        if (rel.extension() == ".logic") {
+            if (!type.empty() && type != "script")
+                return failResult("A .logic graph is a script; leave graph_type out.");
+            if (!Util::isInsidePath(fullPath, project->getLuaPath()))
+                return failResult("A logic graph goes inside the project's Lua directory, where its script is written.");
+            graph.kind = "logic";
+            graph.type = "script";
+        } else {
+            if (type != "function" && !ShaderNodes::get().find("output/" + type))
+                return failResult("graph_type must be mesh, ui, points, lines, sky, water, postprocess or function.");
+            graph.kind = "shader";
+            graph.type = type;
+            graph.addNode(type == "function" ? "function/output" : "output/" + type, Vector2(300.0f, 0.0f));
+        }
     } else if (!readGraphFile(fullPath, graph, error)) {
         return failResult(error);
     }
@@ -6423,21 +6673,34 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
     }
     operations.layout();
 
+    GraphResult compiled;
+    Json data = compiledGraphJson(project, graph, key, compiled);
+    data["path"] = key;
+    data["refs"] = operations.refs;
+
     const std::string text = graph.write();
     if (!(window && window->replaceFileText(rel, text))) {
         fs::create_directories(fullPath.parent_path(), ec);
         if (!FileUtils::writeIfChanged(fullPath, text))
             return failResult("Failed to write the graph.");
-        project->invalidateCustomShader(key);
+        if (graph.kind == "logic") {
+            // the script the entities run, written when the graph compiles
+            std::string scriptError;
+            if (compiled.success && !ProjectUtils::writeLogicScript(project, rel, compiled.code, scriptError))
+                return failResult("Graph written, but not its script: " + scriptError);
+        } else {
+            project->invalidateCustomShader(key);
+        }
     }
     if (create && resourcesWindow)
         resourcesWindow->refreshCurrentDirectory();
     Out::info("AI %s graph: %s", create ? "created" : "edited", key.c_str());
 
-    const ShaderGraphResult compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
-    Json data = shaderGraphJson(graph, compiled);
-    data["path"] = key;
-    data["refs"] = operations.refs;
+    if (graph.kind == "logic") {
+        fs::path script = rel;
+        script.replace_extension(".lua");
+        data["script"] = FileUtils::pathToGenericUtf8(script);
+    }
     return okResult(compiled.success ? "Graph written." : "Graph written; it does not compile yet, see errors.", data);
 }
 
