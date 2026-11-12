@@ -1515,18 +1515,16 @@ Texture editor::Stream::decodeTexture(const YAML::Node& node) {
     return texture;
 }
 
-// set textures only, an empty entry is not saved
-YAML::Node editor::Stream::encodeShaderTextures(const ShaderTextureValues& textures, bool embedTextureData) {
-    YAML::Node node;
+// set textures only, under key; an empty entry is not saved
+void editor::Stream::encodeShaderTextures(YAML::Node& node, const char* key, const ShaderTextureValues& textures, bool embedTextureData) {
     for (const auto& texture : textures) {
         if (!hasTexture(texture.second))
             continue;
         YAML::Node item;
         item["name"] = texture.first;
         item["texture"] = encodeTexture(texture.second, embedTextureData);
-        node.push_back(item);
+        node[key].push_back(item);
     }
-    return node;
 }
 
 ShaderTextureValues editor::Stream::decodeShaderTextures(const YAML::Node& node) {
@@ -3023,8 +3021,7 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
         passNode["enabled"] = pass.enabled;
         if (!pass.uniforms.empty())
             passNode["uniforms"] = encodeShaderUniforms(pass.uniforms);
-        if (YAML::Node textures = encodeShaderTextures(pass.textures))
-            passNode["textures"] = textures;
+        encodeShaderTextures(passNode, "textures", pass.textures);
         sceneNode["postProcess"].push_back(passNode);
     }
 
@@ -3802,8 +3799,7 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
         node["shader"] = material.shader;
     if (!material.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(material.shaderUniforms);
-    if (YAML::Node textures = encodeShaderTextures(material.shaderTextures, embedTextureData))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", material.shaderTextures, embedTextureData);
 
     return node;
 }
@@ -5154,8 +5150,7 @@ YAML::Node editor::Stream::encodeUIComponent(const UIComponent& ui, bool encodeB
 
     if (!ui.shader.empty())
         node["shader"] = ui.shader;
-    if (YAML::Node textures = encodeShaderTextures(ui.shaderTextures, embedTextureData))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", ui.shaderTextures, embedTextureData);
     if (!ui.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(ui.shaderUniforms);
 
@@ -6563,8 +6558,7 @@ YAML::Node editor::Stream::encodeSkyComponent(const SkyComponent& sky) {
 
     if (!sky.shader.empty())
         node["shader"] = sky.shader;
-    if (YAML::Node textures = encodeShaderTextures(sky.shaderTextures))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", sky.shaderTextures);
     if (!sky.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(sky.shaderUniforms);
 
@@ -6647,8 +6641,7 @@ YAML::Node editor::Stream::encodeWaterComponent(const WaterComponent& water) {
 
     if (!water.shader.empty())
         node["shader"] = water.shader;
-    if (YAML::Node textures = encodeShaderTextures(water.shaderTextures))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", water.shaderTextures);
     if (!water.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(water.shaderUniforms);
 
@@ -8408,8 +8401,7 @@ YAML::Node editor::Stream::encodePointsComponent(const PointsComponent& points) 
 
     if (!points.shader.empty())
         node["shader"] = points.shader;
-    if (YAML::Node textures = encodeShaderTextures(points.shaderTextures))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", points.shaderTextures);
     if (!points.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(points.shaderUniforms);
 
@@ -8484,8 +8476,7 @@ YAML::Node editor::Stream::encodeLinesComponent(const LinesComponent& lines) {
 
     if (!lines.shader.empty())
         node["shader"] = lines.shader;
-    if (YAML::Node textures = encodeShaderTextures(lines.shaderTextures))
-        node["shaderTextures"] = textures;
+    encodeShaderTextures(node, "shaderTextures", lines.shaderTextures);
     if (!lines.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(lines.shaderUniforms);
 
