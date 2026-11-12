@@ -18,7 +18,7 @@ layout(location = 3) out vec4 frag_occlusion;
 in vec2 v_projZW;
 in vec3 v_normal;
 // in the vertex stage's order: GL pairs the stages by location
-#ifdef USE_COVERAGE
+#ifdef USE_FRAGMENT_HOOKS
     in vec3 v_worldPosition;
 #endif
 
@@ -27,11 +27,8 @@ uniform u_fs_gbufferMaterial {
     vec4 baseColorFactor;
 } gbufferMaterial;
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
+#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     in vec2 v_uv1;
-    #define HOOK_UV v_uv1
-#else
-    #define HOOK_UV vec2(0.0)
 #endif
 #if defined(HAS_BASECOLOR_TEXTURE)
     uniform texture2D u_baseColorTexture;
@@ -46,6 +43,12 @@ uniform u_fs_gbufferMaterial {
     uniform texture2D u_occlusionTexture;
     uniform sampler u_occlusion_smp;
 #endif
+#ifdef HOOK_FRAGMENT_NORMAL
+    in vec3 v_hookNormal;
+#endif
+#ifdef HOOK_FRAGMENT_COLOR
+    in vec4 v_hookColor;
+#endif
 
 #include "includes/depth_util.glsl"
 #include "includes/octahedral.glsl"
@@ -54,14 +57,28 @@ uniform u_fs_gbufferMaterial {
     #include "includes/terrain_fs.glsl"
 #endif
 #include "includes/parameters_fs.glsl"
-#ifdef USE_COVERAGE
+#ifdef USE_FRAGMENT_HOOKS
     #include "includes/hooks_fs.glsl"
+
+    FragmentContext getGBufferContext(){
+        FragmentContext context = getFragmentContext(v_worldPosition);
+        #ifdef HOOK_FRAGMENT_UV1
+            context.uv1 = v_uv1;
+        #endif
+        #ifdef HOOK_FRAGMENT_NORMAL
+            context.normal = normalize(gl_FrontFacing ? v_hookNormal : -v_hookNormal);
+        #endif
+        #ifdef HOOK_FRAGMENT_COLOR
+            context.color = v_hookColor;
+        #endif
+        return context;
+    }
 #endif
 
 void main() {
     loadShaderParameters();
     #ifdef USE_COVERAGE
-        applyCoverage(getFragmentContext(v_worldPosition, HOOK_UV));
+        applyCoverage(getGBufferContext());
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
     #if defined(HAS_BASECOLOR_TEXTURE)

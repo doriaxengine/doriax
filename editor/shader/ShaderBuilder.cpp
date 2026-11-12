@@ -19,6 +19,7 @@
 #include "util/Util.h"
 #include "util/ProjectUtils.h"
 
+#include <algorithm>
 #include <cstring>
 #include <cstdint>
 #include <filesystem>
@@ -270,13 +271,32 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if (useFragmentHooks)
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
 
+    // what the hooks read of the mesh, where this pass has it
+    auto defined = [&](const char* name) {
+        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
+    };
+    const struct { const char* field; const char* name; bool available; } inputs[] = {
+        {"uv1", "UV1", (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN")},
+        {"normal", "NORMAL", defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS")},
+        {"color", "COLOR", defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING")}
+    };
+    for (const auto& input : inputs) {
+        const bool vertex = useVertexOffset && vertexHooks.contextReads.count(input.field);
+        const bool fragment = useFragmentHooks && fragmentHooks.contextReads.count(input.field);
+        if (input.available && (vertex || fragment))
+            args.defines.push_back({std::string("HOOK_") + input.name, "1"});
+        if (input.available && fragment)
+            args.defines.push_back({std::string("HOOK_FRAGMENT_") + input.name, "1"});
+    }
+
     // the files each stage reaches; an inactive hook is not read
     std::unordered_set<std::string> vertexFiles;
     std::unordered_set<std::string> fragmentFiles;
     auto lookup = [&](std::unordered_set<std::string>& reached) {
         return [&](const std::string& key) -> const std::string* {
             reached.insert(key);
-            if ((key == "includes/vertex_offset.glsl" && !useVertexOffset) || (key == "includes/hooks_fs.glsl" && !useFragmentHooks))
+            if ((key == "shader_hooks_vs.glsl" && !useVertexOffset) || (key == "includes/hooks_vs.glsl" && !useVertexOffset && !useFragmentHooks) ||
+                    (key == "includes/hooks_fs.glsl" && !useFragmentHooks))
                 return nullptr;
             return file(key);
         };
@@ -298,8 +318,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
 
     // a fork from before the hooks existed cannot run them
-    if (useVertexOffset && !vertexFiles.count("includes/vertex_offset.glsl"))
-        editor::Out::warning("%s does not include includes/vertex_offset.glsl, so the vertex offset of %s does nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
+    if (useVertexOffset && !vertexFiles.count("includes/hooks_vs.glsl"))
+        editor::Out::warning("%s does not include includes/hooks_vs.glsl, so the vertex offset of %s does nothing in it", args.vert_file.c_str(), shaderAsset.c_str());
     if (useFragmentHooks && !fragmentFiles.count("includes/hooks_fs.glsl"))
         editor::Out::warning("%s does not include includes/hooks_fs.glsl, so the hooks of %s do nothing in it", args.frag_file.c_str(), shaderAsset.c_str());
 
@@ -693,6 +713,8 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 25)) defs.push_back({"ALPHA_OPAQUE", "1"});               // 'Aop'
     if (prop & (1 << 26)) defs.push_back({"USE_INSTANCE_FADE", "1"});          // 'Ifd'
     if (prop & (1 << 27)) defs.push_back({"HAS_TERRAIN_PBR", "1"});            // 'Tpb'
+    if (prop & (1 << 29)) defs.push_back({"HAS_HOOK_UV1", "1"});               // 'Hu1'
+    if (prop & (1 << 30)) defs.push_back({"HAS_HOOK_NORMALS", "1"});           // 'Hnr'
 }
 
 void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -706,6 +728,9 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 7))  defs.push_back({"ALPHA_MASK", "1"});         // 'Ams'
     if (prop & (1 << 8))  defs.push_back({"USE_INSTANCE_FADE", "1"}); // 'Ifd'
     if (prop & (1 << 9))  defs.push_back({"HAS_UV_SET1", "1"});       // 'Uv1'
+    if (prop & (1 << 10)) defs.push_back({"HAS_NORMALS", "1"});       // 'Nor'
+    if (prop & (1 << 11)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"}); // 'Vc3'
+    if (prop & (1 << 12)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"}); // 'Vc4'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -722,6 +747,8 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 10)) defs.push_back({"HAS_OCCLUSION_TEXTURE", "1"});         // 'Occ'
     if (prop & (1 << 11)) defs.push_back({"OCCLUSION_UV2", "1"});                 // 'Ou2'
     if (prop & (1 << 12)) defs.push_back({"HAS_UV_SET1", "1"});                   // 'Uv1'
+    if (prop & (1 << 13)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"});         // 'Vc3'
+    if (prop & (1 << 14)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"});         // 'Vc4'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {

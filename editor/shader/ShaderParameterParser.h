@@ -6,6 +6,7 @@
 #include "shader/ShaderData.h"
 
 #include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -44,6 +45,8 @@ namespace doriax::editor {
         bool coverage = false;
         bool surface = false;
         bool color = false;
+        // fields they read of their context
+        std::set<std::string> contextReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;

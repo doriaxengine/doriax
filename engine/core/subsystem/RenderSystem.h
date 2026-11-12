@@ -112,12 +112,14 @@ namespace doriax{
 		Matrix4 modelMatrix;
 		Matrix4 lightVPMatrix;
 		Matrix4 mvpMatrix; // lightVPMatrix * modelMatrix
+		Matrix4 normalMatrix; // only when hooks read the normal
 	} vs_depth_t;
 
 	typedef struct vs_gbuffer_t {
 		Matrix4 modelMatrix;
 		Matrix4 viewProjectionMatrix;
 		Matrix4 normalMatrix;       // view-space normal matrix: transpose(inverse(view*model))
+		Matrix4 worldNormalMatrix;  // only when hooks read the normal
 	} vs_gbuffer_t;
 
 	typedef struct fs_gbuffer_material_t {

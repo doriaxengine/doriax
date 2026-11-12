@@ -12,6 +12,9 @@ uniform u_vs_depthParams {
     mat4 modelMatrix;
     mat4 lightVPMatrix;
     mat4 mvpMatrix;
+    #ifdef HOOK_NORMAL
+        mat4 normalMatrix;
+    #endif
 } depthParams;
 
 invariant gl_Position;
@@ -25,7 +28,7 @@ invariant gl_Position;
 
 in vec3 a_position;
 out vec2 v_projZW;
-#ifdef USE_COVERAGE
+#ifdef USE_FRAGMENT_HOOKS
     out vec3 v_worldPosition;
 #endif
 
@@ -36,10 +39,32 @@ out vec2 v_projZW;
     in vec4 i_matrix_col4;
 #endif
 
-// the alpha mask texture, or the coverage hook reading the UV set
-#if defined(HAS_TEXTURE) || defined(HAS_UV_SET1)
+// the alpha mask texture, or the hooks reading the UV set
+#if defined(HAS_TEXTURE) || defined(HOOK_UV1)
     in vec2 a_texcoord1;
+#endif
+#if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     out vec2 v_uv1;
+#endif
+
+#ifdef HOOK_NORMAL
+    in vec3 a_normal;
+#endif
+#ifdef HOOK_COLOR
+    #if defined(HAS_VERTEX_COLOR_VEC3)
+        in vec3 a_color;
+    #elif defined(HAS_VERTEX_COLOR_VEC4)
+        in vec4 a_color;
+    #endif
+    #ifdef HAS_INSTANCING
+        in vec4 i_color;
+    #endif
+#endif
+#ifdef HOOK_FRAGMENT_NORMAL
+    out vec3 v_hookNormal;
+#endif
+#ifdef HOOK_FRAGMENT_COLOR
+    out vec4 v_hookColor;
 #endif
 
 #include "includes/parameters_vs.glsl"
@@ -48,8 +73,9 @@ out vec2 v_projZW;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#ifdef USE_VERTEX_OFFSET
-    #include "includes/vertex_offset.glsl"
+#if defined(USE_VERTEX_OFFSET) || defined(USE_FRAGMENT_HOOKS)
+    #define HOOK_NORMAL_MATRIX depthParams.normalMatrix
+    #include "includes/hooks_vs.glsl"
 #endif
 
 vec4 getPosition(mat4 boneTransform){
@@ -77,13 +103,13 @@ void main() {
         vec4 pos = localPos;
     #endif
 
-    #if defined(HAS_TEXTURE) || defined(HAS_UV_SET1)
+    #if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
         v_uv1 = a_texcoord1;
     #endif
 
     // before the fade, so a faded instance still shrinks to nothing
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(localPos.xyz, (depthParams.modelMatrix * pos).xyz);
+        pos.xyz += getModelOffset(getVertexContext(localPos.xyz, (depthParams.modelMatrix * pos).xyz, boneTransform));
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -101,9 +127,15 @@ void main() {
     gl_Position = depthParams.mvpMatrix * pos;
 
     v_projZW = gl_Position.zw;
-    #ifdef USE_COVERAGE
+    #ifdef USE_FRAGMENT_HOOKS
         vec4 worldPosition = depthParams.modelMatrix * pos;
         v_worldPosition = worldPosition.xyz / worldPosition.w;
+    #endif
+    #ifdef HOOK_FRAGMENT_NORMAL
+        v_hookNormal = getHookNormal(boneTransform);
+    #endif
+    #ifdef HOOK_FRAGMENT_COLOR
+        v_hookColor = getHookColor();
     #endif
     // No Y flip here: the target keeps its native orientation and the atlas lookup
     // (getShadowAtlasUV) converts the coordinate when sampling.

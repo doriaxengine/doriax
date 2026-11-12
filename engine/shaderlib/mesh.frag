@@ -50,11 +50,11 @@
 #if defined(HAS_VERTEX_COLOR_VEC4) || defined(HAS_INSTANCING)
     in vec4 v_color;
 #endif
-#if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+#ifdef HOOK_FRAGMENT_UV1
     in vec2 v_hookUV;
-    #define HOOK_UV v_hookUV
-#else
-    #define HOOK_UV vec2(0.0)
+#endif
+#if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
+    in vec3 v_hookNormal;
 #endif
 
 out vec4 g_finalColor;
@@ -271,25 +271,29 @@ const float M_PI = 3.141592653589793;
     #include "includes/hooks_fs.glsl"
 
     FragmentContext getMeshContext(){
-        FragmentContext context = getFragmentContext(v_position, HOOK_UV);
-        #ifdef HAS_NORMALS
-            #ifdef HAS_TANGENTS
+        FragmentContext context = getFragmentContext(v_position);
+        #ifdef HOOK_FRAGMENT_UV1
+            context.uv1 = v_hookUV;
+        #endif
+        #ifdef HOOK_FRAGMENT_NORMAL
+            #if defined(HAS_NORMALS) && defined(HAS_TANGENTS)
                 context.normal = normalize(v_tbn[2]);
-            #else
+            #elif defined(HAS_NORMALS)
                 context.normal = normalize(v_normal);
+            #else
+                context.normal = normalize(v_hookNormal);
             #endif
             if (!gl_FrontFacing)
                 context.normal = -context.normal;
         #endif
-        #ifdef HAS_UV_SET2
-            context.uv2 = v_uv2;
+        #ifdef HOOK_FRAGMENT_COLOR
+            context.color = getVertexColor();
         #endif
-        context.color = getVertexColor();
         return context;
     }
 
     // after lighting and fog, linear
-    vec4 getHookColor(FragmentContext context, vec4 color){
+    vec4 getFinalColor(FragmentContext context, vec4 color){
         color.a *= keepHookInputs(context);
         #ifdef USE_COLOR
             color = getColor(context, color);
@@ -396,7 +400,7 @@ void main() {
             baseColor.rgb = getFogColor(baseColor.rgb);
         #endif
         #ifdef USE_FRAGMENT_HOOKS
-            baseColor = getHookColor(context, baseColor);
+            baseColor = getFinalColor(context, baseColor);
         #endif
         g_finalColor = (vec4(linearTosRGB(baseColor.rgb), baseColor.a));
         return;
@@ -607,9 +611,9 @@ void main() {
         #endif
 
         #ifdef USE_FRAGMENT_HOOKS
-            vec4 hookColor = getHookColor(context, vec4(color, baseColor.a));
-            color = hookColor.rgb;
-            baseColor.a = hookColor.a;
+            vec4 finalColor = getFinalColor(context, vec4(color, baseColor.a));
+            color = finalColor.rgb;
+            baseColor.a = finalColor.a;
         #endif
         g_finalColor = vec4(linearTosRGB(color.rgb), baseColor.a);
     #endif

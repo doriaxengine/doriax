@@ -6,8 +6,7 @@ struct FragmentContext {
     vec3 worldPosition;
     vec3 normal;        // world space, facing the viewer; (0, 1, 0) without normals
     vec2 uv1;           // as the mesh stores it, 0 without the set
-    vec2 uv2;
-    vec4 color;         // vertex color, 1 without it
+    vec4 color;         // vertex color times instance color, 1 without either
     vec3 view;          // unit vector to the eye
     vec3 eye;
     vec3 forward;
@@ -29,13 +28,12 @@ struct Surface {
 // the fragment stage of the shader file, mapped in by the shader builder
 #include "shader_hooks_fs.glsl"
 
-// what every pass knows of a fragment
-FragmentContext getFragmentContext(vec3 worldPosition, vec2 uv){
+// what every pass knows of a fragment; the pass adds the mesh's data
+FragmentContext getFragmentContext(vec3 worldPosition){
     FragmentContext context;
     context.worldPosition = worldPosition;
     context.normal = vec3(0.0, 1.0, 0.0);
-    context.uv1 = uv;
-    context.uv2 = vec2(0.0);
+    context.uv1 = vec2(0.0);
     context.color = vec4(1.0);
     context.eye = paramsFS.effect_eye.xyz;
     context.forward = paramsFS.effect_forward;
@@ -48,7 +46,8 @@ FragmentContext getFragmentContext(vec3 worldPosition, vec2 uv){
 
 // always 1; keeps unused inputs alive so the stages pair
 float keepHookInputs(FragmentContext context){
-    return (context.worldPosition.x < -3.0e38 || context.uv1.x < -3.0e38) ? 0.0 : 1.0;
+    return (context.worldPosition.x < -3.0e38 || context.uv1.x < -3.0e38 || context.normal.x < -3.0e38 ||
+        context.color.x < -3.0e38) ? 0.0 : 1.0;
 }
 
 #ifdef USE_COVERAGE

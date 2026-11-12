@@ -35,7 +35,7 @@ in vec3 a_position;
     out vec3 v_position;
 #endif
 
-#ifdef HAS_NORMALS
+#if defined(HAS_NORMALS) || defined(HOOK_NORMAL)
     in vec3 a_normal;
 #endif
 
@@ -53,10 +53,10 @@ in vec3 a_position;
 
 // with MSAA an edge pixel is shaded at its center, which can lie outside a sprite
 // or tile quad; centroid keeps the atlas UV inside the rect
+#if (defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)) || defined(HOOK_UV1)
+    in vec2 a_texcoord1;
+#endif
 #ifdef HAS_UV_SET1
-    #ifndef HAS_TERRAIN
-        in vec2 a_texcoord1;
-    #endif
     #ifdef HAS_TEXTURERECT
         centroid out vec2 v_uv1;
     #else
@@ -88,8 +88,11 @@ in vec3 a_position;
     out vec4 v_color;
 #endif
 // the UV set as the mesh stores it, before any texture rect, as the depth passes read it
-#if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+#ifdef HOOK_FRAGMENT_UV1
     out vec2 v_hookUV;
+#endif
+#if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
+    out vec3 v_hookNormal;
 #endif
 
 #ifdef HAS_INSTANCING
@@ -110,8 +113,9 @@ in vec3 a_position;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#ifdef USE_VERTEX_OFFSET
-    #include "includes/vertex_offset.glsl"
+#if defined(USE_VERTEX_OFFSET) || defined(USE_FRAGMENT_HOOKS)
+    #define HOOK_NORMAL_MATRIX pbrParams.normalMatrix
+    #include "includes/hooks_vs.glsl"
 #endif
 
 vec4 getPosition(mat4 boneTransform){
@@ -166,7 +170,7 @@ void main() {
 
     // before the fade, so a faded instance still shrinks to nothing
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
+        pos.xyz += getModelOffset(getVertexContext(localPos.xyz, (pbrParams.modelMatrix * pos).xyz, boneTransform));
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -232,8 +236,11 @@ void main() {
         #endif
     #endif
 
-    #if defined(USE_FRAGMENT_HOOKS) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
+    #ifdef HOOK_FRAGMENT_UV1
         v_hookUV = a_texcoord1;
+    #endif
+    #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
+        v_hookNormal = getHookNormal(boneTransform);
     #endif
 
     #ifdef HAS_UV_SET2

@@ -104,23 +104,61 @@ bool parseTextureWord(const std::string& word, editor::ShaderParameterDeclaratio
     return false;
 }
 
+bool isIdentifierChar(char c){
+    return std::isalnum((unsigned char)c) || c == '_';
+}
+
+// a whole word at position at
+bool isWordAt(const std::string& code, size_t at, size_t length){
+    return (at == 0 || !isIdentifierChar(code[at - 1])) && (at + length >= code.size() || !isIdentifierChar(code[at + length]));
+}
+
+// the character after any spaces, moving i to it
+char nextChar(const std::string& code, size_t& i){
+    while (i < code.size() && std::isspace((unsigned char)code[i]))
+        i++;
+    return i < code.size() ? code[i] : '\0';
+}
+
+std::string readIdentifier(const std::string& code, size_t& i){
+    nextChar(code, i);
+    const size_t start = i;
+    while (i < code.size() && isIdentifierChar(code[i]))
+        i++;
+    return code.substr(start, i - start);
+}
+
 // a hook definition takes its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
-            continue;
         size_t i = at + name.size();
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        if (i >= code.size() || code[i] != '(')
+        if (!isWordAt(code, at, name.size()) || nextChar(code, i) != '(')
             continue;
         i++;
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        if (code.compare(i, contextType.size(), contextType) == 0)
+        if (readIdentifier(code, i) == contextType)
             return true;
     }
     return false;
+}
+
+// the fields read of a context, by whatever name it is given
+void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
+    std::set<std::string> names;
+    for (size_t at = code.find(contextType); at != std::string::npos; at = code.find(contextType, at + contextType.size())){
+        size_t i = at + contextType.size();
+        if (isWordAt(code, at, contextType.size()))
+            names.insert(readIdentifier(code, i));
+    }
+    names.erase("");
+    for (const std::string& name : names){
+        for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+            size_t i = at + name.size();
+            if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
+                continue;
+            i++;
+            reads.insert(readIdentifier(code, i));
+        }
+    }
 }
 
 void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
@@ -128,6 +166,8 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
     out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
     out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
+    scanContextReads(code, "VertexContext", out.contextReads);
+    scanContextReads(code, "FragmentContext", out.contextReads);
     out.color = out.color || definesHook(code, "getColor", "FragmentContext");
     for (size_t at = code.find("Engine"); at != std::string::npos; at = code.find("Engine", at + 6)){
         if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))

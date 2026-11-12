@@ -3295,18 +3295,18 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
         // terrain builds its vertices in the shader and takes no shader file
         const std::string materialShader = terrain ? std::string() : mesh.submeshes[i].material.shader;
-        // a hook reads UV set 1 in every pass; a missing texture binds white
-        const bool p_coverageUV = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
-        if (p_coverageUV){
-            p_hasTexture1 = true;
-        }
+        // what its hooks can read of the mesh, the same in every pass
+        const bool p_hookUV1 = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
+        const bool p_hookNormals = !materialShader.empty() && mesh.submeshes[i].hasNormal;
+        const bool p_hookColor3 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor3;
+        const bool p_hookColor4 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor4;
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
                         p_hasTangent, mesh.submeshes[i].hasVertexColor3, mesh.submeshes[i].hasVertexColor4, mesh.submeshes[i].hasTextureRect,
                         hasFog, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                         (terrain)?true:false, (instmesh)?true:false, p_ibl, p_mirror, p_ssao, p_light2d, p_shadows2d,
-                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface);
+                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_hookUV1 && !p_hasTexture1, p_hookNormals && !p_hasNormal);
         // a user-forked main shader overrides the built-in Mesh shader; the variant
         // (#define) system, depth/gbuffer passes and bind-slots are unchanged.
         // Priority: component customShader > scene default shader > built-in (empty)
@@ -3327,7 +3327,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade, p_coverageUV);
+                p_depthAlphaMask, p_instanceFade, p_hookUV1, p_hookNormals, p_hookColor3, p_hookColor4);
             mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, materialShader));
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
@@ -3366,7 +3366,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_coverageUV);
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_hookUV1, p_hookColor3, p_hookColor4);
             mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", materialShader));
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
@@ -3693,6 +3693,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& gbufferShaderData = mesh.submeshes[i].gbufferShader.get()->shaderData;
 
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
+            gbufferShaderData.getUniformBlockMembers("u_vs_gbufferParams", mesh.submeshes[i].sizeVSGBufferParams);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
@@ -5493,7 +5494,7 @@ void RenderSystem::renderDepthPrePass(CameraComponent& camera){
         TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
         TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
 
-        vs_depth_t params = {transform.modelMatrix, renderVP, renderVP * transform.modelMatrix};
+        vs_depth_t params = {transform.modelMatrix, renderVP, renderVP * transform.modelMatrix, transform.normalMatrix};
         drawMeshDepth(mesh, transform, camera.farClip, camera.frustumPlanes, params, instmesh, terrain, tilemap, true, PIP_DEPTH, 0, &mainLodView);
     }
     ssaoPassRender.endRenderPass();
@@ -5585,7 +5586,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             return false;
         }
 
-        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferParams, sizeof(vs_gbuffer_t), &vsGBufferParams);
+        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferParams, std::min((unsigned int)sizeof(vs_gbuffer_t), mesh.submeshes[i].sizeVSGBufferParams), &vsGBufferParams);
 
         fs_gbuffer_material_t mat;
         // IBL source code of the object (renderGBufferPass), 0 for submeshes without IBL
@@ -5710,7 +5711,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
         Matrix4 viewModel = viewMatrix * transform.modelMatrix;
         Matrix4 normalMatrix = viewModel.inverse().transpose();
 
-        vs_gbuffer_t params = {transform.modelMatrix, renderVP, normalMatrix};
+        vs_gbuffer_t params = {transform.modelMatrix, renderVP, normalMatrix, transform.normalMatrix};
         drawMeshGBuffer(entity, mesh, transform, camera.farClip, camera.frustumPlanes, params, iblCode, instmesh, terrain, tilemap, 0, &mainLodView);
     }
     gbufferPassRender.endRenderPass();
@@ -11084,10 +11085,10 @@ void RenderSystem::draw(){
                     modelViewMatrix.set(2, 2, transform->worldScale.z);
 
                     const Matrix4& projection = light.cameras[cameraIndex].lightProjectionMatrix;
-                    vsDepthParams = {modelViewMatrix, projection, projection * modelViewMatrix};
+                    vsDepthParams = {modelViewMatrix, projection, projection * modelViewMatrix, transform->normalMatrix};
                 }else{
                     const Matrix4& lightVP = light.cameras[cameraIndex].lightViewProjectionMatrix;
-                    vsDepthParams = {transform->modelMatrix, lightVP, lightVP * transform->modelMatrix};
+                    vsDepthParams = {transform->modelMatrix, lightVP, lightVP * transform->modelMatrix, transform->normalMatrix};
                 }
 
                 drawMeshDepth(
@@ -11607,7 +11608,7 @@ void RenderSystem::draw(){
             for (const OpaqueRenderData& opaque : opaqueRenders){
                 if ((sceneColorFork || !opaque.mesh->customShader.empty()) && opaque.mesh->customDepthShader.empty())
                     continue;
-                vs_depth_t params = {opaque.transform->modelMatrix, renderVP, opaque.transform->modelViewProjectionMatrix};
+                vs_depth_t params = {opaque.transform->modelMatrix, renderVP, opaque.transform->modelViewProjectionMatrix, opaque.transform->normalMatrix};
                 drawMeshDepth(*opaque.mesh, *opaque.transform, camera.farClip, camera.frustumPlanes, params, opaque.instmesh, opaque.terrain, opaque.tilemap, true, prepassPip, instanceView, lodView);
             }
         }
