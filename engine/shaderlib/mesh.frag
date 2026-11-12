@@ -53,6 +53,9 @@
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     in vec3 v_hookNormal;
 #endif
+#ifdef HOOK_FRAGMENT_UV2
+    in vec2 v_hookUV2;
+#endif
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat in vec4 v_hookInstance;
 #endif
@@ -287,6 +290,16 @@ const float M_PI = 3.141592653589793;
             #endif
             if (!gl_FrontFacing)
                 context.normal = -context.normal;
+        #endif
+        #ifdef HOOK_FRAGMENT_UV2
+            context.uv2 = v_hookUV2;
+        #endif
+        #ifdef HOOK_FRAGMENT_TANGENT
+            #if defined(HAS_NORMALS) && defined(HAS_TANGENTS)
+                setTangents(context, v_tbn[0], v_tbn[1]);
+            #else
+                setDerivedTangents(context);
+            #endif
         #endif
         #ifdef HOOK_FRAGMENT_COLOR
             context.color = getVertexColor();

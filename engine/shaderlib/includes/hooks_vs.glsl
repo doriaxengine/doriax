@@ -8,6 +8,7 @@ struct VertexContext {
     vec3 worldPosition;   // before the offset
     vec3 normal;          // world space; (0, 1, 0) without normals
     vec2 uv1;             // as the mesh stores it, 0 without the set
+    vec2 uv2;
     vec4 color;           // vertex color times instance color, 1 without either
     vec4 instance;        // the instance's custom value, 0 without instancing
 };
@@ -20,6 +21,17 @@ struct VertexContext {
             normal = instanceNormal(mat3(i_matrix_col1.xyz, i_matrix_col2.xyz, i_matrix_col3.xyz), normal);
         #endif
         return normalize(mat3(HOOK_NORMAL_MATRIX) * normal);
+    }
+#endif
+
+#ifdef HOOK_TANGENT
+    // skinned and instanced like the hook normal; w is the bitangent's sign
+    vec4 getHookTangent(mat4 boneTransform){
+        vec3 tangent = getSkinTangent(a_tangent.xyz, boneTransform);
+        #ifdef HAS_INSTANCING
+            tangent = mat3(i_matrix_col1.xyz, i_matrix_col2.xyz, i_matrix_col3.xyz) * tangent;
+        #endif
+        return vec4(normalize(mat3(HOOK_MODEL_MATRIX) * tangent), a_tangent.w);
     }
 #endif
 
@@ -48,6 +60,7 @@ struct VertexContext {
         context.worldPosition = worldPosition;
         context.normal = vec3(0.0, 1.0, 0.0);
         context.uv1 = vec2(0.0);
+        context.uv2 = vec2(0.0);
         context.color = vec4(1.0);
         context.instance = vec4(0.0);
         #ifdef HOOK_NORMAL
@@ -55,6 +68,9 @@ struct VertexContext {
         #endif
         #ifdef HOOK_UV1
             context.uv1 = a_texcoord1;
+        #endif
+        #ifdef HOOK_UV2
+            context.uv2 = a_texcoord2;
         #endif
         #ifdef HOOK_COLOR
             context.color = getHookColor();

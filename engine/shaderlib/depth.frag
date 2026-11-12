@@ -23,6 +23,12 @@ in vec2 v_projZW;
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat in vec4 v_hookInstance;
 #endif
+#ifdef HOOK_FRAGMENT_UV2
+    in vec2 v_hookUV2;
+#endif
+#ifdef HOOK_TANGENT
+    in vec4 v_hookTangent;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_fs.glsl"
 #endif
@@ -48,6 +54,16 @@ in vec2 v_projZW;
         #endif
         #ifdef HOOK_FRAGMENT_NORMAL
             context.normal = normalize(gl_FrontFacing ? v_hookNormal : -v_hookNormal);
+        #endif
+        #ifdef HOOK_FRAGMENT_UV2
+            context.uv2 = v_hookUV2;
+        #endif
+        #ifdef HOOK_FRAGMENT_TANGENT
+            #ifdef HOOK_TANGENT
+                setTangents(context, v_hookTangent.xyz, cross(v_hookNormal, v_hookTangent.xyz) * v_hookTangent.w);
+            #else
+                setDerivedTangents(context);
+            #endif
         #endif
         #ifdef HOOK_FRAGMENT_COLOR
             context.color = v_hookColor;

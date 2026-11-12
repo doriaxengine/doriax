@@ -1861,6 +1861,9 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 error = "Property requires texture_path.";
                 return nullptr;
             }
+            // empty clears it
+            if (args["texture_path"].get<std::string>().empty())
+                return new PropertyCmd<Texture>(project, sceneId, entity, component, propertyName, Texture(), onChanged);
             std::vector<std::string> paths;
             std::istringstream texturePath(args["texture_path"].get<std::string>());
             for (std::string path; std::getline(texturePath, path, '|');) {

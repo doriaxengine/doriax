@@ -57,8 +57,10 @@ in vec3 a_position;
     #endif
 #endif
 
-#ifdef HAS_UV_SET2
+#if defined(HAS_UV_SET2) || defined(HOOK_UV2)
     in vec2 a_texcoord2;
+#endif
+#ifdef HAS_UV_SET2
     #ifdef HAS_TEXTURERECT
         centroid out vec2 v_uv2;
     #else
@@ -86,6 +88,9 @@ in vec3 a_position;
 #endif
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     out vec3 v_hookNormal;
+#endif
+#ifdef HOOK_FRAGMENT_UV2
+    out vec2 v_hookUV2;
 #endif
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat out vec4 v_hookInstance;
@@ -249,6 +254,9 @@ void main() {
     #endif
     #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
         v_hookNormal = getHookNormal(boneTransform);
+    #endif
+    #ifdef HOOK_FRAGMENT_UV2
+        v_hookUV2 = a_texcoord2;
     #endif
     #ifdef HOOK_FRAGMENT_INSTANCE
         v_hookInstance = getInstanceCustom();

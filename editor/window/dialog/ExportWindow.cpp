@@ -1099,7 +1099,7 @@ void ExportWindow::drawAddShaderDialog() {
         // Preview
         uint32_t props = 0;
         for (int i = 0; i < propCount; i++) {
-            if (m_addShaderProps[i]) props |= (1 << i);
+            if (m_addShaderProps[i]) props |= (1u << i);
         }
         std::string preview = Exporter::getShaderDisplayName(selectedType, props);
         ImGui::Text("Preview: %s", preview.c_str());

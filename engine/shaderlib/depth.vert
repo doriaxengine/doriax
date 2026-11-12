@@ -43,6 +43,9 @@ out vec2 v_projZW;
 #if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     out vec2 v_uv1;
 #endif
+#ifdef HOOK_UV2
+    in vec2 a_texcoord2;
+#endif
 
 #ifdef HOOK_NORMAL
     in vec3 a_normal;
@@ -66,6 +69,13 @@ out vec2 v_projZW;
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat out vec4 v_hookInstance;
 #endif
+#ifdef HOOK_FRAGMENT_UV2
+    out vec2 v_hookUV2;
+#endif
+#ifdef HOOK_TANGENT
+    in vec4 a_tangent;
+    out vec4 v_hookTangent;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_vs.glsl"
 #endif
@@ -78,6 +88,7 @@ out vec2 v_projZW;
 #endif
 #if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX depthParams.normalMatrix
+    #define HOOK_MODEL_MATRIX depthParams.modelMatrix
     #include "includes/hooks_vs.glsl"
 #endif
 
@@ -155,6 +166,12 @@ void main() {
     #endif
     #ifdef HOOK_FRAGMENT_INSTANCE
         v_hookInstance = getInstanceCustom();
+    #endif
+    #ifdef HOOK_FRAGMENT_UV2
+        v_hookUV2 = a_texcoord2;
+    #endif
+    #ifdef HOOK_TANGENT
+        v_hookTangent = getHookTangent(boneTransform);
     #endif
     // No Y flip here: the target keeps its native orientation and the atlas lookup
     // (getShadowAtlasUV) converts the coordinate when sampling.

@@ -3314,13 +3314,16 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         const bool p_hookNormals = !materialShader.empty() && mesh.submeshes[i].hasNormal;
         const bool p_hookColor3 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor3;
         const bool p_hookColor4 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor4;
+        const bool p_hookUV2 = !materialShader.empty() && mesh.submeshes[i].hasTexCoord2;
+        const bool p_hookTangents = p_hookNormals && mesh.submeshes[i].hasTangent;
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
                         p_hasTangent, mesh.submeshes[i].hasVertexColor3, mesh.submeshes[i].hasVertexColor4, mesh.submeshes[i].hasTextureRect,
                         hasFog, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                         (terrain)?true:false, (instmesh)?true:false, p_ibl, p_mirror, p_ssao, p_light2d, p_shadows2d,
-                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_hookUV1 && !p_hasTexture1, p_hookNormals && !p_hasNormal);
+                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_hookUV1 && !p_hasTexture1, p_hookNormals && !p_hasNormal,
+                        p_hookUV2 && !p_hasTexture2);
         const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, ownShader);
         mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(materialShader);
         // 'Dlo': without the point/spot paths
@@ -3336,7 +3339,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade, p_hookUV1, p_hookNormals, p_hookColor3, p_hookColor4);
+                p_depthAlphaMask, p_instanceFade, p_hookUV1, p_hookNormals, p_hookColor3, p_hookColor4, p_hookUV2, p_hookTangents);
             mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(materialShader);
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
@@ -3375,7 +3378,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_hookUV1, p_hookColor3, p_hookColor4);
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_hookUV1, p_hookColor3, p_hookColor4, p_hookUV2, p_hookTangents);
             mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(materialShader);
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
@@ -3622,9 +3625,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         depthRender.setIndex(buf.second->getRender(), indexattr.getDataType(), indexattr.getOffset());
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
-                            // normals and colors only reach a shader that reads them
+                            // normals, tangents, colors and the second UV set only reach a shader that reads them
                             if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                                    attr.first == AttributeType::COLOR){
+                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                                 depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3653,7 +3656,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     if (attr.first == AttributeType::INDEX){
                         depthRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
                     }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                            attr.first == AttributeType::COLOR){
+                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                         depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
@@ -3760,7 +3763,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
                             if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::COLOR){
+                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                                 gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3789,7 +3792,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     if (attr.first == AttributeType::INDEX){
                         gbufferRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
                     }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::COLOR){
+                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                         gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){

@@ -439,9 +439,9 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
 
 int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
     switch (shaderType) {
-        case ShaderType::MESH:   return 31;
-        case ShaderType::DEPTH:  return 13;
-        case ShaderType::GBUFFER: return 15;
+        case ShaderType::MESH:   return 32;
+        case ShaderType::DEPTH:  return 15;
+        case ShaderType::GBUFFER: return 17;
         case ShaderType::UI:     return 4;
         case ShaderType::POINTS: return 4;
         case ShaderType::LINES:  return 2;
@@ -492,6 +492,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 28: return shortName ? "Dlo" : "Directional Lights Only";
             case 29: return shortName ? "Hu1" : "Hook UV1";
             case 30: return shortName ? "Hnr" : "Hook Normals";
+            case 31: return shortName ? "Hu2" : "Hook UV2";
         }
     } else if (shaderType == ShaderType::DEPTH) {
         switch (bit) {
@@ -508,6 +509,8 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 10: return shortName ? "Nor" : "Normals";
             case 11: return shortName ? "Vc3" : "Vertex Color 3";
             case 12: return shortName ? "Vc4" : "Vertex Color 4";
+            case 13: return shortName ? "Uv2" : "UV2";
+            case 14: return shortName ? "Tan" : "Tangents";
         }
     } else if (shaderType == ShaderType::GBUFFER) {
         switch (bit) {
@@ -526,6 +529,8 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 12: return shortName ? "Uv1" : "UV1";
             case 13: return shortName ? "Vc3" : "Vertex Color 3";
             case 14: return shortName ? "Vc4" : "Vertex Color 4";
+            case 15: return shortName ? "Uv2" : "UV2";
+            case 16: return shortName ? "Tan" : "Tangents";
         }
     } else if (shaderType == ShaderType::UI) {
         switch (bit) {
@@ -593,7 +598,7 @@ std::string ShaderPool::getShaderStr(ShaderType shaderType, uint32_t properties,
 
     int propCount = getShaderPropertyCount(shaderType);
     for (int i = 0; i < propCount; i++) {
-        if (properties & (1 << i))
+        if (properties & (1u << i))
             propOut += getShaderPropertyName(shaderType, i, true);
     }
 
@@ -825,7 +830,7 @@ uint32_t ShaderPool::getMeshProperties(
     bool tangents, bool vertexColorVec3, bool vertexColorVec4, bool textureRect,
     bool fog, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent,
     bool terrain, bool instanced, bool ibl, bool mirror, bool ssao, bool light2d, bool shadows2d,
-    bool alphaMask, bool alphaOpaque, bool instanceFade, bool terrainPBR, bool hookUV1, bool hookNormals){
+    bool alphaMask, bool alphaOpaque, bool instanceFade, bool terrainPBR, bool hookUV1, bool hookNormals, bool hookUV2){
     uint32_t prop = 0;
 
     prop |= unlit            ? (1 <<  0) : 0;
@@ -859,12 +864,13 @@ uint32_t ShaderPool::getMeshProperties(
     prop |= terrainPBR       ? (1 << 27) : 0;
     prop |= hookUV1          ? (1 << 29) : 0;
     prop |= hookNormals      ? (1 << 30) : 0;
+    prop |= hookUV2          ? (1u << 31) : 0;
 
     return prop;
 }
 
 uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask, bool instanceFade,
-        bool uv1, bool normals, bool vertexColorVec3, bool vertexColorVec4){
+        bool uv1, bool normals, bool vertexColorVec3, bool vertexColorVec4, bool uv2, bool tangents){
     uint32_t prop = 0;
 
     prop |= texture          ? (1 <<  0) : 0;
@@ -880,12 +886,14 @@ uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool mo
     prop |= normals          ? (1 << 10) : 0;
     prop |= vertexColorVec3  ? (1 << 11) : 0;
     prop |= vertexColorVec4  ? (1 << 12) : 0;
+    prop |= uv2              ? (1 << 13) : 0;
+    prop |= tangents         ? (1 << 14) : 0;
 
     return prop;
 }
 
 uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2,
-        bool uv1, bool vertexColorVec3, bool vertexColorVec4){
+        bool uv1, bool vertexColorVec3, bool vertexColorVec4, bool uv2, bool tangents){
     uint32_t prop = 0;
 
     prop |= baseColorTexture        ? (1 <<  0) : 0;
@@ -903,6 +911,8 @@ uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normal
     prop |= uv1                     ? (1 << 12) : 0;
     prop |= vertexColorVec3         ? (1 << 13) : 0;
     prop |= vertexColorVec4         ? (1 << 14) : 0;
+    prop |= uv2                     ? (1 << 15) : 0;
+    prop |= tangents                ? (1 << 16) : 0;
 
     return prop;
 }

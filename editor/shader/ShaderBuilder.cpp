@@ -321,10 +321,20 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         declared.flags |= ShaderFlag_Unlit;
     }
 
+    // a tangent frame needs the normal, and without mesh tangents the UVs it is derived from
+    std::set<std::string> fragmentReads = fragmentHooks.contextReads;
+    const bool tangentFrame = meshPass && useFragmentHooks && (fragmentReads.count("tangent") || fragmentReads.count("bitangent"));
+    if (tangentFrame) {
+        fragmentReads.insert("normal");
+        if (!defined("HAS_TANGENTS"))
+            fragmentReads.insert("uv1");
+    }
+
     // what the hooks read of the vertices, where this pass has it; a UI always has UVs,
     // and the other types compute what they give in place
     const struct { const char* field; const char* name; bool available; } inputs[] = {
         {"uv1", "UV1", passType == ShaderType::UI || (meshPass && (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN"))},
+        {"uv2", "UV2", meshPass && (defined("HAS_UV_SET2") || defined("HAS_HOOK_UV2")) && !defined("HAS_TERRAIN")},
         {"normal", "NORMAL", meshPass && (defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS"))},
         {"color", "COLOR", (meshPass || primitive) && (defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING"))},
         {"instance", "INSTANCE", meshPass && defined("HAS_INSTANCING")},
@@ -332,11 +342,17 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     };
     for (const auto& input : inputs) {
         const bool vertex = useVertexHooks && vertexHooks.contextReads.count(input.field);
-        const bool fragment = useFragmentHooks && fragmentHooks.contextReads.count(input.field);
+        const bool fragment = useFragmentHooks && fragmentReads.count(input.field);
         if (input.available && (vertex || fragment))
             args.defines.push_back({std::string("HOOK_") + input.name, "1"});
         if (input.available && fragment)
             args.defines.push_back({std::string("HOOK_FRAGMENT_") + input.name, "1"});
+    }
+    if (tangentFrame) {
+        args.defines.push_back({"HOOK_FRAGMENT_TANGENT", "1"});
+        // the color pass has the mesh's tangents already, the depth passes take the attribute
+        if (passType != ShaderType::MESH && defined("HAS_TANGENTS"))
+            args.defines.push_back({"HOOK_TANGENT", "1"});
     }
 
     // the files each stage reaches; an inactive hook is not read
@@ -779,6 +795,7 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 27)) defs.push_back({"HAS_TERRAIN_PBR", "1"});            // 'Tpb'
     if (prop & (1 << 29)) defs.push_back({"HAS_HOOK_UV1", "1"});               // 'Hu1'
     if (prop & (1 << 30)) defs.push_back({"HAS_HOOK_NORMALS", "1"});           // 'Hnr'
+    if (prop & (1u << 31)) defs.push_back({"HAS_HOOK_UV2", "1"});              // 'Hu2'
 }
 
 void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -795,6 +812,8 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 10)) defs.push_back({"HAS_NORMALS", "1"});       // 'Nor'
     if (prop & (1 << 11)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"}); // 'Vc3'
     if (prop & (1 << 12)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"}); // 'Vc4'
+    if (prop & (1 << 13)) defs.push_back({"HAS_UV_SET2", "1"});       // 'Uv2'
+    if (prop & (1 << 14)) defs.push_back({"HAS_TANGENTS", "1"});      // 'Tan'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -813,6 +832,8 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 12)) defs.push_back({"HAS_UV_SET1", "1"});                   // 'Uv1'
     if (prop & (1 << 13)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"});         // 'Vc3'
     if (prop & (1 << 14)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"});         // 'Vc4'
+    if (prop & (1 << 15)) defs.push_back({"HAS_UV_SET2", "1"});                   // 'Uv2'
+    if (prop & (1 << 16)) defs.push_back({"HAS_TANGENTS", "1"});                  // 'Tan'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {

@@ -55,6 +55,9 @@ out vec3 v_normal;          // view space
     #endif
     out vec2 v_uvOcclusion;
 #endif
+#if defined(HOOK_UV2) && !(defined(HAS_OCCLUSION_TEXTURE) && defined(OCCLUSION_UV2))
+    in vec2 a_texcoord2;
+#endif
 
 #ifdef HOOK_COLOR
     #if defined(HAS_VERTEX_COLOR_VEC3)
@@ -75,6 +78,13 @@ out vec3 v_normal;          // view space
 #ifdef HOOK_FRAGMENT_INSTANCE
     flat out vec4 v_hookInstance;
 #endif
+#ifdef HOOK_FRAGMENT_UV2
+    out vec2 v_hookUV2;
+#endif
+#ifdef HOOK_TANGENT
+    in vec4 a_tangent;
+    out vec4 v_hookTangent;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_vs.glsl"
 #endif
@@ -87,6 +97,7 @@ out vec3 v_normal;          // view space
 #endif
 #if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
     #define HOOK_NORMAL_MATRIX gbufferParams.worldNormalMatrix
+    #define HOOK_MODEL_MATRIX gbufferParams.modelMatrix
     #include "includes/hooks_vs.glsl"
 #endif
 
@@ -195,6 +206,12 @@ void main() {
     #endif
     #ifdef HOOK_FRAGMENT_INSTANCE
         v_hookInstance = getInstanceCustom();
+    #endif
+    #ifdef HOOK_FRAGMENT_UV2
+        v_hookUV2 = a_texcoord2;
+    #endif
+    #ifdef HOOK_TANGENT
+        v_hookTangent = getHookTangent(boneTransform);
     #endif
     // No Y flip here: the G-buffer keeps the target's native orientation, and SSR
     // pairs it with the scene color through the flip flag in misc.z.

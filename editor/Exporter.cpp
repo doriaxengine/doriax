@@ -3899,7 +3899,7 @@ std::string editor::Exporter::getShaderDisplayName(ShaderType type, uint32_t pro
 
     std::string props;
     for (int i = 0; i < propCount; i++) {
-        if (properties & (1 << i)) {
+        if (properties & (1u << i)) {
             if (!props.empty()) props += ", ";
             props += ShaderPool::getShaderPropertyName(type, i, true);
         }

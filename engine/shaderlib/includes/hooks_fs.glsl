@@ -6,7 +6,10 @@
 struct FragmentContext {
     vec3 worldPosition;
     vec3 normal;        // world space, facing the viewer; (0, 1, 0) without normals
+    vec3 tangent;       // world space, along u; from the uv1 derivatives without mesh tangents
+    vec3 bitangent;
     vec2 uv1;           // as the mesh stores it, 0 without the set
+    vec2 uv2;
     vec4 color;         // vertex color times instance color, 1 without either
     vec4 instance;      // the instance's custom value, 0 without instancing
     vec3 view;          // unit vector to the eye
@@ -83,7 +86,10 @@ FragmentContext getFragmentContext(vec3 worldPosition){
     FragmentContext context;
     context.worldPosition = worldPosition;
     context.normal = vec3(0.0, 1.0, 0.0);
+    context.tangent = vec3(1.0, 0.0, 0.0);
+    context.bitangent = vec3(0.0, 0.0, 1.0);
     context.uv1 = vec2(0.0);
+    context.uv2 = vec2(0.0);
     context.color = vec4(1.0);
     context.instance = vec4(0.0);
     context.eye = paramsFS.effect_eye.xyz;
@@ -106,8 +112,31 @@ FragmentContext getFragmentContext(vec3 worldPosition){
 // always 1; keeps unused inputs alive so the stages pair
 float keepHookInputs(FragmentContext context){
     return (context.worldPosition.x < -3.0e38 || context.uv1.x < -3.0e38 || context.normal.x < -3.0e38 ||
-        context.color.x < -3.0e38 || context.instance.x < -3.0e38) ? 0.0 : 1.0;
+        context.color.x < -3.0e38 || context.instance.x < -3.0e38 || context.uv2.x < -3.0e38 ||
+        context.tangent.x < -3.0e38) ? 0.0 : 1.0;
 }
+
+#ifdef HOOK_FRAGMENT_TANGENT
+    // after the normal; turned with it on back faces, as the material's normal map does
+    void setTangents(inout FragmentContext context, vec3 tangent, vec3 bitangent){
+        context.tangent = context.frontFacing ? normalize(tangent) : -normalize(tangent);
+        context.bitangent = context.frontFacing ? normalize(bitangent) : -normalize(bitangent);
+    }
+
+    // along uv1 from screen derivatives, for meshes without tangents
+    void setDerivedTangents(inout FragmentContext context){
+        vec3 normal = context.frontFacing ? context.normal : -context.normal;
+        vec2 uvX = dFdx(context.uv1);
+        vec2 uvY = dFdy(context.uv1);
+        vec3 tangent = (uvY.y * dFdx(context.worldPosition) - uvX.y * dFdy(context.worldPosition)) * sign(uvX.x * uvY.y - uvY.x * uvX.y);
+        tangent -= normal * dot(normal, tangent);
+        // no UVs: any frame around the normal
+        if (dot(tangent, tangent) < 1.0e-20)
+            tangent = cross(abs(normal.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), normal);
+        tangent = normalize(tangent);
+        setTangents(context, tangent, cross(normal, tangent));
+    }
+#endif
 
 #ifdef USE_DEPTH_OFFSET
     // pushed away from the eye; from gl_FragCoord, so every pass agrees
