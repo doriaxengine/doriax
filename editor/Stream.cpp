@@ -31,7 +31,7 @@
 
 using namespace doriax;
 
-// The customShaderId in a key is a session-local registry index, so a fork is
+// The customShaderId in a key is a session-local registry index, so a shader file is
 // named by its project-relative path instead, the way scenes name theirs.
 // Both directions normalize, keeping a since-retired property bit out of the file.
 YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKeys) {
@@ -39,19 +39,19 @@ YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKey
     for (ShaderKey rawKey : shaderKeys) {
         const ShaderKey key = ShaderPool::normalizeKey(rawKey);
         const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
-        std::string customShader;
+        std::string shader;
         if (customId != 0) {
             // Without a name there is nothing stable to write, and dropping only
             // the id would turn the override into one for the built-in shader
-            customShader = ShaderPool::getCustomShaderName(customId);
-            if (customShader.empty()) continue;
+            shader = ShaderPool::getCustomShaderName(customId);
+            if (shader.empty()) continue;
         }
 
         const uint32_t properties = ShaderPool::getPropertiesFromKey(key);
         YAML::Node entry(YAML::NodeType::Map);
         entry["type"] = ShaderPool::getShaderTypeName(ShaderPool::getShaderTypeFromKey(key), true);
         if (properties) entry["properties"] = properties;
-        if (!customShader.empty()) entry["customShader"] = customShader;
+        if (!shader.empty()) entry["shader"] = shader;
         node.push_back(entry);
     }
     return node;
@@ -80,10 +80,6 @@ namespace {
 
         for (const auto& keyNode : node) {
             if (!keyNode.IsMap()) {
-                // Backward compatibility: scenes saved before forks were named by path
-                // stored the packed key, so only its stable half survives and the fork
-                // is re-paired on the next save. Remove this branch with support for them.
-                shaderKeys.push_back(ShaderPool::normalizeKey(ShaderPool::getStorageKey(keyNode.as<uint64_t>())));
                 continue;
             }
             ShaderType shaderType;
@@ -93,8 +89,8 @@ namespace {
 
             // Keyed by name, so this returns the id the scenes resolve for it too
             uint16_t customId = 0;
-            if (keyNode["customShader"]) {
-                customId = ShaderPool::registerCustomShader(keyNode["customShader"].as<std::string>());
+            if (keyNode["shader"]) {
+                customId = ShaderPool::registerCustomShader(keyNode["shader"].as<std::string>());
             }
             const uint32_t properties = keyNode["properties"] ? keyNode["properties"].as<uint32_t>() : 0;
             shaderKeys.push_back(ShaderPool::normalizeKey(ShaderPool::getShaderKey(shaderType, properties, customId)));
@@ -5026,14 +5022,8 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["cullingMode"] = cullingModeToString(mesh.cullingMode);
     node["windingOrder"] = windingOrderToString(mesh.windingOrder);
 
-    if (!mesh.customShader.empty())
-        node["customShader"] = mesh.customShader;
-    if (!mesh.customDepthShader.empty())
-        node["customDepthShader"] = mesh.customDepthShader;
     if (mesh.vertexOffsetMax != 0.0f)
         node["vertexOffsetMax"] = mesh.vertexOffsetMax;
-    if (!mesh.shaderUniforms.empty())
-        node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
 
     //node["needUpdateBuffer"] = mesh.needUpdateBuffer;
     //node["needReload"] = mesh.needReload;
@@ -5103,10 +5093,7 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["windingOrder"]) mesh.windingOrder = stringToWindingOrder(node["windingOrder"].as<std::string>());
 
     // Written only when set
-    mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
-    mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
     mesh.vertexOffsetMax = decodeFinite(node["vertexOffsetMax"], 0.0f);
-    mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     mesh.needUpdateShaderUniforms = true;
 
     //mesh.needUpdateBuffer = node["needUpdateBuffer"].as<bool>();

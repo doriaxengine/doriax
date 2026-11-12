@@ -1,12 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-//
-// The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
-// step with positions displaced here, fork the depth shader too (Depth Shader in Properties).
-
 uniform u_vs_pbrParams {
     mat4 modelMatrix;
     mat4 normalMatrix;

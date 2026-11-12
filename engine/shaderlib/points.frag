@@ -1,9 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-
 out vec4 g_finalColor;
 
 #ifdef HAS_TEXTURE

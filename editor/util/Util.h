@@ -48,7 +48,7 @@ namespace doriax::editor{
         }
 
         inline static std::string getShaderExtensions() {
-             return "vert,frag";
+             return "glsl";
         }
 
         inline static std::string getScriptExtensions() {
@@ -109,7 +109,7 @@ namespace doriax::editor{
 
         inline static bool isShaderFile(const std::string& path) {
              static const std::unordered_set<std::string> shaderExtensions = {
-                ".vert", ".frag", ".glsl"
+                ".glsl"
             };
 
             std::string ext = std::filesystem::path(path).extension().string();
@@ -118,39 +118,6 @@ namespace doriax::editor{
             }
             std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
             return shaderExtensions.find(ext) != shaderExtensions.end();
-        }
-
-        // A forked custom shader is stored in a component's customShader field as either:
-        //   - a shared base path with no extension (vert = base+".vert", frag = base+".frag"), or
-        //   - two explicit project-relative paths joined by '|' ("vert|frag") when the entry
-        //     points live in differently-named files.
-        // All stored paths are project-relative.
-        static constexpr char customShaderSeparator = '|';
-
-        struct CustomShaderPaths {
-            std::string vert;  // project-relative, with extension (empty if customShader empty)
-            std::string frag;
-        };
-
-        // Resolves a customShader value into its concrete .vert/.frag project-relative paths.
-        inline static CustomShaderPaths resolveCustomShaderPaths(const std::string& customShader) {
-            CustomShaderPaths paths;
-            if (customShader.empty())
-                return paths;
-
-            size_t sep = customShader.find(customShaderSeparator);
-            if (sep != std::string::npos) {
-                paths.vert = customShader.substr(0, sep);
-                paths.frag = customShader.substr(sep + 1);
-            } else {
-                paths.vert = customShader + ".vert";
-                paths.frag = customShader + ".frag";
-            }
-            return paths;
-        }
-
-        inline static bool isSeparateCustomShader(const std::string& customShader) {
-            return customShader.find(customShaderSeparator) != std::string::npos;
         }
 
         // True for a relative path that cannot escape the directory it is resolved
@@ -212,34 +179,6 @@ namespace doriax::editor{
             for (ShaderInclude& include : getShaderIncludes(source))
                 keys.push_back(std::move(include.key));
             return keys;
-        }
-
-        // Directory an #include key resolves against before the project root and the
-        // engine library, so a fork directory mirrors the engine shaderlib layout.
-        // Derived from the entry point, never stored: moving a fork cannot break it.
-        inline static std::filesystem::path getCustomShaderIncludeRoot(const std::string& customShader) {
-            CustomShaderPaths paths = resolveCustomShaderPaths(customShader);
-            if (paths.vert.empty())
-                return {};
-
-            return std::filesystem::path(paths.vert).parent_path();
-        }
-
-        // Builds a customShader value from two project-relative entry-point paths (with
-        // extensions). Collapses to the shared-base shorthand when they are <base>.vert and
-        // <base>.frag of the same base; otherwise stores the explicit "vert|frag" form.
-        inline static std::string makeCustomShader(const std::string& vertPath, const std::string& fragPath) {
-            if (vertPath.empty() || fragPath.empty())
-                return "";
-
-            std::filesystem::path vp(vertPath);
-            std::filesystem::path fp(fragPath);
-            std::string vBase = (vp.parent_path() / vp.stem()).generic_string();
-            std::string fBase = (fp.parent_path() / fp.stem()).generic_string();
-            if (vBase == fBase && vp.extension() == ".vert" && fp.extension() == ".frag")
-                return vBase;
-
-            return vertPath + customShaderSeparator + fragPath;
         }
 
         inline static bool isBundleFile(const std::string& path) {

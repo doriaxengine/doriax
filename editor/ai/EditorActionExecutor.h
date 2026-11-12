@@ -110,7 +110,6 @@ private:
     ActionResult exportProject(const Json& arguments, const std::atomic<bool>* cancel);
     ActionResult setExportShaders(const Json& arguments);
     ActionResult generateShaders(const Json& arguments, const std::atomic<bool>* cancel);
-    ActionResult forkShader(const Json& arguments);
     ActionResult writeShaderFile(const Json& arguments);
     ActionResult inspectShaderUniforms(const Json& arguments);
     ActionResult setShaderUniform(const Json& arguments);

@@ -205,8 +205,7 @@ namespace doriax::editor{
 
         // the component's custom shader (own or scene default) failed and the built-in is rendering
         static bool isCustomShaderBuildFailed(Scene* scene, Entity entity, ComponentType component);
-        // same for a mesh's depth fork
-        static bool isCustomDepthShaderBuildFailed(Scene* scene, Entity entity);
+        // the same for the underwater fade a water's shader file fills
         static bool isCustomUnderwaterShaderBuildFailed(Scene* scene, Entity entity);
         // scene property of a default shader's uniform values ("default_mesh_shader_uniforms"...)
         static const char* getDefaultShaderUniformsProperty(ShaderType type);

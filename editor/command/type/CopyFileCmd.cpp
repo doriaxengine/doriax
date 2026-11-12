@@ -138,8 +138,8 @@ bool editor::CopyFileCmd::execute(){
 
             bool isDir = fs::is_directory(sourceFs);
             std::string extension = sourceFs.extension().string();
-            // Copies count too: a .glsl arriving in a directory a fork resolves
-            // against changes which file wins for it.
+            // Copies count too: a .glsl arriving where a shader file's includes
+            // resolve changes which file wins for it.
             touchedShaderSource |= isDir || Util::isShaderFile(extension);
 
             if (isDir && Util::isInsidePath(fs::weakly_canonical(fdata.targetDirectory), fs::weakly_canonical(sourceFs))) {

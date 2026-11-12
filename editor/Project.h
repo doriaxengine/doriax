@@ -521,11 +521,11 @@ namespace doriax::editor{
         // Runs an asset transform over every scene, entity bundle and material file,
         // marking what changed.
         void applyAssetPathChange(const std::function<bool(std::string&)>& transform);
-        // Applies a transform to the forks of every renderable component (a mesh's and its
-        // depth one) across all scenes and entity bundles, flagging shader reloads and marking
-        // affected scenes/bundles modified. The transform mutates the value in place and
-        // returns whether it changed; fileTransform does it for the shader files.
-        void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform);
+        // Applies a transform to every shader file path (materials, components, scene defaults
+        // and post-process passes) across all scenes and entity bundles, flagging shader reloads
+        // and marking affected scenes/bundles modified. The transform mutates the path in place
+        // and returns whether it changed.
+        void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform);
         bool removeMissingChildSceneReferences(SceneProject& sceneProject);
         bool detachChildSceneFromParents(uint32_t childSceneId, const std::set<uint32_t>& skippedSceneIds);
 
@@ -847,8 +847,8 @@ namespace doriax::editor{
         std::vector<SceneProject>& getScenes();
         const std::vector<SceneProject>& getScenes() const;
 
-        // Flushes compiled forked-shader caches and flags meshes that use a custom
-        // shader for reload, so editing a shader source file updates the viewport.
+        // Flushes the compiled shader file caches and flags what uses one for reload,
+        // so editing a shader file updates the viewport.
         void invalidateCustomShaders();
 
         SceneProject* getScene(uint32_t sceneId);

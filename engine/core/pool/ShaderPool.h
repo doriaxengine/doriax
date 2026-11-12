@@ -76,19 +76,15 @@ namespace doriax{
         // variants stop being exported and looked up.
         static ShaderKey normalizeKey(ShaderKey key);
 
-        // Custom (user-forked) shader registry. Interns a project-relative base path
-        // (e.g. "shaders/myMesh", no extension) and returns a stable session id used
-        // in the ShaderKey; an empty path returns 0 (built-in). The derived (sanitized)
-        // basename is what makes editor build, disk cache, export and shipping-runtime
-        // .sdat filenames line up. Thread-safe (ShaderBuilder runs on a thread pool).
-        static uint16_t registerCustomShader(const std::string& baseName);
-        static std::string getCustomShaderName(uint16_t customId);     // project-relative base, "" if none
+        // Shader file registry. Interns a project-relative .glsl path (e.g. "shaders/wind.glsl")
+        // and returns a stable session id used in the ShaderKey; an empty path returns 0
+        // (built-in). The derived (sanitized) basename is what makes editor build, disk
+        // cache, export and shipping-runtime .sdat filenames line up. Thread-safe
+        // (ShaderBuilder runs on a thread pool).
+        static uint16_t registerCustomShader(const std::string& shader);
+        static std::string getCustomShaderName(uint16_t customId);     // project-relative path, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-        // a material shader rides on the custom shader name, "fork#shader"
-        static std::string getCustomShader(const std::string& fork, const std::string& shader);
-        static std::string getCustomShaderFork(const std::string& customShader);
-        static std::string getCustomShaderAsset(const std::string& customShader);
 
         // Frees the GPU handle of every cached forked-shader variant so the next get()
         // rebuilds (used by the editor after a shader source is edited). The pool keeps

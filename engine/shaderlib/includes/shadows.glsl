@@ -21,7 +21,6 @@ struct Shadow{
     vec4 lightProjPos;
 };
 
-#ifdef SHADOW_FRAGMENT_PROJECTION
 // affine in position and normal, so projecting the interpolated values is exact
 vec4 getLightProjPos(int index){
     vec3 position = v_position;
@@ -30,17 +29,6 @@ vec4 getLightProjPos(int index){
     #endif
     return uShadowProjection.lightVPMatrix[index] * vec4(position, 1.0);
 }
-#else
-// shader forks from before the projection moved here still pass one varying per slot
-vec4 getLightProjPos(int index){
-    for (int i = 0; i < MAX_SHADOW_ATLAS_SLOTS; i++){
-        if (i == index){
-            return v_lightProjPos[i];
-        }
-    }
-    return vec4(0.0);
-}
-#endif
 
 Shadow getShadow2DConf(int index){
     return Shadow(
@@ -210,7 +198,6 @@ float shadowCascadedCalculationPCF(int shadowMapIndex, int numShadowCascades, fl
             if ((viewDepth >= nearFar.x) && (viewDepth <= nearFar.y)){
                 float shadow = shadowCalculationAux(index, getShadow2DConf(index), NdotL);
 
-                #ifdef SHADOW_FRAGMENT_PROJECTION
                 if (c > 0){
                     float band = uShadowProjection.shadowParams[index - 1].y;
                     float t = (band > 0.0) ? (viewDepth - nearFar.x) / band : 1.0;
@@ -219,7 +206,6 @@ float shadowCascadedCalculationPCF(int shadowMapIndex, int numShadowCascades, fl
                         shadow = mix(finer, shadow, smoothstep(0.0, 1.0, t));
                     }
                 }
-                #endif
 
                 return shadow;
             }

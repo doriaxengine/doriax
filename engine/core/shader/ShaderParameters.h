@@ -111,8 +111,8 @@ namespace doriax{
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);
         void clear();
 
-        // own value, else the parent's, the inherited one or the default
-        void writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited = nullptr, const ShaderUniformValues* parent = nullptr);
+        // own value, else the inherited one or the default
+        void writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited = nullptr);
         // the engine clock and target size, then the scene and view values
         void writeFrame(const ShaderEffectView& view, const Vector2& resolution);
         void writeVertexContext(const ShaderEffectView& view, const Matrix4& modelMatrix, float maxOffset);

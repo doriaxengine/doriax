@@ -135,224 +135,22 @@ void editor::ProjectUtils::setDefaultSkyTexture(Texture& outTexture) {
 
 namespace {
 
-std::string shaderTypeFileName(ShaderType shaderType) {
-    switch (shaderType) {
-        case ShaderType::MESH:   return "mesh";
-        case ShaderType::DEPTH:  return "depth";
-        default:                 return "";
-    }
-}
-
-std::string sanitizeShaderName(ShaderType shaderType, const std::string& desiredName) {
+// a safe filename from an entity or scene label
+std::string sanitizeShaderName(const std::string& desiredName) {
     std::string name;
     for (char c : desiredName) {
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
             name += c;
     }
-    std::string typeFile = shaderTypeFileName(shaderType);
     if (name.empty() || !(std::isalpha(static_cast<unsigned char>(name[0])) || name[0] == '_'))
-        name = typeFile + name;
-    return name.empty() ? "shader" : name;
-}
-
-// Every .glsl the entry points reach through the engine library, keyed by its
-// include key ("includes/pbr.glsl"). Sorted, so the dialog preview is stable.
-std::map<std::string, std::string> collectBuiltInShaderIncludes(const std::string& vertSource,
-                                                                const std::string& fragSource) {
-    std::map<std::string, std::string> collected;
-    std::unordered_set<std::string> visited;
-
-    std::function<void(const std::string&)> visitSource = [&](const std::string& source) {
-        for (const std::string& key : editor::Util::getShaderIncludeKeys(source)) {
-            if (!visited.insert(key).second)
-                continue;
-
-            auto sourceIt = editor::shaderMap.find(key);
-            if (sourceIt == editor::shaderMap.end())
-                continue;
-
-            if (std::filesystem::path(key).extension() == ".glsl")
-                collected[key] = sourceIt->second;
-            visitSource(sourceIt->second);
-        }
-    };
-
-    visitSource(vertSource);
-    visitSource(fragSource);
-    return collected;
-}
-
-// Removes the directories a fork created. remove() only succeeds on an empty one,
-// so anything the user put there survives.
-void pruneForkDirectories(const std::filesystem::path& root) {
-    if (root.empty())
-        return;
-
-    std::error_code ec;
-    std::vector<std::filesystem::path> dirs;
-    for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_directory(ec))
-            dirs.push_back(it->path());
-    }
-    dirs.push_back(root);
-
-    // The iterator visits parents first, so deleting in reverse empties the leaves first.
-    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) {
-        std::filesystem::remove(*it, ec);
-    }
-}
-
-} // namespace
-
-std::filesystem::path editor::ProjectUtils::defaultShaderForkDir() {
-    return "shaders";
-}
-
-std::string editor::ProjectUtils::makeUniqueShaderName(const std::filesystem::path& absDir,
-                                                       ShaderType shaderType,
-                                                       const std::string& desiredName) {
-    // Both layouts are checked, so toggling "fork includes" cannot land on a name
-    // that is free in one and taken in the other.
-    std::string baseName = sanitizeShaderName(shaderType, desiredName);
-    std::string name = baseName;
-    int suffix = 2;
-    while (std::filesystem::exists(absDir / (name + ".vert")) ||
-           std::filesystem::exists(absDir / (name + ".frag")) ||
-           std::filesystem::exists(absDir / name)) {
-        name = baseName + std::to_string(suffix++);
-    }
+        name = "shader" + name;
     return name;
 }
 
-editor::ProjectUtils::ShaderForkPlan editor::ProjectUtils::prepareShaderFork(
-        Project* project, ShaderType shaderType, const std::filesystem::path& targetDirRel,
-        const std::string& baseName, bool forkIncludes) {
-    ShaderForkPlan plan;
-    if (!project) {
-        plan.error = "Project is unavailable.";
-        return plan;
-    }
-
-    std::string typeFile = shaderTypeFileName(shaderType);
-    if (typeFile.empty()) {
-        plan.error = "This shader type cannot be forked.";
-        return plan;
-    }
-
-    if (baseName.empty() || std::filesystem::path(baseName).filename() != baseName) {
-        plan.error = "Enter a shader name without a path or extension.";
-        return plan;
-    }
-    for (char c : baseName) {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
-            plan.error = "Shader names may contain only letters, numbers, and underscores.";
-            return plan;
-        }
-    }
-
-    std::filesystem::path normalizedDir = targetDirRel.empty() ? std::filesystem::path(".")
-                                                               : targetDirRel.lexically_normal();
-    if (!Util::isSafeRelativePath(normalizedDir)) {
-        plan.error = "The shader directory must be inside the project.";
-        return plan;
-    }
-
-    std::filesystem::path projectRoot = project->getProjectPath();
-
-    auto vertIt = editor::shaderMap.find(typeFile + ".vert");
-    auto fragIt = editor::shaderMap.find(typeFile + ".frag");
-    if (vertIt == editor::shaderMap.end() || fragIt == editor::shaderMap.end()) {
-        plan.error = "The built-in shader source is unavailable.";
-        return plan;
-    }
-
-    // Forked includes override the engine library for every entry point beside them,
-    // so a fork carrying them gets a directory to itself.
-    std::filesystem::path forkDirRel = forkIncludes ? normalizedDir / baseName : normalizedDir;
-    std::filesystem::path forkDir = projectRoot / forkDirRel;
-
-    plan.base = (forkDirRel / baseName).lexically_normal().generic_string();
-    plan.vertPath = forkDir / (baseName + ".vert");
-    plan.fragPath = forkDir / (baseName + ".frag");
-    plan.vertContent = vertIt->second;
-    plan.fragContent = fragIt->second;
-    if (forkIncludes)
-        plan.forkDirPath = forkDir;
-
-    // With includes the whole directory must be free, so a fork never merges into
-    // someone else's folder.
-    std::vector<std::filesystem::path> collisions = {plan.vertPath, plan.fragPath};
-    if (forkIncludes)
-        collisions = {plan.forkDirPath};
-
-    for (const std::filesystem::path& collision : collisions) {
-        std::error_code ec;
-        if (std::filesystem::exists(collision, ec) && !ec) {
-            plan.error = "A fork target already exists: " +
-                         std::filesystem::relative(collision, projectRoot, ec).generic_string();
-            return plan;
-        }
-    }
-
-    if (forkIncludes) {
-        // The fork directory mirrors the shaderlib root, so each key keeps its shape:
-        // "includes/pbr.glsl" -> <fork>/includes/pbr.glsl.
-        for (const auto& [key, content] : collectBuiltInShaderIncludes(plan.vertContent, plan.fragContent)) {
-            if (Util::isSafeRelativePath(key))
-                plan.includeFiles.push_back({forkDir / key, content});
-        }
-    }
-
-    plan.valid = true;
-    return plan;
-}
-
-bool editor::ProjectUtils::writeShaderFork(const ShaderForkPlan& plan) {
-    if (!plan.valid)
-        return false;
-
-    // Never overwrite: undoing a fork that clobbered a file would destroy its contents.
-    std::vector<std::filesystem::path> written;
-    auto writeFile = [&](const std::filesystem::path& path, const std::string& content) -> bool {
-        std::error_code ec;
-        std::filesystem::create_directories(path.parent_path(), ec);
-        if (ec)
-            return false;
-        if (std::filesystem::exists(path, ec) || ec)
-            return false;
-
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f.is_open())
-            return false;
-        written.push_back(path);
-        f << content;
-        return static_cast<bool>(f);
-    };
-
-    bool success = writeFile(plan.vertPath, plan.vertContent) &&
-                   writeFile(plan.fragPath, plan.fragContent);
-    for (const auto& include : plan.includeFiles) {
-        if (!success)
-            break;
-        success = writeFile(include.path, include.content);
-    }
-
-    if (!success) {
-        std::error_code ec;
-        for (const auto& path : written)
-            std::filesystem::remove(path, ec);
-        pruneForkDirectories(plan.forkDirPath);
-        Out::error("Could not write forked shader files");
-    }
-    return success;
-}
-
-namespace {
-
 // writes a .glsl under a free name in the default shader directory; empty on failure
 std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content) {
-    const std::filesystem::path dirRel = editor::ProjectUtils::defaultShaderForkDir();
-    const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName);
+    const std::filesystem::path dirRel = "shaders";
+    const std::string baseName = sanitizeShaderName(desiredName);
     std::string name = baseName;
     int suffix = 2;
     while (std::filesystem::exists(projectRoot / dirRel / (name + ".glsl")))
@@ -548,39 +346,21 @@ bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& project
     return true;
 }
 
-std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh) {
-    std::vector<std::pair<std::string, bool>> sources;
-    auto addFork = [&](const std::string& fork) {
-        if (!fork.empty())
-            sources.push_back({fork, true});
-    };
-    auto addEffect = [&](const std::string& effect) {
-        if (!effect.empty())
-            sources.push_back({effect, false});
-    };
-
+std::string editor::ProjectUtils::getComponentShader(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh) {
+    std::string shader;
     // meshes directly, a scene can hold thousands
     if (cpType == ComponentType::MeshComponent) {
-        if (const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
-            addFork(mesh->customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh->customShader);
-            addFork(mesh->customDepthShader);
-            if (submesh >= 0 && submesh < (int)mesh->numSubmeshes)
-                addEffect(mesh->submeshes[submesh].material.shader);
-        }
-        return sources;
+        const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+        if (!mesh || submesh < 0 || submesh >= (int)mesh->numSubmeshes)
+            return "";
+        shader = mesh->submeshes[submesh].material.shader;
+    } else if (const std::string* own = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader")) {
+        shader = *own;
+    } else {
+        return "";
     }
-    if (const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader"))
-        addEffect(shader->empty() ? scene->getDefaultCustomShader(shaderType) : *shader);
-    return sources;
-}
 
-void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {
-    std::error_code ec;
-    std::filesystem::remove(plan.vertPath, ec);
-    std::filesystem::remove(plan.fragPath, ec);
-    for (const auto& include : plan.includeFiles)
-        std::filesystem::remove(include.path, ec);
-    pruneForkDirectories(plan.forkDirPath);
+    return shader.empty() ? scene->getDefaultCustomShader(shaderType) : shader;
 }
 
 void editor::ProjectUtils::collectModelEntities(Scene* scene, const ModelComponent& model, std::vector<Entity>& out){

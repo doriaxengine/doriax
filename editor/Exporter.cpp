@@ -3740,8 +3740,7 @@ bool editor::Exporter::writeAppIcon() {
 std::vector<ShaderKey> editor::Exporter::getPairedShaderKeys(ShaderKey key) {
     key = ShaderPool::normalizeKey(key);
     std::vector<ShaderKey> keys;
-    const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(key));
-    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && ShaderPool::getCustomShaderFork(customShader).empty()) {
+    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH) {
         key &= ~(ShaderKey(1) << 28);
         if (ShaderPool::getPropertiesFromKey(key) & (1u << 3)) {
             keys.push_back(key | (ShaderKey(1) << 28));
@@ -3890,7 +3889,7 @@ bool editor::Exporter::buildAndSaveShaders() {
 std::string editor::Exporter::getShaderDisplayName(ShaderType type, uint32_t properties, uint16_t customId) {
     std::string name = ShaderPool::getShaderTypeName(type);
 
-    // Distinguish forked shaders (same type/props, different source) in the list.
+    // Distinguish shader files (same type/props, different source) in the list.
     std::string customName = ShaderPool::getCustomShaderName(customId);
     if (!customName.empty()) {
         name += " [" + customName + "]";

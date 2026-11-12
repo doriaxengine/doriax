@@ -154,17 +154,17 @@ static std::vector<std::string>& customShaderNames(){
     return *names;
 }
 
-uint16_t ShaderPool::registerCustomShader(const std::string& baseName){
-    if (baseName.empty())
+uint16_t ShaderPool::registerCustomShader(const std::string& shader){
+    if (shader.empty())
         return 0;
 
     std::lock_guard<std::mutex> lock(customShaderMutex());
     auto& names = customShaderNames();
     for (size_t i = 0; i < names.size(); i++){
-        if (names[i] == baseName)
+        if (names[i] == shader)
             return (uint16_t)(i + 1);
     }
-    names.push_back(baseName);
+    names.push_back(shader);
     return (uint16_t)names.size();
 }
 
@@ -177,25 +177,6 @@ std::string ShaderPool::getCustomShaderName(uint16_t customId){
     if (customId <= names.size())
         return names[customId - 1];
     return "";
-}
-
-std::string ShaderPool::getCustomShader(const std::string& fork, const std::string& shader){
-    if (!shader.empty())
-        return fork + '#' + shader;
-
-    return fork;
-}
-
-std::string ShaderPool::getCustomShaderFork(const std::string& customShader){
-    return customShader.substr(0, customShader.find('#'));
-}
-
-std::string ShaderPool::getCustomShaderAsset(const std::string& customShader){
-    size_t separator = customShader.find('#');
-    if (separator == std::string::npos)
-        return "";
-
-    return customShader.substr(separator + 1);
 }
 
 std::string ShaderPool::getCustomShaderBasename(uint16_t customId){

@@ -300,7 +300,7 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.customShader, mesh.customDepthShader, mesh.vertexOffsetMax, mesh.shaderUniforms};
+            mesh.vertexOffsetMax};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -314,10 +314,7 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.autoTransparency = settings.autoTransparency;
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
-    mesh.customShader = settings.customShader;
-    mesh.customDepthShader = settings.customDepthShader;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
-    mesh.shaderUniforms = settings.shaderUniforms;
 }
 
 MeshSystem::MeshSettingsByNode MeshSystem::collectMeshSettings(Entity entity, const ModelComponent& model, const std::string& filename) const {

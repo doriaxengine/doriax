@@ -1576,30 +1576,25 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
     });
 }
 
-void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform) {
-    // forks are a .vert/.frag pair (a mesh's and its depth one), the other shaders one
-    // file; visit each array in a registry, apply the transform, and flag a shader reload
-    // on the entities that changed.
+void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform) {
+    // visit every shader file of a registry, apply the transform, and flag a shader
+    // reload on the entities that changed
     auto applyToRegistry = [&](EntityRegistry* registry) -> bool {
         bool changed = false;
-        auto applyToArray = [&](auto arr, auto shaderField, const std::function<bool(std::string&)>& apply) {
+        auto applyToArray = [&](auto arr, auto shaderField) {
             for (size_t i = 0; i < arr->size(); ++i) {
                 std::string& shader = arr->getComponentFromIndex(i).*shaderField;
-                if (shader.empty())
-                    continue;
-                if (apply(shader)) {
+                if (!shader.empty() && transform(shader)) {
                     Catalog::updateEntity(registry, arr->getEntity(i), UpdateFlags_Shader_Reload);
                     changed = true;
                 }
             }
         };
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customShader, transform);
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customDepthShader, transform);
-        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::shader, fileTransform);
-        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::shader, fileTransform);
-        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::shader, fileTransform);
-        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::shader, fileTransform);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::shader, fileTransform);
+        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::shader);
+        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::shader);
+        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::shader);
+        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::shader);
+        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::shader);
 
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
@@ -1607,7 +1602,7 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
             bool meshChanged = false;
             for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
                 std::string& shader = mesh.submeshes[s].material.shader;
-                if (!shader.empty() && fileTransform(shader))
+                if (!shader.empty() && transform(shader))
                     meshChanged = true;
             }
             if (meshChanged) {
@@ -1618,17 +1613,23 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         return changed;
     };
 
-    // scene-level default shaders reference the same files; the setter flags the reload
-    auto applyToSceneDefaults = [&](Scene* scene) -> bool {
+    // the scene's default shaders and post-process passes; their setters flag the reload
+    auto applyToScene = [&](Scene* scene) -> bool {
         bool changed = false;
         for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX, ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
             std::string defaultShader = scene->getDefaultCustomShader(type);
-            if (!defaultShader.empty() && (type == ShaderType::MESH ? transform(defaultShader) : fileTransform(defaultShader))) {
+            if (!defaultShader.empty() && transform(defaultShader)) {
                 scene->setDefaultCustomShader(type, defaultShader);
                 changed = true;
             }
         }
-        return changed;
+        std::vector<PostProcessPass> passes = scene->getPostProcessPasses();
+        bool passChanged = false;
+        for (PostProcessPass& pass : passes)
+            passChanged = (!pass.shader.empty() && transform(pass.shader)) || passChanged;
+        if (passChanged)
+            scene->setPostProcessPasses(passes);
+        return changed || passChanged;
     };
 
     for (auto& sceneProject : scenes) {
@@ -1636,7 +1637,7 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
             continue;
         }
         bool changed = applyToRegistry(sceneProject.scene);
-        changed |= applyToSceneDefaults(sceneProject.scene);
+        changed |= applyToScene(sceneProject.scene);
         if (changed) {
             sceneProject.isModified = true;
             sceneProject.needUpdateRender = true;
@@ -1666,28 +1667,8 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         return;
     }
 
-    // customShader resolves to a .vert and a .frag entry point; remap each path against the
-    // rename and rebuild the value. A single-file rename of a shared-base pair naturally
-    // becomes the separate-file form; a directory rename remaps both via child match.
-    applyCustomShaderPathChange([&](std::string& customShader) -> bool {
-        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(customShader);
-        std::string newVert = paths.vert;
-        std::string newFrag = paths.frag;
-        bool changed = false;
-        std::string updated;
-        if (remapRelativeString(oldRelative, newRelative, paths.vert, updated)) {
-            newVert = updated;
-            changed = true;
-        }
-        if (remapRelativeString(oldRelative, newRelative, paths.frag, updated)) {
-            newFrag = updated;
-            changed = true;
-        }
-        if (changed) {
-            customShader = Util::makeCustomShader(newVert, newFrag);
-        }
-        return changed;
-    }, [&](std::string& path) -> bool {
+    // a directory rename remaps the files inside it too
+    applyCustomShaderPathChange([&](std::string& path) -> bool {
         std::string updated;
         if (!remapRelativeString(oldRelative, newRelative, path, updated))
             return false;
@@ -1706,17 +1687,8 @@ void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deleted
         return;
     }
 
-    // A custom shader needs both its .vert and .frag; deleting either entry point (or the
-    // containing folder) leaves the reference dangling, so reset it to built-in. Match the
-    // deleted path against each resolved entry point (handles shared-base and separate forms).
-    applyCustomShaderPathChange([&](std::string& customShader) -> bool {
-        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(customShader);
-        if (matchesRelativeString(deletedRelative, paths.vert) || matchesRelativeString(deletedRelative, paths.frag)) {
-            customShader.clear();
-            return true;
-        }
-        return false;
-    }, [&](std::string& path) -> bool {
+    // deleting the file or its folder leaves the reference dangling, so it resets to the built-in
+    applyCustomShaderPathChange([&](std::string& path) -> bool {
         if (!matchesRelativeString(deletedRelative, path))
             return false;
         path.clear();
@@ -3922,7 +3894,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     // strings rather than the cached customShaderId, which lags a reload frame after a
     // scene-default change and is zeroed by the build-fail fallback
     auto effectiveShaderId = [&](const std::string& shader, ShaderType type) -> uint16_t {
-        return ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", shader.empty() ? scene->getDefaultCustomShader(type) : shader));
+        return ShaderPool::registerCustomShader(shader.empty() ? scene->getDefaultCustomShader(type) : shader);
     };
 
     // the runtime falls back to the built-in variant when a custom shader fails to build,
@@ -3961,16 +3933,14 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             // a reload keeps the mesh unloaded until its new shaders have built
             if (mesh.loaded || mesh.submeshes[0].shader) {
                 bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
-                // as in RenderSystem::loadMesh
-                const std::string& meshShader = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
                     if (!mesh.loaded && !mesh.submeshes[s].shader) {
                         continue;
                     }
-                    const std::string materialShader = isTerrain ? std::string() : mesh.submeshes[s].material.shader;
-                    uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, materialShader));
-                    uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, materialShader));
-                    uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", materialShader));
+                    // as in RenderSystem::loadMesh
+                    const std::string& ownShader = mesh.submeshes[s].material.shader;
+                    const std::string materialShader = isTerrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
+                    const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
                     uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
                     // Saving/exporting can happen before RenderSystem has reloaded
                     // meshes after a probe was added. Derive the required IBL
@@ -3994,7 +3964,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     }
                     insertKeys(ShaderType::MESH, meshProperties, customShaderId);
                     // The runtime only computes depthShaderProperties while
-                    // shadows or SSAO are active (or a depth fork is set), so the
+                    // shadows or SSAO are active, so the
                     // stored value can be a stale 0 for scenes whose shadow lights
                     // arrive at runtime (scripts spawning them). Derive the props
                     // from the same submesh flags RenderSystem::loadMesh uses, and
@@ -4012,10 +3982,10 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1,
                         !materialShader.empty() && mesh.submeshes[s].hasNormal, !materialShader.empty() && mesh.submeshes[s].hasVertexColor3,
                         !materialShader.empty() && mesh.submeshes[s].hasVertexColor4);
-                    insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
-                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
+                    insertKeys(ShaderType::DEPTH, depthProperties, customShaderId);
+                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
-                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customGBufferShaderId);
+                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customShaderId);
                     }
                 }
             }
@@ -4087,7 +4057,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
     // disabled passes ship too: the generated scene carries the whole chain
     for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
-        insertKeys(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", pass.shader)));
+        insertKeys(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(pass.shader));
     }
 
     // fixed resolution upscales with it and a scene stack is presented with it
@@ -4122,7 +4092,7 @@ void editor::Project::buildStandaloneShaderCache() {
 }
 
 void editor::Project::invalidateCustomShaders() {
-    // Drop the editor's compiled cache for forked shaders, free their GPU handles, and
+    // Drop the editor's compiled cache for shader files, free their GPU handles, and
     // flag every renderable that uses one so RenderSystem recompiles it on the next draw.
     editor::ShaderBuilder::invalidateCustomShaders();
     ShaderPool::destroyCustomShaders();
@@ -4142,8 +4112,8 @@ void editor::Project::invalidateCustomShaders() {
         // needReload is only consumed while the scene draws, and the idle loop skips
         // scenes that are not flagged, so the redraw has to be requested here. Saving a
         // shader file is not a command, so nothing else would request it.
-        auto flagReload = [&sceneProject](bool& needReload, bool usesFork) {
-            if (!usesFork)
+        auto flagReload = [&sceneProject](bool& needReload, bool usesShader) {
+            if (!usesShader)
                 return;
             needReload = true;
             sceneProject.needUpdateRender = true;
@@ -4151,15 +4121,15 @@ void editor::Project::invalidateCustomShaders() {
 
         // every component, not just the authored ones: generated foliage and Play
         // entities lost their handles too
-        auto flagComponents = [&](auto* componentArray, auto&& usesFork) {
+        auto flagComponents = [&](auto* componentArray, auto&& usesShader) {
             for (size_t i = 0; i < componentArray->size(); i++) {
                 auto& component = componentArray->getComponentFromIndex(i);
-                flagReload(component.needReload, usesFork(component));
+                flagReload(component.needReload, usesShader(component));
             }
         };
 
         flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
-            if (sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty())
+            if (sceneMesh)
                 return true;
             for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
                 if (!mesh.submeshes[s].material.shader.empty())
@@ -6232,13 +6202,10 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
-    // Except those of deleted forks or shader files, which exports could not build
+    // Except those of deleted shader files, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
-        const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
-        const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-        const std::string shaderFile = ShaderPool::getCustomShaderAsset(customShader);
-        if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
-                (!shaderFile.empty() && !fs::exists(projectPath / shaderFile) && !ProjectUtils::isEngineShader(shaderFile))) {
+        const std::string shaderFile = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
+        if (!shaderFile.empty() && !fs::exists(projectPath / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
             it = shaderKeys.erase(it);
         } else {
             ++it;

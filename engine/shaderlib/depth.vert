@@ -2,12 +2,8 @@
 
 #define DEPTH_SHADER
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-
 // mvpMatrix is lightVPMatrix * modelMatrix computed once, so a depth prepass matches
-// mesh.vert bit for bit; a fork may still multiply the two itself
+// mesh.vert bit for bit
 uniform u_vs_depthParams {
     mat4 modelMatrix;
     mat4 lightVPMatrix;

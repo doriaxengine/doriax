@@ -103,53 +103,6 @@ public:
     // Fills a Texture with the editor built-in default skybox cubemap.
     static void setDefaultSkyTexture(Texture& outTexture);
 
-    // Resolved plan for a built-in shader fork: the project-relative base path (no
-    // extension), the absolute target paths, and the source contents to write. Computed
-    // without touching the filesystem so it can drive an undoable command.
-    struct ShaderForkPlan {
-        bool valid = false;
-        std::string error;
-        std::string base;                  // e.g. "shaders/myMesh"
-        std::filesystem::path vertPath;    // absolute
-        std::filesystem::path fragPath;    // absolute
-        // Empty unless includes were forked, in which case the fork owns this directory
-        // and holds its entry points plus the copied includes/ tree inside it.
-        std::filesystem::path forkDirPath;      // absolute
-        std::string vertContent;
-        std::string fragContent;
-        struct IncludeFile {
-            std::filesystem::path path;    // absolute
-            std::string content;
-        };
-        std::vector<IncludeFile> includeFiles;
-    };
-
-    // Default used only by non-interactive callers. The editor dialog lets the user
-    // select any directory inside the project for each individual fork.
-    static std::filesystem::path defaultShaderForkDir();
-
-    // Converts an entity/scene label to a safe filename and adds a numeric suffix until
-    // neither fork layout (loose .vert/.frag pair, or a directory of that name) is taken.
-    static std::string makeUniqueShaderName(const std::filesystem::path& absDir,
-                                            ShaderType shaderType,
-                                            const std::string& desiredName);
-
-    // Plans a built-in shader fork without writing anything. targetDirRel must be a safe
-    // project-relative directory and baseName the exact filename stem. Without includes
-    // the entry points stay loose in it; with them the fork takes <targetDirRel>/<base>/,
-    // so its copies override the engine library for no other shader.
-    static ShaderForkPlan prepareShaderFork(Project* project, ShaderType shaderType,
-                                            const std::filesystem::path& targetDirRel,
-                                            const std::string& baseName,
-                                            bool forkIncludes = false);
-
-    // Writes all planned files. It refuses collisions and removes partial output when a
-    // later write fails, so a failed command never truncates or strands source files.
-    static bool writeShaderFork(const ShaderForkPlan& plan);
-
-    // Removes only files owned by the plan, then prunes the directories it created.
-    static void removeShaderFork(const ShaderForkPlan& plan);
-
     // a starting shader file of the type; its project path, empty on failure
     static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
     // a project copy of an engine shader file
@@ -159,8 +112,8 @@ public:
     static bool isEngineShader(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
-    // the forks (true) and shader files (false) a component draws with; a mesh's of one submesh
-    static std::vector<std::pair<std::string, bool>> getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh = -1);
+    // the shader file a component draws with, its own or the scene default; a mesh's of one submesh
+    static std::string getComponentShader(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh = -1);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.
     // Returns the command (caller must add it to CommandHandle) or nullptr if invalid.

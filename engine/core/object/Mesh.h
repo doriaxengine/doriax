@@ -111,12 +111,6 @@ namespace doriax{
         void setAutoTransparency(bool autoTransparency);
         bool isAutoTransparency() const;
 
-        void setCustomShader(const std::string& path);
-        std::string getCustomShader() const;
-
-        void setCustomDepthShader(const std::string& path);
-        std::string getCustomDepthShader() const;
-
         // shader file of the materials
         void setShader(const std::string& path);
         void setShader(unsigned int submesh, const std::string& path);

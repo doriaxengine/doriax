@@ -2,10 +2,6 @@
 
 // The scene seen by a camera inside a water, fading into it with the distance as
 // water.frag fades what is seen through the surface.
-//
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
 
 in vec2 v_texcoord;
 out vec4 frag_color;

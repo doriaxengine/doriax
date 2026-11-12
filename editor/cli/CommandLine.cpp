@@ -181,12 +181,12 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
 }
 
 static bool parseShaderSpec(const std::string& spec, ShaderKey& out, std::string& error) {
-    // a fork and a shader file follow '@', as "fork#shader"
+    // a shader file follows '@'
     const size_t customSeparator = spec.find('@');
     const std::string value = spec.substr(0, customSeparator);
-    const std::string customShader = customSeparator == std::string::npos ? "" : spec.substr(customSeparator + 1);
-    if (customSeparator != std::string::npos && customShader.empty()) {
-        error = "Missing custom shader after '@' in " + spec;
+    const std::string shaderFile = customSeparator == std::string::npos ? "" : spec.substr(customSeparator + 1);
+    if (customSeparator != std::string::npos && shaderFile.empty()) {
+        error = "Missing shader file after '@' in " + spec;
         return false;
     }
 
@@ -224,7 +224,7 @@ static bool parseShaderSpec(const std::string& spec, ShaderKey& out, std::string
         }
     }
 
-    out = ShaderPool::getShaderKey(type, properties, ShaderPool::registerCustomShader(customShader));
+    out = ShaderPool::getShaderKey(type, properties, ShaderPool::registerCustomShader(shaderFile));
     return true;
 }
 
@@ -281,8 +281,8 @@ static void printUsage(const std::string& commandName) {
         << "      --lua <path>            Lua directory, relative to the project or absolute.\n"
         << "      --start-scene <id|name> Start scene override.\n"
         << "      --backend <list>        opengl, opengles, d3d11, metal-macos, metal-ios, vulkan, all. Can repeat.\n"
-        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. A fork and a\n"
-        << "                              shader file follow @, e.g. mesh:Uv1,Nor@#shaders/wind.glsl. Can repeat.\n"
+        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. A shader\n"
+        << "                              file follows @, e.g. mesh:Uv1,Nor@shaders/wind.glsl. Can repeat.\n"
         << "      --list-scenes           Print project scenes and exit.\n"
         << "  -h, --help                  Show this help.\n\n"
         << "If no --backend is provided, all supported backends are used.\n"

@@ -689,10 +689,7 @@ namespace {
         makeFastProperty<MeshComponent, bool, &MeshComponent::renderInReflectionProbes>("renderInReflectionProbes", PropertyType::Bool, UpdateFlags_Reflection_Probe_Recapture_All),
         makeFastProperty<MeshComponent, bool, &MeshComponent::transparent>("transparent", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::autoTransparency>("autoTransparency", PropertyType::Bool, UpdateFlags_Mesh_Reload),
-        makeFastProperty<MeshComponent, std::string, &MeshComponent::customShader>("customShader", PropertyType::String, UpdateFlags_Shader_Reload),
-        makeFastProperty<MeshComponent, std::string, &MeshComponent::customDepthShader>("customDepthShader", PropertyType::String, UpdateFlags_Shader_Reload),
         makeFastProperty<MeshComponent, float, &MeshComponent::vertexOffsetMax>("vertexOffsetMax", PropertyType::Float, UpdateFlags_Transform),
-        makeFastProperty<MeshComponent, ShaderUniformValues, &MeshComponent::shaderUniforms>("shaderUniforms", PropertyType::Custom, UpdateFlags_Shader_Uniforms),
         makeFastProperty<MeshComponent, unsigned int, &MeshComponent::numSubmeshes>("numSubmeshes", PropertyType::UInt, UpdateFlags_None),
     };
 
@@ -4094,7 +4091,7 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
             // a model root without submeshes is drawn by its parts and builds nothing
             if (MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
                 for (unsigned int i = 0; i < mesh->numSubmeshes; i++) {
-                    if (failed(ShaderPool::getCustomShader(mesh->customShader, mesh->submeshes[i].material.shader), ShaderType::MESH,
+                    if (failed(mesh->submeshes[i].material.shader, ShaderType::MESH,
                                mesh->loaded, mesh->needReload, mesh->submeshes[i].customShaderId))
                         return true;
                 }
@@ -4125,13 +4122,6 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
     }
 
     return false;
-}
-
-bool editor::Catalog::isCustomDepthShaderBuildFailed(Scene* scene, Entity entity) {
-    // the depth fork has no scene default; loadMesh always builds it when set
-    MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
-    return mesh && !mesh->customDepthShader.empty() && mesh->loaded && !mesh->needReload &&
-           mesh->numSubmeshes > 0 && mesh->submeshes[0].customDepthShaderId == 0;
 }
 
 bool editor::Catalog::isCustomUnderwaterShaderBuildFailed(Scene* scene, Entity entity) {
@@ -4277,7 +4267,7 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
         }
     }
     if (updateFlags & UpdateFlags_Shader_Reload){
-        // Forked-shader assignment/reset: reload whichever renderable the entity has
+        // Shader file assignment/reset: reload whichever renderable the entity has
         // so it re-fetches its (possibly custom) shader from the pool.
         if (MeshComponent* m = registry->findComponent<MeshComponent>(entity)) m->needReload = true;
         if (UIComponent* u = registry->findComponent<UIComponent>(entity)) u->needReload = true;

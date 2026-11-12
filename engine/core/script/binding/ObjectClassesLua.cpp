@@ -587,8 +587,6 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("shadowsBillboard", &Mesh::isShadowsBillboard, &Mesh::setShadowsBillboard)
         .addProperty("transparent", &Mesh::isTransparent, &Mesh::setTransparent)
         .addProperty("autoTransparency", &Mesh::isAutoTransparency, &Mesh::setAutoTransparency)
-        .addProperty("customShader", &Mesh::getCustomShader, &Mesh::setCustomShader)
-        .addProperty("customDepthShader", &Mesh::getCustomDepthShader, &Mesh::setCustomDepthShader)
         .addProperty("shader", (std::string(Mesh::*)()const)&Mesh::getShader, (void(Mesh::*)(const std::string&))&Mesh::setShader)
         .addFunction("setShader",
             luabridge::overload<const std::string&>(&Mesh::setShader),

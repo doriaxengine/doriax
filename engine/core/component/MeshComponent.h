@@ -76,8 +76,8 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // resolved ids of the mesh forks with the material shader (0 = built-in),
-        // cached here so the matching ShaderPool::remove uses the same key
+        // the shader file's id each pass was taken with (0 = built-in), so the
+        // matching ShaderPool::remove uses the same key
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
         uint16_t customGBufferShaderId = 0;
@@ -102,7 +102,7 @@ namespace doriax{
         int slotFSTerrainLayers = -1;
 
         int slotVSDepthParams = -1;
-        unsigned int sizeVSDepthParams = 0; // reflected: an older fork declares the block without mvpMatrix
+        unsigned int sizeVSDepthParams = 0; // reflected: the normal matrix is there only when a hook reads normals
         int slotFSDepthMaterial = -1;
         unsigned int sizeFSDepthMaterial = 0;
         int slotVSDepthFade = -1;
@@ -118,7 +118,7 @@ namespace doriax{
         int slotVSGBufferTerrain = -1;
         int slotFSGBufferTerrainLayers = -1;
 
-        // declared parameters of each pass and stage, filled from MeshComponent::shaderUniforms
+        // declared parameters of each pass and stage, filled from the material's shaderUniforms
         ShaderParameterBlock paramsVS;
         ShaderParameterBlock paramsFS;
         ShaderParameterBlock depthParamsVS;
@@ -181,18 +181,8 @@ namespace doriax{
         HybridArray<Submesh, MAX_SUBMESHES> submeshes;
         unsigned int numSubmeshes = 0;
 
-        // Optional user-forked shader. Project-relative base path (no extension),
-        // e.g. "shaders/myMesh" -> shaders/myMesh.vert + shaders/myMesh.frag.
-        // Empty = use the built-in Mesh shader. Drives the main render pass only;
-        // the gbuffer pass keeps the built-in shader.
-        std::string customShader;
-        // Same for the depth shader (shadow maps, and the SSAO/post-process depth when SSR
-        // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
-        // vertices or discards keeps its shadows in step.
-        std::string customDepthShader;
         float vertexOffsetMax = 0.0f; // longest vertex offset, widens the bounds; 0 = no limit
-        // fork parameter values, by name; a material's own come first
-        ShaderUniformValues shaderUniforms;
+        // the materials' shader values changed
         bool needUpdateShaderUniforms = false;
 
         float normAdjustJoint = 1;

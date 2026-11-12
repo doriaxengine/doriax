@@ -1,13 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-//
-// The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
-// step with a discard here, fork the depth shader too (Depth Shader in Properties). A
-// getCoverage() in the material's shader file cuts every pass alike without a fork.
-
 #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
     in vec3 v_position;
 #endif
@@ -190,7 +182,6 @@ uniform u_fs_pbrParams {
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
         vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
     } uShadowProjection;
-    #define SHADOW_FRAGMENT_PROJECTION
     #ifdef HAS_NORMALS
         #ifdef HAS_TANGENTS
             #define SHADOW_OFFSET_NORMAL v_tbn[2]

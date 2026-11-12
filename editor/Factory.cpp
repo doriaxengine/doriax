@@ -835,14 +835,8 @@ std::string editor::Factory::createMeshComponent(int indentSpaces, EntityRegistr
     code << ind << "mesh.lodEnabled = " << formatBool(mesh.lodEnabled) << ";\n";
     code << ind << "mesh.lodBias = " << formatFloat(mesh.lodBias) << ";\n";
     code << ind << "mesh.renderInReflectionProbes = " << formatBool(mesh.renderInReflectionProbes) << ";\n";
-    if (!mesh.customShader.empty())
-        code << ind << "mesh.customShader = " << formatString(mesh.customShader) << ";\n";
-    if (!mesh.customDepthShader.empty())
-        code << ind << "mesh.customDepthShader = " << formatString(mesh.customDepthShader) << ";\n";
     if (mesh.vertexOffsetMax != 0.0f)
         code << ind << "mesh.vertexOffsetMax = " << formatFloat(mesh.vertexOffsetMax) << ";\n";
-    if (!mesh.shaderUniforms.empty())
-        code << ind << "mesh.shaderUniforms = " << formatShaderUniforms(mesh.shaderUniforms) << ";\n";
     code << ind << "mesh.vertexCount = " << formatUInt(mesh.vertexCount) << ";\n";
     //code << ind << "mesh.submeshes.resize(" << formatUInt(mesh.numSubmeshes) << ");\n";
     // Kept for a model too: its load reads the count to find the edited submeshes.

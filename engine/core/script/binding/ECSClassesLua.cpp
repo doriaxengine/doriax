@@ -969,8 +969,6 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("loaded", &MeshComponent::loaded)
         .addProperty("vertexCount", &MeshComponent::vertexCount)
         .addProperty("numSubmeshes", &MeshComponent::numSubmeshes)
-        .addProperty("customShader", &MeshComponent::customShader, &MeshComponent::customShader)
-        .addProperty("customDepthShader", &MeshComponent::customDepthShader, &MeshComponent::customDepthShader)
         .addProperty("vertexOffsetMax", &MeshComponent::vertexOffsetMax, &MeshComponent::vertexOffsetMax)
         .addProperty("aabb", &MeshComponent::aabb)
         .addProperty("worldAABB", &MeshComponent::worldAABB)

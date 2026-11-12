@@ -1,9 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-
 in vec3 v_position;
 in vec3 v_normal;
 in float v_waveHeight;
@@ -94,7 +90,6 @@ uniform sampler u_waterWake_smp;
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
         vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
     } uShadowProjection;
-    #define SHADOW_FRAGMENT_PROJECTION
     #define SHADOW_OFFSET_NORMAL v_normal
 
     uniform u_fs_point_shadows {

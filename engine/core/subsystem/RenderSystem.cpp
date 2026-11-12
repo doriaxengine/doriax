@@ -118,8 +118,7 @@ namespace {
     // fade distance past which instances can be dropped: only the built-in triangle
     // shaders shrink them to nothing, and the SSR G-buffer has no fade yet
     float instanceFadeCullEnd(const InstancedMeshComponent& instmesh, const MeshComponent& mesh, const Scene& scene){
-        if (scene.isSSREnabled() || !scene.getDefaultMeshShader().empty() ||
-            !instmesh.distanceFade || !mesh.customShader.empty() || !mesh.customDepthShader.empty() ||
+        if (scene.isSSREnabled() || !instmesh.distanceFade ||
             !(instmesh.fadeEnd > instmesh.fadeStart) || !std::isfinite(instmesh.fadeStart) ||
             !std::isfinite(instmesh.fadeEnd) || instmesh.fadeEnd < 0.0f){
             return -1.0f;
@@ -234,15 +233,15 @@ namespace {
         if (!mesh.needUpdateShaderUniforms)
             return;
 
-        const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
         for (int i = 0; i < mesh.numSubmeshes; i++){
             Submesh& submesh = mesh.submeshes[i];
-            submesh.paramsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
-            submesh.paramsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
-            submesh.depthParamsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
-            submesh.depthParamsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
-            submesh.gbufferParamsVS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
-            submesh.gbufferParamsFS.writeObject(submesh.material.shaderUniforms, inherited, &mesh.shaderUniforms);
+            const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, submesh.material.shader);
+            submesh.paramsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.paramsFS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.depthParamsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.depthParamsFS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.gbufferParamsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.gbufferParamsFS.writeObject(submesh.material.shaderUniforms, inherited);
         }
         mesh.needUpdateShaderUniforms = false;
     }
@@ -267,6 +266,18 @@ namespace {
             auto& component = components->getComponentFromIndex(i);
             if ((component.*shader).empty())
                 component.needUpdateShaderUniforms = true;
+        }
+    }
+
+    // flags the meshes with a material that inherits the default shader
+    template<typename ComponentArrayPtr>
+    void flagInheritedMaterials(const ComponentArrayPtr& meshes){
+        for (size_t i = 0; i < meshes->size(); i++){
+            MeshComponent& mesh = meshes->getComponentFromIndex(i);
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                if (mesh.submeshes[s].material.shader.empty())
+                    mesh.needUpdateShaderUniforms = true;
+            }
         }
     }
 
@@ -3295,8 +3306,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
-        // terrain builds its vertices in the shader and takes no shader file
-        const std::string materialShader = terrain ? std::string() : mesh.submeshes[i].material.shader;
+        // the material's shader file, else the scene's; terrain builds its vertices in the shader and takes none
+        const std::string& ownShader = mesh.submeshes[i].material.shader;
+        const std::string materialShader = terrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
         // what its hooks can read of the mesh, the same in every pass
         const bool p_hookUV1 = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
         const bool p_hookNormals = !materialShader.empty() && mesh.submeshes[i].hasNormal;
@@ -3309,34 +3321,29 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         hasFog, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                         (terrain)?true:false, (instmesh)?true:false, p_ibl, p_mirror, p_ssao, p_light2d, p_shadows2d,
                         p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_hookUV1 && !p_hasTexture1, p_hookNormals && !p_hasNormal);
-        // a user-forked main shader overrides the built-in Mesh shader; the variant
-        // (#define) system, depth/gbuffer passes and bind-slots are unchanged.
-        // Priority: component customShader > scene default shader > built-in (empty)
-        const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
-        const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, materialShader));
-        // 'Dlo': built-in shader without the point/spot paths
-        if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
+        const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, ownShader);
+        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(materialShader);
+        // 'Dlo': without the point/spot paths
+        if (p_punctual && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
         }
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
         // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
-        // (SSR uses its own G-buffer shader, built below). A depth fork is built even
-        // without a pass, so its uniforms and build errors show up in the editor.
+        // (SSR uses its own G-buffer shader, built below)
         const bool needPrepass = scene->isDepthPrepassEnabled();
         bool needDepthPass = (hasShadows && mesh.castShadows) || scene->isSSAOEnabled() || needPrepass || hasWaterDepth;
-        if (needDepthPass || !mesh.customDepthShader.empty()){
+        if (needDepthPass){
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
                 p_depthAlphaMask, p_instanceFade, p_hookUV1, p_hookNormals, p_hookColor3, p_hookColor4);
-            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, materialShader));
+            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(materialShader);
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
                 // same fallback as the main shader below
                 if (mesh.submeshes[i].customDepthShaderId != 0 &&
                     ShaderPool::isShaderBuildFailed(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId)){
-                    Log::error("Custom depth shader '%s' failed to compile; rendering '%s' with the built-in shader",
+                    Log::error("Shader '%s' failed to compile in the depth pass; rendering '%s' with the built-in shader",
                                ShaderPool::getCustomShaderName(mesh.submeshes[i].customDepthShaderId).c_str(), scene->getEntityName(entity).c_str());
                     mesh.submeshes[i].customDepthShaderId = 0;
                     mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, 0);
@@ -3348,8 +3355,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
             mesh.submeshes[i].depthParamsVS.resolve(depthShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].depthParamsFS.resolve(depthShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].depthParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
-            mesh.submeshes[i].depthParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+            mesh.submeshes[i].depthParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
         }else if (mesh.submeshes[i].depthShader){
             // a reload keeps the handle; release it with the key it was taken with
             mesh.submeshes[i].depthShader.reset();
@@ -3369,7 +3376,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
                 gbufferHasOcclusionTex, gbufferOcclusionUV2, p_hookUV1, p_hookColor3, p_hookColor4);
-            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", materialShader));
+            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(materialShader);
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
                 // the color pass reports the failure
@@ -3383,9 +3390,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
         }
         if (!mesh.submeshes[i].shader->isCreated()){
-            // A custom shader that failed to compile falls back to the built-in shader so
+            // A shader file that failed to compile falls back to the built-in shader so
             // the object stays visible and the mesh finishes loading (otherwise needReload
-            // stays set and we retry forever). The fork is retried after its source changes
+            // stays set and we retry forever). It is retried after its source changes
             // (invalidateCustomShaders clears the failure and re-flags needReload).
             if (mesh.submeshes[i].customShaderId != 0 &&
                 ShaderPool::isShaderBuildFailed(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId)){
@@ -3411,8 +3418,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // the fragment stage keeps them in the material block, having no block to spare
         mesh.submeshes[i].paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
         mesh.submeshes[i].paramsFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
-        mesh.submeshes[i].paramsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
-        mesh.submeshes[i].paramsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+        mesh.submeshes[i].paramsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
         }
@@ -3703,8 +3710,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
-            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms, &mesh.shaderUniforms);
+            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -4465,7 +4472,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 // checks what an equal pipeline does not tell, and finds the attributes the batch rewrites
 bool RenderSystem::getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const{
     const Submesh& submesh = mesh.submeshes[0];
-    if (submesh.customShaderId != 0 || !mesh.customShader.empty() || !scene->getDefaultMeshShader().empty() ||
+    if (submesh.customShaderId != 0 ||
             submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
             submesh.material.baseColorTexture.isFramebuffer())
         return false;
@@ -4997,8 +5004,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             bool needUpdateFramebuffer = checkPBRFrabebufferUpdate(mesh.submeshes[i].material);
 
             // a new material may bring another shader file
+            const std::string& ownShader = mesh.submeshes[i].material.shader;
             if (mesh.submeshes[i].needUpdateTexture && !terrain &&
-                    ShaderPool::getCustomShaderAsset(ShaderPool::getCustomShaderName(mesh.submeshes[i].customShaderId)) != mesh.submeshes[i].material.shader){
+                    ShaderPool::getCustomShaderName(mesh.submeshes[i].customShaderId) != (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader)){
                 mesh.needReload = true;
                 return false;
             }
@@ -6131,7 +6139,7 @@ void RenderSystem::needUpdatePostProcessUniforms(){
 
 void RenderSystem::needUpdateDefaultShaderUniforms(ShaderType type){
     switch (type){
-        case ShaderType::MESH:   flagInheritedUniforms(scene->getComponentArray<MeshComponent>(), &MeshComponent::customShader); break;
+        case ShaderType::MESH:   flagInheritedMaterials(scene->getComponentArray<MeshComponent>());                          break;
         case ShaderType::UI:     flagInheritedUniforms(scene->getComponentArray<UIComponent>(), &UIComponent::shader);         break;
         case ShaderType::SKYBOX: flagInheritedUniforms(scene->getComponentArray<SkyComponent>(), &SkyComponent::shader);       break;
         case ShaderType::POINTS: flagInheritedUniforms(scene->getComponentArray<PointsComponent>(), &PointsComponent::shader); break;
@@ -6167,7 +6175,7 @@ void RenderSystem::loadPostProcess(){
         pass.passIndex = i;
 
         // an empty path is the built-in passthrough, also the fallback of a failed shader
-        pass.customId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", passes[i].shader));
+        pass.customId = ShaderPool::registerCustomShader(passes[i].shader);
         pass.shader = ShaderPool::get(ShaderType::POSTPROCESS, 0, pass.customId);
         if (pass.customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, pass.customId)){
             // the pool already logged the failure; the panel marks the pass
@@ -6530,7 +6538,7 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
 
     ui.shaderProperties = ShaderPool::getUIProperties(p_hasTexture, p_hasFontAtlasTexture, false, p_vertexColorVec4);
     const std::string& uiShaderSrc = ui.shader.empty() ? scene->getDefaultCustomShader(ShaderType::UI) : ui.shader;
-    ui.customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", uiShaderSrc));
+    ui.customShaderId = ShaderPool::registerCustomShader(uiShaderSrc);
     ui.shaderRender = ShaderPool::get(ShaderType::UI, ui.shaderProperties, ui.customShaderId);
     if (!ui.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
@@ -6729,7 +6737,7 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
 
     points.shaderProperties = ShaderPool::getPointsProperties(p_hasTexture, false, true, p_hasTextureRect);
     const std::string& pointsShaderSrc = points.shader.empty() ? scene->getDefaultCustomShader(ShaderType::POINTS) : points.shader;
-    points.customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", pointsShaderSrc));
+    points.customShaderId = ShaderPool::registerCustomShader(pointsShaderSrc);
     points.shaderRender = ShaderPool::get(ShaderType::POINTS, points.shaderProperties, points.customShaderId);
     if (!points.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
@@ -6821,7 +6829,7 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
 
     lines.shaderProperties = ShaderPool::getLinesProperties(false, true);
     const std::string& linesShaderSrc = lines.shader.empty() ? scene->getDefaultCustomShader(ShaderType::LINES) : lines.shader;
-    lines.customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", linesShaderSrc));
+    lines.customShaderId = ShaderPool::registerCustomShader(linesShaderSrc);
     lines.shaderRender = ShaderPool::get(ShaderType::LINES, lines.shaderProperties, lines.customShaderId);
     if (!lines.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
@@ -7118,7 +7126,7 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
     render->beginLoad(PrimitiveType::TRIANGLES);
 
     const std::string& skyShaderSrc = sky.shader.empty() ? scene->getDefaultCustomShader(ShaderType::SKYBOX) : sky.shader;
-    sky.customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", skyShaderSrc));
+    sky.customShaderId = ShaderPool::registerCustomShader(skyShaderSrc);
     sky.shaderRender = ShaderPool::get(ShaderType::SKYBOX, 0, sky.customShaderId);
     if (!sky.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
@@ -7753,7 +7761,7 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
     const bool receiveShadows = hasLights && hasShadows && water.receiveShadows;
     water.shaderProperties = ShaderPool::getWaterProperties(hasFog, water.depthEffects, water.planarReflection, receiveShadows, water.refraction);
     const std::string& waterShaderSrc = water.shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.shader;
-    water.customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", waterShaderSrc));
+    water.customShaderId = ShaderPool::registerCustomShader(waterShaderSrc);
     water.shaderRender = ShaderPool::get(ShaderType::WATER, water.shaderProperties, water.customShaderId);
     if (!water.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
@@ -8495,7 +8503,7 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
 
     // the water's shader file, which may fill getUnderwaterColor
     const std::string& waterShader = water.shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.shader;
-    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", waterShader));
+    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(waterShader);
     water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId);
     if (!water.underwaterShader->isCreated()){
         // as in loadWater, a shader that failed to compile falls back to the built-in one
@@ -11651,18 +11659,14 @@ void RenderSystem::draw(){
             }
         }
 
-        // the same draws, depth only, with the color pass's own MVP; a color fork
-        // without a depth fork is left out since its vertices may not match
+        // the same draws, depth only, with the color pass's own MVP
         if (depthPrepass){
             const PipelineType prepassPip = offscreenTarget ? PIP_ZPREPASS_RTT : PIP_ZPREPASS;
-            const bool sceneColorFork = !scene->getDefaultMeshShader().empty();
             Matrix4 renderVP = camera.viewProjectionMatrix;
             if (isRenderingFlipped(camera)){
                 renderVP = Matrix4::scaleMatrix(Vector3(1, -1, 1)) * renderVP;
             }
             for (const OpaqueRenderData& opaque : opaqueRenders){
-                if ((sceneColorFork || !opaque.mesh->customShader.empty()) && opaque.mesh->customDepthShader.empty())
-                    continue;
                 vs_depth_t params = {opaque.transform->modelMatrix, renderVP, opaque.transform->modelViewProjectionMatrix, opaque.transform->normalMatrix};
                 drawMeshDepth(*opaque.mesh, *opaque.transform, camera.farClip, camera.frustumPlanes, params, opaque.instmesh, opaque.terrain, opaque.tilemap, true, prepassPip, instanceView, lodView);
             }

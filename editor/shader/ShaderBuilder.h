@@ -69,10 +69,9 @@ namespace doriax::editor {
         bool setupShaderArgs(shadercompiler::args_t& args, ShaderType shaderType, uint32_t properties);
         std::string getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform);
 
-        // Sets entry-point files + defines for the key. For custom shaders, resolves only
-        // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
-        // Throws on failure.
-        // parameters takes what the fork and the effect functions declare, for ShaderData
+        // Sets entry-point files + defines for the key, and for a shader file the exact
+        // graph of files it includes. Throws on failure.
+        // declarations takes what the shader file declares, for ShaderData
         void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations);
 
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
@@ -80,8 +79,8 @@ namespace doriax::editor {
 
         static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project);
 
-        // Compares the cached source signature with the entry points and the exact
-        // transitive include graph used by this fork. No directory walk is required.
+        // Compares the cached source signature with the shader file and the exact
+        // graph of files it includes. No directory walk is required.
         static bool isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath);
 
     public:
@@ -89,8 +88,8 @@ namespace doriax::editor {
         virtual ~ShaderBuilder();
 
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
-        // annotations of a fork (its .vert and .frag) or of a shader file, with their includes
-        static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader, bool fork);
+        // annotations of a shader file, with its includes
+        static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 
         // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.

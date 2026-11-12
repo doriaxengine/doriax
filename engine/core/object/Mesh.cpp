@@ -511,34 +511,6 @@ bool Mesh::isAutoTransparency() const{
     return getMesh().autoTransparency;
 }
 
-void Mesh::setCustomShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->customShader != path){
-            mesh->customShader = path;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-std::string Mesh::getCustomShader() const{
-    return getMesh().customShader;
-}
-
-void Mesh::setCustomDepthShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->customDepthShader != path){
-            mesh->customDepthShader = path;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-std::string Mesh::getCustomDepthShader() const{
-    return getMesh().customDepthShader;
-}
-
 void Mesh::setShader(const std::string& path){
     for (MeshComponent* mesh : getMeshes()){
         for (unsigned int i = 0; i < mesh->numSubmeshes; i++){

@@ -40,7 +40,6 @@
 #include "command/type/CreateEntityBundleCmd.h"
 #include "command/type/CreateEntityCmd.h"
 #include "command/type/CreateMaterialFileCmd.h"
-#include "command/type/ForkShaderCmd.h"
 #include "command/type/DeleteEntityCmd.h"
 #include "command/type/DeleteFileCmd.h"
 #include "command/type/DuplicateEntityCmd.h"
@@ -899,7 +898,7 @@ bool validateButtonUIProperty(EntityRegistry* registry, Entity entity, Component
     return false;
 }
 
-// Maps a renderable component to its forkable built-in shader type.
+// Maps a renderable component to its shader type.
 bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     switch (component) {
         case ComponentType::MeshComponent:   out = ShaderType::MESH;   return true;
@@ -912,8 +911,8 @@ bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     }
 }
 
-// Parses the "mesh"/"ui"/"sky"/"points"/"lines"/"water" shader_type argument used to fork or
-// address a scene's default shader (as opposed to a specific entity's component).
+// Parses a "mesh"/"ui"/"sky"/"points"/"lines"/"water" shader_type argument, which addresses
+// a scene's default shader (as opposed to a specific entity's component).
 bool parseShaderTypeName(const std::string& name, ShaderType& out) {
     static const std::unordered_map<std::string, ShaderType> map = {
         {"mesh", ShaderType::MESH}, {"ui", ShaderType::UI}, {"sky", ShaderType::SKYBOX},
@@ -940,7 +939,7 @@ const char* scenePropertyNameForShaderType(ShaderType type) {
 }
 
 // Picks the entity's first renderable component that supports custom shaders.
-bool detectForkableComponent(EntityRegistry* registry, Entity entity, ComponentType& component, ShaderType& shaderType) {
+bool detectShaderComponent(EntityRegistry* registry, Entity entity, ComponentType& component, ShaderType& shaderType) {
     for (ComponentType candidate : {ComponentType::MeshComponent, ComponentType::UIComponent,
                                     ComponentType::PointsComponent, ComponentType::LinesComponent,
                                     ComponentType::SkyComponent, ComponentType::WaterComponent}) {
@@ -970,7 +969,7 @@ bool resolveShaderComponent(SceneProject* sceneProject, const Json& args, Entity
             error = "Entity has no " + componentArg + ".";
             return false;
         }
-    } else if (!detectForkableComponent(sceneProject->scene, entity, component, shaderType)) {
+    } else if (!detectShaderComponent(sceneProject->scene, entity, component, shaderType)) {
         error = "Entity has no shader-capable component (Mesh/UI/Points/Lines/Sky/Water).";
         return false;
     }
@@ -2512,7 +2511,6 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "export_project") return exportProject(arguments, cancel);
     if (name == "set_export_shaders") return setExportShaders(arguments);
     if (name == "generate_shaders") return generateShaders(arguments, cancel);
-    if (name == "fork_shader") return forkShader(arguments);
     if (name == "write_shader_file") return writeShaderFile(arguments);
     if (name == "inspect_shader_uniforms") return inspectShaderUniforms(arguments);
     if (name == "set_shader_uniform") return setShaderUniform(arguments);
@@ -5032,7 +5030,7 @@ ActionResult EditorActionExecutor::exportProject(const Json& arguments, const st
 }
 
 ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
-    // type[:properties][@forkBasePath]
+    // type[:properties][@shaderFile]
     auto parseSpecs = [&](const char* field, bool requireFiles, std::vector<ShaderKey>& keys, std::string& error) {
         if (!arguments.contains(field)) return true;
         const Json& list = arguments[field];
@@ -5085,25 +5083,16 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
             }
             uint16_t customId = 0;
             if (customSeparator != std::string::npos) {
-                const std::string customShader = spec.substr(customSeparator + 1);
-                if (customShader.empty()) {
-                    error = "Missing custom shader path after '@' in '" + spec + "'.";
+                const std::string shaderFile = spec.substr(customSeparator + 1);
+                if (shaderFile.empty()) {
+                    error = "Missing shader file path after '@' in '" + spec + "'.";
                     return false;
                 }
-                if (requireFiles) {
-                    // a fork, then a shader file after '#'
-                    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-                    if (!paths.vert.empty() && (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag))) {
-                        error = "'" + spec + "' references missing files (" + paths.vert + ", " + paths.frag + ").";
-                        return false;
-                    }
-                    const std::string shaderFile = ShaderPool::getCustomShaderAsset(customShader);
-                    if (!shaderFile.empty() && !fs::exists(project->getProjectPath() / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
-                        error = "'" + spec + "' references a missing shader file (" + shaderFile + ").";
-                        return false;
-                    }
+                if (requireFiles && !fs::exists(project->getProjectPath() / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
+                    error = "'" + spec + "' references a missing shader file (" + shaderFile + ").";
+                    return false;
                 }
-                customId = ShaderPool::registerCustomShader(customShader);
+                customId = ShaderPool::registerCustomShader(shaderFile);
             }
             keys.push_back(ShaderPool::normalizeKey(ShaderPool::getShaderKey(type, properties, customId)));
         }
@@ -5195,25 +5184,6 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
 
 namespace {
 
-// empty when both entry points of a custom shader are files of the project
-std::string customShaderFilesError(const Project* project, const std::string& shader) {
-    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
-    const std::string files = " (" + paths.vert + ", " + paths.frag + ")";
-    // saved as given, and only Windows reads a backslash as a separator
-    if (shader.find('\\') != std::string::npos) {
-        return "must use forward slashes" + files;
-    }
-    if (!PathUtils::isSafeRelativePath(fs::path(paths.vert)) || !PathUtils::isSafeRelativePath(fs::path(paths.frag))) {
-        return "must use safe project-relative paths" + files;
-    }
-    const fs::path projectPath = project->getProjectPath();
-    // Web, Android and Linux only find a file under its exact name
-    if (!PathUtils::existsExactCase(projectPath, paths.vert) || !PathUtils::existsExactCase(projectPath, paths.frag)) {
-        return "references missing files, names are case-sensitive" + files;
-    }
-    return "";
-}
-
 // empty when the shader file is an engine one or a .glsl of the project
 std::string shaderFileError(const Project* project, const std::string& shader) {
     if (ProjectUtils::isEngineShader(shader))
@@ -5229,19 +5199,13 @@ std::string shaderFileError(const Project* project, const std::string& shader) {
 } // namespace
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
-    // A fork property is a project-relative base path whose .vert and .frag must exist;
-    // the other shader properties take one .glsl file
-    static const std::set<std::string> forkProperties = {
-        "customShader", "customDepthShader", "default_mesh_shader"
-    };
+    // a shader property takes one .glsl file, from the project or the engine
     static const std::set<std::string> fileProperties = {
-        "shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
+        "shader", "default_mesh_shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
     };
     // or submeshes[N].material.shader
     const size_t field = propertyName.rfind('.');
-    const bool shaderFile = fileProperties.count(propertyName) ||
-        (field != std::string::npos && propertyName.compare(field, std::string::npos, ".shader") == 0);
-    if (!shaderFile && !forkProperties.count(propertyName)) {
+    if (!fileProperties.count(propertyName) && (field == std::string::npos || propertyName.compare(field, std::string::npos, ".shader") != 0)) {
         return true;
     }
     const std::string value = args.value("string_value", "");
@@ -5249,159 +5213,12 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true; // empty resets to the built-in shader
     }
 
-    // a shader file is one .glsl, from the project or the engine
-    if (shaderFile) {
-        const std::string fileError = shaderFileError(project, value);
-        if (!fileError.empty()) {
-            error = propertyName + " " + fileError;
-            return false;
-        }
-        return true;
-    }
-
-    const std::string filesError = customShaderFilesError(project, value);
-    if (!filesError.empty()) {
-        error = propertyName + " " + filesError +
-                ". Use fork_shader to create a fork, or write_shader_file to author the .vert/.frag, before setting " + propertyName + ".";
+    const std::string fileError = shaderFileError(project, value);
+    if (!fileError.empty()) {
+        error = propertyName + " " + fileError;
         return false;
     }
     return true;
-}
-
-ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
-    uint32_t sceneId = resolveSceneId(project, arguments);
-    SceneProject* sceneProject = project->getScene(sceneId);
-    if (!sceneProject || !sceneProject->scene) return failResult("Scene not found.");
-
-    const bool hasEntity = arguments.contains("entity_id") ||
-                           (arguments.contains("entity_name") && arguments["entity_name"].is_string());
-    const std::string shaderTypeArg = arguments.value("shader_type", "");
-    const bool forkIncludes = arguments.value("fork_includes", false);
-    const fs::path targetDirectory = FileUtils::pathFromUtf8(arguments.value(
-        "directory", FileUtils::pathToGenericUtf8(ProjectUtils::defaultShaderForkDir()))).lexically_normal();
-    if (targetDirectory != "." && !PathUtils::isSafeRelativePath(targetDirectory)) {
-        return failResult("directory must be a safe project-relative path.");
-    }
-    if (isInProjectTrash(project, targetDirectory)) {
-        return failResult("directory is in the project trash.");
-    }
-
-    // a pass runs a shader file
-    if (!hasEntity && lower(shaderTypeArg) == "postprocess") {
-        return failResult("A post-process pass takes a shader file, not a fork: write one with write_shader_file "
-                          "(\"#pragma shader postprocess\" and a getColor hook) and add it with set_post_process_pass.");
-    }
-
-    // No entity selector: fork a scene-wide default shader for the given type instead of a
-    // specific component (priority: component customShader > scene default > built-in).
-    if (!hasEntity) {
-        ShaderType shaderType;
-        if (!parseShaderTypeName(shaderTypeArg, shaderType)) {
-            return failResult("fork_shader requires entity_id/entity_name, or shader_type mesh to fork the scene's default mesh shader.");
-        }
-        if (shaderType != ShaderType::MESH) {
-            return failResult("A scene's default " + shaderTypeArg + " shader is a shader file, not a fork: write one with write_shader_file "
-                              "(\"#pragma shader " + ShaderParameterParser::getShaderFileType(shaderType) + "\") and set " +
-                              scenePropertyNameForShaderType(shaderType) + " to it.");
-        }
-        const std::string scenePropertyName = scenePropertyNameForShaderType(shaderType);
-
-        // Re-forking would orphan the previous fork's files; require an explicit reset first.
-        const std::string current = Catalog::getSceneProperty<std::string>(sceneProject->scene, scenePropertyName);
-        if (!current.empty()) {
-            return failResult("Scene already has a default " + shaderTypeArg + " shader (" + current +
-                              "). Edit it with write_shader_file, or clear " + scenePropertyName +
-                              " to reset before forking again.");
-        }
-
-        const std::string desiredName = sceneProject->name + " " + shaderTypeArg;
-        const std::string forkName = ProjectUtils::makeUniqueShaderName(
-            project->getProjectPath() / targetDirectory, shaderType, desiredName);
-        auto* forkCmd = new ForkShaderCmd(project, sceneProject, shaderType, scenePropertyName,
-                                          targetDirectory, forkName, forkIncludes);
-        if (!forkCmd->isValid()) {
-            const std::string error = forkCmd->getError();
-            delete forkCmd;
-            return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-        }
-
-        const std::string base = forkCmd->getBase();
-        CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-        // The command writes the files as part of execute(); confirm so the AI gets accurate feedback.
-        if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-            !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-            return failResult("Shader fork did not write its source files.");
-        }
-
-        if (resourcesWindow) {
-            resourcesWindow->refreshCurrentDirectory();
-        }
-        Out::info("AI forked scene default shader: %s", base.c_str());
-
-        return okResult("Forked scene default shader through the command history.",
-                        Json{{"custom_shader", base},
-                             {"vert_path", base + ".vert"},
-                             {"frag_path", base + ".frag"},
-                             {"scene_property", scenePropertyName}});
-    }
-
-    Entity entity;
-    ComponentType component;
-    ShaderType shaderType;
-    std::string error;
-    if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return failResult(error);
-
-    // a mesh's shadow/SSAO depth pass and a water's underwater fade have forks of their own
-    std::string propertyName = "customShader";
-    if (component != ComponentType::MeshComponent) {
-        return failResult("A " + Catalog::getComponentName(component) + " takes a shader file, not a fork: write one with write_shader_file "
-                          "(\"#pragma shader " + ShaderParameterParser::getShaderFileType(shaderType) + "\") and set its shader property to it.");
-    }
-    if (lower(shaderTypeArg) == "depth") {
-        shaderType = ShaderType::DEPTH;
-        propertyName = "customDepthShader";
-    }
-
-    // Re-forking would orphan the previous fork's files; require an explicit reset first.
-    if (std::string* current = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, propertyName)) {
-        if (!current->empty()) {
-            return failResult("Component already uses a custom shader (" + *current +
-                              "). Edit it with write_shader_file, or clear " + propertyName + " to reset before forking again.");
-        }
-    }
-
-    std::string desiredName = sceneProject->scene->getEntityName(entity);
-    if (shaderType == ShaderType::DEPTH) desiredName += "_depth";
-    const std::string forkName = ProjectUtils::makeUniqueShaderName(
-        project->getProjectPath() / targetDirectory, shaderType, desiredName);
-    auto* forkCmd = new ForkShaderCmd(project, sceneId, entity, component, shaderType,
-                                      targetDirectory, forkName, forkIncludes);
-    if (!forkCmd->isValid()) {
-        const std::string error = forkCmd->getError();
-        delete forkCmd;
-        return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-    }
-
-    const std::string base = forkCmd->getBase();
-    CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-    // The command writes the files as part of execute(); confirm so the AI gets accurate feedback.
-    if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-        !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-        return failResult("Shader fork did not write its source files.");
-    }
-
-    if (resourcesWindow) {
-        resourcesWindow->refreshCurrentDirectory();
-    }
-    Out::info("AI forked shader: %s", base.c_str());
-
-    return okResult("Forked shader through the command history.",
-                    Json{{"custom_shader", base},
-                         {"property", propertyName},
-                         {"vert_path", base + ".vert"},
-                         {"frag_path", base + ".frag"}});
 }
 
 namespace {
@@ -5443,35 +5260,34 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
     }
 }
 
-// a mesh's fork, the shader file of the other components
-const char* componentShaderProperty(ComponentType component) {
-    return component == ComponentType::MeshComponent ? "customShader" : "shader";
+// the shader file a component or a mesh's material sets, empty for the scene default
+std::string ownShader(Scene* scene, Entity entity, ComponentType component, int submesh) {
+    if (component == ComponentType::MeshComponent) {
+        const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+        return (mesh && submesh >= 0 && submesh < (int)mesh->numSubmeshes) ? mesh->submeshes[submesh].material.shader : std::string();
+    }
+    const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, component, "shader");
+    return shader ? *shader : std::string();
 }
 
 void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
                                           ComponentType component, ShaderType shaderType, const ShaderUniformValues& values, int submesh = -1) {
-    const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, component, componentShaderProperty(component));
-    const ShaderUniformValues* inherited = shader ? scene->getInheritedShaderUniforms(shaderType, *shader) : nullptr;
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(shaderType, ownShader(scene, entity, component, submesh));
     warnings = Json::array();
-    std::vector<ShaderEffectAnnotations> sources;
-    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity, submesh)) {
-        sources.push_back(ShaderBuilder::getShaderAnnotations(project, source, fork));
-        appendParameterMembers(members, sources.back(), values, inherited);
-        for (const std::string& error : sources.back().errors) warnings.push_back(error);
-    }
-
-    // a clash between two of its files stops the build
-    std::vector<const ShaderEffectAnnotations*> annotations;
-    for (const ShaderEffectAnnotations& source : sources) annotations.push_back(&source);
-    for (const std::string& error : ShaderParameterParser::checkSources(annotations)) warnings.push_back(error);
+    const std::string shader = ProjectUtils::getComponentShader(scene, component, shaderType, entity, submesh);
+    if (shader.empty())
+        return;
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, shader);
+    appendParameterMembers(members, annotations, values, inherited);
+    for (const std::string& error : annotations.errors) warnings.push_back(error);
 }
 
 void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* project, const PostProcessPass& pass, bool& buildFailed) {
-    const uint16_t customId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", pass.shader));
+    const uint16_t customId = ShaderPool::registerCustomShader(pass.shader);
     buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
     warnings = Json::array();
     if (pass.shader.empty()) return;
-    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader, false);
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader);
     appendParameterMembers(members, annotations, pass.uniforms, nullptr);
     for (const std::string& error : annotations.errors) warnings.push_back(error);
 }
@@ -5526,42 +5342,34 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     std::string error;
     if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return expectedMissResult(error);
 
-    ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
-    std::string* shader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, componentShaderProperty(component));
-    if (!valuesRef || !shader) return failResult("Component has no shader uniforms.");
-
-    const std::string effectiveShader = shader->empty()
-        ? sceneProject->scene->getDefaultCustomShader(shaderType) : *shader;
-
-    // a material's values come before the mesh's
-    ShaderUniformValues values = *valuesRef;
+    // a mesh keeps its values on the materials, one submesh at a time
+    ShaderUniformValues values;
     const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr;
-    const int submesh = arguments.value("submesh", 0);
+    const int submesh = mesh ? arguments.value("submesh", 0) : -1;
     if (mesh) {
         if (submesh < 0 || submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
-        for (const auto& value : mesh->submeshes[submesh].material.shaderUniforms)
-            ShaderUniforms::set(values, value.first, value.second);
+        values = mesh->submeshes[submesh].material.shaderUniforms;
+    } else if (const ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms")) {
+        values = *valuesRef;
+    } else {
+        return failResult("Component has no shader uniforms.");
     }
 
     Json warnings;
-    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, values, mesh ? submesh : -1);
+    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, values, submesh);
 
     Json result{{"scene_id", sceneId},
                 {"entity_id", entity},
                 {"component", Catalog::getComponentName(component)},
-                {component == ComponentType::MeshComponent ? "custom_shader" : "shader", *shader},
-                {"effective_shader", effectiveShader},
+                {"shader", ownShader(sceneProject->scene, entity, component, submesh)},
+                {"effective_shader", ProjectUtils::getComponentShader(sceneProject->scene, component, shaderType, entity, submesh)},
                 {"build_failed", Catalog::isCustomShaderBuildFailed(sceneProject->scene, entity, component)},
                 {"members", members},
                 {"warnings", warnings},
                 {"values", shaderUniformValuesJson(values)}};
-    // a mesh's depth fork can declare values of its own, listed in the same members
-    if (component == ComponentType::MeshComponent) {
+    if (mesh) {
         result["submesh"] = submesh;
         result["submesh_count"] = mesh->numSubmeshes;
-        result["material_shader"] = mesh->submeshes[submesh].material.shader;
-        result["custom_depth_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader");
-        result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
     }
     // and a water's shader file builds the underwater fade too
     if (component == ComponentType::WaterComponent) {
@@ -5717,10 +5525,7 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
     ShaderType shaderType;
     if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return failResult(error);
 
-    ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
-    if (!valuesRef) return failResult("Component has no shader uniforms.");
-
-    ShaderUniformValues values = *valuesRef;
+    ShaderUniformValues values;
     int submesh = -1;
     if (const MeshComponent* mesh = (component == ComponentType::MeshComponent) ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
         // a mesh keeps them on its materials
@@ -5731,10 +5536,7 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
         submesh = first;
 
         MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
-        bool removed = remove && ShaderUniforms::remove(values, name);
-        if (removed) {
-            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values);
-        }
+        bool removed = false;
         for (int i = first; i <= last; i++) {
             ShaderUniformValues materialValues = mesh->submeshes[i].material.shaderUniforms;
             if (remove) {
@@ -5751,7 +5553,11 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
             return expectedMissResult("Component has no value named '" + name + "'.");
         }
         CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
+        values = mesh->submeshes[submesh].material.shaderUniforms;
     } else {
+        const ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
+        if (!valuesRef) return failResult("Component has no shader uniforms.");
+        values = *valuesRef;
         if (remove) {
             if (!ShaderUniforms::remove(values, name)) return expectedMissResult("Component has no value named '" + name + "'.");
         } else {
@@ -5777,14 +5583,13 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
 ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
     std::string error;
     fs::path rel;
-    // A shader source may be edited (forked entry point) or newly created (shared include).
+    // a shader file, or a file one includes
     if (!safeRelativePath(project, arguments, "path", rel, error, false)) {
         return failResult(error);
     }
 
-    const std::string ext = lower(rel.extension().string());
-    if (ext != ".vert" && ext != ".frag" && ext != ".glsl") {
-        return failResult("path must point to a .vert, .frag, or .glsl shader file.");
+    if (lower(rel.extension().string()) != ".glsl") {
+        return failResult("path must point to a .glsl shader file.");
     }
 
     const std::string content = arguments.value("content", "");
@@ -5806,8 +5611,8 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
         return failResult("Failed to write shader file.");
     }
 
-    // Editing a forked source (or shared include) invalidates compiled shaders so the
-    // viewport recompiles them; mirrors CodeEditor saving a .vert/.frag/.glsl.
+    // Editing a shader file (or an include) invalidates compiled shaders so the
+    // viewport recompiles them; mirrors CodeEditor saving a .glsl.
     project->invalidateCustomShaders();
 
     if (resourcesWindow) {
