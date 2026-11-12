@@ -3611,7 +3611,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         depthRender.setIndex(buf.second->getRender(), indexattr.getDataType(), indexattr.getOffset());
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
-                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1){
+                            // normals and colors only reach a shader that reads them
+                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                                    attr.first == AttributeType::COLOR){
                                 depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3639,7 +3641,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 if (bufferNameToRender.count(attr.second.getBufferName())){
                     if (attr.first == AttributeType::INDEX){
                         depthRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
-                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1){
+                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                            attr.first == AttributeType::COLOR){
                         depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
@@ -3746,7 +3749,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
                             if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                                    attr.first == AttributeType::TEXCOORD2){
+                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::COLOR){
                                 gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3775,7 +3778,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     if (attr.first == AttributeType::INDEX){
                         gbufferRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
                     }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                            attr.first == AttributeType::TEXCOORD2){
+                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::COLOR){
                         gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
