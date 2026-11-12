@@ -9541,6 +9541,7 @@ void editor::Properties::drawInstancedMeshComponent(ComponentType cpType, SceneP
             propertyRow(RowPropertyType::Quat, cpType, propPrefix + ".rotation", "Rotation", sceneProject, entities);
             propertyRow(RowPropertyType::Vector3, cpType, propPrefix + ".scale", "Scale", sceneProject, entities);
             propertyRow(RowPropertyType::Color4L, cpType, propPrefix + ".color", "Color", sceneProject, entities);
+            propertyRow(RowPropertyType::Vector4, cpType, propPrefix + ".custom", "Custom", sceneProject, entities);
             propertyRow(RowPropertyType::Bool, cpType, propPrefix + ".visible", "Visible", sceneProject, entities);
         }
 

@@ -9,6 +9,7 @@ struct VertexContext {
     vec3 normal;          // world space; (0, 1, 0) without normals
     vec2 uv1;             // as the mesh stores it, 0 without the set
     vec4 color;           // vertex color times instance color, 1 without either
+    vec4 instance;        // the instance's custom value, 0 without instancing
 };
 
 #ifdef HOOK_NORMAL
@@ -48,6 +49,7 @@ struct VertexContext {
         context.normal = vec3(0.0, 1.0, 0.0);
         context.uv1 = vec2(0.0);
         context.color = vec4(1.0);
+        context.instance = vec4(0.0);
         #ifdef HOOK_NORMAL
             context.normal = getHookNormal(boneTransform);
         #endif
@@ -56,6 +58,9 @@ struct VertexContext {
         #endif
         #ifdef HOOK_COLOR
             context.color = getHookColor();
+        #endif
+        #ifdef HOOK_INSTANCE
+            context.instance = getInstanceCustom();
         #endif
         return context;
     }

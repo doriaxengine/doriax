@@ -327,6 +327,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         {"uv1", "UV1", passType == ShaderType::UI || (meshPass && (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN"))},
         {"normal", "NORMAL", meshPass && (defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS"))},
         {"color", "COLOR", (meshPass || primitive) && (defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING"))},
+        {"instance", "INSTANCE", meshPass && defined("HAS_INSTANCING")},
         {"worldPosition", "POSITION", primitive}
     };
     for (const auto& input : inputs) {

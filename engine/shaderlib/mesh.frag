@@ -53,6 +53,9 @@
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     in vec3 v_hookNormal;
 #endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat in vec4 v_hookInstance;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_fs.glsl"
 #endif
@@ -287,6 +290,9 @@ const float M_PI = 3.141592653589793;
         #endif
         #ifdef HOOK_FRAGMENT_COLOR
             context.color = getVertexColor();
+        #endif
+        #ifdef HOOK_FRAGMENT_INSTANCE
+            context.instance = v_hookInstance;
         #endif
         return context;
     }

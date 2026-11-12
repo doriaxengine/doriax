@@ -9566,12 +9566,6 @@ void RenderSystem::updateInstancedMesh(InstancedMeshComponent& instmesh, MeshCom
 
             Matrix4 instanceMatrix = translateMatrix * rotationMatrix * scaleMatrix;
 
-            instmesh.renderInstances.push_back({});
-            instmesh.renderInstances[instmesh.numVisible].instanceMatrix = instanceMatrix;
-            instmesh.renderInstances[instmesh.numVisible].color = instmesh.instances[i].color;
-            instmesh.renderInstances[instmesh.numVisible].textureRect = instmesh.instances[i].textureRect;
-            instmesh.numVisible++;
-
             const Vector3& scale = instmesh.instances[i].scale;
             InstanceBounds bounds;
             bounds.scale = std::max(std::abs(scale.x), std::max(std::abs(scale.y), std::abs(scale.z)));
@@ -9580,6 +9574,19 @@ void RenderSystem::updateInstancedMesh(InstancedMeshComponent& instmesh, MeshCom
             instmesh.renderBounds.push_back(bounds);
 
             mesh.aabb.merge(instanceMatrix * mesh.verticesAABB);
+
+            // the shaders put (0, 0, 0, 1) back
+            const Vector4& custom = instmesh.instances[i].custom;
+            instanceMatrix[0][3] = custom.x;
+            instanceMatrix[1][3] = custom.y;
+            instanceMatrix[2][3] = custom.z;
+            instanceMatrix[3][3] = custom.w;
+
+            instmesh.renderInstances.push_back({});
+            instmesh.renderInstances[instmesh.numVisible].instanceMatrix = instanceMatrix;
+            instmesh.renderInstances[instmesh.numVisible].color = instmesh.instances[i].color;
+            instmesh.renderInstances[instmesh.numVisible].textureRect = instmesh.instances[i].textureRect;
+            instmesh.numVisible++;
         }
     }
 

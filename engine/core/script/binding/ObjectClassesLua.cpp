@@ -645,6 +645,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("removeInstance", &Mesh::removeInstance)
         .addFunction("isInstanceVisible", &Mesh::isInstanceVisible)
         .addFunction("setInstanceVisible", &Mesh::setInstanceVisible)
+        .addFunction("getInstanceCustom", &Mesh::getInstanceCustom)
+        .addFunction("setInstanceCustom", &Mesh::setInstanceCustom)
         .addFunction("updateInstances", &Mesh::updateInstances)
         .addFunction("getNumInstances", &Mesh::getNumInstances)
         .addFunction("clearInstances", &Mesh::clearInstances)

@@ -1001,6 +1001,30 @@ void Mesh::setInstanceVisible(size_t index, bool visible) const{
     }
 }
 
+Vector4 Mesh::getInstanceCustom(size_t index){
+    if (hasInstancedMesh()){
+        InstancedMeshComponent& instmesh = getComponent<InstancedMeshComponent>();
+
+        return instmesh.instances.at(index).custom;
+    }
+
+    return Vector4(0.0, 0.0, 0.0, 0.0);
+}
+
+void Mesh::setInstanceCustom(size_t index, Vector4 custom) const{
+    if (hasInstancedMesh()){
+        InstancedMeshComponent& instmesh = getComponent<InstancedMeshComponent>();
+
+        if (instmesh.instances.at(index).custom != custom){
+            instmesh.instances.at(index).custom = custom;
+
+            instmesh.needUpdateInstances = true;
+        }
+    }else{
+        Log::error("There is no instanced mesh component in this mesh");
+    }
+}
+
 void Mesh::updateInstances(){
     if (hasInstancedMesh()){
         InstancedMeshComponent& instmesh = getComponent<InstancedMeshComponent>();

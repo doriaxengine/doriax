@@ -87,6 +87,9 @@ in vec3 a_position;
 #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
     out vec3 v_hookNormal;
 #endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat out vec4 v_hookInstance;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_vs.glsl"
 #endif
@@ -100,6 +103,7 @@ in vec3 a_position;
     #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
         in vec4 i_textureRect;
     #endif
+    #include "includes/instance_matrix.glsl"
 #endif
 
 #include "includes/parameters_vs.glsl"
@@ -158,7 +162,7 @@ void main() {
 
     vec4 localPos = getPosition(boneTransform);
     #ifdef HAS_INSTANCING
-        mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
+        mat4 instanceMatrix = getInstanceMatrix();
         vec4 pos = instanceMatrix * localPos;
     #else
         vec4 pos = localPos;
@@ -245,6 +249,9 @@ void main() {
     #endif
     #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
         v_hookNormal = getHookNormal(boneTransform);
+    #endif
+    #ifdef HOOK_FRAGMENT_INSTANCE
+        v_hookInstance = getInstanceCustom();
     #endif
 
     #ifdef HAS_UV_SET2

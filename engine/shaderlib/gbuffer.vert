@@ -35,6 +35,7 @@ out vec3 v_normal;          // view space
     in vec4 i_matrix_col2;
     in vec4 i_matrix_col3;
     in vec4 i_matrix_col4;
+    #include "includes/instance_matrix.glsl"
 #endif
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
@@ -70,6 +71,9 @@ out vec3 v_normal;          // view space
 #endif
 #ifdef HOOK_FRAGMENT_COLOR
     out vec4 v_hookColor;
+#endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat out vec4 v_hookInstance;
 #endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_vs.glsl"
@@ -122,7 +126,7 @@ void main() {
     vec3 objNormal = getNormalObj(boneTransform, objPos);
 
     #ifdef HAS_INSTANCING
-        mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
+        mat4 instanceMatrix = getInstanceMatrix();
         vec4 pos = instanceMatrix * objPos;
         // instance matrix sits between model and object; fold it in before the
         // (model+view) normal matrix
@@ -188,6 +192,9 @@ void main() {
     #endif
     #ifdef HOOK_FRAGMENT_COLOR
         v_hookColor = getHookColor();
+    #endif
+    #ifdef HOOK_FRAGMENT_INSTANCE
+        v_hookInstance = getInstanceCustom();
     #endif
     // No Y flip here: the G-buffer keeps the target's native orientation, and SSR
     // pairs it with the scene color through the flip flag in misc.z.

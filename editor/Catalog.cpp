@@ -1817,6 +1817,10 @@ namespace {
                 static Vector4 defColor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
                 return {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defColor, (void*)&comp->instances[index].color};
             }
+            if (fieldName == ".custom") {
+                static Vector4 defCustom = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+                return {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defCustom, (void*)&comp->instances[index].custom};
+            }
             if (fieldName == ".visible") {
                 static bool defVisible = true;
                 return {PropertyType::Bool, UpdateFlags_Instanced_Mesh, (void*)&defVisible, (void*)&comp->instances[index].visible};
@@ -1848,6 +1852,7 @@ namespace {
             static Quaternion defRot;
             static Vector3 defScale = Vector3(1.0f, 1.0f, 1.0f);
             static Vector4 defColor = Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+            static Vector4 defCustom = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
             static bool defVisible = true;
             for (size_t i = 0; i < comp->instances.size(); i++) {
                 std::string prefix = "instances[" + std::to_string(i) + "]";
@@ -1855,6 +1860,7 @@ namespace {
                 ps[prefix + ".rotation"] = {PropertyType::Quat, UpdateFlags_Instanced_Mesh, (void*)&defRot, (void*)&comp->instances[i].rotation};
                 ps[prefix + ".scale"] = {PropertyType::Vector3, UpdateFlags_Instanced_Mesh, (void*)&defScale, (void*)&comp->instances[i].scale};
                 ps[prefix + ".color"] = {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defColor, (void*)&comp->instances[i].color};
+                ps[prefix + ".custom"] = {PropertyType::Vector4, UpdateFlags_Instanced_Mesh, (void*)&defCustom, (void*)&comp->instances[i].custom};
                 ps[prefix + ".visible"] = {PropertyType::Bool, UpdateFlags_Instanced_Mesh, (void*)&defVisible, (void*)&comp->instances[i].visible};
             }
         }

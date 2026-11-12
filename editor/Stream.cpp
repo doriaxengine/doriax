@@ -8313,6 +8313,8 @@ YAML::Node editor::Stream::encodeInstancedMeshComponent(const InstancedMeshCompo
         instNode["scale"] = encodeVector3(inst.scale);
         instNode["color"] = encodeVector4(inst.color);
         instNode["textureRect"] = encodeRect(inst.textureRect);
+        if (inst.custom != Vector4(0.0f, 0.0f, 0.0f, 0.0f))
+            instNode["custom"] = encodeVector4(inst.custom);
         instNode["visible"] = inst.visible;
         instancesNode.push_back(instNode);
     }
@@ -8343,6 +8345,7 @@ InstancedMeshComponent editor::Stream::decodeInstancedMeshComponent(const YAML::
             if (instNode["scale"]) inst.scale = decodeVector3(instNode["scale"]);
             if (instNode["color"]) inst.color = decodeVector4(instNode["color"]);
             if (instNode["textureRect"]) inst.textureRect = decodeRect(instNode["textureRect"]);
+            if (instNode["custom"]) inst.custom = decodeVector4(instNode["custom"]);
             if (instNode["visible"]) inst.visible = instNode["visible"].as<bool>();
             instmesh.instances.push_back(inst);
         }

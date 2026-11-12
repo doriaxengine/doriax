@@ -49,6 +49,9 @@ uniform u_fs_gbufferMaterial {
 #ifdef HOOK_FRAGMENT_COLOR
     in vec4 v_hookColor;
 #endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat in vec4 v_hookInstance;
+#endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_fs.glsl"
 #endif
@@ -73,6 +76,9 @@ uniform u_fs_gbufferMaterial {
         #endif
         #ifdef HOOK_FRAGMENT_COLOR
             context.color = v_hookColor;
+        #endif
+        #ifdef HOOK_FRAGMENT_INSTANCE
+            context.instance = v_hookInstance;
         #endif
         return context;
     }

@@ -3278,6 +3278,8 @@ std::string editor::Factory::createInstancedMeshComponent(int indentSpaces, Enti
         code << ind << "    inst.scale = " << formatVector3(inst.scale) << ";\n";
         code << ind << "    inst.color = " << formatVector4(inst.color) << ";\n";
         code << ind << "    inst.textureRect = " << formatRect(inst.textureRect) << ";\n";
+        if (inst.custom != Vector4(0.0f, 0.0f, 0.0f, 0.0f))
+            code << ind << "    inst.custom = " << formatVector4(inst.custom) << ";\n";
         code << ind << "    inst.visible = " << formatBool(inst.visible) << ";\n";
         code << ind << "    instmesh.instances.push_back(inst);\n";
         code << ind << "}\n";

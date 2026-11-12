@@ -8,6 +8,7 @@ struct FragmentContext {
     vec3 normal;        // world space, facing the viewer; (0, 1, 0) without normals
     vec2 uv1;           // as the mesh stores it, 0 without the set
     vec4 color;         // vertex color times instance color, 1 without either
+    vec4 instance;      // the instance's custom value, 0 without instancing
     vec3 view;          // unit vector to the eye
     vec3 eye;
     vec3 forward;
@@ -84,6 +85,7 @@ FragmentContext getFragmentContext(vec3 worldPosition){
     context.normal = vec3(0.0, 1.0, 0.0);
     context.uv1 = vec2(0.0);
     context.color = vec4(1.0);
+    context.instance = vec4(0.0);
     context.eye = paramsFS.effect_eye.xyz;
     context.forward = paramsFS.effect_forward;
     context.perspective = paramsFS.effect_eye.w > 0.5;
@@ -104,7 +106,7 @@ FragmentContext getFragmentContext(vec3 worldPosition){
 // always 1; keeps unused inputs alive so the stages pair
 float keepHookInputs(FragmentContext context){
     return (context.worldPosition.x < -3.0e38 || context.uv1.x < -3.0e38 || context.normal.x < -3.0e38 ||
-        context.color.x < -3.0e38) ? 0.0 : 1.0;
+        context.color.x < -3.0e38 || context.instance.x < -3.0e38) ? 0.0 : 1.0;
 }
 
 #ifdef USE_DEPTH_OFFSET

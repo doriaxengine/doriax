@@ -190,6 +190,10 @@ namespace doriax{
         bool isInstanceVisible(size_t index);
         void setInstanceVisible(size_t index, bool visible) const;
 
+        // read by shader files as context.instance
+        Vector4 getInstanceCustom(size_t index);
+        void setInstanceCustom(size_t index, Vector4 custom) const;
+
         void updateInstances();
         size_t getNumInstances();
 

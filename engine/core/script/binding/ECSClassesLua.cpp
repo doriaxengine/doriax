@@ -832,6 +832,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("scale", &InstanceData::scale, &InstanceData::scale)
         .addProperty("color", &InstanceData::color, &InstanceData::color)
         .addProperty("textureRect", &InstanceData::textureRect, &InstanceData::textureRect)
+        .addProperty("custom", &InstanceData::custom, &InstanceData::custom)
         .addProperty("visible", &InstanceData::visible, &InstanceData::visible)
         .endClass();
 

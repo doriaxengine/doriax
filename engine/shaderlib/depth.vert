@@ -33,6 +33,7 @@ out vec2 v_projZW;
     in vec4 i_matrix_col2;
     in vec4 i_matrix_col3;
     in vec4 i_matrix_col4;
+    #include "includes/instance_matrix.glsl"
 #endif
 
 // the alpha mask texture, or the hooks reading the UV set
@@ -61,6 +62,9 @@ out vec2 v_projZW;
 #endif
 #ifdef HOOK_FRAGMENT_COLOR
     out vec4 v_hookColor;
+#endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat out vec4 v_hookInstance;
 #endif
 #ifdef USE_VARYINGS
     #include "shader_varyings_vs.glsl"
@@ -96,7 +100,7 @@ void main() {
 
     vec4 localPos = getPosition(boneTransform);
     #ifdef HAS_INSTANCING
-        mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
+        mat4 instanceMatrix = getInstanceMatrix();
         vec4 pos = instanceMatrix * localPos;
     #else
         vec4 pos = localPos;
@@ -148,6 +152,9 @@ void main() {
     #endif
     #ifdef HOOK_FRAGMENT_COLOR
         v_hookColor = getHookColor();
+    #endif
+    #ifdef HOOK_FRAGMENT_INSTANCE
+        v_hookInstance = getInstanceCustom();
     #endif
     // No Y flip here: the target keeps its native orientation and the atlas lookup
     // (getShadowAtlasUV) converts the coordinate when sampling.
