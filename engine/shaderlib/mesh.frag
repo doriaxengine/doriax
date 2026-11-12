@@ -314,14 +314,21 @@ const float M_PI = 3.141592653589793;
         surface.occlusion = 1.0;
         surface.emissive = vec3(0.0);
         #ifndef MATERIAL_UNLIT
-            MaterialInfo info = {0.0, vec3(0.0), 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0), vec3(0.0)};
-            info = getMetallicRoughnessInfo(info, 0.04);
+            // the maps of the fields the hook replaces are not sampled
             surface.normal = getNormalInfo().n;
-            surface.metallic = info.metallic;
-            surface.roughness = info.perceptualRoughness;
-            surface.emissive = pbrParams.emissiveFactor;
-            #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
+            #ifndef SURFACE_REPLACES_METALLICROUGHNESS_MAP
+                MaterialInfo info = {0.0, vec3(0.0), 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0), vec3(0.0)};
+                info = getMetallicRoughnessInfo(info, 0.04);
+                surface.metallic = info.metallic;
+                surface.roughness = info.perceptualRoughness;
+            #endif
+            #ifndef SURFACE_REPLACES_EMISSIVE_MAP
+                surface.emissive = pbrParams.emissiveFactor;
+            #endif
+            #if (defined(HAS_UV_SET1) || defined(HAS_UV_SET2)) && !defined(SURFACE_REPLACES_OCCLUSION_MAP)
                 surface.occlusion = getOcclusionTexture().r;
+            #endif
+            #if (defined(HAS_UV_SET1) || defined(HAS_UV_SET2)) && !defined(SURFACE_REPLACES_EMISSIVE_MAP)
                 surface.emissive *= sRGBToLinear(getEmissiveTexture().rgb);
             #endif
         #endif
@@ -350,7 +357,11 @@ void main() {
         float coverageAlpha = applyCoverage(context);
     #endif
 
-    vec4 baseColor = getBaseColor();
+    #ifdef SURFACE_REPLACES_BASECOLOR_MAP
+        vec4 baseColor = vec4(1.0);
+    #else
+        vec4 baseColor = getBaseColor();
+    #endif
 
     #if defined(USE_MIRROR) && defined(HAS_UV_SET1)
         // planar reflection: sample the reflection texture by this fragment's

@@ -84,7 +84,7 @@ void main() {
         applyCoverage(context);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
-    #if defined(HAS_BASECOLOR_TEXTURE)
+    #if defined(HAS_BASECOLOR_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
         vec4 texColor = texture(sampler2D(u_baseColorTexture, u_baseColor_smp), v_uv1);
         baseColor *= sRGBToLinear(texColor);
     #endif
@@ -96,7 +96,7 @@ void main() {
 
     float roughness = gbufferMaterial.params.x;
     float metallic  = gbufferMaterial.params.y;
-    #if defined(HAS_METALLICROUGHNESS_TEXTURE)
+    #if defined(HAS_METALLICROUGHNESS_TEXTURE) && !defined(SURFACE_REPLACES_METALLICROUGHNESS_MAP)
         // glTF convention: green = roughness, blue = metallic
         vec4 mr = texture(sampler2D(u_metallicRoughnessTexture, u_metallicRoughness_smp), v_uv1);
         roughness *= mr.g;
@@ -110,7 +110,7 @@ void main() {
     if (!gl_FrontFacing) n = -n;
 
     float occlusion = 1.0;
-    #ifdef HAS_OCCLUSION_TEXTURE
+    #if defined(HAS_OCCLUSION_TEXTURE) && !defined(SURFACE_REPLACES_OCCLUSION_MAP)
         occlusion = texture(sampler2D(u_occlusionTexture, u_occlusion_smp), v_uvOcclusion).r;
     #endif
 

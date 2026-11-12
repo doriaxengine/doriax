@@ -5044,8 +5044,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             // a submesh is lit (uses the lighting block + full PBR params) unless it
-            // was compiled as MATERIAL_UNLIT (property bit 0)
-            bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0));
+            // was compiled as MATERIAL_UNLIT (property bit 0, or an unlit shader file)
+            bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0)) &&
+                !(mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit);
 
             if (submeshLit){
                 ShaderData& lightingShaderData = mesh.submeshes[i].shader.get()->shaderData;

@@ -278,6 +278,35 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if (!shaderAsset.empty())
         args.defines.push_back({passType == ShaderType::DEPTH ? "IN_DEPTH_PASS" : passType == ShaderType::GBUFFER ? "IN_GBUFFER_PASS" : "IN_COLOR_PASS", "1"});
 
+    // the material maps a surface hook makes unnecessary
+    const std::set<std::string>& replaces = fragmentHooks.surfaceReplaces;
+    if (useSurface && replaces.count("baseColor") && replaces.count("alpha"))
+        args.defines.push_back({"SURFACE_REPLACES_BASECOLOR_MAP", "1"});
+    if (useSurface && replaces.count("metallic") && replaces.count("roughness"))
+        args.defines.push_back({"SURFACE_REPLACES_METALLICROUGHNESS_MAP", "1"});
+    if (useSurface && replaces.count("normal"))
+        args.defines.push_back({"SURFACE_REPLACES_NORMAL_MAP", "1"});
+    if (useSurface && replaces.count("occlusion"))
+        args.defines.push_back({"SURFACE_REPLACES_OCCLUSION_MAP", "1"});
+    if (useSurface && replaces.count("emissive"))
+        args.defines.push_back({"SURFACE_REPLACES_EMISSIVE_MAP", "1"});
+
+    // an unlit shader compiles the unlit variant under whatever key the lights gave the mesh
+    if ((vertexHooks.unlit || fragmentHooks.unlit) && passType == ShaderType::MESH) {
+        const bool light2D = defined("USE_LIGHT2D");
+        const bool normals = defined("HAS_NORMALS");
+        args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
+            static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_SSAO", "DIRECTIONAL_LIGHTS_ONLY"};
+            static const std::set<std::string> surface = {"HAS_NORMALS", "HAS_TANGENTS", "HAS_NORMAL_MAP"};
+            return lighting.count(define.def) || (!light2D && surface.count(define.def));
+        }), args.defines.end());
+        args.defines.push_back({"MATERIAL_UNLIT", "1"});
+        // the hooks keep the normals the lit key gave
+        if (normals && !light2D && !defined("HAS_HOOK_NORMALS"))
+            args.defines.push_back({"HAS_HOOK_NORMALS", "1"});
+        declared.flags |= ShaderFlag_Unlit;
+    }
+
     // what the hooks read of the mesh, where this pass has it
     const struct { const char* field; const char* name; bool available; } inputs[] = {
         {"uv1", "UV1", (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN")},

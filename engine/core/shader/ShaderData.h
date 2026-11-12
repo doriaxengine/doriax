@@ -117,7 +117,8 @@ namespace doriax {
 
     // what a shader's hooks ask of the renderer
     enum ShaderFlags : uint32_t {
-        ShaderFlag_CoverageShadows = 1 << 0  // shadow maps follow getCoverage()
+        ShaderFlag_CoverageShadows = 1 << 0, // shadow maps follow getCoverage()
+        ShaderFlag_Unlit = 1 << 1            // compiled unlit whatever its key says
     };
 
     struct ShaderBinSource{

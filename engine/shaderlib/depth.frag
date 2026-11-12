@@ -65,7 +65,7 @@ void main() {
     #if defined(ALPHA_MASK)
         float alpha = depthMaterial.alphaParams.x;
     #endif
-    #if defined(HAS_TEXTURE)
+    #if defined(HAS_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
         vec4 texColor = texture(sampler2D(u_depthTexture, u_depth_smp), v_uv1);
 
         #if defined(ALPHA_MASK)
@@ -76,7 +76,7 @@ void main() {
         // only its alpha cuts here, as in the color pass
         Surface surface;
         surface.baseColor = depthMaterial.baseColorFactor.rgb;
-        #if defined(HAS_TEXTURE)
+        #if defined(HAS_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
             surface.baseColor *= sRGBToLinear(texColor).rgb;
         #endif
         surface.alpha = alpha;

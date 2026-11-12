@@ -50,6 +50,10 @@ namespace doriax::editor {
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;
+        // "#pragma shading unlit"
+        bool unlit = false;
+        // "#pragma surface_replaces baseColor alpha", fields the surface hook sets from scratch
+        std::set<std::string> surfaceReplaces;
         // the code reads Engine.time or Engine.resolution
         bool engineTime = false;
         bool engineResolution = false;

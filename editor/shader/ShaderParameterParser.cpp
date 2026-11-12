@@ -337,6 +337,25 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
             }
             continue;
         }
+        if (tag == "shading"){
+            if (rest == "unlit" || rest == "lit")
+                out.unlit = out.unlit || rest == "unlit";
+            else
+                out.errors.push_back(where + "shading takes lit or unlit");
+            continue;
+        }
+        if (tag == "surface_replaces"){
+            static const std::set<std::string> fields = {"baseColor", "alpha", "normal", "metallic", "roughness", "occlusion", "emissive"};
+            std::istringstream words(rest);
+            std::string field;
+            while (words >> field){
+                if (fields.count(field))
+                    out.surfaceReplaces.insert(field);
+                else
+                    out.errors.push_back(where + "'" + field + "' is not a surface field");
+            }
+            continue;
+        }
 
         ShaderParameterDeclaration declaration;
         if (tag == "param"){
