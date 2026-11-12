@@ -268,7 +268,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         {"getSurface", fragmentHooks.surface, meshPass},
         {"getColor", fragmentHooks.color, true},
         {"getDepthOffset", fragmentHooks.depthOffset, meshPass},
-        {"getUnderwaterColor", fragmentHooks.underwaterColor, shaderType == "water"}
+        {"getUnderwaterColor", fragmentHooks.underwaterColor, shaderType == "water"},
+        {"getLight", fragmentHooks.light, meshPass}
     };
     bool anyHook = false;
     for (const auto& hook : hooks) {
@@ -287,7 +288,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     const bool useColor = fragmentHooks.color && passType != ShaderType::DEPTH && passType != ShaderType::GBUFFER && passType != ShaderType::UNDERWATER;
     const bool useDepthOffset = fragmentHooks.depthOffset;
     const bool useUnderwaterColor = fragmentHooks.underwaterColor && passType == ShaderType::UNDERWATER;
-    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset || useUnderwaterColor;
+    // the lights of the color pass, unless the file draws unlit
+    const bool useLight = fragmentHooks.light && passType == ShaderType::MESH && !vertexHooks.unlit && !fragmentHooks.unlit;
+    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset || useUnderwaterColor || useLight;
     // only where a fragment hook can read them
     const bool useVaryings = vertexHooks.varyingsHook && useFragmentHooks;
     const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;
@@ -312,6 +315,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_SURFACE", "1"});
     if (useColor)
         args.defines.push_back({"USE_COLOR", "1"});
+    if (useLight)
+        args.defines.push_back({"USE_LIGHT", "1"});
     if (useFragmentHooks)
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
     if (!shaderAsset.empty() && meshPass)

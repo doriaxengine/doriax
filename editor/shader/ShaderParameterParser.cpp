@@ -186,6 +186,7 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
     out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
     out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
+    out.light = out.light || definesHook(code, "getLight", "FragmentContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
     for (const char* input : {"sceneDepth", "sceneNormal", "sceneOcclusion"}){

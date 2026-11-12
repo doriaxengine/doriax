@@ -49,6 +49,7 @@ namespace doriax::editor {
         bool clipPosition = false;
         bool depthOffset = false;
         bool underwaterColor = false;
+        bool light = false;
         // fields they read of their context
         std::set<std::string> contextReads;
         // post-process inputs they sample: sceneDepth, sceneNormal, sceneOcclusion

@@ -12,6 +12,11 @@
     in vec3 v_position;
 #endif
 
+// the hooks see the material as a Surface
+#if defined(USE_SURFACE) || defined(USE_LIGHT)
+    #define HOOK_SURFACE
+#endif
+
 // declared only when actually sampled (USE_MIRROR + a base texture to sample);
 // otherwise the GL driver strips the unused block and its bind slot mismatches
 #if defined(USE_MIRROR) && defined(HAS_UV_SET1)
@@ -305,7 +310,7 @@ const float M_PI = 3.141592653589793;
     }
 #endif
 
-#ifdef USE_SURFACE
+#ifdef HOOK_SURFACE
     // what the material gives, for getSurface() to change
     Surface getMaterialSurface(vec4 baseColor){
         Surface surface;
@@ -386,9 +391,11 @@ void main() {
         baseColor = getTerrainSurface(baseColor, vec3(0.0, 1.0, 0.0), 1.0, 0.0).color;
     #endif
 
-    #ifdef USE_SURFACE
+    #ifdef HOOK_SURFACE
         Surface surface = getMaterialSurface(baseColor);
-        getSurface(context, surface);
+        #ifdef USE_SURFACE
+            getSurface(context, surface);
+        #endif
         baseColor = vec4(surface.baseColor, surface.alpha);
     #endif
 
@@ -424,7 +431,7 @@ void main() {
     #endif
 
     #ifndef MATERIAL_UNLIT
-        #ifdef USE_SURFACE
+        #ifdef HOOK_SURFACE
             vec3 n = surface.normal;
         #else
             NormalInfo normalInfo = getNormalInfo();
@@ -440,7 +447,7 @@ void main() {
         float ior = 1.5;
         float f0_ior = 0.04;
 
-        #ifdef USE_SURFACE
+        #ifdef HOOK_SURFACE
             materialInfo = getSurfaceInfo(materialInfo, surface, f0_ior);
         #else
             materialInfo = getMetallicRoughnessInfo(materialInfo, f0_ior);
@@ -494,7 +501,7 @@ void main() {
             #endif
         #endif
 
-        #ifdef USE_SURFACE
+        #ifdef HOOK_SURFACE
             f_diffuse *= surface.occlusion;
             f_specular *= surface.occlusion;
         #elif defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
@@ -595,18 +602,27 @@ void main() {
                             * materialInfo.albedoColor * clamp(pbrParams.foliageTransmission, 0.0, 1.0)
                             * backlight * forwardScatter;
                     }
-                    if (NdotL > 0.0 || NdotV > 0.0){
-                        // Calculation of analytical light
-                        // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
-                        vec3 intensity = getLighIntensity(light, pointToLight, i);
-                        f_diffuse += shadow * intensity * NdotL *  BRDF_lambertian(materialInfo.f0, materialInfo.f90, materialInfo.albedoColor, VdotH);
-                        f_specular += shadow * intensity * NdotL * BRDF_specularGGX(materialInfo.f0, materialInfo.f90, materialInfo.alphaRoughness, VdotH, NdotL, NdotV, NdotH);
-                    }
+                    #ifdef USE_LIGHT
+                        LightContext lightContext;
+                        lightContext.direction = l;
+                        lightContext.color = getLighIntensity(light, pointToLight, i);
+                        lightContext.shadow = shadow;
+                        lightContext.type = light.type;
+                        f_diffuse += getLight(context, surface, lightContext);
+                    #else
+                        if (NdotL > 0.0 || NdotV > 0.0){
+                            // Calculation of analytical light
+                            // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#acknowledgments AppendixB
+                            vec3 intensity = getLighIntensity(light, pointToLight, i);
+                            f_diffuse += shadow * intensity * NdotL *  BRDF_lambertian(materialInfo.f0, materialInfo.f90, materialInfo.albedoColor, VdotH);
+                            f_specular += shadow * intensity * NdotL * BRDF_specularGGX(materialInfo.f0, materialInfo.f90, materialInfo.alphaRoughness, VdotH, NdotL, NdotV, NdotH);
+                        }
+                    #endif
                 }
             }
         #endif
 
-        #ifdef USE_SURFACE
+        #ifdef HOOK_SURFACE
             f_emissive = surface.emissive;
         #else
             f_emissive = pbrParams.emissiveFactor;

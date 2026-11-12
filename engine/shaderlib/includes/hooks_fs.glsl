@@ -16,6 +16,18 @@ struct FragmentContext {
     bool frontFacing;
 };
 
+// one light reaching the surface, for getLight()
+#define LIGHT_DIRECTIONAL 0
+#define LIGHT_POINT 1
+#define LIGHT_SPOT 2
+
+struct LightContext {
+    vec3 direction;       // from the surface to the light
+    vec3 color;           // color times intensity times attenuation, linear
+    float shadow;         // 1 lit, 0 shadowed
+    int type;             // LIGHT_DIRECTIONAL, LIGHT_POINT or LIGHT_SPOT
+};
+
 struct Surface {
     vec3 baseColor;     // linear
     float alpha;
