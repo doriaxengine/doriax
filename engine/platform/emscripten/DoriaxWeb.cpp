@@ -124,6 +124,25 @@ int DoriaxWeb::init(int argc, char **argv){
 
     canvas = "#canvas";
 
+    // where storage is denied (a third-party frame, like YouTube Playables) the keys stay in memory
+    EM_ASM({
+        var store = null;
+        try {
+            store = window.localStorage;
+            if (store) store.getItem('doriax');
+        } catch (e) {
+            store = null;
+        }
+        if (!store) {
+            var mem = {};
+            store = {};
+            store.getItem = function(key) { return Object.prototype.hasOwnProperty.call(mem, key) ? mem[key] : null; };
+            store.setItem = function(key, value) { mem[key] = String(value); };
+            store.removeItem = function(key) { delete mem[key]; };
+        }
+        Module.doriaxStorage = store;
+    });
+
     int sWidth = DEFAULT_WINDOW_WIDTH;
     int sHeight = DEFAULT_WINDOW_HEIGHT;
     if ((argv[1] != NULL && argv[1] != 0) && (argv[2] != NULL && argv[2] != 0)){
@@ -934,8 +953,8 @@ int DoriaxWeb::doriax_legacy_input(int code){
 std::string DoriaxWeb::getStringForKey(const char *key, const std::string& defaultValue){
     char* value = (char*)EM_ASM_INT({
         var key = UTF8ToString($0);
-        var val = localStorage.getItem(UTF8ToString($1) + '/' + key);
-        if (val === null) val = localStorage.getItem(key);
+        var val = Module.doriaxStorage.getItem(UTF8ToString($1) + '/' + key);
+        if (val === null) val = Module.doriaxStorage.getItem(key);
         if (val) {
             var len = lengthBytesUTF8(val)+1;
             var buf = _malloc(len);
@@ -958,7 +977,11 @@ void DoriaxWeb::setStringForKey(const char* key, const std::string& value){
     EM_ASM_ARGS({
         var key = UTF8ToString($0);
         var value = UTF8ToString($1);
-        localStorage.setItem(UTF8ToString($2) + '/' + key, value);
+        try {
+            Module.doriaxStorage.setItem(UTF8ToString($2) + '/' + key, value);
+        } catch (e) {
+            console.warn('Failed to save ' + key + ': ' + e);
+        }
     }, key, value.c_str(), DORIAX_STORAGE_ID);
 }
 
@@ -967,7 +990,7 @@ void DoriaxWeb::removeKey(const char *key){
     EM_ASM_ARGS({
         var key = UTF8ToString($0);
         var own = UTF8ToString($1) + '/' + key;
-        if (localStorage.getItem(key) === null) localStorage.removeItem(own);
-        else localStorage.setItem(own, "");
+        if (Module.doriaxStorage.getItem(key) === null) Module.doriaxStorage.removeItem(own);
+        else Module.doriaxStorage.setItem(own, "");
     }, key, DORIAX_STORAGE_ID);
 }
