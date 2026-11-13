@@ -100,7 +100,7 @@ std::string editor::GraphValue::formatNumber(float value) {
     if (value == 0.0f)
         return "0";
     // std::to_chars for floats is missing from the older systems the editor runs on:
-    // the fewest digits that read back the same, then the shorter of 10 and 1e+01
+    // the fewest digits that read back the same, with an exponent only where zeros would pile up
     char scientific[48];
     int digits = 1;
     for (; digits <= 9; digits++) {
@@ -110,23 +110,50 @@ std::string editor::GraphValue::formatNumber(float value) {
     }
     std::string text = scientific;
     if (const char* exponent = strchr(scientific, 'e')) {
-        char fixed[64];
-        const int decimals = std::max(0, std::min(digits, 9) - 1 - atoi(exponent + 1));
-        const int length = snprintf(fixed, sizeof(fixed), "%.*f", decimals, value);
-        if (length > 0 && length < (int)sizeof(fixed) && (size_t)length <= text.size() && strtof(fixed, nullptr) == value)
-            text = fixed;
+        const int power = atoi(exponent + 1);
+        if (power >= -5 && power <= 9) {
+            char fixed[64];
+            const int length = snprintf(fixed, sizeof(fixed), "%.*f", std::max(0, std::min(digits, 9) - 1 - power), value);
+            if (length > 0 && length < (int)sizeof(fixed) && strtof(fixed, nullptr) == value)
+                text = fixed;
+        }
     }
     std::replace(text.begin(), text.end(), ',', '.');
     return text;
 }
 
 bool editor::GraphValue::parseNumber(const std::string& text, float& value) {
-    if (text.empty() || !(std::isdigit((unsigned char)text[0]) || text[0] == '-' || text[0] == '.'))
+    // digits with a point and an exponent at most, the same on every system: one
+    // library reads 0x10 or inf as numbers where another leaves them text
+    size_t at = 0;
+    auto run = [&]() {
+        const size_t start = at;
+        while (at < text.size() && std::isdigit((unsigned char)text[at]))
+            at++;
+        return at - start;
+    };
+    if (at < text.size() && text[at] == '-')
+        at++;
+    size_t mantissa = run();
+    if (at < text.size() && text[at] == '.') {
+        at++;
+        mantissa += run();
+    }
+    if (mantissa == 0)
+        return false;
+    if (at < text.size() && (text[at] == 'e' || text[at] == 'E')) {
+        at++;
+        if (at < text.size() && (text[at] == '+' || text[at] == '-'))
+            at++;
+        if (run() == 0)
+            return false;
+    }
+    if (at != text.size())
         return false;
     std::istringstream stream(text);
     stream.imbue(std::locale::classic());
-    stream >> std::noskipws >> value;
-    return !stream.fail() && stream.peek() == std::char_traits<char>::eof();
+    stream >> value;
+    return !stream.fail();
 }
 
 bool editor::GraphDocument::read(const std::string& text, std::string& error) {

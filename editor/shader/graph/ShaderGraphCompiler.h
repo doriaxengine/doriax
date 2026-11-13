@@ -30,7 +30,7 @@ namespace doriax::editor {
         // source names the graph in the first line of the code; a function graph compiles to a
         // preview of its outputs, drawn in the first shader type all its nodes fit
         // live names a collection: the numbers typed on pins are then scene parameters of it, so
-        // an editor changes them with no new build. A graph that could not load them keeps its numbers
+        // an editor changes them with no new build
         static ShaderGraphResult compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader = nullptr,
                                          const std::string& live = "");
 

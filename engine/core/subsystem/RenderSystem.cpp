@@ -180,6 +180,9 @@ namespace {
         };
 
         if (mesh.numSubmeshes > 0){
+            // one that inherits the scene's shader reads the scene's values of it too
+            const unsigned char inherits = mesh.submeshes[0].material.shader.empty() ? 1 : 0;
+            add(&inherits, 1);
             for (const auto& entry : mesh.submeshes[0].material.shaderUniforms){
                 add(entry.first.data(), entry.first.size() + 1);
                 const float value[4] = {entry.second.x, entry.second.y, entry.second.z, entry.second.w};
@@ -558,6 +561,11 @@ void RenderSystem::destroy(){
     const bool reloadView = !Engine::isViewLoaded();
 
     unsettleSprites();
+
+    for (auto& copy : shaderLevelTextures){
+        copy.second.destroy();
+    }
+    shaderLevelTextures.clear();
 
     // Before the transform traversal below, which the camera entities are part of.
     while (!mirrorCameras.empty()){
@@ -2579,6 +2587,9 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
                     levels = texture.second;
                     levels.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
                     textureRender = levels.getRender(nullptr);
+                    // nothing else holds the copy, and the pool drops what nothing holds
+                    if (textureRender)
+                        shaderLevelTextures[levels.getRenderId()] = levels;
                 }
                 if (!textureRender){
                     textureRender = texture.second.getRender(fallback);

@@ -34,6 +34,13 @@ namespace doriax::editor {
         uint32_t flags = 0;
     };
 
+    // which form of a project's shader files a build takes
+    enum class ShaderSourceUse {
+        EDITOR,     // as the editor draws: unsaved graph edits, and an open graph's pin numbers left to it
+        RUN,        // as a run of the project draws: unsaved graph edits, the numbers in the code
+        SAVED       // as an export takes them: the files
+    };
+
     class ShaderBuilder {
     private:
         static std::unordered_map<ShaderKey, ShaderData> shaderDataCache;
@@ -73,16 +80,21 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key, and for a shader file the exact
         // graph of files it includes. Throws on failure.
         // declarations takes what the shader file declares, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, bool withEdits = true);
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations,
+                            ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
-        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
+        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR);
         std::string getShaderDisplayName(ShaderKey key);
 
-        static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project);
+        // live names the file of a build that left a graph's pin numbers to the editor, which no run loads
+        static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project, bool live = false);
+        // whether the editor draws this shader with an open graph's pin numbers left to it
+        static bool isLiveShader(ShaderKey shaderKey);
 
         // Compares the cached source signature with the shader file and the exact
         // graph of files it includes. No directory walk is required.
-        static bool isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath);
+        static bool isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath,
+                                       ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
     public:
         ShaderBuilder();
@@ -127,7 +139,8 @@ namespace doriax::editor {
         static void requestShutdown();
 
         // Serialize ShaderData cache on demand (no disk I/O inside buildShaderInternal).
-        static bool saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err = nullptr);
+        static bool saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err = nullptr,
+                                        ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
         ShaderData& getShaderData(ShaderKey shaderKey);
     };

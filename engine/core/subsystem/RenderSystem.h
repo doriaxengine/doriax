@@ -324,6 +324,8 @@ namespace doriax{
 		static TextureRender emptyShadowDepth;
 		// 1x1 textures kept for their samplers
 		static TextureRender shaderSamplers[9];
+		// the mipmapped copies trilinear shader textures read, by render id, kept with the scene
+		std::unordered_map<std::string, Texture> shaderLevelTextures;
 
 		static bool emptyTexturesCreated;
 		

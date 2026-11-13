@@ -1078,7 +1078,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onYes) {
-                        alert.onYes();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onYes;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1086,7 +1088,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onNo) {
-                        alert.onNo();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onNo;
+                        callback();
                     }
                 }
             } else if (alert.type == AlertType::ThreeButton) {
@@ -1099,7 +1103,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onYes) {
-                        alert.onYes();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onYes;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1107,7 +1113,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onNo) {
-                        alert.onNo();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onNo;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1115,7 +1123,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onCancel) {
-                        alert.onCancel();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onCancel;
+                        callback();
                     }
                 }
             }

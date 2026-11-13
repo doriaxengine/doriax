@@ -4,6 +4,7 @@
 #include "ShaderGraphCompiler.h"
 
 #include "ShaderNodes.h"
+#include "shader/ShaderParameters.h"
 
 #include <algorithm>
 #include <cctype>
@@ -982,9 +983,10 @@ namespace {
     bool Compiler::liveNumber(Body& body, const GraphNode& node, const NodePin& pin, const GraphValue& constant, const Type& wanted, std::string& code) {
         // a stage has only so many uniform components, and a graph has other uses for them
         constexpr size_t most = 96;
-        if (live.empty() || !wanted.vector() || !isIdentifier(pin.name))
-            return false;
+        // a pin of a Custom Function is named by its code, and not every name makes a parameter's
         const std::string name = "n" + std::to_string(node.id) + "_" + pin.name;
+        if (live.empty() || !wanted.vector() || !ShaderParameters::isValidName(name))
+            return false;
         const std::string key = live + "." + name;
         if (!liveValues.count(key) && liveValues.size() >= most)
             return false;
@@ -1414,17 +1416,9 @@ bool editor::ShaderGraphCompiler::isLiveCollection(const std::string& collection
 editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader,
                                                                const std::string& live) {
     if (graph.kind != "shader" || graph.type != "function") {
-        if (!live.empty()) {
-            Compiler compiler(graph, source, reader);
-            compiler.live = live;
-            ShaderGraphResult result = compiler.run();
-            // an int beside them makes a block OpenGL loads member by member, and only a few
-            const bool mixed = result.code.find("\n#pragma param int ") != std::string::npos || result.code.find("\n#pragma scene int ") != std::string::npos ||
-                result.code.find("\n#pragma view int ") != std::string::npos;
-            if (!mixed)
-                return result;
-        }
-        return Compiler(graph, source, reader).run();
+        Compiler compiler(graph, source, reader);
+        compiler.live = live;
+        return compiler.run();
     }
 
     // a function draws each output in turn, and shows the first

@@ -106,7 +106,8 @@ std::string customSourceCacheKey(editor::Project* project, const std::string& sh
 
 // a shader file and the files it includes, keyed by '/' and their project path, which no
 // engine include can name, even at the project root; an export takes a graph as saved
-std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project* project, const std::string& shader, bool withEdits = true) {
+std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project* project, const std::string& shader,
+                                                                 editor::ShaderSourceUse use = editor::ShaderSourceUse::EDITOR) {
     if (!project || shader.empty()) {
         auto invalid = std::make_shared<CustomSourceSnapshot>();
         invalid->error = "Shader project or path is unavailable.";
@@ -117,18 +118,22 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     // the edits are copied under the lock, the files read and compiled without it
     std::unordered_map<std::string, std::string> edits;
     const uint32_t generation = customShaderGeneration;
+    // the cache holds what the editor draws: an export reads past it once a graph is edited or
+    // live, which it may have taken in as itself or as a function, and a run past a live graph
     bool saved = false;
+    bool direct = false;
     bool live = false;
     {
         std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-        // with a graph edited or live, what the cache holds may have taken it in, as itself or as a function
-        saved = !withEdits && (!graphSources.empty() || !liveGraphs.empty());
-        if (!saved) {
+        saved = use == editor::ShaderSourceUse::SAVED && (!graphSources.empty() || !liveGraphs.empty());
+        direct = saved || (use == editor::ShaderSourceUse::RUN && liveGraphs.count(shader) > 0);
+        if (!direct) {
             if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
                 return it->second;
-            edits = graphSources;
-            live = liveGraphs.count(shader) > 0;
         }
+        if (!saved)
+            edits = graphSources;
+        live = use == editor::ShaderSourceUse::EDITOR && liveGraphs.count(shader) > 0;
     }
     auto edited = edits.find(shader);
 
@@ -260,7 +265,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     snapshot->valid = true;
     // not kept when the shaders were invalidated meanwhile
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-    if (!saved && generation == customShaderGeneration)
+    if (!direct && generation == customShaderGeneration)
         customSourceCache[cacheKey] = snapshot;
     return snapshot;
 }
@@ -1013,8 +1018,14 @@ ShaderBuildResult editor::ShaderBuilder::buildShader(ShaderKey shaderKey, Projec
     const bool isCustom = ShaderPool::getCustomIdFromKey(shaderKey) != 0;
     if (project) {
         lock.unlock();
-        const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
-        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        const bool live = isLiveShader(shaderKey);
+        std::filesystem::path cachePath = getShaderCachePath(shaderKey, project, live);
+        bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        // a pass that reads none of the pin numbers was filed under the plain name
+        if (!fresh && live) {
+            cachePath = getShaderCachePath(shaderKey, project);
+            fresh = !isCustomCacheStale(shaderKey, project, cachePath);
+        }
         if (fresh) {
             ShaderData diskData;
             std::string err;
@@ -1088,10 +1099,11 @@ void editor::ShaderBuilder::buildMissingShaders(const std::set<ShaderKey>& shade
         return;
     }
 
+    // a run cannot be given a graph's pin numbers, so its files hold them whatever the editor draws
     for (const ShaderKey& shaderKey : shaderKeys) {
         const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
         const bool isCustom = ShaderPool::getCustomIdFromKey(shaderKey) != 0;
-        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath, ShaderSourceUse::RUN);
 
         ShaderData diskData;
         if (fresh && ShaderDataSerializer::readFromFile(cachePath.string(), ShaderPool::getStorageKey(shaderKey), diskData)) {
@@ -1099,8 +1111,8 @@ void editor::ShaderBuilder::buildMissingShaders(const std::set<ShaderKey>& shade
         }
 
         try {
-            const ShaderData data = buildShaderInternal(shaderKey, project, false);
-            (void)saveShaderDataCache(shaderKey, project, data);
+            const ShaderData data = buildShaderInternal(shaderKey, project, false, ShaderSourceUse::RUN);
+            (void)saveShaderDataCache(shaderKey, project, data, nullptr, ShaderSourceUse::RUN);
         } catch (const std::exception&) {
             // buildShaderInternal reports it; the remaining keys still build
         }
@@ -1222,7 +1234,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, bool withEdits) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -1253,7 +1265,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
         throw std::runtime_error("Unknown shader file id");
     }
 
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader, withEdits);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader, use);
     if (!sources->valid)
         throw std::runtime_error(sources->error.empty() ? "Could not resolve the shader file" : sources->error);
 
@@ -1280,7 +1292,7 @@ std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lan
     return "";
 }
 
-ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress){
+ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use){
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
     }
@@ -1306,7 +1318,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     ShaderDeclarations declarations;
     try {
-        setupBuildArgs(args, shaderKey, project, declarations);
+        setupBuildArgs(args, shaderKey, project, declarations, use);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1405,7 +1417,16 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     return shaderData;
 }
 
-std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shaderKey, Project* project) {
+bool editor::ShaderBuilder::isLiveShader(ShaderKey shaderKey) {
+    const uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
+    if (customId == 0)
+        return false;
+    const std::string shader = ShaderPool::getCustomShaderName(customId);
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    return liveGraphs.count(shader) > 0;
+}
+
+std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shaderKey, Project* project, bool live) {
     if (!project) {
         return {};
     }
@@ -1416,15 +1437,22 @@ std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shader
     std::string basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            "_" + ShaderPool::getShaderLangStr();
 
-    return App::getUserShaderCacheDir() / (basename + ".sdat");
+    return App::getUserShaderCacheDir() / (basename + (live ? "_live.sdat" : ".sdat"));
 }
 
-bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err) {
+bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err, ShaderSourceUse use) {
     if (!project) {
         return false;
     }
 
-    const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
+    // the file follows what was built, whatever the graph's window did meanwhile: one
+    // with pin numbers left to the editor never takes the name a run loads
+    const bool live = std::any_of(shaderData.parameters.begin(), shaderData.parameters.end(), [](const ShaderParameterInfo& parameter) {
+        return ShaderGraphCompiler::isLiveCollection(parameter.collection);
+    });
+    if (live)
+        use = ShaderSourceUse::EDITOR;
+    const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project, live);
     if (cachePath.empty()) {
         return false;
     }
@@ -1449,7 +1477,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
         return true;
 
     const std::string customShader = ShaderPool::getCustomShaderName(customId);
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader, use);
     if (!sources->valid) {
         if (err)
             *err = sources->error;
@@ -1471,7 +1499,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
     return true;
 }
 
-bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath) {
+bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath, ShaderSourceUse use) {
     std::error_code ec;
     if (!std::filesystem::exists(cachePath, ec))
         return true;
@@ -1480,7 +1508,7 @@ bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* pro
     if (customShader.empty())
         return true;
 
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader, use);
     if (!sources->valid)
         return true;
 
@@ -1640,7 +1668,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     applyShaderBackend(args, backend);
 
     ShaderDeclarations declarations;
-    setupBuildArgs(args, shaderKey, project, declarations, false);
+    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
