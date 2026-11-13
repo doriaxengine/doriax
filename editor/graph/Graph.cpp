@@ -12,6 +12,7 @@
 #include <limits>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <locale>
 #include <sstream>
 #include <set>
@@ -98,14 +99,23 @@ namespace {
 std::string editor::GraphValue::formatNumber(float value) {
     if (value == 0.0f)
         return "0";
-    // std::to_chars for floats is missing from the older systems the editor runs on
-    char buffer[40];
-    for (int digits = 1; digits <= 9; digits++) {
-        snprintf(buffer, sizeof(buffer), "%.*g", digits, value);
-        if (strtof(buffer, nullptr) == value)
+    // std::to_chars for floats is missing from the older systems the editor runs on:
+    // the fewest digits that read back the same, then the shorter of 10 and 1e+01
+    char scientific[48];
+    int digits = 1;
+    for (; digits <= 9; digits++) {
+        snprintf(scientific, sizeof(scientific), "%.*e", digits - 1, value);
+        if (strtof(scientific, nullptr) == value)
             break;
     }
-    std::string text = buffer;
+    std::string text = scientific;
+    if (const char* exponent = strchr(scientific, 'e')) {
+        char fixed[64];
+        const int decimals = std::max(0, std::min(digits, 9) - 1 - atoi(exponent + 1));
+        const int length = snprintf(fixed, sizeof(fixed), "%.*f", decimals, value);
+        if (length > 0 && length < (int)sizeof(fixed) && (size_t)length <= text.size() && strtof(fixed, nullptr) == value)
+            text = fixed;
+    }
     std::replace(text.begin(), text.end(), ',', '.');
     return text;
 }
