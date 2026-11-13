@@ -65,9 +65,9 @@ EXCLUDED_HEADER_METHODS = {
 
 class APISymbol:
     """Represents one symbol in the engine API."""
-    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared')
+    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly')
 
-    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False):
+    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False):
         self.name = name
         self.kind = kind
         self.detail = detail
@@ -76,6 +76,7 @@ class APISymbol:
         self.signature = signature  # (params, return) of a lambda binding
         self.bound = bound  # parameter types of the overload Lua gets, None when the binding names none
         self.shared = shared  # a static property, read on the class
+        self.readonly = readonly  # bound with a getter and nothing to set it
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -224,7 +225,8 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     pname, kind,
                     f'{current_lua_name}.{pname}', current_lua_name,
-                    shared=True
+                    shared=True,
+                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():]))
                 ))
             continue
 
@@ -237,7 +239,8 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     pname, 'Property',
                     f'{current_lua_name}.{pname}', current_lua_name,
-                    getter=args[1] if len(args) > 2 else ''
+                    getter=args[1] if len(args) > 2 else '',
+                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():]))
                 ))
             continue
 
@@ -385,6 +388,17 @@ def _lambda_signature(text):
     # Lua passes neither self nor the lua_State
     params = [p for p in m.group(1).split(',')[1:] if 'lua_State' not in p]
     return _simplify_params(','.join(params)), m.group(2)
+
+
+RE_GETTER_FUNCTION = re.compile(r'&\s*[A-Za-z0-9_:]+::(?:get|is|has|can)[A-Z]|\[[^\]]*\]\s*\(|\(\s*\*\s*\)|::\s*\*\s*\)')
+
+
+def _getter_only(args):
+    """Whether a property binding gives Lua nothing to set: one function after the name.
+
+    A pointer to a data member, the other one-argument form, is written through.
+    """
+    return len(args) == 2 and bool(RE_GETTER_FUNCTION.search(args[1]))
 
 
 def _binding_text(lines, index):
@@ -669,6 +683,15 @@ def generate_header(symbols, output_path):
     lines.append('inline std::unordered_set<std::string> getEngineStaticProperties() {')
     lines.append('    return {')
     for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.shared and s.kind == 'Property')):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
+    # ── Properties Lua can only read, as "Class.name" ────────────────────
+    lines.append('inline std::unordered_set<std::string> getEngineReadOnlyProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.readonly)):
         lines.append(f'        "{escape(name)}",')
     lines.append('    };')
     lines.append('}')

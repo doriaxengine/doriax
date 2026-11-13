@@ -478,6 +478,10 @@ bool editor::Project::remapScriptEntryPaths(ScriptEntry& scriptEntry, const fs::
     if (!scriptEntry.path.empty()) {
         std::string updatedPath;
         if (remapRelativeString(oldRelative, newRelative, scriptEntry.path, updatedPath)) {
+            // a logic graph's file names its script
+            if (Util::isLogicGraphFile(updatedPath) && scriptEntry.className == fs::path(scriptEntry.path).stem().string()) {
+                scriptEntry.className = fs::path(updatedPath).stem().string();
+            }
             scriptEntry.path = updatedPath;
             changed = true;
         }
@@ -763,6 +767,32 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
         }
     });
 
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        bool textureChanged = false;
+        for (auto& texture : lines.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
+            lines.needReload = true;
+            changed = true;
+        }
+    });
+
+    // the textures of a scene's post-process passes
+    if (Scene* scene = dynamic_cast<Scene*>(registry)) {
+        std::vector<PostProcessPass> passes = scene->getPostProcessPasses();
+        bool passChanged = false;
+        for (PostProcessPass& pass : passes) {
+            for (auto& texture : pass.textures) {
+                passChanged |= visitTexturePaths(texture.second, transform);
+            }
+        }
+        if (passChanged) {
+            scene->setPostProcessPasses(passes);
+            changed = true;
+        }
+    }
+
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
         if (visitTexturePaths(probe.texture, transform)) {
             probe.needUpdate = true;
@@ -909,6 +939,20 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
             addTexture(texture.second, false);
         }
     });
+
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        for (auto& texture : lines.shaderTextures) {
+            addTexture(texture.second, false);
+        }
+    });
+
+    if (Scene* scene = dynamic_cast<Scene*>(registry)) {
+        for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
+            for (const auto& texture : pass.textures) {
+                addTexture(texture.second, false);
+            }
+        }
+    }
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
         addTexture(probe.texture, false);
@@ -1309,6 +1353,12 @@ void editor::Project::remapEntityBundleFilePath(const std::filesystem::path& old
 void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
     if (projectPath.empty() || oldPath.empty() || newPath.empty()) {
         return;
+    }
+
+    // the script written from a logic graph is written again under the graph's new name
+    if (Util::isLogicGraphFile(oldPath.string())) {
+        std::error_code ec;
+        fs::remove(ProjectUtils::getLogicScriptPath(this, oldPath), ec);
     }
 
     for (auto& sceneProject : scenes) {

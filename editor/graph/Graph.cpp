@@ -30,8 +30,9 @@ namespace {
             for (const YAML::Node& item : node)
                 value.numbers.push_back(item.as<float>());
         } else if (node.IsScalar()) {
+            // a quoted scalar is text, whatever it reads as
             float number = 0.0f;
-            if (YAML::convert<float>::decode(node, number))
+            if (node.Tag() != "!" && YAML::convert<float>::decode(node, number))
                 value.numbers.push_back(number);
             else
                 value.text = node.Scalar();
@@ -39,8 +40,16 @@ namespace {
         return value;
     }
 
+    // whether a text would be read back as a number, so it is written quoted
+    bool readsAsNumber(const std::string& text) {
+        float number = 0.0f;
+        return YAML::convert<float>::decode(YAML::Node(text), number);
+    }
+
     void writeValue(YAML::Emitter& out, const editor::GraphValue& value) {
         if (!value.text.empty()) {
+            if (readsAsNumber(value.text))
+                out << YAML::DoubleQuoted;
             out << value.text;
         } else if (value.numbers.size() == 1) {
             out << formatNumber(value.numbers[0]);

@@ -442,7 +442,8 @@ namespace {
                         error(node.id, type.name + " names no variable");
                     text += variable ? variable->name : std::string("_");
                 } else if (node.type == "value/string") {
-                    text += quote(value.text);
+                    // a number written unquoted in the file is the text of its digits
+                    text += quote(value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text);
                 } else if (setting->type == "number") {
                     text += operand(value.number());
                 } else if (setting->type == "choice") {

@@ -55,7 +55,7 @@ bool editor::RenameFileCmd::execute(){
                 if (isDir || Util::isBundleFile(extension)) {
                     project->remapEntityBundleFilePath(sourceFs, destFs);
                 }
-                if (isDir || Util::isScriptFile(extension)) {
+                if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) {
                     project->remapScriptFilePath(sourceFs, destFs);
                 }
                 if (isDir || Util::isAssetFile(extension)) {
@@ -96,7 +96,7 @@ void editor::RenameFileCmd::undo(){
                 if (isDir || Util::isBundleFile(extension)) {
                     project->remapEntityBundleFilePath(sourceFs, destFs);
                 }
-                if (isDir || Util::isScriptFile(extension)) {
+                if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) {
                     project->remapScriptFilePath(sourceFs, destFs);
                 }
                 if (isDir || Util::isAssetFile(extension)) {

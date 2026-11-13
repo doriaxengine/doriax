@@ -454,8 +454,11 @@ void editor::LogicNodes::addEngineApi() {
             LogicNodeType& get = add("get/" + parent + "." + name, "Get " + editor::LogicNodes::getTitle(name), parent, "Reads " + parent + "." + name + ".",
                                      std::move(getInputs), {out("value", "", valueType)}, {access});
             get.atomic = true;
-            add("set/" + parent + "." + name, "Set " + editor::LogicNodes::getTitle(name), parent, "Sets " + parent + "." + name + ".",
-                std::move(setInputs), {execOut()}, {access + " = {value}"});
+            // one bound with a getter alone is read, not set
+            static const std::unordered_set<std::string> readOnly = getEngineReadOnlyProperties();
+            if (!readOnly.count(parent + "." + name))
+                add("set/" + parent + "." + name, "Set " + editor::LogicNodes::getTitle(name), parent, "Sets " + parent + "." + name + ".",
+                    std::move(setInputs), {execOut()}, {access + " = {value}"});
         } else if (kind == "Constant") {
             LogicNodeType& constant = add("const/" + parent + "." + name, parent + "." + name, parent, detail, {}, {out("value", "", parent)}, {parent + "." + name});
             constant.atomic = true;
