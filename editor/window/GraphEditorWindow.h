@@ -112,6 +112,8 @@ namespace doriax::editor {
         void openFile(const std::filesystem::path& path, bool dockToCentral = true);
         void closeFile(const std::filesystem::path& path);
         void closeAll();
+        // the shaders were destroyed to be built anew: no preview draws with what it held
+        void reloadPreviews();
         void show();
 
         bool isFileOpen(const std::filesystem::path& path) const;

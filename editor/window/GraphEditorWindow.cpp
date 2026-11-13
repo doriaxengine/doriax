@@ -551,6 +551,19 @@ void editor::GraphEditorWindow::closeFile(const std::filesystem::path& path) {
     close(toRelativePath(path));
 }
 
+void editor::GraphEditorWindow::reloadPreviews() {
+    for (auto& entry : instances) {
+        Instance& instance = *entry.second;
+        if (!instance.preview)
+            continue;
+        instance.preview->reload();
+        instance.previewGeneration = ShaderBuilder::getCustomShaderGeneration();
+    }
+    // those of closed windows, kept until their last draw is over
+    for (auto& preview : retiredPreviews)
+        preview->reload();
+}
+
 void editor::GraphEditorWindow::closeAll() {
     for (auto& entry : instances) {
         ShaderBuilder::setGraphLive(entry.first, false);

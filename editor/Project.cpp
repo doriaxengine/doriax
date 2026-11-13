@@ -4264,6 +4264,10 @@ void editor::Project::invalidateCustomShader(const std::string& shader) {
 }
 
 void editor::Project::flagCustomShaderUsers(const std::string* shader) {
+    // a graph window's preview is a scene of its own, which may be drawn this very frame
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
+        graphEditor->reloadPreviews();
+
     auto invalidate = [shader](SceneProject& sceneProject) {
         if (!sceneProject.scene)
             return;
