@@ -300,7 +300,8 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.vertexOffsetMax};
+            mesh.vertexOffsetMax, mesh.submeshes[0].material.shader, mesh.submeshes[0].material.shaderUniforms,
+            mesh.submeshes[0].material.shaderTextures};
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {
@@ -315,6 +316,19 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
+    // a shader given before the model loaded goes to the materials that came without one
+    if (settings.shader.empty())
+        return;
+    for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
+        Material& material = mesh.submeshes[i].material;
+        if (!material.shader.empty())
+            continue;
+        material.shader = settings.shader;
+        material.shaderUniforms = settings.shaderUniforms;
+        material.shaderTextures = settings.shaderTextures;
+        mesh.submeshes[i].needUpdateTexture = true;
+        mesh.needReload = true;
+    }
 }
 
 MeshSystem::MeshSettingsByNode MeshSystem::collectMeshSettings(Entity entity, const ModelComponent& model, const std::string& filename) const {

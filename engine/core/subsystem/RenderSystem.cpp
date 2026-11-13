@@ -2544,9 +2544,15 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
             fallback = &emptyNormal;
         }
 
+        const bool mipmapped = parameter.filter != TextureFilter::NEAREST && parameter.filter != TextureFilter::LINEAR;
         TextureRender* textureRender = NULL;
         for (auto& texture : textures){
             if (texture.first == parameter.name){
+                // a trilinear sampler reads levels the texture's own filter would not build
+                const TextureFilter own = texture.second.getMinFilter();
+                if (mipmapped && !texture.second.isFramebuffer() && (own == TextureFilter::NEAREST || own == TextureFilter::LINEAR)){
+                    texture.second.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
+                }
                 textureRender = texture.second.getRender(fallback);
                 break;
             }

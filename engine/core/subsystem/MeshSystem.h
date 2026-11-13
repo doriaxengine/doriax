@@ -218,6 +218,10 @@ namespace doriax{
             bool lodEnabled;
             float lodBias;
             float vertexOffsetMax;
+            // what setShader and its values gave the first material
+            std::string shader;
+            ShaderUniformValues shaderUniforms;
+            ShaderTextureValues shaderTextures;
         };
         typedef std::map<std::pair<int, std::string>, MeshSettings> MeshSettingsByNode;
         MeshSettingsByNode collectMeshSettings(Entity entity, const ModelComponent& model, const std::string& filename) const;
