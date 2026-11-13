@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "Mesh.h"
+
+#include <algorithm>
 #include "render/ObjectRender.h"
 #include "util/Color.h"
 #include "component/MirrorComponent.h"
@@ -513,7 +515,8 @@ bool Mesh::isAutoTransparency() const{
 
 void Mesh::setShader(const std::string& path){
     for (MeshComponent* mesh : getMeshes()){
-        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+        // a mesh not built yet keeps it in its first material
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
             if (mesh->submeshes[i].material.shader != path){
                 mesh->submeshes[i].material.shader = path;
 
@@ -554,7 +557,7 @@ float Mesh::getVertexOffsetMax() const{
 
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){
     for (MeshComponent* mesh : getMeshes()){
-        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
             ShaderUniforms::set(mesh->submeshes[i].material.shaderUniforms, name, value);
         }
         mesh->needUpdateShaderUniforms = true;
@@ -592,7 +595,7 @@ Vector4 Mesh::getShaderUniform(unsigned int submesh, const std::string& name) co
 
 void Mesh::setShaderTexture(const std::string& name, const Texture& texture){
     for (MeshComponent* mesh : getMeshes()){
-        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
             mesh->submeshes[i].material.setShaderTexture(name, texture);
             mesh->submeshes[i].needUpdateTexture = true;
         }

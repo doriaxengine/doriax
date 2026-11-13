@@ -298,10 +298,19 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 }
 
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
-    return {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
+    MeshSystem::MeshSettings settings = {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.vertexOffsetMax, mesh.submeshes[0].material.shader, mesh.submeshes[0].material.shaderUniforms,
-            mesh.submeshes[0].material.shaderTextures};
+            mesh.vertexOffsetMax, std::string(), {}, {}};
+    // a shader every material shares was given to the mesh, one of a single material is that material's
+    const Material& first = mesh.submeshes[0].material;
+    for (unsigned int i = 1; i < mesh.numSubmeshes; i++){
+        if (mesh.submeshes[i].material.shader != first.shader)
+            return settings;
+    }
+    settings.shader = first.shader;
+    settings.shaderUniforms = first.shaderUniforms;
+    settings.shaderTextures = first.shaderTextures;
+    return settings;
 }
 
 static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshComponent& mesh) {

@@ -6,6 +6,7 @@
 
 #include "Export.h"
 #include "ecs/Entity.h"
+#include <functional>
 #include <string>
 
 typedef struct lua_State lua_State;
@@ -22,6 +23,7 @@ namespace doriax {
     private:
         static lua_State *luastate;
         static unsigned int luaStateGeneration;
+        static std::function<std::string(const std::string&)> scriptPathResolver;
         
         static void createLuaState();
         static int setLuaPath(const char* path);
@@ -57,6 +59,9 @@ namespace doriax {
         static bool pushEntityHandleByType(lua_State* L, Scene* scene, Entity entity, const std::string& ptrTypeName);
 
     public:
+        // where a script entry's file is read from, when not under lua://; empty for the usual place
+        static void setScriptPathResolver(std::function<std::string(const std::string&)> resolver);
+
         LuaBinding();
         virtual ~LuaBinding();
         

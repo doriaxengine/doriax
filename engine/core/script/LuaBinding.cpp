@@ -89,6 +89,7 @@ using namespace doriax;
 
 
 lua_State *LuaBinding::luastate = NULL;
+std::function<std::string(const std::string&)> LuaBinding::scriptPathResolver;
 unsigned int LuaBinding::luaStateGeneration = 0;
 
 // modules the engine itself loads, anything after this is project code
@@ -365,6 +366,10 @@ int LuaBinding::luaRegisterEngineEvent(lua_State* L) {
 }
 
 // Note it can be done in the same way with Sol2: https://github.com/ThePhD/sol2/issues/692
+void LuaBinding::setScriptPathResolver(std::function<std::string(const std::string&)> resolver) {
+    scriptPathResolver = std::move(resolver);
+}
+
 int LuaBinding::setLuaPath(const char* path) {
 
     lua_State *L = luastate;
@@ -709,9 +714,11 @@ void LuaBinding::initializeLuaScripts(Scene* scene) {
         const std::string path = entry->path;
         const std::string className = entry->className;
 
-        // a path with a root or a scheme of its own is read as it is
-        const bool rooted = path.find("://") != std::string::npos || path.rfind("/", 0) == 0 || (path.length() > 1 && path[1] == ':');
-        std::string luaFile = rooted ? path : std::string("lua://") + path;
+        // a tool may keep a script elsewhere than the Lua directory
+        std::string luaFile = scriptPathResolver ? scriptPathResolver(path) : std::string();
+        if (luaFile.empty()) {
+            luaFile = std::string("lua://") + path;
+        }
         Data filedata;
         if (filedata.open(luaFile.c_str()) != FileErrors::FILEDATA_OK) {
             Log::error("Lua script file not found: %s", path.c_str());

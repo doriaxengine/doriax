@@ -2548,12 +2548,21 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
         TextureRender* textureRender = NULL;
         for (auto& texture : textures){
             if (texture.first == parameter.name){
-                // a trilinear sampler reads levels the texture's own filter would not build
+                if (!texture.second.empty() && !texture.second.isFramebuffer() && texture.second.getType() != parameter.type){
+                    Log::warn("Shader texture '%s' is not of the type its parameter declares", parameter.name.c_str());
+                    break;
+                }
+                // a trilinear sampler reads levels the texture's own filter would not build:
+                // a copy asks for them, so the texture given stays as it was set
                 const TextureFilter own = texture.second.getMinFilter();
                 if (mipmapped && !texture.second.isFramebuffer() && (own == TextureFilter::NEAREST || own == TextureFilter::LINEAR)){
-                    texture.second.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
+                    Texture levels = texture.second;
+                    levels.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
+                    textureRender = levels.getRender(nullptr);
                 }
-                textureRender = texture.second.getRender(fallback);
+                if (!textureRender){
+                    textureRender = texture.second.getRender(fallback);
+                }
                 break;
             }
         }
