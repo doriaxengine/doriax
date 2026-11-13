@@ -1959,15 +1959,21 @@ void editor::GraphEditorWindow::show() {
             }
             drawToolbar(instance);
 
-            // room between the panel's fields and its edges, where the resize line is
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Theme::dpi(ImVec2(8.0f, 8.0f)));
-            ImGui::BeginChild("##side", ImVec2(Theme::dpi(290.0f), 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX | ImGuiChildFlags_AlwaysUseWindowPadding);
+            // the panel is resized at its edge; what scrolls is a child inside it, so the
+            // scrollbar keeps off that edge and the fields off both
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Theme::dpi(ImVec2(5.0f, 8.0f)));
+            ImGui::BeginChild("##side", ImVec2(Theme::dpi(290.0f), 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
+                              ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+            ImGui::PopStyleVar();
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Theme::dpi(ImVec2(5.0f, 0.0f)));
+            ImGui::BeginChild("##fields", ImVec2(0.0f, 0.0f), ImGuiChildFlags_AlwaysUseWindowPadding);
             ImGui::PopStyleVar();
             drawPreview(instance);
             drawParameters(instance);
             ImGui::Spacing();
             drawInspector(instance);
             drawErrors(instance);
+            ImGui::EndChild();
             ImGui::EndChild();
             // the canvas starts at the panel's edge, where it is resized
             ImGui::SameLine(0.0f, 0.0f);
