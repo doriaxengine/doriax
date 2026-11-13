@@ -14,6 +14,8 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace doriax::editor {
 
@@ -45,6 +47,8 @@ namespace doriax::editor {
             std::string nodePreviewOf;               // the node and graph text it was last worked out for
             std::string nodePreviewCode;             // and the code it built
             std::string builtCode;                   // what the scene was last asked to build
+            std::string liveCode;                    // a shader graph's code as the scene builds it, its pin numbers left out
+            std::vector<std::pair<std::string, Vector4>> liveValues;    // those numbers, as last given to the scenes
             uint32_t compiledGeneration = 0;         // the shaders compiled was checked against
             double checkAt = 0.0;                    // when the file is next looked at
 
@@ -78,6 +82,7 @@ namespace doriax::editor {
         void writeScript(Instance& instance);
         // with the project's function graphs as edited
         void compile(Instance& instance);
+        const std::string& getBuiltCode(const Instance& instance) const;
         // one undoable step: what changed in the document since it was last applied
         void edit(Instance& instance, const std::string& mergeKey = std::string());
         void applyText(Instance& instance, const std::string& text);

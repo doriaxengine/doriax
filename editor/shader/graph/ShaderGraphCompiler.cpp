@@ -7,6 +7,8 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdio>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -340,6 +342,9 @@ namespace {
 
         ShaderGraphResult run();
 
+        // the collection pin numbers are read from, none when the code holds them
+        std::string live;
+
     private:
         // one hook being written
         struct Body {
@@ -360,6 +365,7 @@ namespace {
         std::map<int, std::string> originFile;    // and the function it came from
         std::map<int, std::vector<std::string>> callers;    // the functions a Subgraph node sits in
         std::set<std::string> functions;
+        std::map<std::string, Vector4> liveValues;
         const ShaderNodes& library = ShaderNodes::get();
         ShaderGraphResult result;
         Stage vertex;
@@ -384,6 +390,7 @@ namespace {
         bool checkGraph(const GraphNode*& output);
         bool evaluate(Body& body, int nodeId, const std::string& pin, Value& value);
         bool inputValue(Body& body, const GraphNode& node, const ShaderNodeType& type, const NodePin& pin, Value& value);
+        bool liveNumber(Body& body, const GraphNode& node, const NodePin& pin, const GraphValue& constant, const Type& wanted, std::string& code);
         bool expand(Body& body, const GraphNode& node, const ShaderNodeType& type, const std::string& code,
                     const std::map<std::string, std::string>& inputs, const Type& dynamic, std::string& out);
         bool convert(const Value& from, const Type& to, Value& out, int node, const std::string& pin);
@@ -411,6 +418,7 @@ namespace {
         reportOrigins();
         result.type = graph.type;
         result.functions.assign(functions.begin(), functions.end());
+        result.liveValues.assign(liveValues.begin(), liveValues.end());
         return result;
     }
 
@@ -963,8 +971,37 @@ namespace {
             }
             return true;
         }
-        value.code = literal(constant, wanted);
         value.type = wanted;
+        if (liveNumber(body, node, pin, constant, wanted, value.code))
+            return true;
+        value.code = literal(constant, wanted);
+        return true;
+    }
+
+    // a number left to a scene parameter, which the editor fills as it is typed
+    bool Compiler::liveNumber(Body& body, const GraphNode& node, const NodePin& pin, const GraphValue& constant, const Type& wanted, std::string& code) {
+        // a stage has only so many uniform components, and a graph has other uses for them
+        constexpr size_t most = 96;
+        if (live.empty() || !wanted.vector() || !isIdentifier(pin.name))
+            return false;
+        const std::string name = "n" + std::to_string(node.id) + "_" + pin.name;
+        const std::string key = live + "." + name;
+        if (!liveValues.count(key) && liveValues.size() >= most)
+            return false;
+        // as the literal would spell it
+        const int size = wanted.size();
+        Vector4 value(0.0f, 0.0f, 0.0f, 0.0f);
+        for (int i = 0; i < size; i++) {
+            float number = constant.number();
+            if (constant.numbers.size() > 1)
+                number = i < (int)constant.numbers.size() ? constant.numbers[i] : (wanted.color && i == 3 ? 1.0f : 0.0f);
+            else if (wanted.color && i == 3)
+                number = 1.0f;
+            value[i] = std::isfinite(number) ? number : 0.0f;
+        }
+        liveValues[key] = value;
+        stageOf(body).shared.insert("#pragma scene " + wanted.name + " " + key);
+        code = key;
         return true;
     }
 
@@ -1360,9 +1397,35 @@ namespace {
 
 }
 
-editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader) {
-    if (graph.kind != "shader" || graph.type != "function")
+std::string editor::ShaderGraphCompiler::getLiveCollection(const std::string& source) {
+    // FNV-1a, the same from one run to the next so a built shader is found again
+    uint32_t hash = 2166136261u;
+    for (unsigned char c : source)
+        hash = (hash ^ c) * 16777619u;
+    char text[16];
+    snprintf(text, sizeof(text), "%08x", hash);
+    return std::string("GraphPins") + text;
+}
+
+bool editor::ShaderGraphCompiler::isLiveCollection(const std::string& collection) {
+    return collection.rfind("GraphPins", 0) == 0;
+}
+
+editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader,
+                                                               const std::string& live) {
+    if (graph.kind != "shader" || graph.type != "function") {
+        if (!live.empty()) {
+            Compiler compiler(graph, source, reader);
+            compiler.live = live;
+            ShaderGraphResult result = compiler.run();
+            // an int beside them makes a block OpenGL loads member by member, and only a few
+            const bool mixed = result.code.find("\n#pragma param int ") != std::string::npos || result.code.find("\n#pragma scene int ") != std::string::npos ||
+                result.code.find("\n#pragma view int ") != std::string::npos;
+            if (!mixed)
+                return result;
+        }
         return Compiler(graph, source, reader).run();
+    }
 
     // a function draws each output in turn, and shows the first
     ShaderGraphResult result;

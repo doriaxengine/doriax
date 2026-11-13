@@ -113,6 +113,12 @@ namespace doriax::editor {
         // an open graph's edits, built in place of its file until saved or closed
         static void setGraphSource(const std::string& shader, const std::string& text);
         static void clearGraphSource(const std::string& shader);
+        // a graph open in the editor is built with its pin numbers as values the editor sets,
+        // so changing one needs no new build; an export and the generated file keep the numbers
+        // true when it changed
+        static bool setGraphLive(const std::string& shader, bool live);
+        // the code of a graph in the project's generated files, which a build writes too
+        static void writeGraphCode(Project* project, const std::string& shader, const std::string& code);
         // a graph as the editor holds it, edited or saved, which Subgraph nodes read
         static bool readGraphSource(Project* project, const std::string& path, std::string& text);
         // a function graph's pins as Subgraph nodes show them, as edited; false when it is none

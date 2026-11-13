@@ -46,6 +46,11 @@ namespace doriax{
         // process-wide id of a key, so tables index instead of compare
         static uint32_t intern(const std::string& key);
 
+        // a scene or view value of every scene that sets none of its own, as an editor
+        // gives while it previews; null when the key has none
+        static void setGlobal(const std::string& key, const Vector4& value);
+        static const Vector4* findGlobal(uint32_t key);
+
         static const char* getScopeName(ShaderParameterScope scope);
         static int getComponentCount(ShaderUniformType type);
     };

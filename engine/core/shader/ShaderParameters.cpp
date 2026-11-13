@@ -24,6 +24,11 @@ static std::unordered_map<std::string, uint32_t>& internedKeys(){
     return *keys;
 }
 
+static ShaderParameterTable& globalValues(){
+    static ShaderParameterTable* table = new ShaderParameterTable();
+    return *table;
+}
+
 static void writeFloats(std::vector<uint8_t>& data, unsigned int offset, const float* values, int count){
     if (count <= 0 || (size_t)offset + (size_t)count * sizeof(float) > data.size())
         return;
@@ -106,6 +111,14 @@ uint32_t ShaderParameters::intern(const std::string& key){
     const uint32_t id = (uint32_t)keys.size();
     keys.emplace(key, id);
     return id;
+}
+
+void ShaderParameters::setGlobal(const std::string& key, const Vector4& value){
+    globalValues().set(intern(key), value);
+}
+
+const Vector4* ShaderParameters::findGlobal(uint32_t key){
+    return globalValues().find(key);
 }
 
 const char* ShaderParameters::getScopeName(ShaderParameterScope scope){
@@ -287,6 +300,8 @@ void ShaderParameterBlock::writeFrame(const ShaderEffectView& view, const Vector
             continue;
         }
         const Vector4* value = table ? table->find(binding.key) : nullptr;
+        if (!value)
+            value = ShaderParameters::findGlobal(binding.key);
         writeValue(data, binding, value ? *value : binding.defaultValue);
     }
 }

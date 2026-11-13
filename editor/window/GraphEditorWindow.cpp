@@ -16,6 +16,7 @@
 #include "logic/LogicGraphCompiler.h"
 #include "logic/LogicNodes.h"
 #include "shader/ShaderBuilder.h"
+#include "shader/ShaderParameters.h"
 #include "shader/graph/ShaderNodes.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
@@ -363,11 +364,19 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     instance.loadError.clear();
     instance.text = instance.savedText = instance.document.write();
     compile(instance);
-    instance.builtCode = instance.compiled.code;
-    // what the scene built of the graph before is not what the file holds now
-    if (reopened && !GraphNodes::isLogic(instance.document))
-        project->invalidateCustomShader(key);
+    instance.builtCode = getBuiltCode(instance);
+    if (!GraphNodes::isLogic(instance.document)) {
+        const bool live = ShaderBuilder::setGraphLive(key, instance.document.type != "function");
+        // what the scene built of the graph before is not what the file holds now, or how it is built
+        if (reopened || live)
+            project->invalidateCustomShader(key);
+    }
     return true;
+}
+
+// what the scene builds of a graph, which a pin's number is no part of while the graph is open
+const std::string& editor::GraphEditorWindow::getBuiltCode(const Instance& instance) const {
+    return instance.liveCode.empty() ? instance.compiled.code : instance.liveCode;
 }
 
 void editor::GraphEditorWindow::compile(Instance& instance) {
@@ -377,10 +386,29 @@ void editor::GraphEditorWindow::compile(Instance& instance) {
         return;
     }
     Project* owner = project;
-    instance.compiled = ShaderGraphCompiler::compile(instance.document, instance.filepath.generic_string(), [owner](const std::string& path, std::string& text) {
+    const std::string shader = instance.filepath.generic_string();
+    const ShaderGraphReader reader = [owner](const std::string& path, std::string& text) {
         return ShaderBuilder::readGraphSource(owner, path, text);
-    });
+    };
+    instance.compiled = ShaderGraphCompiler::compile(instance.document, shader, reader);
     instance.compiledGeneration = ShaderBuilder::getCustomShaderGeneration();
+
+    // the scene builds an open graph with its pin numbers as values set here, so
+    // typing one draws at once; a function is built into the graphs that call it
+    instance.liveCode.clear();
+    if (!instance.compiled.success || instance.document.type == "function")
+        return;
+    const ShaderGraphResult live = ShaderGraphCompiler::compile(instance.document, shader, reader, ShaderGraphCompiler::getLiveCollection(shader));
+    if (!live.success)
+        return;
+    instance.liveCode = live.code;
+    if (live.liveValues == instance.liveValues)
+        return;
+    instance.liveValues = live.liveValues;
+    for (const auto& [key, value] : instance.liveValues)
+        ShaderParameters::setGlobal(key, value);
+    for (SceneProject& sceneProject : project->getScenes())
+        sceneProject.needUpdateRender = true;
 }
 
 bool editor::GraphEditorWindow::save(Instance& instance) {
@@ -400,9 +428,15 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
         return true;
     }
     // the file holds the edits now
-    ShaderBuilder::clearGraphSource(instance.filepath.generic_string());
+    const std::string key = instance.filepath.generic_string();
+    ShaderBuilder::clearGraphSource(key);
+    // only pin numbers changed since the scene built it, and those are set: the code's file is all there is to write
+    if (!instance.liveCode.empty() && instance.previewAt < 0.0 && instance.liveCode == instance.builtCode) {
+        ShaderBuilder::writeGraphCode(project, key, instance.compiled.code);
+        return true;
+    }
     instance.previewAt = -1.0;
-    project->invalidateCustomShader(instance.filepath.generic_string());
+    project->invalidateCustomShader(key);
     return true;
 }
 
@@ -430,9 +464,9 @@ void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::s
         ShaderBuilder::clearGraphSource(key);
     else
         ShaderBuilder::setGraphSource(key, text);
-    // moving nodes changes no code; a function's shows one output of several
-    if (instance.document.type == "function" || instance.compiled.code != instance.builtCode) {
-        instance.builtCode = instance.compiled.code;
+    // moving nodes changes no code, nor does a pin's number; a function's shows one output of several
+    if (instance.document.type == "function" || getBuiltCode(instance) != instance.builtCode) {
+        instance.builtCode = getBuiltCode(instance);
         instance.previewAt = ImGui::GetTime() + previewDelay;
     }
 }
@@ -487,7 +521,9 @@ void editor::GraphEditorWindow::erase(const std::string& key) {
         return;
     Instance* instance = it->second.get();
     // a shader graph's unsaved edits were what the scene drew
-    const bool edited = !GraphNodes::isLogic(instance->document) && instance->text != instance->savedText;
+    bool edited = !GraphNodes::isLogic(instance->document) && instance->text != instance->savedText;
+    // the scene goes back to the graph as its file builds
+    edited |= ShaderBuilder::setGraphLive(key, false);
     ShaderBuilder::clearGraphSource(key);
     ShaderBuilder::clearGraphSource(nodePreviewKey(instance->filepath));
     if (instance->preview)
@@ -515,6 +551,7 @@ void editor::GraphEditorWindow::closeFile(const std::filesystem::path& path) {
 
 void editor::GraphEditorWindow::closeAll() {
     for (auto& entry : instances) {
+        ShaderBuilder::setGraphLive(entry.first, false);
         ShaderBuilder::clearGraphSource(entry.first);
         ShaderBuilder::clearGraphSource(nodePreviewKey(entry.second->filepath));
         if (entry.second->preview)
@@ -572,6 +609,7 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     instances.erase(it);
     erase(newKey);
     // unsaved edits follow the file
+    ShaderBuilder::setGraphLive(oldKey, false);
     ShaderBuilder::clearGraphSource(oldKey);
     ShaderBuilder::clearGraphSource(nodePreviewKey(oldKey));
     instance->nodePreviewOf.clear();
@@ -580,8 +618,13 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     if (GraphNodes::isLogic(instance->document)) {
         // the file's name is the script's
         compile(*instance);
-    } else if (instance->text != instance->savedText) {
-        ShaderBuilder::setGraphSource(newKey, instance->text);
+    } else {
+        if (instance->text != instance->savedText)
+            ShaderBuilder::setGraphSource(newKey, instance->text);
+        // its pin numbers are read by the new name
+        ShaderBuilder::setGraphLive(newKey, instance->loadError.empty() && instance->document.type != "function");
+        compile(*instance);
+        instance->builtCode = getBuiltCode(*instance);
     }
     instances[newKey] = std::move(instance);
 

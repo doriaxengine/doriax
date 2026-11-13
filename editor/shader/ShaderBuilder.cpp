@@ -59,6 +59,8 @@ std::mutex customSourceCacheMutex;
 std::unordered_map<std::string, std::shared_ptr<const CustomSourceSnapshot>> customSourceCache;
 // graphs edited in the editor, by path, until saved
 std::unordered_map<std::string, std::string> graphSources;
+// the graphs open in the editor, whose pin numbers are values it sets
+std::unordered_set<std::string> liveGraphs;
 // the graphs each function graph is inlined into
 std::unordered_map<std::string, std::unordered_set<std::string>> graphDependents;
 std::atomic<uint32_t> customShaderGeneration{0};
@@ -116,14 +118,16 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     std::unordered_map<std::string, std::string> edits;
     const uint32_t generation = customShaderGeneration;
     bool saved = false;
+    bool live = false;
     {
         std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-        // with a graph edited, what the cache holds may have taken it in, as itself or as a function
-        saved = !withEdits && !graphSources.empty();
+        // with a graph edited or live, what the cache holds may have taken it in, as itself or as a function
+        saved = !withEdits && (!graphSources.empty() || !liveGraphs.empty());
         if (!saved) {
             if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
                 return it->second;
             edits = graphSources;
+            live = liveGraphs.count(shader) > 0;
         }
     }
     auto edited = edits.find(shader);
@@ -165,7 +169,8 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 }
                 return editor::Util::isSafeRelativePath(path) && readTextFile(projectRoot / path, text);
             };
-            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction);
+            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction,
+                live ? editor::ShaderGraphCompiler::getLiveCollection(shader) : std::string());
             {
                 std::lock_guard<std::mutex> lock(customSourceCacheMutex);
                 for (const std::string& function : compiled.functions)
@@ -177,8 +182,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
             }
             source = compiled.code;
             snapshot->graphLines = compiled.lineNodes;
+            // the generated file holds the numbers, as an export builds it
             if (!saved)
-                writeGeneratedShader(project, shader, source);
+                writeGeneratedShader(project, shader, compiled.liveValues.empty() ? source : editor::ShaderGraphCompiler::compile(graph, shader, readFunction).code);
         }
         appendSignaturePart(signatureInput, "entry:" + shader, source);
     }
@@ -631,6 +637,10 @@ editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Proj
     ShaderParameterParser::parseTree("/" + shader, lookup, ShaderStageType::FRAGMENT, annotations);
     // the clashes the build would stop at
     ShaderParameterParser::checkDeclarations(annotations.parameters, annotations.errors);
+    // a live graph's pin numbers are the graph window's, not parameters to show
+    annotations.parameters.erase(std::remove_if(annotations.parameters.begin(), annotations.parameters.end(), [](const ShaderParameterDeclaration& declaration) {
+        return ShaderGraphCompiler::isLiveCollection(declaration.collection);
+    }), annotations.parameters.end());
     return annotations;
 }
 
@@ -1496,6 +1506,20 @@ std::string editor::ShaderBuilder::getShaderDisplayName(ShaderKey key) {
 void editor::ShaderBuilder::setGraphSource(const std::string& shader, const std::string& text) {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     graphSources[shader] = text;
+}
+
+void editor::ShaderBuilder::writeGraphCode(Project* project, const std::string& shader, const std::string& code) {
+    writeGeneratedShader(project, shader, code);
+}
+
+bool editor::ShaderBuilder::setGraphLive(const std::string& shader, bool live) {
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    if (live ? !liveGraphs.insert(shader).second : liveGraphs.erase(shader) == 0)
+        return false;
+    // what was resolved the other way goes, so an export never takes it
+    customShaderGeneration++;
+    customSourceCache.clear();
+    return true;
 }
 
 void editor::ShaderBuilder::clearGraphSource(const std::string& shader) {
