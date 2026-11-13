@@ -1789,15 +1789,6 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : (logic ? "The Lua script the graph makes" : "The shader code the graph makes"));
     ImGui::SameLine();
     const bool function = instance.document.type == "function";
-    // a logic graph's script is kept by the editor
-    if (!logic) {
-        ImGui::BeginDisabled(!instance.compiled.success || function);
-        if (ImGui::Button(ICON_FA_FILE_CODE " Convert"))
-            convertToCode(instance);
-        ImGui::SetItemTooltip(function ? "A function is used through Subgraph nodes" : "Write the code to a .glsl beside the graph, and use it where the graph is used");
-        ImGui::EndDisabled();
-        ImGui::SameLine();
-    }
     if (instance.compiled.success && logic)
         ImGui::TextDisabled(ICON_FA_CHECK " script");
     else if (instance.compiled.success && function)
@@ -1806,6 +1797,35 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
         ImGui::TextDisabled(ICON_FA_CHECK " %s shader", instance.document.type.c_str());
     else
         ImGui::TextColored(errorColor, ICON_FA_TRIANGLE_EXCLAMATION " %d error%s", (int)instance.compiled.errors.size(), instance.compiled.errors.size() == 1 ? "" : "s");
+    // a logic graph's script is kept by the editor
+    if (logic)
+        return;
+    // apart at the right: it ends the graph's use, where the others edit it
+    const char* label = ICON_FA_FILE_CODE " Convert";
+    const float width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+    ImGui::SameLine();
+    if (ImGui::GetContentRegionAvail().x > width)
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - width);
+    ImGui::BeginDisabled(!instance.compiled.success || function);
+    if (ImGui::Button(label)) {
+        std::filesystem::path code = instance.filepath;
+        code.replace_extension(".glsl");
+        const std::filesystem::path graph = instance.filepath;
+        Backend::getApp().registerConfirmAlert(
+            "Convert to Code",
+            "Write " + code.filename().generic_string() + " and use it everywhere " + instance.filepath.filename().generic_string() +
+                " is used?\n\nThe graph file stays in the project, but nothing draws with it any more, and undo does not bring it back.",
+            [this, graph]() {
+                // still open when the answer comes
+                for (auto& [key, open] : instances)
+                    if (open->filepath == graph) {
+                        convertToCode(*open);
+                        break;
+                    }
+            });
+    }
+    ImGui::SetItemTooltip(function ? "A function is used through Subgraph nodes" : "Write the code to a .glsl beside the graph, and use it where the graph is used");
+    ImGui::EndDisabled();
 }
 
 void editor::GraphEditorWindow::drawCanvas(Instance& instance) {
