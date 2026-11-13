@@ -74,7 +74,7 @@ namespace doriax::editor {
             COPY,
             CUT,
             PASTE,           // at position
-            DUPLICATE,
+            CLONE,
             RESIZE_GROUP,    // id to size
             OPEN             // a double click on node id
         };

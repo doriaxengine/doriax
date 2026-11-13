@@ -10,19 +10,18 @@
 #include <charconv>
 #include <cmath>
 #include <limits>
+#include <cstdio>
+#include <cstdlib>
+#include <locale>
+#include <sstream>
 #include <set>
 
 using namespace doriax;
 
 namespace {
 
-    // the shortest text that reads back as the same float
     std::string formatNumber(float value) {
-        if (value == 0.0f)
-            return "0";
-        char buffer[32];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        return std::string(buffer, result.ptr);
+        return editor::GraphValue::formatNumber(value);
     }
 
     editor::GraphValue readValue(const YAML::Node& node) {
@@ -94,6 +93,30 @@ namespace {
         return sorted;
     }
 
+}
+
+std::string editor::GraphValue::formatNumber(float value) {
+    if (value == 0.0f)
+        return "0";
+    // std::to_chars for floats is missing from the older systems the editor runs on
+    char buffer[40];
+    for (int digits = 1; digits <= 9; digits++) {
+        snprintf(buffer, sizeof(buffer), "%.*g", digits, value);
+        if (strtof(buffer, nullptr) == value)
+            break;
+    }
+    std::string text = buffer;
+    std::replace(text.begin(), text.end(), ',', '.');
+    return text;
+}
+
+bool editor::GraphValue::parseNumber(const std::string& text, float& value) {
+    if (text.empty() || !(std::isdigit((unsigned char)text[0]) || text[0] == '-' || text[0] == '.'))
+        return false;
+    std::istringstream stream(text);
+    stream.imbue(std::locale::classic());
+    stream >> std::noskipws >> value;
+    return !stream.fail() && stream.peek() == std::char_traits<char>::eof();
 }
 
 bool editor::GraphDocument::read(const std::string& text, std::string& error) {

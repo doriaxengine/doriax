@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <charconv>
 #include <cmath>
 #include <functional>
 #include <map>
@@ -51,9 +50,7 @@ namespace {
     std::string glslFloat(float value, bool alone) {
         if (!std::isfinite(value))
             value = 0.0f;
-        char buffer[32];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        std::string text(buffer, result.ptr);
+        std::string text = GraphValue::formatNumber(value);
         if (text.find_first_of(".e") == std::string::npos)
             text += ".0";
         return (alone && value < 0.0f) ? "(" + text + ")" : text;
@@ -788,15 +785,10 @@ namespace {
             for (int i = 0; i < size; i++) {
                 float number = i < (int)parameter.value.numbers.size() ? parameter.value.numbers[i]
                                                                        : (parameter.value.numbers.size() == 1 ? parameter.value.number() : (color ? 1.0f : 0.0f));
-                char buffer[32];
-                auto r = std::to_chars(buffer, buffer + sizeof(buffer), number);
-                line << (i ? ", " : "") << std::string(buffer, r.ptr);
+                line << (i ? ", " : "") << GraphValue::formatNumber(number);
             }
             if (parameter.hasRange) {
-                char low[32], high[32];
-                auto a = std::to_chars(low, low + sizeof(low), parameter.minValue);
-                auto b = std::to_chars(high, high + sizeof(high), parameter.maxValue);
-                line << " [" << std::string(low, a.ptr) << ", " << std::string(high, b.ptr) << "]";
+                line << " [" << GraphValue::formatNumber(parameter.minValue) << ", " << GraphValue::formatNumber(parameter.maxValue) << "]";
             }
             if (color)
                 line << " color";

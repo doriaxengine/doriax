@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <charconv>
 #include <cmath>
 #include <filesystem>
 #include <set>
@@ -34,9 +33,7 @@ namespace {
     std::string formatNumber(float value) {
         if (!std::isfinite(value))
             return value != value ? "(0/0)" : (value > 0.0f ? "math.huge" : "-math.huge");
-        char buffer[32];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        return std::string(buffer, result.ptr);
+        return GraphValue::formatNumber(value);
     }
 
     std::string quote(const std::string& text) {

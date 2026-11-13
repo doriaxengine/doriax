@@ -23,6 +23,11 @@ namespace doriax::editor {
         GraphValue(const char* word): text(word) {}
         GraphValue(std::string word): text(std::move(word)) {}
 
+        // the shortest text that reads back as the same float, with a point whatever the locale
+        static std::string formatNumber(float value);
+        // a whole text as a number; false when it is anything else
+        static bool parseNumber(const std::string& text, float& value);
+
         bool empty() const { return numbers.empty() && text.empty(); }
         float number(size_t index = 0) const { return index < numbers.size() ? numbers[index] : 0.0f; }
 

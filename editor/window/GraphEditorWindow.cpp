@@ -24,7 +24,6 @@
 #include "imgui_internal.h"
 
 #include <algorithm>
-#include <charconv>
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -104,9 +103,7 @@ namespace {
     }
 
     std::string formatNumber(float value) {
-        char buffer[32];
-        auto result = std::to_chars(buffer, buffer + sizeof(buffer), value);
-        return std::string(buffer, result.ptr);
+        return GraphValue::formatNumber(value);
     }
 
     std::string describeValue(const GraphValue& value) {
@@ -288,8 +285,7 @@ namespace {
             std::string text = current.text.empty() && !current.numbers.empty() ? formatNumber(current.number()) : current.text;
             if (editText(id, text)) {
                 float number = 0.0f;
-                const auto parsed = std::from_chars(text.data(), text.data() + text.size(), number);
-                const bool numeric = pin.type == "any" && !text.empty() && parsed.ec == std::errc() && parsed.ptr == text.data() + text.size();
+                const bool numeric = pin.type == "any" && GraphValue::parseNumber(text, number);
                 if (text.empty())
                     node.inputs.erase(pin.name);
                 else
@@ -1018,7 +1014,7 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
                 if (const char* text = ImGui::GetClipboardText())
                     paste(instance, text, change.position);
                 break;
-            case CanvasEdit::Kind::DUPLICATE: {
+            case CanvasEdit::Kind::CLONE: {
                 Vector2 low(1e9f, 1e9f);
                 for (int id : change.ids)
                     if (const GraphNode* node = document.findNode(id))
@@ -1490,8 +1486,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
                     if (ImGui::Selectable(option.c_str(), option == current)) {
                         // a number stays a number, as the file writes it
                         float number = 0.0f;
-                        auto parsed = std::from_chars(option.data(), option.data() + option.size(), number);
-                        const bool numeric = parsed.ec == std::errc() && parsed.ptr == option.data() + option.size();
+                        const bool numeric = GraphValue::parseNumber(option, number);
                         node->settings[setting.name] = numeric ? GraphValue(number) : GraphValue(option);
                         changed = true;
                     }

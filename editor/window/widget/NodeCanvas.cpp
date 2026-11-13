@@ -223,12 +223,12 @@ void editor::NodeCanvas::startMove(const CanvasModel& model, const ImVec2& point
     for (const CanvasGroup& group : model.groups) {
         if (!selection.count(group.id))
             continue;
-        const ImVec2 max(group.position.x + group.size.x, group.position.y + group.size.y);
+        const ImVec2 corner(group.position.x + group.size.x, group.position.y + group.size.y);
         for (const NodeLayout& layout : layouts)
-            if (inside(layout.min, group.position, max) && inside(layout.max, group.position, max))
+            if (inside(layout.min, group.position, corner) && inside(layout.max, group.position, corner))
                 moving.insert(layout.id);
         for (const CanvasComment& comment : model.comments)
-            if (inside(comment.position, group.position, max))
+            if (inside(comment.position, group.position, corner))
                 moving.insert(comment.id);
     }
     gesture = Gesture::MOVE;
@@ -560,7 +560,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
         shortcut(ImGuiKey_C, CanvasEdit::Kind::COPY);
         shortcut(ImGuiKey_X, CanvasEdit::Kind::CUT);
         shortcut(ImGuiKey_V, CanvasEdit::Kind::PASTE);
-        shortcut(ImGuiKey_D, CanvasEdit::Kind::DUPLICATE);
+        shortcut(ImGuiKey_D, CanvasEdit::Kind::CLONE);
         if (!io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false))
             frame(!selection.empty());
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false)) {
