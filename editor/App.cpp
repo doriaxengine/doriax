@@ -2977,7 +2977,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v68: object, camera planes and view matrix for hooks.
     // v69: flags for what the hooks read, which sprite batching asks.
     // v70: varyings type in passes that read none, shadows for getLight on any side.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v70";
+    // v71: uv1 read by a fragment hook is flagged for sprite batching.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v71";
 }
 
 void editor::App::pushTabNotificationStyle(){

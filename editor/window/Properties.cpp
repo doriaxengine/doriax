@@ -5840,6 +5840,14 @@ void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector
 
     for (const ShaderParameterDeclaration* declaration : textures) {
         const std::string path = ShaderTextures::get(passes[index].textures, declaration->name).getPath();
+        // one image holds the six faces of a cube parameter
+        auto picked = [declaration](const std::string& file) {
+            if (declaration->textureType != TextureType::TEXTURE_CUBE)
+                return Texture(file);
+            Texture cube;
+            cube.setCubeMap(file);
+            return cube;
+        };
         ImGui::PushID(declaration->name.c_str());
         ImGui::TableNextRow();
         ImGui::TableSetColumnIndex(0);
@@ -5860,7 +5868,7 @@ void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector
                 std::error_code ec;
                 const std::filesystem::path relative = std::filesystem::relative(std::filesystem::absolute(selected), project->getAssetsPath(), ec);
                 if (!ec && !relative.empty() && *relative.begin() != "..")
-                    setTexture(declaration->name, Texture(relative.generic_string()));
+                    setTexture(declaration->name, picked(relative.generic_string()));
                 else
                     Backend::getApp().registerAlert("Error", "Pick an image inside the project's assets.");
             }
@@ -5883,7 +5891,7 @@ void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector
                 if (!files.empty() && project->isInsideAssetsPath(files[0])) {
                     const std::string relative = droppedAssetPath(project, files[0], true);
                     if (Util::isImageFile(relative))
-                        setTexture(declaration->name, Texture(relative));
+                        setTexture(declaration->name, picked(relative));
                 }
             }
             ImGui::EndDragDropTarget();

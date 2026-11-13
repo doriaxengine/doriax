@@ -431,7 +431,9 @@ void editor::LogicNodes::addEngineApi() {
                 continue;
             const size_t arrow = detail.find("->");
             const std::string type = arrow == std::string::npos ? std::string("any") : pinType(detail.substr(arrow + 2));
-            const std::string valueType = type.empty() ? std::string("any") : type;
+            // the table types the classes a property gives, the bindings say which hold true or false
+            static const std::unordered_set<std::string> bools = getEngineBoolProperties();
+            const std::string valueType = bools.count(parent + "." + name) ? std::string("bool") : (type.empty() ? std::string("any") : type);
             static const std::unordered_set<std::string> statics = getEngineStaticProperties();
             const bool shared = statics.count(parent + "." + name) > 0;
 

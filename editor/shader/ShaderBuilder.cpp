@@ -532,7 +532,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
         if (normal || (useVertexHooks && (vertexReads.count("localPosition") || vertexReads.count("objectPosition") || vertexReads.count("objectScale"))))
             declared.flags |= ShaderFlag_ObjectSpace;
-        if (useVertexHooks && vertexReads.count("uv1"))
+        // either stage gets uv1 as stored, and a batch stores the texture region in it
+        if ((useVertexHooks && vertexReads.count("uv1")) || (useFragmentHooks && fragmentReads.count("uv1")))
             declared.flags |= ShaderFlag_VertexUV;
         if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
             declared.flags |= ShaderFlag_VertexColor;

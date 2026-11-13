@@ -2565,6 +2565,7 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
 
         const bool mipmapped = parameter.filter != TextureFilter::NEAREST && parameter.filter != TextureFilter::LINEAR;
         TextureRender* textureRender = NULL;
+        Texture levels; // owns what it gives while an image still loads
         for (auto& texture : textures){
             if (texture.first == parameter.name){
                 if (!texture.second.empty() && !texture.second.isFramebuffer() && texture.second.getType() != parameter.type){
@@ -2575,7 +2576,7 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
                 // a copy asks for them, so the texture given stays as it was set
                 const TextureFilter own = texture.second.getMinFilter();
                 if (mipmapped && !texture.second.isFramebuffer() && (own == TextureFilter::NEAREST || own == TextureFilter::LINEAR)){
-                    Texture levels = texture.second;
+                    levels = texture.second;
                     levels.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
                     textureRender = levels.getRender(nullptr);
                 }

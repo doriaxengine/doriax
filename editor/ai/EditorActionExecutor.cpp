@@ -5499,9 +5499,9 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
             }
             if (!textureName.empty()) {
                 const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, passes[passIndex].shader);
-                const bool declared = std::any_of(annotations.parameters.begin(), annotations.parameters.end(),
+                const auto declared = std::find_if(annotations.parameters.begin(), annotations.parameters.end(),
                     [&](const ShaderParameterDeclaration& declaration) { return declaration.texture && declaration.name == textureName; });
-                if (!declared)
+                if (declared == annotations.parameters.end())
                     return failResult("texture_name must be a texture the pass's shader declares.");
                 const std::string texturePath = arguments.value("texture_path", "");
                 Texture texture;
@@ -5511,7 +5511,11 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
                         return failResult("texture_path must be a safe project-relative path.");
                     if (!isInsideAssets(project, rel))
                         return failResult(outsideAssetsError(project, "texture_path"));
-                    texture = Texture(assetPathFromAi(project, rel));
+                    // one image holds the six faces of a cube parameter
+                    if (declared->textureType == TextureType::TEXTURE_CUBE)
+                        texture.setCubeMap(assetPathFromAi(project, rel));
+                    else
+                        texture = Texture(assetPathFromAi(project, rel));
                 }
                 passes[passIndex].setTexture(textureName, texture);
             }
