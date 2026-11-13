@@ -160,12 +160,16 @@ int DoriaxWeb::init(int argc, char **argv){
     EM_ASM(
 		FS.mkdir('/datafs');
 		FS.mount(IDBFS, {}, '/datafs');
+	);
+
+    doriax::Engine::systemInit(argc, argv, new DoriaxWeb());
+
+    // after systemInit: where IndexedDB is denied (a third-party frame, like YouTube Playables) the callback runs at once and logs
+    EM_ASM(
 		FS.syncfs(true, function(err) {
 			ccall('syncfs_enable_callback', null, ['string'], [err ? err.message : ""]);
 		});
 	);
-
-    doriax::Engine::systemInit(argc, argv, new DoriaxWeb());
 
     sampleCount = (antiAlias) ? 4 : 1;
 
