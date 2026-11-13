@@ -1469,7 +1469,6 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextDisabled("%s", type->description.c_str());
         ImGui::PopTextWrapPos();
-        ImGui::Spacing();
     }
 
     bool changed = false;
