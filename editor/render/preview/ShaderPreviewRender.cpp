@@ -4,6 +4,7 @@
 #include "ShaderPreviewRender.h"
 
 #include "Engine.h"
+#include "subsystem/RenderSystem.h"
 #include "util/ProjectUtils.h"
 
 using namespace doriax;
@@ -15,6 +16,7 @@ editor::ShaderPreviewRender::ShaderPreviewRender(unsigned int size){
     sky = new SkyBox(scene);
     shape = new Shape(scene);
     shapeType = ShapeType::SPHERE;
+    frames = 0;
 
     scene->setBackgroundColor(0.12, 0.12, 0.13, 1.0);
     scene->setCamera(camera);
@@ -56,6 +58,7 @@ void editor::ShaderPreviewRender::createShape(){
     Material material;
     material.shader = shader;
     shape->setMaterial(material);
+    requestRender();
 }
 
 void editor::ShaderPreviewRender::setShader(const std::string& shader){
@@ -85,9 +88,21 @@ editor::ShaderPreviewRender::ShapeType editor::ShaderPreviewRender::getShape() c
 
 void editor::ShaderPreviewRender::reload(){
     shape->getComponent<MeshComponent>().needReload = true;
+    requestRender();
+}
+
+void editor::ShaderPreviewRender::requestRender(){
+    frames = 30;
 }
 
 void editor::ShaderPreviewRender::render(){
+    // a scene drawn once makes the editor draw its own too, so an idle preview asks for nothing
+    auto renderSystem = scene->getSystem<RenderSystem>();
+    if (renderSystem && !renderSystem->isAllLoaded())
+        requestRender();
+    if (frames <= 0)
+        return;
+    frames--;
     Engine::executeSceneOnce(scene);
 }
 

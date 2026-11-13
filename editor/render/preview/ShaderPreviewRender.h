@@ -31,6 +31,8 @@ namespace doriax::editor{
 
         ShapeType shapeType;
         std::string shader;
+        // frames left to draw: a change asks for some, so builds and uploads that end late show
+        int frames;
 
         void createShape();
 
@@ -48,6 +50,9 @@ namespace doriax::editor{
 
         // takes the shader again, once it was built anew
         void reload();
+        // what it draws changed with nothing here set, as a value its shader reads
+        void requestRender();
+        // draws while something changed or still loads, and leaves the image as it is otherwise
         void render();
 
         Texture getTexture();

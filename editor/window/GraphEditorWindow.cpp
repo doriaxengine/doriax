@@ -407,6 +407,8 @@ void editor::GraphEditorWindow::compile(Instance& instance) {
     instance.liveValues = live.liveValues;
     for (const auto& [key, value] : instance.liveValues)
         ShaderParameters::setGlobal(key, value);
+    if (instance.preview)
+        instance.preview->requestRender();
     for (SceneProject& sceneProject : project->getScenes())
         sceneProject.needUpdateRender = true;
 }
