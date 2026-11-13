@@ -165,10 +165,28 @@ namespace {
 
     // a batch draws with the first sprite's values of a shader file
     bool sharesShaderValues(const MeshComponent& a, const MeshComponent& b){
-        const Material& first = a.submeshes[0].material;
-        const Material& other = b.submeshes[0].material;
         return a.submeshes[0].customShaderId == 0 ||
-            (first.shader == other.shader && first.shaderUniforms == other.shaderUniforms && a.vertexOffsetMax == b.vertexOffsetMax);
+            (a.submeshes[0].customShaderId == b.submeshes[0].customShaderId && a.shaderValuesKey == b.shaderValuesKey &&
+             a.vertexOffsetMax == b.vertexOffsetMax);
+    }
+
+    // FNV-1a over the names and values
+    void updateShaderValuesKey(MeshComponent& mesh){
+        uint64_t key = 14695981039346656037ull;
+        auto add = [&key](const void* data, size_t size){
+            const unsigned char* bytes = static_cast<const unsigned char*>(data);
+            for (size_t i = 0; i < size; i++)
+                key = (key ^ bytes[i]) * 1099511628211ull;
+        };
+
+        if (mesh.numSubmeshes > 0){
+            for (const auto& entry : mesh.submeshes[0].material.shaderUniforms){
+                add(entry.first.data(), entry.first.size() + 1);
+                const float value[4] = {entry.second.x, entry.second.y, entry.second.z, entry.second.w};
+                add(value, sizeof(value));
+            }
+        }
+        mesh.shaderValuesKey = key;
     }
 
     // nearest band first (one per doubling of the distance), then grouped by render state
@@ -280,6 +298,7 @@ namespace {
             submesh.gbufferParamsVS.writeObject(submesh.material.shaderUniforms, inherited);
             submesh.gbufferParamsFS.writeObject(submesh.material.shaderUniforms, inherited);
         }
+        updateShaderValuesKey(mesh);
         mesh.needUpdateShaderUniforms = false;
     }
 
@@ -3883,6 +3902,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
     }
 
     mesh.needReload = false;
+    updateShaderValuesKey(mesh);
     mesh.needUpdateShaderUniforms = false;
     mesh.needUpdateAABB = true;
     mesh.loadCalled = true;
@@ -4490,6 +4510,9 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
     Submesh& submesh = mesh.submeshes[0];
     if ((transform.billboard && transform.fakeBillboard) || !hasAffineModel(transform))
         return false;
+
+    // a batched sprite never draws by itself, so its changed values are taken here
+    writeParameters(mesh, scene);
 
     // an equal pipeline means the same shader, layout and blending
     const bool alphaMask = submesh.shaderProperties & (1u << 24);

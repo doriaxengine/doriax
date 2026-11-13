@@ -186,6 +186,8 @@ namespace doriax{
         float vertexOffsetMax = 0.0f; // longest vertex offset, widens the bounds; 0 = no limit
         // the materials' shader values changed
         bool needUpdateShaderUniforms = false;
+        // of the first material's shader values, so sprites compare one number to share a batch
+        uint64_t shaderValuesKey = 0;
 
         float normAdjustJoint = 1;
         float normAdjustWeight = 1;
