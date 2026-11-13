@@ -21,6 +21,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <unordered_set>
 
 #include "component/ActionComponent.h"
@@ -338,54 +339,133 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
     return graph.write();
 }
 
+namespace {
+
+    // what a script was written from: the graph's text and the compiler that read it
+    std::string logicStamp(const std::string& graphText) {
+        constexpr int compilerVersion = 2;
+        uint64_t hash = 1469598103934665603ull;
+        for (unsigned char c : graphText) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+        char buffer[40];
+        snprintf(buffer, sizeof(buffer), "[%d:%016llx]", compilerVersion, (unsigned long long)hash);
+        return buffer;
+    }
+
+    struct LogicBuild {
+        std::filesystem::file_time_type graphTime;
+        std::string error;
+    };
+
+    std::mutex logicBuildMutex;
+    // the graphs looked at, by path, so one is read again only when its file changes
+    std::map<std::string, LogicBuild> logicBuilds;
+
+}
+
 std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph) {
-    std::filesystem::path script = project->normalizeToLuaRelative(graph);
+    // by its place under the Lua directory, which a graph elsewhere has none of
+    std::filesystem::path script = project->normalizeToLuaRelative(project->resolveLuaPath(project->normalizeToLuaRelative(graph)));
+    if (script.empty() || script.is_absolute() || *script.begin() == "..")
+        return {};
     script.replace_extension(".lua");
     return project->getProjectInternalPath() / "generated" / "logic" / script;
 }
 
-bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& code, std::string& error) {
+bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const std::string& code, std::string& error) {
     const std::filesystem::path script = getLogicScriptPath(project, graph);
+    if (script.empty()) {
+        error = graph.filename().string() + " is outside the project's Lua directory, where a logic graph has to be";
+        return false;
+    }
+    // the first line says what it was written from
+    std::string stamped = code;
+    stamped.insert(std::min(stamped.find('\n'), stamped.size()), " " + logicStamp(graphText));
+
+    std::ifstream existing(script, std::ios::binary);
+    std::stringstream held;
+    held << existing.rdbuf();
+    existing.close();
+    if (held.str() == stamped)
+        return true;
+
     std::error_code ec;
     std::filesystem::create_directories(script.parent_path(), ec);
-    // the entities that run it take its new properties as those of any script changed on disk
-    if (!FileUtils::writeIfChanged(script, code)) {
+    // replaced whole, so a scene starting meanwhile reads one script or the other
+    if (!FileUtils::writeFileReplacing(script, stamped)) {
         error = "could not write the script of " + graph.filename().string();
         return false;
     }
     return true;
 }
 
+void editor::ProjectUtils::removeLogicScript(const Project* project, const std::filesystem::path& graph) {
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    std::error_code ec;
+    if (!script.empty())
+        std::filesystem::remove_all(graph.extension().empty() ? std::filesystem::path(script).replace_extension() : script, ec);
+    std::lock_guard<std::mutex> lock(logicBuildMutex);
+    logicBuilds.clear();
+}
+
 std::filesystem::path editor::ProjectUtils::buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error) {
     const std::filesystem::path fullPath = project->resolveLuaPath(project->normalizeToLuaRelative(graph));
     const std::filesystem::path script = getLogicScriptPath(project, graph);
+    auto fail = [&](const std::string& problem, bool log) {
+        if (error)
+            *error = problem;
+        else if (log)
+            Out::error("%s: %s", fullPath.filename().string().c_str(), problem.c_str());
+    };
+    if (script.empty()) {
+        fail("outside the project's Lua directory, where a logic graph has to be", true);
+        return {};
+    }
+
+    std::lock_guard<std::mutex> lock(logicBuildMutex);
     std::error_code ec;
     const auto graphTime = std::filesystem::last_write_time(fullPath, ec);
-    if (ec)
+    if (ec) {
+        // a graph that is gone leaves no script to run
+        std::filesystem::remove(script, ec);
+        logicBuilds.erase(fullPath.string());
+        fail("the graph is missing", false);
+        return {};
+    }
+    auto known = logicBuilds.find(fullPath.string());
+    if (known != logicBuilds.end() && known->second.graphTime == graphTime && std::filesystem::exists(script, ec) == known->second.error.empty()) {
+        if (!known->second.error.empty())
+            fail(known->second.error, false);
         return script;
-    const auto scriptTime = std::filesystem::last_write_time(script, ec);
-    if (!ec && scriptTime >= graphTime)
-        return script;
+    }
 
     std::ifstream file(fullPath, std::ios::binary);
     std::stringstream text;
     text << file.rdbuf();
-    GraphDocument document;
     std::string problem;
-    if (document.read(text.str(), problem)) {
-        const std::string name = fullPath.filename().string();
-        const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name));
-        if (compiled.success)
-            writeLogicScript(project, graph, compiled.code, problem);
-        else
-            problem = compiled.describeErrors();
+
+    // written from this text by this compiler already
+    std::ifstream held(script, std::ios::binary);
+    std::string firstLine;
+    const bool current = held && std::getline(held, firstLine) && firstLine.find(logicStamp(text.str())) != std::string::npos;
+    held.close();
+    if (!current) {
+        GraphDocument document;
+        if (document.read(text.str(), problem)) {
+            const std::string name = fullPath.filename().string();
+            const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name));
+            if (compiled.success)
+                writeLogicScript(project, fullPath, text.str(), compiled.code, problem);
+            else
+                problem = compiled.describeErrors();
+        }
     }
-    if (!problem.empty()) {
-        if (error)
-            *error = problem;
-        else
-            Out::error("%s: %s", fullPath.filename().string().c_str(), problem.c_str());
-    }
+    logicBuilds[fullPath.string()] = {graphTime, problem};
+    // said once for each change of the graph
+    if (!problem.empty())
+        fail(problem, true);
     return script;
 }
 

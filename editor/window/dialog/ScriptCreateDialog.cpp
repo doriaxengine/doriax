@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ScriptCreateDialog.h"
+#include "logic/LogicNodes.h"
 #include "external/IconsFontAwesome6.h"
 #include "Scene.h"
 #include "Factory.h"
@@ -489,9 +490,8 @@ void ScriptCreateDialog::show() {
         }
 
         if (!m_existingSourcePath.empty() || !m_existingHeaderPath.empty()) {
-            const char* detectedType = m_existingScriptType == ScriptType::LUA
-                ? "Lua Script"
-                : "C++ Script";
+            const char* detectedType = m_existingScriptType != ScriptType::LUA ? "C++ Script"
+                : (Util::isLogicGraphFile(m_existingSourcePath.string()) ? "Logic Graph" : "Lua Script");
             ImGui::TextDisabled("Detected type: %s", detectedType);
         }
     } else {
@@ -560,6 +560,9 @@ void ScriptCreateDialog::show() {
     std::string baseName = m_baseNameBuffer;
     bool hasBase = !baseName.empty();
     std::string name = sanitizeClassName(baseName);
+    // a Lua module or a graph is named in Lua, which keeps other words for itself
+    if (isLua && LogicNodes::isLuaKeyword(name))
+        name += "Script";
 
     fs::path headerPath;
     fs::path sourcePath;
@@ -682,7 +685,7 @@ void ScriptCreateDialog::show() {
 
         if (allCreateFilesExist) {
             if (ImGui::Button("Attach Existing", ImVec2(alertButtonWidth, 0))) {
-                const ScriptType type = m_creationKind == CreationKind::LUA
+                const ScriptType type = (m_creationKind == CreationKind::LUA || m_creationKind == CreationKind::LOGIC)
                     ? ScriptType::LUA
                     : ScriptType::CPP;
                 const std::string attachName = type == ScriptType::CPP

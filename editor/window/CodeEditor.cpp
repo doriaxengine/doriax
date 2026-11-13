@@ -821,7 +821,7 @@ void editor::CodeEditor::updateScriptPropertiesForPath(const fs::path& relFilepa
             for (const auto& scriptEntry : scriptComponent->scripts) {
                 // Lua entries are stored relative to the Lua root
                 bool matchesFile = (scriptEntry.type == ScriptType::CPP) ? (scriptEntry.headerPath == relPathStr)
-                                                                        : (project->resolveLuaPath(scriptEntry.path) == fullPath.lexically_normal());
+                                                                        : (project->resolveLuaSource(scriptEntry.path).lexically_normal() == fullPath.lexically_normal());
                 if (!matchesFile)
                     continue;
 

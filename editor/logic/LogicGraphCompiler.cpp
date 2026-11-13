@@ -74,6 +74,11 @@ namespace {
         return text.substr(1, text.size() - 2);
     }
 
+    // what a text setting holds; a file written by hand may give it as a number
+    std::string settingText(const GraphValue& value) {
+        return value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text;
+    }
+
     int vectorSize(const std::string& type) {
         return type == "Quaternion" ? 0 : (LogicNodes::getComponentCount(type) > 1 ? LogicNodes::getComponentCount(type) : 0);
     }
@@ -111,6 +116,10 @@ namespace {
                     error(node.id, "Unknown node type " + node.type);
             if (!result.errors.empty())
                 return result;
+
+            for (const GraphLink& link : graph.links)
+                if (!link.fromPin.empty())
+                    readers[link.fromNode]++;
 
             // the events, in the order their nodes stand
             std::vector<const GraphNode*> events;
@@ -192,11 +201,16 @@ namespace {
         std::set<int> ran;                   // the nodes written so far
         std::vector<int> running;            // the nodes whose statements are being written, outermost first
         std::vector<int> bodies;             // the loops whose body is being written
+        std::map<std::string, std::string> shared; // the values the statement being written reads more than once
+        std::map<int, int> readers;          // how many inputs each node feeds
+        int statementIndent = 1;
+        int sharedCount = 0;
+        bool sharing = true;                 // off where a value has to be read again, as a loop's condition
         bool overflow = false;               // the function grew past what a graph should make
         std::vector<int> reading;            // the value nodes being read
         std::set<std::string> kept;          // its locals
 
-        std::vector<std::string> state;      // lines of init: what Do Once and Flip Flop remember
+        std::vector<std::string> state;      // lines of init: what Flip Flop starts as
         std::vector<std::string> objects;    // lines of init: the entity as the classes the graph uses
         std::vector<Line> helpers;           // the functions of Lua Expression and Lua Code nodes
         std::set<std::string> usedHelpers;
@@ -205,12 +219,12 @@ namespace {
         static std::string tableName(const std::string& name) {
             static const std::set<std::string> globals = {
                 "math", "string", "table", "os", "io", "coroutine", "utf8", "debug", "package", "tostring", "tonumber", "ipairs", "pairs",
-                "select", "type", "print", "require", "error", "assert", "pcall", "next", "self", "RegisterEvent", "RegisterEngineEvent"};
+                "select", "type", "print", "require", "error", "assert", "pcall", "next", "self", "RegisterEvent", "RegisterEngineEvent",
+                "_ENV", "_G", "nodes"};
             static const std::unordered_set<std::string> types = getEngineTypeNames();
             static const std::unordered_set<std::string> builtins = getEngineBuiltinNames();
             const auto& helpers = helperFunctions();
-            const bool helper = std::any_of(helpers.begin(), helpers.end(), [&](const auto& item) { return item.first == name; }) ||
-                                name.rfind("expression", 0) == 0 || name.rfind("code", 0) == 0;
+            const bool helper = std::any_of(helpers.begin(), helpers.end(), [&](const auto& item) { return item.first == name; });
             const bool taken = globals.count(name) || types.count(name) || builtins.count(name) || helper;
             return taken ? name + "Script" : name;
         }
@@ -443,7 +457,7 @@ namespace {
                     text += variable ? variable->name : std::string("_");
                 } else if (node.type == "value/string") {
                     // a number written unquoted in the file is the text of its digits
-                    text += quote(value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text);
+                    text += quote(settingText(value));
                 } else if (setting->type == "number") {
                     text += operand(value.number());
                 } else if (setting->type == "choice") {
@@ -455,9 +469,9 @@ namespace {
                     // a text names a class or a method
                     if (value.text.empty() && value.numbers.empty())
                         error(node.id, type.name + " needs its " + setting->label);
-                    else if (!isIdentifier(value.text))
+                    else if (!isIdentifier(settingText(value)))
                         error(node.id, setting->label + " of " + type.name + " is a name: letters, digits and _");
-                    text += value.text.empty() ? formatNumber(value.number()) : value.text;
+                    text += settingText(value);
                 }
             }
             return text;
@@ -467,15 +481,15 @@ namespace {
         std::string helperCall(const GraphNode& node, const LogicNodeType& type, bool expression) {
             const char* setting = expression ? "code" : "body";
             auto stored = node.settings.find(setting);
-            const std::string code = stored != node.settings.end() ? stored->second.text : type.findSetting(setting)->value.text;
+            const std::string code = settingText(stored != node.settings.end() ? stored->second : type.findSetting(setting)->value);
             if (code.find_first_not_of(" \t\r\n") == std::string::npos) {
                 error(node.id, type.name + " has no code");
                 return "nil";
             }
-            const std::string name = (expression ? "expression" : "code") + std::to_string(node.id);
+            const std::string name = std::string("nodes.") + (expression ? "expression" : "code") + std::to_string(node.id);
             const bool written = std::any_of(helpers.begin(), helpers.end(), [&](const Line& line) { return line.node == node.id; });
             if (!written) {
-                helpers.push_back({"local function " + name + "(self, a, b, c, d)", node.id});
+                helpers.push_back({"function " + name + "(self, a, b, c, d)", node.id});
                 // one entry for each line, so an error names the node it is in
                 const std::string body = expression ? "return " + code : code;
                 for (size_t begin = 0; begin <= body.size();) {
@@ -504,13 +518,27 @@ namespace {
                 error(node.id, type.name + " reads its own value");
                 return "nil";
             }
+            if (reading.size() > 120) {
+                error(node.id, "Too many values feed one another in a row; keep one in a variable on the way");
+                return "nil";
+            }
+            // a value several inputs of a statement read is worked out once for it
+            // a name or a constant is read as it is
+            const bool plain = type.atomic && type.inputs.empty() && (type.code.empty() || type.code.front().find('(') == std::string::npos);
+            const bool once = sharing && sharedCount < 150 && readers[node.id] > 1 && !plain;
+            const std::string key = std::to_string(node.id) + "." + pin;
+            if (once) {
+                auto held = shared.find(key);
+                if (held != shared.end())
+                    return held->second;
+            }
             reading.push_back(node.id);
             std::string text;
             if (node.type == "utility/expression") {
                 text = helperCall(node, type, true);
             } else if (node.type == "self/object") {
                 auto stored = node.settings.find("class");
-                const std::string name = stored != node.settings.end() ? stored->second.text : type.findSetting("class")->value.text;
+                const std::string name = settingText(stored != node.settings.end() ? stored->second : type.findSetting("class")->value);
                 if (!LogicNodes::isEntityClass(name))
                     error(node.id, name + " is not a class an entity can be read as, such as Object, Mesh or Sprite");
                 text = selfObject(name);
@@ -528,6 +556,17 @@ namespace {
                     text = "(" + text + ")";
             }
             reading.pop_back();
+            if (once && function) {
+                size_t index = 0;
+                for (size_t i = 0; i < type.outputs.size(); i++)
+                    if (type.outputs[i].name == pin)
+                        index = i;
+                const std::string name = "t" + std::to_string(node.id) + (index ? "_" + std::to_string(index) : std::string());
+                line(statementIndent, "local " + name + " = " + unwrapped(text), node.id);
+                sharedCount++;
+                shared[key] = name;
+                return name;
+            }
             return text;
         }
 
@@ -547,8 +586,12 @@ namespace {
         }
 
         void keep(const std::string& name) {
-            if (kept.insert(name).second)
-                function->locals.push_back(name);
+            if (!kept.insert(name).second)
+                return;
+            function->locals.push_back(name);
+            // Lua holds 200 locals in a function
+            if (function->locals.size() == 180)
+                error(function->node, "Too many nodes that give a value run from this event; split it across events or Lua Code nodes");
         }
 
         // what an execution output leads to
@@ -588,6 +631,8 @@ namespace {
                 return;
             running.push_back(id);
             const std::string tag = std::to_string(id);
+            shared.clear();
+            statementIndent = indent;
 
             std::vector<NodePin> inputs, outputs;
             LogicNodes::getPins(graph, *node, *type, inputs, outputs);
@@ -631,7 +676,11 @@ namespace {
                     break;
                 }
                 case LogicFlow::WHILE: {
-                    line(indent, "while " + unwrapped(input(*node, pin("condition"))) + " do", id);
+                    // read again each time round
+                    sharing = false;
+                    const std::string condition = unwrapped(input(*node, pin("condition")));
+                    sharing = true;
+                    line(indent, "while " + condition + " do", id);
                     loop(*node, indent + 1);
                     line(indent, "end", id);
                     follow(*node, "out", indent);
@@ -688,6 +737,9 @@ namespace {
             ran.clear();
             running.clear();
             bodies.clear();
+            shared.clear();
+            sharedCount = 0;
+            statementIndent = 1;
             overflow = false;
             reading.clear();
             kept.clear();
@@ -747,6 +799,10 @@ namespace {
                     continue;
                 for (const std::string& text : helper.second)
                     emit(text);
+                emit("");
+            }
+            if (!helpers.empty()) {
+                emit("local nodes = {}");
                 emit("");
             }
             for (const Line& helper : helpers)

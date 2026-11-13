@@ -274,6 +274,11 @@ void editor::NodeCanvas::drawNode(ImDrawList* drawList, const CanvasNode& node, 
     drawList->AddRectFilled(min, ImVec2(max.x, min.y + headerHeight * scale), node.color, rounding, ImDrawFlags_RoundCornersTop);
     const ImU32 border = !node.error.empty() ? IM_COL32(230, 70, 60, 255) : (selected ? highlight : IM_COL32(15, 15, 15, 255));
     drawList->AddRect(min, max, border, rounding, 0, (selected || !node.error.empty() ? 2.0f : 1.0f) * Theme::dpiScale());
+    // a node with an error keeps its red outline, so the selection goes around it
+    if (selected && !node.error.empty()) {
+        const float gap = 3.0f * Theme::dpiScale();
+        drawList->AddRect(ImVec2(min.x - gap, min.y - gap), ImVec2(max.x + gap, max.y + gap), highlight, rounding + gap, 0, 2.0f * Theme::dpiScale());
+    }
 
     // a data pin is a circle, an execution pin an arrow; filled when linked
     auto drawPin = [&](const CanvasPin& pin, const ImVec2& at, bool filled) {
@@ -353,6 +358,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
         }
         framePending = canvasSize.x != framedSize.x || canvasSize.y != framedSize.y;
         framedSize = canvasSize;
+        framed = !frameSelectionOnly;
     }
 
     const ImVec2 mouse = toGraph(io.MousePos);
@@ -361,6 +367,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
     if (hovered && io.MouseWheel != 0.0f) {
         const ImVec2 before = mouse;
         zoom = std::clamp(zoom * std::pow(1.12f, io.MouseWheel), minZoom, maxZoom);
+        framed = false;
         const float scale = zoom * Theme::dpiScale();
         pan = ImVec2(io.MousePos.x - origin.x - before.x * scale, io.MousePos.y - origin.y - before.y * scale);
     }
@@ -373,6 +380,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
     if (gesture == Gesture::PAN) {
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) || ImGui::IsMouseDragging(ImGuiMouseButton_Right, 4.0f)) {
             pan = ImVec2(pan.x + io.MouseDelta.x, pan.y + io.MouseDelta.y);
+            framed = framed && io.MouseDelta.x == 0.0f && io.MouseDelta.y == 0.0f;
             rightDragged = rightDragged || ImGui::IsMouseDragging(ImGuiMouseButton_Right, 4.0f);
         }
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !rightDragged) {

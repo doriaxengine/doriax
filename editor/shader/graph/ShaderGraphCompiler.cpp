@@ -69,7 +69,7 @@ namespace {
             return glslFloat(value.number(), true);
         // one number fills every component
         if (value.numbers.size() <= 1)
-            return type.name + "(" + glslFloat(value.number(), false) + ")";
+            return type.color ? "vec4(vec3(" + glslFloat(value.number(), false) + "), 1.0)" : type.name + "(" + glslFloat(value.number(), false) + ")";
         std::string text = type.name + "(";
         for (int i = 0; i < size; i++) {
             const float number = i < (int)value.numbers.size() ? value.numbers[i] : (type.color && i == 3 ? 1.0f : 0.0f);
@@ -760,7 +760,8 @@ namespace {
         if (fromSize == toSize) {
             out.code = scalar;
         } else if (fromSize == 1) {
-            out.code = to.name + "(" + scalar + ")";
+            // a number is a gray, not a see-through one
+            out.code = to.color ? "vec4(vec3(" + scalar + "), 1.0)" : to.name + "(" + scalar + ")";
         } else if (fromSize > toSize && toSize > 1) {
             out.code = scalar + (toSize == 2 ? ".xy" : ".xyz");
         } else if (fromSize == 3 && toSize == 4) {
@@ -805,6 +806,7 @@ namespace {
         if (!parameter.description.empty()) {
             std::string description = parameter.description;
             description.erase(std::remove(description.begin(), description.end(), '"'), description.end());
+            std::replace_if(description.begin(), description.end(), [](char c) { return c == '\n' || c == '\r'; }, ' ');
             line << " \"" << description << "\"";
         }
         return line.str();

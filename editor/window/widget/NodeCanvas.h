@@ -100,6 +100,10 @@ namespace doriax::editor {
         void select(const std::set<int>& ids) { selection = ids; }
         // the whole graph, or the selection, in view
         void frame(bool selectionOnly = false);
+        // whether the view still shows the whole graph as frame() left it
+        bool isFramed() const { return framed; }
+        // the graph changed shape under the view
+        void unframe() { framed = false; }
         ImVec2 getViewCenter() const;
         ImVec2 getMousePosition() const;
 
@@ -155,6 +159,7 @@ namespace doriax::editor {
         ImVec2 origin;               // the canvas's top left on screen
         ImVec2 canvasSize;
         bool framePending = true;
+        bool framed = false;
         bool frameSelectionOnly = false;
         ImVec2 framedSize;           // framing goes on while the window settles its size
 

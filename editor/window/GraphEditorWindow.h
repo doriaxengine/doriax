@@ -74,7 +74,7 @@ namespace doriax::editor {
         std::string toRelativePath(const std::filesystem::path& path) const;
         bool load(Instance& instance);
         bool save(Instance& instance);
-        // the Lua script of a logic graph, beside it
+        // the Lua script of a logic graph, where the editor keeps it
         void writeScript(Instance& instance);
         // with the project's function graphs as edited
         void compile(Instance& instance);

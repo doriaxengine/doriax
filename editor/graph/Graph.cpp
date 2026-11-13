@@ -9,6 +9,7 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <limits>
 #include <set>
 
 using namespace doriax;
@@ -206,6 +207,11 @@ bool editor::GraphDocument::read(const std::string& text, std::string& error) {
     // ids are never reused, whatever the file says
     std::set<int> ids;
     auto take = [&](int id) {
+        // 0 is no id, and the next one has to fit
+        if (id <= 0 || id == std::numeric_limits<int>::max()) {
+            error = "id " + std::to_string(id) + " is not one a graph can hold";
+            return false;
+        }
         if (!ids.insert(id).second) {
             error = "id " + std::to_string(id) + " is used twice";
             return false;

@@ -1576,10 +1576,10 @@ std::string editor::Factory::createScriptComponent(int indentSpaces, EntityRegis
         code << ind << "script.scripts.push_back(ScriptEntry());\n";
         code << ind << "script.scripts[" << idx << "].type = " << formatScriptType(script.scripts[i].type) << ";\n";
         // a logic graph ships as the script written from it, under the graph's name
-        std::filesystem::path scriptPath = script.scripts[i].path;
-        if (Util::isLogicGraphFile(script.scripts[i].path))
-            scriptPath.replace_extension(".lua");
-        code << ind << "script.scripts[" << idx << "].path = " << formatString(scriptPath.generic_string()) << ";\n";
+        std::string scriptPath = script.scripts[i].path;
+        if (Util::isLogicGraphFile(scriptPath))
+            scriptPath = scriptPath.substr(0, scriptPath.rfind('.')) + ".lua";
+        code << ind << "script.scripts[" << idx << "].path = " << formatString(scriptPath) << ";\n";
         code << ind << "script.scripts[" << idx << "].headerPath = " << formatString(script.scripts[i].headerPath) << ";\n";
         code << ind << "script.scripts[" << idx << "].className = " << formatString(script.scripts[i].className) << ";\n";
         code << ind << "script.scripts[" << idx << "].enabled = " << formatBool(script.scripts[i].enabled) << ";\n";

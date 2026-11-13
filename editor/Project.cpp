@@ -368,6 +368,13 @@ void editor::Project::overrideExternalRefComponents(EntityRegistry* scene, Entit
 
 editor::Project::Project(){
     resetConfigs();
+
+    // a logic graph on an entity runs the script written from it
+    LuaBinding::setScriptPathResolver([this](const std::string& path) {
+        if (!Util::isLogicGraphFile(path))
+            return std::string();
+        return FileUtils::pathToGenericUtf8(resolveLuaSource(FileUtils::pathFromUtf8(path)));
+    });
 }
 
 fs::path editor::Project::normalizeToProjectRelative(const fs::path& path) const {
@@ -1355,10 +1362,9 @@ void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, 
         return;
     }
 
-    // the script written from a logic graph is written again under the graph's new name
-    if (Util::isLogicGraphFile(oldPath.string())) {
-        std::error_code ec;
-        fs::remove(ProjectUtils::getLogicScriptPath(this, oldPath), ec);
+    // the scripts written from logic graphs are written again under their new names
+    if (Util::isLogicGraphFile(oldPath.string()) || oldPath.extension().empty()) {
+        ProjectUtils::removeLogicScript(this, oldPath);
     }
 
     for (auto& sceneProject : scenes) {
@@ -1566,6 +1572,10 @@ void editor::Project::cleanupEntityBundleFilePath(const std::filesystem::path& d
 void editor::Project::cleanupScriptFilePath(const std::filesystem::path& deletedPath) {
     if (projectPath.empty() || deletedPath.empty()) {
         return;
+    }
+
+    if (Util::isLogicGraphFile(deletedPath.string()) || deletedPath.extension().empty()) {
+        ProjectUtils::removeLogicScript(this, deletedPath);
     }
 
     for (auto& sceneProject : scenes) {
@@ -2675,17 +2685,9 @@ std::filesystem::path editor::Project::resolveLuaPath(const std::filesystem::pat
 }
 
 std::filesystem::path editor::Project::resolveLuaSource(const std::filesystem::path& luaRelative) const{
-    if (Util::isLogicGraphFile(luaRelative.string()))
+    if (Util::isLogicGraphFile(FileUtils::pathToGenericUtf8(luaRelative)))
         return ProjectUtils::buildLogicScript(this, resolveLuaPath(luaRelative));
     return resolveLuaPath(luaRelative);
-}
-
-void editor::Project::useLogicScripts(Scene* scene) const{
-    auto scripts = scene->getComponentArray<ScriptComponent>();
-    for (size_t i = 0; i < scripts->size(); i++)
-        for (ScriptEntry& entry : scripts->getComponentFromIndex(i).scripts)
-            if (entry.type == ScriptType::LUA && Util::isLogicGraphFile(entry.path))
-                entry.path = resolveLuaSource(entry.path).generic_string();
 }
 
 std::filesystem::path editor::Project::normalizeToLuaRelative(const std::filesystem::path& path) const{
@@ -10138,7 +10140,6 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                     entry.initializing = true;
 
                     Scene* scene = entry.runtime->scene;
-                    useLogicScripts(scene);
                     if (hasCppScripts) {
                         conector.init(scene);
                     } else {
@@ -10220,7 +10221,6 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
         entry.initializing = true;
 
         Scene* scene = entry.runtime->scene;
-        useLogicScripts(scene);
         if (conector.isLibraryConnected()) {
             conector.init(scene);
         }else{
@@ -10467,7 +10467,6 @@ void editor::Project::registerBundleManager() {
     // spawned instances run their scripts like the scene does
     BundleManager::setScriptCallbacks(
         [this](Scene* scene) {
-            useLogicScripts(scene);
             if (conector.isLibraryConnected()) {
                 conector.init(scene);
             } else {

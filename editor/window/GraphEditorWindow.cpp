@@ -157,7 +157,7 @@ namespace {
     bool beginFields(const char* id) {
         if (!ImGui::BeginTable(id, 2, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV))
             return false;
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, Theme::dpi(84.0f));
+        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, Theme::dpi(96.0f));
         ImGui::TableSetupColumn("Value");
         return true;
     }
@@ -416,7 +416,7 @@ void editor::GraphEditorWindow::writeScript(Instance& instance) {
         return;
     }
     std::string error;
-    if (!ProjectUtils::writeLogicScript(project, project->getProjectPath() / instance.filepath, instance.compiled.code, error))
+    if (!ProjectUtils::writeLogicScript(project, project->getProjectPath() / instance.filepath, instance.savedText, instance.compiled.code, error))
         Out::error("%s", error.c_str());
 }
 
@@ -1048,6 +1048,7 @@ void editor::GraphEditorWindow::applyCanvasEdits(Instance& instance, const std::
     }
     if (!document.findNode(instance.inspected))
         instance.inspected = 0;
+    instance.canvas.unframe();
     edit(instance);
 }
 
@@ -1218,15 +1219,6 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
     if (ImGui::Button(logic ? ICON_FA_PLUS " Variable" : ICON_FA_PLUS " Parameter"))
         ImGui::OpenPopup("##parameterTypes");
     ImGui::SetItemTooltip(logic ? "Add a variable" : "Add a parameter");
-    ImGui::SameLine();
-    ImGui::BeginDisabled(!document.findParameter(instance.parameter));
-    if (ImGui::Button(ICON_FA_TRASH_CAN "##removeParameter")) {
-        document.removeParameter(instance.parameter);
-        instance.parameter = 0;
-        changed = true;
-    }
-    ImGui::SetItemTooltip(logic ? "Remove the variable; the nodes that name it lose it" : "Remove the parameter, and the links from it");
-    ImGui::EndDisabled();
 
     if (ImGui::BeginPopup("##parameterTypes")) {
         static const std::vector<std::pair<const char*, const char*>> shaderTypes = {
@@ -1259,149 +1251,172 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         ImGui::EndPopup();
     }
 
-    if (!document.parameters.empty() && ImGui::BeginTable("##list", 2, ImGuiTableFlags_PadOuterX)) {
-        ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed);
-        for (const GraphParameter& parameter : document.parameters) {
-            ImGui::PushID(parameter.id);
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            if (ImGui::Selectable(parameter.name.c_str(), parameter.id == instance.parameter, ImGuiSelectableFlags_SpanAllColumns))
-                instance.parameter = parameter.id;
-            // dropped on the canvas, it becomes a node
-            if (ImGui::BeginDragDropSource()) {
-                ImGui::SetDragDropPayload("graph_parameter", &parameter.id, sizeof(int));
-                ImGui::TextUnformatted(parameter.name.c_str());
-                ImGui::EndDragDropSource();
-            }
-            ImGui::TableNextColumn();
-            ImGui::TextDisabled("%s", parameter.type.c_str());
-            ImGui::PopID();
-        }
-        ImGui::EndTable();
-    }
-    if (document.parameters.empty())
-        ImGui::TextDisabled(logic ? "None yet. They show on the script in Properties." : "None yet. They show in Properties.");
-
-    GraphParameter* parameter = nullptr;
-    for (GraphParameter& item : document.parameters)
-        if (item.id == instance.parameter)
-            parameter = &item;
-
-    if (parameter && beginFields("##parameter")) {
+    // each one folds like a script in Properties, so several can be open and set side by side
+    int removed = 0;
+    int edited = 0;
+    for (GraphParameter& item : document.parameters) {
+        GraphParameter* parameter = &item;
         ImGui::PushID(parameter->id);
-
-        // a name keeps to what GLSL and Lua allow, and is taken once typed
-        const char* nameLabel = field("Name");
-        if (ImGui::GetActiveID() != ImGui::GetID(nameLabel))
-            instance.parameterName = parameter->name;
-        editText(nameLabel, instance.parameterName, nullptr, ImGuiInputTextFlags_CallbackCharFilter, identifierFilter);
-        if (ImGui::IsItemDeactivatedAfterEdit()) {
-            const std::string& name = instance.parameterName;
-            if (!name.empty() && !std::isdigit((unsigned char)name[0]) && !document.findParameter(name)) {
-                parameter->name = name;
-                changed = true;
-            }
+        if (parameter->id == instance.parameter) {
+            ImGui::SetNextItemOpen(true);
+            instance.parameter = 0;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Header, Theme::Colors::NestedHeader);
+        ImGui::PushStyleColor(ImGuiCol_HeaderHovered, Theme::Colors::NestedHeaderHovered);
+        ImGui::PushStyleColor(ImGuiCol_HeaderActive, Theme::Colors::NestedHeaderActive);
+        // the id stays while the name is typed
+        const bool open = ImGui::CollapsingHeader((parameter->name + "  [" + parameter->type + "]###header").c_str(), ImGuiTreeNodeFlags_AllowOverlap);
+        ImGui::PopStyleColor(3);
+        const ImVec2 headerMin = ImGui::GetItemRectMin();
+        const ImVec2 headerMax = ImGui::GetItemRectMax();
+        // dropped on the canvas, it becomes a node
+        if (ImGui::BeginDragDropSource()) {
+            ImGui::SetDragDropPayload("graph_parameter", &parameter->id, sizeof(int));
+            ImGui::TextUnformatted(parameter->name.c_str());
+            ImGui::EndDragDropSource();
         }
 
-        if (logic) {
-            const std::string valueType = LogicNodes::getVariablePinType(parameter->type);
-            if (parameter->type == "string") {
-                std::string text = parameter->value.text;
-                if (editText(field("Default"), text)) {
-                    parameter->value = text.empty() ? GraphValue() : GraphValue(text);
+        // the trash can at the header's right, as Properties draws a script's
+        const ImVec2 after = ImGui::GetCursorPos();
+        const float padding = ImGui::GetStyle().FramePadding.x / 4.0f;
+        const ImVec2 removeSize(ImGui::CalcTextSize(ICON_FA_TRASH_CAN).x + padding * 2.0f, 0.0f);
+        ImGui::SetCursorScreenPos(ImVec2(headerMax.x - removeSize.x, headerMin.y + (headerMax.y - headerMin.y - ImGui::GetFrameHeight()) * 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(padding, ImGui::GetStyle().FramePadding.y));
+        if (ImGui::Button(ICON_FA_TRASH_CAN "##remove", removeSize))
+            removed = parameter->id;
+        ImGui::SetItemTooltip(logic ? "Remove the variable; the nodes that name it lose it" : "Remove the parameter, and the links from it");
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(2);
+        ImGui::SetCursorPos(after);
+
+        if (open && beginFields("##fields")) {
+            const bool before = changed;
+            changed = false;
+            // a name keeps to what GLSL and Lua allow, and is taken once typed
+            const char* nameLabel = field("Name");
+            const bool typing = ImGui::GetActiveID() == ImGui::GetID(nameLabel);
+            std::string name = typing ? instance.parameterName : parameter->name;
+            const bool typed = editText(nameLabel, name, nullptr, ImGuiInputTextFlags_CallbackCharFilter, identifierFilter);
+            if (typed || ImGui::IsItemActivated())
+                instance.parameterName = name;
+            if (ImGui::IsItemDeactivatedAfterEdit()) {
+                const std::string& taken = instance.parameterName;
+                if (!taken.empty() && !std::isdigit((unsigned char)taken[0]) && !document.findParameter(taken)) {
+                    parameter->name = taken;
                     changed = true;
                 }
-            } else if (parameter->type == "entity") {
-                field("Default");
-                ImGui::TextDisabled("Set in Properties");
+            }
+
+            if (logic) {
+                const std::string valueType = LogicNodes::getVariablePinType(parameter->type);
+                if (parameter->type == "string") {
+                    std::string text = parameter->value.text;
+                    if (editText(field("Default"), text)) {
+                        parameter->value = text.empty() ? GraphValue() : GraphValue(text);
+                        changed = true;
+                    }
+                } else if (parameter->type == "entity") {
+                    field("Default");
+                    ImGui::TextDisabled("Set in Properties");
+                } else {
+                    std::vector<float> values = parameter->value.numbers;
+                    values.resize(LogicNodes::getComponentCount(valueType), 0.0f);
+                    bool set = false;
+                    if (parameter->type == "bool") {
+                        bool on = values[0] != 0.0f;
+                        if ((set = ImGui::Checkbox(field("Default"), &on)))
+                            values[0] = on ? 1.0f : 0.0f;
+                    } else if (parameter->type == "int") {
+                        int value = (int)std::lround(values[0]);
+                        if ((set = ImGui::DragInt(field("Default"), &value)))
+                            values[0] = (float)value;
+                    } else if (parameter->type == "color3") {
+                        set = ImGui::ColorEdit3(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                    } else if (parameter->type == "color4") {
+                        set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                    } else {
+                        set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), (int)values.size(), 0.01f);
+                    }
+                    if (set) {
+                        parameter->value = GraphValue(values);
+                        changed = true;
+                    }
+                }
+                if (parameter->type != "entity") {
+                    changed |= ImGui::Checkbox(field("Private"), &parameter->runtime);
+                    ImGui::SetItemTooltip("Kept by the script, not shown in Properties");
+                }
+            } else if (isTexture(parameter->type)) {
+                auto combo = [&](const char* label, std::string& value, std::initializer_list<const char*> options) {
+                    if (!ImGui::BeginCombo(label, value.c_str()))
+                        return;
+                    for (const char* option : options) {
+                        if (ImGui::Selectable(option, value == option)) {
+                            value = option;
+                            changed = true;
+                        }
+                    }
+                    ImGui::EndCombo();
+                };
+                std::string defaultTexture = parameter->value.text.empty() ? std::string("white") : parameter->value.text;
+                combo(field("Default"), defaultTexture, {"white", "black", "normal"});
+                if (defaultTexture != parameter->value.text)
+                    parameter->value = GraphValue(defaultTexture);
+                combo(field("Filter"), parameter->filter, {"nearest", "linear", "trilinear"});
+                combo(field("Wrap"), parameter->wrap, {"repeat", "clamp", "mirror"});
             } else {
+                const int count = componentCount(parameter->type);
                 std::vector<float> values = parameter->value.numbers;
-                values.resize(LogicNodes::getComponentCount(valueType), 0.0f);
+                values.resize(count, parameter->type == "color" ? 1.0f : 0.0f);
                 bool set = false;
-                if (parameter->type == "bool") {
-                    bool on = values[0] != 0.0f;
-                    if ((set = ImGui::Checkbox(field("Default"), &on)))
-                        values[0] = on ? 1.0f : 0.0f;
+                if (parameter->type == "color") {
+                    set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
                 } else if (parameter->type == "int") {
                     int value = (int)std::lround(values[0]);
                     if ((set = ImGui::DragInt(field("Default"), &value)))
                         values[0] = (float)value;
-                } else if (parameter->type == "color3") {
-                    set = ImGui::ColorEdit3(field("Default"), values.data(), ImGuiColorEditFlags_Float);
-                } else if (parameter->type == "color4") {
-                    set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                } else if (parameter->hasRange && count == 1) {
+                    set = ImGui::SliderFloat(field("Default"), values.data(), parameter->minValue, parameter->maxValue);
                 } else {
-                    set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), (int)values.size(), 0.01f);
+                    set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), count, 0.01f);
                 }
                 if (set) {
                     parameter->value = GraphValue(values);
                     changed = true;
                 }
-            }
-            if (parameter->type != "entity") {
-                changed |= ImGui::Checkbox(field("Private"), &parameter->runtime);
-                ImGui::SetItemTooltip("Kept by the script, not shown in Properties");
-            }
-        } else if (isTexture(parameter->type)) {
-            auto combo = [&](const char* label, std::string& value, std::initializer_list<const char*> options) {
-                if (!ImGui::BeginCombo(label, value.c_str()))
-                    return;
-                for (const char* option : options) {
-                    if (ImGui::Selectable(option, value == option)) {
-                        value = option;
-                        changed = true;
+                if (parameter->type == "float" || parameter->type == "int") {
+                    changed |= ImGui::Checkbox(field("Range"), &parameter->hasRange);
+                    if (parameter->hasRange) {
+                        float range[2] = {parameter->minValue, parameter->maxValue};
+                        if (ImGui::DragFloat2(field("Limits"), range, 0.01f)) {
+                            parameter->minValue = range[0];
+                            parameter->maxValue = range[1];
+                            changed = true;
+                        }
                     }
                 }
-                ImGui::EndCombo();
-            };
-            std::string defaultTexture = parameter->value.text.empty() ? std::string("white") : parameter->value.text;
-            combo(field("Default"), defaultTexture, {"white", "black", "normal"});
-            if (defaultTexture != parameter->value.text)
-                parameter->value = GraphValue(defaultTexture);
-            combo(field("Filter"), parameter->filter, {"nearest", "linear", "trilinear"});
-            combo(field("Wrap"), parameter->wrap, {"repeat", "clamp", "mirror"});
-        } else {
-            const int count = componentCount(parameter->type);
-            std::vector<float> values = parameter->value.numbers;
-            values.resize(count, parameter->type == "color" ? 1.0f : 0.0f);
-            bool set = false;
-            if (parameter->type == "color") {
-                set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
-            } else if (parameter->type == "int") {
-                int value = (int)std::lround(values[0]);
-                if ((set = ImGui::DragInt(field("Default"), &value)))
-                    values[0] = (float)value;
-            } else if (parameter->hasRange && count == 1) {
-                set = ImGui::SliderFloat(field("Default"), values.data(), parameter->minValue, parameter->maxValue);
-            } else {
-                set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), count, 0.01f);
+                changed |= ImGui::Checkbox(field("Set by scripts"), &parameter->runtime);
+                ImGui::SetItemTooltip("Hidden in Properties; scripts set it");
             }
-            if (set) {
-                parameter->value = GraphValue(values);
-                changed = true;
-            }
-            if (parameter->type == "float" || parameter->type == "int") {
-                changed |= ImGui::Checkbox(field("Range"), &parameter->hasRange);
-                if (parameter->hasRange) {
-                    float range[2] = {parameter->minValue, parameter->maxValue};
-                    if (ImGui::DragFloat2(field("Limits"), range, 0.01f)) {
-                        parameter->minValue = range[0];
-                        parameter->maxValue = range[1];
-                        changed = true;
-                    }
-                }
-            }
-            changed |= ImGui::Checkbox(field("Set by scripts"), &parameter->runtime);
-            ImGui::SetItemTooltip("Hidden in Properties; scripts set it");
+            changed |= editText(field("Description"), parameter->description);
+            if (changed)
+                edited = parameter->id;
+            changed |= before;
+            ImGui::EndTable();
         }
-        changed |= editText(field("Description"), parameter->description);
         ImGui::PopID();
-        ImGui::EndTable();
+    }
+    if (document.parameters.empty())
+        ImGui::TextDisabled(logic ? "None yet. They show on the script in Properties." : "None yet. They show in Properties.");
+    if (removed) {
+        document.removeParameter(removed);
+        changed = true;
     }
 
     if (changed)
-        edit(instance, "parameter" + std::to_string(instance.parameter));
+        edit(instance, edited ? "parameter" + std::to_string(edited) : std::string());
 }
 
 bool editor::GraphEditorWindow::drawLayoutInspector(Instance& instance) {
@@ -1764,9 +1779,12 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     }
     ImGui::SetItemTooltip("Add a node (or right click the canvas)");
     ImGui::SameLine();
+    // nothing to do while the view is as the last framing left it
+    ImGui::BeginDisabled(instance.canvas.isFramed());
     if (ImGui::Button(ICON_FA_DOWN_LEFT_AND_UP_RIGHT_TO_CENTER "##frame"))
         instance.canvas.frame();
     ImGui::SetItemTooltip("Frame the graph (F)");
+    ImGui::EndDisabled();
     ImGui::SameLine();
     if (ImGui::Button(instance.showCode ? ICON_FA_DIAGRAM_PROJECT " Graph" : ICON_FA_CODE " Code"))
         instance.showCode = !instance.showCode;
@@ -1774,7 +1792,7 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : (logic ? "The Lua script the graph makes" : "The shader code the graph makes"));
     ImGui::SameLine();
     const bool function = instance.document.type == "function";
-    // a logic graph's script is the .lua saved beside it already
+    // a logic graph's script is kept by the editor
     if (!logic) {
         ImGui::BeginDisabled(!instance.compiled.success || function);
         if (ImGui::Button(ICON_FA_FILE_CODE " Convert"))

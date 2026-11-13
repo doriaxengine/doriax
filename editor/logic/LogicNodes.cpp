@@ -422,6 +422,10 @@ void editor::LogicNodes::addEngineApi() {
             LogicNodeType& type = add("call/" + parent + "." + name, editor::LogicNodes::getTitle(name), parent, detail, std::move(inputs), std::move(outputs), {call});
             type.atomic = true;
         } else if (kind == "Property") {
+            // an event is registered for, through its event node
+            static const std::unordered_set<std::string> events = getEngineEventProperties();
+            if (events.count(parent + "." + name))
+                continue;
             // a type a class declares, which the table lists with its members
             if (std::isupper(static_cast<unsigned char>(name[0])) && !isConstantName(name))
                 continue;

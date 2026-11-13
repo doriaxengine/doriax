@@ -9233,6 +9233,11 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                     std::string newSource = srcPath.generic_string();
                     std::string newHeader = hdrPath.generic_string();
 
+                    // a logic graph's file names its script
+                    if (Util::isLogicGraphFile(newSource)) {
+                        newName = srcPath.stem().string();
+                    }
+
                     // Empty class name falls back to header (or source) filename stem
                     if (newName.empty()) {
                         newName = !hdrPath.empty() ? hdrPath.stem().string() : srcPath.stem().string();

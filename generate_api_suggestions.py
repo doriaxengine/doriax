@@ -205,6 +205,7 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     fname, 'Method',
                     f'{current_lua_name}:{fname}()', current_lua_name,
+                    getter=_bound_member(stripped[m.end():]),
                     signature=_lambda_signature(stripped[m.end():]),
                     bound=_bound_types(_binding_text(lines, index))
                 ))
@@ -401,6 +402,15 @@ def _getter_only(args):
     return len(args) == 2 and bool(RE_GETTER_FUNCTION.search(args[1]))
 
 
+RE_BOUND_MEMBER = re.compile(r'&\s*[A-Za-z0-9_]+::([A-Za-z0-9_]+)')
+
+
+def _bound_member(text):
+    """The C++ method a binding names first, which the Lua name may differ from."""
+    m = RE_BOUND_MEMBER.search(text)
+    return m.group(1) if m else ''
+
+
 def _binding_text(lines, index):
     """An add call with the lines it runs over, up to the next call of the chain."""
     text = lines[index].strip()
@@ -441,6 +451,7 @@ def _bound_types(text):
     takes a single value (a vector rather than its numbers), else the first.
     """
     found = []
+    text = text.replace('luabridge::constOverload<', 'luabridge::overload<')
     marker = 'luabridge::overload<'
     start = text.find(marker)
     while start >= 0:
@@ -547,7 +558,7 @@ def parse_cpp_headers(base_dir):
     sig_pattern = re.compile(
         r'(?:virtual\s+|inline\s+|static\s+)*'
         r'([A-Za-z0-9_:<>&*\s]+)\s+'
-        r'([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*(?:const)?\s*(?:override|final)?\s*[;{]'
+        r'([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*(?:const)?\s*(?:override|final)?\s*(?:=\s*0\s*)?[;{]'
     )
     class_start = re.compile(
         r'(?:class|struct)\s+(?:[A-Z0-9_]+\s+)?([A-Za-z0-9_]+)\s*(?::[^{]+)?\{'
@@ -697,6 +708,15 @@ def generate_header(symbols, output_path):
     lines.append('}')
     lines.append('')
 
+    # ── Events, which scripts register for rather than read, as "Class.name" ──
+    lines.append('inline std::unordered_set<std::string> getEngineEventProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in events)):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
     lines.append('inline const std::vector<EngineAPISymbol>& getEngineAPISymbols() {')
     lines.append('    static const std::vector<EngineAPISymbol> symbols = {')
 
@@ -773,7 +793,7 @@ def main():
     # Update existing LuaBridge method symbols with param + return info from C++ headers
     for s in all_symbols:
         if s.kind in ('Method', 'StaticMethod') and s.parent:
-            sig = s.signature or cpp_signatures.get((s.parent, s.name))
+            sig = s.signature or cpp_signatures.get((s.parent, s.name)) or cpp_signatures.get((s.parent, s.getter))
             # the header's shortest overload is not always the one bound
             if s.signature is None and s.bound is not None:
                 sig = _bound_overload(cpp_methods.get(s.parent, {}).get(s.name, []), s.bound)

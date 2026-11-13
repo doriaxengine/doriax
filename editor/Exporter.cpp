@@ -2000,14 +2000,23 @@ bool editor::Exporter::copyLua() try {
 
         // A logic graph ships as the script written from it, in the graph's place
         if (Util::isLogicGraphFile(entry.path().string())) {
-            const fs::path script = ProjectUtils::buildLogicScript(project, entry.path());
+            std::string problem;
+            const fs::path script = ProjectUtils::buildLogicScript(project, entry.path(), &problem);
+            if (!problem.empty() || script.empty()) {
+                setError("Cannot export: " + relPath.generic_string() + " does not compile: " + problem);
+                return false;
+            }
+            fs::path scriptSrc = entry.path();
+            scriptSrc.replace_extension(".lua");
+            if (fs::exists(scriptSrc)) {
+                setError("Cannot export: " + relPath.generic_string() + " and " + scriptSrc.filename().string() + " would be the same script; rename one of them");
+                return false;
+            }
             fs::path destPath = luaDst / relPath;
             destPath.replace_extension(".lua");
-            if (fs::exists(script)) {
-                fs::create_directories(destPath.parent_path());
-                fs::copy_file(script, destPath, fs::copy_options::overwrite_existing);
-                luaExportedPaths.insert(fs::relative(destPath, luaDst).lexically_normal());
-            }
+            fs::create_directories(destPath.parent_path());
+            fs::copy_file(script, destPath, fs::copy_options::overwrite_existing);
+            luaExportedPaths.insert(fs::relative(destPath, luaDst).lexically_normal());
             continue;
         }
 

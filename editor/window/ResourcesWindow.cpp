@@ -1814,7 +1814,7 @@ void editor::ResourcesWindow::renderNewItemMenu(const fs::path& directory){
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " Lua Script", nullptr, false, inLuaDir)) startNewItem(NewItemType::LUA_SCRIPT, directory);
     if (!inLuaDir) ImGui::SetItemTooltip("Lua scripts must be inside the Lua directory");
     if (ImGui::MenuItem(ICON_FA_DIAGRAM_PROJECT " Logic Graph", nullptr, false, inLuaDir)) startNewItem(NewItemType::LOGIC_GRAPH, directory);
-    ImGui::SetItemTooltip(inLuaDir ? "A script made of nodes, saved with its Lua beside it" : "Logic graphs must be inside the Lua directory");
+    ImGui::SetItemTooltip(inLuaDir ? "A script made of nodes" : "Logic graphs must be inside the Lua directory");
 
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Source")) startNewItem(NewItemType::CPP_SOURCE, directory);
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Header")) startNewItem(NewItemType::CPP_HEADER, directory);

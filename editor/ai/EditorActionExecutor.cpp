@@ -4368,6 +4368,12 @@ ActionResult EditorActionExecutor::attachScript(const Json& arguments) {
     if (type != ScriptType::LUA) {
         if (!safeRelativePath(project, arguments, "header_path", headerRel, error, true)) return failResult(error);
     }
+    const bool graph = Util::isLogicGraphFile(sourceRel.string());
+    if (graph && type != ScriptType::LUA) return failResult("A logic graph is attached with type lua.");
+    if (graph && ProjectUtils::getLogicScriptPath(project, project->getProjectPath() / sourceRel).empty()) {
+        return failResult("A logic graph goes inside the project's Lua directory.");
+    }
+    if (type == ScriptType::LUA && !graph && !Util::isLuaFile(sourceRel.string())) return failResult("path must be a .lua file or a .logic graph.");
 
     ScriptEntry entry;
     entry.type = type;
@@ -5885,7 +5891,16 @@ public:
                 continue;
             auto found = depth.find(id);
             const int column = found != depth.end() ? found->second : deepest + 1;
-            node->position = Vector2(output->position.x - 280.0f * column, output->position.y + 150.0f * rows[column]++);
+            // clear of what an earlier call put in this column
+            Vector2 at;
+            for (bool free = false; !free;) {
+                at = Vector2(output->position.x - 280.0f * column, output->position.y + 150.0f * rows[column]++);
+                free = std::none_of(graph.nodes.begin(), graph.nodes.end(), [&](const GraphNode& other) {
+                    return other.id != id && std::abs(other.position.x - at.x) < 260.0f && std::abs(other.position.y - at.y) < 140.0f &&
+                           (!added(other.id) || std::find(placed.begin(), placed.end(), other.id) < std::find(placed.begin(), placed.end(), id));
+                });
+            }
+            node->position = at;
         }
     }
 
@@ -5989,9 +6004,22 @@ private:
         return true;
     }
 
+    // {x, y}, or [x, y] as read_graph gives it
+    static bool isPoint(const Json& operation, const char* key) {
+        if (!operation.contains(key))
+            return false;
+        const Json& at = operation[key];
+        return at.is_object() || (at.is_array() && at.size() == 2 && at[0].is_number() && at[1].is_number());
+    }
+
+    static Vector2 point(const Json& at, float fallback = 0.0f) {
+        if (at.is_array())
+            return Vector2(at[0].get<float>(), at[1].get<float>());
+        return Vector2(at.value("x", fallback), at.value("y", fallback));
+    }
+
     Vector2 position(const Json& operation) const {
-        const Json& at = operation["position"];
-        return Vector2(at.value("x", 0.0f), at.value("y", 0.0f));
+        return point(operation["position"]);
     }
 
     bool addNode(const Json& operation, std::string& error) {
@@ -6015,7 +6043,7 @@ private:
             error = "the graph has its output node already";
             return false;
         }
-        const bool given = operation.contains("position") && operation["position"].is_object();
+        const bool given = isPoint(operation, "position");
         const int id = graph.addNode(typeId, given ? position(operation) : Vector2(0.0f, 0.0f));
         if (!given)
             placed.push_back(id);
@@ -6056,7 +6084,7 @@ private:
     }
 
     bool move(const Json& operation, std::string& error) {
-        if (!operation.contains("position") || !operation["position"].is_object()) {
+        if (!isPoint(operation, "position")) {
             error = "move needs position";
             return false;
         }
@@ -6413,14 +6441,14 @@ private:
 
     bool addLayout(const Json& operation, bool group, std::string& error) {
         const std::string text = operation.value("text", "");
-        const bool given = operation.contains("position") && operation["position"].is_object();
+        const bool given = isPoint(operation, "position");
         const Vector2 at = given ? position(operation) : Vector2(0.0f, 0.0f);
         if (group) {
             GraphGroup item;
             item.id = graph.takeId();
             item.title = text.empty() ? "Group" : text;
-            const bool sized = operation.contains("size") && operation["size"].is_object();
-            item.rect = Vector4(at.x, at.y, sized ? operation["size"].value("x", 300.0f) : 300.0f, sized ? operation["size"].value("y", 200.0f) : 200.0f);
+            const Vector2 size = isPoint(operation, "size") ? point(operation["size"], 300.0f) : Vector2(300.0f, 200.0f);
+            item.rect = Vector4(at.x, at.y, size.x, size.y);
             graph.groups.push_back(item);
             keep(operation, item.id);
             if (!given)
@@ -6636,13 +6664,11 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (rel.extension() == ".logic") {
             if (!type.empty() && type != "script")
                 return failResult("A .logic graph is a script; leave graph_type out.");
-            if (!Util::isInsidePath(fullPath, project->getLuaPath()))
-                return failResult("A logic graph goes inside the project's Lua directory, where its script is written.");
             const std::string name = rel.stem().string();
             const bool identifier = !name.empty() && !std::isdigit((unsigned char)name[0]) && !LogicNodes::isLuaKeyword(name) &&
                                     std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; });
             if (!identifier)
-                return failResult("The file name is the script's name: letters, digits and _, not starting with a digit.");
+                return failResult("The file name is the script's name: letters, digits and _, not starting with a digit, and not a word of Lua.");
             graph.kind = "logic";
             graph.type = "script";
         } else {
@@ -6655,6 +6681,9 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
     } else if (!readGraphFile(fullPath, graph, error)) {
         return failResult(error);
     }
+
+    if (graph.kind == "logic" && ProjectUtils::getLogicScriptPath(project, fullPath).empty())
+        return failResult("A logic graph goes inside the project's Lua directory, where its script is kept.");
 
     GraphOperations operations(graph);
     const Json& list = arguments["operations"];
@@ -6679,7 +6708,7 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (graph.kind == "logic") {
             // the script the entities run, written when the graph compiles
             std::string scriptError;
-            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, compiled.code, scriptError))
+            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, text, compiled.code, scriptError))
                 return failResult("Graph written, but not its script: " + scriptError);
         } else {
             project->invalidateCustomShader(key);
