@@ -1423,9 +1423,7 @@ bool editor::GraphEditorWindow::drawLayoutInspector(Instance& instance) {
         if (group.id != instance.inspected)
             continue;
         shown = true;
-        ImGui::TextUnformatted("Group");
-        ImGui::Separator();
-        if (!beginFields("##group"))
+        if (!ImGui::CollapsingHeader("Group###inspector", ImGuiTreeNodeFlags_DefaultOpen) || !beginFields("##group"))
             continue;
         changed |= editText(field("Title"), group.title);
         float color[4] = {group.color.x, group.color.y, group.color.z, group.color.w};
@@ -1439,8 +1437,8 @@ bool editor::GraphEditorWindow::drawLayoutInspector(Instance& instance) {
         if (comment.id != instance.inspected)
             continue;
         shown = true;
-        ImGui::TextUnformatted("Comment");
-        ImGui::Separator();
+        if (!ImGui::CollapsingHeader("Comment###inspector", ImGuiTreeNodeFlags_DefaultOpen))
+            continue;
         changed |= editTextMultiline("##text", comment.text, ImVec2(-FLT_MIN, Theme::dpi(100.0f)));
     }
     if (changed)
@@ -1464,11 +1462,15 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
     }
     const bool logic = GraphNodes::isLogic(document);
 
-    ImGui::TextUnformatted(type->name.c_str());
-    ImGui::PushTextWrapPos(0.0f);
-    ImGui::TextDisabled("%s", type->description.c_str());
-    ImGui::PopTextWrapPos();
-    ImGui::Separator();
+    // a section as the ones above it, named by the node
+    if (!ImGui::CollapsingHeader((type->name + "###inspector").c_str(), ImGuiTreeNodeFlags_DefaultOpen))
+        return;
+    if (!type->description.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("%s", type->description.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::Spacing();
+    }
 
     bool changed = false;
     if (!beginFields("##node"))
@@ -1714,7 +1716,8 @@ void editor::GraphEditorWindow::drawErrors(Instance& instance) {
     if (instance.compiled.errors.empty())
         return;
     ImGui::Spacing();
-    ImGui::Separator();
+    if (!ImGui::CollapsingHeader("Errors", ImGuiTreeNodeFlags_DefaultOpen))
+        return;
     ImGui::PushStyleColor(ImGuiCol_Text, errorColor);
     for (size_t i = 0; i < instance.compiled.errors.size(); i++) {
         const GraphMessage& message = instance.compiled.errors[i];
@@ -1944,11 +1947,11 @@ void editor::GraphEditorWindow::show() {
             drawPreview(instance);
             drawParameters(instance);
             ImGui::Spacing();
-            ImGui::Separator();
             drawInspector(instance);
             drawErrors(instance);
             ImGui::EndChild();
-            ImGui::SameLine();
+            // the canvas starts at the panel's edge, where it is resized
+            ImGui::SameLine(0.0f, 0.0f);
             ImGui::BeginChild("##canvas", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
             drawCanvas(instance);
             ImGui::EndChild();
