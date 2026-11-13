@@ -102,7 +102,7 @@ namespace doriax {
     };
 
     // a declared texture; those of one filter and wrap share a sampler
-    struct ShaderTextureInfo{
+    struct DORIAX_API ShaderTextureInfo{
         ShaderStageType stage = ShaderStageType::FRAGMENT;
         std::string name;
         TextureType type = TextureType::TEXTURE_2D;
