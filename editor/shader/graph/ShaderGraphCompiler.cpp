@@ -502,6 +502,8 @@ namespace {
         if (preview) {
             function = *previewed;
         } else {
+            // a missing one too, so its return recompiles the caller
+            functions.insert(file);
             std::string text, readError;
             if (!reader || !reader(file, text)) {
                 error(call.id, "Subgraph cannot read " + file);
@@ -511,7 +513,6 @@ namespace {
                 error(call.id, file + ": " + readError);
                 return false;
             }
-            functions.insert(file);
         }
         std::vector<NodePin> inputs, outputs;
         std::vector<GraphMessage> problems;

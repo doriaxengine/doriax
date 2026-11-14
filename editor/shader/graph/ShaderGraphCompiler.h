@@ -16,7 +16,7 @@ namespace doriax::editor {
     // code holds a shader file, as one written by hand
     struct ShaderGraphResult : GraphResult {
         std::string type;                        // what the code fills, as mesh, or a function preview's type
-        std::vector<std::string> functions;      // the function graphs its Subgraph nodes read
+        std::vector<std::string> functions;      // the function graphs its Subgraph nodes call
         // pin numbers a live compile left out, by parameter
         std::vector<std::pair<std::string, Vector4>> liveValues;
     };
