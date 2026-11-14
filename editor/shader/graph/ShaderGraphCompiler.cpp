@@ -169,15 +169,33 @@ namespace {
         return false;
     }
 
-    // whether a node is of a type, or is fed by one that is
-    bool fedBy(const GraphDocument& graph, int node, const char* type, std::set<int>& seen) {
+    // whether a function graph holds a node of a type, in itself or in the functions it calls
+    bool functionHolds(const std::string& file, const char* type, const ShaderGraphReader& reader, std::set<std::string>& read) {
+        std::string text, error;
+        GraphDocument function;
+        if (!reader || !read.insert(file).second || !reader(file, text) || !function.read(text, error))
+            return false;
+        for (const GraphNode& node : function.nodes) {
+            if (node.type == type)
+                return true;
+            if (node.type == "utility/subgraph" && functionHolds(settingText(node, "file"), type, reader, read))
+                return true;
+        }
+        return false;
+    }
+
+    // whether a node is of a type, or is fed by one that is, a Subgraph being all its function holds
+    bool fedBy(const GraphDocument& graph, int node, const char* type, std::set<int>& seen, const ShaderGraphReader& reader) {
         if (!seen.insert(node).second)
             return false;
         const GraphNode* found = graph.findNode(node);
         if (found && found->type == type)
             return true;
+        std::set<std::string> read;
+        if (found && found->type == "utility/subgraph" && functionHolds(settingText(*found, "file"), type, reader, read))
+            return true;
         for (const GraphLink& link : graph.links) {
-            if (link.toNode == node && !link.fromPin.empty() && fedBy(graph, link.fromNode, type, seen))
+            if (link.toNode == node && !link.fromPin.empty() && fedBy(graph, link.fromNode, type, seen, reader))
                 return true;
         }
         return false;
@@ -1485,7 +1503,7 @@ bool editor::ShaderGraphCompiler::getFunctionPins(const GraphDocument& function,
     return false;
 }
 
-bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int node, GraphDocument& preview) {
+bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int node, GraphDocument& preview, const ShaderGraphReader& reader) {
     const GraphNode* shown = graph.findNode(node);
     const ShaderNodeType* type = shown ? ShaderNodes::get().find(shown->type) : nullptr;
     if (graph.type != "mesh" || !type || type->id.rfind("output/", 0) == 0)
@@ -1504,7 +1522,7 @@ bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int no
     const bool perVertex = type->stage == ShaderNodeStage::VERTEX || fedPerVertex(graph, node, seen);
     // what only one hook has decides where it draws, as a function's preview does
     std::set<int> light, material;
-    const char* fragmentSlot = fedBy(graph, node, "input/light", light) ? "light" : (fedBy(graph, node, "input/material", material) ? "emissive" : "color");
+    const char* fragmentSlot = fedBy(graph, node, "input/light", light, reader) ? "light" : (fedBy(graph, node, "input/material", material, reader) ? "emissive" : "color");
     preview.connect(node, outputs.front().name, draw, perVertex ? "vertexOffset" : fragmentSlot);
     return true;
 }

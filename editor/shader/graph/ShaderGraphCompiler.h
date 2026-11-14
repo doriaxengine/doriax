@@ -43,7 +43,8 @@ namespace doriax::editor {
 
         // a mesh graph that draws one node's first output in place of what it draws, as Final
         // Color or, from nodes that work per vertex, Vertex Offset; false for a node with none
-        static bool previewNode(const GraphDocument& graph, int node, GraphDocument& preview);
+        // the reader tells what the functions of its Subgraph nodes read, which picks the output
+        static bool previewNode(const GraphDocument& graph, int node, GraphDocument& preview, const ShaderGraphReader& reader = nullptr);
     };
 
 }

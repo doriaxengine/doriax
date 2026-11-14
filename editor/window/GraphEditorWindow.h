@@ -84,6 +84,8 @@ namespace doriax::editor {
         // with the project's function graphs as edited
         void compile(Instance& instance);
         const std::string& getBuiltCode(const Instance& instance) const;
+        // an open graph follows its file to another path
+        void moveInstance(const std::string& oldKey, const std::string& newKey);
         // one undoable step: what changed in the document since it was last applied
         void edit(Instance& instance, const std::string& mergeKey = std::string());
         void applyText(Instance& instance, const std::string& text);

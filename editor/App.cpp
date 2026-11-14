@@ -2860,6 +2860,10 @@ void editor::App::saveAllCodeEditors() {
     if (codeEditor) {
         codeEditor->saveAll();
     }
+    // a logic graph's script is written from its saved file, as a script's code is read from its own
+    if (graphEditorWindow) {
+        graphEditorWindow->saveAll();
+    }
 }
 
 void editor::App::registerAlert(std::string title, std::string message) {

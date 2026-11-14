@@ -300,16 +300,12 @@ void MeshSystem::applySubmeshOverride(const Submesh& saved, Submesh& submesh) {
 static MeshSystem::MeshSettings getMeshSettings(const MeshComponent& mesh) {
     MeshSystem::MeshSettings settings = {mesh.receiveLights, mesh.receiveIBL, mesh.castShadows, mesh.receiveShadows, mesh.shadowsBillboard,
             mesh.renderInReflectionProbes, mesh.transparent, mesh.autoTransparency, mesh.lodEnabled, mesh.lodBias,
-            mesh.vertexOffsetMax, std::string(), {}, {}};
-    // a shader every material shares was given to the mesh, one of a single material is that material's
-    const Material& first = mesh.submeshes[0].material;
-    for (unsigned int i = 1; i < mesh.numSubmeshes; i++){
-        if (mesh.submeshes[i].material.shader != first.shader)
-            return settings;
+            mesh.vertexOffsetMax, {}};
+    // a mesh not built yet holds what it was given in its first material
+    for (unsigned int i = 0; i < std::max(mesh.numSubmeshes, 1u); i++){
+        const Material& material = mesh.submeshes[i].material;
+        settings.shaders.push_back({material.shader, material.shaderUniforms, material.shaderTextures});
     }
-    settings.shader = first.shader;
-    settings.shaderUniforms = first.shaderUniforms;
-    settings.shaderTextures = first.shaderTextures;
     return settings;
 }
 
@@ -325,17 +321,25 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
-    // a shader given before the model loaded goes to the materials that came without one, and
-    // so do its values, which one that draws with the scene's shader has with no shader of its own
-    if (settings.shader.empty() && settings.shaderUniforms.empty() && settings.shaderTextures.empty())
+    // what was given before the model loaded goes to the materials that came without a shader:
+    // each its own when the model has as many as before, as one loaded again, else the one
+    // shader every material shared, which was given to the mesh. The values go with or
+    // without a shader, since a material that draws with the scene's has them too
+    const bool each = settings.shaders.size() == mesh.numSubmeshes;
+    bool shared = !settings.shaders.empty();
+    for (size_t i = 1; i < settings.shaders.size(); i++){
+        shared = shared && settings.shaders[i].shader == settings.shaders[0].shader;
+    }
+    if (!each && !shared)
         return;
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
         Material& material = mesh.submeshes[i].material;
-        if (!material.shader.empty())
+        const MeshSystem::MeshSettings::MaterialShader& saved = settings.shaders[each ? i : 0];
+        if (!material.shader.empty() || (saved.shader.empty() && saved.shaderUniforms.empty() && saved.shaderTextures.empty()))
             continue;
-        material.shader = settings.shader;
-        material.shaderUniforms = settings.shaderUniforms;
-        material.shaderTextures = settings.shaderTextures;
+        material.shader = saved.shader;
+        material.shaderUniforms = saved.shaderUniforms;
+        material.shaderTextures = saved.shaderTextures;
         mesh.submeshes[i].needUpdateTexture = true;
         mesh.needUpdateShaderUniforms = true;
         mesh.needReload = true;

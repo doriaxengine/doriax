@@ -614,11 +614,27 @@ bool editor::GraphEditorWindow::isFocused() const {
 }
 
 bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
-    const std::string oldKey = toRelativePath(oldPath);
-    const std::string newKey = toRelativePath(newPath);
-    auto it = instances.find(oldKey);
-    if (it == instances.end() || newKey.empty())
+    const std::string oldRoot = toRelativePath(oldPath);
+    const std::string newRoot = toRelativePath(newPath);
+    if (oldRoot.empty() || newRoot.empty())
         return false;
+    // the file itself, or the files of a folder that was renamed
+    std::vector<std::pair<std::string, std::string>> moved;
+    for (const auto& entry : instances) {
+        if (entry.first == oldRoot)
+            moved.push_back({entry.first, newRoot});
+        else if (entry.first.size() > oldRoot.size() && entry.first.compare(0, oldRoot.size(), oldRoot) == 0 && entry.first[oldRoot.size()] == '/')
+            moved.push_back({entry.first, newRoot + entry.first.substr(oldRoot.size())});
+    }
+    for (const auto& [oldKey, newKey] : moved)
+        moveInstance(oldKey, newKey);
+    return !moved.empty();
+}
+
+void editor::GraphEditorWindow::moveInstance(const std::string& oldKey, const std::string& newKey) {
+    auto it = instances.find(oldKey);
+    if (it == instances.end())
+        return;
 
     std::unique_ptr<Instance> instance = std::move(it->second);
     instances.erase(it);
@@ -649,7 +665,6 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     project->addTab(TabType::GRAPH_EDITOR, newKey);
     project->saveWorkspaceFile();
     Backend::getApp().addGraphEditorWindowToDock(std::filesystem::path(newKey));
-    return true;
 }
 
 bool editor::GraphEditorWindow::saveLastFocused() {
@@ -1715,16 +1730,17 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     // the selected node's value, through a graph of its own
     std::string shader = instance.filepath.generic_string();
     GraphDocument nodeGraph;
-    if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph)) {
+    Project* owner = project;
+    const ShaderGraphReader reader = [owner](const std::string& path, std::string& text) {
+        return ShaderBuilder::readGraphSource(owner, path, text);
+    };
+    if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph, reader)) {
         const std::string key = nodePreviewKey(instance.filepath);
         // built again once a drag ends, and only when its code changed
         const std::string of = std::to_string(instance.inspected) + "\n" + instance.text;
         if (of != instance.nodePreviewOf && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             instance.nodePreviewOf = of;
-            Project* owner = project;
-            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, [owner](const std::string& path, std::string& text) {
-                return ShaderBuilder::readGraphSource(owner, path, text);
-            });
+            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, reader);
             instance.nodePreviewNode = built.success ? instance.inspected : 0;
             if (built.success && built.code != instance.nodePreviewCode) {
                 instance.nodePreviewCode = built.code;

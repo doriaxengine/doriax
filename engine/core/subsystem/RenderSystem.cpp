@@ -10860,6 +10860,12 @@ void RenderSystem::update(double dt){
                     }
                 }
 
+                // a framebuffer made anew, as a resized one, is a new texture for every pass: the
+                // color pass alone would take it and leave the depth and G-buffer on the old one
+                if (!mesh.submeshes[s].needUpdateTexture && checkPBRFrabebufferUpdate(mesh.submeshes[s].material)){
+                    mesh.submeshes[s].needUpdateTexture = true;
+                }
+
                 if (mesh.submeshes[s].needUpdateTexture){
                     if (terrain){
                         transform.needUpdate = true;
