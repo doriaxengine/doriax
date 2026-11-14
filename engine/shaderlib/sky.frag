@@ -1,9 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-
 out vec4 frag_color;
 
 in vec3 uv;
@@ -17,8 +13,32 @@ uniform u_fs_skyParams {
 
 #include "includes/parameters_fs.glsl"
 
+#ifdef USE_FRAGMENT_HOOKS
+    #include "includes/srgb.glsl"
+
+    // linear, as the hooks of the other types
+    struct FragmentContext {
+        vec3 direction;       // of the cube map, in the sky's space
+        vec4 textureColor;    // the cube map sample
+        vec4 tint;            // the sky color
+        vec2 pixel;
+    };
+
+    // the shader file's fragment stage
+    #include "shader_hooks_fs.glsl"
+#endif
+
 void main(){
     loadShaderParameters();
 
-    frag_color = skyParams.color * texture(samplerCube(u_skyTexture, u_sky_smp), uv);
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context;
+        context.direction = uv;
+        context.textureColor = sRGBToLinear(texture(samplerCube(u_skyTexture, u_sky_smp), uv));
+        context.tint = sRGBToLinear(skyParams.color);
+        context.pixel = gl_FragCoord.xy;
+        frag_color = linearTosRGB(getColor(context, context.tint * context.textureColor));
+    #else
+        frag_color = skyParams.color * texture(samplerCube(u_skyTexture, u_sky_smp), uv);
+    #endif
 }

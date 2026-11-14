@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "ScriptCreateDialog.h"
+#include "logic/LogicNodes.h"
 #include "external/IconsFontAwesome6.h"
 #include "Scene.h"
 #include "Factory.h"
@@ -122,32 +123,22 @@ void ScriptCreateDialog::writeFiles(const fs::path& headerPath,
         if (isCppSubclass) {
             ProjectUtils::EntityClassInfo parentInfo = ProjectUtils::getEntityClassInfo(m_scene, m_entity);
             std::string parentClass = parentInfo.name;
-            bool hasTransform = parentInfo.derivesObject;
-            bool isMesh = parentInfo.derivesMesh;
 
             // Header
             {
                 std::ofstream h(headerPath, std::ios::binary | std::ios::trunc);
                 if (h) {
                     h << "#pragma once\n\n";
-                    h << "#include \"Shape.h\"\n";
                     h << "#include \"" << parentClass << ".h\"\n";
+                    h << "#include \"Engine.h\"\n";
                     h << "#include \"ScriptProperty.h\"\n\n";
                     h << "class " << classOrModuleName << " : public doriax::" << parentClass << " {\n";
                     h << "public:\n";
-                    h << "    // Example properties\n";
+                    h << "    // Example properties - you can add more!\n";
                     h << "    DPROPERTY(\"Is Active\")\n";
                     h << "    bool isActive = true;\n\n";
-                    if (hasTransform){
-                        h << "    DPROPERTY(\"Speed\")\n";
-                        h << "    float speed = 5.0f;\n\n";
-                        h << "    DPROPERTY(\"Target Position\")\n";
-                        h << "    doriax::Vector3 targetPosition = doriax::Vector3(0, 0, 0);\n\n";
-                        if (isMesh){
-                            h << "    DPROPERTY(\"Mesh Color\", Color4)\n";
-                            h << "    doriax::Vector4 meshColor = doriax::Vector4(1, 1, 1, 1);\n\n";
-                        }
-                    }
+                    h << "    DPROPERTY(\"Counter\")\n";
+                    h << "    int counter = 0;\n\n";
                     h << "    " << classOrModuleName << "(doriax::Scene* scene, doriax::Entity entity);\n";
                     h << "    virtual ~" << classOrModuleName << "();\n\n";
                     h << "    void onUpdate();\n";
@@ -169,17 +160,12 @@ void ScriptCreateDialog::writeFiles(const fs::path& headerPath,
                     c << "}\n\n";
                     c << "void " << classOrModuleName << "::onUpdate() {\n";
                     c << "    if (!isActive) return;\n\n";
-                    if (hasTransform){
-                        c << "    // Example: move toward the target at 'speed' units per second.\n";
-                        c << "    // moveTowards() clamps the step to the remaining distance, so it\n";
-                        c << "    // never overshoots - even on the first frame where deltaTime is large.\n";
-                        c << "    float deltaTime = Engine::getDeltatime();\n";
-                        c << "    Vector3 currentPos = getPosition();\n";
-                        c << "    setPosition(currentPos.moveTowards(targetPosition, speed * deltaTime));\n";
-                        if (isMesh){
-                            c << "    setColor(meshColor);\n";
-                        }
-                    }
+                    c << "    // Example: Increment counter every frame\n";
+                    c << "    // The class is the entity's own, so its methods are here too: getName(), setPosition()...\n";
+                    c << "    counter++;\n";
+                    c << "    if (counter % 60 == 0) {\n";
+                    c << "        Log::print(\"Counter: %d\\n\", counter);\n";
+                    c << "    }\n";
                     c << "}\n\n";
                 }
             }
@@ -234,6 +220,12 @@ void ScriptCreateDialog::writeFiles(const fs::path& headerPath,
         }
     }
 
+    if (kind == CreationKind::LOGIC) {
+        fs::create_directories(sourcePath.parent_path());
+        std::ofstream f(sourcePath, std::ios::binary | std::ios::trunc);
+        if (f) f << ProjectUtils::getLogicGraphTemplate();
+    }
+
     // Lua generation
     if (isLua) {
         fs::create_directories(sourcePath.parent_path());
@@ -285,7 +277,8 @@ void ScriptCreateDialog::writeFiles(const fs::path& headerPath,
 void ScriptCreateDialog::finalizeCreation(const fs::path& headerPath,
                                           const fs::path& sourcePath,
                                           const std::string& name) {
-    const bool isLua = m_creationKind == CreationKind::LUA;
+    // a logic graph is attached as the Lua script written from it
+    const bool isLua = m_creationKind == CreationKind::LUA || m_creationKind == CreationKind::LOGIC;
     const ScriptType type = isLua ? ScriptType::LUA : ScriptType::CPP;
 
     writeFiles(headerPath, sourcePath, name, m_creationKind);
@@ -344,13 +337,13 @@ void ScriptCreateDialog::selectExistingFile(bool selectHeader) {
     if (selected.empty()) return;
 
     const fs::path selectedPath = fs::path(selected).lexically_normal();
-    if (Util::isLuaFile(selectedPath.string())) {
+    if (Util::isLuaFile(selectedPath.string()) || Util::isLogicGraphFile(selectedPath.string())) {
         if (selectHeader) {
             m_attachError = "Select a C++ header (.h, .hh, .hpp, or .hxx).";
             return;
         }
         if (!Util::isInsidePath(selectedPath, m_luaPath)) {
-            m_attachError = "Lua scripts must be inside the configured Lua directory.";
+            m_attachError = "Lua scripts and logic graphs must be inside the configured Lua directory.";
             return;
         }
         m_existingScriptType = ScriptType::LUA;
@@ -377,7 +370,7 @@ void ScriptCreateDialog::selectExistingFile(bool selectHeader) {
         m_existingSourcePath = selectedPath;
         m_existingHeaderPath = findCompanion(selectedPath, {".h", ".hpp", ".hh", ".hxx"});
     } else {
-        m_attachError = "Select a Lua or C++ script file.";
+        m_attachError = "Select a Lua script, a logic graph or a C++ script file.";
         return;
     }
 
@@ -431,11 +424,12 @@ void ScriptCreateDialog::show() {
         if (ImGui::RadioButton("C++ Subclass", (int*)&m_creationKind, (int)CreationKind::CPP_SUBCLASS)) {}
         if (ImGui::RadioButton("C++ Script Class", (int*)&m_creationKind, (int)CreationKind::CPP_SCRIPT_CLASS)) {}
         if (ImGui::RadioButton("Lua Script", (int*)&m_creationKind, (int)CreationKind::LUA)) {}
+        if (ImGui::RadioButton("Logic Graph", (int*)&m_creationKind, (int)CreationKind::LOGIC)) {}
     }
 
     bool isLua = m_attachExisting
         ? m_existingScriptType == ScriptType::LUA
-        : m_creationKind == CreationKind::LUA;
+        : (m_creationKind == CreationKind::LUA || m_creationKind == CreationKind::LOGIC);
     bool isCpp = !isLua;
 
     ImGui::Spacing();
@@ -496,9 +490,8 @@ void ScriptCreateDialog::show() {
         }
 
         if (!m_existingSourcePath.empty() || !m_existingHeaderPath.empty()) {
-            const char* detectedType = m_existingScriptType == ScriptType::LUA
-                ? "Lua Script"
-                : "C++ Script";
+            const char* detectedType = m_existingScriptType != ScriptType::LUA ? "C++ Script"
+                : (Util::isLogicGraphFile(m_existingSourcePath.string()) ? "Logic Graph" : "Lua Script");
             ImGui::TextDisabled("Detected type: %s", detectedType);
         }
     } else {
@@ -567,6 +560,9 @@ void ScriptCreateDialog::show() {
     std::string baseName = m_baseNameBuffer;
     bool hasBase = !baseName.empty();
     std::string name = sanitizeClassName(baseName);
+    // Lua keywords cannot name a module or graph
+    if (isLua && LogicNodes::isLuaKeyword(name))
+        name += "Script";
 
     fs::path headerPath;
     fs::path sourcePath;
@@ -575,6 +571,8 @@ void ScriptCreateDialog::show() {
         sourcePath = makeSourcePath(name);
     } else if (isLua) {
         sourcePath = makeLuaPath(name);
+        if (!m_attachExisting && m_creationKind == CreationKind::LOGIC)
+            sourcePath.replace_extension(".logic");
     }
 
     std::error_code existsEc;
@@ -588,7 +586,7 @@ void ScriptCreateDialog::show() {
     if (m_attachExisting) {
         std::error_code sourceEc;
         const bool validSource = fs::is_regular_file(m_existingSourcePath, sourceEc) &&
-            (isLua ? Util::isLuaFile(m_existingSourcePath.string())
+            (isLua ? (Util::isLuaFile(m_existingSourcePath.string()) || Util::isLogicGraphFile(m_existingSourcePath.string()))
                    : Util::isSourceFile(m_existingSourcePath.string())) &&
             Util::isInsidePath(m_existingSourcePath, rootPath);
         std::error_code headerEc;
@@ -687,7 +685,7 @@ void ScriptCreateDialog::show() {
 
         if (allCreateFilesExist) {
             if (ImGui::Button("Attach Existing", ImVec2(alertButtonWidth, 0))) {
-                const ScriptType type = m_creationKind == CreationKind::LUA
+                const ScriptType type = (m_creationKind == CreationKind::LUA || m_creationKind == CreationKind::LOGIC)
                     ? ScriptType::LUA
                     : ScriptType::CPP;
                 const std::string attachName = type == ScriptType::CPP

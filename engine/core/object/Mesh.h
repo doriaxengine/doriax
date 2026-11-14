@@ -111,32 +111,29 @@ namespace doriax{
         void setAutoTransparency(bool autoTransparency);
         bool isAutoTransparency() const;
 
-        void setCustomShader(const std::string& path);
-        std::string getCustomShader() const;
+        // shader file of the materials
+        void setShader(const std::string& path);
+        void setShader(unsigned int submesh, const std::string& path);
+        std::string getShader() const;
+        std::string getShader(unsigned int submesh) const;
 
-        void setCustomDepthShader(const std::string& path);
-        std::string getCustomDepthShader() const;
-
-        void setVertexOffsetShader(const std::string& path);
-        std::string getVertexOffsetShader() const;
-
+        // longest vertex offset, widens the bounds; 0 = no limit
         void setVertexOffsetMax(float vertexOffsetMax);
         float getVertexOffsetMax() const;
-
-        // .glsl defining getCoverage(), from the project or the engine
-        void setCoverageShader(const std::string& path);
-        std::string getCoverageShader() const;
-
-        // the shadow maps follow the coverage too, instead of keeping the whole silhouette
-        void setCoverageShadows(bool coverageShadows);
-        bool isCoverageShadows() const;
 
         void setShaderUniform(const std::string& name, const Vector4& value);
         void setShaderUniform(const std::string& name, const Vector3& value);
         void setShaderUniform(const std::string& name, const Vector2& value);
         void setShaderUniform(const std::string& name, float value);
+        void setShaderUniform(unsigned int submesh, const std::string& name, const Vector4& value);
         Vector4 getShaderUniform(const std::string& name) const;
+        Vector4 getShaderUniform(unsigned int submesh, const std::string& name) const;
         bool removeShaderUniform(const std::string& name);
+
+        void setShaderTexture(const std::string& name, const Texture& texture);
+        void setShaderTexture(unsigned int submesh, const std::string& name, const Texture& texture);
+        Texture getShaderTexture(const std::string& name) const;
+        Texture getShaderTexture(unsigned int submesh, const std::string& name) const;
 
         void setAsMirror();
         void setAsMirror(Vector3 normal);
@@ -193,6 +190,10 @@ namespace doriax{
 
         bool isInstanceVisible(size_t index);
         void setInstanceVisible(size_t index, bool visible) const;
+
+        // read by shader files as context.instance
+        Vector4 getInstanceCustom(size_t index);
+        void setInstanceCustom(size_t index, Vector4 custom) const;
 
         void updateInstances();
         size_t getNumInstances();

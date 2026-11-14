@@ -17,11 +17,12 @@ namespace doriax{
         Vector3 scale = Vector3(1.0, 1.0, 1.0);
         Vector4 color = Vector4(1.0, 1.0, 1.0, 1.0);  //linear color;
         Rect textureRect = Rect(0.0, 0.0, 1.0, 1.0);
+        Vector4 custom = Vector4(0.0, 0.0, 0.0, 0.0); // what shader files read as context.instance
         bool visible = true;
     };
 
     struct InstanceRenderData{
-        Matrix4 instanceMatrix;
+        Matrix4 instanceMatrix; // affine, its bottom row carries the custom value
         Vector4 color;
         Rect textureRect;
     };

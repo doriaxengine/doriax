@@ -96,6 +96,15 @@ NormalInfo getNormalInfo(){
             ng = normalize(v_normal);
         #else
             ng = normalize(cross(dFdx(v_position), dFdy(v_position)));
+            // flat, toward the camera: the sign flips with the target's y
+            #if defined(USE_PUNCTUAL) || defined(USE_IBL)
+                vec3 toCamera = lighting.eyePos.w > 0.5 ? lighting.eyePos.xyz - v_position : lighting.cameraDir.xyz;
+                if (dot(ng, toCamera) < 0.0)
+                    ng = -ng;
+                // undone by the back face flip below
+                if (!gl_FrontFacing)
+                    ng = -ng;
+            #endif
         #endif
         #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
             vec2 normalUV = getNormalUV();
@@ -110,7 +119,7 @@ NormalInfo getNormalInfo(){
     #endif
 
     // Compute pertubed normals:
-    #ifdef HAS_NORMAL_MAP
+    #if defined(HAS_NORMAL_MAP) && !defined(SURFACE_REPLACES_NORMAL_MAP)
         n = texture(sampler2D(u_normalTexture, u_normal_smp), getNormalUV()).rgb * 2.0 - vec3(1.0);
         n *= vec3(normalScale, normalScale, 1.0);
         n = mat3(t, b, ng) * normalize(n);

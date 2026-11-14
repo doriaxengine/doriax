@@ -685,7 +685,7 @@ void editor::CodeEditor::checkExternalScriptChanges() {
                     referenced.insert(scriptEntry.headerPath);
                 } else if (scriptEntry.type == ScriptType::LUA && !scriptEntry.path.empty()) {
                     // Stored relative to the Lua root, the watch list is project-relative
-                    referenced.insert(toRelativePath(project->resolveLuaPath(scriptEntry.path).string()));
+                    referenced.insert(toRelativePath(project->resolveLuaSource(scriptEntry.path).string()));
                 }
             }
         }
@@ -821,7 +821,7 @@ void editor::CodeEditor::updateScriptPropertiesForPath(const fs::path& relFilepa
             for (const auto& scriptEntry : scriptComponent->scripts) {
                 // Lua entries are stored relative to the Lua root
                 bool matchesFile = (scriptEntry.type == ScriptType::CPP) ? (scriptEntry.headerPath == relPathStr)
-                                                                        : (project->resolveLuaPath(scriptEntry.path) == fullPath.lexically_normal());
+                                                                        : (project->resolveLuaSource(scriptEntry.path).lexically_normal() == fullPath.lexically_normal());
                 if (!matchesFile)
                     continue;
 

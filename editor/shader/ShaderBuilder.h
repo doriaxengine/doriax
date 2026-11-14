@@ -8,6 +8,7 @@
 #include "shader/ShaderBuildTypes.h"
 #include "ShaderData.h"
 #include "ShaderParameterParser.h"
+#include "graph/NodeRegistry.h"
 #include <vector>
 #include <set>
 #include <unordered_map>
@@ -25,6 +26,20 @@ namespace shadercompiler {
 }
 
 namespace doriax::editor {
+
+    // what a shader's sources declare
+    struct ShaderDeclarations {
+        std::vector<ShaderParameterInfo> parameters;
+        std::vector<ShaderTextureInfo> textures;
+        uint32_t flags = 0;
+    };
+
+    // the sources a build takes
+    enum class ShaderSourceUse {
+        EDITOR,     // edits, live pin numbers while open
+        RUN,        // edits, pin numbers in the code
+        SAVED       // the files, as exports take them
+    };
 
     class ShaderBuilder {
     private:
@@ -62,33 +77,32 @@ namespace doriax::editor {
         bool setupShaderArgs(shadercompiler::args_t& args, ShaderType shaderType, uint32_t properties);
         std::string getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform);
 
-        // Sets entry-point files + defines for the key. For custom shaders, resolves only
-        // the exact transitive dependency graph from the fork's .vert/.frag entrypoints.
-        // Throws on failure.
-        // parameters takes what the fork and the effect functions declare, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>& parameters);
+        // Sets entry-point files + defines for the key, and for a shader file the exact
+        // graph of files it includes. Throws on failure.
+        // declarations takes what the shader file declares, for ShaderData
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations,
+                            ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
-        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress);
+        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR);
         std::string getShaderDisplayName(ShaderKey key);
 
-        static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project);
+        // live for a build with pin numbers as parameters
+        static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project, bool live = false);
+        // whether an open graph builds it with live pin numbers
+        static bool isLiveShader(ShaderKey shaderKey);
 
-        // Compares the cached source signature with the entry points and the exact
-        // transitive include graph used by this fork. No directory walk is required.
-        static bool isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath);
+        // Compares the cached source signature with the shader file and the exact
+        // graph of files it includes. No directory walk is required.
+        static bool isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath,
+                                       ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
     public:
         ShaderBuilder();
         virtual ~ShaderBuilder();
 
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
-        // annotations of a fork (its .vert and .frag) or of an effect file, with their includes
-        static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader, bool fork);
-        // the project's .vert and .frag files that still declare a custom block of v0.8.4.
-        // Deprecated: remove in a few versions, with everything marked "v0.8.4 port"
-        static std::vector<std::string> findLegacyShaders(Project* project);
-        // rewrites those blocks as parameters, in every file or in none; rewritten counts the files changed
-        static bool portLegacyShaders(Project* project, const std::vector<std::string>& files, size_t& rewritten, std::string& error);
+        // annotations of a shader file, with its includes
+        static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader);
         ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
 
         // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.
@@ -102,11 +116,28 @@ namespace doriax::editor {
         // Drops cached builds and dependency snapshots for all custom variants so the
         // next get() recompiles. Called after source mutations and project switches.
         static void invalidateCustomShaders();
+        // one shader file or graph and its callers; returns them
+        static std::vector<std::string> invalidateCustomShader(const std::string& shader);
+        // bumped by the calls above
+        static uint32_t getCustomShaderGeneration();
+
+        // an open graph's edits, built until saved or closed
+        static void setGraphSource(const std::string& shader, const std::string& text);
+        static void clearGraphSource(const std::string& shader);
+        // open graphs build pin numbers as parameters; true when changed
+        static bool setGraphLive(const std::string& shader, bool live);
+        // writes a graph's code to the generated files
+        static void writeGraphCode(Project* project, const std::string& shader, const std::string& code);
+        // a graph as the editor holds it, edited or saved
+        static bool readGraphSource(Project* project, const std::string& path, std::string& text);
+        // a function graph's pins, as edited; false for no function
+        static bool getFunctionPins(Project* project, const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs);
 
         static void requestShutdown();
 
         // Serialize ShaderData cache on demand (no disk I/O inside buildShaderInternal).
-        static bool saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err = nullptr);
+        static bool saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err = nullptr,
+                                        ShaderSourceUse use = ShaderSourceUse::EDITOR);
 
         ShaderData& getShaderData(ShaderKey shaderKey);
     };

@@ -22,6 +22,7 @@ private:
         CPP_SUBCLASS,
         CPP_SCRIPT_CLASS,
         LUA,
+        LOGIC,
     };
 
     bool m_isOpen = false;

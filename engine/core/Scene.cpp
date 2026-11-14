@@ -785,8 +785,8 @@ bool Scene::removeDefaultShaderUniform(ShaderType type, const std::string& name)
     return true;
 }
 
-const ShaderUniformValues* Scene::getInheritedShaderUniforms(ShaderType type, const std::string& customShader) const{
-    if (!customShader.empty() || getDefaultCustomShader(type).empty())
+const ShaderUniformValues* Scene::getInheritedShaderUniforms(ShaderType type, const std::string& shader) const{
+    if (!shader.empty() || getDefaultCustomShader(type).empty())
         return nullptr;
 
     return &getDefaultShaderUniforms(type);
@@ -801,7 +801,8 @@ void Scene::setPostProcessPasses(const std::vector<PostProcessPass>& passes){
     bool sameChain = passes.size() == settings.postProcess.size();
     for (size_t i = 0; sameChain && i < passes.size(); i++){
         sameChain = passes[i].shader == settings.postProcess[i].shader &&
-                    passes[i].enabled == settings.postProcess[i].enabled;
+                    passes[i].enabled == settings.postProcess[i].enabled &&
+                    ShaderTextures::equals(passes[i].textures, settings.postProcess[i].textures);
     }
 
     settings.postProcess = passes;
@@ -851,6 +852,23 @@ bool Scene::removePostProcessUniform(unsigned int index, const std::string& name
 
     getSystem<RenderSystem>()->needUpdatePostProcessUniforms();
     return true;
+}
+
+void Scene::setPostProcessTexture(unsigned int index, const std::string& name, const Texture& texture){
+    if (index >= settings.postProcess.size()){
+        Log::error("Post-process pass %u does not exist, cannot set texture '%s'", index, name.c_str());
+        return;
+    }
+
+    ShaderTextures::set(settings.postProcess[index].textures, name, texture);
+    getSystem<RenderSystem>()->needReloadPostProcess();
+}
+
+Texture Scene::getPostProcessTexture(unsigned int index, const std::string& name) const{
+    if (index >= settings.postProcess.size())
+        return Texture();
+
+    return ShaderTextures::get(settings.postProcess[index].textures, name);
 }
 
 void Scene::setPostProcessPassEnabled(unsigned int index, bool enabled){

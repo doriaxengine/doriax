@@ -1,4 +1,4 @@
-// Shapes for coverage functions, each returning 1 to keep and 0 to remove
+// Shapes for coverage hooks, each returning 1 to keep and 0 to remove
 #ifndef COVERAGE_HELPERS
 #define COVERAGE_HELPERS
 

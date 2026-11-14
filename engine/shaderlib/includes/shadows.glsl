@@ -21,26 +21,14 @@ struct Shadow{
     vec4 lightProjPos;
 };
 
-#ifdef SHADOW_FRAGMENT_PROJECTION
 // affine in position and normal, so projecting the interpolated values is exact
 vec4 getLightProjPos(int index){
     vec3 position = v_position;
     #ifdef SHADOW_OFFSET_NORMAL
-        position += SHADOW_OFFSET_NORMAL * uShadowProjection.shadowParams[index].x;
+        position += SHADOW_OFFSET_NORMAL * uShadows.shadowParams[index].x;
     #endif
-    return uShadowProjection.lightVPMatrix[index] * vec4(position, 1.0);
+    return uShadows.lightVPMatrix[index] * vec4(position, 1.0);
 }
-#else
-// shader forks from before the projection moved here still pass one varying per slot
-vec4 getLightProjPos(int index){
-    for (int i = 0; i < MAX_SHADOW_ATLAS_SLOTS; i++){
-        if (i == index){
-            return v_lightProjPos[i];
-        }
-    }
-    return vec4(0.0);
-}
-#endif
 
 Shadow getShadow2DConf(int index){
     return Shadow(
@@ -56,11 +44,11 @@ Shadow getShadow2DConf(int index){
 #ifndef DIRECTIONAL_LIGHTS_ONLY
 Shadow getShadowCubeConf(int baseIndex){
     return Shadow(
-        uPointShadows.bias_texSize_nearFar[baseIndex].x,
-        uPointShadows.bias_texSize_nearFar[baseIndex].x / 10.0,
-        uPointShadows.bias_texSize_nearFar[baseIndex].yy,
-        uPointShadows.bias_texSize_nearFar[baseIndex].zw,
-        uPointShadows.atlasRect[baseIndex],
+        uShadows.pointBias_texSize_nearFar[baseIndex].x,
+        uShadows.pointBias_texSize_nearFar[baseIndex].x / 10.0,
+        uShadows.pointBias_texSize_nearFar[baseIndex].yy,
+        uShadows.pointBias_texSize_nearFar[baseIndex].zw,
+        uShadows.pointAtlasRect[baseIndex],
         vec4(0.0)
     );
 }
@@ -113,9 +101,9 @@ vec4 getShadowCubeMap(int baseIndex, vec3 coords) {
     int face = directionToCubeFace(dir);
     vec2 uv = cubeFaceUV(dir, face);
     int slot = baseIndex + face;
-    vec4 rect = uPointShadows.atlasRect[slot];
+    vec4 rect = uShadows.pointAtlasRect[slot];
     // half-texel inset keeps the lookup inside this cube-face tile (no cross-face bleed)
-    vec2 inset = 0.5 / vec2(uPointShadows.bias_texSize_nearFar[slot].y);
+    vec2 inset = 0.5 / vec2(uShadows.pointBias_texSize_nearFar[slot].y);
     uv = clamp(uv, inset, 1.0 - inset);
     vec2 atlasUV = getShadowAtlasUV(rect, uv);
     // the atlas has no mips; implicit derivatives in this loop hang the GPU on some GL drivers
@@ -210,16 +198,14 @@ float shadowCascadedCalculationPCF(int shadowMapIndex, int numShadowCascades, fl
             if ((viewDepth >= nearFar.x) && (viewDepth <= nearFar.y)){
                 float shadow = shadowCalculationAux(index, getShadow2DConf(index), NdotL);
 
-                #ifdef SHADOW_FRAGMENT_PROJECTION
                 if (c > 0){
-                    float band = uShadowProjection.shadowParams[index - 1].y;
+                    float band = uShadows.shadowParams[index - 1].y;
                     float t = (band > 0.0) ? (viewDepth - nearFar.x) / band : 1.0;
                     if (t < 1.0){
                         float finer = shadowCalculationAux(index - 1, getShadow2DConf(index - 1), NdotL);
                         shadow = mix(finer, shadow, smoothstep(0.0, 1.0, t));
                     }
                 }
-                #endif
 
                 return shadow;
             }

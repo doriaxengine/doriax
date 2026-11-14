@@ -55,7 +55,7 @@ bool editor::RenameFileCmd::execute(){
                 if (isDir || Util::isBundleFile(extension)) {
                     project->remapEntityBundleFilePath(sourceFs, destFs);
                 }
-                if (isDir || Util::isScriptFile(extension)) {
+                if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) {
                     project->remapScriptFilePath(sourceFs, destFs);
                 }
                 if (isDir || Util::isAssetFile(extension)) {
@@ -65,6 +65,7 @@ bool editor::RenameFileCmd::execute(){
                     project->remapShaderFilePath(sourceFs, destFs);
                     project->invalidateCustomShaders();
                 }
+                Project::remapWindowFilePath(sourceFs, destFs);
             }
         }
     } catch (const fs::filesystem_error& e) {
@@ -96,7 +97,7 @@ void editor::RenameFileCmd::undo(){
                 if (isDir || Util::isBundleFile(extension)) {
                     project->remapEntityBundleFilePath(sourceFs, destFs);
                 }
-                if (isDir || Util::isScriptFile(extension)) {
+                if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) {
                     project->remapScriptFilePath(sourceFs, destFs);
                 }
                 if (isDir || Util::isAssetFile(extension)) {
@@ -106,6 +107,7 @@ void editor::RenameFileCmd::undo(){
                     project->remapShaderFilePath(sourceFs, destFs);
                     project->invalidateCustomShaders();
                 }
+                Project::remapWindowFilePath(sourceFs, destFs);
             }
         }
     } catch (const fs::filesystem_error& e) {

@@ -17,6 +17,11 @@
 #include "Exporter.h"
 #include "Stream.h"
 #include "render/SceneRender.h"
+#include "graph/GraphNodes.h"
+#include "shader/graph/ShaderGraphJson.h"
+#include "logic/LogicGraphCompiler.h"
+#include "logic/LogicGraphJson.h"
+#include "window/GraphEditorWindow.h"
 #include "util/CxxStandards.h"
 #include "util/ProjectUtils.h"
 #include "util/FileUtils.h"
@@ -40,7 +45,6 @@
 #include "command/type/CreateEntityBundleCmd.h"
 #include "command/type/CreateEntityCmd.h"
 #include "command/type/CreateMaterialFileCmd.h"
-#include "command/type/ForkShaderCmd.h"
 #include "command/type/DeleteEntityCmd.h"
 #include "command/type/DeleteFileCmd.h"
 #include "command/type/DuplicateEntityCmd.h"
@@ -899,7 +903,7 @@ bool validateButtonUIProperty(EntityRegistry* registry, Entity entity, Component
     return false;
 }
 
-// Maps a renderable component to its forkable built-in shader type.
+// Maps a renderable component to its shader type.
 bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     switch (component) {
         case ComponentType::MeshComponent:   out = ShaderType::MESH;   return true;
@@ -912,8 +916,8 @@ bool shaderTypeForComponent(ComponentType component, ShaderType& out) {
     }
 }
 
-// Parses the "mesh"/"ui"/"sky"/"points"/"lines"/"water" shader_type argument used to fork or
-// address a scene's default shader (as opposed to a specific entity's component).
+// Parses a "mesh"/"ui"/"sky"/"points"/"lines"/"water" shader_type argument, which addresses
+// a scene's default shader (as opposed to a specific entity's component).
 bool parseShaderTypeName(const std::string& name, ShaderType& out) {
     static const std::unordered_map<std::string, ShaderType> map = {
         {"mesh", ShaderType::MESH}, {"ui", ShaderType::UI}, {"sky", ShaderType::SKYBOX},
@@ -940,7 +944,7 @@ const char* scenePropertyNameForShaderType(ShaderType type) {
 }
 
 // Picks the entity's first renderable component that supports custom shaders.
-bool detectForkableComponent(EntityRegistry* registry, Entity entity, ComponentType& component, ShaderType& shaderType) {
+bool detectShaderComponent(EntityRegistry* registry, Entity entity, ComponentType& component, ShaderType& shaderType) {
     for (ComponentType candidate : {ComponentType::MeshComponent, ComponentType::UIComponent,
                                     ComponentType::PointsComponent, ComponentType::LinesComponent,
                                     ComponentType::SkyComponent, ComponentType::WaterComponent}) {
@@ -970,7 +974,7 @@ bool resolveShaderComponent(SceneProject* sceneProject, const Json& args, Entity
             error = "Entity has no " + componentArg + ".";
             return false;
         }
-    } else if (!detectForkableComponent(sceneProject->scene, entity, component, shaderType)) {
+    } else if (!detectShaderComponent(sceneProject->scene, entity, component, shaderType)) {
         error = "Entity has no shader-capable component (Mesh/UI/Points/Lines/Sky/Water).";
         return false;
     }
@@ -1400,7 +1404,7 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
                             material.baseColorTexture.getSvgScale())}};
         }
         case PropertyType::Custom:
-            if (propertyName == "shaderUniforms" || propertyName == "shaderParameters") {
+            if (propertyName.find("shaderUniforms") != std::string::npos || propertyName == "shaderParameters") {
                 return shaderUniformValuesJson(*static_cast<ShaderUniformValues*>(property.ref));
             }
             if (propertyName == "bursts") {
@@ -1862,6 +1866,9 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 error = "Property requires texture_path.";
                 return nullptr;
             }
+            // empty clears it
+            if (args["texture_path"].get<std::string>().empty())
+                return new PropertyCmd<Texture>(project, sceneId, entity, component, propertyName, Texture(), onChanged);
             std::vector<std::string> paths;
             std::istringstream texturePath(args["texture_path"].get<std::string>());
             for (std::string path; std::getline(texturePath, path, '|');) {
@@ -1876,9 +1883,10 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 }
                 paths.push_back(assetPathFromAi(project, rel));
             }
-            // a cubemap takes one cross-layout image or its six faces
-            const bool cubeMap = propertyName == "texture" &&
-                (component == ComponentType::SkyComponent || component == ComponentType::ReflectionProbeComponent);
+            // cubemaps: one cross image or six faces; shaders take six
+            const bool cubeMap = (propertyName == "texture" &&
+                (component == ComponentType::SkyComponent || component == ComponentType::ReflectionProbeComponent)) ||
+                (propertyName.find("shaderTextures[") != std::string::npos && paths.size() == 6);
             if (paths.size() != 1 && !(cubeMap && paths.size() == 6)) {
                 error = "texture_path takes one path, or six faces joined by '|' for a cubemap.";
                 return nullptr;
@@ -2516,9 +2524,10 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "export_project") return exportProject(arguments, cancel);
     if (name == "set_export_shaders") return setExportShaders(arguments);
     if (name == "generate_shaders") return generateShaders(arguments, cancel);
-    if (name == "fork_shader") return forkShader(arguments);
     if (name == "write_shader_file") return writeShaderFile(arguments);
-    if (name == "port_shader_fork") return portShaderFork(arguments);
+    if (name == "list_graph_node_types") return listGraphNodeTypes(arguments);
+    if (name == "read_graph") return readGraph(arguments);
+    if (name == "edit_graph") return editGraph(arguments);
     if (name == "inspect_shader_uniforms") return inspectShaderUniforms(arguments);
     if (name == "set_shader_uniform") return setShaderUniform(arguments);
     if (name == "list_post_process_passes") return listPostProcessPasses(arguments);
@@ -3267,6 +3276,11 @@ ActionResult EditorActionExecutor::setComponentProperty(const Json& arguments) {
         return okResult("Set camera shader parameter through the command history.");
     }
 
+    // a declared texture has no entry until it is set
+    if (propertyName.rfind("shaderTextures[", 0) == 0 || propertyName.find(".shaderTextures[") != std::string::npos) {
+        Catalog::findProperty(sceneProject->scene, entity, component, propertyName);
+    }
+
     auto properties = Catalog::findEntityProperties(sceneProject->scene, entity, component);
     auto it = properties.find(propertyName);
     if (it == properties.end() || !it->second.ref) return failResult("Property not found or not editable.");
@@ -3571,7 +3585,7 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
                property == "default_sky_shader" || property == "default_points_shader" ||
                property == "default_lines_shader" || property == "default_water_shader") {
         if (!arguments.contains("string_value") || !arguments["string_value"].is_string()) {
-            return failResult(property + " requires string_value (custom shader base path, empty for built-in).");
+            return failResult(property + " requires string_value (a shader file path, empty for built-in).");
         }
         std::string error;
         if (!validateCustomShaderValue(property, arguments, error)) return failResult(error);
@@ -4358,6 +4372,12 @@ ActionResult EditorActionExecutor::attachScript(const Json& arguments) {
     if (type != ScriptType::LUA) {
         if (!safeRelativePath(project, arguments, "header_path", headerRel, error, true)) return failResult(error);
     }
+    const bool graph = Util::isLogicGraphFile(sourceRel.string());
+    if (graph && type != ScriptType::LUA) return failResult("A logic graph is attached with type lua.");
+    if (graph && ProjectUtils::getLogicScriptPath(project, project->getProjectPath() / sourceRel).empty()) {
+        return failResult("A logic graph goes inside the project's Lua directory.");
+    }
+    if (type == ScriptType::LUA && !graph && !Util::isLuaFile(sourceRel.string())) return failResult("path must be a .lua file or a .logic graph.");
 
     ScriptEntry entry;
     entry.type = type;
@@ -5032,7 +5052,7 @@ ActionResult EditorActionExecutor::exportProject(const Json& arguments, const st
 }
 
 ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
-    // type[:properties][@forkBasePath]
+    // type[:properties][@shaderFile]
     auto parseSpecs = [&](const char* field, bool requireFiles, std::vector<ShaderKey>& keys, std::string& error) {
         if (!arguments.contains(field)) return true;
         const Json& list = arguments[field];
@@ -5085,26 +5105,16 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
             }
             uint16_t customId = 0;
             if (customSeparator != std::string::npos) {
-                const std::string customShader = spec.substr(customSeparator + 1);
-                if (customShader.empty()) {
-                    error = "Missing custom shader path after '@' in '" + spec + "'.";
+                const std::string shaderFile = spec.substr(customSeparator + 1);
+                if (shaderFile.empty()) {
+                    error = "Missing shader file path after '@' in '" + spec + "'.";
                     return false;
                 }
-                if (requireFiles) {
-                    // a fork, then a vertex offset and a coverage function after '#'
-                    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-                    if (!paths.vert.empty() && (!fs::exists(project->getProjectPath() / paths.vert) || !fs::exists(project->getProjectPath() / paths.frag))) {
-                        error = "'" + spec + "' references missing files (" + paths.vert + ", " + paths.frag + ").";
-                        return false;
-                    }
-                    for (const std::string& effect : {ShaderPool::getCustomShaderVertexOffset(customShader), ShaderPool::getCustomShaderCoverage(customShader)}) {
-                        if (!effect.empty() && !fs::exists(project->getProjectPath() / effect) && !ProjectUtils::isEngineEffectFunction(effect)) {
-                            error = "'" + spec + "' references a missing effect function (" + effect + ").";
-                            return false;
-                        }
-                    }
+                if (requireFiles && !fs::exists(project->getProjectPath() / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
+                    error = "'" + spec + "' references a missing shader file (" + shaderFile + ").";
+                    return false;
                 }
-                customId = ShaderPool::registerCustomShader(customShader);
+                customId = ShaderPool::registerCustomShader(shaderFile);
             }
             keys.push_back(ShaderPool::normalizeKey(ShaderPool::getShaderKey(type, properties, customId)));
         }
@@ -5196,36 +5206,34 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
 
 namespace {
 
-// empty when both entry points of a custom shader are files of the project
-std::string customShaderFilesError(const Project* project, const std::string& shader) {
-    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
-    const std::string files = " (" + paths.vert + ", " + paths.frag + ")";
-    // saved as given, and only Windows reads a backslash as a separator
-    if (shader.find('\\') != std::string::npos) {
-        return "must use forward slashes" + files;
-    }
-    if (!PathUtils::isSafeRelativePath(fs::path(paths.vert)) || !PathUtils::isSafeRelativePath(fs::path(paths.frag))) {
-        return "must use safe project-relative paths" + files;
-    }
-    const fs::path projectPath = project->getProjectPath();
-    // Web, Android and Linux only find a file under its exact name
-    if (!PathUtils::existsExactCase(projectPath, paths.vert) || !PathUtils::existsExactCase(projectPath, paths.frag)) {
-        return "references missing files, names are case-sensitive" + files;
-    }
+// empty for an engine file or a project .glsl or .shader
+std::string shaderFileError(Project* project, const std::string& shader) {
+    if (ProjectUtils::isEngineShader(shader))
+        return "";
+    std::string text, readError;
+    GraphDocument graph;
+    if (fs::path(shader).extension() == ".shader" && ShaderBuilder::readGraphSource(project, shader, text) &&
+            graph.read(text, readError) && graph.type == "function")
+        return "is a function graph, which goes in no slot: other graphs call it through Subgraph nodes.";
+    const fs::path extension = fs::path(shader).extension();
+    if (shader.find('\\') != std::string::npos || (extension != ".glsl" && extension != ".shader") ||
+            !PathUtils::isSafeRelativePath(fs::path(shader)) ||
+            !PathUtils::existsExactCase(project->getProjectPath(), shader))
+        return "must be an existing project-relative .glsl file or .shader graph with forward slashes and exact letter case, or an engine one such as shaders/wind.glsl. "
+               "Write a project one with write_shader_file first, starting it with the \"#pragma shader <type>\" line of what it is for.";
     return "";
 }
 
 } // namespace
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
-    // Every shader-path property (per-component customShader, or a scene's per-type
-    // default) is a project-relative base path; both must reference real files.
-    static const std::set<std::string> shaderPathProperties = {
-        "customShader", "customDepthShader", "customUnderwaterShader", "default_mesh_shader", "default_ui_shader",
-        "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader", "vertexOffsetShader",
-        "coverageShader"
+    // shader properties take one .glsl, project or engine
+    static const std::set<std::string> fileProperties = {
+        "shader", "default_mesh_shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
     };
-    if (!shaderPathProperties.count(propertyName)) {
+    // or submeshes[N].material.shader
+    const size_t field = propertyName.rfind('.');
+    if (!fileProperties.count(propertyName) && (field == std::string::npos || propertyName.compare(field, std::string::npos, ".shader") != 0)) {
         return true;
     }
     const std::string value = args.value("string_value", "");
@@ -5233,205 +5241,12 @@ bool EditorActionExecutor::validateCustomShaderValue(const std::string& property
         return true; // empty resets to the built-in shader
     }
 
-    // an effect function is one .glsl file, from the project or the engine
-    if (propertyName == "vertexOffsetShader" || propertyName == "coverageShader") {
-        const bool vertexOffset = propertyName == "vertexOffsetShader";
-        if (vertexOffset ? ProjectUtils::isEngineVertexOffset(value) : ProjectUtils::isEngineCoverage(value))
-            return true;
-        if (value.find('\\') != std::string::npos || fs::path(value).extension() != ".glsl" ||
-                !PathUtils::isSafeRelativePath(fs::path(value)) ||
-                !PathUtils::existsExactCase(project->getProjectPath(), value)) {
-            error = propertyName + " must be an existing project-relative .glsl file with forward slashes and exact letter case, or an engine one such as " +
-                (vertexOffset ? "offsets/wind.glsl" : "coverage/see_through.glsl") + ". Write a project one with write_shader_file first.";
-            return false;
-        }
-        return true;
-    }
-
-    const std::string filesError = customShaderFilesError(project, value);
-    if (!filesError.empty()) {
-        error = propertyName + " " + filesError +
-                ". Use fork_shader to create a fork, or write_shader_file to author the .vert/.frag, before setting " + propertyName + ".";
+    const std::string fileError = shaderFileError(project, value);
+    if (!fileError.empty()) {
+        error = propertyName + " " + fileError;
         return false;
     }
     return true;
-}
-
-ActionResult EditorActionExecutor::forkShader(const Json& arguments) {
-    uint32_t sceneId = resolveSceneId(project, arguments);
-    SceneProject* sceneProject = project->getScene(sceneId);
-    if (!sceneProject || !sceneProject->scene) return failResult("Scene not found.");
-
-    const bool hasEntity = arguments.contains("entity_id") ||
-                           (arguments.contains("entity_name") && arguments["entity_name"].is_string());
-    const std::string shaderTypeArg = arguments.value("shader_type", "");
-    const bool forkIncludes = arguments.value("fork_includes", false);
-    const fs::path targetDirectory = FileUtils::pathFromUtf8(arguments.value(
-        "directory", FileUtils::pathToGenericUtf8(ProjectUtils::defaultShaderForkDir()))).lexically_normal();
-    if (targetDirectory != "." && !PathUtils::isSafeRelativePath(targetDirectory)) {
-        return failResult("directory must be a safe project-relative path.");
-    }
-    if (isInProjectTrash(project, targetDirectory)) {
-        return failResult("directory is in the project trash.");
-    }
-
-    // a new post-process pass, or a passthrough one at pass_index
-    if (!hasEntity && lower(shaderTypeArg) == "postprocess") {
-        std::vector<PostProcessPass> passes = sceneProject->scene->getPostProcessPasses();
-        const int passIndex = arguments.value("pass_index", (int)passes.size());
-        if (passIndex < 0 || passIndex > (int)passes.size()) {
-            return failResult("Post-process pass not found; the scene has " + std::to_string(passes.size()) + " pass(es).");
-        }
-        if (passIndex == (int)passes.size()) {
-            passes.push_back(PostProcessPass());
-        }else if (!passes[passIndex].shader.empty()) {
-            return failResult("Pass already uses a custom shader (" + passes[passIndex].shader +
-                              "). Edit it with write_shader_file, or reset it with set_post_process_pass before forking again.");
-        }
-
-        const std::string desiredName = sceneProject->name + " Post " + std::to_string(passIndex + 1);
-        const std::string forkName = ProjectUtils::makeUniqueShaderName(
-            project->getProjectPath() / targetDirectory, ShaderType::POSTPROCESS, desiredName);
-        auto makePropertyCmd = [this, sceneId, passIndex, passes](const std::string& forkBase) mutable {
-            passes[passIndex].shader = forkBase;
-            return std::make_unique<ScenePropertyCmd<std::vector<PostProcessPass>>>(
-                project, sceneId, "post_process", passes);
-        };
-        auto* forkCmd = new ForkShaderCmd(project, ShaderType::POSTPROCESS, makePropertyCmd,
-                                          targetDirectory, forkName, forkIncludes);
-        if (!forkCmd->isValid()) {
-            const std::string error = forkCmd->getError();
-            delete forkCmd;
-            return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-        }
-
-        const std::string base = forkCmd->getBase();
-        CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-        if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-            !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-            return failResult("Shader fork did not write its source files.");
-        }
-
-        if (resourcesWindow) {
-            resourcesWindow->refreshCurrentDirectory();
-        }
-        Out::info("AI forked post-process shader: %s", base.c_str());
-
-        return okResult("Forked post-process pass shader through the command history.",
-                        Json{{"custom_shader", base},
-                             {"vert_path", base + ".vert"},
-                             {"frag_path", base + ".frag"},
-                             {"pass_index", passIndex}});
-    }
-
-    // No entity selector: fork a scene-wide default shader for the given type instead of a
-    // specific component (priority: component customShader > scene default > built-in).
-    if (!hasEntity) {
-        ShaderType shaderType;
-        if (!parseShaderTypeName(shaderTypeArg, shaderType)) {
-            return failResult("fork_shader requires entity_id/entity_name, or shader_type "
-                              "(mesh, ui, sky, points, lines, or water) to fork a scene default.");
-        }
-        const std::string scenePropertyName = scenePropertyNameForShaderType(shaderType);
-
-        // Re-forking would orphan the previous fork's files; require an explicit reset first.
-        const std::string current = Catalog::getSceneProperty<std::string>(sceneProject->scene, scenePropertyName);
-        if (!current.empty()) {
-            return failResult("Scene already has a default " + shaderTypeArg + " shader (" + current +
-                              "). Edit it with write_shader_file, or clear " + scenePropertyName +
-                              " to reset before forking again.");
-        }
-
-        const std::string desiredName = sceneProject->name + " " + shaderTypeArg;
-        const std::string forkName = ProjectUtils::makeUniqueShaderName(
-            project->getProjectPath() / targetDirectory, shaderType, desiredName);
-        auto* forkCmd = new ForkShaderCmd(project, sceneProject, shaderType, scenePropertyName,
-                                          targetDirectory, forkName, forkIncludes);
-        if (!forkCmd->isValid()) {
-            const std::string error = forkCmd->getError();
-            delete forkCmd;
-            return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-        }
-
-        const std::string base = forkCmd->getBase();
-        CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-        // The command writes the files as part of execute(); confirm so the AI gets accurate feedback.
-        if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-            !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-            return failResult("Shader fork did not write its source files.");
-        }
-
-        if (resourcesWindow) {
-            resourcesWindow->refreshCurrentDirectory();
-        }
-        Out::info("AI forked scene default shader: %s", base.c_str());
-
-        return okResult("Forked scene default shader through the command history.",
-                        Json{{"custom_shader", base},
-                             {"vert_path", base + ".vert"},
-                             {"frag_path", base + ".frag"},
-                             {"scene_property", scenePropertyName}});
-    }
-
-    Entity entity;
-    ComponentType component;
-    ShaderType shaderType;
-    std::string error;
-    if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return failResult(error);
-
-    // a mesh's shadow/SSAO depth pass and a water's underwater fade have forks of their own
-    std::string propertyName = "customShader";
-    if (lower(shaderTypeArg) == "depth") {
-        if (component != ComponentType::MeshComponent) return failResult("Only a MeshComponent has a depth shader.");
-        shaderType = ShaderType::DEPTH;
-        propertyName = "customDepthShader";
-    }else if (lower(shaderTypeArg) == "underwater") {
-        if (component != ComponentType::WaterComponent) return failResult("Only a WaterComponent has an underwater shader.");
-        shaderType = ShaderType::UNDERWATER;
-        propertyName = "customUnderwaterShader";
-    }
-
-    // Re-forking would orphan the previous fork's files; require an explicit reset first.
-    if (std::string* current = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, propertyName)) {
-        if (!current->empty()) {
-            return failResult("Component already uses a custom shader (" + *current +
-                              "). Edit it with write_shader_file, or clear " + propertyName + " to reset before forking again.");
-        }
-    }
-
-    std::string desiredName = sceneProject->scene->getEntityName(entity);
-    if (shaderType == ShaderType::DEPTH) desiredName += "_depth";
-    const std::string forkName = ProjectUtils::makeUniqueShaderName(
-        project->getProjectPath() / targetDirectory, shaderType, desiredName);
-    auto* forkCmd = new ForkShaderCmd(project, sceneId, entity, component, shaderType,
-                                      targetDirectory, forkName, forkIncludes);
-    if (!forkCmd->isValid()) {
-        const std::string error = forkCmd->getError();
-        delete forkCmd;
-        return failResult(error.empty() ? "Failed to plan the shader fork." : error);
-    }
-
-    const std::string base = forkCmd->getBase();
-    CommandHandle::get(sceneId)->addCommandNoMerge(forkCmd);
-
-    // The command writes the files as part of execute(); confirm so the AI gets accurate feedback.
-    if (!fs::exists(project->getProjectPath() / (base + ".vert")) ||
-        !fs::exists(project->getProjectPath() / (base + ".frag"))) {
-        return failResult("Shader fork did not write its source files.");
-    }
-
-    if (resourcesWindow) {
-        resourcesWindow->refreshCurrentDirectory();
-    }
-    Out::info("AI forked shader: %s", base.c_str());
-
-    return okResult("Forked shader through the command history.",
-                    Json{{"custom_shader", base},
-                         {"property", propertyName},
-                         {"vert_path", base + ".vert"},
-                         {"frag_path", base + ".frag"}});
 }
 
 namespace {
@@ -5449,6 +5264,14 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
             }
         }
         if (listed) continue;
+        // set via shaderTextures[name], or texture_name on a pass
+        if (declaration.texture) {
+            Json texture = {{"name", declaration.name}, {"texture", true},
+                            {"type", declaration.textureType == TextureType::TEXTURE_CUBE ? "textureCube" : "texture2D"}};
+            if (!declaration.description.empty()) texture["description"] = declaration.description;
+            members.push_back(texture);
+            continue;
+        }
 
         const bool hasValue = ShaderUniforms::has(values, declaration.name);
         Vector4 value = declaration.defaultValue;
@@ -5473,22 +5296,26 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
     }
 }
 
-void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
-                                          ComponentType component, ShaderType shaderType, const ShaderUniformValues& values) {
-    const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, component, "customShader");
-    const ShaderUniformValues* inherited = customShader ? scene->getInheritedShaderUniforms(shaderType, *customShader) : nullptr;
-    warnings = Json::array();
-    std::vector<ShaderEffectAnnotations> sources;
-    for (const auto& [source, fork] : ProjectUtils::getComponentShaderSources(scene, component, shaderType, entity)) {
-        sources.push_back(ShaderBuilder::getShaderAnnotations(project, source, fork));
-        appendParameterMembers(members, sources.back(), values, inherited);
-        for (const std::string& error : sources.back().errors) warnings.push_back(error);
+// the component's own shader file, empty for the scene's
+std::string ownShader(Scene* scene, Entity entity, ComponentType component, int submesh) {
+    if (component == ComponentType::MeshComponent) {
+        const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+        return (mesh && submesh >= 0 && submesh < (int)mesh->numSubmeshes) ? mesh->submeshes[submesh].material.shader : std::string();
     }
+    const std::string* shader = Catalog::getPropertyRef<std::string>(scene, entity, component, "shader");
+    return shader ? *shader : std::string();
+}
 
-    // a clash between two of its files stops the build
-    std::vector<const ShaderEffectAnnotations*> annotations;
-    for (const ShaderEffectAnnotations& source : sources) annotations.push_back(&source);
-    for (const std::string& error : ShaderParameterParser::checkSources(annotations)) warnings.push_back(error);
+void collectComponentShaderUniformMembers(Json& members, Json& warnings, Project* project, Scene* scene, Entity entity,
+                                          ComponentType component, ShaderType shaderType, const ShaderUniformValues& values, int submesh = -1) {
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(shaderType, ownShader(scene, entity, component, submesh));
+    warnings = Json::array();
+    const std::string shader = ProjectUtils::getComponentShader(scene, component, shaderType, entity, submesh);
+    if (shader.empty())
+        return;
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, shader);
+    appendParameterMembers(members, annotations, values, inherited);
+    for (const std::string& error : annotations.errors) warnings.push_back(error);
 }
 
 void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* project, const PostProcessPass& pass, bool& buildFailed) {
@@ -5496,7 +5323,7 @@ void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* pro
     buildFailed = customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, customId);
     warnings = Json::array();
     if (pass.shader.empty()) return;
-    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader, true);
+    const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, pass.shader);
     appendParameterMembers(members, annotations, pass.uniforms, nullptr);
     for (const std::string& error : annotations.errors) warnings.push_back(error);
 }
@@ -5505,7 +5332,7 @@ void collectPassShaderUniformMembers(Json& members, Json& warnings, Project* pro
 std::string shaderUniformSetNote(const Json& members, const std::string& name, bool& declared) {
     declared = false;
     for (const Json& member : members) {
-        if (member.value("name", "") == name) {
+        if (member.value("name", "") == name && !member.value("texture", false)) {
             declared = true;
             return "";
         }
@@ -5551,33 +5378,37 @@ ActionResult EditorActionExecutor::inspectShaderUniforms(const Json& arguments) 
     std::string error;
     if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return expectedMissResult(error);
 
-    ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
-    std::string* customShader = Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customShader");
-    if (!valuesRef || !customShader) return failResult("Component has no shader uniforms.");
-
-    const std::string effectiveShader = customShader->empty()
-        ? sceneProject->scene->getDefaultCustomShader(shaderType) : *customShader;
+    // a mesh keeps its values on the materials, one submesh at a time
+    ShaderUniformValues values;
+    const MeshComponent* mesh = component == ComponentType::MeshComponent ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr;
+    const int submesh = mesh ? arguments.value("submesh", 0) : -1;
+    if (mesh) {
+        if (submesh < 0 || submesh >= (int)mesh->numSubmeshes) return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
+        values = mesh->submeshes[submesh].material.shaderUniforms;
+    } else if (const ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms")) {
+        values = *valuesRef;
+    } else {
+        return failResult("Component has no shader uniforms.");
+    }
 
     Json warnings;
-    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, *valuesRef);
+    collectComponentShaderUniformMembers(members, warnings, project, sceneProject->scene, entity, component, shaderType, values, submesh);
 
     Json result{{"scene_id", sceneId},
                 {"entity_id", entity},
                 {"component", Catalog::getComponentName(component)},
-                {"custom_shader", *customShader},
-                {"effective_shader", effectiveShader},
+                {"shader", ownShader(sceneProject->scene, entity, component, submesh)},
+                {"effective_shader", ProjectUtils::getComponentShader(sceneProject->scene, component, shaderType, entity, submesh)},
                 {"build_failed", Catalog::isCustomShaderBuildFailed(sceneProject->scene, entity, component)},
                 {"members", members},
                 {"warnings", warnings},
-                {"values", shaderUniformValuesJson(*valuesRef)}};
-    // a mesh's depth fork can declare values of its own, listed in the same members
-    if (component == ComponentType::MeshComponent) {
-        result["custom_depth_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customDepthShader");
-        result["depth_build_failed"] = Catalog::isCustomDepthShaderBuildFailed(sceneProject->scene, entity);
+                {"values", shaderUniformValuesJson(values)}};
+    if (mesh) {
+        result["submesh"] = submesh;
+        result["submesh_count"] = mesh->numSubmeshes;
     }
-    // and so does a water's underwater fork
+    // and a water's shader file builds the underwater fade too
     if (component == ComponentType::WaterComponent) {
-        result["custom_underwater_shader"] = *Catalog::getPropertyRef<std::string>(sceneProject->scene, entity, component, "customUnderwaterShader");
         result["underwater_build_failed"] = Catalog::isCustomUnderwaterShaderBuildFailed(sceneProject->scene, entity);
     }
 
@@ -5589,10 +5420,16 @@ namespace {
 Json postProcessPassesJson(const std::vector<PostProcessPass>& passes) {
     Json list = Json::array();
     for (size_t i = 0; i < passes.size(); i++) {
+        Json textures = Json::object();
+        for (const auto& texture : passes[i].textures) {
+            if (!texture.second.empty())
+                textures[texture.first] = texture.second.getPath();
+        }
         list.push_back(Json{{"pass_index", i},
                             {"shader", passes[i].shader},
                             {"enabled", passes[i].enabled},
-                            {"values", shaderUniformValuesJson(passes[i].uniforms)}});
+                            {"values", shaderUniformValuesJson(passes[i].uniforms)},
+                            {"textures", textures}});
     }
     return list;
 }
@@ -5622,11 +5459,16 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
     const bool hasShader = arguments.contains("shader");
     const std::string shader = arguments.value("shader", "");
     if (!shader.empty()) {
-        const std::string filesError = customShaderFilesError(project, shader);
-        if (!filesError.empty()) {
-            return failResult("shader " + filesError + ". Use fork_shader with shader_type postprocess to create a pass with its fork.");
-        }
+        const std::string fileError = shaderFileError(project, shader);
+        if (!fileError.empty())
+            return failResult("shader " + fileError);
     }
+    // one texture of the pass, an empty path clears it
+    const std::string textureName = arguments.value("texture_name", "");
+    if (arguments.contains("texture_path") && textureName.empty())
+        return failResult("texture_path needs texture_name, the name the shader declares.");
+    if (!textureName.empty() && action != "set")
+        return failResult("texture_name goes with action set.");
 
     int passIndex = arguments.value("pass_index", action == "add" ? count : -1);
     if (action == "add") {
@@ -5655,7 +5497,31 @@ ActionResult EditorActionExecutor::setPostProcessPass(const Json& arguments) {
         }else if (action == "set") {
             if (hasShader && passes[passIndex].shader != shader) {
                 passes[passIndex].shader = shader;
-                passes[passIndex].uniforms.clear(); // another shader has other members
+                // another shader has other members
+                passes[passIndex].uniforms.clear();
+                passes[passIndex].textures.clear();
+            }
+            if (!textureName.empty()) {
+                const ShaderEffectAnnotations annotations = ShaderBuilder::getShaderAnnotations(project, passes[passIndex].shader);
+                const auto declared = std::find_if(annotations.parameters.begin(), annotations.parameters.end(),
+                    [&](const ShaderParameterDeclaration& declaration) { return declaration.texture && declaration.name == textureName; });
+                if (declared == annotations.parameters.end())
+                    return failResult("texture_name must be a texture the pass's shader declares.");
+                const std::string texturePath = arguments.value("texture_path", "");
+                Texture texture;
+                if (!texturePath.empty()) {
+                    const fs::path rel = FileUtils::pathFromUtf8(texturePath);
+                    if (!PathUtils::isSafeRelativePath(rel))
+                        return failResult("texture_path must be a safe project-relative path.");
+                    if (!isInsideAssets(project, rel))
+                        return failResult(outsideAssetsError(project, "texture_path"));
+                    // one image holds the six faces of a cube parameter
+                    if (declared->textureType == TextureType::TEXTURE_CUBE)
+                        texture.setCubeMap(assetPathFromAi(project, rel));
+                    else
+                        texture = Texture(assetPathFromAi(project, rel));
+                }
+                passes[passIndex].setTexture(textureName, texture);
             }
             passes[passIndex].enabled = arguments.value("enabled", passes[passIndex].enabled);
         }else{
@@ -5715,21 +5581,52 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
     ShaderType shaderType;
     if (!resolveShaderComponent(sceneProject, arguments, entity, component, shaderType, error)) return failResult(error);
 
-    ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
-    if (!valuesRef) return failResult("Component has no shader uniforms.");
+    ShaderUniformValues values;
+    int submesh = -1;
+    if (const MeshComponent* mesh = (component == ComponentType::MeshComponent) ? sceneProject->scene->findComponent<MeshComponent>(entity) : nullptr) {
+        // a mesh keeps them on its materials
+        submesh = arguments.value("submesh", -1);
+        if (submesh < -1 || submesh >= (int)mesh->numSubmeshes || mesh->numSubmeshes == 0)
+            return expectedMissResult("Submesh not found; the mesh has " + std::to_string(mesh->numSubmeshes) + ".");
+        const int first = std::max(submesh, 0);
+        const int last = (submesh < 0) ? (int)mesh->numSubmeshes - 1 : submesh;
+        submesh = first;
 
-    ShaderUniformValues values = *valuesRef;
-    if (remove) {
-        if (!ShaderUniforms::remove(values, name)) return expectedMissResult("Component has no value named '" + name + "'.");
+        MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+        bool removed = false;
+        for (int i = first; i <= last; i++) {
+            ShaderUniformValues materialValues = mesh->submeshes[i].material.shaderUniforms;
+            if (remove) {
+                if (!ShaderUniforms::remove(materialValues, name)) continue;
+                removed = true;
+            } else {
+                ShaderUniforms::set(materialValues, name, value);
+            }
+            multiCmd->addPropertyCmd<ShaderUniformValues>(project, sceneId, entity, component,
+                "submeshes[" + std::to_string(i) + "].material.shaderUniforms", materialValues);
+        }
+        if (remove && !removed) {
+            delete multiCmd;
+            return expectedMissResult("Component has no value named '" + name + "'.");
+        }
+        CommandHandle::get(sceneId)->addCommandNoMerge(multiCmd);
+        values = mesh->submeshes[submesh].material.shaderUniforms;
     } else {
-        ShaderUniforms::set(values, name, value);
+        const ShaderUniformValues* valuesRef = Catalog::getPropertyRef<ShaderUniformValues>(sceneProject->scene, entity, component, "shaderUniforms");
+        if (!valuesRef) return failResult("Component has no shader uniforms.");
+        values = *valuesRef;
+        if (remove) {
+            if (!ShaderUniforms::remove(values, name)) return expectedMissResult("Component has no value named '" + name + "'.");
+        } else {
+            ShaderUniforms::set(values, name, value);
+        }
+        CommandHandle::get(sceneId)->addCommandNoMerge(
+            new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values));
     }
-    CommandHandle::get(sceneId)->addCommandNoMerge(
-        new PropertyCmd<ShaderUniformValues>(project, sceneId, entity, component, "shaderUniforms", values));
 
     Json declared = Json::array();
     Json warnings;
-    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values);
+    collectComponentShaderUniformMembers(declared, warnings, project, sceneProject->scene, entity, component, shaderType, values, submesh);
     bool declaredMember = false;
     std::string message = remove ? "Removed shader uniform through the command history."
                                  : "Set shader uniform through the command history.";
@@ -5743,14 +5640,13 @@ ActionResult EditorActionExecutor::setShaderUniform(const Json& arguments) {
 ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
     std::string error;
     fs::path rel;
-    // A shader source may be edited (forked entry point) or newly created (shared include).
+    // a shader file, or a file one includes
     if (!safeRelativePath(project, arguments, "path", rel, error, false)) {
         return failResult(error);
     }
 
-    const std::string ext = lower(rel.extension().string());
-    if (ext != ".vert" && ext != ".frag" && ext != ".glsl") {
-        return failResult("path must point to a .vert, .frag, or .glsl shader file.");
+    if (lower(rel.extension().string()) != ".glsl") {
+        return failResult("path must point to a .glsl shader file.");
     }
 
     const std::string content = arguments.value("content", "");
@@ -5772,8 +5668,8 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
         return failResult("Failed to write shader file.");
     }
 
-    // Editing a forked source (or shared include) invalidates compiled shaders so the
-    // viewport recompiles them; mirrors CodeEditor saving a .vert/.frag/.glsl.
+    // Editing a shader file (or an include) invalidates compiled shaders so the
+    // viewport recompiles them; mirrors CodeEditor saving a .glsl.
     project->invalidateCustomShaders();
 
     if (resourcesWindow) {
@@ -5787,29 +5683,1054 @@ ActionResult EditorActionExecutor::writeShaderFile(const Json& arguments) {
 }
 
 
-// v0.8.4 port
-ActionResult EditorActionExecutor::portShaderFork(const Json& arguments) {
-    const std::string shader = arguments.value("shader", "");
-    std::string error = customShaderFilesError(project, shader);
-    if (!error.empty()) {
-        return failResult("shader " + error);
+namespace {
+
+// the typed value fields of a graph operation
+bool graphOperationValue(const Json& operation, GraphValue& value) {
+    if (operation.contains("number_value") && operation["number_value"].is_number()) {
+        value = GraphValue(operation["number_value"].get<float>());
+        return true;
     }
-    const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
-    size_t rewritten = 0;
-    if (!ShaderBuilder::portLegacyShaders(project, {paths.vert, paths.frag}, rewritten, error)) {
-        return failResult("Could not port the fork: " + error);
+    if (operation.contains("vector_value") && operation["vector_value"].is_array()) {
+        std::vector<float> numbers;
+        for (const Json& number : operation["vector_value"]) {
+            if (!number.is_number())
+                return false;
+            numbers.push_back(number.get<float>());
+        }
+        value = GraphValue(numbers);
+        return !numbers.empty() && numbers.size() <= 4;
     }
-    if (rewritten == 0) {
-        return okResult("Nothing to port: the fork declares no v0.8.4 block.", Json{{"shader", shader}, {"ported", false}});
+    if (operation.contains("string_value") && operation["string_value"].is_string()) {
+        value = GraphValue(operation["string_value"].get<std::string>());
+        return true;
+    }
+    if (operation.contains("bool_value") && operation["bool_value"].is_boolean()) {
+        value = GraphValue(operation["bool_value"].get<bool>() ? 1.0f : 0.0f);
+        return true;
+    }
+    return false;
+}
+
+std::string joinWords(const std::vector<std::string>& words) {
+    std::string text;
+    for (const std::string& word : words)
+        text += (text.empty() ? "" : ", ") + word;
+    return text;
+}
+
+std::string pinNames(const std::vector<NodePin>& pins) {
+    std::vector<std::string> names;
+    for (const NodePin& pin : pins)
+        names.push_back(pin.name);
+    return names.empty() ? std::string("none") : joinWords(names);
+}
+
+// edit_graph's operations on a graph; refs name what the call added
+class GraphOperations {
+public:
+    std::map<std::string, int> refs;
+
+    // "output" is the output node, in a function its first one
+    explicit GraphOperations(GraphDocument& graph): graph(graph), logic(graph.kind == "logic") {
+        for (const GraphNode& node : graph.nodes)
+            if (isSink(node) && !refs.count("output"))
+                refs["output"] = node.id;
     }
 
-    if (resourcesWindow) {
+    bool apply(const Json& operation, std::string& error) {
+        const std::string op = operation.value("op", "");
+        if (op == "add_node") return addNode(operation, error);
+        if (op == "remove") return remove(operation, error);
+        if (op == "move") return move(operation, error);
+        if (op == "connect") return connect(operation, error);
+        if (op == "disconnect") return disconnect(operation, error);
+        if (op == "set") return set(operation, error);
+        if (op == "add_parameter") return addParameter(operation, error);
+        if (op == "set_parameter") return setParameter(operation, error);
+        if (op == "remove_parameter") return removeParameter(operation, error);
+        if (op == "add_group" || op == "add_comment") return addLayout(operation, op == "add_group", error);
+        error = "there is no op \"" + op + "\"";
+        return false;
+    }
+
+    void layout() {
+        if (logic)
+            layoutLogicNodes();
+        else
+            layoutNodes();
+        layoutNotes();
+    }
+
+    // places new logic nodes, a lane per event
+    void layoutLogicNodes() {
+        if (placed.empty())
+            return;
+        auto added = [&](int id) { return std::find(placed.begin(), placed.end(), id) != placed.end(); };
+        // below what the graph held
+        float top = 0.0f;
+        bool any = false;
+        for (const GraphNode& node : graph.nodes) {
+            if (added(node.id))
+                continue;
+            top = any ? std::max(top, node.position.y + 220.0f) : node.position.y + 220.0f;
+            any = true;
+        }
+
+        std::set<int> done;
+        std::map<int, int> rows;
+        Vector2 origin;
+        int deepest = 0;
+        // clear of placed nodes
+        std::vector<Vector2> taken;
+        for (const GraphNode& node : graph.nodes)
+            if (!added(node.id))
+                taken.push_back(node.position);
+        auto place = [&](GraphNode& node, int column) {
+            if (!added(node.id)) {
+                rows[column]++;
+                return;
+            }
+            Vector2 at;
+            for (bool free = false; !free;) {
+                at = Vector2(origin.x + 300.0f * column, origin.y + 150.0f * rows[column]++);
+                free = std::none_of(taken.begin(), taken.end(), [&](const Vector2& other) {
+                    return std::abs(other.x - at.x) < 280.0f && std::abs(other.y - at.y) < 140.0f;
+                });
+            }
+            deepest = std::max(deepest, rows[column] - 1);
+            node.position = at;
+            taken.push_back(at);
+        };
+        // what runs, in the order it is linked
+        std::vector<std::pair<int, int>> chain;
+        std::function<void(int, int)> walk = [&](int id, int column) {
+            GraphNode* node = graph.findNode(id);
+            if (!node || !done.insert(id).second)
+                return;
+            place(*node, column);
+            chain.push_back({id, column});
+            for (const GraphLink& link : graph.links)
+                if (link.fromNode == id && isExecutionLink(link))
+                    walk(link.toNode, column + 1);
+        };
+        std::function<void(int, int)> values = [&](int id, int column) {
+            for (const GraphLink& link : graph.links) {
+                GraphNode* from = link.toNode == id && !link.fromPin.empty() ? graph.findNode(link.fromNode) : nullptr;
+                if (!from || runsNode(from->id) || !done.insert(from->id).second)
+                    continue;
+                place(*from, column - 1);
+                values(from->id, column - 1);
+            }
+        };
+        auto lane = [&](GraphNode& first) {
+            rows.clear();
+            chain.clear();
+            deepest = 0;
+            // an event that had its place keeps the lane there
+            origin = added(first.id) ? Vector2(0.0f, top) : first.position;
+            walk(first.id, 0);
+            for (const auto& [id, column] : chain)
+                values(id, column);
+            if (added(first.id))
+                top += 150.0f * (deepest + 1) + 70.0f;
+        };
+        for (GraphNode& node : graph.nodes) {
+            const NodeType* type = findType(node.type);
+            if (type && static_cast<const LogicNodeType*>(type)->flow == LogicFlow::EVENT)
+                lane(node);
+        }
+        // what no event reaches yet
+        for (GraphNode& node : graph.nodes)
+            if (!done.count(node.id) && added(node.id) && runsNode(node.id))
+                lane(node);
+        rows.clear();
+        origin = Vector2(0.0f, top);
+        for (GraphNode& node : graph.nodes)
+            if (!done.count(node.id) && added(node.id))
+                place(node, rows.size() < 6 ? (int)rows.size() : 0);
+    }
+
+    // places new nodes in columns from the outputs
+    void layoutNodes() {
+        std::vector<const GraphNode*> sinks;
+        for (const GraphNode& node : graph.nodes)
+            if (isSink(node))
+                sinks.push_back(&node);
+        if (placed.empty() || sinks.empty())
+            return;
+        auto added = [&](int id) { return std::find(placed.begin(), placed.end(), id) != placed.end(); };
+        // the first one already there holds the place of the columns
+        const GraphNode* output = sinks.front();
+        for (const GraphNode* sink : sinks) {
+            if (!added(sink->id)) {
+                output = sink;
+                break;
+            }
+        }
+        std::map<int, int> depth;
+        std::map<int, int> rows;
+        for (const GraphNode* sink : sinks) {
+            depth[sink->id] = 0;
+            rows[0] += added(sink->id) ? 0 : 1;
+        }
+        for (size_t pass = 0; pass <= graph.nodes.size(); pass++) {
+            bool changed = false;
+            for (const GraphLink& link : graph.links) {
+                auto to = depth.find(link.toNode);
+                if (link.fromPin.empty() || to == depth.end())
+                    continue;
+                auto from = depth.find(link.fromNode);
+                if (from == depth.end() || from->second < to->second + 1) {
+                    depth[link.fromNode] = to->second + 1;
+                    changed = true;
+                }
+            }
+            if (!changed)
+                break;
+        }
+        int deepest = 0;
+        for (const auto& entry : depth)
+            deepest = std::max(deepest, entry.second);
+        for (int id : placed) {
+            GraphNode* node = graph.findNode(id);
+            if (!node)
+                continue;
+            auto found = depth.find(id);
+            const int column = found != depth.end() ? found->second : deepest + 1;
+            // clear of what an earlier call put in this column
+            Vector2 at;
+            for (bool free = false; !free;) {
+                at = Vector2(output->position.x - 280.0f * column, output->position.y + 150.0f * rows[column]++);
+                free = std::none_of(graph.nodes.begin(), graph.nodes.end(), [&](const GraphNode& other) {
+                    return other.id != id && std::abs(other.position.x - at.x) < 260.0f && std::abs(other.position.y - at.y) < 140.0f &&
+                           (!added(other.id) || std::find(placed.begin(), placed.end(), other.id) < std::find(placed.begin(), placed.end(), id));
+                });
+            }
+            node->position = at;
+        }
+    }
+
+    // new groups frame what was added; comments go above
+    void layoutNotes() {
+        if (notes.empty())
+            return;
+        float left = 1e9f, top = 1e9f, right = -1e9f, bottom = -1e9f;
+        for (const GraphNode& node : graph.nodes) {
+            if (!placed.empty() && std::find(placed.begin(), placed.end(), node.id) == placed.end())
+                continue;
+            const NodeType* type = findType(node.type);
+            const size_t rows = type ? std::max(type->inputs.size(), type->outputs.size()) : 1;
+            left = std::min(left, node.position.x - 30.0f);
+            top = std::min(top, node.position.y - 50.0f);
+            right = std::max(right, node.position.x + 250.0f);
+            bottom = std::max(bottom, node.position.y + 60.0f + 20.0f * rows);
+        }
+        if (left > right)
+            return;
+        float above = top - 40.0f;
+        for (int id : notes) {
+            for (GraphGroup& group : graph.groups)
+                if (group.id == id)
+                    group.rect = Vector4(left, top, right - left, bottom - top);
+            for (GraphComment& comment : graph.comments) {
+                if (comment.id == id) {
+                    comment.position = Vector2(left, above);
+                    above -= 30.0f;
+                }
+            }
+        }
+    }
+
+private:
+    GraphDocument& graph;
+    const bool logic;
+    std::vector<int> placed;
+    std::vector<int> notes;
+
+    const NodeType* findType(const std::string& id) const {
+        return GraphNodes::getRegistry(graph).findType(id);
+    }
+
+    bool isSink(const GraphNode& node) const {
+        if (logic)
+            return false;
+        return node.type.rfind("output/", 0) == 0 || (graph.type == "function" && node.type == "function/output");
+    }
+
+    bool runsNode(int id) const {
+        const GraphNode* node = graph.findNode(id);
+        const NodeType* type = node ? findType(node->type) : nullptr;
+        return logic && type && static_cast<const LogicNodeType*>(type)->runs();
+    }
+
+    bool isExecutionLink(const GraphLink& link) const {
+        return GraphNodes::isExecutionOutput(graph, link.fromNode, link.fromPin);
+    }
+
+    // an id, or the ref of something added earlier in the call
+    int resolve(const Json& value) const {
+        if (value.is_number_integer())
+            return value.get<int>();
+        if (!value.is_string())
+            return 0;
+        const std::string text = value.get<std::string>();
+        if (auto ref = refs.find(text); ref != refs.end())
+            return ref->second;
+        const bool digits = !text.empty() && std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isdigit(c); });
+        return digits ? std::atoi(text.c_str()) : 0;
+    }
+
+    void keep(const Json& operation, int id) {
+        if (operation.contains("ref") && operation["ref"].is_string())
+            refs[operation["ref"].get<std::string>()] = id;
+    }
+
+    // node.pin, with the node by id or ref
+    bool pinRef(const std::string& text, int& node, std::string& pin) const {
+        const size_t dot = text.find('.');
+        if (dot == std::string::npos)
+            return false;
+        node = resolve(Json(text.substr(0, dot)));
+        pin = text.substr(dot + 1);
+        return node && !pin.empty();
+    }
+
+    GraphNode* findNode(const Json& operation, std::string& error) {
+        GraphNode* node = operation.contains("node") ? graph.findNode(resolve(operation["node"])) : nullptr;
+        if (!node)
+            error = operation.contains("node") ? "there is no node " + operation["node"].dump() : "node is required";
+        return node;
+    }
+
+    bool pins(const GraphNode& node, const NodeType*& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string& error) const {
+        if (!GraphNodes::getPins(graph, node, inputs, outputs, &type)) {
+            error = "node " + std::to_string(node.id) + " has the unknown type " + node.type;
+            return false;
+        }
+        return true;
+    }
+
+    // {x, y}, or [x, y] as read_graph gives it
+    static bool isPoint(const Json& operation, const char* key) {
+        if (!operation.contains(key))
+            return false;
+        const Json& at = operation[key];
+        return at.is_object() || (at.is_array() && at.size() == 2 && at[0].is_number() && at[1].is_number());
+    }
+
+    static Vector2 point(const Json& at, float fallback = 0.0f) {
+        if (at.is_array())
+            return Vector2(at[0].get<float>(), at[1].get<float>());
+        return Vector2(at.value("x", fallback), at.value("y", fallback));
+    }
+
+    Vector2 position(const Json& operation) const {
+        return point(operation["position"]);
+    }
+
+    bool addNode(const Json& operation, std::string& error) {
+        const std::string typeId = operation.value("type", "");
+        const NodeType* type = findType(typeId);
+        if (!type) {
+            error = "there is no node type \"" + typeId + "\"; list_graph_node_types lists them";
+            return false;
+        }
+        // a function takes any node but an output
+        const bool inFunction = graph.type == "function" && typeId.rfind("output/", 0) != 0;
+        const bool fits = logic || inFunction || [&] {
+            const std::vector<std::string>& shaderTypes = static_cast<const ShaderNodeType*>(type)->shaderTypes;
+            return shaderTypes.empty() || std::find(shaderTypes.begin(), shaderTypes.end(), graph.type) != shaderTypes.end();
+        }();
+        if (!fits) {
+            error = type->name + " does not fit a " + graph.type + " graph";
+            return false;
+        }
+        if (typeId.rfind("output/", 0) == 0 && std::any_of(graph.nodes.begin(), graph.nodes.end(), [](const GraphNode& node) { return node.type.rfind("output/", 0) == 0; })) {
+            error = "the graph has its output node already";
+            return false;
+        }
+        const bool given = isPoint(operation, "position");
+        const int id = graph.addNode(typeId, given ? position(operation) : Vector2(0.0f, 0.0f));
+        if (!given)
+            placed.push_back(id);
+        keep(operation, id);
+        return true;
+    }
+
+    bool isLayout(int id) const {
+        return std::any_of(graph.groups.begin(), graph.groups.end(), [&](const GraphGroup& group) { return group.id == id; }) ||
+               std::any_of(graph.comments.begin(), graph.comments.end(), [&](const GraphComment& comment) { return comment.id == id; });
+    }
+
+    bool remove(const Json& operation, std::string& error) {
+        std::vector<int> ids;
+        if (operation.contains("ids") && operation["ids"].is_array()) {
+            for (const Json& id : operation["ids"])
+                ids.push_back(resolve(id));
+        } else if (operation.contains("node")) {
+            ids.push_back(resolve(operation["node"]));
+        }
+        if (ids.empty()) {
+            error = "remove needs node or ids";
+            return false;
+        }
+        for (int id : ids) {
+            const GraphNode* node = graph.findNode(id);
+            if (!node && !isLayout(id)) {
+                error = "there is no node, group or comment " + std::to_string(id);
+                return false;
+            }
+            if (node && node->type.rfind("output/", 0) == 0) {
+                error = "the output node stays, a graph needs it";
+                return false;
+            }
+        }
+        graph.removeNodes(ids);
+        return true;
+    }
+
+    bool move(const Json& operation, std::string& error) {
+        if (!isPoint(operation, "position")) {
+            error = "move needs position";
+            return false;
+        }
+        const int id = operation.contains("node") ? resolve(operation["node"]) : 0;
+        const Vector2 at = position(operation);
+        if (GraphNode* node = graph.findNode(id)) {
+            node->position = at;
+            return true;
+        }
+        for (GraphGroup& group : graph.groups) {
+            if (group.id == id) {
+                group.rect.x = at.x;
+                group.rect.y = at.y;
+                return true;
+            }
+        }
+        for (GraphComment& comment : graph.comments) {
+            if (comment.id == id) {
+                comment.position = at;
+                return true;
+            }
+        }
+        error = "there is no node, group or comment " + std::to_string(id);
+        return false;
+    }
+
+    bool connect(const Json& operation, std::string& error) {
+        int fromId = 0;
+        int toId = 0;
+        std::string fromPin;
+        std::string toPin;
+        if (!pinRef(operation.value("from", ""), fromId, fromPin) || !pinRef(operation.value("to", ""), toId, toPin)) {
+            error = "connect needs from and to as node.pin";
+            return false;
+        }
+        const GraphNode* from = graph.findNode(fromId);
+        const GraphNode* to = graph.findNode(toId);
+        if (!from || !to) {
+            error = "there is no node " + std::to_string(from ? toId : fromId);
+            return false;
+        }
+        const NodeType* fromType = nullptr;
+        const NodeType* toType = nullptr;
+        std::vector<NodePin> fromInputs, fromOutputs, toInputs, toOutputs;
+        if (!pins(*from, fromType, fromInputs, fromOutputs, error) || !pins(*to, toType, toInputs, toOutputs, error))
+            return false;
+
+        const std::string base = fromPin.substr(0, fromPin.find('.'));
+        const NodePin* output = nullptr;
+        for (const NodePin& pin : fromOutputs)
+            if (pin.name == base)
+                output = &pin;
+        // node.xyz swizzles the first output
+        const bool swizzle = !logic && fromPin.find('.') == std::string::npos && fromPin.size() <= 4 && fromPin.find_first_not_of("xyzwrgba") == std::string::npos;
+        if (!output && swizzle && !fromOutputs.empty())
+            output = &fromOutputs.front();
+        if (!output) {
+            error = fromType->name + " has no output " + base + " (" + pinNames(fromOutputs) + ")";
+            return false;
+        }
+        const NodePin* input = nullptr;
+        for (const NodePin& pin : toInputs)
+            if (pin.name == toPin)
+                input = &pin;
+        if (!input) {
+            error = toType->name + " has no input " + toPin + " (" + pinNames(toInputs) + ")";
+            return false;
+        }
+        const std::string outType = GraphNodes::getPinType(graph, *from, *output);
+        const std::string inType = GraphNodes::getPinType(graph, *to, *input);
+        if (!GraphNodes::canLink(graph, outType, inType)) {
+            error = outType + " does not go into " + (inType == "execution" ? "an " : "a ") + inType + " input";
+            return false;
+        }
+        if (graph.feeds(toId, fromId)) {
+            error = "that link would make the graph loop";
+            return false;
+        }
+        GraphNodes::connect(graph, fromId, fromPin, toId, toPin);
+        return true;
+    }
+
+    bool disconnect(const Json& operation, std::string& error) {
+        int toId = 0;
+        std::string toPin;
+        if (!pinRef(operation.value("to", ""), toId, toPin) || !graph.findLinkInto(toId, toPin)) {
+            error = "nothing feeds " + operation.value("to", std::string("that input"));
+            return false;
+        }
+        if (!operation.contains("from")) {
+            graph.disconnect(toId, toPin);
+            return true;
+        }
+        // from picks one of the links into an execution input
+        int fromId = 0;
+        std::string fromPin;
+        const bool linked = pinRef(operation.value("from", ""), fromId, fromPin) &&
+            std::any_of(graph.links.begin(), graph.links.end(), [&](const GraphLink& link) {
+                return link.fromNode == fromId && link.fromPin == fromPin && link.toNode == toId && link.toPin == toPin;
+            });
+        if (!linked) {
+            error = "no link goes from " + operation.value("from", std::string()) + " to " + operation.value("to", std::string());
+            return false;
+        }
+        graph.disconnect(fromId, fromPin, toId, toPin);
+        return true;
+    }
+
+    const GraphParameter* findParameter(const Json& value) const {
+        if (!value.is_string())
+            return nullptr;
+        if (const GraphParameter* parameter = graph.findParameter(value.get<std::string>()))
+            return parameter;
+        auto ref = refs.find(value.get<std::string>());
+        return ref != refs.end() ? graph.findParameter(ref->second) : nullptr;
+    }
+
+    bool set(const Json& operation, std::string& error) {
+        GraphNode* node = findNode(operation, error);
+        const NodeType* type = nullptr;
+        std::vector<NodePin> inputs, outputs;
+        if (!node || !pins(*node, type, inputs, outputs, error))
+            return false;
+        const std::string name = operation.value("name", "");
+        GraphValue value;
+        const bool hasValue = graphOperationValue(operation, value);
+
+        if (const NodeSetting* setting = type->findSetting(name)) {
+            if (!hasValue) {
+                error = "set " + name + " needs a value";
+                return false;
+            }
+            if (setting->type == "parameter") {
+                const GraphParameter* parameter = findParameter(operation.value("string_value", Json()));
+                if (!parameter) {
+                    error = setting->label + " takes a parameter by name, in string_value";
+                    return false;
+                }
+                if (!setting->options.empty() && std::find(setting->options.begin(), setting->options.end(), parameter->type) == setting->options.end()) {
+                    error = setting->label + " takes a " + joinWords(setting->options) + " parameter, and " + parameter->name + " is a " + parameter->type;
+                    return false;
+                }
+                node->settings[name] = GraphValue((float)parameter->id);
+            } else if (setting->type == "function") {
+                GraphNode call = *node;
+                call.settings[name] = value;
+                std::vector<NodePin> functionInputs, functionOutputs;
+                if (value.text.empty() || logic || !ShaderNodes::getPins(call, *static_cast<const ShaderNodeType*>(type), functionInputs, functionOutputs)) {
+                    error = setting->label + " takes the path of a function graph of the project (a .shader of type function), in string_value";
+                    return false;
+                }
+                node->settings[name] = value;
+            } else if (setting->type == "choice") {
+                const std::string chosen = value.text.empty() ? std::to_string((int)value.number()) : value.text;
+                if (std::find(setting->options.begin(), setting->options.end(), chosen) == setting->options.end()) {
+                    error = setting->label + " is one of " + joinWords(setting->options);
+                    return false;
+                }
+                // a number stays a number, as the file writes it
+                const bool digits = std::all_of(chosen.begin(), chosen.end(), [](unsigned char c) { return std::isdigit(c); });
+                node->settings[name] = digits ? GraphValue((float)std::atoi(chosen.c_str())) : GraphValue(chosen);
+            } else {
+                node->settings[name] = value;
+            }
+            return true;
+        }
+
+        for (const NodePin& pin : inputs) {
+            if (pin.name != name)
+                continue;
+            if (operation.value("reset", false)) {
+                node->inputs.erase(name);
+                return true;
+            }
+            if (!hasValue) {
+                error = "set " + name + " needs a value, or reset";
+                return false;
+            }
+            if (pin.kind == PinKind::EXECUTION) {
+                error = name + " orders what runs; connect it";
+                return false;
+            }
+            node->inputs[name] = value;
+            return true;
+        }
+        std::vector<std::string> names;
+        for (const NodeSetting& setting : type->settings)
+            names.push_back(setting.name);
+        error = type->name + " has no setting or input " + name + " (settings: " + (names.empty() ? std::string("none") : joinWords(names)) +
+                "; inputs: " + pinNames(inputs) + ")";
+        return false;
+    }
+
+    static bool isTextureType(const std::string& type) {
+        return type == "texture2D" || type == "textureCube";
+    }
+
+    // the fields add_parameter and set_parameter share
+    bool fillParameter(GraphParameter& parameter, const Json& operation, std::string& error) const {
+        GraphValue value;
+        const bool given = operation.contains("number_value") || operation.contains("vector_value") ||
+            operation.contains("string_value") || operation.contains("bool_value");
+        if (given && !graphOperationValue(operation, value)) {
+            error = "the default is a number, 1 to 4 numbers in vector_value, or a word in string_value";
+            return false;
+        }
+        if (given && logic) {
+            const size_t count = LogicNodes::getComponentCount(LogicNodes::getVariablePinType(parameter.type));
+            if (parameter.type == "entity") {
+                error = "an entity variable is set on the script in Properties";
+                return false;
+            }
+            if (parameter.type == "string") {
+                if (value.text.empty() && !value.numbers.empty()) {
+                    error = "a string variable takes its default in string_value";
+                    return false;
+                }
+            } else {
+                if (!value.text.empty() || (value.numbers.size() != 1 && value.numbers.size() != count)) {
+                    error = "a " + parameter.type + " default takes " + (count > 1 ? "1 or " + std::to_string(count) + " numbers" : std::string("a number, or bool_value"));
+                    return false;
+                }
+                value.numbers.resize(count, value.numbers.back());
+            }
+            parameter.value = value;
+        } else if (given) {
+            if (isTextureType(parameter.type)) {
+                if (value.text != "white" && value.text != "black" && value.text != "normal") {
+                    error = "a texture's default is white, black or normal";
+                    return false;
+                }
+            } else {
+                if (!value.text.empty()) {
+                    error = "a " + parameter.type + " parameter takes a number or vector default";
+                    return false;
+                }
+                // one number fills the vector; a color without alpha is opaque
+                const size_t count = parameter.type == "vec2" ? 2 : (parameter.type == "vec3" ? 3 : (parameter.type == "vec4" || parameter.type == "color" ? 4 : 1));
+                const bool color3 = parameter.type == "color" && value.numbers.size() == 3;
+                if (value.numbers.size() != 1 && value.numbers.size() != count && !color3) {
+                    error = "a " + parameter.type + " default takes 1 or " + std::to_string(count) + " numbers";
+                    return false;
+                }
+                value.numbers.resize(count, color3 ? 1.0f : value.numbers.back());
+            }
+            parameter.value = value;
+        }
+        if (operation.contains("min") || operation.contains("max")) {
+            if (!parameter.hasRange && !(operation.contains("min") && operation.contains("max"))) {
+                error = "a range takes both min and max";
+                return false;
+            }
+            parameter.hasRange = true;
+            parameter.minValue = operation.value("min", parameter.minValue);
+            parameter.maxValue = operation.value("max", parameter.maxValue);
+        }
+        if (operation.contains("runtime"))
+            parameter.runtime = operation.value("runtime", false);
+        if (operation.contains("description"))
+            parameter.description = operation.value("description", "");
+        if (operation.contains("filter")) {
+            const std::string filter = operation.value("filter", "");
+            if (filter != "nearest" && filter != "linear" && filter != "trilinear") {
+                error = "filter is nearest, linear or trilinear";
+                return false;
+            }
+            parameter.filter = filter;
+        }
+        if (operation.contains("wrap")) {
+            const std::string wrap = operation.value("wrap", "");
+            if (wrap != "repeat" && wrap != "clamp" && wrap != "mirror") {
+                error = "wrap is repeat, clamp or mirror";
+                return false;
+            }
+            parameter.wrap = wrap;
+        }
+        return true;
+    }
+
+    bool freeName(const std::string& name, std::string& error) const {
+        const bool identifier = !name.empty() && !std::isdigit((unsigned char)name[0]) &&
+                                std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+        if (graph.findParameter(name)) {
+            error = "there is a parameter " + name + " already";
+            return false;
+        }
+        if (!identifier) {
+            error = "\"" + name + "\" is not a parameter name: letters, digits and _, not starting with a digit";
+            return false;
+        }
+        return true;
+    }
+
+    bool addParameter(const Json& operation, std::string& error) {
+        static const std::vector<std::string> shaderTypes = {"float", "vec2", "vec3", "vec4", "int", "color", "texture2D", "textureCube"};
+        const std::vector<std::string>& types = logic ? LogicNodes::getVariableTypes() : shaderTypes;
+        GraphParameter parameter;
+        parameter.name = operation.value("name", "");
+        parameter.type = operation.value("type", "");
+        if (std::find(types.begin(), types.end(), parameter.type) == types.end()) {
+            error = std::string(logic ? "a variable's" : "a parameter's") + " type is one of " + joinWords(types);
+            return false;
+        }
+        if (!freeName(parameter.name, error))
+            return false;
+        if (logic) {
+            parameter.value = LogicNodes::getVariableDefault(parameter.type);
+        } else if (isTextureType(parameter.type)) {
+            parameter.value = GraphValue("white");
+            parameter.filter = "linear";
+            parameter.wrap = "repeat";
+        } else {
+            const size_t count = parameter.type == "vec2" ? 2 : (parameter.type == "vec3" ? 3 : (parameter.type == "vec4" || parameter.type == "color" ? 4 : 1));
+            parameter.value = GraphValue(std::vector<float>(count, parameter.type == "color" ? 1.0f : 0.0f));
+        }
+        if (!fillParameter(parameter, operation, error))
+            return false;
+        keep(operation, graph.addParameter(parameter));
+        return true;
+    }
+
+    bool setParameter(const Json& operation, std::string& error) {
+        const GraphParameter* found = findParameter(operation.value("name", Json()));
+        if (!found) {
+            error = "there is no parameter " + operation.value("name", std::string());
+            return false;
+        }
+        for (GraphParameter& parameter : graph.parameters) {
+            if (parameter.id != found->id)
+                continue;
+            GraphParameter changed = parameter;
+            if (operation.contains("new_name")) {
+                const std::string name = operation.value("new_name", "");
+                if (name != changed.name && !freeName(name, error))
+                    return false;
+                changed.name = name;
+            }
+            if (!fillParameter(changed, operation, error))
+                return false;
+            parameter = changed;
+        }
+        return true;
+    }
+
+    bool removeParameter(const Json& operation, std::string& error) {
+        const GraphParameter* parameter = findParameter(operation.value("name", Json()));
+        if (!parameter) {
+            error = "there is no parameter " + operation.value("name", std::string());
+            return false;
+        }
+        graph.removeParameter(parameter->id);
+        return true;
+    }
+
+    bool addLayout(const Json& operation, bool group, std::string& error) {
+        const std::string text = operation.value("text", "");
+        const bool given = isPoint(operation, "position");
+        const Vector2 at = given ? position(operation) : Vector2(0.0f, 0.0f);
+        if (group) {
+            GraphGroup item;
+            item.id = graph.takeId();
+            item.title = text.empty() ? "Group" : text;
+            const Vector2 size = isPoint(operation, "size") ? point(operation["size"], 300.0f) : Vector2(300.0f, 200.0f);
+            item.rect = Vector4(at.x, at.y, size.x, size.y);
+            graph.groups.push_back(item);
+            keep(operation, item.id);
+            if (!given)
+                notes.push_back(item.id);
+        } else {
+            if (text.empty()) {
+                error = "add_comment needs text";
+                return false;
+            }
+            GraphComment item;
+            item.id = graph.takeId();
+            item.text = text;
+            item.position = at;
+            graph.comments.push_back(item);
+            keep(operation, item.id);
+            if (!given)
+                notes.push_back(item.id);
+        }
+        return true;
+    }
+};
+
+// a .shader or .logic path of the project
+bool graphPath(Project* project, const Json& arguments, fs::path& rel, std::string& error) {
+    if (!safeRelativePath(project, arguments, "path", rel, error))
+        return false;
+    const std::string extension = lower(rel.extension().string());
+    if (extension != ".shader" && extension != ".logic") {
+        error = "path must point to a .shader or .logic graph.";
+        return false;
+    }
+    return true;
+}
+
+// the function graphs Subgraph nodes call, as the editor holds them
+ShaderGraphReader graphReader(Project* project) {
+    return [project](const std::string& path, std::string& text) { return ShaderBuilder::readGraphSource(project, path, text); };
+}
+
+bool readGraphFile(const fs::path& path, GraphDocument& graph, std::string& error) {
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        error = "The graph could not be opened.";
+        return false;
+    }
+    std::stringstream text;
+    text << file.rdbuf();
+    if (!graph.read(text.str(), error))
+        return false;
+    if (graph.kind != (path.extension() == ".logic" ? "logic" : "shader")) {
+        error = path.extension() == ".logic" ? "Not a logic graph." : "Not a shader graph.";
+        return false;
+    }
+    return true;
+}
+
+// what a graph compiles to, as JSON with its nodes
+Json compiledGraphJson(Project* project, const GraphDocument& graph, const std::string& key, GraphResult& compiled) {
+    if (graph.kind == "logic") {
+        compiled = LogicGraphCompiler::compile(graph, fs::path(key).filename().string(), LogicGraphCompiler::getModuleName(key));
+    } else {
+        compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
+    }
+    return graph.kind == "logic" ? graphJson(graph, compiled) : shaderGraphJson(graph, compiled);
+}
+
+}
+
+ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
+    const std::string graphType = arguments.value("graph_type", "");
+    const std::string category = lower(arguments.value("category", ""));
+    const std::string search = lower(arguments.value("search", ""));
+    const bool detail = !search.empty() || !category.empty();
+
+    if (graphType == "script")
+        return listLogicNodeTypes(category, search);
+
+    Json list = Json::array();
+    for (const NodeType* base : ShaderNodes::get().getTypes()) {
+        const ShaderNodeType& type = *static_cast<const ShaderNodeType*>(base);
+        // a function takes any node; the graph calling it decides where it runs
+        const bool function = graphType == "function" && type.id.rfind("output/", 0) != 0;
+        if (!graphType.empty() && !function && !type.shaderTypes.empty() && std::find(type.shaderTypes.begin(), type.shaderTypes.end(), graphType) == type.shaderTypes.end())
+            continue;
+        if (!category.empty() && lower(type.category) != category)
+            continue;
+        if (!search.empty() && lower(type.id + " " + type.name + " " + type.category + " " + type.description).find(search) == std::string::npos)
+            continue;
+        if (detail) {
+            list.push_back(shaderNodeTypeJson(type));
+            continue;
+        }
+        auto pins = [](const std::vector<NodePin>& items) {
+            std::string text;
+            for (const NodePin& pin : items)
+                text += (text.empty() ? "" : ", ") + pin.name + ":" + pin.type;
+            return text;
+        };
+        Json item = {{"id", type.id}, {"name", type.name}, {"category", type.category}, {"in", pins(type.inputs)}, {"out", pins(type.outputs)}};
+        if (!type.settings.empty()) {
+            std::vector<std::string> settings;
+            for (const NodeSetting& setting : type.settings)
+                settings.push_back(setting.name);
+            item["settings"] = settings;
+        }
+        list.push_back(item);
+    }
+    return okResult(std::to_string(list.size()) + " node types.", Json{{"node_types", list}, {"complete", detail}});
+}
+
+// thousands of nodes, listed by search or class
+ActionResult EditorActionExecutor::listLogicNodeTypes(const std::string& category, const std::string& search) {
+    constexpr size_t limit = 120;
+    const bool detail = !search.empty() || !category.empty();
+    auto pins = [](const std::vector<NodePin>& items) {
+        std::string text;
+        for (const NodePin& pin : items)
+            text += (text.empty() ? "" : ", ") + pin.name + ":" + (pin.kind == PinKind::EXECUTION ? std::string("execution") : pin.type);
+        return text;
+    };
+
+    Json list = Json::array();
+    std::map<std::string, int> classes;
+    size_t matched = 0;
+    for (const NodeType* base : LogicNodes::get().getTypes()) {
+        const LogicNodeType& type = *static_cast<const LogicNodeType*>(base);
+        if (!detail && LogicNodes::isEngineType(type.id)) {
+            classes[type.category]++;
+            continue;
+        }
+        if (!category.empty() && lower(type.category) != category)
+            continue;
+        if (!search.empty()) {
+            // every word, in the id, the name, the category or the description
+            const std::string text = lower(type.id + " " + type.name + " " + type.category + " " + type.description);
+            std::istringstream words(search);
+            std::string word;
+            bool all = true;
+            while (words >> word)
+                all &= text.find(word) != std::string::npos;
+            if (!all)
+                continue;
+        }
+        // a search is cut short, a class listed whole
+        if (!search.empty() && ++matched > limit)
+            continue;
+        if (detail) {
+            list.push_back(logicNodeTypeJson(type));
+            continue;
+        }
+        Json item = {{"id", type.id}, {"name", type.name}, {"category", type.category}, {"in", pins(type.inputs)}, {"out", pins(type.outputs)}};
+        if (!type.settings.empty()) {
+            std::vector<std::string> settings;
+            for (const NodeSetting& setting : type.settings)
+                settings.push_back(setting.name);
+            item["settings"] = settings;
+        }
+        list.push_back(item);
+    }
+    Json data = {{"node_types", list}, {"complete", detail}};
+    if (matched > limit)
+        data["more"] = std::to_string(matched - limit) + " more match; narrow the search";
+    if (!detail) {
+        Json names = Json::object();
+        for (const auto& [name, count] : classes)
+            names[name] = count;
+        data["engine_classes"] = names;
+        data["note"] = "The engine's classes are listed by name with their node count: pass one as category, or search, to see its call/, get/ and set/ nodes.";
+    }
+    return okResult(std::to_string(list.size()) + " node types.", data);
+}
+
+ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
+    std::string error;
+    fs::path rel;
+    if (!graphPath(project, arguments, rel, error))
+        return failResult(error);
+    GraphDocument graph;
+    if (!readGraphFile(project->getProjectPath() / rel, graph, error))
+        return failResult(error);
+
+    const std::string key = FileUtils::pathToGenericUtf8(rel);
+    GraphResult compiled;
+    Json data = compiledGraphJson(project, graph, key, compiled);
+    data["path"] = key;
+    if (arguments.value("include_code", false) && compiled.success)
+        data["code"] = compiled.code;
+    GraphEditorWindow* window = editor::getEditorHost().getGraphEditorWindow();
+    if (window && window->isFileModified(rel))
+        data["unsaved_in_editor"] = true;
+    return okResult("Read graph.", data);
+}
+
+ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
+    std::string error;
+    fs::path rel;
+    if (!graphPath(project, arguments, rel, error))
+        return failResult(error);
+    const std::string key = FileUtils::pathToGenericUtf8(rel);
+    const fs::path fullPath = project->getProjectPath() / rel;
+
+    GraphEditorWindow* window = editor::getEditorHost().getGraphEditorWindow();
+    if (window && window->isFileModified(rel))
+        return failResult(key + " has unsaved changes in the editor. Save or close it first.");
+
+    GraphDocument graph;
+    std::error_code ec;
+    const bool create = arguments.value("create", false);
+    if (create) {
+        if (fs::exists(fullPath, ec))
+            return failResult(key + " already exists.");
+        const std::string type = arguments.value("graph_type", "");
+        if (rel.extension() == ".logic") {
+            if (!type.empty() && type != "script")
+                return failResult("A .logic graph is a script; leave graph_type out.");
+            const std::string name = rel.stem().string();
+            const bool identifier = !name.empty() && !std::isdigit((unsigned char)name[0]) && !LogicNodes::isLuaKeyword(name) &&
+                                    std::all_of(name.begin(), name.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; });
+            if (!identifier)
+                return failResult("The file name is the script's name: letters, digits and _, not starting with a digit, and not a word of Lua.");
+            graph.kind = "logic";
+            graph.type = "script";
+        } else {
+            if (type != "function" && !ShaderNodes::get().find("output/" + type))
+                return failResult("graph_type must be mesh, ui, points, lines, sky, water, postprocess or function.");
+            graph.kind = "shader";
+            graph.type = type;
+            graph.addNode(type == "function" ? "function/output" : "output/" + type, Vector2(300.0f, 0.0f));
+        }
+    } else if (!readGraphFile(fullPath, graph, error)) {
+        return failResult(error);
+    }
+
+    if (graph.kind == "logic" && ProjectUtils::getLogicScriptPath(project, fullPath).empty())
+        return failResult("A logic graph goes inside the project's Lua directory, where its script is kept.");
+
+    GraphOperations operations(graph);
+    const Json& list = arguments["operations"];
+    for (size_t i = 0; i < list.size(); i++) {
+        if (!list[i].is_object())
+            return failResult("Operation " + std::to_string(i) + " must be an object. Nothing was changed.");
+        if (!operations.apply(list[i], error))
+            return failResult("Operation " + std::to_string(i) + " (" + list[i].value("op", std::string("?")) + "): " + error + ". Nothing was changed.");
+    }
+    operations.layout();
+
+    GraphResult compiled;
+    Json data = compiledGraphJson(project, graph, key, compiled);
+    data["path"] = key;
+    data["refs"] = operations.refs;
+
+    const std::string text = graph.write();
+    if (!(window && window->replaceFileText(rel, text))) {
+        fs::create_directories(fullPath.parent_path(), ec);
+        if (!FileUtils::writeIfChanged(fullPath, text))
+            return failResult("Failed to write the graph.");
+        if (graph.kind == "logic") {
+            // the script the entities run, written when the graph compiles
+            std::string scriptError;
+            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, text, compiled.code, scriptError))
+                return failResult("Graph written, but not its script: " + scriptError);
+        } else {
+            project->invalidateCustomShader(key);
+        }
+    }
+    if (create && resourcesWindow)
         resourcesWindow->refreshCurrentDirectory();
-    }
-    Out::info("AI ported shader fork: %s", shader.c_str());
+    Out::info("AI %s graph: %s", create ? "created" : "edited", key.c_str());
 
-    return okResult("Ported the shader fork to parameters.",
-                    Json{{"shader", shader}, {"ported", true}, {"vert_path", paths.vert}, {"frag_path", paths.frag}});
+    // what attach_script takes: the graph itself
+    if (graph.kind == "logic") {
+        data["script"] = key;
+        data["class_name"] = LogicGraphCompiler::getModuleName(key);
+    }
+    return okResult(compiled.success ? "Graph written." : "Graph written; it does not compile yet, see errors.", data);
 }
 
 ActionResult EditorActionExecutor::createTerrainHeightmap(const Json& arguments) {
@@ -6673,6 +7594,10 @@ ActionResult EditorActionExecutor::setComponentProperties(const Json& arguments)
             return failResult("Each properties entry requires property.");
         }
 
+        // a declared texture has no entry until it is set
+        if (propertyName.rfind("shaderTextures[", 0) == 0 || propertyName.find(".shaderTextures[") != std::string::npos) {
+            Catalog::findProperty(sceneProject->scene, entity, component, propertyName);
+        }
         auto props = Catalog::findEntityProperties(sceneProject->scene, entity, component);
         auto it = props.find(propertyName);
         if (it == props.end()) {

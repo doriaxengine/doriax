@@ -211,20 +211,20 @@ AABB Image::getWorldAABB() const{
     return ui.worldAABB;
 }
 
-void Image::setCustomShader(const std::string& path){
+void Image::setShader(const std::string& path){
     UIComponent& ui = getComponent<UIComponent>();
 
-    if (ui.customShader != path){
-        ui.customShader = path;
+    if (ui.shader != path){
+        ui.shader = path;
 
         ui.needReload = true;
     }
 }
 
-std::string Image::getCustomShader() const{
+std::string Image::getShader() const{
     UIComponent& ui = getComponent<UIComponent>();
 
-    return ui.customShader;
+    return ui.shader;
 }
 
 void Image::setShaderUniform(const std::string& name, const Vector4& value){
@@ -260,4 +260,21 @@ bool Image::removeShaderUniform(const std::string& name){
 
     ui.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Image::setShaderTexture(const std::string& name, const Texture& texture){
+    UIComponent& ui = getComponent<UIComponent>();
+
+    const Texture* current = ShaderTextures::find(ui.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
+    ShaderTextures::set(ui.shaderTextures, name, texture);
+    ui.needUpdateTexture = true;
+}
+
+Texture Image::getShaderTexture(const std::string& name) const{
+    UIComponent& ui = getComponent<UIComponent>();
+
+    return ShaderTextures::get(ui.shaderTextures, name);
 }

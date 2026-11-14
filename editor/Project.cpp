@@ -11,7 +11,9 @@
 #include "util/TextEncoding.h"
 #include "window/CodeEditor.h"
 #include "window/ImageViewerWindow.h"
+#include "window/GraphEditorWindow.h"
 #include "window/TerrainEditWindow.h"
+#include "graph/Graph.h"
 
 #include <cctype>
 #include <cmath>
@@ -366,6 +368,13 @@ void editor::Project::overrideExternalRefComponents(EntityRegistry* scene, Entit
 
 editor::Project::Project(){
     resetConfigs();
+
+    // a logic graph on an entity runs the script written from it
+    LuaBinding::setScriptPathResolver([this](const std::string& path) {
+        if (!Util::isLogicGraphFile(path))
+            return std::string();
+        return FileUtils::pathToGenericUtf8(resolveLuaSource(FileUtils::pathFromUtf8(path)));
+    });
 }
 
 fs::path editor::Project::normalizeToProjectRelative(const fs::path& path) const {
@@ -476,6 +485,10 @@ bool editor::Project::remapScriptEntryPaths(ScriptEntry& scriptEntry, const fs::
     if (!scriptEntry.path.empty()) {
         std::string updatedPath;
         if (remapRelativeString(oldRelative, newRelative, scriptEntry.path, updatedPath)) {
+            // a logic graph's file names its script
+            if (Util::isLogicGraphFile(updatedPath) && scriptEntry.className == fs::path(scriptEntry.path).stem().string()) {
+                scriptEntry.className = fs::path(updatedPath).stem().string();
+            }
             scriptEntry.path = updatedPath;
             changed = true;
         }
@@ -650,6 +663,9 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
             submeshChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
             submeshChanged |= visitTexturePaths(material.occlusionTexture, transform);
             submeshChanged |= visitTexturePaths(material.normalTexture, transform);
+            for (auto& texture : material.shaderTextures) {
+                submeshChanged |= visitTexturePaths(texture.second, transform);
+            }
 
             if (submeshChanged) {
                 mesh.submeshes[s].needUpdateTexture = true;
@@ -662,7 +678,11 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
-        if (visitTexturePaths(ui.texture, transform)) {
+        bool textureChanged = visitTexturePaths(ui.texture, transform);
+        for (auto& texture : ui.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             ui.needUpdateTexture = true;
             changed = true;
         }
@@ -681,15 +701,24 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     });
 
     visitComponents(registry->getComponentArray<SkyComponent>(), [&](SkyComponent& sky) {
-        if (visitTexturePaths(sky.texture, transform)) {
+        bool textureChanged = visitTexturePaths(sky.texture, transform);
+        for (auto& texture : sky.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             sky.needUpdateTexture = true;
             changed = true;
         }
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
-        if (visitTexturePaths(water.normalTexture, transform)) {
+        bool textureChanged = visitTexturePaths(water.normalTexture, transform);
+        for (auto& texture : water.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             water.needUpdateTexture = true;
+            water.needReload = true;
             changed = true;
         }
     });
@@ -735,11 +764,41 @@ bool editor::Project::visitAssetPathsInRegistry(EntityRegistry* registry, const 
     });
 
     visitComponents(registry->getComponentArray<PointsComponent>(), [&](PointsComponent& points) {
-        if (visitTexturePaths(points.texture, transform)) {
+        bool textureChanged = visitTexturePaths(points.texture, transform);
+        for (auto& texture : points.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
             points.needUpdateTexture = true;
             changed = true;
         }
     });
+
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        bool textureChanged = false;
+        for (auto& texture : lines.shaderTextures) {
+            textureChanged |= visitTexturePaths(texture.second, transform);
+        }
+        if (textureChanged) {
+            lines.needReload = true;
+            changed = true;
+        }
+    });
+
+    // the textures of a scene's post-process passes
+    if (Scene* scene = dynamic_cast<Scene*>(registry)) {
+        std::vector<PostProcessPass> passes = scene->getPostProcessPasses();
+        bool passChanged = false;
+        for (PostProcessPass& pass : passes) {
+            for (auto& texture : pass.textures) {
+                passChanged |= visitTexturePaths(texture.second, transform);
+            }
+        }
+        if (passChanged) {
+            scene->setPostProcessPasses(passes);
+            changed = true;
+        }
+    }
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
         if (visitTexturePaths(probe.texture, transform)) {
@@ -827,11 +886,17 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
             addTexture(material.metallicRoughnessTexture, false);
             addTexture(material.occlusionTexture, false);
             addTexture(material.normalTexture, false);
+            for (auto& texture : material.shaderTextures) {
+                addTexture(texture.second, false);
+            }
         }
     }
 
     visitComponents(registry->getComponentArray<UIComponent>(), [&](UIComponent& ui) {
         addTexture(ui.texture, true);
+        for (auto& texture : ui.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<ButtonComponent>(), [&](ButtonComponent& button) {
@@ -843,10 +908,16 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<SkyComponent>(), [&](SkyComponent& sky) {
         addTexture(sky.texture, false);
+        for (auto& texture : sky.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<WaterComponent>(), [&](WaterComponent& water) {
         addTexture(water.normalTexture, false);
+        for (auto& texture : water.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
 
     visitComponents(registry->getComponentArray<TerrainComponent>(), [&](TerrainComponent& terrain) {
@@ -871,7 +942,24 @@ SceneResources editor::Project::collectResourcesInRegistry(EntityRegistry* regis
 
     visitComponents(registry->getComponentArray<PointsComponent>(), [&](PointsComponent& points) {
         addTexture(points.texture, true);
+        for (auto& texture : points.shaderTextures) {
+            addTexture(texture.second, false);
+        }
     });
+
+    visitComponents(registry->getComponentArray<LinesComponent>(), [&](LinesComponent& lines) {
+        for (auto& texture : lines.shaderTextures) {
+            addTexture(texture.second, false);
+        }
+    });
+
+    if (Scene* scene = dynamic_cast<Scene*>(registry)) {
+        for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
+            for (const auto& texture : pass.textures) {
+                addTexture(texture.second, false);
+            }
+        }
+    }
 
     visitComponents(registry->getComponentArray<ReflectionProbeComponent>(), [&](ReflectionProbeComponent& probe) {
         addTexture(probe.texture, false);
@@ -1274,6 +1362,11 @@ void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, 
         return;
     }
 
+    // scripts of renamed logic graphs are written again
+    if (Util::isLogicGraphFile(oldPath.string()) || oldPath.extension().empty()) {
+        ProjectUtils::removeLogicScript(this, oldPath);
+    }
+
     for (auto& sceneProject : scenes) {
         if (!sceneProject.scene) {
             continue;
@@ -1481,6 +1574,10 @@ void editor::Project::cleanupScriptFilePath(const std::filesystem::path& deleted
         return;
     }
 
+    if (Util::isLogicGraphFile(deletedPath.string()) || deletedPath.extension().empty()) {
+        ProjectUtils::removeLogicScript(this, deletedPath);
+    }
+
     for (auto& sceneProject : scenes) {
         if (!sceneProject.scene) {
             continue;
@@ -1570,39 +1667,34 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
     });
 }
 
-void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform) {
-    // customShader lives on every renderable component type (a mesh also has its depth
-    // fork, a water its underwater one); visit each array in a registry, apply the
-    // transform, and flag a shader reload on the entities that changed.
+void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform) {
+    // transforms a registry's shader paths, reloading what changed
     auto applyToRegistry = [&](EntityRegistry* registry) -> bool {
         bool changed = false;
         auto applyToArray = [&](auto arr, auto shaderField) {
             for (size_t i = 0; i < arr->size(); ++i) {
-                std::string& customShader = arr->getComponentFromIndex(i).*shaderField;
-                if (customShader.empty())
-                    continue;
-                if (transform(customShader)) {
+                std::string& shader = arr->getComponentFromIndex(i).*shaderField;
+                if (!shader.empty() && transform(shader)) {
                     Catalog::updateEntity(registry, arr->getEntity(i), UpdateFlags_Shader_Reload);
                     changed = true;
                 }
             }
         };
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customShader);
-        applyToArray(registry->getComponentArray<MeshComponent>(), &MeshComponent::customDepthShader);
-        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::customShader);
-        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::customShader);
-        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::customShader);
-        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::customShader);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customShader);
-        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::customUnderwaterShader);
+        applyToArray(registry->getComponentArray<UIComponent>(), &UIComponent::shader);
+        applyToArray(registry->getComponentArray<PointsComponent>(), &PointsComponent::shader);
+        applyToArray(registry->getComponentArray<LinesComponent>(), &LinesComponent::shader);
+        applyToArray(registry->getComponentArray<SkyComponent>(), &SkyComponent::shader);
+        applyToArray(registry->getComponentArray<WaterComponent>(), &WaterComponent::shader);
 
-        // an effect function is one file, not a .vert/.frag pair
         auto meshes = registry->getComponentArray<MeshComponent>();
         for (size_t i = 0; i < meshes->size(); ++i) {
             MeshComponent& mesh = meshes->getComponentFromIndex(i);
-            bool meshChanged = !mesh.vertexOffsetShader.empty() && fileTransform(mesh.vertexOffsetShader);
-            if (!mesh.coverageShader.empty() && fileTransform(mesh.coverageShader))
-                meshChanged = true;
+            bool meshChanged = false;
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
+                std::string& shader = mesh.submeshes[s].material.shader;
+                if (!shader.empty() && transform(shader))
+                    meshChanged = true;
+            }
             if (meshChanged) {
                 Catalog::updateEntity(registry, meshes->getEntity(i), UpdateFlags_Shader_Reload);
                 changed = true;
@@ -1611,8 +1703,8 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         return changed;
     };
 
-    // scene-level default shaders reference the same files; the setter flags the reload
-    auto applyToSceneDefaults = [&](Scene* scene) -> bool {
+    // scene default shaders and post-process passes
+    auto applyToScene = [&](Scene* scene) -> bool {
         bool changed = false;
         for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX, ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
             std::string defaultShader = scene->getDefaultCustomShader(type);
@@ -1621,7 +1713,13 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
                 changed = true;
             }
         }
-        return changed;
+        std::vector<PostProcessPass> passes = scene->getPostProcessPasses();
+        bool passChanged = false;
+        for (PostProcessPass& pass : passes)
+            passChanged = (!pass.shader.empty() && transform(pass.shader)) || passChanged;
+        if (passChanged)
+            scene->setPostProcessPasses(passes);
+        return changed || passChanged;
     };
 
     for (auto& sceneProject : scenes) {
@@ -1629,7 +1727,7 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
             continue;
         }
         bool changed = applyToRegistry(sceneProject.scene);
-        changed |= applyToSceneDefaults(sceneProject.scene);
+        changed |= applyToScene(sceneProject.scene);
         if (changed) {
             sceneProject.isModified = true;
             sceneProject.needUpdateRender = true;
@@ -1645,6 +1743,10 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
             saveEntityBundleToDisk(bundlePath);
         }
     }
+
+    visitMaterialFiles([&](Material& material) {
+        return !material.shader.empty() && transform(material.shader);
+    });
 }
 
 void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
@@ -1659,34 +1761,70 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         return;
     }
 
-    // customShader resolves to a .vert and a .frag entry point; remap each path against the
-    // rename and rebuild the value. A single-file rename of a shared-base pair naturally
-    // becomes the separate-file form; a directory rename remaps both via child match.
-    applyCustomShaderPathChange([&](std::string& customShader) -> bool {
-        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(customShader);
-        std::string newVert = paths.vert;
-        std::string newFrag = paths.frag;
-        bool changed = false;
-        std::string updated;
-        if (remapRelativeString(oldRelative, newRelative, paths.vert, updated)) {
-            newVert = updated;
-            changed = true;
-        }
-        if (remapRelativeString(oldRelative, newRelative, paths.frag, updated)) {
-            newFrag = updated;
-            changed = true;
-        }
-        if (changed) {
-            customShader = Util::makeCustomShader(newVert, newFrag);
-        }
-        return changed;
-    }, [&](std::string& path) -> bool {
+    // a directory rename remaps the files inside it too
+    applyCustomShaderPathChange([&](std::string& path) -> bool {
         std::string updated;
         if (!remapRelativeString(oldRelative, newRelative, path, updated))
             return false;
         path = updated;
         return true;
     });
+    // a graph, or a folder that may hold graphs
+    std::error_code ec;
+    if (fs::is_directory(projectPath / newRelative, ec) || Util::isShaderGraphFile(oldRelative.string()))
+        remapSubgraphFunctions(oldRelative, newRelative);
+}
+
+void editor::Project::remapWindowFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
+    if (CodeEditor* codeEditor = editor::getEditorHost().getCodeEditor())
+        codeEditor->handleFileRename(oldPath, newPath);
+    if (ImageViewerWindow* imageViewer = editor::getEditorHost().getImageViewerWindow())
+        imageViewer->handleFileRename(oldPath, newPath);
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
+        graphEditor->handleFileRename(oldPath, newPath);
+}
+
+// Subgraph nodes name their function by path, in the graph files
+void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const fs::path& newRelative) {
+    auto remap = [&](GraphDocument& graph) {
+        bool changed = false;
+        for (GraphNode& node : graph.nodes) {
+            auto file = node.settings.find("file");
+            std::string updated;
+            if (node.type == "utility/subgraph" && file != node.settings.end() && remapRelativeString(oldRelative, newRelative, file->second.text, updated)) {
+                file->second = GraphValue(updated);
+                changed = true;
+            }
+        }
+        return changed;
+    };
+
+    GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow();
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(projectPath, fs::directory_options::skip_permission_denied, ec);
+            !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        if (name.rfind(".", 0) == 0 || (name == "build" && it->is_directory(ec))) {
+            if (it->is_directory(ec))
+                it.disable_recursion_pending();
+            continue;
+        }
+        // edited graphs too, their edits may be discarded
+        if (it->path().extension() != ".shader")
+            continue;
+        std::ifstream in(it->path(), std::ios::binary);
+        std::stringstream text;
+        text << in.rdbuf();
+        in.close();
+        GraphDocument graph;
+        std::string error;
+        if (!graph.read(text.str(), error) || !remap(graph))
+            continue;
+        std::ofstream out(it->path(), std::ios::binary | std::ios::trunc);
+        out << graph.write();
+    }
+    if (graphEditor)
+        graphEditor->remapOpenGraphs(remap);
 }
 
 void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deletedPath) {
@@ -1699,17 +1837,8 @@ void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deleted
         return;
     }
 
-    // A custom shader needs both its .vert and .frag; deleting either entry point (or the
-    // containing folder) leaves the reference dangling, so reset it to built-in. Match the
-    // deleted path against each resolved entry point (handles shared-base and separate forms).
-    applyCustomShaderPathChange([&](std::string& customShader) -> bool {
-        Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(customShader);
-        if (matchesRelativeString(deletedRelative, paths.vert) || matchesRelativeString(deletedRelative, paths.frag)) {
-            customShader.clear();
-            return true;
-        }
-        return false;
-    }, [&](std::string& path) -> bool {
+    // a deleted file falls back to the built-in shader
+    applyCustomShaderPathChange([&](std::string& path) -> bool {
         if (!matchesRelativeString(deletedRelative, path))
             return false;
         path.clear();
@@ -2564,6 +2693,12 @@ std::filesystem::path editor::Project::resolveLuaPath(const std::filesystem::pat
     return resolveAgainstRoot(getLuaPath(), luaRelative);
 }
 
+std::filesystem::path editor::Project::resolveLuaSource(const std::filesystem::path& luaRelative) const{
+    if (Util::isLogicGraphFile(FileUtils::pathToGenericUtf8(luaRelative)))
+        return ProjectUtils::buildLogicScript(this, resolveLuaPath(luaRelative));
+    return resolveLuaPath(luaRelative);
+}
+
 std::filesystem::path editor::Project::normalizeToLuaRelative(const std::filesystem::path& path) const{
     return normalizeAgainstRoot(getLuaPath(), path);
 }
@@ -2682,6 +2817,21 @@ static bool isWritableForSave(const std::filesystem::path& file){
 }
 
 bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed){
+    return visitMaterialFiles([&](Material& material) {
+        bool materialChanged = visitTexturePaths(material.baseColorTexture, transform);
+        materialChanged |= visitTexturePaths(material.emissiveTexture, transform);
+        materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
+        materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
+        materialChanged |= visitTexturePaths(material.normalTexture, transform);
+        for (auto& texture : material.shaderTextures){
+            materialChanged |= visitTexturePaths(texture.second, transform);
+        }
+        return materialChanged;
+    }, failed);
+}
+
+// visits the project's .material files, saving changes
+bool editor::Project::visitMaterialFiles(const std::function<bool(Material&)>& visit, std::vector<std::filesystem::path>* failed){
     if (projectPath.empty()){
         return false;
     }
@@ -2714,13 +2864,7 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
             continue;
         }
 
-        bool materialChanged = visitTexturePaths(material.baseColorTexture, transform);
-        materialChanged |= visitTexturePaths(material.emissiveTexture, transform);
-        materialChanged |= visitTexturePaths(material.metallicRoughnessTexture, transform);
-        materialChanged |= visitTexturePaths(material.occlusionTexture, transform);
-        materialChanged |= visitTexturePaths(material.normalTexture, transform);
-
-        if (!materialChanged){
+        if (!visit(material)){
             continue;
         }
 
@@ -3218,6 +3362,11 @@ bool editor::Project::changeAssetRoots(const std::filesystem::path& newAssetsDir
     if (ImageViewerWindow* imageViewer = editor::getEditorHost().getImageViewerWindow()){
         for (const auto& [source, destination] : completedMoves){
             imageViewer->handleFileRename(source, destination);
+        }
+    }
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow()){
+        for (const auto& [source, destination] : completedMoves){
+            graphEditor->handleFileRename(source, destination);
         }
     }
 
@@ -3908,8 +4057,8 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     // resolve the effective custom shader (component > scene default > built-in) from the
     // strings rather than the cached customShaderId, which lags a reload frame after a
     // scene-default change and is zeroed by the build-fail fallback
-    auto effectiveShaderId = [&](const std::string& customShader, ShaderType type) -> uint16_t {
-        return ShaderPool::registerCustomShader(customShader.empty() ? scene->getDefaultCustomShader(type) : customShader);
+    auto effectiveShaderId = [&](const std::string& shader, ShaderType type) -> uint16_t {
+        return ShaderPool::registerCustomShader(shader.empty() ? scene->getDefaultCustomShader(type) : shader);
     };
 
     // the runtime falls back to the built-in variant when a custom shader fails to build,
@@ -3948,17 +4097,14 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             // a reload keeps the mesh unloaded until its new shaders have built
             if (mesh.loaded || mesh.submeshes[0].shader) {
                 bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
-                // as in RenderSystem::loadMesh
-                const std::string vertexOffset = isTerrain ? std::string() : mesh.vertexOffsetShader;
-                const std::string coverage = isTerrain ? std::string() : mesh.coverageShader;
-                const std::string& meshShader = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
-                uint16_t customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShader, vertexOffset, coverage));
-                uint16_t customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
-                uint16_t customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
                 for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
                     if (!mesh.loaded && !mesh.submeshes[s].shader) {
                         continue;
                     }
+                    // as in RenderSystem::loadMesh
+                    const std::string& ownShader = mesh.submeshes[s].material.shader;
+                    const std::string materialShader = isTerrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
+                    const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
                     uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
                     // Saving/exporting can happen before RenderSystem has reloaded
                     // meshes after a probe was added. Derive the required IBL
@@ -3982,7 +4128,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     }
                     insertKeys(ShaderType::MESH, meshProperties, customShaderId);
                     // The runtime only computes depthShaderProperties while
-                    // shadows or SSAO are active (or a depth fork is set), so the
+                    // shadows or SSAO are active, so the
                     // stored value can be a stale 0 for scenes whose shadow lights
                     // arrive at runtime (scripts spawning them). Derive the props
                     // from the same submesh flags RenderSystem::loadMesh uses, and
@@ -3997,11 +4143,14 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         depthTexture, mesh.submeshes[s].hasSkinning,
                         mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
                         mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, !coverage.empty() && mesh.submeshes[s].hasTexCoord1);
-                    insertKeys(ShaderType::DEPTH, depthProperties, customDepthShaderId);
-                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customDepthShaderId);
+                        instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1,
+                        !materialShader.empty() && mesh.submeshes[s].hasNormal, !materialShader.empty() && mesh.submeshes[s].hasVertexColor3,
+                        !materialShader.empty() && mesh.submeshes[s].hasVertexColor4, !materialShader.empty() && mesh.submeshes[s].hasTexCoord2,
+                        !materialShader.empty() && mesh.submeshes[s].hasNormal && mesh.submeshes[s].hasTangent);
+                    insertKeys(ShaderType::DEPTH, depthProperties, customShaderId);
+                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customShaderId);
                     if (mesh.submeshes[s].gbufferShader) {
-                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customGBufferShaderId);
+                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customShaderId);
                     }
                 }
             }
@@ -4009,29 +4158,29 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<UIComponent>())) {
             const UIComponent& ui = scene->getComponent<UIComponent>(entity);
-            if (ui.loaded || ui.shader) {
-                insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.customShader, ShaderType::UI));
+            if (ui.loaded || ui.shaderRender) {
+                insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.shader, ShaderType::UI));
             }
         }
 
         if (signature.test(scene->getComponentId<PointsComponent>())) {
             const PointsComponent& pts = scene->getComponent<PointsComponent>(entity);
-            if (pts.loaded || pts.shader) {
-                insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.customShader, ShaderType::POINTS));
+            if (pts.loaded || pts.shaderRender) {
+                insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.shader, ShaderType::POINTS));
             }
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>())) {
             const LinesComponent& ln = scene->getComponent<LinesComponent>(entity);
-            if (ln.loaded || ln.shader) {
-                insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.customShader, ShaderType::LINES));
+            if (ln.loaded || ln.shaderRender) {
+                insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.shader, ShaderType::LINES));
             }
         }
 
         if (signature.test(scene->getComponentId<SkyComponent>())) {
             const SkyComponent& sky = scene->getComponent<SkyComponent>(entity);
             if (sky.loaded) {
-                insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.customShader, ShaderType::SKYBOX));
+                insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.shader, ShaderType::SKYBOX));
             }
         }
 
@@ -4049,9 +4198,9 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             }
             insertKeys(ShaderType::WATER, ShaderPool::getWaterProperties(sceneFog, water.depthEffects, water.planarReflection,
                 sceneShadows && water.receiveShadows, water.refraction),
-                effectiveShaderId(water.customShader, ShaderType::WATER));
+                effectiveShaderId(water.shader, ShaderType::WATER));
             if (water.underwater) {
-                insertKeys(ShaderType::UNDERWATER, 0, ShaderPool::registerCustomShader(water.customUnderwaterShader));
+                insertKeys(ShaderType::UNDERWATER, 0, effectiveShaderId(water.shader, ShaderType::WATER));
             }
         }
     }
@@ -4108,28 +4257,42 @@ void editor::Project::buildStandaloneShaderCache() {
 }
 
 void editor::Project::invalidateCustomShaders() {
-    // Drop the editor's compiled cache for forked shaders, free their GPU handles, and
+    // Drop the editor's compiled cache for shader files, free their GPU handles, and
     // flag every renderable that uses one so RenderSystem recompiles it on the next draw.
     editor::ShaderBuilder::invalidateCustomShaders();
     ShaderPool::destroyCustomShaders();
+    flagCustomShaderUsers(nullptr);
+}
 
-    auto invalidate = [](SceneProject& sceneProject) {
+void editor::Project::invalidateCustomShader(const std::string& shader) {
+    // with the graphs that call it as a function
+    for (const std::string& changed : editor::ShaderBuilder::invalidateCustomShader(shader)) {
+        ShaderPool::destroyCustomShader(ShaderPool::registerCustomShader(changed));
+        flagCustomShaderUsers(&changed);
+    }
+}
+
+void editor::Project::flagCustomShaderUsers(const std::string* shader) {
+    // graph previews draw outside the project scenes
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
+        graphEditor->reloadPreviews();
+
+    auto invalidate = [shader](SceneProject& sceneProject) {
         if (!sceneProject.scene)
             return;
         Scene* scene = sceneProject.scene;
-        // a component rides on a fork either via its own customShader or the scene default
-        bool sceneMesh = !scene->getDefaultMeshShader().empty();
-        bool sceneUI = !scene->getDefaultUIShader().empty();
-        bool scenePoints = !scene->getDefaultPointsShader().empty();
-        bool sceneLines = !scene->getDefaultLinesShader().empty();
-        bool sceneSky = !scene->getDefaultSkyShader().empty();
-        bool sceneWater = !scene->getDefaultWaterShader().empty();
+
+        // a slot draws with its own shader, else the scene default
+        auto uses = [shader](const std::string& own, const std::string& sceneDefault) {
+            const std::string& resolved = own.empty() ? sceneDefault : own;
+            return shader ? resolved == *shader : !resolved.empty();
+        };
 
         // needReload is only consumed while the scene draws, and the idle loop skips
         // scenes that are not flagged, so the redraw has to be requested here. Saving a
         // shader file is not a command, so nothing else would request it.
-        auto flagReload = [&sceneProject](bool& needReload, bool usesFork) {
-            if (!usesFork)
+        auto flagReload = [&sceneProject](bool& needReload, bool usesShader) {
+            if (!usesShader)
                 return;
             needReload = true;
             sceneProject.needUpdateRender = true;
@@ -4137,35 +4300,42 @@ void editor::Project::invalidateCustomShaders() {
 
         // every component, not just the authored ones: generated foliage and Play
         // entities lost their handles too
-        auto flagComponents = [&](auto* componentArray, auto&& usesFork) {
+        auto flagComponents = [&](auto* componentArray, auto&& usesShader) {
             for (size_t i = 0; i < componentArray->size(); i++) {
                 auto& component = componentArray->getComponentFromIndex(i);
-                flagReload(component.needReload, usesFork(component));
+                flagReload(component.needReload, usesShader(component));
             }
         };
 
+        const std::string sceneMesh = scene->getDefaultMeshShader();
         flagComponents(scene->getComponentArray<MeshComponent>(), [&](const MeshComponent& mesh) {
-            return sceneMesh || !mesh.customShader.empty() || !mesh.customDepthShader.empty() || !mesh.vertexOffsetShader.empty() ||
-                !mesh.coverageShader.empty();
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++) {
+                if (uses(mesh.submeshes[s].material.shader, sceneMesh))
+                    return true;
+            }
+            return false;
         });
         flagComponents(scene->getComponentArray<UIComponent>(), [&](const UIComponent& ui) {
-            return sceneUI || !ui.customShader.empty();
+            return uses(ui.shader, scene->getDefaultUIShader());
         });
         flagComponents(scene->getComponentArray<PointsComponent>(), [&](const PointsComponent& points) {
-            return scenePoints || !points.customShader.empty();
+            return uses(points.shader, scene->getDefaultPointsShader());
         });
         flagComponents(scene->getComponentArray<LinesComponent>(), [&](const LinesComponent& lines) {
-            return sceneLines || !lines.customShader.empty();
+            return uses(lines.shader, scene->getDefaultLinesShader());
         });
         flagComponents(scene->getComponentArray<SkyComponent>(), [&](const SkyComponent& sky) {
-            return sceneSky || !sky.customShader.empty();
+            return uses(sky.shader, scene->getDefaultSkyShader());
         });
         flagComponents(scene->getComponentArray<WaterComponent>(), [&](const WaterComponent& water) {
-            return sceneWater || !water.customShader.empty() || !water.customUnderwaterShader.empty();
+            return uses(water.shader, scene->getDefaultWaterShader());
         });
 
         // post-process passes hold their shader directly, so the chain is rebuilt whole
-        if (!scene->getPostProcessPasses().empty()) {
+        const std::vector<PostProcessPass>& passes = scene->getPostProcessPasses();
+        const bool passUses = shader ? std::any_of(passes.begin(), passes.end(), [&](const PostProcessPass& pass) { return pass.shader == *shader; })
+                                     : !passes.empty();
+        if (passUses) {
             scene->getSystem<RenderSystem>()->needReloadPostProcess();
             sceneProject.needUpdateRender = true;
         }
@@ -5919,32 +6089,6 @@ bool editor::Project::saveProjectToPath(const std::filesystem::path& path) {
     return true;
 }
 
-void editor::Project::offerLegacyShaderPort() {
-    const std::vector<std::string> files = ShaderBuilder::findLegacyShaders(this);
-    if (files.empty()) {
-        return;
-    }
-
-    std::string message = "These custom shaders declare their values in a uniform block, which the engine no longer fills:\n";
-    for (const std::string& file : files) {
-        message += "\n" + file;
-    }
-    message += "\n\nRewrite them to declare shader parameters instead?";
-
-    editor::getEditorHost().registerConfirmAlert("Custom shaders from an older version", message, [this, files]() {
-        // one at a time, so a file that can't be ported doesn't hold the others back
-        for (const std::string& file : files) {
-            size_t rewritten = 0;
-            std::string error;
-            if (ShaderBuilder::portLegacyShaders(this, {file}, rewritten, error)) {
-                Out::info("Ported custom shader to parameters: %s", file.c_str());
-            } else {
-                Out::error("Could not port custom shader %s", error.c_str());
-            }
-        }
-    });
-}
-
 bool editor::Project::loadProject(const std::filesystem::path path, bool updateLastOpened) {
     if (isAnyScenePlaying()) {
         Out::warning("Cannot load a project while a scene is running or stopping.");
@@ -6042,11 +6186,6 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
         }
 
         Out::info("Project loaded successfully: \"%s\"", projectPath.string().c_str());
-
-        // v0.8.4 port: only where a person answers, the command line takes every alert as a yes
-        if (editor::getEditorHost().locksProjects()) {
-            offerLegacyShaderPort();
-        }
         return true;
 
     } catch (const YAML::Exception& e) {
@@ -6244,17 +6383,10 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     collectSceneShaderKeys(sceneProject, shaderKeys);
     // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
     shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
-    // Except those of deleted forks or effect functions, which exports could not build
+    // Except those of deleted shader files, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
-        const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
-        const Util::CustomShaderPaths fork = Util::resolveCustomShaderPaths(ShaderPool::getCustomShaderFork(customShader));
-        const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
-        const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
-        auto missingEffect = [&](const std::string& path) {
-            return !path.empty() && !fs::exists(projectPath / path) && !ProjectUtils::isEngineEffectFunction(path);
-        };
-        if ((!fork.vert.empty() && !fs::exists(projectPath / fork.vert) && !fs::exists(projectPath / fork.frag)) ||
-                missingEffect(vertexOffset) || missingEffect(coverage)) {
+        const std::string shaderFile = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));
+        if (!shaderFile.empty() && !fs::exists(projectPath / shaderFile) && !ProjectUtils::isEngineShader(shaderFile)) {
             it = shaderKeys.erase(it);
         } else {
             ++it;
@@ -7446,7 +7578,7 @@ bool editor::Project::updateScriptProperties(SceneProject* sceneProject, Entity 
         if (scriptEntry.type == ScriptType::LUA) {
             if (scriptEntry.path.empty()) continue;
 
-            fs::path fullPath = resolveLuaPath(scriptEntry.path);
+            fs::path fullPath = resolveLuaSource(scriptEntry.path);
 
             ScriptEntry parsedEntry = scriptEntry;
 

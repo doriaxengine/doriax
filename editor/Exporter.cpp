@@ -10,6 +10,8 @@
 #include "util/Base64.h"
 #include "util/FbxImporter.h"
 #include "util/FileUtils.h"
+#include "util/ProjectUtils.h"
+#include "util/Util.h"
 #include "util/MsBuildProgress.h"
 #include "util/ShaderHeaderBuilder.h"
 #include "pool/ShaderPool.h"
@@ -1922,6 +1924,9 @@ bool editor::Exporter::copyAssets() try {
             continue;
         }
 
+        // Graphs are what the editor builds shaders and scripts from
+        if (Util::isGraphFile(entry.path().string())) continue;
+
         // Skip Lua sources already shipped in the lua tree
         if (isLuaSourceFile(entry.path()) && luaCopiedSources.count(entry.path().lexically_normal())) continue;
 
@@ -1992,6 +1997,28 @@ bool editor::Exporter::copyLua() try {
 
         // Skip C++ source/header files; registered scripts ship via copyCppScripts
         if (!entry.is_regular_file() || isCppSourceFile(entry.path())) continue;
+
+        // a logic graph ships as its script
+        if (Util::isLogicGraphFile(entry.path().string())) {
+            std::string problem;
+            const fs::path script = ProjectUtils::buildLogicScript(project, entry.path(), &problem);
+            if (!problem.empty() || script.empty()) {
+                setError("Cannot export: " + relPath.generic_string() + " does not compile: " + problem);
+                return false;
+            }
+            fs::path scriptSrc = entry.path();
+            scriptSrc.replace_extension(".lua");
+            if (fs::exists(scriptSrc)) {
+                setError("Cannot export: " + relPath.generic_string() + " and " + scriptSrc.filename().string() + " would be the same script; rename one of them");
+                return false;
+            }
+            fs::path destPath = luaDst / relPath;
+            destPath.replace_extension(".lua");
+            fs::create_directories(destPath.parent_path());
+            fs::copy_file(script, destPath, fs::copy_options::overwrite_existing);
+            luaExportedPaths.insert(fs::relative(destPath, luaDst).lexically_normal());
+            continue;
+        }
 
         if (luaRootIsAssetsRoot && !isLuaSourceFile(entry.path())) continue;
         if (luaRootIsProjectRoot && !isLuaExportFile(entry.path())) continue;
@@ -3740,8 +3767,7 @@ bool editor::Exporter::writeAppIcon() {
 std::vector<ShaderKey> editor::Exporter::getPairedShaderKeys(ShaderKey key) {
     key = ShaderPool::normalizeKey(key);
     std::vector<ShaderKey> keys;
-    const std::string customShader = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(key));
-    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && ShaderPool::getCustomShaderFork(customShader).empty()) {
+    if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH) {
         key &= ~(ShaderKey(1) << 28);
         if (ShaderPool::getPropertiesFromKey(key) & (1u << 3)) {
             keys.push_back(key | (ShaderKey(1) << 28));
@@ -3890,7 +3916,7 @@ bool editor::Exporter::buildAndSaveShaders() {
 std::string editor::Exporter::getShaderDisplayName(ShaderType type, uint32_t properties, uint16_t customId) {
     std::string name = ShaderPool::getShaderTypeName(type);
 
-    // Distinguish forked shaders (same type/props, different source) in the list.
+    // Distinguish shader files (same type/props, different source) in the list.
     std::string customName = ShaderPool::getCustomShaderName(customId);
     if (!customName.empty()) {
         name += " [" + customName + "]";
@@ -3900,7 +3926,7 @@ std::string editor::Exporter::getShaderDisplayName(ShaderType type, uint32_t pro
 
     std::string props;
     for (int i = 0; i < propCount; i++) {
-        if (properties & (1 << i)) {
+        if (properties & (1u << i)) {
             if (!props.empty()) props += ", ";
             props += ShaderPool::getShaderPropertyName(type, i, true);
         }

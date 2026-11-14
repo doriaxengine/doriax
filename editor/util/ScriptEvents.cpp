@@ -1253,6 +1253,14 @@ std::string ScriptEvents::getParameterNames(const ScriptEvent& event) {
     return event.params.empty() ? "" : "(" + luaParameters(event) + ")";
 }
 
+std::string ScriptEvents::getLuaName(const ScriptEvent& event) {
+    return luaEventName(event);
+}
+
+std::string ScriptEvents::getLuaRegistration(const ScriptEvent& event, const std::string& method) {
+    return luaRegistration(event, method);
+}
+
 ScriptEventScan ScriptEvents::scanLua(const std::string& text) {
     ScriptEventScan scan;
     LuaScript script;

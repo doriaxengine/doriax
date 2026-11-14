@@ -333,20 +333,20 @@ void Points::removeSpriteFrame(const std::string& name){
     }
 }
 
-void Points::setCustomShader(const std::string& path){
+void Points::setShader(const std::string& path){
     PointsComponent& points = getComponent<PointsComponent>();
 
-    if (points.customShader != path){
-        points.customShader = path;
+    if (points.shader != path){
+        points.shader = path;
 
         points.needReload = true;
     }
 }
 
-std::string Points::getCustomShader() const{
+std::string Points::getShader() const{
     PointsComponent& points = getComponent<PointsComponent>();
 
-    return points.customShader;
+    return points.shader;
 }
 
 void Points::setShaderUniform(const std::string& name, const Vector4& value){
@@ -382,4 +382,21 @@ bool Points::removeShaderUniform(const std::string& name){
 
     points.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Points::setShaderTexture(const std::string& name, const Texture& texture){
+    PointsComponent& points = getComponent<PointsComponent>();
+
+    const Texture* current = ShaderTextures::find(points.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
+    ShaderTextures::set(points.shaderTextures, name, texture);
+    points.needUpdateTexture = true;
+}
+
+Texture Points::getShaderTexture(const std::string& name) const{
+    PointsComponent& points = getComponent<PointsComponent>();
+
+    return ShaderTextures::get(points.shaderTextures, name);
 }

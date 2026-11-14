@@ -1,3 +1,6 @@
+#ifndef DEPTH_UTIL
+#define DEPTH_UTIL
+
 // Encoding / decoding [0..1] floats into 8 bit/channel RGBA
 // Note that 1.0 will not be encoded properly
 vec4 encodeDepth(float v) {
@@ -29,3 +32,5 @@ float ndcYToDepthUV(float ndcY) {
         return 0.5 - ndcY * 0.5;
     #endif
 }
+
+#endif

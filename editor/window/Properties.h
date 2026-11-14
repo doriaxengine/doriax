@@ -10,7 +10,6 @@
 #include "render/preview/DirectionRender.h"
 #include "util/ShapeParameters.h"
 #include "window/dialog/ScriptCreateDialog.h"
-#include "window/dialog/ShaderForkDialog.h"
 #include "window/dialog/ComponentAddDialog.h"
 #include "window/dialog/TextureSlicerToolDialog.h"
 
@@ -25,7 +24,6 @@
 namespace doriax::editor{
 
     class SceneWindow;
-    class ForkShaderCmd;
     class MultiPropertyCmd;
 
     enum class RowPropertyType{
@@ -233,7 +231,6 @@ namespace doriax::editor{
 
         // Dialogs
         ScriptCreateDialog scriptCreateDialog;
-        ShaderForkDialog shaderForkDialog;
         ComponentAddDialog componentAddDialog;
         TextureSlicerToolDialog textureSlicerToolDialog;
 
@@ -298,24 +295,25 @@ namespace doriax::editor{
         void setParticleBursts(ComponentType cpType, SceneProject* sceneProject, Entity entity, const std::vector<ParticleBurst>& bursts);
         void setParticleColorGradient(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ParticleColorGradient& gradient);
         void drawParticleFrameList(ComponentType cpType, const std::string& propertyId, const std::string& tableId, SceneProject* sceneProject, const std::vector<Entity>& entities);
-        // Shared "Shader" row for components that support forking a built-in shader
-        // (Mesh/UI/Points/Lines/Sky): fork, edit files, open .vert/.frag, reset to built-in,
-        // plus .vert/.frag drag-drop. The .vert/.frag entry points may share a base name or
-        // live in separate files (see Util::resolveCustomShaderPaths).
+        // a component's shader file and vertex offset limit
         void drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities);
-        // one shader property of that row (customShader, a mesh's customDepthShader or a
-        // water's customUnderwaterShader)
-        void drawComponentShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity, const char* propertyName, const std::string& idSuffix);
-        // a mesh's vertexOffsetShader or coverageShader: one .glsl, from the project or the engine
-        void drawEffectFunctionRow(SceneProject* sceneProject, Entity entity, bool coverage);
+        // a material's shader file
+        void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
+        // a shader file slot with its buttons
+        void drawShaderFileRow(ShaderType shaderType, const std::string& current, const std::string& defaultName,
+                               const std::function<void(const std::string&)>& setShader, const std::string& idSuffix,
+                               const std::string& inheritedShader = std::string());
+        // texture parameters, at prefix + "shaderTextures[name]"
+        void drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, const std::vector<Entity>& entities,
+                                   const ShaderEffectAnnotations& annotations, const std::string& prefix, const std::function<void()>& onChanged);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
-        // annotations of a fork or an effect file, parsed again once a second at most
+        // annotations of a shader file, parsed again once a second at most
         struct CachedShaderAnnotations {
             ShaderEffectAnnotations annotations;
             double parsedAt = -1.0;
         };
         std::map<std::string, CachedShaderAnnotations> shaderAnnotationsCache;
-        const ShaderEffectAnnotations& getShaderAnnotations(const std::string& shader, bool fork);
+        const ShaderEffectAnnotations& getShaderAnnotations(const std::string& shader);
         // one declared parameter; an unset value shows the inherited one, else its default
         ShaderUniformEdit drawParameterRow(const ShaderParameterDeclaration& declaration, const std::string& key, const ShaderUniformValues& values,
                                            const ShaderUniformValues* inherited, const std::string& idPrefix, Vector4& newValue);
@@ -325,35 +323,23 @@ namespace doriax::editor{
         // the #pragma param rows of one shader file and the shared values it reads; false when empty
         bool drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
-        // a section per shader file the component is built from, stored by name in shaderUniforms
+        // the component shader's textures and parameters
         void drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
+        // and its parameters
+        void drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
         // scene or view parameters the scene's shaders declare, and stored ones nothing declares
         std::vector<ShaderParameterDeclaration> collectSharedParameters(SceneProject* sceneProject, ShaderParameterScope scope, const ShaderUniformValues& stored);
         void drawSceneShaderParameters(SceneProject* sceneProject);
         void drawCameraShaderParameters(SceneProject* sceneProject, Entity entity);
         // Scene-level variant: edits a scene default shader property (e.g. "default_mesh_shader"),
-        // used by every component of that type whose customShader is empty.
+        // used by every component of that type without a shader of its own.
         void drawSceneShaderRow(SceneProject* sceneProject, ShaderType shaderType, const char* scenePropertyName, const char* label);
 
-        // Ordered user post-process chain: per-pass enable, shader fork/pick, reorder
-        // and remove, then the parameters each pass shader declares.
+        // Ordered user post-process chain: per-pass enable, shader file, reorder and
+        // remove, then the textures and parameters each pass shader declares.
         void drawScenePostProcess(SceneProject* sceneProject);
+        void drawPassTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const ShaderEffectAnnotations& annotations);
 
-        // Commits a planned fork as one undoable step and opens the new .vert/.frag in the
-        // code editor. Alerts instead when the plan is invalid or the files cannot be written.
-        void commitShaderFork(uint32_t sceneId, std::unique_ptr<ForkShaderCmd> forkCmd);
-
-        // Interaction core shared by the entity and scene shader rows; draws into the current
-        // table value cell. setShader issues the undoable command; onFork opens the modal
-        // that selects the destination and exact shader name before files are written.
-        // idSuffix uniquifies ImGui IDs and the edit-files popup within the window.
-        // inheritedShader names the scene default an empty component shader falls back to.
-        void drawShaderRowContents(ShaderType shaderType, const std::string& currentShader,
-                                   const std::function<void(const std::string&)>& setShader,
-                                   const std::function<void()>& onFork,
-                                   const std::string& idSuffix,
-                                   const std::string& inheritedShader = std::string());
-        void drawShaderFilesPopup(const std::string& popupName, const std::function<void(const std::string&)>& setShader, const std::string& currentVert, const std::string& currentFrag);
         void drawTransform(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawMeshComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawModelComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);

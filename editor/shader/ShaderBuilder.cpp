@@ -5,6 +5,8 @@
 #include "ShaderParameterParser.h"
 
 #include "ShaderDataSerializer.h"
+#include "shader/graph/ShaderGraphCompiler.h"
+#include "Generator.h"
 #include "App.h"
 #include "Engine.h"
 #include "Out.h"
@@ -17,13 +19,13 @@
 #include "pool/ShaderPool.h"
 #include "util/SHA1.h"
 #include "util/Util.h"
-#include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
+#include "util/FileUtils.h"
 
+#include <algorithm>
 #include <cstring>
 #include <cstdint>
 #include <filesystem>
-#include <algorithm>
 #include <fstream>
 #include <functional>
 #include <memory>
@@ -50,10 +52,28 @@ struct CustomSourceSnapshot {
     std::string error;
     std::unordered_map<std::string, std::string> projectBuffers;
     std::string signature;
+    std::vector<int> graphLines;     // of a graph, the node each line of its code came from
 };
 
 std::mutex customSourceCacheMutex;
 std::unordered_map<std::string, std::shared_ptr<const CustomSourceSnapshot>> customSourceCache;
+// graphs edited in the editor, by path, until saved
+std::unordered_map<std::string, std::string> graphSources;
+// the graphs open in the editor, whose pin numbers are values it sets
+std::unordered_set<std::string> liveGraphs;
+// the graphs each function graph is inlined into
+std::unordered_map<std::string, std::unordered_set<std::string>> graphDependents;
+std::atomic<uint32_t> customShaderGeneration{0};
+
+// Subgraph pins, read again after invalidation
+struct FunctionPinsEntry {
+    uint32_t generation = 0;
+    bool valid = false;
+    std::vector<editor::NodePin> inputs;
+    std::vector<editor::NodePin> outputs;
+};
+std::mutex functionPinsMutex;
+std::unordered_map<std::string, FunctionPinsEntry> functionPinsCache;
 
 bool readTextFile(const std::filesystem::path& path, std::string& content) {
     std::ifstream file(path, std::ios::binary);
@@ -72,93 +92,126 @@ void appendSignaturePart(std::string& input, const std::string& label, const std
     input += ':' + std::to_string(content.size()) + ':' + content + '\n';
 }
 
-std::string customSourceCacheKey(editor::Project* project, const std::string& customShader) {
-    return project->getProjectPath().lexically_normal().generic_string() + '\n' + customShader;
+// the code a graph compiles to, where a person can read it
+void writeGeneratedShader(editor::Project* project, const std::string& shader, const std::string& code) {
+    const std::filesystem::path path = editor::Generator::getGeneratedPath(project->getProjectInternalPath()) / "shaders" / (shader + ".glsl");
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    editor::FileUtils::writeIfChanged(path, code);
 }
 
-std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project* project,
-                                                                 const std::string& customShader) {
-    if (!project || customShader.empty()) {
+std::string customSourceCacheKey(editor::Project* project, const std::string& shader) {
+    return project->getProjectPath().lexically_normal().generic_string() + '\n' + shader;
+}
+
+// a shader file and its includes, keyed by '/' and project path
+std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project* project, const std::string& shader,
+                                                                 editor::ShaderSourceUse use = editor::ShaderSourceUse::EDITOR) {
+    if (!project || shader.empty()) {
         auto invalid = std::make_shared<CustomSourceSnapshot>();
-        invalid->error = "Custom shader project or path is unavailable.";
+        invalid->error = "Shader project or path is unavailable.";
         return invalid;
     }
 
-    std::string cacheKey = customSourceCacheKey(project, customShader);
-    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-    if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
-        return it->second;
+    std::string cacheKey = customSourceCacheKey(project, shader);
+    // edits copied under the lock, files read without it
+    std::unordered_map<std::string, std::string> edits;
+    const uint32_t generation = customShaderGeneration;
+    // cached sources are the editor's, exports and runs may skip them
+    bool saved = false;
+    bool direct = false;
+    bool live = false;
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        saved = use == editor::ShaderSourceUse::SAVED && (!graphSources.empty() || !liveGraphs.empty());
+        direct = saved || (use == editor::ShaderSourceUse::RUN && liveGraphs.count(shader) > 0);
+        if (!direct) {
+            if (auto it = customSourceCache.find(cacheKey); it != customSourceCache.end())
+                return it->second;
+        }
+        if (!saved)
+            edits = graphSources;
+        live = use == editor::ShaderSourceUse::EDITOR && liveGraphs.count(shader) > 0;
+    }
+    auto edited = edits.find(shader);
 
     auto snapshot = std::make_shared<CustomSourceSnapshot>();
     std::filesystem::path projectRoot = project->getProjectPath();
-    const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
-    const std::string vertexOffset = ShaderPool::getCustomShaderVertexOffset(customShader);
-    const std::string coverage = ShaderPool::getCustomShaderCoverage(customShader);
-    editor::Util::CustomShaderPaths paths = editor::Util::resolveCustomShaderPaths(forkShader);
     std::string signatureInput;
 
-    auto loadEntryPoint = [&](const std::string& rel, const char* stage) -> bool {
-        std::string content;
-        if (!editor::Util::isSafeRelativePath(rel)) {
-            snapshot->error = std::string("Unsafe custom ") + stage + " shader path: " + rel;
-            return false;
+    // a project file, else an engine one; failures not cached
+    std::string source;
+    std::error_code ec;
+    if (editor::ProjectUtils::isEngineShader(shader) && !std::filesystem::exists(projectRoot / shader, ec)) {
+        source = editor::shaderMap.at(shader);
+        appendSignaturePart(signatureInput, "engine:" + shader, source);
+    } else {
+        if (!editor::Util::isSafeRelativePath(shader)) {
+            snapshot->error = "Unsafe shader path: " + shader;
+            return snapshot;
         }
-        if (!readTextFile(projectRoot / rel, content)) {
-            snapshot->error = std::string("Could not open custom ") + stage + " shader: " + rel;
-            return false;
+        if (edited != edits.end()) {
+            source = edited->second;
+        } else if (!readTextFile(projectRoot / shader, source)) {
+            snapshot->error = "Could not open shader file: " + shader;
+            return snapshot;
         }
-
-        snapshot->projectBuffers[rel] = content;
-        appendSignaturePart(signatureInput, std::string("entry:") + rel, content);
-        return true;
-    };
-
-    // Failures are not cached: the file may be created or restored at any moment.
-    if (!forkShader.empty() && (!loadEntryPoint(paths.vert, "vertex") || !loadEntryPoint(paths.frag, "fragment")))
-        return snapshot;
-    // a project file, else an engine one, pulled in by its own path so errors name it
-    auto loadEffectFunction = [&](const std::string& path, const char* kind, const char* functionFile, std::string& source) -> bool {
-        std::error_code ec;
-        if (editor::ProjectUtils::isEngineEffectFunction(path) && !std::filesystem::exists(projectRoot / path, ec)){
-            source = editor::shaderMap.at(path);
-            appendSignaturePart(signatureInput, "engine:" + path, source);
-        }else{
-            if (!loadEntryPoint(path, kind))
-                return false;
-            source = std::move(snapshot->projectBuffers[path]);
-            snapshot->projectBuffers.erase(path);
+        // a graph stands for the shader file it compiles to
+        if (editor::Util::isShaderGraphFile(shader)) {
+            editor::GraphDocument graph;
+            std::string error;
+            if (!graph.read(source, error)) {
+                snapshot->error = shader + ": " + error;
+                return snapshot;
+            }
+            // called functions, as edited unless exporting
+            auto readFunction = [&](const std::string& path, std::string& text) {
+                if (auto function = edits.find(path); function != edits.end()) {
+                    text = function->second;
+                    return true;
+                }
+                return editor::Util::isSafeRelativePath(path) && readTextFile(projectRoot / path, text);
+            };
+            const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction,
+                live ? editor::ShaderGraphCompiler::getLiveCollection(shader) : std::string());
+            {
+                std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+                for (const std::string& function : compiled.functions)
+                    graphDependents[function].insert(shader);
+            }
+            if (!compiled.success) {
+                snapshot->error = shader + ": " + compiled.describeErrors();
+                return snapshot;
+            }
+            source = compiled.code;
+            snapshot->graphLines = compiled.lineNodes;
+            // the generated file holds the numbers, as an export builds it
+            if (!saved)
+                writeGeneratedShader(project, shader, compiled.liveValues.empty() ? source : editor::ShaderGraphCompiler::compile(graph, shader, readFunction).code);
         }
-        snapshot->projectBuffers[functionFile] = "#include \"/" + path + "\"\n";
-        return true;
-    };
-    std::string vertexOffsetSource;
-    if (!vertexOffset.empty() && !loadEffectFunction(vertexOffset, "vertex offset", "vertex_offset_function.glsl", vertexOffsetSource))
-        return snapshot;
-    std::string coverageSource;
-    if (!coverage.empty() && !loadEffectFunction(coverage, "coverage", "coverage_function.glsl", coverageSource))
-        return snapshot;
+        appendSignaturePart(signatureInput, "entry:" + shader, source);
+    }
+    // texture names are defines, kept to the file
+    snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
+        shader + "\"\n#include \"shader_textures_end_vs.glsl\"\n";
+    snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
+        shader + "\"\n#include \"shader_textures_end_fs.glsl\"\n";
 
     auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
         std::error_code ec;
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
-    // Includes share one namespace, so an effect file keys its files by '/' and their project
-    // path, which no fork include can name, even at the project root
+    // includes: the file's folder, the project root, then the engine
     std::unordered_set<std::string> visited;
-    std::unordered_map<std::string, std::string> effectPaths;
-    std::function<std::string(const std::string&, const std::filesystem::path&, bool)> visitSource =
-            [&](const std::string& source, const std::filesystem::path& includeRootRel, bool effect) {
-        // An empty include root means the entry point sits at the project root, where the
-        // first two candidates would be the same file.
-        bool hasLocalRoot = !includeRootRel.empty() && includeRootRel != ".";
-
+    std::unordered_map<std::string, std::string> paths;
+    std::function<std::string(const std::string&, const std::filesystem::path&)> visitSource =
+            [&](const std::string& source, const std::filesystem::path& folder) {
         std::string renamed;
         size_t copied = 0;
         for (const editor::Util::ShaderInclude& include : editor::Util::getShaderIncludes(source)) {
             const std::string& key = include.key;
-            // effect files resolve from their own folder, where one name can be another file
-            const std::string visitKey = effect ? "effect:" + includeRootRel.generic_string() + ":" + key : key;
+            const std::string visitKey = folder.generic_string() + ":" + key;
             if (visited.insert(visitKey).second) {
                 if (!editor::Util::isSafeRelativePath(key)) {
                     appendSignaturePart(signatureInput, "unsafe:" + key, "");
@@ -168,12 +221,12 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 std::string content;
                 std::string origin;
                 std::string path;
-                if (hasLocalRoot && readCandidate(projectRoot / includeRootRel / key, content)) {
+                if (!folder.empty() && readCandidate(projectRoot / folder / key, content)) {
                     origin = "local:" + key;
-                    path = effect ? "/" + (includeRootRel / key).lexically_normal().generic_string() : key;
+                    path = "/" + (folder / key).lexically_normal().generic_string();
                 } else if (readCandidate(projectRoot / key, content)) {
                     origin = "project:" + key;
-                    path = effect ? "/" + std::filesystem::path(key).lexically_normal().generic_string() : key;
+                    path = "/" + std::filesystem::path(key).lexically_normal().generic_string();
                 } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
                     origin = "engine:" + key;
                     content = engineIt->second;
@@ -183,18 +236,17 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 }
 
                 appendSignaturePart(signatureInput, origin, content);
-                if (effect && !path.empty())
-                    effectPaths[visitKey] = path;
-                content = visitSource(content, includeRootRel, effect);
-                // the fork's file wins a name both use, as it does over the engine's
+                if (!path.empty())
+                    paths[visitKey] = path;
+                content = visitSource(content, folder);
                 if (!path.empty())
                     snapshot->projectBuffers.emplace(path, std::move(content));
             }
 
-            auto effectPath = effectPaths.find(visitKey);
-            if (effect && effectPath != effectPaths.end() && effectPath->second != key) {
+            auto pathIt = paths.find(visitKey);
+            if (pathIt != paths.end() && pathIt->second != key) {
                 renamed.append(source, copied, include.position - copied);
-                renamed += effectPath->second;
+                renamed += pathIt->second;
                 copied = include.position + key.size();
             }
         }
@@ -205,19 +257,35 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         return renamed;
     };
 
-    if (!forkShader.empty()){
-        const std::filesystem::path forkRoot = editor::Util::getCustomShaderIncludeRoot(forkShader);
-        visitSource(snapshot->projectBuffers[paths.vert], forkRoot, false);
-        visitSource(snapshot->projectBuffers[paths.frag], forkRoot, false);
-    }
-    if (!vertexOffset.empty())
-        snapshot->projectBuffers["/" + vertexOffset] = visitSource(vertexOffsetSource, std::filesystem::path(vertexOffset).parent_path(), true);
-    if (!coverage.empty())
-        snapshot->projectBuffers["/" + coverage] = visitSource(coverageSource, std::filesystem::path(coverage).parent_path(), true);
+    snapshot->projectBuffers["/" + shader] = visitSource(source, std::filesystem::path(shader).parent_path());
     snapshot->signature = editor::SHA1::hash(signatureInput);
     snapshot->valid = true;
-    customSourceCache[cacheKey] = snapshot;
+    // not kept when the shaders were invalidated meanwhile
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    if (!direct && generation == customShaderGeneration)
+        customSourceCache[cacheKey] = snapshot;
     return snapshot;
+}
+
+// a compiler error on a graph's code names the node the line came from
+std::string nameGraphNodes(editor::Project* project, uint16_t customId, const std::string& log) {
+    const std::string shader = ShaderPool::getCustomShaderName(customId);
+    if (customId == 0 || !editor::Util::isShaderGraphFile(shader))
+        return log;
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader);
+    const std::string marker = "/" + shader + ":";
+    std::istringstream lines(log);
+    std::string named;
+    for (std::string line; std::getline(lines, line);) {
+        const size_t at = line.find(marker);
+        if (at != std::string::npos) {
+            const int number = std::atoi(line.c_str() + at + marker.size());
+            if (number > 0 && number <= (int)sources->graphLines.size() && sources->graphLines[number - 1] != 0)
+                line += " (node " + std::to_string(sources->graphLines[number - 1]) + ")";
+        }
+        named += line + "\n";
+    }
+    return named;
 }
 
 std::filesystem::path sourceSignaturePath(const std::filesystem::path& shaderCachePath) {
@@ -235,64 +303,269 @@ bool readSourceSignature(const std::filesystem::path& path, std::string& signatu
 void clearCustomSourceCache() {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     customSourceCache.clear();
+    graphDependents.clear();
 }
 
-// parameter headers and hook defines of a custom shader; throws on a bad annotation
-void setupShaderParameters(shadercompiler::args_t& args, const std::string& vertexOffset, const std::string& coverage,
-                           std::vector<ShaderParameterInfo>& parameters) {
-    const bool useVertexOffset = !vertexOffset.empty();
-    const bool useCoverage = !coverage.empty();
+// parameter headers, hook defines and flags; throws on a bad annotation
+void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
+                           editor::ShaderDeclarations& declared) {
+    const std::string shaderType = editor::ShaderParameterParser::getShaderFileType(passType);
+    const bool meshPass = shaderType == "mesh";
+    // UI, points and lines move vertices and color pixels
+    const bool primitive = passType == ShaderType::UI || passType == ShaderType::POINTS || passType == ShaderType::LINES;
+    auto defined = [&](const char* name) {
+        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
+    };
+
+    auto file = [&](const std::string& key) -> const std::string* {
+        auto it = args.fileBuffers.find(key);
+        return it != args.fileBuffers.end() ? &it->second : nullptr;
+    };
+
+    // only the hooks the file defines are compiled in
+    editor::ShaderEffectAnnotations vertexHooks;
+    editor::ShaderEffectAnnotations fragmentHooks;
+    if (!shaderAsset.empty()) {
+        editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::VERTEX, vertexHooks);
+        editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::FRAGMENT, fragmentHooks);
+        const std::string& type = vertexHooks.shaderType.empty() ? fragmentHooks.shaderType : vertexHooks.shaderType;
+        if (type.empty())
+            throw std::runtime_error(shaderAsset + " has no \"#pragma shader " + shaderType + "\" line");
+        if (type != shaderType)
+            throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
+    }
+    // the hooks each type runs
+    const struct { const char* name; bool defined; bool runs; } hooks[] = {
+        {"getVertexOffset", vertexHooks.vertexOffset, meshPass || primitive},
+        {"getVaryings", vertexHooks.varyingsHook, meshPass},
+        {"getClipPosition", vertexHooks.clipPosition, meshPass},
+        {"getCoverage", fragmentHooks.coverage, meshPass},
+        {"getSurface", fragmentHooks.surface, meshPass},
+        {"getColor", fragmentHooks.color, true},
+        {"getDepthOffset", fragmentHooks.depthOffset, meshPass},
+        {"getUnderwaterColor", fragmentHooks.underwaterColor, shaderType == "water"},
+        {"getLight", fragmentHooks.light, meshPass}
+    };
+    bool anyHook = false;
+    for (const auto& hook : hooks) {
+        if (hook.defined && !hook.runs)
+            throw std::runtime_error(shaderAsset + " defines " + hook.name + "(), which " + shaderType + " shaders do not have");
+        anyHook = anyHook || hook.defined;
+    }
+    if (!shaderAsset.empty() && !anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
+        throw std::runtime_error(shaderAsset + " defines no hook function");
+
+    const bool useVertexOffset = vertexHooks.vertexOffset;
+    const bool useClipPosition = vertexHooks.clipPosition;
+    const bool useCoverage = fragmentHooks.coverage;
+    // the depth passes take only the surface alpha, of masked materials
+    const bool useSurface = fragmentHooks.surface && (passType != ShaderType::DEPTH || defined("ALPHA_MASK"));
+    const bool useColor = fragmentHooks.color && passType != ShaderType::DEPTH && passType != ShaderType::GBUFFER && passType != ShaderType::UNDERWATER;
+    const bool useDepthOffset = fragmentHooks.depthOffset;
+    const bool useUnderwaterColor = fragmentHooks.underwaterColor && passType == ShaderType::UNDERWATER;
+    // the lights of the color pass, unless the file draws unlit
+    const bool useLight = fragmentHooks.light && passType == ShaderType::MESH && !vertexHooks.unlit && !fragmentHooks.unlit;
+    const bool useFragmentHooks = useCoverage || useSurface || useColor || useDepthOffset || useUnderwaterColor || useLight;
+    // only where a fragment hook can read them
+    const bool useVaryings = vertexHooks.varyingsHook && useFragmentHooks;
+    const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;
+    if (vertexHooks.varyingsHook && vertexHooks.varyings.empty())
+        throw std::runtime_error(shaderAsset + " fills varyings without declaring any with #pragma varying");
+    // GLES3 has 15 varying vectors, the engine uses most
+    if (vertexHooks.varyings.size() > 4)
+        throw std::runtime_error(shaderAsset + " declares " + std::to_string(vertexHooks.varyings.size()) + " varyings, the limit is 4");
+    if (useVertexHooks)
+        args.defines.push_back({"USE_VERTEX_HOOKS", "1"});
     if (useVertexOffset)
         args.defines.push_back({"USE_VERTEX_OFFSET", "1"});
+    if (useClipPosition)
+        args.defines.push_back({"USE_CLIP_POSITION", "1"});
+    if (useVaryings)
+        args.defines.push_back({"USE_VARYINGS", "1"});
+    // getVaryings compiles with the vertex hooks
+    const bool varyingsType = vertexHooks.varyingsHook && useVertexHooks;
+    if (varyingsType)
+        args.defines.push_back({"HOOK_VARYINGS", "1"});
+    if (useDepthOffset)
+        args.defines.push_back({"USE_DEPTH_OFFSET", "1"});
     if (useCoverage)
         args.defines.push_back({"USE_COVERAGE", "1"});
+    if (useSurface)
+        args.defines.push_back({"USE_SURFACE", "1"});
+    if (useColor)
+        args.defines.push_back({"USE_COLOR", "1"});
+    if (useLight)
+        args.defines.push_back({"USE_LIGHT", "1"});
+    if (useFragmentHooks)
+        args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
+    if (!shaderAsset.empty() && meshPass)
+        args.defines.push_back({passType == ShaderType::DEPTH ? "IN_DEPTH_PASS" : passType == ShaderType::GBUFFER ? "IN_GBUFFER_PASS" : "IN_COLOR_PASS", "1"});
 
-    // the files each stage reaches, to find the hooks; an inactive hook is not read
-    std::unordered_set<std::string> vertexFiles;
-    std::unordered_set<std::string> fragmentFiles;
-    auto lookup = [&](std::unordered_set<std::string>& reached) {
-        return [&](const std::string& key) -> const std::string* {
-            reached.insert(key);
-            if ((key == "includes/vertex_offset.glsl" && !useVertexOffset) || (key == "includes/coverage.glsl" && !useCoverage))
-                return nullptr;
-            auto it = args.fileBuffers.find(key);
-            return it != args.fileBuffers.end() ? &it->second : nullptr;
-        };
+    // the material maps a surface hook makes unnecessary
+    const std::set<std::string>& replaces = fragmentHooks.surfaceReplaces;
+    if (useSurface && replaces.count("baseColor") && replaces.count("alpha"))
+        args.defines.push_back({"SURFACE_REPLACES_BASECOLOR_MAP", "1"});
+    if (useSurface && replaces.count("metallic") && replaces.count("roughness"))
+        args.defines.push_back({"SURFACE_REPLACES_METALLICROUGHNESS_MAP", "1"});
+    if (useSurface && replaces.count("normal"))
+        args.defines.push_back({"SURFACE_REPLACES_NORMAL_MAP", "1"});
+    if (useSurface && replaces.count("occlusion"))
+        args.defines.push_back({"SURFACE_REPLACES_OCCLUSION_MAP", "1"});
+    if (useSurface && replaces.count("emissive"))
+        args.defines.push_back({"SURFACE_REPLACES_EMISSIVE_MAP", "1"});
+
+    // an unlit shader builds unlit under any light key
+    if ((vertexHooks.unlit || fragmentHooks.unlit) && passType == ShaderType::MESH) {
+        const bool light2D = defined("USE_LIGHT2D");
+        const bool normals = defined("HAS_NORMALS");
+        args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
+            static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_SSAO", "DIRECTIONAL_LIGHTS_ONLY"};
+            static const std::set<std::string> surface = {"HAS_NORMALS", "HAS_TANGENTS", "HAS_NORMAL_MAP"};
+            return lighting.count(define.def) || (!light2D && surface.count(define.def));
+        }), args.defines.end());
+        args.defines.push_back({"MATERIAL_UNLIT", "1"});
+        // the hooks keep the normals the lit key gave
+        if (normals && !light2D && !defined("HAS_HOOK_NORMALS"))
+            args.defines.push_back({"HAS_HOOK_NORMALS", "1"});
+        declared.flags |= ShaderFlag_Unlit;
+    }
+
+    // tangents need the normal, and UVs without mesh tangents
+    std::set<std::string> fragmentReads = fragmentHooks.contextReads;
+    const bool tangentFrame = meshPass && useFragmentHooks && (fragmentReads.count("tangent") || fragmentReads.count("bitangent"));
+    if (tangentFrame) {
+        fragmentReads.insert("normal");
+        if (!defined("HAS_TANGENTS"))
+            fragmentReads.insert("uv1");
+    }
+    // depth and G-buffer take the surface normal from the context
+    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface && fragmentHooks.surfaceReads.count("normal"))
+        fragmentReads.insert("normal");
+    // and tints the surface with the vertex color
+    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
+        fragmentReads.insert("color");
+
+    // vertex data the hooks read, where the pass has it
+    const struct { const char* field; const char* name; bool available; } inputs[] = {
+        {"uv1", "UV1", passType == ShaderType::UI || (meshPass && (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN"))},
+        {"uv2", "UV2", meshPass && (defined("HAS_UV_SET2") || defined("HAS_HOOK_UV2")) && !defined("HAS_TERRAIN")},
+        {"normal", "NORMAL", meshPass && (defined("HAS_NORMALS") || defined("HAS_HOOK_NORMALS"))},
+        {"color", "COLOR", (meshPass || primitive) && (defined("HAS_VERTEX_COLOR_VEC3") || defined("HAS_VERTEX_COLOR_VEC4") || defined("HAS_INSTANCING"))},
+        {"instance", "INSTANCE", meshPass && defined("HAS_INSTANCING")},
+        {"worldPosition", "POSITION", primitive}
+    };
+    for (const auto& input : inputs) {
+        const bool vertex = useVertexHooks && vertexHooks.contextReads.count(input.field);
+        const bool fragment = useFragmentHooks && fragmentReads.count(input.field);
+        if (input.available && (vertex || fragment))
+            args.defines.push_back({std::string("HOOK_") + input.name, "1"});
+        if (input.available && fragment)
+            args.defines.push_back({std::string("HOOK_FRAGMENT_") + input.name, "1"});
+    }
+    if (tangentFrame) {
+        args.defines.push_back({"HOOK_FRAGMENT_TANGENT", "1"});
+        // depth passes take the tangent attribute
+        if (passType != ShaderType::MESH && defined("HAS_TANGENTS"))
+            args.defines.push_back({"HOOK_TANGENT", "1"});
+    }
+
+    // the files each stage reaches; an inactive hook is not read
+    auto lookup = [&](const std::string& key) -> const std::string* {
+        if ((key == "shader_hooks_vs.glsl" && !useVertexHooks) || (key == "shader_hooks_fs.glsl" && !useFragmentHooks))
+            return nullptr;
+        return file(key);
     };
 
     editor::ShaderEffectAnnotations vertexAnnotations;
     editor::ShaderEffectAnnotations fragmentAnnotations;
-    editor::ShaderParameterParser::parseTree(args.vert_file, lookup(vertexFiles), vertexAnnotations);
-    editor::ShaderParameterParser::parseTree(args.frag_file, lookup(fragmentFiles), fragmentAnnotations);
+    editor::ShaderParameterParser::parseTree(args.vert_file, lookup, ShaderStageType::VERTEX, vertexAnnotations);
+    editor::ShaderParameterParser::parseTree(args.frag_file, lookup, ShaderStageType::FRAGMENT, fragmentAnnotations);
 
     std::vector<std::string> errors = vertexAnnotations.errors;
     errors.insert(errors.end(), fragmentAnnotations.errors.begin(), fragmentAnnotations.errors.end());
+    // of a section no hook reaches
+    for (const editor::ShaderEffectAnnotations* hooks : {&vertexHooks, &fragmentHooks}) {
+        for (const std::string& error : hooks->errors) {
+            if (std::find(errors.begin(), errors.end(), error) == errors.end())
+                errors.push_back(error);
+        }
+    }
 
-    // a fork from before the hooks existed cannot run the function
-    if (useVertexOffset && !vertexFiles.count("includes/vertex_offset.glsl"))
-        editor::Out::warning("%s does not include includes/vertex_offset.glsl, so the vertex offset %s does nothing in it", args.vert_file.c_str(), vertexOffset.c_str());
-    if (useCoverage && !fragmentFiles.count("includes/coverage.glsl"))
-        editor::Out::warning("%s does not include includes/coverage.glsl, so the coverage %s does nothing in it", args.frag_file.c_str(), coverage.c_str());
+    if (useCoverage && fragmentAnnotations.hasCoverageShadows && fragmentAnnotations.coverageShadows)
+        declared.flags |= ShaderFlag_CoverageShadows;
 
     // both stages read one value by name, so they are checked together
     std::vector<editor::ShaderParameterDeclaration> declarations = vertexAnnotations.parameters;
     declarations.insert(declarations.end(), fragmentAnnotations.parameters.begin(), fragmentAnnotations.parameters.end());
     editor::ShaderParameterParser::checkDeclarations(declarations, errors);
 
-    args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::VERTEX, vertexAnnotations, useVertexOffset, false, parameters);
-    args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
-        ShaderStageType::FRAGMENT, fragmentAnnotations, false, useCoverage, parameters);
+    // shadows and camera depth share the program
+    if (useClipPosition && passType == ShaderType::DEPTH)
+        vertexAnnotations.enginePass = true;
+    if (varyingsType) {
+        args.fileBuffers["shader_varyings_vs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::VERTEX, vertexHooks.varyings);
+        args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
+    }
 
-    // a fork that dropped the call would read zeros
-    auto warnMissingLoad = [&](const std::string& file, const char* header) {
-        auto source = args.fileBuffers.find(file);
-        if (args.fileBuffers[header].find(" = block.") != std::string::npos && source != args.fileBuffers.end() &&
-                source->second.find("loadShaderParameters();") == std::string::npos)
-            editor::Out::warning("%s declares shader parameters but never calls loadShaderParameters(), so they read zero", file.c_str());
-    };
-    warnMissingLoad(args.vert_file, "shader_params_vs.glsl");
-    warnMissingLoad(args.frag_file, "shader_params_fs.glsl");
+    // scene inputs, neutral in passes drawn before the scene
+    const bool postProcess = useColor && passType == ShaderType::POSTPROCESS;
+    const bool colorPass = useFragmentHooks && passType == ShaderType::MESH;
+    const bool sceneColor = colorPass && fragmentHooks.sceneReads.count("sceneColor");
+    const bool sceneDepth = (postProcess || colorPass) && fragmentHooks.sceneReads.count("sceneDepth");
+    const bool sceneNormal = postProcess && fragmentHooks.sceneReads.count("sceneNormal");
+    if (sceneColor)
+        args.defines.push_back({"HOOK_SCENE_COLOR", "1"});
+    if (sceneDepth)
+        args.defines.push_back({"HOOK_SCENE_DEPTH", "1"});
+    if (sceneNormal)
+        args.defines.push_back({"HOOK_SCENE_NORMAL", "1"});
+    if (postProcess && fragmentHooks.sceneReads.count("sceneOcclusion"))
+        args.defines.push_back({"HOOK_SCENE_OCCLUSION", "1"});
+    if (sceneColor)
+        declared.flags |= ShaderFlag_SceneColor;
+    if (sceneDepth && colorPass)
+        declared.flags |= ShaderFlag_SceneDepth;
+    // where the camera sees the fragment
+    const bool screenUV = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("screenUV");
+    if (screenUV)
+        args.defines.push_back({"HOOK_FRAGMENT_SCREEN", "1"});
+    const bool depthRange = meshPass && useFragmentHooks && (fragmentHooks.contextReads.count("nearPlane") || fragmentHooks.contextReads.count("farPlane"));
+    if (depthRange)
+        args.defines.push_back({"HOOK_FRAGMENT_DEPTH_RANGE", "1"});
+    const bool viewMatrix = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("worldToView");
+    if (viewMatrix)
+        args.defines.push_back({"HOOK_FRAGMENT_VIEW", "1"});
+    // the object's matrix, which the vertex stage has
+    if (meshPass && useVertexHooks && (vertexHooks.contextReads.count("objectPosition") || vertexHooks.contextReads.count("objectScale")))
+        args.defines.push_back({"HOOK_OBJECT", "1"});
+    // what sprite batching changes for the hooks
+    if (passType == ShaderType::MESH) {
+        const std::set<std::string>& vertexReads = vertexHooks.contextReads;
+        const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
+        if (normal || (useVertexHooks && (vertexReads.count("localPosition") || vertexReads.count("objectPosition") || vertexReads.count("objectScale"))))
+            declared.flags |= ShaderFlag_ObjectSpace;
+        // a batch writes the texture region into uv1
+        if ((useVertexHooks && vertexReads.count("uv1")) || (useFragmentHooks && fragmentReads.count("uv1")))
+            declared.flags |= ShaderFlag_VertexUV;
+        if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
+            declared.flags |= ShaderFlag_VertexColor;
+    }
+
+    // the model matrix of the types whose own blocks lack it
+    const bool modelMatrix = primitive && (useVertexHooks || defined("HOOK_FRAGMENT_POSITION"));
+    args.fileBuffers["shader_params_vs.glsl"] = editor::ShaderParameterParser::generateHeader(
+        ShaderStageType::VERTEX, vertexAnnotations, (useVertexOffset ? editor::HookContext_Vertex : 0) | (useClipPosition ? editor::HookContext_Clip : 0) |
+        (modelMatrix ? editor::HookContext_Model : 0), declared.parameters, declared.textures);
+    args.fileBuffers["shader_params_fs.glsl"] = editor::ShaderParameterParser::generateHeader(
+        ShaderStageType::FRAGMENT, fragmentAnnotations, ((useFragmentHooks && meshPass) ? editor::HookContext_Fragment : 0) |
+        ((useSurface && passType == ShaderType::GBUFFER) || sceneNormal || viewMatrix ? editor::HookContext_View : 0) |
+        (useDepthOffset || sceneDepth || depthRange ? editor::HookContext_Projection : 0) | (screenUV || sceneColor ? editor::HookContext_Screen : 0),
+        declared.parameters, declared.textures);
+
+    args.fileBuffers["shader_textures_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, true);
+    args.fileBuffers["shader_textures_end_vs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::VERTEX, declared.textures, false);
+    args.fileBuffers["shader_textures_fs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::FRAGMENT, declared.textures, true);
+    args.fileBuffers["shader_textures_end_fs.glsl"] = editor::ShaderParameterParser::generateTextureNames(ShaderStageType::FRAGMENT, declared.textures, false);
 
     if (!errors.empty()){
         std::string message = "Shader parameter annotations:";
@@ -304,7 +577,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& vert
 
 bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
                    const std::string& name, const char* value) {
-    const std::string annotation = std::string("@") + tag + " " + name + " " + value;
+    const std::string annotation = std::string("#pragma ") + tag + " " + name + " " + value;
     for (const auto& file : args.fileBuffers)
         if (file.second.find(annotation) != std::string::npos)
             return true;
@@ -313,27 +586,37 @@ bool hasAnnotation(const shadercompiler::args_t& args, const char* tag,
 
 // SG_MAX_UNIFORMBLOCK_MEMBERS: on GL, a block of mixed member types declares them one by one
 constexpr size_t maxMixedBlockMembers = 16;
+// SG_MAX_SAMPLER_BINDSLOTS and SG_MAX_PORTABLE_TEXTURE_BINDINGS_PER_STAGE
+constexpr size_t maxSamplers = 16;
+constexpr size_t maxStageTextures = 16;
+// D3D11 and Metal bind 8 blocks a stage; GL flattens them
+constexpr size_t maxStageBlocks = 8;
 
-// a fork still declaring a custom block, which nothing fills any more (v0.8.4 port),
-// or a shader past what the runtime loads
-std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) {
-    if (customId == 0)
-        return "";
+// a shader past what the runtime loads, engine shaders included
+std::string getShaderDataError(const ShaderData& shaderData) {
+    size_t samplers = 0;
+    for (const ShaderStage& stage : shaderData.stages) {
+        samplers += stage.samplers.size();
+        if (stage.textures.size() > maxStageTextures)
+            return std::to_string(stage.textures.size()) + " textures in one stage, the limit is " + std::to_string(maxStageTextures);
+        if (shaderData.lang != ShaderLang::GLSL && stage.uniformblocks.size() > maxStageBlocks)
+            return std::to_string(stage.uniformblocks.size()) + " uniform blocks in one stage, the limit is " + std::to_string(maxStageBlocks);
+    }
+    if (samplers > maxSamplers)
+        return std::to_string(samplers) + " samplers, the limit is " + std::to_string(maxSamplers) +
+            "; textures of one filter and wrap share a sampler";
 
-    const std::string name = ShaderPool::getCustomShaderName(customId);
     for (const ShaderStage& stage : shaderData.stages) {
         for (const ShaderUniformBlock& block : stage.uniformblocks) {
-            if (block.name == "u_vs_customParams" || block.name == "u_fs_customParams" || block.name == "u_fs_postParams")
-                return name + ": " + block.name + " is no longer filled; reopen the project to port the fork to shader parameters";
             if (shaderData.lang == ShaderLang::GLSL && !block.flattened && block.uniforms.size() > maxMixedBlockMembers)
-                return name + ": " + block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
+                return block.name + " mixes member types and has " + std::to_string(block.uniforms.size()) +
                     " members, more than the " + std::to_string(maxMixedBlockMembers) + " OpenGL loads";
         }
     }
 
     std::string error;
     if (!ShaderDataSerializer::validate(shaderData, &error))
-        return name + ": " + error;
+        return error;
     return "";
 }
 
@@ -341,12 +624,13 @@ std::string getShaderDataError(const ShaderData& shaderData, uint16_t customId) 
 
 
 // read from the sources the build resolves, so both see the same includes
-editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Project* project, const std::string& shader, bool fork) {
+editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Project* project, const std::string& shader) {
     ShaderEffectAnnotations annotations;
-    // any effect slot resolves a single .glsl
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, fork ? shader : "#" + shader);
-    if (!sources->valid)
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader);
+    if (!sources->valid) {
+        annotations.errors.push_back(sources->error);
         return annotations;
+    }
 
     auto lookup = [&](const std::string& key) -> const std::string* {
         auto projectFile = sources->projectBuffers.find(key);
@@ -355,77 +639,15 @@ editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Proj
         auto engineFile = editor::shaderMap.find(key);
         return engineFile != editor::shaderMap.end() ? &engineFile->second : nullptr;
     };
-    if (fork) {
-        const Util::CustomShaderPaths paths = Util::resolveCustomShaderPaths(shader);
-        ShaderParameterParser::parseTree(paths.vert, lookup, annotations);
-        ShaderParameterParser::parseTree(paths.frag, lookup, annotations);
-    } else {
-        ShaderParameterParser::parseTree("/" + shader, lookup, annotations);
-    }
+    ShaderParameterParser::parseTree("/" + shader, lookup, ShaderStageType::VERTEX, annotations);
+    ShaderParameterParser::parseTree("/" + shader, lookup, ShaderStageType::FRAGMENT, annotations);
     // the clashes the build would stop at
     ShaderParameterParser::checkDeclarations(annotations.parameters, annotations.errors);
+    // pin numbers of live graphs are not parameters
+    annotations.parameters.erase(std::remove_if(annotations.parameters.begin(), annotations.parameters.end(), [](const ShaderParameterDeclaration& declaration) {
+        return ShaderGraphCompiler::isLiveCollection(declaration.collection);
+    }), annotations.parameters.end());
     return annotations;
-}
-
-std::vector<std::string> editor::ShaderBuilder::findLegacyShaders(Project* project) {
-    std::vector<std::string> files;
-    const std::filesystem::path root = project->getProjectPath();
-    std::error_code ec;
-    std::filesystem::recursive_directory_iterator it(root, std::filesystem::directory_options::skip_permission_denied, ec);
-    for (const std::filesystem::recursive_directory_iterator end; !ec && it != end; it.increment(ec)) {
-        const std::string name = it->path().filename().string();
-        // .doriax, .git and the like, and copies of a project inside this one
-        std::error_code ignored;
-        if (it->is_directory(ignored)) {
-            if ((!name.empty() && name[0] == '.') || std::filesystem::exists(it->path() / "project.yaml", ignored))
-                it.disable_recursion_pending();
-            continue;
-        }
-        const std::string extension = it->path().extension().string();
-        if (extension != ".vert" && extension != ".frag")
-            continue;
-
-        std::string source;
-        if (readTextFile(it->path(), source) && ShaderParameterParser::hasLegacyBlock(source))
-            files.push_back(it->path().lexically_relative(root).generic_string());
-    }
-    std::sort(files.begin(), files.end());
-    return files;
-}
-
-bool editor::ShaderBuilder::portLegacyShaders(Project* project, const std::vector<std::string>& files, size_t& rewritten, std::string& error) {
-    const std::filesystem::path root = project->getProjectPath();
-    rewritten = 0;
-
-    std::vector<std::pair<std::string, std::string>> ported;
-    for (const std::string& file : files) {
-        std::string source;
-        if (!readTextFile(root / file, source)) {
-            error = "can't read " + file;
-            return false;
-        }
-        const ShaderStageType stage = std::filesystem::path(file).extension() == ".vert" ? ShaderStageType::VERTEX : ShaderStageType::FRAGMENT;
-        std::string result = source;
-        std::string reason;
-        if (!ShaderParameterParser::portLegacyBlock(result, stage, reason)) {
-            error = file + ": " + reason;
-            return false;
-        }
-        if (result != source)
-            ported.push_back({file, std::move(result)});
-    }
-
-    for (const auto& [file, source] : ported) {
-        if (!FileUtils::writeFileReplacing(root / file, source)) {
-            error = "can't write " + file;
-            return false;
-        }
-        rewritten++;
-    }
-
-    if (rewritten > 0)
-        project->invalidateCustomShaders();
-    return true;
 }
 
 std::unordered_map<ShaderKey, ShaderData> editor::ShaderBuilder::shaderDataCache;
@@ -710,6 +932,9 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 25)) defs.push_back({"ALPHA_OPAQUE", "1"});               // 'Aop'
     if (prop & (1 << 26)) defs.push_back({"USE_INSTANCE_FADE", "1"});          // 'Ifd'
     if (prop & (1 << 27)) defs.push_back({"HAS_TERRAIN_PBR", "1"});            // 'Tpb'
+    if (prop & (1 << 29)) defs.push_back({"HAS_HOOK_UV1", "1"});               // 'Hu1'
+    if (prop & (1 << 30)) defs.push_back({"HAS_HOOK_NORMALS", "1"});           // 'Hnr'
+    if (prop & (1u << 31)) defs.push_back({"HAS_HOOK_UV2", "1"});              // 'Hu2'
 }
 
 void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -723,6 +948,11 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 7))  defs.push_back({"ALPHA_MASK", "1"});         // 'Ams'
     if (prop & (1 << 8))  defs.push_back({"USE_INSTANCE_FADE", "1"}); // 'Ifd'
     if (prop & (1 << 9))  defs.push_back({"HAS_UV_SET1", "1"});       // 'Uv1'
+    if (prop & (1 << 10)) defs.push_back({"HAS_NORMALS", "1"});       // 'Nor'
+    if (prop & (1 << 11)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"}); // 'Vc3'
+    if (prop & (1 << 12)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"}); // 'Vc4'
+    if (prop & (1 << 13)) defs.push_back({"HAS_UV_SET2", "1"});       // 'Uv2'
+    if (prop & (1 << 14)) defs.push_back({"HAS_TANGENTS", "1"});      // 'Tan'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -739,6 +969,10 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 10)) defs.push_back({"HAS_OCCLUSION_TEXTURE", "1"});         // 'Occ'
     if (prop & (1 << 11)) defs.push_back({"OCCLUSION_UV2", "1"});                 // 'Ou2'
     if (prop & (1 << 12)) defs.push_back({"HAS_UV_SET1", "1"});                   // 'Uv1'
+    if (prop & (1 << 13)) defs.push_back({"HAS_VERTEX_COLOR_VEC3", "1"});         // 'Vc3'
+    if (prop & (1 << 14)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"});         // 'Vc4'
+    if (prop & (1 << 15)) defs.push_back({"HAS_UV_SET2", "1"});                   // 'Uv2'
+    if (prop & (1 << 16)) defs.push_back({"HAS_TANGENTS", "1"});                  // 'Tan'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -776,17 +1010,23 @@ ShaderBuildResult editor::ShaderBuilder::buildShader(ShaderKey shaderKey, Projec
         return ShaderBuildResult(shaderDataCache[shaderKey], ResourceLoadState::Finished);
     }
 
-    // Try disk cache (<cache>/doriax/shaders/<version>/<basename>.sdat). Forked shaders
+    // Try disk cache (<cache>/doriax/shaders/<version>/<basename>.sdat). Shader files
     // are cached too (the run-build / standalone runtime loads shaders from this same
-    // dir and cannot compile). A persisted source signature covers both entry points and
-    // their exact resolved include graph. The validation key is the storage key
+    // dir and cannot compile). A persisted source signature covers the file and its
+    // exact resolved include graph. The validation key is the storage key
     // (customId stripped) because that id is session-local and would not match across
     // the editor and a separate run process.
     const bool isCustom = ShaderPool::getCustomIdFromKey(shaderKey) != 0;
     if (project) {
         lock.unlock();
-        const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
-        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        const bool live = isLiveShader(shaderKey);
+        std::filesystem::path cachePath = getShaderCachePath(shaderKey, project, live);
+        bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        // a pass without pin numbers has the plain name
+        if (!fresh && live) {
+            cachePath = getShaderCachePath(shaderKey, project);
+            fresh = !isCustomCacheStale(shaderKey, project, cachePath);
+        }
         if (fresh) {
             ShaderData diskData;
             std::string err;
@@ -860,10 +1100,11 @@ void editor::ShaderBuilder::buildMissingShaders(const std::set<ShaderKey>& shade
         return;
     }
 
+    // runs need the pin numbers in the code
     for (const ShaderKey& shaderKey : shaderKeys) {
         const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
         const bool isCustom = ShaderPool::getCustomIdFromKey(shaderKey) != 0;
-        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
+        const bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath, ShaderSourceUse::RUN);
 
         ShaderData diskData;
         if (fresh && ShaderDataSerializer::readFromFile(cachePath.string(), ShaderPool::getStorageKey(shaderKey), diskData)) {
@@ -871,8 +1112,8 @@ void editor::ShaderBuilder::buildMissingShaders(const std::set<ShaderKey>& shade
         }
 
         try {
-            const ShaderData data = buildShaderInternal(shaderKey, project, false);
-            (void)saveShaderDataCache(shaderKey, project, data);
+            const ShaderData data = buildShaderInternal(shaderKey, project, false, ShaderSourceUse::RUN);
+            (void)saveShaderDataCache(shaderKey, project, data, nullptr, ShaderSourceUse::RUN);
         } catch (const std::exception&) {
             // buildShaderInternal reports it; the remaining keys still build
         }
@@ -994,13 +1235,12 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, std::vector<ShaderParameterInfo>& parameters) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
 
-    // Built-in entry-point files + property #defines (the variant system is identical
-    // for forked shaders).
+    // Built-in entry-point files + property #defines (the same for shader files).
     if (!setupShaderArgs(args, shaderType, properties)) {
         throw std::runtime_error("Unknown shader type");
     }
@@ -1016,38 +1256,28 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     if (customId == 0)
         return;
 
-    // Overlay the project's forked entry points and every include they reach onto the
-    // embedded engine file buffers.
+    // the shader file and its project includes
     if (!project) {
-        throw std::runtime_error("Custom shader requested without a project");
+        throw std::runtime_error("Shader file requested without a project");
     }
 
-    std::string customShader = ShaderPool::getCustomShaderName(customId);
-    if (customShader.empty()) {
-        throw std::runtime_error("Unknown custom shader id");
+    std::string shader = ShaderPool::getCustomShaderName(customId);
+    if (shader.empty()) {
+        throw std::runtime_error("Unknown shader file id");
     }
 
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, shader, use);
     if (!sources->valid)
-        throw std::runtime_error(sources->error.empty() ? "Could not resolve custom shader sources" : sources->error);
+        throw std::runtime_error(sources->error.empty() ? "Could not resolve the shader file" : sources->error);
 
-    // The .vert/.frag entry points may share a base name or live in separate files.
-    // Only project files that are actually reachable through #include are overlaid.
-    // Resolution order is the entry point's own directory, the project root, then the
-    // embedded engine shader library already present in args.fileBuffers.
     for (const auto& [key, content] : sources->projectBuffers)
         args.fileBuffers[key] = content;
 
-    // effect functions alone keep the built-in entry points
-    const std::string forkShader = ShaderPool::getCustomShaderFork(customShader);
-    if (!forkShader.empty()) {
-        const editor::Util::CustomShaderPaths customPaths = editor::Util::resolveCustomShaderPaths(forkShader);
-        args.vert_file = customPaths.vert;
-        args.frag_file = customPaths.frag;
-    }
+    setupShaderParameters(args, shader, shaderType, declarations);
 
-    setupShaderParameters(args, ShaderPool::getCustomShaderVertexOffset(customShader),
-                          ShaderPool::getCustomShaderCoverage(customShader), parameters);
+    // compiled with its stages as conditions
+    for (const auto& [key, content] : sources->projectBuffers)
+        args.fileBuffers[key] = ShaderParameterParser::getStageConditions(content);
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {
@@ -1063,7 +1293,7 @@ std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lan
     return "";
 }
 
-ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress){
+ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use){
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
     }
@@ -1087,9 +1317,9 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     std::string compileLog;
     args.error_output = &compileLog;
 
-    std::vector<ShaderParameterInfo> parameters;
+    ShaderDeclarations declarations;
     try {
-        setupBuildArgs(args, shaderKey, project, parameters);
+        setupBuildArgs(args, shaderKey, project, declarations, use);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1127,7 +1357,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
             ResourceProgress::failBuild(shaderKey);
         }
         Out::error("Shader %s failed to compile:\n%s", getShaderDisplayName(shaderKey).c_str(),
-                   compileLog.empty() ? "(no compiler output)" : compileLog.c_str());
+                   compileLog.empty() ? "(no compiler output)" : nameGraphNodes(project, ShaderPool::getCustomIdFromKey(shaderKey), compileLog).c_str());
         throw std::runtime_error("Error compiling to SPIRV");
     }
 
@@ -1159,9 +1389,11 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     // Use a deterministic basename for stage naming and disk cache
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) + getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
-    shaderData.parameters = std::move(parameters);
+    shaderData.parameters = std::move(declarations.parameters);
+    shaderData.textureParameters = std::move(declarations.textures);
+    shaderData.flags = declarations.flags;
 
-    const std::string blockError = getShaderDataError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty()) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1186,7 +1418,16 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
     return shaderData;
 }
 
-std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shaderKey, Project* project) {
+bool editor::ShaderBuilder::isLiveShader(ShaderKey shaderKey) {
+    const uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
+    if (customId == 0)
+        return false;
+    const std::string shader = ShaderPool::getCustomShaderName(customId);
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    return liveGraphs.count(shader) > 0;
+}
+
+std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shaderKey, Project* project, bool live) {
     if (!project) {
         return {};
     }
@@ -1197,15 +1438,21 @@ std::filesystem::path editor::ShaderBuilder::getShaderCachePath(ShaderKey shader
     std::string basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            "_" + ShaderPool::getShaderLangStr();
 
-    return App::getUserShaderCacheDir() / (basename + ".sdat");
+    return App::getUserShaderCacheDir() / (basename + (live ? "_live.sdat" : ".sdat"));
 }
 
-bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err) {
+bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* project, const ShaderData& shaderData, std::string* err, ShaderSourceUse use) {
     if (!project) {
         return false;
     }
 
-    const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
+    // named by what was built, so runs never load live code
+    const bool live = std::any_of(shaderData.parameters.begin(), shaderData.parameters.end(), [](const ShaderParameterInfo& parameter) {
+        return ShaderGraphCompiler::isLiveCollection(parameter.collection);
+    });
+    if (live)
+        use = ShaderSourceUse::EDITOR;
+    const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project, live);
     if (cachePath.empty()) {
         return false;
     }
@@ -1221,7 +1468,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
 
     // Validate/serialize with the storage key (customId stripped): a separate run
     // process assigns its own session-local customId, so the on-disk key must not
-    // depend on it (the unique basename in the filename identifies the forked source).
+    // depend on it (the unique basename in the filename identifies the shader file).
     if (!ShaderDataSerializer::writeToFile(cachePath.string(), ShaderPool::getStorageKey(shaderKey), shaderData, err))
         return false;
 
@@ -1230,7 +1477,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
         return true;
 
     const std::string customShader = ShaderPool::getCustomShaderName(customId);
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader, use);
     if (!sources->valid) {
         if (err)
             *err = sources->error;
@@ -1252,7 +1499,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
     return true;
 }
 
-bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath) {
+bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* project, const std::filesystem::path& cachePath, ShaderSourceUse use) {
     std::error_code ec;
     if (!std::filesystem::exists(cachePath, ec))
         return true;
@@ -1261,7 +1508,7 @@ bool editor::ShaderBuilder::isCustomCacheStale(ShaderKey shaderKey, Project* pro
     if (customShader.empty())
         return true;
 
-    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader);
+    const std::shared_ptr<const CustomSourceSnapshot> sources = resolveCustomSources(project, customShader, use);
     if (!sources->valid)
         return true;
 
@@ -1284,7 +1531,106 @@ std::string editor::ShaderBuilder::getShaderDisplayName(ShaderKey key) {
     return shaderStr;
 }
 
+void editor::ShaderBuilder::setGraphSource(const std::string& shader, const std::string& text) {
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    graphSources[shader] = text;
+}
+
+void editor::ShaderBuilder::writeGraphCode(Project* project, const std::string& shader, const std::string& code) {
+    writeGeneratedShader(project, shader, code);
+}
+
+bool editor::ShaderBuilder::setGraphLive(const std::string& shader, bool live) {
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    if (live ? !liveGraphs.insert(shader).second : liveGraphs.erase(shader) == 0)
+        return false;
+    // what was resolved the other way goes, so an export never takes it
+    customShaderGeneration++;
+    customSourceCache.clear();
+    return true;
+}
+
+void editor::ShaderBuilder::clearGraphSource(const std::string& shader) {
+    std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+    if (graphSources.erase(shader) == 0)
+        return;
+    // drop what was resolved with the edits
+    customShaderGeneration++;
+    customSourceCache.clear();
+}
+
+uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {
+    return customShaderGeneration;
+}
+
+std::vector<std::string> editor::ShaderBuilder::invalidateCustomShader(const std::string& shader) {
+    customShaderGeneration++;
+    // the graphs that inline it, and the graphs that inline those
+    std::vector<std::string> shaders = {shader};
+    auto listed = [&](const std::string& name) { return std::find(shaders.begin(), shaders.end(), name) != shaders.end(); };
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        for (size_t i = 0; i < shaders.size(); i++) {
+            auto dependents = graphDependents.find(shaders[i]);
+            if (dependents == graphDependents.end())
+                continue;
+            for (const std::string& dependent : dependents->second)
+                if (!listed(dependent))
+                    shaders.push_back(dependent);
+        }
+        for (auto it = customSourceCache.begin(); it != customSourceCache.end();)
+            it = listed(it->first.substr(it->first.find('\n') + 1)) ? customSourceCache.erase(it) : std::next(it);
+    }
+    auto named = [&](ShaderKey key) {
+        const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
+        return customId != 0 && listed(ShaderPool::getCustomShaderName(customId));
+    };
+    std::lock_guard<std::mutex> lock(cacheMutex);
+    for (auto it = shaderDataCache.begin(); it != shaderDataCache.end();)
+        it = named(it->first) ? shaderDataCache.erase(it) : std::next(it);
+    for (auto it = pendingBuilds.begin(); it != pendingBuilds.end();)
+        it = named(it->first) ? pendingBuilds.erase(it) : std::next(it);
+    return shaders;
+}
+
+bool editor::ShaderBuilder::readGraphSource(Project* project, const std::string& path, std::string& text) {
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        if (auto edited = graphSources.find(path); edited != graphSources.end()) {
+            text = edited->second;
+            return true;
+        }
+    }
+    return project && editor::Util::isSafeRelativePath(path) && readTextFile(project->getProjectPath() / path, text);
+}
+
+bool editor::ShaderBuilder::getFunctionPins(Project* project, const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs) {
+    const uint32_t generation = customShaderGeneration;
+    {
+        std::lock_guard<std::mutex> lock(functionPinsMutex);
+        auto cached = functionPinsCache.find(path);
+        if (cached != functionPinsCache.end() && cached->second.generation == generation) {
+            inputs = cached->second.inputs;
+            outputs = cached->second.outputs;
+            return cached->second.valid;
+        }
+    }
+    std::string text;
+    FunctionPinsEntry entry;
+    entry.generation = generation;
+    GraphDocument function;
+    std::string error;
+    entry.valid = readGraphSource(project, path, text) && function.read(text, error) && ShaderGraphCompiler::getFunctionPins(function, entry.inputs, entry.outputs);
+    const bool valid = entry.valid;
+    inputs = entry.inputs;
+    outputs = entry.outputs;
+    std::lock_guard<std::mutex> lock(functionPinsMutex);
+    functionPinsCache[path] = std::move(entry);
+    return valid;
+}
+
 void editor::ShaderBuilder::invalidateCustomShaders() {
+    customShaderGeneration++;
     std::lock_guard<std::mutex> lock(cacheMutex);
     for (auto it = shaderDataCache.begin(); it != shaderDataCache.end(); ) {
         if (ShaderPool::getCustomIdFromKey(it->first) != 0)
@@ -1321,8 +1667,8 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.fileBuffers = editor::shaderMap;
     applyShaderBackend(args, backend);
 
-    std::vector<ShaderParameterInfo> parameters;
-    setupBuildArgs(args, shaderKey, project, parameters);
+    ShaderDeclarations declarations;
+    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
@@ -1343,9 +1689,11 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     args.output_basename = ShaderPool::getShaderStr(shaderType, properties, customId) +
                            getLangSuffix(args.lang, args.version, args.es, args.platform);
     ShaderData shaderData = convertToShaderData(spirvcrossvec, inputs, args);
-    shaderData.parameters = std::move(parameters);
+    shaderData.parameters = std::move(declarations.parameters);
+    shaderData.textureParameters = std::move(declarations.textures);
+    shaderData.flags = declarations.flags;
 
-    const std::string blockError = getShaderDataError(shaderData, customId);
+    const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty())
         throw std::runtime_error(blockError);
 

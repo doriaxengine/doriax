@@ -59,7 +59,8 @@ namespace doriax::editor{
     enum class TabType{
         SCENE,
         CODE_EDITOR,
-        IMAGE_VIEWER
+        IMAGE_VIEWER,
+        GRAPH_EDITOR
     };
 
     struct TabEntry{
@@ -518,14 +519,16 @@ namespace doriax::editor{
         static bool visitLuaPathsInRegistry(EntityRegistry* registry, const std::function<bool(std::string&)>& transform);
         // Unwritten files go in failed
         bool visitAssetPathsInMaterialFiles(const std::function<bool(std::string&)>& transform, std::vector<std::filesystem::path>* failed = nullptr);
+        bool visitMaterialFiles(const std::function<bool(Material&)>& visit, std::vector<std::filesystem::path>* failed = nullptr);
         // Runs an asset transform over every scene, entity bundle and material file,
         // marking what changed.
         void applyAssetPathChange(const std::function<bool(std::string&)>& transform);
-        // Applies a transform to the customShader of every renderable component (Mesh/UI/
-        // Points/Lines/Sky) across all scenes and entity bundles, flagging shader reloads
-        // and marking affected scenes/bundles modified. The transform mutates the value in
-        // place and returns whether it changed; fileTransform does it for a mesh's vertexOffsetShader.
-        void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform, const std::function<bool(std::string&)>& fileTransform);
+        // Applies a transform to every shader file path (materials, components, scene defaults
+        // and post-process passes) across all scenes and entity bundles, flagging shader reloads
+        // and marking affected scenes/bundles modified. The transform mutates the path in place
+        // and returns whether it changed.
+        void applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform);
+        void remapSubgraphFunctions(const fs::path& oldRelative, const fs::path& newRelative);
         bool removeMissingChildSceneReferences(SceneProject& sceneProject);
         bool detachChildSceneFromParents(uint32_t childSceneId, const std::set<uint32_t>& skippedSceneIds);
 
@@ -572,6 +575,8 @@ namespace doriax::editor{
         // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
         // and cannot compile, so a variant the editor never draws with is missing there.
         void buildStandaloneShaderCache();
+        // reloads what uses the shader, or any shader file when null
+        void flagCustomShaderUsers(const std::string* shader);
 
     public:
         // Factory defaults, also used by the settings dialog to restore a value
@@ -672,6 +677,8 @@ namespace doriax::editor{
         // False for files the assets root only reaches with "..", which the runtime cannot resolve.
         bool isInsideAssetsPath(const std::filesystem::path& path) const;
         std::filesystem::path resolveLuaPath(const std::filesystem::path& luaRelative) const;
+        // a script entry's Lua file, or its logic graph's script
+        std::filesystem::path resolveLuaSource(const std::filesystem::path& luaRelative) const;
         std::filesystem::path normalizeToLuaRelative(const std::filesystem::path& path) const;
 
         // Applies new roots: referenced files outside them are moved in keeping their
@@ -789,6 +796,8 @@ namespace doriax::editor{
         void remapScriptFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void remapAssetFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void remapShaderFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
+        // moves the open tabs of a file or folder
+        static void remapWindowFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void cleanupMaterialFilePath(const std::filesystem::path& deletedPath);
         void cleanupSceneFilePath(const std::filesystem::path& deletedPath);
         void cleanupEntityBundleFilePath(const std::filesystem::path& deletedPath);
@@ -847,11 +856,11 @@ namespace doriax::editor{
         std::vector<SceneProject>& getScenes();
         const std::vector<SceneProject>& getScenes() const;
 
-        // Flushes compiled forked-shader caches and flags meshes that use a custom
-        // shader for reload, so editing a shader source file updates the viewport.
+        // Flushes the compiled shader file caches and flags what uses one for reload,
+        // so editing a shader file updates the viewport.
         void invalidateCustomShaders();
-        // v0.8.4 port: asks to rewrite the forks that still declare a custom block
-        void offerLegacyShaderPort();
+        // the same for one shader file or graph and its callers
+        void invalidateCustomShader(const std::string& shader);
 
         SceneProject* getScene(uint32_t sceneId);
         const SceneProject* getScene(uint32_t sceneId) const;

@@ -116,6 +116,10 @@ ImageViewerWindow* EditorHost::getImageViewerWindow() const {
     return nullptr;
 }
 
+GraphEditorWindow* EditorHost::getGraphEditorWindow() const {
+    return nullptr;
+}
+
 static EditorHost s_defaultHost;
 static EditorHost* s_activeHost = &s_defaultHost;
 

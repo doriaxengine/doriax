@@ -3,10 +3,14 @@
 
 #include "ProjectUtils.h"
 
+#include "FileUtils.h"
 #include "Out.h"
 #include "Catalog.h"
 #include "Stream.h"
 #include "shaders.h"
+#include "graph/Graph.h"
+#include "logic/LogicGraphCompiler.h"
+#include "shader/ShaderParameterParser.h"
 #include "util/Util.h"
 
 #include <algorithm>
@@ -17,6 +21,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <unordered_set>
 
 #include "component/ActionComponent.h"
@@ -134,312 +139,370 @@ void editor::ProjectUtils::setDefaultSkyTexture(Texture& outTexture) {
 
 namespace {
 
-std::string shaderTypeFileName(ShaderType shaderType) {
-    switch (shaderType) {
-        case ShaderType::MESH:   return "mesh";
-        case ShaderType::DEPTH:  return "depth";
-        case ShaderType::UI:     return "ui";
-        case ShaderType::POINTS: return "points";
-        case ShaderType::LINES:  return "lines";
-        case ShaderType::SKYBOX: return "sky";
-        case ShaderType::POSTPROCESS: return "postprocess";
-        case ShaderType::WATER:  return "water";
-        case ShaderType::UNDERWATER: return "underwater";
-        default:                 return "";
-    }
-}
-
-std::string sanitizeShaderName(ShaderType shaderType, const std::string& desiredName) {
+// a safe filename from an entity or scene label
+std::string sanitizeShaderName(const std::string& desiredName) {
     std::string name;
     for (char c : desiredName) {
         if (std::isalnum(static_cast<unsigned char>(c)) || c == '_')
             name += c;
     }
-    std::string typeFile = shaderTypeFileName(shaderType);
     if (name.empty() || !(std::isalpha(static_cast<unsigned char>(name[0])) || name[0] == '_'))
-        name = typeFile + name;
-    return name.empty() ? "shader" : name;
-}
-
-// Every .glsl the entry points reach through the engine library, keyed by its
-// include key ("includes/pbr.glsl"). Sorted, so the dialog preview is stable.
-std::map<std::string, std::string> collectBuiltInShaderIncludes(const std::string& vertSource,
-                                                                const std::string& fragSource) {
-    std::map<std::string, std::string> collected;
-    std::unordered_set<std::string> visited;
-
-    std::function<void(const std::string&)> visitSource = [&](const std::string& source) {
-        for (const std::string& key : editor::Util::getShaderIncludeKeys(source)) {
-            if (!visited.insert(key).second)
-                continue;
-
-            auto sourceIt = editor::shaderMap.find(key);
-            if (sourceIt == editor::shaderMap.end())
-                continue;
-
-            if (std::filesystem::path(key).extension() == ".glsl")
-                collected[key] = sourceIt->second;
-            visitSource(sourceIt->second);
-        }
-    };
-
-    visitSource(vertSource);
-    visitSource(fragSource);
-    return collected;
-}
-
-// Removes the directories a fork created. remove() only succeeds on an empty one,
-// so anything the user put there survives.
-void pruneForkDirectories(const std::filesystem::path& root) {
-    if (root.empty())
-        return;
-
-    std::error_code ec;
-    std::vector<std::filesystem::path> dirs;
-    for (std::filesystem::recursive_directory_iterator it(root, ec), end; !ec && it != end; it.increment(ec)) {
-        if (it->is_directory(ec))
-            dirs.push_back(it->path());
-    }
-    dirs.push_back(root);
-
-    // The iterator visits parents first, so deleting in reverse empties the leaves first.
-    for (auto it = dirs.rbegin(); it != dirs.rend(); ++it) {
-        std::filesystem::remove(*it, ec);
-    }
-}
-
-} // namespace
-
-std::filesystem::path editor::ProjectUtils::defaultShaderForkDir() {
-    return "shaders";
-}
-
-std::string editor::ProjectUtils::makeUniqueShaderName(const std::filesystem::path& absDir,
-                                                       ShaderType shaderType,
-                                                       const std::string& desiredName) {
-    // Both layouts are checked, so toggling "fork includes" cannot land on a name
-    // that is free in one and taken in the other.
-    std::string baseName = sanitizeShaderName(shaderType, desiredName);
-    std::string name = baseName;
-    int suffix = 2;
-    while (std::filesystem::exists(absDir / (name + ".vert")) ||
-           std::filesystem::exists(absDir / (name + ".frag")) ||
-           std::filesystem::exists(absDir / name)) {
-        name = baseName + std::to_string(suffix++);
-    }
+        name = "shader" + name;
     return name;
 }
 
-editor::ProjectUtils::ShaderForkPlan editor::ProjectUtils::prepareShaderFork(
-        Project* project, ShaderType shaderType, const std::filesystem::path& targetDirRel,
-        const std::string& baseName, bool forkIncludes) {
-    ShaderForkPlan plan;
-    if (!project) {
-        plan.error = "Project is unavailable.";
-        return plan;
-    }
-
-    std::string typeFile = shaderTypeFileName(shaderType);
-    if (typeFile.empty()) {
-        plan.error = "This shader type cannot be forked.";
-        return plan;
-    }
-
-    if (baseName.empty() || std::filesystem::path(baseName).filename() != baseName) {
-        plan.error = "Enter a shader name without a path or extension.";
-        return plan;
-    }
-    for (char c : baseName) {
-        if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_')) {
-            plan.error = "Shader names may contain only letters, numbers, and underscores.";
-            return plan;
-        }
-    }
-
-    std::filesystem::path normalizedDir = targetDirRel.empty() ? std::filesystem::path(".")
-                                                               : targetDirRel.lexically_normal();
-    if (!Util::isSafeRelativePath(normalizedDir)) {
-        plan.error = "The shader directory must be inside the project.";
-        return plan;
-    }
-
-    std::filesystem::path projectRoot = project->getProjectPath();
-
-    // fullscreen passes share one vertex entry point; the fork still gets its own copy
-    std::string vertFile = (shaderType == ShaderType::POSTPROCESS || shaderType == ShaderType::UNDERWATER) ? "fullscreen" : typeFile;
-    auto vertIt = editor::shaderMap.find(vertFile + ".vert");
-    auto fragIt = editor::shaderMap.find(typeFile + ".frag");
-    if (vertIt == editor::shaderMap.end() || fragIt == editor::shaderMap.end()) {
-        plan.error = "The built-in shader source is unavailable.";
-        return plan;
-    }
-
-    // Forked includes override the engine library for every entry point beside them,
-    // so a fork carrying them gets a directory to itself.
-    std::filesystem::path forkDirRel = forkIncludes ? normalizedDir / baseName : normalizedDir;
-    std::filesystem::path forkDir = projectRoot / forkDirRel;
-
-    plan.base = (forkDirRel / baseName).lexically_normal().generic_string();
-    plan.vertPath = forkDir / (baseName + ".vert");
-    plan.fragPath = forkDir / (baseName + ".frag");
-    plan.vertContent = vertIt->second;
-    plan.fragContent = fragIt->second;
-    if (forkIncludes)
-        plan.forkDirPath = forkDir;
-
-    // With includes the whole directory must be free, so a fork never merges into
-    // someone else's folder.
-    std::vector<std::filesystem::path> collisions = {plan.vertPath, plan.fragPath};
-    if (forkIncludes)
-        collisions = {plan.forkDirPath};
-
-    for (const std::filesystem::path& collision : collisions) {
-        std::error_code ec;
-        if (std::filesystem::exists(collision, ec) && !ec) {
-            plan.error = "A fork target already exists: " +
-                         std::filesystem::relative(collision, projectRoot, ec).generic_string();
-            return plan;
-        }
-    }
-
-    if (forkIncludes) {
-        // The fork directory mirrors the shaderlib root, so each key keeps its shape:
-        // "includes/pbr.glsl" -> <fork>/includes/pbr.glsl.
-        for (const auto& [key, content] : collectBuiltInShaderIncludes(plan.vertContent, plan.fragContent)) {
-            if (Util::isSafeRelativePath(key))
-                plan.includeFiles.push_back({forkDir / key, content});
-        }
-    }
-
-    plan.valid = true;
-    return plan;
-}
-
-bool editor::ProjectUtils::writeShaderFork(const ShaderForkPlan& plan) {
-    if (!plan.valid)
-        return false;
-
-    // Never overwrite: undoing a fork that clobbered a file would destroy its contents.
-    std::vector<std::filesystem::path> written;
-    auto writeFile = [&](const std::filesystem::path& path, const std::string& content) -> bool {
-        std::error_code ec;
-        std::filesystem::create_directories(path.parent_path(), ec);
-        if (ec)
-            return false;
-        if (std::filesystem::exists(path, ec) || ec)
-            return false;
-
-        std::ofstream f(path, std::ios::binary | std::ios::trunc);
-        if (!f.is_open())
-            return false;
-        written.push_back(path);
-        f << content;
-        return static_cast<bool>(f);
-    };
-
-    bool success = writeFile(plan.vertPath, plan.vertContent) &&
-                   writeFile(plan.fragPath, plan.fragContent);
-    for (const auto& include : plan.includeFiles) {
-        if (!success)
-            break;
-        success = writeFile(include.path, include.content);
-    }
-
-    if (!success) {
-        std::error_code ec;
-        for (const auto& path : written)
-            std::filesystem::remove(path, ec);
-        pruneForkDirectories(plan.forkDirPath);
-        Out::error("Could not write forked shader files");
-    }
-    return success;
-}
-
-namespace {
-
-// writes a .glsl under a free name in the default shader directory; empty on failure
-std::string writeEffectFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content) {
-    const std::filesystem::path dirRel = editor::ProjectUtils::defaultShaderForkDir();
-    const std::string baseName = sanitizeShaderName(ShaderType::MESH, desiredName);
+// writes a shader file under a free name; empty on failure
+std::string writeShaderFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content, const std::string& extension = ".glsl") {
+    const std::filesystem::path dirRel = "shaders";
+    const std::string baseName = sanitizeShaderName(desiredName);
     std::string name = baseName;
     int suffix = 2;
-    while (std::filesystem::exists(projectRoot / dirRel / (name + ".glsl")))
+    // engine shader paths count as taken
+    auto taken = [&](const std::string& candidate) {
+        return std::filesystem::exists(projectRoot / dirRel / (candidate + extension)) ||
+            editor::ProjectUtils::isEngineShader((dirRel / (candidate + extension)).generic_string());
+    };
+    while (taken(name))
         name = baseName + std::to_string(suffix++);
 
     std::error_code ec;
     std::filesystem::create_directories(projectRoot / dirRel, ec);
-    std::ofstream file(projectRoot / dirRel / (name + ".glsl"), std::ios::binary);
+    std::ofstream file(projectRoot / dirRel / (name + extension), std::ios::binary);
     if (ec || !file)
         return "";
 
     file << content;
-    return file ? (dirRel / (name + ".glsl")).generic_string() : "";
+    return file ? (dirRel / (name + extension)).generic_string() : "";
 }
 
 }
 
-std::string editor::ProjectUtils::writeVertexOffsetTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName + "_offset", R"(// Moves each vertex by the returned offset in world units, the same in every pass.
-// The values declared below are the mesh's shader uniforms, read as params.name.
+std::string editor::ProjectUtils::getShaderTemplate(ShaderType shaderType) {
+    switch (shaderType) {
+        case ShaderType::UI:
+            return R"(// Hooks of a UI shader. Declared values are read as params.name.
+#pragma shader ui
+
+#pragma stage vertex
+#pragma param float sway = 0 [0, 20] "Sideways sway of the vertices, in world units"
+
+// offset of each vertex, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(sin(Engine.time * 3.0 + context.worldPosition.y * 0.05) * params.sway, 0.0, 0.0);
+}
+
+#pragma stage fragment
+#pragma param vec4 shine = 1, 1, 1, 0.6 color "Color of the band that sweeps across"
+#pragma param float speed = 0.5 [0, 4] "Sweeps per second"
+
+// final color, linear: the tint times the texture and the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float band = 1.0 - smoothstep(0.0, 0.1, abs(fract(context.uv1.x - Engine.time * params.speed) - 0.5));
+    return vec4(mix(color.rgb, params.shine.rgb, band * params.shine.a), color.a);
+}
+)";
+        case ShaderType::POINTS:
+            return R"(// Hooks of a points shader. Declared values are read as params.name.
+#pragma shader points
+
+#pragma stage vertex
+#pragma param float rise = 0 [0, 5] "Height the points drift up, in world units"
+
+// offset of each point, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(0.0, fract(Engine.time * 0.2 + context.worldPosition.x) * params.rise, 0.0);
+}
+
+#pragma stage fragment
+#pragma param float softness = 0.3 [0, 1] "Width of the faded rim"
+
+// final color, linear: the texture times the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float rim = 1.0 - smoothstep(0.5 - params.softness * 0.5, 0.5, length(context.uv1 - 0.5));
+    return vec4(color.rgb, color.a * rim);
+}
+)";
+        case ShaderType::LINES:
+            return R"(// Hooks of a lines shader. Declared values are read as params.name.
+#pragma shader lines
+
+#pragma stage fragment
+#pragma param float pulse = 0.5 [0, 1] "Strength of the light running along the lines"
+#pragma param float speed = 1 [0, 10] "Pulses per second"
+
+// final color, linear: the vertex color
+vec4 getColor(FragmentContext context, vec4 color){
+    float wave = 0.5 + 0.5 * sin(6.2832 * (Engine.time * params.speed - length(context.worldPosition) * 0.2));
+    return vec4(color.rgb * mix(1.0, wave * 2.0, params.pulse), color.a);
+}
+)";
+        case ShaderType::SKYBOX:
+            return R"(// Hooks of a sky shader. Declared values are read as params.name.
+#pragma shader sky
+
+#pragma stage fragment
+#pragma param vec3 sunDirection = 0.3, 0.5, -0.8 "Direction to the sun, in the sky's space"
+#pragma param vec4 sunColor = 1, 0.9, 0.7, 1 color "Color of the sun disk"
+#pragma param float sunSize = 0.02 [0, 0.2] "Angular radius of the disk"
+
+// final color, linear: the cube map times the sky color
+vec4 getColor(FragmentContext context, vec4 color){
+    float facing = dot(normalize(context.direction), normalize(params.sunDirection));
+    float disk = smoothstep(cos(params.sunSize * 1.2), cos(params.sunSize), facing);
+    return vec4(color.rgb + params.sunColor.rgb * params.sunColor.a * disk * 10.0, color.a);
+}
+)";
+        case ShaderType::WATER:
+            return R"(// Hooks of a water shader. Declared values are read as params.name.
+#pragma shader water
+
+#pragma stage fragment
+#pragma param vec4 tint = 0.8, 1, 0.9, 1 color "Color the water is multiplied by"
+
+// final color, linear, after lighting and fog
+vec4 getColor(FragmentContext context, vec4 color){
+    return vec4(color.rgb * params.tint.rgb, color.a);
+}
+)";
+        case ShaderType::POSTPROCESS:
+            return R"(// Hooks of a post-process pass. Declared values are read as params.name.
+#pragma shader postprocess
+
+#pragma stage fragment
+#pragma param float vignette = 0.3 [0, 1] "Darkening toward the corners"
+#pragma param float saturation = 1.1 [0, 2] "Color strength"
+
+// the new color of the pixel, linear; color is the scene there
+vec4 getColor(FragmentContext context, vec4 color){
+    float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+    vec3 graded = mix(vec3(luma), color.rgb, params.saturation);
+    vec2 fromCenter = context.uv - 0.5;
+    graded *= 1.0 - params.vignette * smoothstep(0.1, 0.5, dot(fromCenter, fromCenter));
+    return vec4(graded, color.a);
+}
+)";
+        default:
+            return R"(// Hooks of a mesh shader, run in every pass. Declared values are read as params.name.
+#pragma shader mesh
+
+#pragma stage vertex
 #pragma param float waveHeight = 0.2 [0, 2] "Height of the waves in world units"
 #pragma param float waveSpeed = 2 [0, 10] "Waves per second"
 
-vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition){
-    return vec3(0.0, sin(Engine.time * params.waveSpeed + worldPosition.x) * params.waveHeight, 0.0);
-}
-)");
+// offset of each vertex, in world units
+vec3 getVertexOffset(VertexContext context){
+    return vec3(0.0, sin(Engine.time * params.waveSpeed + context.worldPosition.x) * params.waveHeight, 0.0);
 }
 
-std::string editor::ProjectUtils::writeCoverageTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName) {
-    return writeEffectFile(projectRoot, desiredName + "_coverage", R"(// Returns how much of each fragment stays, from 0 (removed) to 1 (kept), the same in every pass.
-// Opaque surfaces dither in between, blended ones fade.
-#pragma param float cutHeight = 1 "World height above which the mesh is cut away"
+#pragma stage fragment
+#pragma param float cutHeight = 1000 "World height above which the mesh is cut away"
 #pragma param float cutSoftness = 0.2 [0, 5] "Width of the dithered band above the cut"
 #pragma coverage_shadows apply
 
-float getCoverage(CoverageContext context){
+// share of each fragment that stays, 0 to 1
+float getCoverage(FragmentContext context){
     return coverageBelowHeight(context.worldPosition, params.cutHeight, params.cutSoftness);
 }
-)");
+)";
+    }
 }
 
-std::string editor::ProjectUtils::copyEffectFunctionToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
+std::string editor::ProjectUtils::writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+    return writeShaderFile(projectRoot, desiredName, getShaderTemplate(shaderType));
+}
+
+std::string editor::ProjectUtils::getShaderGraphTemplate(ShaderType shaderType) {
+    const std::string type = ShaderParameterParser::getShaderFileType(shaderType);
+    GraphDocument graph;
+    graph.kind = "shader";
+    graph.type = type;
+    graph.addNode("output/" + type, Vector2(300.0f, 0.0f));
+    return graph.write();
+}
+
+std::string editor::ProjectUtils::getShaderFunctionTemplate() {
+    GraphDocument graph;
+    graph.kind = "shader";
+    graph.type = "function";
+    const int input = graph.addNode("function/input", Vector2(0.0f, 0.0f));
+    const int output = graph.addNode("function/output", Vector2(300.0f, 0.0f));
+    graph.connect(input, "out", output, "value");
+    return graph.write();
+}
+
+std::string editor::ProjectUtils::getLogicGraphTemplate() {
+    GraphDocument graph;
+    graph.kind = "logic";
+    graph.type = "script";
+    graph.addNode("event/start", Vector2(0.0f, 0.0f));
+    graph.addNode("event/Engine.onUpdate", Vector2(0.0f, 160.0f));
+    return graph.write();
+}
+
+namespace {
+
+    // the graph text and compiler version, as a stamp
+    std::string logicStamp(const std::string& graphText) {
+        constexpr int compilerVersion = 2;
+        uint64_t hash = 1469598103934665603ull;
+        for (unsigned char c : graphText) {
+            hash ^= c;
+            hash *= 1099511628211ull;
+        }
+        char buffer[40];
+        snprintf(buffer, sizeof(buffer), "[%d:%016llx]", compilerVersion, (unsigned long long)hash);
+        return buffer;
+    }
+
+    struct LogicBuild {
+        std::filesystem::file_time_type graphTime;
+        std::string error;
+    };
+
+    std::mutex logicBuildMutex;
+    // graphs by path, read again when their file changes
+    std::map<std::string, LogicBuild> logicBuilds;
+
+}
+
+std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph) {
+    // mirrors the graph's path under the Lua directory
+    std::filesystem::path script = project->normalizeToLuaRelative(project->resolveLuaPath(project->normalizeToLuaRelative(graph)));
+    if (script.empty() || script.is_absolute() || *script.begin() == "..")
+        return {};
+    script.replace_extension(".lua");
+    return project->getProjectInternalPath() / "generated" / "logic" / script;
+}
+
+bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const std::string& code, std::string& error) {
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    if (script.empty()) {
+        error = graph.filename().string() + " is outside the project's Lua directory, where a logic graph has to be";
+        return false;
+    }
+    // the first line says what it was written from
+    std::string stamped = code;
+    stamped.insert(std::min(stamped.find('\n'), stamped.size()), " " + logicStamp(graphText));
+
+    std::ifstream existing(script, std::ios::binary);
+    std::stringstream held;
+    held << existing.rdbuf();
+    existing.close();
+    if (held.str() == stamped)
+        return true;
+
+    std::error_code ec;
+    std::filesystem::create_directories(script.parent_path(), ec);
+    // replaced whole, never read half written
+    if (!FileUtils::writeFileReplacing(script, stamped)) {
+        error = "could not write the script of " + graph.filename().string();
+        return false;
+    }
+    return true;
+}
+
+void editor::ProjectUtils::removeLogicScript(const Project* project, const std::filesystem::path& graph) {
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    std::error_code ec;
+    if (!script.empty())
+        std::filesystem::remove_all(graph.extension().empty() ? std::filesystem::path(script).replace_extension() : script, ec);
+    std::lock_guard<std::mutex> lock(logicBuildMutex);
+    logicBuilds.clear();
+}
+
+std::filesystem::path editor::ProjectUtils::buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error) {
+    const std::filesystem::path fullPath = project->resolveLuaPath(project->normalizeToLuaRelative(graph));
+    const std::filesystem::path script = getLogicScriptPath(project, graph);
+    auto fail = [&](const std::string& problem, bool log) {
+        if (error)
+            *error = problem;
+        else if (log)
+            Out::error("%s: %s", fullPath.filename().string().c_str(), problem.c_str());
+    };
+    if (script.empty()) {
+        fail("outside the project's Lua directory, where a logic graph has to be", true);
+        return {};
+    }
+
+    std::lock_guard<std::mutex> lock(logicBuildMutex);
+    std::error_code ec;
+    const auto graphTime = std::filesystem::last_write_time(fullPath, ec);
+    if (ec) {
+        // a graph that is gone leaves no script to run
+        std::filesystem::remove(script, ec);
+        logicBuilds.erase(fullPath.string());
+        fail("the graph is missing", false);
+        return {};
+    }
+    auto known = logicBuilds.find(fullPath.string());
+    if (known != logicBuilds.end() && known->second.graphTime == graphTime && std::filesystem::exists(script, ec) == known->second.error.empty()) {
+        if (!known->second.error.empty())
+            fail(known->second.error, false);
+        return script;
+    }
+
+    std::ifstream file(fullPath, std::ios::binary);
+    std::stringstream text;
+    text << file.rdbuf();
+    std::string problem;
+
+    // written from this text by this compiler already
+    std::ifstream held(script, std::ios::binary);
+    std::string firstLine;
+    const bool current = held && std::getline(held, firstLine) && firstLine.find(logicStamp(text.str())) != std::string::npos;
+    held.close();
+    if (!current) {
+        GraphDocument document;
+        if (document.read(text.str(), problem)) {
+            const std::string name = fullPath.filename().string();
+            const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name));
+            if (compiled.success)
+                writeLogicScript(project, fullPath, text.str(), compiled.code, problem);
+            else
+                problem = compiled.describeErrors();
+        }
+    }
+    logicBuilds[fullPath.string()] = {graphTime, problem};
+    // said once for each change of the graph
+    if (!problem.empty())
+        fail(problem, true);
+    return script;
+}
+
+std::string editor::ProjectUtils::writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType) {
+    return writeShaderFile(projectRoot, desiredName, getShaderGraphTemplate(shaderType), ".shader");
+}
+
+std::string editor::ProjectUtils::copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName) {
     auto source = editor::shaderMap.find(enginePath);
     if (source == editor::shaderMap.end())
         return "";
-    return writeEffectFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
+    return writeShaderFile(projectRoot, desiredName, "// A copy of the engine's " + enginePath + "\n" + source->second);
 }
 
-std::vector<std::string> editor::ProjectUtils::getEngineVertexOffsets() {
-    std::vector<std::string> offsets;
+std::vector<std::string> editor::ProjectUtils::getEngineShaders(ShaderType shaderType) {
+    // the embedded files never change, so each type is parsed once
+    static std::map<std::string, std::vector<std::string>> byType;
+    const std::string type = ShaderParameterParser::getShaderFileType(shaderType);
+    auto cached = byType.find(type);
+    if (cached != byType.end())
+        return cached->second;
+
+    std::vector<std::string>& shaders = byType[type];
     for (const auto& entry : editor::shaderMap) {
-        if (isEngineVertexOffset(entry.first))
-            offsets.push_back(entry.first);
+        if (!isEngineShader(entry.first))
+            continue;
+        ShaderEffectAnnotations annotations;
+        ShaderParameterParser::parse(entry.second, entry.first, annotations);
+        if (annotations.shaderType == type)
+            shaders.push_back(entry.first);
     }
-    std::sort(offsets.begin(), offsets.end());
-    return offsets;
+    std::sort(shaders.begin(), shaders.end());
+    return shaders;
 }
 
-bool editor::ProjectUtils::isEngineVertexOffset(const std::string& path) {
-    return path.rfind("offsets/", 0) == 0 && editor::shaderMap.count(path) > 0;
-}
-
-std::vector<std::string> editor::ProjectUtils::getEngineCoverages() {
-    std::vector<std::string> coverages;
-    for (const auto& entry : editor::shaderMap) {
-        if (isEngineCoverage(entry.first))
-            coverages.push_back(entry.first);
-    }
-    std::sort(coverages.begin(), coverages.end());
-    return coverages;
-}
-
-bool editor::ProjectUtils::isEngineCoverage(const std::string& path) {
-    return path.rfind("coverage/", 0) == 0 && editor::shaderMap.count(path) > 0;
-}
-
-bool editor::ProjectUtils::isEngineEffectFunction(const std::string& path) {
-    return isEngineVertexOffset(path) || isEngineCoverage(path);
+bool editor::ProjectUtils::isEngineShader(const std::string& path) {
+    return path.rfind("shaders/", 0) == 0 && editor::shaderMap.count(path) > 0;
 }
 
 bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source) {
@@ -458,43 +521,22 @@ bool editor::ProjectUtils::readShaderSource(const std::filesystem::path& project
     return true;
 }
 
-std::vector<std::pair<std::string, bool>> editor::ProjectUtils::getComponentShaderSources(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity) {
-    std::vector<std::pair<std::string, bool>> sources;
-    auto addFork = [&](const std::string& fork) {
-        if (!fork.empty())
-            sources.push_back({fork, true});
-    };
-    auto addEffect = [&](const std::string& effect) {
-        if (!effect.empty())
-            sources.push_back({effect, false});
-    };
-
+std::string editor::ProjectUtils::getComponentShader(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh) {
+    std::string shader;
     // meshes directly, a scene can hold thousands
     if (cpType == ComponentType::MeshComponent) {
-        if (const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity)) {
-            addFork(mesh->customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh->customShader);
-            addFork(mesh->customDepthShader);
-            addEffect(mesh->vertexOffsetShader);
-            addEffect(mesh->coverageShader);
-        }
-        return sources;
+        const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
+        // terrain takes no shader file
+        if (!mesh || submesh < 0 || submesh >= (int)mesh->numSubmeshes || scene->findComponent<TerrainComponent>(entity))
+            return "";
+        shader = mesh->submeshes[submesh].material.shader;
+    } else if (const std::string* own = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "shader")) {
+        shader = *own;
+    } else {
+        return "";
     }
-    if (const std::string* customShader = Catalog::getPropertyRef<std::string>(scene, entity, cpType, "customShader"))
-        addFork(customShader->empty() ? scene->getDefaultCustomShader(shaderType) : *customShader);
-    if (cpType == ComponentType::WaterComponent) {
-        if (const WaterComponent* water = scene->findComponent<WaterComponent>(entity))
-            addFork(water->customUnderwaterShader);
-    }
-    return sources;
-}
 
-void editor::ProjectUtils::removeShaderFork(const ShaderForkPlan& plan) {
-    std::error_code ec;
-    std::filesystem::remove(plan.vertPath, ec);
-    std::filesystem::remove(plan.fragPath, ec);
-    for (const auto& include : plan.includeFiles)
-        std::filesystem::remove(include.path, ec);
-    pruneForkDirectories(plan.forkDirPath);
+    return shader.empty() ? scene->getDefaultCustomShader(shaderType) : shader;
 }
 
 void editor::ProjectUtils::collectModelEntities(Scene* scene, const ModelComponent& model, std::vector<Entity>& out){

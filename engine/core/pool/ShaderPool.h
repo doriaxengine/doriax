@@ -61,7 +61,7 @@ namespace doriax{
         // Key used to validate a serialized .sdat/header blob. The customShaderId is a
         // session-local registry value (assigned in registration order) and is NOT
         // stable between the editor that exported the shader and the standalone runtime
-        // that loads it. The unique filename already identifies the forked source, so
+        // that loads it. The unique filename already identifies the shader file, so
         // the on-disk validation key drops customId and keeps only type+properties.
         static ShaderKey getStorageKey(ShaderKey key);
 
@@ -76,26 +76,22 @@ namespace doriax{
         // variants stop being exported and looked up.
         static ShaderKey normalizeKey(ShaderKey key);
 
-        // Custom (user-forked) shader registry. Interns a project-relative base path
-        // (e.g. "shaders/myMesh", no extension) and returns a stable session id used
-        // in the ShaderKey; an empty path returns 0 (built-in). The derived (sanitized)
-        // basename is what makes editor build, disk cache, export and shipping-runtime
-        // .sdat filenames line up. Thread-safe (ShaderBuilder runs on a thread pool).
-        static uint16_t registerCustomShader(const std::string& baseName);
-        static std::string getCustomShaderName(uint16_t customId);     // project-relative base, "" if none
+        // Shader file registry. Interns a project-relative .glsl path (e.g. "shaders/wind.glsl")
+        // and returns a stable session id used in the ShaderKey; an empty path returns 0
+        // (built-in). The derived (sanitized) basename is what makes editor build, disk
+        // cache, export and shipping-runtime .sdat filenames line up. Thread-safe
+        // (ShaderBuilder runs on a thread pool).
+        static uint16_t registerCustomShader(const std::string& shader);
+        static std::string getCustomShaderName(uint16_t customId);     // project-relative path, "" if none
         static std::string getCustomShaderBasename(uint16_t customId); // filesystem-safe token, "" if none
 
-        // effect functions ride on the custom shader name, "fork#vertexOffset#coverage"
-        static std::string getCustomShader(const std::string& fork, const std::string& vertexOffset, const std::string& coverage);
-        static std::string getCustomShaderFork(const std::string& customShader);
-        static std::string getCustomShaderVertexOffset(const std::string& customShader);
-        static std::string getCustomShaderCoverage(const std::string& customShader);
-
-        // Frees the GPU handle of every cached forked-shader variant so the next get()
+        // Frees the GPU handle of every cached shader file variant so the next get()
         // rebuilds (used by the editor after a shader source is edited). The pool keeps
         // the ShaderRender objects, so meshes holding them stay valid and re-bind on
         // their needReload pass.
         static void destroyCustomShaders();
+        // the same for the shaders of one shader file
+        static void destroyCustomShader(uint16_t customId);
 
         static const std::vector<ShaderBackend>& getShaderBackends();
         // backend this runtime was built for
@@ -122,10 +118,12 @@ namespace doriax{
                         bool terrain, bool instanced, bool ibl, bool mirror, bool ssao = false,
                         bool light2d = false, bool shadows2d = false,
                         bool alphaMask = false, bool alphaOpaque = false, bool instanceFade = false,
-                        bool terrainPBR = false);
-        // uv1: UV set 1 for a coverage function
-        static uint32_t getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask = false, bool instanceFade = false, bool uv1 = false);
-        static uint32_t getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR = false, bool occlusionTexture = false, bool occlusionUV2 = false, bool uv1 = false);
+                        bool terrainPBR = false, bool hookUV1 = false, bool hookNormals = false, bool hookUV2 = false);
+        // uv1, uv2, normals, tangents and colors for shader files
+        static uint32_t getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask = false, bool instanceFade = false,
+                        bool uv1 = false, bool normals = false, bool vertexColorVec3 = false, bool vertexColorVec4 = false, bool uv2 = false, bool tangents = false);
+        static uint32_t getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR = false, bool occlusionTexture = false, bool occlusionUV2 = false,
+                        bool uv1 = false, bool vertexColorVec3 = false, bool vertexColorVec4 = false, bool uv2 = false, bool tangents = false);
         static uint32_t getUIProperties(bool texture, bool fontAtlasTexture, bool vertexColorVec3, bool vertexColorVec4);
         static uint32_t getPointsProperties(bool texture, bool vertexColorVec3, bool vertexColorVec4, bool textureRect);
         static uint32_t getLinesProperties(bool vertexColorVec3, bool vertexColorVec4);

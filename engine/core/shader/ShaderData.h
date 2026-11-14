@@ -95,6 +95,37 @@ namespace doriax {
         Vector4 defaultValue = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     };
 
+    enum class ShaderTextureDefault{
+        WHITE,
+        BLACK,
+        NORMAL
+    };
+
+    // a declared texture; those of one filter and wrap share a sampler
+    struct DORIAX_API ShaderTextureInfo{
+        ShaderStageType stage = ShaderStageType::FRAGMENT;
+        std::string name;
+        TextureType type = TextureType::TEXTURE_2D;
+        ShaderTextureDefault defaultTexture = ShaderTextureDefault::WHITE;
+        TextureFilter filter = TextureFilter::LINEAR;
+        TextureWrap wrap = TextureWrap::REPEAT;
+
+        // uniform names
+        std::string getTextureName() const { return name + "_texture"; }
+        std::string getSamplerName() const;
+    };
+
+    // what a shader's hooks ask of the renderer
+    enum ShaderFlags : uint32_t {
+        ShaderFlag_CoverageShadows = 1 << 0, // shadow maps follow getCoverage()
+        ShaderFlag_Unlit = 1 << 1,           // compiled unlit whatever its key says
+        ShaderFlag_SceneColor = 1 << 2,      // samples the scene drawn before it
+        ShaderFlag_SceneDepth = 1 << 3,      // samples the depth of the scene drawn before it
+        ShaderFlag_ObjectSpace = 1 << 4,     // reads the local position, the object's position or scale, or the normal
+        ShaderFlag_VertexUV = 1 << 5,        // a hook reads uv1 as the mesh stores it
+        ShaderFlag_VertexColor = 1 << 6      // reads the vertex color
+    };
+
     struct ShaderBinSource{
         unsigned char* data = NULL;
         uint32_t size;
@@ -122,7 +153,8 @@ namespace doriax {
         bool es;
         std::vector<ShaderStage> stages;
         std::vector<ShaderParameterInfo> parameters;
-
+        std::vector<ShaderTextureInfo> textureParameters;
+        uint32_t flags = 0;
 
         ShaderData();
         virtual ~ShaderData();
@@ -139,6 +171,8 @@ namespace doriax {
         // enum (user post-process passes). Missing names give -1.
         int getUniformBlockIndexByName(const std::string& name);
         std::pair<int, int> getTextureIndexByName(const std::string& name);
+        // view and sampler slots of a declared texture
+        std::pair<int, int> getTextureParameterIndex(const ShaderTextureInfo& texture);
 
         // block members, to build its byte blob by name
         const std::vector<ShaderUniform>* getUniformBlockMembers(const std::string& name, unsigned int& sizeBytes);

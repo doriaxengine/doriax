@@ -8,18 +8,21 @@
 // The build defines DEPTH_SHADER (see ShaderBuilder) for the same reason depth.vert does:
 // it suppresses the morph-normal machinery and, unless HAS_TERRAIN_PBR samples them, the
 // terrain texture-coordinate varyings. Skinning and terrain normals are still applied;
-// per-target morph-normal blending is not (fine for SSR).
+// per-target morph normals only reach the hooks (fine for SSR).
 
 uniform u_vs_gbufferParams {
     mat4 modelMatrix;
     mat4 viewProjectionMatrix;
     mat4 normalMatrix;       // view-space normal matrix: transpose(inverse(view*model))
+    #ifdef HOOK_NORMAL
+        mat4 worldNormalMatrix;
+    #endif
 } gbufferParams;
 
 in vec3 a_position;
 out vec2 v_projZW;
 out vec3 v_normal;          // view space
-#ifdef USE_COVERAGE
+#ifdef USE_FRAGMENT_HOOKS
     out vec3 v_worldPosition;
 #endif
 
@@ -32,16 +35,17 @@ out vec3 v_normal;          // view space
     in vec4 i_matrix_col2;
     in vec4 i_matrix_col3;
     in vec4 i_matrix_col4;
+    #include "includes/instance_matrix.glsl"
 #endif
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
+#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     out vec2 v_uv1;
 #endif
 // Terrain carries no texcoord vertex attribute (its UVs are generated from the
 // world position in-shader, like mesh.vert). Declaring a_texcoord1 for terrain
 // would leave that attribute slot unbound, making the pipeline's vertex layout
 // non-continuous and failing sokol validation, so only non-terrain declares it.
-#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)) || defined(HAS_UV_SET1))
+#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)) || defined(HOOK_UV1))
     in vec2 a_texcoord1;
 #endif
 // baked occlusion (material occlusionTexture), on the UV set the material names
@@ -51,6 +55,39 @@ out vec3 v_normal;          // view space
     #endif
     out vec2 v_uvOcclusion;
 #endif
+#if defined(HOOK_UV2) && !(defined(HAS_OCCLUSION_TEXTURE) && defined(OCCLUSION_UV2))
+    in vec2 a_texcoord2;
+#endif
+
+#ifdef HOOK_COLOR
+    #if defined(HAS_VERTEX_COLOR_VEC3)
+        in vec3 a_color;
+    #elif defined(HAS_VERTEX_COLOR_VEC4)
+        in vec4 a_color;
+    #endif
+    #ifdef HAS_INSTANCING
+        in vec4 i_color;
+    #endif
+#endif
+#ifdef HOOK_FRAGMENT_NORMAL
+    out vec3 v_hookNormal;  // world space
+#endif
+#ifdef HOOK_FRAGMENT_COLOR
+    out vec4 v_hookColor;
+#endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat out vec4 v_hookInstance;
+#endif
+#ifdef HOOK_FRAGMENT_UV2
+    out vec2 v_hookUV2;
+#endif
+#ifdef HOOK_TANGENT
+    in vec4 a_tangent;
+    out vec4 v_hookTangent;
+#endif
+#ifdef HOOK_VARYINGS
+    #include "shader_varyings_vs.glsl"
+#endif
 
 #include "includes/parameters_vs.glsl"
 #include "includes/skinning.glsl"
@@ -58,8 +95,10 @@ out vec3 v_normal;          // view space
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#ifdef USE_VERTEX_OFFSET
-    #include "includes/vertex_offset.glsl"
+#if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
+    #define HOOK_NORMAL_MATRIX gbufferParams.worldNormalMatrix
+    #define HOOK_MODEL_MATRIX gbufferParams.modelMatrix
+    #include "includes/hooks_vs.glsl"
 #endif
 
 vec4 getPosition(mat4 boneTransform){
@@ -98,7 +137,7 @@ void main() {
     vec3 objNormal = getNormalObj(boneTransform, objPos);
 
     #ifdef HAS_INSTANCING
-        mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
+        mat4 instanceMatrix = getInstanceMatrix();
         vec4 pos = instanceMatrix * objPos;
         // instance matrix sits between model and object; fold it in before the
         // (model+view) normal matrix
@@ -118,7 +157,7 @@ void main() {
         vec2 terrainBaseUV = getTerrainTiledTexture(objPos.xyz);
     #endif
 
-    #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
+    #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
         #ifdef HAS_TERRAIN_PBR
             v_uv1 = terrainBaseUV;
         #elif defined(HAS_TERRAIN)
@@ -137,16 +176,42 @@ void main() {
         #endif
     #endif
 
+    #ifdef USE_VERTEX_HOOKS
+        VertexContext context = getVertexContext(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz, boneTransform);
+    #endif
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(objPos.xyz, (gbufferParams.modelMatrix * pos).xyz);
+        pos.xyz += getModelOffset(context);
+    #endif
+    #ifdef USE_VARYINGS
+        Varyings varyings;
+        getVaryings(context, varyings);
+        writeVaryings(varyings);
     #endif
 
     gl_Position = mvpMatrix * pos;
+    #ifdef USE_CLIP_POSITION
+        gl_Position = getHookClipPosition(context, gl_Position);
+    #endif
 
     v_projZW = gl_Position.zw;
-    #ifdef USE_COVERAGE
+    #ifdef USE_FRAGMENT_HOOKS
         vec4 worldPosition = gbufferParams.modelMatrix * pos;
         v_worldPosition = worldPosition.xyz / worldPosition.w;
+    #endif
+    #ifdef HOOK_FRAGMENT_NORMAL
+        v_hookNormal = getHookNormal(boneTransform);
+    #endif
+    #ifdef HOOK_FRAGMENT_COLOR
+        v_hookColor = getHookColor();
+    #endif
+    #ifdef HOOK_FRAGMENT_INSTANCE
+        v_hookInstance = getInstanceCustom();
+    #endif
+    #ifdef HOOK_FRAGMENT_UV2
+        v_hookUV2 = a_texcoord2;
+    #endif
+    #ifdef HOOK_TANGENT
+        v_hookTangent = getHookTangent(boneTransform);
     #endif
     // No Y flip here: the G-buffer keeps the target's native orientation, and SSR
     // pairs it with the scene color through the flip flag in misc.z.

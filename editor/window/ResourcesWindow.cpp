@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 #include "ResourcesWindow.h"
+#include "logic/LogicNodes.h"
 #include "util/BidiText.h"
 #include "util/UIUtils.h"
+#include "util/ProjectUtils.h"
 
 #include "ImageViewerWindow.h"
+#include "GraphEditorWindow.h"
 
 #include "AppSettings.h"
 #include "external/IconsFontAwesome6.h"
@@ -16,6 +19,8 @@
 #include "resources/icons/source-icon_png.h"
 #include "resources/icons/header-icon_png.h"
 #include "resources/icons/lua-icon_png.h"
+#include "resources/icons/logic-icon_png.h"
+#include "resources/icons/shader-icon_png.h"
 #include "resources/icons/audio-icon_png.h"
 #include "resources/icons/font-icon_png.h"
 
@@ -157,10 +162,11 @@ std::string editor::ResourcesWindow::thumbnailRequestKey(const fs::path& filePat
     return filePath.lexically_normal().string();
 }
 
-editor::ResourcesWindow::ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow) {
+editor::ResourcesWindow::ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow, GraphEditorWindow* graphEditorWindow) {
     this->project = project;
     this->codeEditor = codeEditor;
     this->imageViewerWindow = imageViewerWindow;
+    this->graphEditorWindow = graphEditorWindow;
     this->firstOpen = true;
     this->requestSort = true;
     this->iconSize = 32;
@@ -556,6 +562,8 @@ ImU32 editor::ResourcesWindow::fileSeparatorColor(const FileEntry& fe) const{
             return ImGui::GetColorU32(ImVec4(0.12f, 0.62f, 0.39f, 1.0f));
         case FileType::FONT:
             return ImGui::GetColorU32(ImVec4(0.84f, 0.27f, 0.31f, 1.0f));
+        case FileType::GRAPH:
+            return ImGui::GetColorU32(ImVec4(0.95f, 0.50f, 0.20f, 1.0f));
         case FileType::NONE:
         default:
             return ImGui::GetColorU32(ImVec4(0.50f, 0.50f, 0.50f, 1.0f));
@@ -985,6 +993,8 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                     const fs::path filePath = currentPath / file.name;
                     if (file.type == FileType::IMAGE)
                         imageViewerWindow->openFile(filePath);
+                    else if (file.type == FileType::GRAPH)
+                        graphEditorWindow->openFile(filePath);
                     else if (file.type == FileType::SCENE)
                         project->openScene(filePath);
                     else
@@ -1450,6 +1460,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                 pathsToDelete.push_back(filePath);
                 codeEditor->closeFile(filePath.string());
                 imageViewerWindow->closeFile(filePath);
+                graphEditorWindow->closeFile(filePath);
             }
 
             project->getProjectCommandHistory()->addCommand(new DeleteFileCmd(project, pathsToDelete, project->getProjectPath()));
@@ -1632,6 +1643,8 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
     TextureRender* sourceIconH = sourceIcon.getRender();
     TextureRender* headerIconH = headerIcon.getRender();
     TextureRender* luaIconH = luaIcon.getRender();
+    TextureRender* logicIconH = logicIcon.getRender();
+    TextureRender* shaderIconH = shaderIcon.getRender();
     TextureRender* audioIconH = audioIcon.getRender();
     TextureRender* fontIconH = fontIcon.getRender();
 
@@ -1700,6 +1713,9 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
             }else if (Util::isFontFile(fileEntry.extension)){
                 fileEntry.type = FileType::FONT;
                 fileEntry.icon = fontIconH;
+            }else if (Util::isGraphFile(fileEntry.extension)){
+                fileEntry.type = FileType::GRAPH;
+                fileEntry.icon = Util::isLogicGraphFile(fileEntry.extension) ? logicIconH : shaderIconH;
             }
 
             if (fileEntry.type == FileType::IMAGE || fileEntry.type == FileType::MATERIAL || fileEntry.type == FileType::MODEL) {
@@ -1779,9 +1795,10 @@ void editor::ResourcesWindow::handleInternalDragAndDrop(const fs::path& targetDi
     scanDirectory(currentPath);
 }
 
-void editor::ResourcesWindow::startNewItem(NewItemType type, const fs::path& directory){
+void editor::ResourcesWindow::startNewItem(NewItemType type, const fs::path& directory, ShaderType shaderType){
     isCreatingNewItem = true;
     newItemType = type;
+    newItemShaderType = shaderType;
     newItemDirectory = directory;
     memset(nameBuffer, 0, sizeof(nameBuffer));
 }
@@ -1796,9 +1813,33 @@ void editor::ResourcesWindow::renderNewItemMenu(const fs::path& directory){
     bool inLuaDir = Util::isInsidePath(directory, project->getLuaPath());
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " Lua Script", nullptr, false, inLuaDir)) startNewItem(NewItemType::LUA_SCRIPT, directory);
     if (!inLuaDir) ImGui::SetItemTooltip("Lua scripts must be inside the Lua directory");
+    if (ImGui::MenuItem(ICON_FA_DIAGRAM_PROJECT " Logic Graph", nullptr, false, inLuaDir)) startNewItem(NewItemType::LOGIC_GRAPH, directory);
+    ImGui::SetItemTooltip(inLuaDir ? "A script made of nodes" : "Logic graphs must be inside the Lua directory");
 
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Source")) startNewItem(NewItemType::CPP_SOURCE, directory);
     if (ImGui::MenuItem(ICON_FA_FILE_CODE " C++ Header")) startNewItem(NewItemType::CPP_HEADER, directory);
+
+    ImGui::Separator();
+
+    // the kinds a shader file can be
+    static const std::pair<const char*, ShaderType> shaderTypes[] = {
+        {"Mesh", ShaderType::MESH}, {"UI", ShaderType::UI}, {"Points", ShaderType::POINTS}, {"Lines", ShaderType::LINES},
+        {"Sky", ShaderType::SKYBOX}, {"Water", ShaderType::WATER}, {"Post-process", ShaderType::POSTPROCESS}};
+    for (NewItemType type : {NewItemType::SHADER, NewItemType::SHADER_GRAPH}) {
+        const bool graph = type == NewItemType::SHADER_GRAPH;
+        if (!ImGui::BeginMenu(graph ? ICON_FA_DIAGRAM_PROJECT " Shader Graph" : ICON_FA_FILE_CODE " Shader"))
+            continue;
+        for (const auto& [label, shaderType] : shaderTypes)
+            if (ImGui::MenuItem(label))
+                startNewItem(type, directory, shaderType);
+        if (graph) {
+            ImGui::Separator();
+            if (ImGui::MenuItem("Function"))
+                startNewItem(NewItemType::SHADER_FUNCTION, directory);
+            ImGui::SetItemTooltip("A part other graphs use through Subgraph nodes");
+        }
+        ImGui::EndMenu();
+    }
 
     ImGui::EndMenu();
 }
@@ -1809,6 +1850,10 @@ void editor::ResourcesWindow::handleNewItem(){
     if (newItemType == NewItemType::LUA_SCRIPT) popupName = "Create New Lua Script";
     else if (newItemType == NewItemType::CPP_SOURCE) popupName = "Create New C++ Source";
     else if (newItemType == NewItemType::CPP_HEADER) popupName = "Create New C++ Header";
+    else if (newItemType == NewItemType::SHADER) popupName = "Create New Shader";
+    else if (newItemType == NewItemType::SHADER_GRAPH) popupName = "Create New Shader Graph";
+    else if (newItemType == NewItemType::SHADER_FUNCTION) popupName = "Create New Shader Function";
+    else if (newItemType == NewItemType::LOGIC_GRAPH) popupName = "Create New Logic Graph";
 
     // Handle new item creation popup
     if (isCreatingNewItem) {
@@ -1861,13 +1906,30 @@ void editor::ResourcesWindow::handleNewItem(){
                 } else if (newItemType == NewItemType::CPP_HEADER) {
                     if (!Util::isHeaderFile(itemName)) itemName += ".h";
                     content = "#pragma once\n";
+                } else if (newItemType == NewItemType::SHADER) {
+                    if (fs::path(itemName).extension() != ".glsl") itemName += ".glsl";
+                    content = ProjectUtils::getShaderTemplate(newItemShaderType);
+                } else if (newItemType == NewItemType::SHADER_GRAPH) {
+                    if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
+                    content = ProjectUtils::getShaderGraphTemplate(newItemShaderType);
+                } else if (newItemType == NewItemType::SHADER_FUNCTION) {
+                    if (!Util::isShaderGraphFile(itemName)) itemName += ".shader";
+                    content = ProjectUtils::getShaderFunctionTemplate();
+                } else if (newItemType == NewItemType::LOGIC_GRAPH) {
+                    if (!Util::isLogicGraphFile(itemName)) itemName += ".logic";
+                    content = ProjectUtils::getLogicGraphTemplate();
                 }
 
                 try {
                     fs::path newItemPath = newItemDirectory / FileUtils::pathFromUtf8(itemName);
 
                     // Check if the name is already taken
-                    if (!FileUtils::isNarrowPath(newItemPath)) {
+                    // a logic graph's name is its script's, which Lua must take
+                    const std::string stem = newItemPath.stem().string();
+                    const bool scriptName = newItemType != NewItemType::LOGIC_GRAPH ||
+                        (!std::isdigit((unsigned char)stem[0]) && !LogicNodes::isLuaKeyword(stem) &&
+                         std::all_of(stem.begin(), stem.end(), [](unsigned char c) { return std::isalnum(c) || c == '_'; }));
+                    if (!FileUtils::isNarrowPath(newItemPath) || !scriptName) {
                         ImGui::OpenPopup("Invalid Name");
                     } else if (fs::exists(newItemPath)) {
                         ImGui::OpenPopup("Name Already Exists");
@@ -2003,7 +2065,6 @@ void editor::ResourcesWindow::handleRename(){
             fs::path newName = FileUtils::pathFromUtf8(nameBuffer);
             if (!newName.empty() && newName != fs::path(fileBeingRenamed)) {
                 try {
-                    fs::path oldPath = currentPath / fileBeingRenamed;
                     fs::path newPath = currentPath / newName;
 
                     // Check if the target file already exists
@@ -2012,9 +2073,8 @@ void editor::ResourcesWindow::handleRename(){
                     } else if (fs::exists(newPath)) {
                         ImGui::OpenPopup("File Already Exists");
                     } else {
+                        // the command moves open tabs, undo included
                         project->getProjectCommandHistory()->addCommand(new RenameFileCmd(project, fileBeingRenamed, newName.string(), currentPath.string()));
-                        codeEditor->handleFileRename(oldPath, newPath);
-                        imageViewerWindow->handleFileRename(oldPath, newPath);
                         scanDirectory(currentPath);
                         isRenaming = false;
                         ImGui::CloseCurrentPopup();
@@ -2633,6 +2693,14 @@ void editor::ResourcesWindow::show() {
         data.loadTextureFromMemory(lua_icon_png, lua_icon_png_len);
         luaIcon.setData("editor:resources:lua_icon", data);
         luaIcon.load();
+
+        data.loadTextureFromMemory(logic_icon_png, logic_icon_png_len);
+        logicIcon.setData("editor:resources:logic_icon", data);
+        logicIcon.load();
+
+        data.loadTextureFromMemory(shader_icon_png, shader_icon_png_len);
+        shaderIcon.setData("editor:resources:shader_icon", data);
+        shaderIcon.load();
 
         data.loadTextureFromMemory(audio_icon_png, audio_icon_png_len);
         audioIcon.setData("editor:resources:audio_icon", data);

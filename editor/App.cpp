@@ -34,6 +34,7 @@
 #include "util/DefaultFontArabic.h"
 
 #include "shader/ShaderBuilder.h"
+#include "shader/graph/ShaderNodes.h"
 #include "subsystem/MeshSystem.h"
 #include "subsystem/RenderSystem.h"
 #include "subsystem/UISystem.h"
@@ -109,12 +110,17 @@ editor::App::App(){
     structureWindow = new Structure(&project, sceneWindow);
     codeEditor = new CodeEditor(&project, &gitMonitor);
     imageViewerWindow = new ImageViewerWindow(&project);
-    resourcesWindow = new ResourcesWindow(&project, codeEditor, imageViewerWindow);
+    graphEditorWindow = new GraphEditorWindow(&project);
+    resourcesWindow = new ResourcesWindow(&project, codeEditor, imageViewerWindow, graphEditorWindow);
     loadingWindow = new LoadingWindow();
     animationWindow = new AnimationWindow(&project);
     terrainEditWindow = new TerrainEditWindow(&project);
     aiChatWindow = new AiChatWindow(&project, resourcesWindow);
     mcpServer = new ai::McpServer(&project, resourcesWindow);
+    // Subgraph nodes show the pins of the project's function graphs
+    ShaderNodes::setFunctionPins([this](const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs) {
+        return ShaderBuilder::getFunctionPins(&project, path, inputs, outputs);
+    });
 
     isInitialized = false;
     dockspaceNeedsRebuild = false;
@@ -138,6 +144,10 @@ void editor::App::saveFunc(){
         if (!codeEditor->saveLastFocused()) {
             registerAlert("Save Failed", "The script could not be saved. Check its file permissions and try again.");
         }
+    }else if (lastFocusedWindow == LastFocusedWindow::Graph) {
+        if (!graphEditorWindow->saveLastFocused()) {
+            registerAlert("Save Failed", "The graph could not be saved. Check its file permissions and try again.");
+        }
     }else if (project.isPlaySessionActive()) {
         registerAlert("Scene Running", "A scene is currently running or stopping. Stop it before saving.");
     }else if (!project.isAnyScenePlaying()) {
@@ -156,6 +166,12 @@ void editor::App::saveAllFunc(std::function<void(bool)> callback){
     codeEditor->saveAll();
     if (codeEditor->hasUnsavedChanges()) {
         registerAlert("Save Failed", "Some scripts could not be saved. Check their file permissions and try again.");
+        if (callback) callback(false);
+        return;
+    }
+    graphEditorWindow->saveAll();
+    if (graphEditorWindow->hasUnsavedChanges()) {
+        registerAlert("Save Failed", "Some graphs could not be saved. Check their file permissions and try again.");
         if (callback) callback(false);
         return;
     }
@@ -212,7 +228,7 @@ void editor::App::openProjectFunc(){
 
         requestProjectChange([this, projectDir]() { project.loadProject(projectDir); });
     };
-    if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || project.isTempUnsavedProject()) {
+    if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || graphEditorWindow->hasUnsavedChanges() || project.isTempUnsavedProject()) {
         registerConfirmAlert(
             "Unsaved Changes",
             "There are unsaved changes. Do you want to save them before opening another project?",
@@ -358,6 +374,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
             canSave = !isProjectBusy;
         } else if (lastFocusedWindow == LastFocusedWindow::Code) {
             canSave = codeEditor->hasLastFocusedUnsavedChanges();
+        } else if (lastFocusedWindow == LastFocusedWindow::Graph) {
+            canSave = graphEditorWindow->hasLastFocusedUnsavedChanges();
         } else {
             canSave = !isProjectBusy && project.hasSelectedSceneUnsavedChanges();
         }
@@ -374,6 +392,9 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         } else if (lastFocusedWindow == LastFocusedWindow::Code) {
             canUndo = codeEditor->canUndoLastFocused();
             canRedo = codeEditor->canRedoLastFocused();
+        } else if (lastFocusedWindow == LastFocusedWindow::Graph) {
+            canUndo = graphEditorWindow->canUndoLastFocused();
+            canRedo = graphEditorWindow->canRedoLastFocused();
         } else if (lastFocusedWindow != LastFocusedWindow::AI && hasSelectedScene) {
             canUndo = CommandHandle::get(selectedSceneId)->canUndo();
             canRedo = CommandHandle::get(selectedSceneId)->canRedo();
@@ -498,7 +519,7 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                     if (project.createTempProject(projectName, true)) aiChatWindow->startNewChat();
                 });
             };
-            if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() ||
+            if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || graphEditorWindow->hasUnsavedChanges() ||
                 project.isTempUnsavedProject()) {
                 registerConfirmAlert(
                     "Unsaved Changes",
@@ -531,7 +552,7 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
             auto openRecentProject = [this, path]() {
                 requestProjectChange([this, path]() { project.loadProject(path); });
             };
-            if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() ||
+            if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || graphEditorWindow->hasUnsavedChanges() ||
                 project.isTempUnsavedProject()) {
                 registerConfirmAlert(
                     "Unsaved Changes",
@@ -568,6 +589,8 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 resourcesWindow->refreshCurrentDirectory();
             } else if (lastFocusedWindow == LastFocusedWindow::Code) {
                 codeEditor->undoLastFocused();
+            } else if (lastFocusedWindow == LastFocusedWindow::Graph) {
+                graphEditorWindow->undoLastFocused();
             } else if (lastFocusedWindow != LastFocusedWindow::AI && project.getSelectedScene()) {
                 CommandHandle::get(project.getSelectedSceneId())->undo();
             }
@@ -578,6 +601,8 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 resourcesWindow->refreshCurrentDirectory();
             } else if (lastFocusedWindow == LastFocusedWindow::Code) {
                 codeEditor->redoLastFocused();
+            } else if (lastFocusedWindow == LastFocusedWindow::Graph) {
+                graphEditorWindow->redoLastFocused();
             } else if (lastFocusedWindow != LastFocusedWindow::AI && project.getSelectedScene()) {
                 CommandHandle::get(project.getSelectedSceneId())->redo();
             }
@@ -1053,7 +1078,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onYes) {
-                        alert.onYes();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onYes;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1061,7 +1088,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onNo) {
-                        alert.onNo();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onNo;
+                        callback();
                     }
                 }
             } else if (alert.type == AlertType::ThreeButton) {
@@ -1074,7 +1103,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onYes) {
-                        alert.onYes();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onYes;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1082,7 +1113,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onNo) {
-                        alert.onNo();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onNo;
+                        callback();
                     }
                 }
                 ImGui::SameLine();
@@ -1090,7 +1123,9 @@ void editor::App::showAlert(){
                     alert.needShow = false;
                     ImGui::CloseCurrentPopup();
                     if (alert.onCancel) {
-                        alert.onCancel();
+                        // a copy: the call may register the next alert over this one
+                        const std::function<void()> callback = alert.onCancel;
+                        callback();
                     }
                 }
             }
@@ -1322,6 +1357,17 @@ void editor::App::dockProjectTabs(){
         }
     };
 
+    auto dockGraphTab = [&](const TabEntry& tab) {
+        fs::path fullPath = project.getProjectPath() / tab.filepath;
+        if (fs::exists(fullPath)) {
+            if (!graphEditorWindow->isFileOpen(tab.filepath)) {
+                graphEditorWindow->openFile(tab.filepath, false);
+            } else {
+                dockTabWindow(GraphEditorWindow::getWindowId(tab.filepath));
+            }
+        }
+    };
+
     auto dockOrphanScenes = [&]() {
         for (auto& sceneProject : project.getScenes()) {
             if (!sceneProject.opened) continue;
@@ -1343,11 +1389,15 @@ void editor::App::dockProjectTabs(){
         for (const auto& tab : tabs) {
             if (tab.type == TabType::IMAGE_VIEWER) dockImageTab(tab);
         }
+        for (const auto& tab : tabs) {
+            if (tab.type == TabType::GRAPH_EDITOR) dockGraphTab(tab);
+        }
     } else {
         for (const auto& tab : tabs) {
             if (tab.type == TabType::SCENE) dockSceneTab(tab);
             else if (tab.type == TabType::CODE_EDITOR) dockCodeTab(tab);
             else if (tab.type == TabType::IMAGE_VIEWER) dockImageTab(tab);
+            else if (tab.type == TabType::GRAPH_EDITOR) dockGraphTab(tab);
         }
         dockOrphanScenes();
     }
@@ -1389,6 +1439,9 @@ void editor::App::dockProjectTabs(){
         for (const auto& tab : tabs) {
             if (tab.type == TabType::IMAGE_VIEWER) stampDockOrder(tabWindowName(tab));
         }
+        for (const auto& tab : tabs) {
+            if (tab.type == TabType::GRAPH_EDITOR) stampDockOrder(tabWindowName(tab));
+        }
     } else {
         for (const auto& tab : tabs) {
             stampDockOrder(tabWindowName(tab));
@@ -1407,6 +1460,9 @@ std::string editor::App::tabWindowName(const TabEntry& tab) const {
     }
     if (tab.type == TabType::IMAGE_VIEWER) {
         return ImageViewerWindow::getWindowId(tab.filepath);
+    }
+    if (tab.type == TabType::GRAPH_EDITOR) {
+        return GraphEditorWindow::getWindowId(tab.filepath);
     }
     // CodeEditor docks its windows as "###<relative-filepath>" (see getWindowTitle()).
     return "###" + tab.filepath;
@@ -1771,6 +1827,8 @@ void editor::App::show(){
             lastFocusedWindow = LastFocusedWindow::Resources;
         } else if (codeEditor->isFocused()) {
             lastFocusedWindow = LastFocusedWindow::Code;
+        } else if (graphEditorWindow->isFocused()) {
+            lastFocusedWindow = LastFocusedWindow::Graph;
         } else if (aiChatWindow->isFocused()) {
             lastFocusedWindow = LastFocusedWindow::AI;
         }else{
@@ -1847,7 +1905,7 @@ void editor::App::show(){
         // space to keys events
     }
 
-    if (!popupOpen && !resourcesWindow->isFocused() && !codeEditor->isFocused() && !aiChatWindow->isFocused()){
+    if (!popupOpen && !resourcesWindow->isFocused() && !codeEditor->isFocused() && !graphEditorWindow->isFocused() && !aiChatWindow->isFocused()){
         uint32_t sceneId = project.getSelectedSceneId();
 
         // Update the Undo and Redo button logic:
@@ -1863,6 +1921,15 @@ void editor::App::show(){
         if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) duplicateSelection();
 
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F2, false)) propertiesWindow->focusNameInput();
+    }
+
+    if (!popupOpen && graphEditorWindow->isFocused()) {
+        if (isUndo) {
+            graphEditorWindow->undoLastFocused();
+        }
+        if (isRedo) {
+            graphEditorWindow->redoLastFocused();
+        }
     }
 
     if (!popupOpen && resourcesWindow->isFocused()) {
@@ -1917,6 +1984,7 @@ void editor::App::show(){
     structureWindow->show();
     resourcesWindow->show();
     imageViewerWindow->show();
+    graphEditorWindow->show();
     outputWindow->show();
     animationWindow->show();
     terrainEditWindow->show();
@@ -2676,6 +2744,7 @@ void editor::App::prepareForProjectSwitch() {
     Engine::removeAllScenes();
     Engine::setFramebuffer(nullptr);
     codeEditor->closeAll();
+    graphEditorWindow->closeAll();
     outputWindow->clear();
     sceneWindow->resetProjectState();
     terrainEditWindow->resetProjectState();
@@ -2704,6 +2773,12 @@ void editor::App::addNewCodeWindowToDock(fs::path path, bool force){
 void editor::App::addImageViewerWindowToDock(fs::path path, bool force){
     if (isInitialized && !projectLoading){
         dockTabWindow(ImageViewerWindow::getWindowId(path), force);
+    }
+}
+
+void editor::App::addGraphEditorWindowToDock(fs::path path, bool force){
+    if (isInitialized && !projectLoading){
+        dockTabWindow(GraphEditorWindow::getWindowId(path), force);
     }
 }
 
@@ -2784,6 +2859,10 @@ void editor::App::flushSceneMaterialWrites(uint32_t sceneId) {
 void editor::App::saveAllCodeEditors() {
     if (codeEditor) {
         codeEditor->saveAll();
+    }
+    // logic graphs write their scripts on save
+    if (graphEditorWindow) {
+        graphEditorWindow->saveAll();
     }
 }
 
@@ -2905,10 +2984,20 @@ std::filesystem::path editor::App::getUserCacheBaseDir() {
 std::filesystem::path editor::App::getUserShaderCacheDir(){
     // Bump on any shader source change: the .sdat cache is keyed by shaderType and
     // properties, not by source. Older entries are in git history.
-    // v58: whitecaps filtered under a pixel, repeating where their travel wraps.
-    // v59: shadow cascades sampled inside their loop.
-    // v60: shader parameters declared with #pragma.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v60";
+    // v61: hooks in shader files with stages, on the material.
+    // v62: varyings, clip position and depth offset hooks.
+    // v63: shader files on every type, post-process scene inputs.
+    // v67: one fragment shadow block, one terrain blend sampler.
+    // v68: object, camera planes and view matrix for hooks.
+    // v69: flags for what the hooks read, which sprite batching asks.
+    // v70: varyings type where unread, getLight shadows on any side.
+    // v71: fragment uv1 reads flagged for sprite batching.
+    // v72: depth surface hooks start from material factors.
+    // v73: G-buffer surface hooks get the emissive factor.
+    // v74: depth reads the surface normal, unlit hooks match.
+    // v75: vertex color in hook surfaces, flat normals fixed.
+    // v76: morphed hook normals, flat normals without lights.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v76";
 }
 
 void editor::App::pushTabNotificationStyle(){
@@ -2939,6 +3028,10 @@ editor::CodeEditor* editor::App::getCodeEditor() const{
 
 editor::ImageViewerWindow* editor::App::getImageViewerWindow() const{
     return imageViewerWindow;
+}
+
+editor::GraphEditorWindow* editor::App::getGraphEditorWindow() const{
+    return graphEditorWindow;
 }
 
 editor::ResourcesWindow* editor::App::getResourcesWindow() const{
@@ -3227,7 +3320,7 @@ void editor::App::exit() {
         return;
     }
 
-    if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || project.isTempUnsavedProject()) {
+    if (project.hasScenesUnsavedChanges() || codeEditor->hasUnsavedChanges() || graphEditorWindow->hasUnsavedChanges() || project.isTempUnsavedProject()) {
         registerThreeButtonAlert(
             "Unsaved Changes",
             "There are unsaved changes. Do you want to save them before exiting?",

@@ -2,8 +2,6 @@
 
 // Vertexless fullscreen triangle: drawn with draw(3, 1) and no vertex buffer.
 // gl_VertexIndex 0,1,2 -> uv (0,0),(2,0),(0,2) -> clip triangle covering the screen.
-//
-// A post-process or underwater fork can declare values here too, as in its .frag.
 out vec2 v_texcoord;
 
 #include "includes/parameters_vs.glsl"

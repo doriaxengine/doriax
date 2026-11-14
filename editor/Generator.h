@@ -97,7 +97,6 @@ namespace doriax::editor {
         std::atomic<bool> lastBuildSucceeded;
         CommandRunner commandRunner;
 
-        static fs::path getGeneratedPath(const fs::path& projectInternalPath);
         static std::string getEditorPluginAbiCheck();
         static const CMakeKit* chooseDefaultKit(const std::vector<CMakeKit>& kits);
 
@@ -119,6 +118,8 @@ namespace doriax::editor {
         void writeSourceFiles(const fs::path& projectPath, const fs::path& projectInternalPath, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<SceneBuildInfo>& scenes, const std::vector<BundleSceneInfo>& bundles, bool vsyncEnabled, const WindowSettings& windowSettings, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard);
 
     public:
+        // .doriax/generated, where scene, bundle and shader graph sources go
+        static fs::path getGeneratedPath(const fs::path& projectInternalPath);
         Generator();
         ~Generator();
         // Export rebuilds the engine, so it does not need the editor's ABI.

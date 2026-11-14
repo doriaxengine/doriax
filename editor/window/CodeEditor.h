@@ -70,7 +70,7 @@ namespace doriax::editor {
         size_t pendingEvent = 0;
 
         void checkFileChanges(EditorInstance& instance);
-        // Drops the compiled forks of a shader source after it is written or reloaded
+        // Drops the compiled shaders of a shader file after it is written or reloaded
         void invalidateShadersForFile(const EditorInstance& instance);
         // Re-parses properties of script files edited outside the editor (e.g. in nano)
         void checkExternalScriptChanges();

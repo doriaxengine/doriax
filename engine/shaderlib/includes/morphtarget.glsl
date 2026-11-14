@@ -12,20 +12,21 @@
         in vec3 a_morphTarget7;
     #endif
 
-    #ifndef DEPTH_SHADER
-        #if defined(HAS_NORMALS) && defined(HAS_MORPHNORMAL)
-            in vec3 a_morphNormal0;
-            in vec3 a_morphNormal1;
-            #if !defined(HAS_MORPHTANGENT)
-                in vec3 a_morphNormal2;
-                in vec3 a_morphNormal3;
-            #endif
+    // depth passes read normals and tangents only for the hooks
+    #if defined(HAS_MORPHNORMAL) && ((defined(HAS_NORMALS) && !defined(DEPTH_SHADER)) || defined(HOOK_NORMAL))
+        #define MORPH_NORMALS
+        in vec3 a_morphNormal0;
+        in vec3 a_morphNormal1;
+        #if !defined(HAS_MORPHTANGENT)
+            in vec3 a_morphNormal2;
+            in vec3 a_morphNormal3;
         #endif
+    #endif
 
-        #if defined(HAS_TANGENTS) && defined(HAS_MORPHTANGENT)
-            in vec3 a_morphTangent0;
-            in vec3 a_morphTangent1;
-        #endif
+    #if defined(HAS_MORPHTANGENT) && ((defined(HAS_TANGENTS) && !defined(DEPTH_SHADER)) || defined(HOOK_TANGENT))
+        #define MORPH_TANGENTS
+        in vec3 a_morphTangent0;
+        in vec3 a_morphTangent1;
     #endif
 
     uniform u_vs_morphtarget {
@@ -56,26 +57,24 @@ vec3 getMorphPosition(vec3 pos){
     return pos;
 }
 
-#ifndef DEPTH_SHADER
-    vec3 getMorphNormal(vec3 normal){
-        #if defined(HAS_NORMALS) && defined(HAS_MORPHNORMAL)
-            normal += (morphWeights[0].x * a_morphNormal0);
-            normal += (morphWeights[0].y * a_morphNormal1);
-            #if !defined(HAS_MORPHTANGENT)
-                normal += (morphWeights[0].z * a_morphNormal2);
-                normal += (morphWeights[0].w * a_morphNormal3);
-            #endif
+vec3 getMorphNormal(vec3 normal){
+    #ifdef MORPH_NORMALS
+        normal += (morphWeights[0].x * a_morphNormal0);
+        normal += (morphWeights[0].y * a_morphNormal1);
+        #if !defined(HAS_MORPHTANGENT)
+            normal += (morphWeights[0].z * a_morphNormal2);
+            normal += (morphWeights[0].w * a_morphNormal3);
         #endif
+    #endif
 
-        return normal;
-    }
+    return normal;
+}
 
-    vec3 getMorphTangent(vec3 tangent){
-        #if defined(HAS_TANGENTS) && defined(HAS_MORPHTANGENT)
-            tangent += (morphWeights[0].x * a_morphTangent0);
-            tangent += (morphWeights[0].y * a_morphTangent1);
-        #endif
+vec3 getMorphTangent(vec3 tangent){
+    #ifdef MORPH_TANGENTS
+        tangent += (morphWeights[0].x * a_morphTangent0);
+        tangent += (morphWeights[0].y * a_morphTangent1);
+    #endif
 
-        return tangent;
-    }
-#endif
+    return tangent;
+}

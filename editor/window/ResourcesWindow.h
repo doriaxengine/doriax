@@ -27,6 +27,7 @@ namespace fs = std::filesystem;
 namespace doriax::editor {
 
     class ImageViewerWindow;
+    class GraphEditorWindow;
 
     enum class FileType {
         NONE,
@@ -39,7 +40,8 @@ namespace doriax::editor {
         HEADER,
         LUA,
         AUDIO,
-        FONT
+        FONT,
+        GRAPH
     };
 
     struct FileEntry {
@@ -73,6 +75,7 @@ namespace doriax::editor {
         Project* project;
         CodeEditor* codeEditor;
         ImageViewerWindow* imageViewerWindow;
+        GraphEditorWindow* graphEditorWindow;
 
         enum class LayoutType {
             AUTO,              // Automatically switch between GRID and SPLIT_FILES_ONLY based on window size
@@ -104,6 +107,8 @@ namespace doriax::editor {
         Texture sourceIcon;
         Texture headerIcon;
         Texture luaIcon;
+        Texture logicIcon;
+        Texture shaderIcon;
         Texture audioIcon;
         Texture fontIcon;
         // Bounded cache of GPU thumbnail textures; must stay well below the
@@ -143,10 +148,15 @@ namespace doriax::editor {
             FOLDER,
             LUA_SCRIPT,
             CPP_SOURCE,
-            CPP_HEADER
+            CPP_HEADER,
+            SHADER,
+            SHADER_GRAPH,
+            SHADER_FUNCTION,
+            LOGIC_GRAPH
         };
         bool isCreatingNewItem;
         NewItemType newItemType = NewItemType::FOLDER;
+        ShaderType newItemShaderType = ShaderType::MESH;
         fs::path newItemDirectory;
 
         std::filesystem::file_time_type lastWriteTime;
@@ -217,7 +227,7 @@ namespace doriax::editor {
         void sortWithSortSpecs(ImGuiTableSortSpecs* sortSpecs, std::vector<FileEntry>& files);
         void highlightDragAndDrop();
         void handleInternalDragAndDrop(const fs::path& targetDirectory);
-        void startNewItem(NewItemType type, const fs::path& directory);
+        void startNewItem(NewItemType type, const fs::path& directory, ShaderType shaderType = ShaderType::MESH);
         void handleNewItem();
         void startRename(const std::string& fileName);
         void handleRename();
@@ -245,7 +255,7 @@ namespace doriax::editor {
     public:
         static constexpr const char* WINDOW_NAME = "Resources";
 
-        ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow);
+        ResourcesWindow(Project* project, CodeEditor* codeEditor, ImageViewerWindow* imageViewerWindow, GraphEditorWindow* graphEditorWindow);
         ~ResourcesWindow();
 
         bool isFocused() const;

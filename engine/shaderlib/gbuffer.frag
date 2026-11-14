@@ -18,20 +18,18 @@ layout(location = 3) out vec4 frag_occlusion;
 in vec2 v_projZW;
 in vec3 v_normal;
 // in the vertex stage's order: GL pairs the stages by location
-#ifdef USE_COVERAGE
+#ifdef USE_FRAGMENT_HOOKS
     in vec3 v_worldPosition;
 #endif
 
 uniform u_fs_gbufferMaterial {
     vec4 params;        // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutoff (-1 = disabled)
     vec4 baseColorFactor;
+    vec4 emissiveFactor; // for a surface hook, w = 1 when unlit
 } gbufferMaterial;
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HAS_UV_SET1)
+#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
     in vec2 v_uv1;
-    #define COVERAGE_UV v_uv1
-#else
-    #define COVERAGE_UV vec2(0.0)
 #endif
 #if defined(HAS_BASECOLOR_TEXTURE)
     uniform texture2D u_baseColorTexture;
@@ -46,6 +44,24 @@ uniform u_fs_gbufferMaterial {
     uniform texture2D u_occlusionTexture;
     uniform sampler u_occlusion_smp;
 #endif
+#ifdef HOOK_FRAGMENT_NORMAL
+    in vec3 v_hookNormal;
+#endif
+#ifdef HOOK_FRAGMENT_COLOR
+    in vec4 v_hookColor;
+#endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat in vec4 v_hookInstance;
+#endif
+#ifdef HOOK_FRAGMENT_UV2
+    in vec2 v_hookUV2;
+#endif
+#ifdef HOOK_TANGENT
+    in vec4 v_hookTangent;
+#endif
+#ifdef USE_VARYINGS
+    #include "shader_varyings_fs.glsl"
+#endif
 
 #include "includes/depth_util.glsl"
 #include "includes/octahedral.glsl"
@@ -54,27 +70,59 @@ uniform u_fs_gbufferMaterial {
     #include "includes/terrain_fs.glsl"
 #endif
 #include "includes/parameters_fs.glsl"
-#ifdef USE_COVERAGE
-    #include "includes/coverage.glsl"
+#ifdef USE_FRAGMENT_HOOKS
+    #include "includes/hooks_fs.glsl"
+
+    FragmentContext getGBufferContext(){
+        FragmentContext context = getFragmentContext(v_worldPosition);
+        #ifdef HOOK_FRAGMENT_UV1
+            context.uv1 = v_uv1;
+        #endif
+        #ifdef HOOK_FRAGMENT_NORMAL
+            context.normal = normalize(gl_FrontFacing ? v_hookNormal : -v_hookNormal);
+        #endif
+        #ifdef HOOK_FRAGMENT_UV2
+            context.uv2 = v_hookUV2;
+        #endif
+        #ifdef HOOK_FRAGMENT_TANGENT
+            #ifdef HOOK_TANGENT
+                setTangents(context, v_hookTangent.xyz, cross(v_hookNormal, v_hookTangent.xyz) * v_hookTangent.w);
+            #else
+                setDerivedTangents(context);
+            #endif
+        #endif
+        #ifdef HOOK_FRAGMENT_COLOR
+            context.color = v_hookColor;
+        #endif
+        #ifdef HOOK_FRAGMENT_INSTANCE
+            context.instance = v_hookInstance;
+        #endif
+        return context;
+    }
 #endif
 
 void main() {
     loadShaderParameters();
+    #ifdef USE_FRAGMENT_HOOKS
+        FragmentContext context = getGBufferContext();
+    #endif
     #ifdef USE_COVERAGE
-        applyCoverage(v_worldPosition, COVERAGE_UV);
+        applyCoverage(context);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
-    #if defined(HAS_BASECOLOR_TEXTURE)
+    #if defined(HAS_BASECOLOR_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
         vec4 texColor = texture(sampler2D(u_baseColorTexture, u_baseColor_smp), v_uv1);
         baseColor *= sRGBToLinear(texColor);
     #endif
-    if (gbufferMaterial.params.w >= 0.0 && baseColor.a < gbufferMaterial.params.w) {
-        discard;
-    }
+    #ifndef USE_SURFACE
+        if (gbufferMaterial.params.w >= 0.0 && baseColor.a < gbufferMaterial.params.w) {
+            discard;
+        }
+    #endif
 
     float roughness = gbufferMaterial.params.x;
     float metallic  = gbufferMaterial.params.y;
-    #if defined(HAS_METALLICROUGHNESS_TEXTURE)
+    #if defined(HAS_METALLICROUGHNESS_TEXTURE) && !defined(SURFACE_REPLACES_METALLICROUGHNESS_MAP)
         // glTF convention: green = roughness, blue = metallic
         vec4 mr = texture(sampler2D(u_metallicRoughnessTexture, u_metallicRoughness_smp), v_uv1);
         roughness *= mr.g;
@@ -82,13 +130,19 @@ void main() {
     #endif
 
     // Higher precision equivalent of gl_FragCoord.z (see depth.frag).
-    frag_depth = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #ifdef USE_DEPTH_OFFSET
+        float depth = getHookDepth(context);
+        gl_FragDepth = depth;
+        frag_depth = encodeDepth(depth);
+    #else
+        frag_depth = encodeDepth(0.5 * v_projZW[0] / v_projZW[1] + 0.5);
+    #endif
 
     vec3 n = normalize(v_normal);
     if (!gl_FrontFacing) n = -n;
 
     float occlusion = 1.0;
-    #ifdef HAS_OCCLUSION_TEXTURE
+    #if defined(HAS_OCCLUSION_TEXTURE) && !defined(SURFACE_REPLACES_OCCLUSION_MAP)
         occlusion = texture(sampler2D(u_occlusionTexture, u_occlusion_smp), v_uvOcclusion).r;
     #endif
 
@@ -100,6 +154,44 @@ void main() {
         metallic = terrainSurface.metallic;
         n = terrainSurface.normal;
         occlusion = terrainSurface.occlusion;
+    #endif
+
+    #ifdef USE_SURFACE
+        // as the color pass gives it, unlit gets none
+        bool unlit = gbufferMaterial.emissiveFactor.w > 0.5;
+        Surface surface;
+        surface.baseColor = baseColor.rgb;
+        surface.alpha = baseColor.a;
+        #ifdef HOOK_FRAGMENT_COLOR
+            // the vertex and instance color tint it, as in the color pass
+            surface.baseColor *= context.color.rgb;
+            surface.alpha *= context.color.a;
+        #endif
+        #ifdef HOOK_FRAGMENT_NORMAL
+            vec3 normal = context.normal;
+        #elif defined(HAS_NORMALS)
+            vec3 normal = n * mat3(paramsFS.effect_worldToView);
+        #else
+            // without normals, the flat one the color pass makes
+            vec3 normal = getFlatNormal(context.worldPosition, context.view);
+        #endif
+        surface.normal = unlit ? vec3(0.0, 1.0, 0.0) : normal;
+        surface.metallic = unlit ? 0.0 : metallic;
+        surface.roughness = unlit ? 1.0 : roughness;
+        surface.occlusion = unlit ? 1.0 : occlusion;
+        // factor only, the map is not sampled here
+        surface.emissive = gbufferMaterial.emissiveFactor.rgb;
+        getSurface(context, surface);
+        if (gbufferMaterial.params.w >= 0.0 && surface.alpha * keepHookInputs(context) < gbufferMaterial.params.w) {
+            discard;
+        }
+        baseColor.rgb = surface.baseColor;
+        if (!unlit) {
+            n = normalize(mat3(paramsFS.effect_worldToView) * surface.normal);
+            roughness = surface.roughness;
+            metallic = surface.metallic;
+            occlusion = surface.occlusion;
+        }
     #endif
 
     frag_gbuffer = vec4(octEncode(n), clamp(roughness, 0.0, 1.0), clamp(metallic, 0.0, 1.0));

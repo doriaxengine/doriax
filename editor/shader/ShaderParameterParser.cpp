@@ -3,16 +3,15 @@
 
 #include "ShaderParameterParser.h"
 #include "shader/ShaderParameters.h"
+#include "pool/ShaderPool.h"
 #include "util/Util.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <map>
-#include <regex>
 #include <set>
 #include <sstream>
-#include <tuple>
 
 using namespace doriax;
 
@@ -83,91 +82,124 @@ std::string stripComments(const std::string& source){
     return code;
 }
 
-// the source with its comments blanked, so positions match
-std::string maskComments(const std::string& source){
-    std::string code = source;
-    for (size_t i = 0; i < code.size(); i++){
-        size_t end = i;
-        if (code.compare(i, 2, "//") == 0){
-            end = code.find('\n', i);
-        }else if (code.compare(i, 2, "/*") == 0){
-            end = code.find("*/", i + 2);
-            end = (end == std::string::npos) ? end : end + 2;
-        }else{
-            continue;
-        }
-        end = std::min(end, code.size());
-        for (; i < end; i++){
-            if (code[i] != '\n')
-                code[i] = ' ';
-        }
-        i--;
+// name of a "#pragma stage" line
+bool readStage(const std::string& line, std::string& name){
+    std::istringstream words(pragmaText(line));
+    std::string tag;
+    name.clear();
+    words >> tag >> name;
+    return tag == "stage";
+}
+
+// default, filter or wrap of a texture
+bool parseTextureWord(const std::string& word, editor::ShaderParameterDeclaration& declaration){
+    if (word == "white"){ declaration.textureDefault = ShaderTextureDefault::WHITE; return true; }
+    if (word == "black"){ declaration.textureDefault = ShaderTextureDefault::BLACK; return true; }
+    if (word == "normal"){ declaration.textureDefault = ShaderTextureDefault::NORMAL; return true; }
+    if (word == "nearest"){ declaration.filter = TextureFilter::NEAREST; return true; }
+    if (word == "linear"){ declaration.filter = TextureFilter::LINEAR; return true; }
+    if (word == "trilinear"){ declaration.filter = TextureFilter::LINEAR_MIPMAP_LINEAR; return true; }
+    if (word == "repeat"){ declaration.wrap = TextureWrap::REPEAT; return true; }
+    if (word == "clamp"){ declaration.wrap = TextureWrap::CLAMP_TO_EDGE; return true; }
+    if (word == "mirror"){ declaration.wrap = TextureWrap::MIRRORED_REPEAT; return true; }
+    return false;
+}
+
+bool isIdentifierChar(char c){
+    return std::isalnum((unsigned char)c) || c == '_';
+}
+
+// a whole word at position at
+bool isWordAt(const std::string& code, size_t at, size_t length){
+    return (at == 0 || !isIdentifierChar(code[at - 1])) && (at + length >= code.size() || !isIdentifierChar(code[at + length]));
+}
+
+// the character after any spaces, moving i to it
+char nextChar(const std::string& code, size_t& i){
+    while (i < code.size() && std::isspace((unsigned char)code[i]))
+        i++;
+    return i < code.size() ? code[i] : '\0';
+}
+
+std::string readIdentifier(const std::string& code, size_t& i){
+    nextChar(code, i);
+    const size_t start = i;
+    while (i < code.size() && isIdentifierChar(code[i]))
+        i++;
+    return code.substr(start, i - start);
+}
+
+// a call anywhere in the code
+bool callsFunction(const std::string& code, const std::string& name){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        size_t i = at + name.size();
+        if (isWordAt(code, at, name.size()) && nextChar(code, i) == '(')
+            return true;
     }
-    return code;
+    return false;
 }
 
-// "uniform <name> { ... } instance;" found in code without comments
-struct UniformBlock {
-    size_t start = 0;      // of "uniform"
-    size_t bodyStart = 0;  // after the brace
-    size_t bodyEnd = 0;    // at the closing one
-    size_t end = 0;        // after the semicolon
-    std::string name;
-    std::string instance;
-};
-
-bool findUniformBlock(const std::string& code, const std::regex& header, UniformBlock& block){
-    std::smatch match;
-    if (!std::regex_search(code, match, header))
-        return false;
-
-    block.start = match.position(0);
-    block.bodyStart = block.start + match.length(0);
-    block.bodyEnd = code.find('}', block.bodyStart);
-    const size_t semicolon = (block.bodyEnd == std::string::npos) ? block.bodyEnd : code.find(';', block.bodyEnd);
-    if (semicolon == std::string::npos)
-        return false;
-
-    block.end = semicolon + 1;
-    block.name = match[1];
-    block.instance = trim(code.substr(block.bodyEnd + 1, semicolon - block.bodyEnd - 1));
-    return true;
-}
-
-// the blocks a fork declared for its own values before parameters (v0.8.4 port)
-bool findLegacyBlock(const std::string& code, UniformBlock& block){
-    static const std::regex header(R"(uniform\s+(u_vs_customParams|u_fs_customParams|u_fs_postParams)\s*\{)");
-    return findUniformBlock(code, header, block);
-}
-
-// cheap to rule out before the comments are blanked
-bool namesLegacyBlock(const std::string& source){
-    return source.find("u_vs_customParams") != std::string::npos || source.find("u_fs_customParams") != std::string::npos ||
-        source.find("u_fs_postParams") != std::string::npos;
-}
-
-void scanEngineUses(const std::string& source, editor::ShaderEffectAnnotations& out){
-    const std::string code = stripComments(source);
-    for (size_t at = code.find("Engine"); at != std::string::npos; at = code.find("Engine", at + 6)){
-        if (at > 0 && (std::isalnum((unsigned char)code[at - 1]) || code[at - 1] == '_'))
-            continue;
-        size_t i = at + 6;
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        if (i >= code.size() || code[i] != '.')
+// a hook definition takes its context type
+bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        size_t i = at + name.size();
+        if (!isWordAt(code, at, name.size()) || nextChar(code, i) != '(')
             continue;
         i++;
-        while (i < code.size() && std::isspace((unsigned char)code[i]))
-            i++;
-        size_t end = i;
-        while (end < code.size() && (std::isalnum((unsigned char)code[end]) || code[end] == '_'))
-            end++;
-        const std::string member = code.substr(i, end - i);
-        if (member == "time")
-            out.engineTime = true;
-        else if (member == "resolution")
-            out.engineResolution = true;
+        if (readIdentifier(code, i) == contextType)
+            return true;
     }
+    return false;
+}
+
+// the members read of a variable
+void scanMemberReads(const std::string& code, const std::string& name, std::set<std::string>& reads){
+    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        size_t i = at + name.size();
+        if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
+            continue;
+        i++;
+        reads.insert(readIdentifier(code, i));
+    }
+}
+
+// the fields read of a context, by whatever name it is given
+void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
+    std::set<std::string> names;
+    for (size_t at = code.find(contextType); at != std::string::npos; at = code.find(contextType, at + contextType.size())){
+        size_t i = at + contextType.size();
+        if (isWordAt(code, at, contextType.size()))
+            names.insert(readIdentifier(code, i));
+    }
+    names.erase("");
+    for (const std::string& name : names)
+        scanMemberReads(code, name, reads);
+}
+
+void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
+    const std::string code = stripComments(source);
+    out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
+    out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
+    out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
+    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
+    out.varyingsHook = out.varyingsHook || definesHook(code, "getVaryings", "VertexContext");
+    out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
+    out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
+    out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
+    out.light = out.light || definesHook(code, "getLight", "FragmentContext");
+    scanContextReads(code, "VertexContext", out.contextReads);
+    scanContextReads(code, "FragmentContext", out.contextReads);
+    scanContextReads(code, "Surface", out.surfaceReads);
+    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
+        if (callsFunction(code, input))
+            out.sceneReads.insert(input);
+    }
+
+    std::set<std::string> engine;
+    scanMemberReads(code, "Engine", engine);
+    out.engineTime = out.engineTime || engine.count("time");
+    out.engineResolution = out.engineResolution || engine.count("resolution");
+    out.enginePass = out.enginePass || engine.count("pass");
 }
 
 // ints are packed as floats in the block
@@ -206,7 +238,12 @@ std::vector<editor::ShaderParameterDeclaration> mergeDeclarations(const std::vec
         bool repeated = false;
         for (editor::ShaderParameterDeclaration& existing : merged){
             if (existing.scope == declaration.scope && existing.collection == declaration.collection && existing.name == declaration.name){
-                if (existing.type != declaration.type){
+                if (existing.texture != declaration.texture || (declaration.texture && existing.textureType != declaration.textureType)){
+                    report(errorPrefix(declaration) + " is another kind of parameter in " + existing.sourceName);
+                }else if (declaration.texture && (existing.filter != declaration.filter || existing.wrap != declaration.wrap ||
+                        existing.textureDefault != declaration.textureDefault)){
+                    report(errorPrefix(declaration) + " has another default, filter or wrap in " + existing.sourceName);
+                }else if (!declaration.texture && existing.type != declaration.type){
                     report(errorPrefix(declaration) + " is a " + ShaderParameterParser::getTypeName(declaration.type) +
                         " here but a " + ShaderParameterParser::getTypeName(existing.type) + " in " + existing.sourceName);
                 }else if (existing.description.empty()){
@@ -280,9 +317,9 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
 }
 
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
-    scanEngineUses(source, out);
+    scanCode(source, out);
 
-
+    std::set<std::string> stages;
     std::istringstream stream(source);
     std::string line;
     int lineNumber = 0;
@@ -297,12 +334,55 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         std::string rest = tagEnd == std::string::npos ? std::string() : trim(text.substr(tagEnd));
         const std::string where = sourceName + ":" + std::to_string(lineNumber) + ": ";
 
+        if (tag == "shader"){
+            if (rest.empty() || !ShaderParameters::isValidName(rest))
+                out.errors.push_back(where + "shader takes the type it extends, as in \"#pragma shader mesh\"");
+            else
+                out.shaderType = rest;
+            continue;
+        }
+        if (tag == "stage"){
+            if (rest != "vertex" && rest != "fragment")
+                out.errors.push_back(where + "stage takes vertex or fragment");
+            else if (!stages.insert(rest).second)
+                out.errors.push_back(where + "the " + rest + " stage has a section already");
+            continue;
+        }
         if (tag == "coverage_shadows"){
             if (rest == "apply" || rest == "keep"){
                 out.hasCoverageShadows = true;
                 out.coverageShadows = rest == "apply";
             }else{
                 out.errors.push_back(where + "coverage_shadows takes apply or keep");
+            }
+            continue;
+        }
+        if (tag == "shading"){
+            if (rest == "unlit" || rest == "lit")
+                out.unlit = out.unlit || rest == "unlit";
+            else
+                out.errors.push_back(where + "shading takes lit or unlit");
+            continue;
+        }
+        if (tag == "varying"){
+            std::istringstream words(rest);
+            std::string type, name, extra;
+            words >> type >> name;
+            if ((type != "float" && type != "vec2" && type != "vec3" && type != "vec4") || !ShaderParameters::isValidName(name) || (words >> extra))
+                out.errors.push_back(where + "a varying is written \"#pragma varying vec3 name\", of float or vec2-4");
+            else if (std::none_of(out.varyings.begin(), out.varyings.end(), [&](const auto& varying) { return varying.second == name; }))
+                out.varyings.push_back({type, name});
+            continue;
+        }
+        if (tag == "surface_replaces"){
+            static const std::set<std::string> fields = {"baseColor", "alpha", "normal", "metallic", "roughness", "occlusion", "emissive"};
+            std::istringstream words(rest);
+            std::string field;
+            while (words >> field){
+                if (fields.count(field))
+                    out.surfaceReplaces.insert(field);
+                else
+                    out.errors.push_back(where + "'" + field + "' is not a surface field");
             }
             continue;
         }
@@ -363,8 +443,16 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         std::istringstream words(rest);
         std::string typeName, name, flag;
         words >> typeName >> name;
-        if (!parseTypeName(typeName, declaration.type)){
-            out.errors.push_back(where + "'" + typeName + "' is not a parameter type (float, vec2-4, int or ivec2-4)");
+        if (typeName == "texture2D" || typeName == "textureCube"){
+            declaration.texture = true;
+            declaration.textureType = typeName == "texture2D" ? TextureType::TEXTURE_2D : TextureType::TEXTURE_CUBE;
+            declaration.textureDefault = typeName == "texture2D" ? ShaderTextureDefault::WHITE : ShaderTextureDefault::BLACK;
+            if (declaration.scope != ShaderParameterScope::OBJECT){
+                out.errors.push_back(where + "a texture is declared with #pragma param");
+                continue;
+            }
+        }else if (!parseTypeName(typeName, declaration.type)){
+            out.errors.push_back(where + "'" + typeName + "' is not a parameter type (float, vec2-4, int, ivec2-4, texture2D or textureCube)");
             continue;
         }
         if (declaration.scope == ShaderParameterScope::OBJECT){
@@ -389,9 +477,11 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         }
         bool badFlag = false;
         while (words >> flag){
-            if (flag == "color"){
+            if (declaration.texture && parseTextureWord(flag, declaration)){
+                continue;
+            }else if (flag == "color" && !declaration.texture){
                 declaration.color = true;
-            }else if (flag == "runtime"){
+            }else if (flag == "runtime" && !declaration.texture){
                 declaration.runtime = true;
             }else{
                 out.errors.push_back(where + "unknown word '" + flag + "'");
@@ -402,6 +492,10 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
         if (badFlag)
             continue;
 
+        if (declaration.texture && (!defaults.empty() || declaration.hasRange)){
+            out.errors.push_back(where + "a texture takes white, black or normal, a filter (nearest, linear, trilinear) and a wrap (repeat, clamp, mirror)");
+            continue;
+        }
         if (!defaults.empty()){
             std::vector<float> values;
             const int components = ShaderParameters::getComponentCount(declaration.type);
@@ -425,7 +519,7 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
 }
 
 void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
-                                              ShaderEffectAnnotations& out){
+                                              ShaderStageType stage, ShaderEffectAnnotations& out){
     std::set<std::string> visited;
     std::function<void(const std::string&)> visit = [&](const std::string& key){
         if (!visited.insert(key).second)
@@ -433,147 +527,107 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
         const std::string* source = lookup(key);
         if (!source)
             return;
-        // effect files are keyed with a leading '/'
-        parse(*source, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
-        for (const std::string& include : Util::getShaderIncludeKeys(*source))
+        const std::string staged = getStageSource(*source, stage);
+        // shader files are keyed with a leading '/'
+        parse(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
+        for (const std::string& include : Util::getShaderIncludeKeys(staged))
             visit(include);
     };
     visit(rootKey);
+}
+
+std::string editor::ShaderParameterParser::getStageSource(const std::string& source, ShaderStageType stage){
+    if (source.find("stage") == std::string::npos)
+        return source;
+
+    const std::string own = stage == ShaderStageType::VERTEX ? "vertex" : "fragment";
+    std::istringstream stream(source);
+    std::string line, name, staged;
+    bool skip = false;
+    while (std::getline(stream, line)){
+        if (readStage(line, name))
+            skip = name != own;
+        else if (skip)
+            line.clear();
+        staged += line + "\n";
+    }
+    return staged;
+}
+
+std::string editor::ShaderParameterParser::getStageConditions(const std::string& source){
+    if (source.find("stage") == std::string::npos)
+        return source;
+
+    std::istringstream stream(source);
+    std::string line, name, conditions;
+    bool open = false;
+    while (std::getline(stream, line)){
+        if (readStage(line, name)){
+            line = std::string(open ? "#elif" : "#if") + " defined(SHADER_STAGE_" + (name == "vertex" ? "VERTEX)" : "FRAGMENT)");
+            open = true;
+        }
+        conditions += line + "\n";
+    }
+    if (open)
+        conditions += "#endif\n";
+    return conditions;
+}
+
+std::string editor::ShaderParameterParser::generateVaryings(ShaderStageType stage, const std::vector<std::pair<std::string, std::string>>& varyings){
+    const bool vertex = stage == ShaderStageType::VERTEX;
+    std::ostringstream code;
+    code << "struct Varyings {";
+    for (const auto& [type, name] : varyings)
+        code << " " << type << " " << name << ";";
+    code << " };\n";
+    // passes without fragment hooks still compile getVaryings
+    code << "#ifdef USE_VARYINGS\n";
+    for (const auto& [type, name] : varyings)
+        code << (vertex ? "out " : "in ") << type << " v_var_" << name << ";\n";
+    if (vertex){
+        code << "void writeVaryings(Varyings varyings){";
+        for (const auto& varying : varyings)
+            code << " v_var_" << varying.second << " = varyings." << varying.second << ";";
+    }else{
+        code << "Varyings varyings;\nvoid loadVaryings(){";
+        for (const auto& varying : varyings)
+            code << " varyings." << varying.second << " = v_var_" << varying.second << ";";
+    }
+    code << " }\n#endif\n";
+    return code.str();
+}
+
+std::string editor::ShaderParameterParser::generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define){
+    std::ostringstream names;
+    for (const ShaderTextureInfo& texture : textures){
+        if (texture.stage != stage)
+            continue;
+        if (!define){
+            names << "#undef " << texture.name << "\n#undef " << texture.name << "_sampler\n";
+            continue;
+        }
+        const char* combined = texture.type == TextureType::TEXTURE_CUBE ? " samplerCube(" : " sampler2D(";
+        names << "#define " << texture.name << "_sampler " << texture.getSamplerName() << "\n";
+        names << "#define " << texture.name << combined << texture.getTextureName() << ", " << texture.getSamplerName() << ")\n";
+    }
+    return names.str();
 }
 
 void editor::ShaderParameterParser::checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors){
     mergeDeclarations(declarations, &errors);
 }
 
-bool editor::ShaderParameterParser::hasLegacyBlock(const std::string& source){
-    if (!namesLegacyBlock(source))
-        return false;
+std::string editor::ShaderParameterParser::getShaderFileType(ShaderType shaderType){
+    if (shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER)
+        return "mesh";
+    if (shaderType == ShaderType::UNDERWATER)
+        return "water";
 
-    UniformBlock block;
-    return findLegacyBlock(maskComments(source), block);
+    return ShaderPool::getShaderTypeName(shaderType, true);
 }
 
-bool editor::ShaderParameterParser::portLegacyBlock(std::string& source, ShaderStageType stage, std::string& error){
-    if (!namesLegacyBlock(source))
-        return true;
-
-    // ported with plain newlines, a Windows file gets its own back at the end
-    const bool crlf = source.find("\r\n") != std::string::npos;
-    std::string text = source;
-    text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-
-    const std::string code = maskComments(text);
-    UniformBlock block;
-    if (!findLegacyBlock(code, block))
-        return true;
-
-    if (block.instance.empty() || !ShaderParameters::isValidName(block.instance)){
-        error = block.name + " has no instance name";
-        return false;
-    }
-
-    // read from the text, where a comment after a member is its description
-    static const std::regex memberPattern(R"(^(\w+)\s+(\w+)\s*;\s*(?://\s*(.*))?$)");
-    std::string declarations;
-    std::istringstream members(text.substr(block.bodyStart, block.bodyEnd - block.bodyStart));
-    std::string line;
-    while (std::getline(members, line)){
-        const std::string memberText = trim(line);
-        if (memberText.empty() || memberText.rfind("//", 0) == 0)
-            continue;
-
-        std::smatch member;
-        ShaderUniformType type;
-        if (!std::regex_match(memberText, member, memberPattern) || !parseTypeName(member[1], type)){
-            error = "'" + memberText + "' is not a float, vec2-4, int or ivec2-4 member";
-            return false;
-        }
-        // Engine.time and Engine.resolution now
-        if (member[2] == "time" || member[2] == "resolution")
-            continue;
-
-        // quotes and escapes would end the description early
-        std::string description = trim(member[3]);
-        std::replace(description.begin(), description.end(), '"', '\'');
-        std::replace(description.begin(), description.end(), '\\', '/');
-        declarations += "#pragma param " + member[1].str() + " " + member[2].str();
-        if (!description.empty())
-            declarations += " \"" + description + "\"";
-        declarations += "\n";
-    }
-
-    // (position, length, text), applied from the end so positions hold
-    std::vector<std::tuple<size_t, size_t, std::string>> edits;
-
-    // mesh.frag keeps its parameters in the material block, having no block to spare
-    static const std::regex materialHeader(R"(uniform\s+(u_fs_pbrParams)\s*\{)");
-    UniformBlock material;
-    const bool vertex = stage == ShaderStageType::VERTEX;
-    if (!vertex && findUniformBlock(code, materialHeader, material) && !material.instance.empty()){
-        // before the block and before the first code that can read a parameter
-        if (text.find("\"shader_params_fs.glsl\"") == std::string::npos){
-            if (block.start < material.start)
-                declarations += "\n#include \"shader_params_fs.glsl\"\n";
-            else
-                edits.emplace_back(material.start, 0, "#include \"shader_params_fs.glsl\"\n\n");
-        }
-        edits.emplace_back(material.bodyEnd, 0, "    #ifdef HAS_SHADER_PARAMS_FS\n        SHADER_PARAMS_FS_MEMBERS\n    #endif\n");
-        edits.emplace_back(material.end, 0,
-            "\n\n#define SHADER_PARAMETERS_FS\n#ifdef HAS_SHADER_PARAMS_FS\n    #define paramsFS " + material.instance +
-            "\n    void loadShaderParameters(){\n        SHADER_PARAMS_FS_LOAD(" + material.instance + ")\n    }\n#else\n    void loadShaderParameters(){}\n#endif");
-    }else{
-        const std::string header = vertex ? "includes/parameters_vs.glsl" : "includes/parameters_fs.glsl";
-        if (text.find("\"" + header + "\"") == std::string::npos)
-            declarations += std::string(declarations.empty() ? "" : "\n") + "#include \"" + header + "\"\n";
-    }
-    while (!declarations.empty() && declarations.back() == '\n')
-        declarations.pop_back();
-    edits.emplace_back(block.start, block.end - block.start, declarations);
-
-    if (code.find("loadShaderParameters();") == std::string::npos){
-        static const std::regex mainPattern(R"(void\s+main\s*\(\s*(?:void)?\s*\)\s*\{)");
-        std::smatch entry;
-        if (!std::regex_search(code, entry, mainPattern)){
-            error = "main() not found";
-            return false;
-        }
-        edits.emplace_back(entry.position(0) + entry.length(0), 0, "\n    loadShaderParameters();\n");
-    }
-
-    std::sort(edits.begin(), edits.end(), [](const auto& a, const auto& b){ return std::get<0>(a) > std::get<0>(b); });
-    for (const auto& [position, length, replacement] : edits)
-        text.replace(position, length, replacement);
-
-    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\.time\\b"), "Engine.time");
-    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\.resolution\\b"), "Engine.resolution");
-    text = std::regex_replace(text, std::regex("\\b" + block.instance + "\\."), "params.");
-
-    if (crlf)
-        text = std::regex_replace(text, std::regex("\n"), "\r\n");
-    source = text;
-    return true;
-}
-
-std::vector<std::string> editor::ShaderParameterParser::checkSources(const std::vector<const ShaderEffectAnnotations*>& sources){
-    std::vector<ShaderParameterDeclaration> declarations;
-    std::vector<std::string> known;
-    for (const ShaderEffectAnnotations* annotations : sources){
-        declarations.insert(declarations.end(), annotations->parameters.begin(), annotations->parameters.end());
-        known.insert(known.end(), annotations->errors.begin(), annotations->errors.end());
-    }
-
-    std::vector<std::string> errors;
-    checkDeclarations(declarations, errors);
-    errors.erase(std::remove_if(errors.begin(), errors.end(), [&](const std::string& error){
-        return std::find(known.begin(), known.end(), error) != known.end();
-    }), errors.end());
-
-    return errors;
-}
-
-std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations,
-                                                          bool vertexContext, bool fragmentContext,
-                                                          std::vector<ShaderParameterInfo>& parameters){
+std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
+                                                          std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures){
     const std::string suffix = stage == ShaderStageType::VERTEX ? "VS" : "FS";
 
     std::vector<Member> members;
@@ -587,15 +641,31 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         parameters.push_back(info);
         members.push_back({(type == ShaderUniformType::MAT4 ? "mat4" : getTypeName(type)) + " " + member + ";", load});
     };
-    // the context of the effect hooks
-    if (vertexContext){
+    // the context of the hooks
+    if (context & HookContext_Vertex){
         addEngine(ShaderUniformType::MAT4, "effect_worldToModel", "worldToModel", "");
         addEngine(ShaderUniformType::FLOAT, "effect_offsetMax", "offsetMax", "");
     }
-    if (fragmentContext){
+    if (context & HookContext_Fragment){
         addEngine(ShaderUniformType::FLOAT4, "effect_eye", "eye", "");
         addEngine(ShaderUniformType::FLOAT3, "effect_forward", "forward", "");
         addEngine(ShaderUniformType::FLOAT4, "effect_pass", "pass", "");
+    }
+    if (context & HookContext_View){
+        addEngine(ShaderUniformType::MAT4, "effect_worldToView", "worldToView", "");
+    }
+    if (context & HookContext_Projection){
+        addEngine(ShaderUniformType::FLOAT4, "effect_projection", "projection", "");
+    }
+    if (context & HookContext_Clip){
+        addEngine(ShaderUniformType::FLOAT, "effect_flipY", "flipY", "");
+    }
+    if (context & HookContext_Model){
+        addEngine(ShaderUniformType::MAT4, "effect_modelToWorld", "modelToWorld", "");
+    }
+    if (context & HookContext_Screen){
+        addEngine(ShaderUniformType::MAT4, "effect_viewProjection", "viewProjection", "");
+        addEngine(ShaderUniformType::FLOAT4, "effect_sceneRect", "sceneRect", "");
     }
     // Engine.time and Engine.resolution, only where the code reads them
     std::string engineStruct;
@@ -606,6 +676,10 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     if (annotations.engineResolution){
         addEngine(ShaderUniformType::FLOAT4, "engine_resolution", "resolution", "Engine.resolution = block.engine_resolution;");
         engineStruct += " vec4 resolution;";
+    }
+    if (annotations.enginePass){
+        addEngine(ShaderUniformType::FLOAT, "engine_pass", "passType", "Engine.pass = int(block.engine_pass);");
+        engineStruct += " int pass;";
     }
 
     const std::vector<ShaderParameterDeclaration> merged = mergeDeclarations(annotations.parameters, nullptr);
@@ -618,18 +692,41 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     std::ostringstream structs;
     if (!engineStruct.empty())
         structs << "struct ShaderParams_Engine {" << engineStruct << " };\nShaderParams_Engine Engine;\n";
+    if (annotations.enginePass)
+        structs << "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n";
 
     // the object parameters, then each collection, as globals the load fills
     bool hasObject = false;
     for (const ShaderParameterDeclaration& declaration : merged)
-        hasObject = hasObject || declaration.scope == ShaderParameterScope::OBJECT;
+        hasObject = hasObject || (declaration.scope == ShaderParameterScope::OBJECT && !declaration.texture);
     if (hasObject){
         structs << "struct ShaderParamsObject {";
         for (const ShaderParameterDeclaration& declaration : merged){
-            if (declaration.scope == ShaderParameterScope::OBJECT)
+            if (declaration.scope == ShaderParameterScope::OBJECT && !declaration.texture)
                 structs << " " << getTypeName(declaration.type) << " " << declaration.name << ";";
         }
         structs << " };\nShaderParamsObject params;\n";
+    }
+
+    // textures of one filter and wrap share a sampler
+    std::ostringstream textureLines;
+    std::set<std::string> samplers;
+    for (const ShaderParameterDeclaration& declaration : merged){
+        if (!declaration.texture)
+            continue;
+        ShaderTextureInfo info;
+        info.stage = stage;
+        info.name = declaration.name;
+        info.type = declaration.textureType;
+        info.defaultTexture = declaration.textureDefault;
+        info.filter = declaration.filter;
+        info.wrap = declaration.wrap;
+        textures.push_back(info);
+
+        const bool cube = info.type == TextureType::TEXTURE_CUBE;
+        if (samplers.insert(info.getSamplerName()).second)
+            textureLines << "uniform sampler " << info.getSamplerName() << ";\n";
+        textureLines << "uniform " << (cube ? "textureCube " : "texture2D ") << info.getTextureName() << ";\n";
     }
     for (const std::string& collection : collections){
         structs << "struct ShaderParams_" << collection << " {";
@@ -641,6 +738,8 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     }
 
     for (const ShaderParameterDeclaration& declaration : merged){
+        if (declaration.texture)
+            continue;
         ShaderParameterInfo info;
         info.stage = stage;
         info.member = getMemberName(declaration);
@@ -657,24 +756,28 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
         members.push_back({packed + " " + info.member + ";", target + " = " + value + ";"});
     }
 
-    if (members.empty())
+    if (members.empty() && samplers.empty())
         return "// no parameters\n";
 
     std::ostringstream header;
     header << "// generated from the parameter annotations of this stage\n";
     header << "#ifndef SHADER_PARAMS_" << suffix << "_GENERATED\n";
     header << "#define SHADER_PARAMS_" << suffix << "_GENERATED\n";
-    header << "#define HAS_SHADER_PARAMS_" << suffix << "\n";
-    header << "#define SHADER_PARAMS_" << suffix << "_MEMBERS";
-    for (const Member& member : members)
-        header << " " << member.declaration;
-    header << "\n";
-    header << structs.str();
-    header << "#define SHADER_PARAMS_" << suffix << "_LOAD(block)";
-    for (const Member& member : members){
-        if (!member.load.empty())
-            header << " " << member.load;
+    header << textureLines.str();
+    if (!members.empty()){
+        header << "#define HAS_SHADER_PARAMS_" << suffix << "\n";
+        header << "#define SHADER_PARAMS_" << suffix << "_MEMBERS";
+        for (const Member& member : members)
+            header << " " << member.declaration;
+        header << "\n";
+        header << structs.str();
+        header << "#define SHADER_PARAMS_" << suffix << "_LOAD(block)";
+        for (const Member& member : members){
+            if (!member.load.empty())
+                header << " " << member.load;
+        }
+        header << "\n";
     }
-    header << "\n#endif\n";
+    header << "#endif\n";
     return header.str();
 }

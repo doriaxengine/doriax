@@ -440,36 +440,20 @@ float Water::getWakeFade() const{
     return water.wakeFade;
 }
 
-void Water::setCustomShader(const std::string& path){
+void Water::setShader(const std::string& path){
     WaterComponent& water = getComponent<WaterComponent>();
 
-    if (water.customShader != path){
-        water.customShader = path;
+    if (water.shader != path){
+        water.shader = path;
 
         water.needReload = true;
     }
 }
 
-std::string Water::getCustomShader() const{
+std::string Water::getShader() const{
     WaterComponent& water = getComponent<WaterComponent>();
 
-    return water.customShader;
-}
-
-void Water::setCustomUnderwaterShader(const std::string& path){
-    WaterComponent& water = getComponent<WaterComponent>();
-
-    if (water.customUnderwaterShader != path){
-        water.customUnderwaterShader = path;
-
-        water.needReload = true;
-    }
-}
-
-std::string Water::getCustomUnderwaterShader() const{
-    WaterComponent& water = getComponent<WaterComponent>();
-
-    return water.customUnderwaterShader;
+    return water.shader;
 }
 
 void Water::setShaderUniform(const std::string& name, const Vector4& value){
@@ -505,6 +489,23 @@ bool Water::removeShaderUniform(const std::string& name){
 
     water.needUpdateShaderUniforms = true;
     return true;
+}
+
+void Water::setShaderTexture(const std::string& name, const Texture& texture){
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    const Texture* current = ShaderTextures::find(water.shaderTextures, name);
+    if (current && *current == texture)
+        return;
+
+    ShaderTextures::set(water.shaderTextures, name, texture);
+    water.needReload = true;
+}
+
+Texture Water::getShaderTexture(const std::string& name) const{
+    WaterComponent& water = getComponent<WaterComponent>();
+
+    return ShaderTextures::get(water.shaderTextures, name);
 }
 
 float Water::getHeight(float x, float z) const{

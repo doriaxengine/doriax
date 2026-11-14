@@ -12,12 +12,17 @@
 #include "Project.h"
 #include "pool/ShaderPool.h"
 #include "shader/ShaderBuilder.h"
+#include "logic/LogicGraphCompiler.h"
+#include "logic/LogicGraphJson.h"
+#include "shader/graph/ShaderGraphJson.h"
+#include "json.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -181,12 +186,12 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
 }
 
 static bool parseShaderSpec(const std::string& spec, ShaderKey& out, std::string& error) {
-    // a fork and its effect functions follow '@', as "fork#vertexOffset#coverage"
+    // a shader file follows '@'
     const size_t customSeparator = spec.find('@');
     const std::string value = spec.substr(0, customSeparator);
-    const std::string customShader = customSeparator == std::string::npos ? "" : spec.substr(customSeparator + 1);
-    if (customSeparator != std::string::npos && customShader.empty()) {
-        error = "Missing custom shader after '@' in " + spec;
+    const std::string shaderFile = customSeparator == std::string::npos ? "" : spec.substr(customSeparator + 1);
+    if (customSeparator != std::string::npos && shaderFile.empty()) {
+        error = "Missing shader file after '@' in " + spec;
         return false;
     }
 
@@ -224,7 +229,7 @@ static bool parseShaderSpec(const std::string& spec, ShaderKey& out, std::string
         }
     }
 
-    out = ShaderPool::getShaderKey(type, properties, ShaderPool::registerCustomShader(customShader));
+    out = ShaderPool::getShaderKey(type, properties, ShaderPool::registerCustomShader(shaderFile));
     return true;
 }
 
@@ -266,7 +271,10 @@ static void printMainUsage(const std::string& commandName) {
         << "  " << commandName << "                          Open the editor.\n"
         << "  " << commandName << " export [options]         Export a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
-        << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n\n"
+        << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"
+        << "  " << commandName << " shader-nodes             Print the shader graph node types as JSON.\n"
+        << "  " << commandName << " logic-nodes              Print the logic graph node types as JSON.\n"
+        << "  " << commandName << " logic <file> [options]   Write the Lua script of a logic graph.\n\n"
         << "Run a subcommand with --help for its options.\n";
 }
 
@@ -281,8 +289,8 @@ static void printUsage(const std::string& commandName) {
         << "      --lua <path>            Lua directory, relative to the project or absolute.\n"
         << "      --start-scene <id|name> Start scene override.\n"
         << "      --backend <list>        opengl, opengles, d3d11, metal-macos, metal-ios, vulkan, all. Can repeat.\n"
-        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. A fork and its\n"
-        << "                              effect functions follow @, e.g. mesh:Uv1,Nor@#offsets/wind.glsl. Can repeat.\n"
+        << "      --shader <spec>         Shader type and optional properties, e.g. mesh:Uv1,Nor. A shader\n"
+        << "                              file follows @, e.g. mesh:Uv1,Nor@shaders/wind.glsl. Can repeat.\n"
         << "      --list-scenes           Print project scenes and exit.\n"
         << "  -h, --help                  Show this help.\n\n"
         << "If no --backend is provided, all supported backends are used.\n"
@@ -643,6 +651,185 @@ int CommandLine::runBenchmarkHelp(int argc, char** argv, const char* executableN
     (void)argc;
     (void)argv;
     return 0;
+}
+
+int CommandLine::runShaderNodesCommand(int argc, char** argv, const char* executableName) {
+    attachHostConsoleIfNeeded();
+    const std::string commandName = getCommandName(executableName);
+    for (int i = 1; i < argc; i++) {
+        const std::string argument = argv[i];
+        if (argument == "-h" || argument == "--help") {
+            std::cout << "Usage:\n  " << commandName << " shader-nodes\n\n"
+                      << "Prints every shader graph node type as JSON: pins, settings, where it runs and the shaders it fits.\n";
+            return 0;
+        }
+        std::cerr << commandName << " shader-nodes: unknown argument '" << argument << "'\n";
+        return 2;
+    }
+
+    nlohmann::json list = nlohmann::json::array();
+    for (const NodeType* base : ShaderNodes::get().getTypes())
+        list.push_back(shaderNodeTypeJson(*static_cast<const ShaderNodeType*>(base)));
+    std::cout << list.dump(2) << "\n";
+    return 0;
+}
+
+int CommandLine::runLogicNodesCommand(int argc, char** argv, const char* executableName) {
+    attachHostConsoleIfNeeded();
+
+    const std::string commandName = getCommandName(executableName);
+    bool check = false;
+    for (int i = 1; i < argc; i++) {
+        const std::string argument = argv[i];
+        if (argument == "-h" || argument == "--help") {
+            std::cout << "Usage:\n  " << commandName << " logic-nodes [--check]\n\n"
+                      << "Prints every logic graph node type as JSON: pins, settings and whether it runs in execution order.\n"
+                      << "With --check, compiles a graph around each node type instead and prints the ones that fail.\n";
+            return 0;
+        }
+        if (argument == "--check") {
+            check = true;
+            continue;
+        }
+        std::cerr << commandName << " logic-nodes: unknown argument '" << argument << "'\n";
+        return 2;
+    }
+
+    if (check) {
+        int graphs = 0;
+        int failed = 0;
+        for (const NodeType* base : LogicNodes::get().getTypes()) {
+            const LogicNodeType& type = *static_cast<const LogicNodeType*>(base);
+            // a value node is read once through each output
+            size_t values = 0;
+            for (const NodePin& pin : type.outputs)
+                values += pin.kind == PinKind::DATA ? 1 : 0;
+            const size_t runs = type.runs() ? 1 : std::max<size_t>(values, 1);
+            for (size_t run = 0; run < runs; run++) {
+                GraphDocument graph;
+                graph.kind = "logic";
+                graph.type = "script";
+                GraphParameter variable;
+                variable.name = "value1";
+                variable.type = "float";
+                const int variableId = graph.addParameter(variable);
+
+                const int node = graph.addNode(type.id, Vector2(200.0f, 0.0f));
+                GraphNode& added = *graph.findNode(node);
+                for (const NodeSetting& setting : type.settings) {
+                    if (setting.type == "parameter")
+                        added.settings[setting.name] = GraphValue((float)variableId);
+                    else if (setting.name == "method")
+                        added.settings[setting.name] = GraphValue("update");
+                    else if (setting.name == "body")
+                        added.settings[setting.name] = GraphValue("return a");
+                }
+                // an object the script has none of comes from somewhere
+                if (const NodePin* target = type.findInput("self"); target && !LogicNodes::isEntityClass(target->type) && target->type != "any") {
+                    const int source = graph.addNode("utility/expression", Vector2(0.0f, 100.0f));
+                    graph.findNode(source)->settings["code"] = GraphValue("self");
+                    graph.connect(source, "value", node, "self");
+                }
+                if (type.flow == LogicFlow::FOR_EACH) {
+                    const int list = graph.addNode("utility/expression", Vector2(0.0f, 200.0f));
+                    graph.findNode(list)->settings["code"] = GraphValue("{}");
+                    graph.connect(list, "value", node, "list");
+                }
+                const int print = graph.addNode("utility/print", Vector2(400.0f, 0.0f));
+                if (type.flow == LogicFlow::EVENT) {
+                    graph.connectExecution(node, "out", print, "in");
+                } else {
+                    const int start = graph.addNode("event/start", Vector2(0.0f, 0.0f));
+                    if (type.runs()) {
+                        graph.connectExecution(start, "out", node, "in");
+                        // what it leads to, and what it gives
+                        for (const NodePin& pin : type.outputs) {
+                            if (pin.kind == PinKind::EXECUTION && !graph.findLinkInto(print, "in"))
+                                graph.connectExecution(node, pin.name, print, "in");
+                            else if (pin.kind == PinKind::DATA && !graph.findLinkInto(print, "text"))
+                                graph.connect(node, pin.name, print, "text");
+                        }
+                    } else {
+                        graph.connectExecution(start, "out", print, "in");
+                        size_t index = 0;
+                        for (const NodePin& pin : type.outputs)
+                            if (pin.kind == PinKind::DATA && index++ == run)
+                                graph.connect(node, pin.name, print, "text");
+                    }
+                }
+                graphs++;
+                const GraphResult result = LogicGraphCompiler::compile(graph, "Check.logic", "Check");
+                if (!result.success) {
+                    failed++;
+                    std::cout << type.id << ": " << result.describeErrors() << "\n";
+                }
+            }
+        }
+        std::cout << graphs << " graphs, " << failed << " failed\n";
+        return failed ? 1 : 0;
+    }
+
+    nlohmann::json list = nlohmann::json::array();
+    for (const NodeType* base : LogicNodes::get().getTypes())
+        list.push_back(logicNodeTypeJson(*static_cast<const LogicNodeType*>(base)));
+    std::cout << list.dump(2) << "\n";
+    return 0;
+}
+
+int CommandLine::runLogicCommand(int argc, char** argv, const char* executableName) {
+    attachHostConsoleIfNeeded();
+
+    const std::string commandName = getCommandName(executableName);
+    std::string input;
+    std::string output;
+    for (int i = 1; i < argc; i++) {
+        const std::string argument = argv[i];
+        if (argument == "-h" || argument == "--help") {
+            std::cout << "Usage:\n  " << commandName << " logic <file.logic> [--out <file.lua>]\n\n"
+                      << "Writes the Lua script a logic graph stands for, to the file or to the output.\n";
+            return 0;
+        }
+        if ((argument == "-o" || argument == "--out") && i + 1 < argc) {
+            output = argv[++i];
+        } else if (input.empty() && argument[0] != '-') {
+            input = argument;
+        } else {
+            std::cerr << commandName << " logic: unknown argument '" << argument << "'\n";
+            return 2;
+        }
+    }
+    if (input.empty()) {
+        std::cerr << commandName << " logic: no graph file given\n";
+        return 2;
+    }
+
+    std::ifstream file(input, std::ios::binary);
+    if (!file) {
+        std::cerr << commandName << " logic: cannot read " << input << "\n";
+        return 1;
+    }
+    std::stringstream text;
+    text << file.rdbuf();
+
+    GraphDocument graph;
+    std::string error;
+    if (!graph.read(text.str(), error)) {
+        std::cerr << commandName << " logic: " << input << ": " << error << "\n";
+        return 1;
+    }
+    const std::string name = std::filesystem::path(input).filename().string();
+    const GraphResult result = LogicGraphCompiler::compile(graph, name, LogicGraphCompiler::getModuleName(input));
+    if (!result.success) {
+        std::cerr << input << ": " << result.describeErrors() << "\n";
+        return 1;
+    }
+    if (output.empty()) {
+        std::cout << result.code;
+        return 0;
+    }
+    std::ofstream written(output, std::ios::binary | std::ios::trunc);
+    written << result.code;
+    return written ? 0 : 1;
 }
 
 int CommandLine::runHelpCommand(int argc, char** argv, const char* executableName) {

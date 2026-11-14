@@ -11,6 +11,7 @@
 #include "render/ShaderRender.h"
 #include "texture/Texture.h"
 #include "shader/ShaderParameters.h"
+#include "shader/ShaderTextures.h"
 #include "math/AABB.h"
 #include "Engine.h"
 #include <string>
@@ -51,15 +52,15 @@ namespace doriax{
         AABB aabb; // local bounds of the visible points
 
         ObjectRender render;
-        std::shared_ptr<ShaderRender> shader;
+        std::shared_ptr<ShaderRender> shaderRender;
         uint32_t shaderProperties = 0;
-        // optional user-forked shader: project-relative base path (no extension),
-        // empty = built-in. customShaderId is the resolved id for ShaderPool keys.
-        std::string customShader;
+        // .glsl file with the shader hooks, the scene default when empty
+        std::string shader;
         uint16_t customShaderId = 0;
         int slotVSParams = -1;
         // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
+        ShaderTextureValues shaderTextures;
         bool needUpdateShaderUniforms = false;
         ShaderParameterBlock paramsVS;
         ShaderParameterBlock paramsFS;

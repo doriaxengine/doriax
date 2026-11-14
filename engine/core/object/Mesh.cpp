@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "Mesh.h"
+
+#include <algorithm>
 #include "render/ObjectRender.h"
 #include "util/Color.h"
 #include "component/MirrorComponent.h"
@@ -204,6 +206,9 @@ float Mesh::getAlpha() const{
 void Mesh::setMaterial(const Material& material){
     for (MeshComponent* mesh : getMeshes()){
         if (mesh->submeshes[0].material != material){
+            if (mesh->submeshes[0].material.shader != material.shader)
+                mesh->needReload = true;
+            mesh->needUpdateShaderUniforms = true;
             mesh->submeshes[0].material = material;
             mesh->submeshes[0].needUpdateTexture = true;
         }
@@ -218,6 +223,9 @@ void Mesh::setMaterial(unsigned int submesh, const Material& material){
     MeshComponent* mesh = findSubmesh(submesh);
 
     if (mesh && mesh->submeshes[submesh].material != material){
+        if (mesh->submeshes[submesh].material.shader != material.shader)
+            mesh->needReload = true;
+        mesh->needUpdateShaderUniforms = true;
         mesh->submeshes[submesh].material = material;
         mesh->submeshes[submesh].needUpdateTexture = true;
         updateSpriteBatch();
@@ -505,46 +513,35 @@ bool Mesh::isAutoTransparency() const{
     return getMesh().autoTransparency;
 }
 
-void Mesh::setCustomShader(const std::string& path){
+void Mesh::setShader(const std::string& path){
     for (MeshComponent* mesh : getMeshes()){
-        if (mesh->customShader != path){
-            mesh->customShader = path;
+        // a mesh not built yet keeps it in its first material
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
+            if (mesh->submeshes[i].material.shader != path){
+                mesh->submeshes[i].material.shader = path;
 
-            mesh->needReload = true;
+                mesh->needReload = true;
+            }
         }
     }
 }
 
-std::string Mesh::getCustomShader() const{
-    return getMesh().customShader;
-}
+void Mesh::setShader(unsigned int submesh, const std::string& path){
+    MeshComponent* mesh = findSubmesh(submesh);
 
-void Mesh::setCustomDepthShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->customDepthShader != path){
-            mesh->customDepthShader = path;
+    if (mesh && mesh->submeshes[submesh].material.shader != path){
+        mesh->submeshes[submesh].material.shader = path;
 
-            mesh->needReload = true;
-        }
+        mesh->needReload = true;
     }
 }
 
-std::string Mesh::getCustomDepthShader() const{
-    return getMesh().customDepthShader;
+std::string Mesh::getShader() const{
+    return getShader(0);
 }
 
-void Mesh::setVertexOffsetShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->vertexOffsetShader != path){
-            mesh->vertexOffsetShader = path;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-std::string Mesh::getVertexOffsetShader() const{
-    return getMesh().vertexOffsetShader;
+std::string Mesh::getShader(unsigned int submesh) const{
+    return getSubmesh(submesh).material.shader;
 }
 
 void Mesh::setVertexOffsetMax(float vertexOffsetMax){
@@ -558,33 +555,11 @@ float Mesh::getVertexOffsetMax() const{
     return getMesh().vertexOffsetMax;
 }
 
-void Mesh::setCoverageShader(const std::string& path){
-    for (MeshComponent* mesh : getMeshes()){
-        if (mesh->coverageShader != path){
-            mesh->coverageShader = path;
-
-            mesh->needReload = true;
-        }
-    }
-}
-
-std::string Mesh::getCoverageShader() const{
-    return getMesh().coverageShader;
-}
-
-void Mesh::setCoverageShadows(bool coverageShadows){
-    for (MeshComponent* mesh : getMeshes()){
-        mesh->coverageShadows = coverageShadows;
-    }
-}
-
-bool Mesh::isCoverageShadows() const{
-    return getMesh().coverageShadows;
-}
-
 void Mesh::setShaderUniform(const std::string& name, const Vector4& value){
     for (MeshComponent* mesh : getMeshes()){
-        ShaderUniforms::set(mesh->shaderUniforms, name, value);
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
+            ShaderUniforms::set(mesh->submeshes[i].material.shaderUniforms, name, value);
+        }
         mesh->needUpdateShaderUniforms = true;
     }
 }
@@ -601,16 +576,57 @@ void Mesh::setShaderUniform(const std::string& name, float value){
     setShaderUniform(name, Vector4(value, 0.0f, 0.0f, 0.0f));
 }
 
+void Mesh::setShaderUniform(unsigned int submesh, const std::string& name, const Vector4& value){
+    MeshComponent* mesh = findSubmesh(submesh);
+
+    if (mesh){
+        ShaderUniforms::set(mesh->submeshes[submesh].material.shaderUniforms, name, value);
+        mesh->needUpdateShaderUniforms = true;
+    }
+}
+
 Vector4 Mesh::getShaderUniform(const std::string& name) const{
-    return ShaderUniforms::get(getMesh().shaderUniforms, name);
+    return getShaderUniform(0, name);
+}
+
+Vector4 Mesh::getShaderUniform(unsigned int submesh, const std::string& name) const{
+    return ShaderUniforms::get(getSubmesh(submesh).material.shaderUniforms, name);
+}
+
+void Mesh::setShaderTexture(const std::string& name, const Texture& texture){
+    for (MeshComponent* mesh : getMeshes()){
+        for (unsigned int i = 0; i < std::max(mesh->numSubmeshes, 1u); i++){
+            mesh->submeshes[i].material.setShaderTexture(name, texture);
+            mesh->submeshes[i].needUpdateTexture = true;
+        }
+    }
+}
+
+void Mesh::setShaderTexture(unsigned int submesh, const std::string& name, const Texture& texture){
+    MeshComponent* mesh = findSubmesh(submesh);
+
+    if (mesh){
+        mesh->submeshes[submesh].material.setShaderTexture(name, texture);
+        mesh->submeshes[submesh].needUpdateTexture = true;
+    }
+}
+
+Texture Mesh::getShaderTexture(const std::string& name) const{
+    return getShaderTexture(0, name);
+}
+
+Texture Mesh::getShaderTexture(unsigned int submesh, const std::string& name) const{
+    return getSubmesh(submesh).material.getShaderTexture(name);
 }
 
 bool Mesh::removeShaderUniform(const std::string& name){
     bool removed = false;
     for (MeshComponent* mesh : getMeshes()){
-        if (ShaderUniforms::remove(mesh->shaderUniforms, name)){
-            mesh->needUpdateShaderUniforms = true;
-            removed = true;
+        for (unsigned int i = 0; i < mesh->numSubmeshes; i++){
+            if (ShaderUniforms::remove(mesh->submeshes[i].material.shaderUniforms, name)){
+                mesh->needUpdateShaderUniforms = true;
+                removed = true;
+            }
         }
     }
 
@@ -984,6 +1000,30 @@ void Mesh::setInstanceVisible(size_t index, bool visible) const{
 
         if (instmesh.instances.at(index).visible != visible){
             instmesh.instances.at(index).visible = visible;
+
+            instmesh.needUpdateInstances = true;
+        }
+    }else{
+        Log::error("There is no instanced mesh component in this mesh");
+    }
+}
+
+Vector4 Mesh::getInstanceCustom(size_t index){
+    if (hasInstancedMesh()){
+        InstancedMeshComponent& instmesh = getComponent<InstancedMeshComponent>();
+
+        return instmesh.instances.at(index).custom;
+    }
+
+    return Vector4(0.0, 0.0, 0.0, 0.0);
+}
+
+void Mesh::setInstanceCustom(size_t index, Vector4 custom) const{
+    if (hasInstancedMesh()){
+        InstancedMeshComponent& instmesh = getComponent<InstancedMeshComponent>();
+
+        if (instmesh.instances.at(index).custom != custom){
+            instmesh.instances.at(index).custom = custom;
 
             instmesh.needUpdateInstances = true;
         }

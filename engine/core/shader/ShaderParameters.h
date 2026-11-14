@@ -46,8 +46,20 @@ namespace doriax{
         // process-wide id of a key, so tables index instead of compare
         static uint32_t intern(const std::string& key);
 
+        // fallback for scene values, as live pin numbers
+        static void setGlobal(const std::string& key, const Vector4& value);
+        static const Vector4* findGlobal(uint32_t key);
+
         static const char* getScopeName(ShaderParameterScope scope);
         static int getComponentCount(ShaderUniformType type);
+    };
+
+    // what a pass draws, as Engine.pass tells shaders
+    enum class ShaderPass{
+        COLOR,
+        DEPTH,
+        SHADOW,
+        GBUFFER
     };
 
     // the camera a pass draws for, as effect functions see it
@@ -58,6 +70,16 @@ namespace doriax{
         // pixel the coverage dither counts from
         Vector2 ditherOrigin = Vector2(0.0f, 0.0f);
         float time = 0.0f;
+        ShaderPass pass = ShaderPass::COLOR;
+        Matrix4 viewMatrix;
+        // projection terms of view depth; 0 without depth offsets
+        Vector4 depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        // drawn with the y-flipped matrix of GL offscreen targets
+        bool flipY = false;
+        // the camera's, unflipped
+        Matrix4 viewProjection;
+        // where the view sits in the scene copy
+        Vector4 sceneRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
         const ShaderParameterTable* scene = nullptr;
         const ShaderParameterTable* view = nullptr;
     };
@@ -82,21 +104,28 @@ namespace doriax{
         // engine value bindings, -1 when not declared
         int engineTime = -1;
         int engineResolution = -1;
+        int enginePass = -1;
         int worldToModel = -1;
         int offsetMax = -1;
         int eye = -1;
         int forward = -1;
         int pass = -1;
+        int worldToView = -1;
+        int projection = -1;
+        int flipY = -1;
+        int modelToWorld = -1;
+        int viewProjection = -1;
+        int sceneRect = -1;
         bool shared = false;     // has SCENE or VIEW members
 
         bool resolve(ShaderData& shaderData, const std::string& blockName, ShaderStageType stage);
         void clear();
 
-        // own value, else inherited, else the declared default
+        // own value, else the inherited one or the default
         void writeObject(const ShaderUniformValues& values, const ShaderUniformValues* inherited = nullptr);
         // the engine clock and target size, then the scene and view values
         void writeFrame(const ShaderEffectView& view, const Vector2& resolution);
-        void writeVertexContext(const Matrix4& modelMatrix, float maxOffset);
+        void writeVertexContext(const ShaderEffectView& view, const Matrix4& modelMatrix, float maxOffset);
         // coverage false bypasses the effect, fade blends instead of dithering
         void writeFragmentContext(const ShaderEffectView& view, bool coverage, bool fade);
     };

@@ -1,3 +1,6 @@
+#ifndef INSTANCE_NORMAL
+#define INSTANCE_NORMAL
+
 // Instance transforms contain rotation and possibly nonuniform scale. Normals need
 // the inverse transpose; applying the instance position matrix changes their angle.
 vec3 instanceNormal(mat3 m, vec3 n) {
@@ -10,3 +13,5 @@ vec3 instanceNormal(mat3 m, vec3 n) {
     // mirrored instances without an expensive matrix inverse.
     return mat3(c0, c1, c2) * n * (det < 0.0 ? -1.0 : 1.0);
 }
+
+#endif

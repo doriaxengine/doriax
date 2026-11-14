@@ -77,9 +77,11 @@ void editor::CopyFileCmd::remapPaths(const fs::path& from, const fs::path& to, b
     if (isDir || Util::isMaterialFile(extension)) project->remapMaterialFilePath(from, to);
     if (isDir || Util::isSceneFile(extension)) project->remapSceneFilePath(from, to);
     if (isDir || Util::isBundleFile(extension)) project->remapEntityBundleFilePath(from, to);
-    if (isDir || Util::isScriptFile(extension)) project->remapScriptFilePath(from, to);
+    if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) project->remapScriptFilePath(from, to);
     if (isDir || Util::isAssetFile(extension)) project->remapAssetFilePath(from, to);
     if (isDir || Util::isShaderFile(extension)) project->remapShaderFilePath(from, to);
+    // open tabs follow the move
+    Project::remapWindowFilePath(from, to);
 }
 
 // Two files sharing a scene id make the loader give one a new id on every load
@@ -138,8 +140,8 @@ bool editor::CopyFileCmd::execute(){
 
             bool isDir = fs::is_directory(sourceFs);
             std::string extension = sourceFs.extension().string();
-            // Copies count too: a .glsl arriving in a directory a fork resolves
-            // against changes which file wins for it.
+            // Copies count too: a .glsl arriving where a shader file's includes
+            // resolve changes which file wins for it.
             touchedShaderSource |= isDir || Util::isShaderFile(extension);
 
             if (isDir && Util::isInsidePath(fs::weakly_canonical(fdata.targetDirectory), fs::weakly_canonical(sourceFs))) {

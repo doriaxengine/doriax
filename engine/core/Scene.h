@@ -275,8 +275,8 @@ namespace doriax{
         void setDefaultShaderUniform(ShaderType type, const std::string& name, float value);
         Vector4 getDefaultShaderUniform(ShaderType type, const std::string& name) const;
         bool removeDefaultShaderUniform(ShaderType type, const std::string& name);
-        // the values a component with this customShader inherits, null when it has its own fork
-        const ShaderUniformValues* getInheritedShaderUniforms(ShaderType type, const std::string& customShader) const;
+        // inherited values of this shader, null when it has its own
+        const ShaderUniformValues* getInheritedShaderUniforms(ShaderType type, const std::string& shader) const;
 
         // ordered user post-process chain; setting it rebuilds the RenderSystem passes
         // unless only uniform values changed
@@ -290,6 +290,8 @@ namespace doriax{
         void setPostProcessUniform(unsigned int index, const std::string& name, float value);
         Vector4 getPostProcessUniform(unsigned int index, const std::string& name) const;
         bool removePostProcessUniform(unsigned int index, const std::string& name);
+        void setPostProcessTexture(unsigned int index, const std::string& name, const Texture& texture);
+        Texture getPostProcessTexture(unsigned int index, const std::string& name) const;
         void setPostProcessPassEnabled(unsigned int index, bool enabled);
         bool isPostProcessPassEnabled(unsigned int index) const;
 

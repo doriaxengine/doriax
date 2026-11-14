@@ -46,6 +46,9 @@ namespace doriax{
         SubmeshOverride_TextureShadow            = 1 << 13,
         SubmeshOverride_PrimitiveType            = 1 << 14,
         SubmeshOverride_FoliageTransmission      = 1 << 15,
+        SubmeshOverride_Shader                   = 1 << 16,
+        SubmeshOverride_ShaderUniforms           = 1 << 17,
+        SubmeshOverride_ShaderTextures           = 1 << 18,
 
         SubmeshOverride_Material = SubmeshOverride_BaseColorFactor | SubmeshOverride_MetallicFactor |
                                    SubmeshOverride_RoughnessFactor | SubmeshOverride_AlphaCutoff |
@@ -53,7 +56,8 @@ namespace doriax{
                                    SubmeshOverride_MaterialName | SubmeshOverride_BaseColorTexture |
                                    SubmeshOverride_EmissiveTexture | SubmeshOverride_MetallicRoughnessTexture |
                                    SubmeshOverride_OcclusionTexture | SubmeshOverride_NormalTexture |
-                                   SubmeshOverride_FoliageTransmission
+                                   SubmeshOverride_FoliageTransmission | SubmeshOverride_Shader |
+                                   SubmeshOverride_ShaderUniforms | SubmeshOverride_ShaderTextures
     };
 
     struct DORIAX_API Submesh{
@@ -72,8 +76,8 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // resolved ids of MeshComponent::customShader/customDepthShader and the vertex offset
-        // (0 = built-in); cached here so the matching ShaderPool::remove uses the same key
+        // ids each pass was taken with, for ShaderPool::remove
+        uint16_t shaderFileId = 0;   // the file asked for; customShaderId is 0 once it failed
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
         uint16_t customGBufferShaderId = 0;
@@ -88,31 +92,34 @@ namespace doriax{
         int slotFSFog = -1;
         int slotFSMirror = -1;
         int slotVSSprite = -1;
-        int slotVSShadows = -1;
         int slotFSShadows = -1;
-        int slotFSShadowProjection = -1;
-        int slotFSPointShadows = -1;
+        unsigned int sizeFSShadows = 0; // without the point lights in a directional-only variant
         int slotVSSkinning = -1;
         int slotVSMorphTarget = -1;
         int slotVSTerrain = -1;
         int slotFSTerrainLayers = -1;
+        // the scene its shader file samples
+        std::pair<int, int> slotSceneColor = {-1, -1};
+        std::pair<int, int> slotSceneDepth = {-1, -1};
 
         int slotVSDepthParams = -1;
-        unsigned int sizeVSDepthParams = 0; // reflected: an older fork declares the block without mvpMatrix
+        unsigned int sizeVSDepthParams = 0; // reflected: the normal matrix only when a hook reads normals
         int slotFSDepthMaterial = -1;
+        unsigned int sizeFSDepthMaterial = 0;
         int slotVSDepthFade = -1;
         int slotVSDepthSkinning = -1;
         int slotVSDepthMorphTarget = -1;
         int slotVSDepthTerrain = -1;
 
         int slotVSGBufferParams = -1;
+        unsigned int sizeVSGBufferParams = 0;
         int slotFSGBufferMaterial = -1;
         int slotVSGBufferSkinning = -1;
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;
         int slotFSGBufferTerrainLayers = -1;
 
-        // declared parameters of each pass and stage, filled from MeshComponent::shaderUniforms
+        // declared parameters per pass and stage
         ShaderParameterBlock paramsVS;
         ShaderParameterBlock paramsFS;
         ShaderParameterBlock depthParamsVS;
@@ -175,24 +182,11 @@ namespace doriax{
         HybridArray<Submesh, MAX_SUBMESHES> submeshes;
         unsigned int numSubmeshes = 0;
 
-        // Optional user-forked shader. Project-relative base path (no extension),
-        // e.g. "shaders/myMesh" -> shaders/myMesh.vert + shaders/myMesh.frag.
-        // Empty = use the built-in Mesh shader. Drives the main render pass only;
-        // the gbuffer pass keeps the built-in shader.
-        std::string customShader;
-        // Same for the depth shader (shadow maps, and the SSAO/post-process depth when SSR
-        // is off; with SSR on those read the built-in gbuffer), so a fork that displaces
-        // vertices or discards keeps its shadows in step.
-        std::string customDepthShader;
-        // .glsl defining getVertexOffset(), from the project or the engine, applied in every pass
-        std::string vertexOffsetShader;
-        float vertexOffsetMax = 0.0f; // longest offset in world units, widens the bounds; 0 = no limit
-        // .glsl defining getCoverage(), from the project or the engine, applied in every pass
-        std::string coverageShader;
-        bool coverageShadows = false; // shadow maps follow the coverage too
-        // values of the declared parameters, by name, shared by all submeshes
-        ShaderUniformValues shaderUniforms;
+        float vertexOffsetMax = 0.0f; // longest vertex offset, widens the bounds; 0 = no limit
+        // the materials' shader values changed
         bool needUpdateShaderUniforms = false;
+        // hash of the shader values, for sprite batching
+        uint64_t shaderValuesKey = 0;
 
         float normAdjustJoint = 1;
         float normAdjustWeight = 1;
@@ -219,6 +213,9 @@ namespace doriax{
 
         bool transparent = false;
         bool autoTransparency = true;
+        // the shader samples the scene, so the mesh draws after it
+        bool readsSceneColor = false;
+        bool readsSceneDepth = false;
 
         // opt-out of the scene's detail levels (Scene::setMeshLodEnabled); bias above 1 keeps detail longer
         bool lodEnabled = true;

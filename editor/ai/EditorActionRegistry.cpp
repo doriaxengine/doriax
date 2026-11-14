@@ -131,7 +131,7 @@ Json propertyValueFields(std::initializer_list<std::pair<const char*, Json>> ext
         {"vector3_value", vector3Schema("Vector3 or Color3 property value")},
         {"vector4_value", vector4Schema("Vector4 or Color4 property value")},
         {"quat_value", quaternionSchema("Quaternion property value, not Euler angles")},
-        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'assets/ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z")},
+        {"texture_path", stringSchema("Project-relative texture/resource path for Texture properties, inside the assets directory reported by get_project_summary as assets_dir. For .svg sources an optional '?svgScale=N' suffix sets the rasterization scale (e.g. 'assets/ui/icon.svg?svgScale=2'). A cubemap (Sky or ReflectionProbe texture) takes one cross-layout image or six faces joined by '|', ordered +X|-X|+Y|-Y|+Z|-Z. Empty clears the texture")},
         {"entity_value", integerSchema("Entity id for Entity or EntityReference properties")},
         {"entity_scene_id", integerSchema("Scene id for EntityReference properties, only for an entity in another scene. Omit for the same scene")},
         {"bursts_value", {
@@ -491,7 +491,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_scene_property",
-            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). A saved scene shader parameter is set as shader_parameter:<Collection>.<name> with number_value, vector2_value, vector3_value or vector4_value; every shader declaring #pragma scene <type> <Collection>.<name> reads it, e.g. shader_parameter:Wind.velocity (vector3_value, air velocity in m/s) bends meshes with the offsets/wind.glsl vertex offset and terrain foliage layers with wind_sway. Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default custom shader per type via default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader as string_value (project-relative fork base path, empty to reset to built-in) - used by every component of that type whose own customShader is empty (priority: component customShader > scene default > built-in). Use fork_shader with shader_type (no entity) to create the fork first.",
+            "Set a supported scene-level property such as background_color, global_illumination_color, ssao_enabled, ssr_enabled, ambient_light_2d_color/ambient_light_2d_intensity (2D light ambient), shadows_quality (3D) and shadows_2d_quality (2D) as int_value 0=none/1=low/2=medium/3=high. Physics gravity in m/s^2: physics_gravity_2d (vector2_value, Box2D world) and physics_gravity_3d (vector3_value, Jolt world), default (0, -9.81). A saved scene shader parameter is set as shader_parameter:<Collection>.<name> with number_value, vector2_value, vector3_value or vector4_value; every shader declaring #pragma scene <type> <Collection>.<name> reads it, e.g. shader_parameter:Wind.velocity (vector3_value, air velocity in m/s) bends meshes whose material uses shaders/wind.glsl and terrain foliage layers with wind_sway. Fixed game resolution (main scene renders at that size and is upscaled to the view): fixed_resolution_enabled (bool_value), fixed_resolution_width/fixed_resolution_height (int_value, pixels), fixed_resolution_filter (int_value 0=nearest, 1=linear). Also sets a scene's default shader per type as string_value, empty to reset to the built-in: default_mesh_shader/default_ui_shader/default_sky_shader/default_points_shader/default_lines_shader/default_water_shader each a shader file of that type (.glsl or a .shader graph) - used by every component of that type without a shader of its own (priority: component > scene default > built-in).",
             objectSchemaFromProperties(propertyValueFields({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"property", stringSchema("Scene property name")}
@@ -770,7 +770,7 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
                 {"type", stringSchema("lua or cpp")},
                 {"class_name", stringSchema("Class/module name")},
-                {"path", stringSchema("Safe project-relative .lua or .cpp path")},
+                {"path", stringSchema("Safe project-relative .lua or .cpp path, or a .logic graph with type lua")},
                 {"header_path", stringSchema("Safe project-relative header path for C++ scripts")}
             }, {"type", "class_name", "path"}),
             false
@@ -948,7 +948,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_export_shaders",
-            "Edit the shader variants every export adds to or leaves out of what the saved scenes use (project.yaml export.shaderAdditions/shaderExclusions, the overrides the Export window lists), and return both lists. An export ships only the shaders of each scene's saved state, so a variant that appears only at runtime, such as a script toggling Scene.ssaoEnabled or ssrEnabled, must be added here or its meshes fail to load in the exported game. A spec is type or type:properties with a decimal or 0x property mask or property names, as scene files and the shaders command write them: mesh:4184, mesh:Uv1,Nor, ssao, gbuffer:12. A forked shader adds its project-relative base path after @: mesh:4184@shaders/myMesh, then a vertex offset and a coverage function follow #: mesh:8@#offsets/wind.glsl, mesh:8@##coverage/see_through.glsl, mesh:4184@shaders/myMesh#myoffsets/wave.glsl#coverage/dissolve.glsl. A built-in lit mesh variant (property bit 3), also one with only effect functions, ships with its bit 28 twin, so every field applies to both. Call with no arguments to read the lists.",
+            "Edit the shader variants every export adds to or leaves out of what the saved scenes use (project.yaml export.shaderAdditions/shaderExclusions, the overrides the Export window lists), and return both lists. An export ships only the shaders of each scene's saved state, so a variant that appears only at runtime, such as a script toggling Scene.ssaoEnabled or ssrEnabled, must be added here or its meshes fail to load in the exported game. A spec is type or type:properties with a decimal or 0x property mask or property names, as scene files and the shaders command write them: mesh:4184, mesh:Uv1,Nor, ssao, gbuffer:12. A shader file follows @: mesh:8@shaders/wind.glsl. A built-in lit mesh variant (property bit 3), also one with only a shader file, ships with its bit 28 twin, so every field applies to both. Call with no arguments to read the lists.",
             objectSchema({
                 {"add", {{"type", "array"}, {"description", "Specs to add to the additions (taken out of the exclusions)"}, {"items", {{"type", "string"}}}}},
                 {"remove", {{"type", "array"}, {"description", "Specs to take out of the additions"}, {"items", {{"type", "string"}}}}},
@@ -969,72 +969,117 @@ const std::vector<ToolDefinition>& cachedTools() {
             false
         },
         {
-            "fork_shader",
-            "Fork a built-in shader into a project-relative directory as one undoable step. Give entity_id/entity_name to fork a single component's shader (points its customShader at the fork); with shader_type depth on a MeshComponent it forks the depth shader instead (points customDepthShader at the fork): shadow maps, plus SSAO/post-process depth while SSR is off (with SSR on they read the built-in G-buffer) - needed when the mesh fork displaces vertices or discards, so shadows follow; with shader_type underwater on a WaterComponent it forks the fade a camera below the surface sees (points customUnderwaterShader at the fork). Omit entity_id/entity_name and give shader_type instead to fork a scene-wide default shader for that type (points the scene's default_<type>_shader at the fork, used by every component of that type without its own customShader - see set_scene_property). With shader_type postprocess and no entity it forks a post-process pass instead (fullscreen.vert and postprocess.frag): a new pass at the end of the scene chain, or the passthrough pass at pass_index, runs the fork. Creates <name>.vert and <name>.frag directly in that directory. With fork_includes the fork is placed in its own <directory>/<name>/ folder together with an includes/ copy of the engine .glsl files it uses, so those edits override the engine library only for this fork. This is the correct way to start a custom shader; do not set customShader or a scene default_*_shader to files that do not exist.",
-            objectSchema({
-                {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
-                {"entity_id", integerSchema("Entity id. Omit both this and entity_name, and give shader_type, to fork a scene default instead")},
-                {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
-                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect the entity's renderable component. Ignored when forking a scene default")},
-                {"shader_type", stringSchema("mesh, ui, sky, points, lines, or water. Required when entity_id/entity_name are omitted, to fork a scene-wide default shader for that type; postprocess forks a post-process pass instead; with an entity only depth (fork a mesh's depth shader) or underwater (fork a water's underwater shader) is meaningful")},
-                {"pass_index", integerSchema("With shader_type postprocess: the passthrough pass that takes the fork. Omit to add a new pass at the end of the chain")},
-                {"directory", stringSchema("Optional safe project-relative destination directory; defaults to shaders")},
-                {"fork_includes", boolSchema("Also copy the built-in transitive .glsl includes so they can be edited; this moves the fork into its own <name>/ directory")}
-            }),
-            false
-        },
-        // v0.8.4 port
-        {
-            "port_shader_fork",
-            "Port a custom shader forked in v0.8.4 or earlier, which still declares a u_vs_customParams, u_fs_customParams or u_fs_postParams block. Rewrites both files in place: each block member becomes a #pragma param line read as params.name (a comment after the member becomes its description), time and resolution become Engine.time and Engine.resolution, and the parameter include and the loadShaderParameters() call are added. The values saved by name on the component or the pass keep applying. Fails without writing when a member is not a float, vec2-4, int or ivec2-4.",
-            objectSchema({
-                {"shader", stringSchema("The fork as its customShader value: a project-relative base path without extension, or \"a.vert|b.frag\"")}
-            }, {"shader"}),
-            false
-        },
-        {
             "write_shader_file",
-            "Write a project-relative custom shader source file (.vert, .frag, or .glsl). Use after fork_shader to edit entry points, private copied includes, or project-root-relative shared includes. Read the file first and keep ALL original texture and sampler declarations (uniform sampler2D/samplerCube/etc. and their #ifdef guards) plus the uniform blocks, #version, #include lines and output variable - the engine binds textures by fixed slot, so removing or renaming a declaration breaks the bindings. Add no uniform block: declare values as #pragma param lines instead, set with set_shader_uniform. Unmodified #include \"includes/...\" resolves private fork copies first, then project-root overrides, then the engine library.",
+            "Write a project-relative .glsl shader file: one a material, a component, a scene default or a post-process pass uses (it starts with \"#pragma shader <type>\" and fills hooks), or a file one of them includes. Read an existing file first with read_resource_file. Shader files declare their values with #pragma lines, never with uniform blocks or texture declarations of their own. Saving rebuilds every shader that uses the file.",
             objectSchema({
-                {"path", stringSchema("Existing or new safe project-relative path. Allowed extensions: .vert, .frag, .glsl")},
+                {"path", stringSchema("Existing or new safe project-relative path. Must end in .glsl")},
                 {"content", stringSchema("Complete replacement file contents")},
                 {"reason", stringSchema("Short reason shown in the approval preview")}
             }, {"path", "content"}),
             false
         },
         {
+            "list_graph_node_types",
+            "List the node types graphs are built from: shader graphs (.shader), or with graph_type script the logic graphs (.logic) that write Lua scripts. A script's nodes are events (event/..., each a method of the script), flow (branch, loops, sequence), variables, values, math, and one node per method and property of the engine's Lua API (call/Class.method, get/Class.property, set/Class.property), which are listed only by search or with a class as category; a node with execution pins runs in the order they are linked, the others are values read where they are used, and an unlinked self input is the script's own entity. For shaders, graph_type keeps the ones a graph of that type takes (mesh, ui, points, lines, sky, water, postprocess or function). With search (matched against ids, names, categories and descriptions) or category, each entry is complete: inputs with their types and defaults, outputs, settings with their options, where the node runs. Without them the list is short, one line of pins per node, so search for the nodes you mean to use. Pin types are float, vec2, vec3, vec4, int, bool, color (a vec4), texture2D, textureCube and dynamic, which takes the smallest vector linked into the node; numbers convert into each other. An input default such as @uv1 reads that field of the hook's context. Each graph has one output node (output/<type>), whose inputs fill the shader's hooks; the Mesh Output's Light input fills getLight, what each light adds in place of the built-in shading, with the Light node's direction, color and shadow. A function graph (type function) is a part other graphs reuse: its Function Input nodes (function/input, settings name and valueType, Default used when the caller passes nothing) are the values it takes, its Function Output nodes (function/output) the values it gives, and any node fits in it; a Subgraph node (utility/subgraph, setting file) calls it with those names as its pins, and its parameters join the calling graph's by name.",
+            objectSchema({
+                {"graph_type", stringSchema("Only the nodes a graph of this type takes: mesh, ui, points, lines, sky, water, postprocess or function; script for logic graphs")},
+                {"category", stringSchema("Only this category, as Math, Noise, Texture or Effect; for a script also an engine class, as Object or Input")},
+                {"search", stringSchema("Words to look for in ids, names, categories and descriptions")}
+            }),
+            true
+        },
+        {
+            "read_graph",
+            "Read a shader graph (.shader) or a logic graph (.logic, a script made of nodes; include_code returns the Lua it compiles to): its type, parameters (the values Properties shows), nodes with their id, type, position, settings and constant inputs, links (from node.pin, or a parameter by name, into node.pin), groups and comments, and whether it compiles, with the node of each error; a Subgraph node lists its pins, its function's inputs and outputs, and a function graph compiles to a preview of its outputs. include_code adds the GLSL file it compiles to. A graph is used where a .glsl shader file is: a material's shader (set_component_property submeshes[N].material.shader), a component's shader, or a post-process pass. Change it with edit_graph.",
+            objectSchema({
+                {"path", stringSchema("Project-relative .shader or .logic file")},
+                {"include_code", boolSchema("Also return the GLSL, or the Lua, the graph compiles to")}
+            }, {"path"}),
+            true
+        },
+        {
+            "edit_graph",
+            "Change a shader graph (.shader) or a logic graph (.logic) with operations applied in order as one step. A logic graph is created with create=true and a .logic path inside the Lua directory, without graph_type, and starts empty: add its events (event/start, event/Engine.onUpdate), link execution from their out pin through the nodes that run (an execution output takes one link, and connecting it again moves it), and feed values into their inputs; add_parameter adds its variables (type float, int, bool, string, vector2, vector3, vector4, color3, color4 or entity; runtime=true keeps one private), which variable/get and variable/set name in their variable setting. The Lua it compiles to is kept by the editor, out of the project's files: attach the graph itself to an entity with attach_script (type lua, path the .logic as script returns it, class_name as returned). Nothing is written when one fails, and the error names it. create=true makes a new graph holding only the output node of graph_type before the operations run, or for a function graph one Function Output. Operations: add_node (type, ref, position); remove (node, or ids); move (node, position); connect (from node.pin, or node.pin.xyz for a swizzle, to node.pin, replacing what fed that input); disconnect (to); set (node, name of a setting or an input, and number_value, vector_value, string_value or bool_value; reset=true drops an input's constant); add_parameter (name, type float, vec2, vec3, vec4, int, color, texture2D or textureCube, a default in a value field, min and max, runtime, description; filter nearest, linear or trilinear and wrap repeat, clamp or mirror for textures, whose default is white, black or normal); set_parameter (name, new_name and the same fields); remove_parameter (name); add_group (text as its title, position, size); add_comment (text, position). A node is named by its id, by output for the output node, or by the ref an add_node of the same call gave it. A Parameter node, or a texture node, takes its parameter by name through set with name parameter or texture; a Subgraph node takes its function graph's path through set with name file, then connects by the function's input and output names. Nodes added without a position are laid out in columns by how far their links are from the output; a group without one frames the nodes the call added, and a comment goes above them. Returns the graph as read_graph does, plus refs with the ids they were given. A graph open in the editor takes the change as one undoable step; one with unsaved edits there is refused. Find node types with list_graph_node_types.",
+            objectSchema({
+                {"path", stringSchema("Project-relative .shader or .logic file")},
+                {"create", boolSchema("Make a new graph at path first: a shader graph holding only the output node of graph_type, or an empty logic graph")},
+                {"graph_type", stringSchema("Type of the new graph: mesh, ui, points, lines, sky, water, postprocess or function")},
+                {"operations", {
+                    {"type", "array"},
+                    {"description", "Changes, applied in order"},
+                    {"items", objectSchema({
+                        {"op", stringSchema("add_node, remove, move, connect, disconnect, set, add_parameter, set_parameter, remove_parameter, add_group or add_comment")},
+                        {"type", stringSchema("Node type id for add_node, as noise/voronoi; parameter type for add_parameter")},
+                        {"ref", stringSchema("Name for what an add makes, for later operations of the call")},
+                        {"node", stringSchema("Node id as text, or the ref of a node added earlier in the call")},
+                        {"ids", {
+                            {"type", "array"},
+                            {"description", "Nodes, groups or comments to remove, by id or ref"},
+                            {"items", {{"type", "string"}}}
+                        }},
+                        {"position", vector2Schema("Position on the canvas")},
+                        {"size", vector2Schema("Size of a group")},
+                        {"from", stringSchema("Link source: node.pin, or node.pin.xyz for a swizzle")},
+                        {"to", stringSchema("Input a link goes into: node.pin; with from, disconnect removes that one link of an execution input")},
+                        {"name", stringSchema("Setting or input for set; parameter for the parameter operations")},
+                        {"new_name", stringSchema("New name of a parameter")},
+                        {"number_value", numberSchema("A float or int value")},
+                        {"vector_value", {
+                            {"type", "array"},
+                            {"description", "A vector or color value, 1 to 4 numbers; colors are linear"},
+                            {"items", {{"type", "number"}}}
+                        }},
+                        {"string_value", stringSchema("A choice, a parameter name, a word such as white, or text")},
+                        {"bool_value", boolSchema("A bool value")},
+                        {"reset", boolSchema("Drop the input's constant, back to its default")},
+                        {"min", numberSchema("Lowest value of a float or int parameter")},
+                        {"max", numberSchema("Highest value of a float or int parameter")},
+                        {"runtime", boolSchema("A parameter scripts set, hidden in Properties")},
+                        {"description", stringSchema("A parameter's description")},
+                        {"filter", stringSchema("A texture parameter's filter")},
+                        {"wrap", stringSchema("A texture parameter's wrap")},
+                        {"text", stringSchema("A group's title or a comment's text")}
+                    }, {"op"})}
+                }},
+                {"reason", stringSchema("Short reason shown in the approval preview")}
+            }, {"path", "operations"}),
+            false
+        },
+        {
             "inspect_shader_uniforms",
-            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), plus annotation errors as warnings. The files are the fork (own or the scene default), a mesh's depth fork and effect functions, and a water's underwater fork. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
+            "List the parameters the shaders of a component or post-process pass declare with #pragma param, each with its type, default, range, description and the value it reads (own, inherited from the scene default shader, else the default), its declared textures (texture true, set through shaderTextures[name] or a pass's texture_name), plus annotation errors as warnings. The file is the shader file of one submesh's material (submesh, 0 when omitted; submesh_count says how many there are) or of a UI/Points/Lines/Sky/Water component, its own or the scene default. Give entity_id/entity_name (component optional, auto-detected) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Use before set_shader_uniform to learn the names.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
-                {"entity_id", integerSchema("Entity id of a component with a custom shader")},
+                {"entity_id", integerSchema("Entity id of a component with a shader file")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
-                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect")},
-                {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")}
+                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent, WaterComponent). Omit to auto-detect")},
+                {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")},
+                {"submesh", integerSchema("Mesh submesh whose material is read. Default 0")}
             }),
             true
         },
         {
             "set_shader_uniform",
-            "Set or remove the value of one #pragma param parameter, by name, as one undoable step and without a shader rebuild. Values live on the component (shaderUniforms) or on the post-process pass, kept as a Vector4: give number_value for float/int, vector2_value/vector3_value/vector4_value for vec2/vec3/vec4 and ivec types (ints truncate). Give entity_id/entity_name (component optional) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Set remove=true to drop the value, so the inherited one or the declared default applies again. Names no shader declares are stored but unused; use inspect_shader_uniforms to see the declared parameters.",
+            "Set or remove the value of one #pragma param parameter, by name, as one undoable step and without a shader rebuild. Values live on the component (shaderUniforms), on a mesh's materials (every submesh, or the one given as submesh) or on the post-process pass, kept as a Vector4: give number_value for float/int, vector2_value/vector3_value/vector4_value for vec2/vec3/vec4 and ivec types (ints truncate). Give entity_id/entity_name (component optional) for a Mesh/UI/Points/Lines/Sky/Water component, or pass_index for a scene post-process pass. Set remove=true to drop the value, so the inherited one or the declared default applies again. Names no shader declares are stored but unused; use inspect_shader_uniforms to see the declared parameters.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
-                {"entity_id", integerSchema("Entity id of a component with a custom shader")},
+                {"entity_id", integerSchema("Entity id of a component with a shader file")},
                 {"entity_name", stringSchema("Entity name, used only when entity_id is omitted")},
-                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent). Omit to auto-detect")},
+                {"component", stringSchema("Renderable component name (MeshComponent, UIComponent, PointsComponent, LinesComponent, SkyComponent, WaterComponent). Omit to auto-detect")},
                 {"pass_index", integerSchema("Post-process pass index (0 = first pass of the scene chain), instead of an entity")},
                 {"name", stringSchema("Uniform member name as declared in the shader block, e.g. amplitude or tint")},
                 {"number_value", numberSchema("Value for a float or int member")},
                 {"vector2_value", vector2Schema("Value for a vec2 member")},
                 {"vector3_value", vector3Schema("Value for a vec3 member")},
                 {"vector4_value", vector4Schema("Value for a vec4 member")},
+                {"submesh", integerSchema("Mesh submesh whose material takes the value. Omit for every submesh")},
                 {"remove", boolSchema("Remove the stored value instead of setting one")}
             }, {"name"}),
             false
         },
         {
             "list_post_process_passes",
-            "List a scene's post-process chain in the order it runs: each pass with its index, shader (project-relative fork base, empty = the built-in passthrough), enabled flag and stored parameter values. Use inspect_shader_uniforms with pass_index to see what a pass's shader declares.",
+            "List a scene's post-process chain in the order it runs: each pass with its index, shader (a project-relative .glsl or .shader graph, empty = the built-in passthrough), enabled flag, stored parameter values and textures. Use inspect_shader_uniforms with pass_index to see what a pass's shader declares.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")}
             }),
@@ -1042,14 +1087,16 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "set_post_process_pass",
-            "Change a scene's post-process chain, the fullscreen passes run over its finished image, as one undoable step; returns the chain after it. action add inserts a pass at pass_index (the end when omitted) using shader, an existing fork, or the built-in passthrough when shader is omitted; remove deletes the pass at pass_index; move takes it to to_index (passes run from index 0); set changes its shader (which clears its parameter values) and/or enabled. To write a new effect, call fork_shader with shader_type postprocess instead: it copies the pass template and adds the pass in one step. Set parameter values with set_shader_uniform and pass_index. The chain runs on the scene's active camera and is skipped while the scene is drawn as a layer.",
+            "Change a scene's post-process chain, the fullscreen passes run over its finished image, as one undoable step; returns the chain after it. action add inserts a pass at pass_index (the end when omitted) using shader, or the built-in passthrough when shader is omitted; remove deletes the pass at pass_index; move takes it to to_index (passes run from index 0); set changes its shader (which clears its values and textures), enabled, and one texture with texture_name and texture_path. A pass's shader is a .glsl written with write_shader_file: \"#pragma shader postprocess\", then after \"#pragma stage fragment\" vec4 getColor(FragmentContext context, vec4 color), where color is the scene at this pixel and the result replaces it, both linear; FragmentContext has uv (0 at the top left) and pixel, and the hook can call vec4 sceneColor(vec2 uv) (the previous pass, linear), float sceneDepth(vec2 uv) (distance from the eye in world units, the far plane where nothing was drawn), vec3 sceneNormal(vec2 uv) (world space, needs SSR on) and float sceneOcclusion(vec2 uv) (SSAO, 1 without it); an input is bound only when the file calls its function. Set parameter values with set_shader_uniform and pass_index. The chain runs on the scene's active camera and is skipped while the scene is drawn as a layer.",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"action", stringSchema("add, remove, move, or set. Defaults to set")},
                 {"pass_index", integerSchema("Pass index (0 = first pass of the chain). Required except for add, which appends when it is omitted")},
                 {"to_index", integerSchema("New index of the pass, for move")},
-                {"shader", stringSchema("Project-relative fork base path with no extension (vert=base.vert, frag=base.frag), or \"a.vert|b.frag\"; empty = the built-in passthrough")},
-                {"enabled", boolSchema("Whether the pass runs")}
+                {"shader", stringSchema("Project-relative postprocess shader file, a .glsl starting with \"#pragma shader postprocess\" or a .shader graph; empty = the built-in passthrough")},
+                {"enabled", boolSchema("Whether the pass runs")},
+                {"texture_name", stringSchema("For set: a texture the pass's shader declares with #pragma param texture2D")},
+                {"texture_path", stringSchema("For set with texture_name: the image, project-relative inside the assets directory; empty clears it")}
             }),
             false
         },
@@ -1552,10 +1599,9 @@ std::string EditorActionRegistry::guidance() {
         << "Cameras orient by target, not by rotation: CameraComponent.useTarget defaults to true and Camera::setTarget re-enables it, so while it is on the view is lookAt(position, target, up) and the entity's rotation is ignored. Call disableTarget() first if you want the rotation to drive the view (forward = rotation * Vector3(0, 0, -1)). For a third-person or orbit camera, place the camera around the target with spherical coordinates -- offset = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw)); position = target + offset*distance -- then call setTarget(target), so a positive pitch means the camera sits ABOVE the target. Do not derive the position by subtracting a rotated forward vector (target - forward*distance): rotations are right-handed, so a positive pitch tilts the VIEW up and that formula silently puts the camera below the target.\n"
         << "Engine angle arguments are in the engine's default unit, which is DEGREES unless Engine::setUseDegrees(false) was called: Quaternion(angle, axis), Quaternion::fromEulerAngles, Camera::rotateView and similar all pass their angle through Angle::defaultToRad, so never assume they take radians. Convert explicitly with Angle::degToDefault/Angle::radToDefault, and note that std::sin/std::cos always want radians (Angle::defaultToRad).\n"
         << "To print or log from scripts use the Log class: C++ Log::print(\"pos %f %f %f\", p.x, p.y, p.z) with #include \"Log.h\" (Log::warn/Log::error for severity); Lua Log.print(\"pos \" .. tostring(p)). Engine has no log method; never use Engine::log, printf, std::cout, or bare print().\n"
-        << "Custom shaders are per-component on Mesh/UI/Points/Lines/Sky/Water via the customShader property. To customize, call fork_shader (it copies the built-in <type>.vert/.frag into a project-relative directory and sets customShader in one undoable step; directory defaults to shaders, and fork_includes optionally copies the engine includes into an editable includes/ folder beside the fork). Never set customShader by hand to files that do not exist; the value is a base path with no extension (vert=base.vert, frag=base.frag) or two explicit paths joined by '|' (\"a.vert|b.frag\") when the entry points have different names. Both a .vert and a .frag are always required. Clear customShader (empty string) to reset to the built-in shader. A Mesh fork drives the color pass only: when it displaces vertices or discards, also fork the depth shader (fork_shader with shader_type depth sets customDepthShader) so shadow maps follow - and SSAO/post-process depth while SSR is off (with SSR on they read the G-buffer, which keeps the built-in shader); it reads the same shaderUniforms.\n"
-        << "A MeshComponent can also run effect functions without forking: vertexOffsetShader is one .glsl defining vec3 getVertexOffset(vec3 localPosition, vec3 worldPosition) that returns a world-space offset, and coverageShader is one .glsl defining float getCoverage(CoverageContext context) that returns how much of each fragment stays (1 kept, 0 removed; opaque surfaces dither in between, blended ones fade). Both run in the color, depth and G-buffer passes, so shadows, SSAO and SSR follow; coverageShadows (bool) makes the shadow maps follow the coverage too, otherwise they keep the whole silhouette. Effect files declare their values with #pragma lines, never in uniform blocks: \"#pragma param float strength = 0.5 [0, 2]\" is a mesh shader uniform read as params.strength (set it with set_shader_uniform), \"#pragma scene vec3 Wind.velocity\" a scene parameter read as Wind.velocity (set with set_scene_property shader_parameter:Wind.velocity) and \"#pragma view float SeeThrough.radius\" a per-camera parameter read as SeeThrough.radius (set with set_component_property CameraComponent shader_parameter:SeeThrough.radius). Engine.time is the scene clock; CoverageContext has worldPosition, uv, eye, forward, perspective and pixel, and includes/coverage_helpers.glsl has coverageBelowHeight, coverageNoise and coverageViewOpening. Set vertexOffsetMax to the longest offset: longer ones are clamped and culling widens the bounds by it. The engine ships offsets/wind.glsl (uniforms windSway and windSwayHeight, scene Wind.velocity), offsets/interaction.glsl (scene Interaction.position and Interaction.radius, which a script updates), coverage/see_through.glsl (view SeeThrough.target, radius, opacity and margin, which a script updates with scene:setMainViewShaderParameter), coverage/height_clip.glsl (scene Clip.height and Clip.softness) and coverage/dissolve.glsl (uniforms dissolve, dissolveScale, dissolveEdge).\n"
-        << "The forked .vert/.frag are complete, compiling engine shaders with a strict structure: a #version line, #include \"includes/...\" (resolved against the engine library), #ifdef variant guards, uniform blocks, texture and sampler declarations, in/out varyings, and a specific fragment output variable. Editing them with write_shader_file REQUIRES first calling read_resource_file on the forked file, then making minimal targeted changes that PRESERVE the #version, #include lines, uniform blocks, ALL original texture and sampler declarations (uniform sampler2D/samplerCube/textureN/samplerN and their #ifdef guards), in/out declarations, and the existing output variable name. Keep every original texture/sampler declaration even if your new code does not sample it - the engine binds them by fixed slot, so removing or renaming one breaks the texture bindings. Likewise keep the original main() code that READS the in varyings (v_position, v_normal, v_uv1, v_color, etc.): if you delete a varying's usage the GLSL compiler strips that fragment input and the shader fails to cross-compile with a vertex/fragment interface mismatch (\"vertex shader output X does not exist in fragment shader inputs\"). Prefer to keep the original main() body that consumes the varyings and layer your effect on the final color (e.g. compute the original color, then posterize/override it), rather than deleting the existing computations. Only change the shading math (usually near the end of main()). Never rewrite a shader from scratch, drop the #version/#include lines, or invent sampler, texture, output or engine uniform names - that produces compile errors (e.g. missing precision qualifier / wrong #version) or broken bindings. A stylized custom shader (e.g. toon/cel) may legitimately replace the lighting model and stop sampling the shadow or IBL maps; that is allowed - keep their declarations (the engine harmlessly skips the now-unused bindings), but briefly tell the user when your shader changes lighting behavior such as no longer receiving shadows, so they can ask to keep it. If a custom shader fails to compile, the object falls back to the built-in shader and the error appears in the output window; read that error and the forked source, then fix minimally.\n"
-        << "A fork declares its values with #pragma lines, never as uniform blocks (u_vs_customParams, u_fs_customParams and u_fs_postParams fail the build; port_shader_fork rewrites such a fork): \"#pragma param float amplitude = 0.2 [0, 1] \\\"Wave height\\\"\" is read as params.amplitude once main() has called loadShaderParameters(), which every built-in shader already does; types are float, vec2-4, int and ivec2-4, and color, runtime and a [min, max] range are optional. Keep the existing engine blocks and the includes/parameters_*.glsl include untouched. Values are filled BY NAME from the component's shaderUniforms (or the pass uniforms), an unset one reads the scene default shader's value, else the declared default: set them with set_shader_uniform (undoable, no shader rebuild) and list them with inspect_shader_uniforms; scripts use mesh:setShaderUniform(\"amplitude\", 0.3) / scene:setPostProcessUniform(0, \"amount\", 0.5). A scene's post-process chain is read with list_post_process_passes and changed with set_post_process_pass (add, remove, move, enable); fork_shader with shader_type postprocess adds a pass with a new fork of the passthrough template. Engine.time (seconds of the scene clock, which holds in the editor view until Play) and Engine.resolution (xy = target size, zw = 1/size) are always readable, so an animated effect just reads Engine.time and moves once the scene plays. \"#pragma scene vec3 Weather.wind\" and \"#pragma view float Fade.amount\" read values shared by the scene or set per camera.\n";
+        << "A mesh material draws with a shader file: submeshes[N].material.shader is one .glsl that starts with \"#pragma shader mesh\" and fills hooks in its stages; text before the first \"#pragma stage vertex\" or \"#pragma stage fragment\" line is shared by both. Vertex hooks: vec3 getVertexOffset(VertexContext context) returns a world-space offset; void getVaryings(VertexContext context, out Varyings varyings) fills values declared with \"#pragma varying vec3 tint\" (at most 4, float or vec2-4) that the fragment stage reads as varyings.tint; vec4 getClipPosition(VertexContext context, vec4 clipPosition) changes the clip-space position in the camera passes, with y up on every backend, never in shadow maps. VertexContext has localPosition, worldPosition (before the offset), normal (world space), uv1, uv2 (the second UV set, 0 without it), color (vertex color times instance color), instance (a vec4 set per instance of an instanced mesh, InstancedMeshComponent instances[N].custom or mesh:setInstanceCustom(index, Vector4), 0 without instancing), and objectPosition and objectScale (the object's origin in world space and its scale, an instance's own with instancing). Fragment hooks: float getCoverage(FragmentContext context) returns how much of each fragment stays (1 kept, 0 removed; opaque surfaces dither in between, blended ones fade); void getSurface(FragmentContext context, inout Surface surface) changes baseColor, alpha, normal (world space), metallic, roughness, occlusion and emissive before lighting; vec3 getLight(FragmentContext context, Surface surface, LightContext light) returns what one light adds in the color pass, replacing the built-in shading of each light (LightContext has direction toward the light, color times intensity and attenuation, shadow from 1 lit to 0 shadowed, and type LIGHT_DIRECTIONAL, LIGHT_POINT or LIGHT_SPOT; ambient light and reflections stay physically based); vec4 getColor(FragmentContext context, vec4 color) changes the final linear color after lighting and fog, in the color pass; float getDepthOffset(FragmentContext context) pushes the depth away from the eye by that many world units, not in shadow maps. FragmentContext has worldPosition, normal, tangent and bitangent (world space, the mesh's tangents or else derived from uv1, so mat3(context.tangent, context.bitangent, surface.normal) * n applies a tangent-space normal map), uv1, uv2, color, instance, view (toward the eye), eye, forward, perspective, pixel, screenUV (where the camera sees it, 0 at the top left), frontFacing, nearPlane and farPlane (the camera's clip planes as distances) and worldToView (a mat3 turning a world direction into the camera's space, z toward the eye). In the color pass the hooks can call vec4 sceneColor(vec2 screenUV) (the scene drawn before the mesh, linear; in 3D its opaque part) and float sceneDepth(vec2 screenUV) (distance from the eye along the view in world units, comparable with dot(context.worldPosition - context.eye, context.forward)); a mesh calling either draws after the scene like a transparency and stays out of the depth prepass and G-buffer, and the other passes read black and a far distance. \"#pragma shading unlit\" draws without lights; \"#pragma surface_replaces baseColor alpha normal metallic roughness occlusion emissive\" (any of them) leaves out the material maps the surface hook sets from scratch; \"#pragma coverage_shadows apply\" in the fragment stage makes the shadow maps follow the coverage, otherwise they keep the whole silhouette. The hooks run in the color, depth and G-buffer passes alike, so shadows, SSAO and SSR follow; IN_COLOR_PASS, IN_DEPTH_PASS and IN_GBUFFER_PASS are defined per pass, and Engine.pass is PASS_COLOR, PASS_DEPTH, PASS_SHADOW or PASS_GBUFFER at runtime. Set the mesh's vertexOffsetMax to the longest offset: longer ones are clamped and culling widens the bounds by it. Shader files declare their values with #pragma lines, never in uniform blocks: \"#pragma param float strength = 0.5 [0, 2]\" is read as params.strength (set it with set_shader_uniform), \"#pragma param texture2D detail = white linear repeat\" is a texture (white, black or normal default; nearest, linear or trilinear; repeat, clamp or mirror) sampled with texture(detail, uv) and set with set_component_property submeshes[N].material.shaderTextures[detail], \"#pragma scene vec3 Wind.velocity\" a scene parameter read as Wind.velocity (set with set_scene_property shader_parameter:Wind.velocity) and \"#pragma view float SeeThrough.radius\" a per-camera parameter read as SeeThrough.radius (set with set_component_property CameraComponent shader_parameter:SeeThrough.radius). A declaration belongs to the stage it is written in. Engine.time is the scene clock, and includes/coverage_helpers.glsl has coverageBelowHeight, coverageNoise and coverageViewOpening. The engine ships shaders/wind.glsl (uniforms windSway and windSwayHeight, scene Wind.velocity), shaders/interaction.glsl (scene Interaction.position and Interaction.radius, which a script updates), shaders/see_through.glsl (view SeeThrough.target, radius, opacity and margin, which a script updates with scene:setMainViewShaderParameter), shaders/height_clip.glsl (scene Clip.height and Clip.softness) and shaders/dissolve.glsl (uniforms dissolve, dissolveScale, dissolveEdge); their functions are in effects/ (windSway, interactionPush, seeThrough, heightClip, dissolve), so one file can combine them by including effects/wind.glsl in its vertex stage and effects/see_through.glsl in its fragment stage.\n"
+        << "UI, Points, Lines, Sky and Water components take a shader file the same way through their shader property: one .glsl starting with \"#pragma shader ui\" (or points, lines, sky, water), its values in shaderUniforms and its textures in shaderTextures[name]; an empty shader uses the scene's default_<type>_shader, else the built-in. UI, points and lines run vec3 getVertexOffset(VertexContext context) (world units; VertexContext has localPosition, worldPosition, uv1 on a UI and color) and vec4 getColor(FragmentContext context, vec4 color), where FragmentContext has worldPosition, uv1 (a point's coordinate after its rotation and atlas rect), color (the vertex color), textureColor (the texture or font sample), tint (the UI color) and pixel, and color is tint times texture times vertex color, linear. Sky and water run getColor: the sky's FragmentContext has direction (the cube map direction, in the sky's own space), textureColor (the cube map sample) and tint (the sky color), all linear; the water's has worldPosition, normal (the rippled surface), view and pixel, and its color is the lit, fogged water. A water file can also define vec4 getUnderwaterColor(UnderwaterContext context, vec4 color) for the fade a camera below the surface sees (needs the water's underwater on): UnderwaterContext has uv (of the view, 0 at the top left), sceneColor (the scene before the fade, linear), pathLength (water the view crosses, in world units) and pixel. Any other hook in such a file fails the build.\n"
+        << "Shader files declare their values with #pragma lines: \"#pragma param float amplitude = 0.2 [0, 1] \\\"Wave height\\\"\" is read as params.amplitude; types are float, vec2-4, int and ivec2-4, and color, runtime and a [min, max] range are optional. Values are filled BY NAME from the material's or the component's shaderUniforms (or the pass uniforms), an unset one reads the scene default shader's value, else the declared default: set them with set_shader_uniform (undoable, no shader rebuild) and list them with inspect_shader_uniforms; scripts use mesh:setShaderUniform(\"amplitude\", 0.3) / scene:setPostProcessUniform(0, \"amount\", 0.5). A scene's post-process chain is read with list_post_process_passes and changed with set_post_process_pass (add, remove, move, enable, textures); each pass runs a shader file with a getColor hook, written with write_shader_file. A .shader file is a node graph that compiles to such a file and goes in the same slots: find nodes with list_graph_node_types, read one with read_graph and change or create one with edit_graph. A .shader of type function goes in no slot: other graphs call it through Subgraph nodes, so a part used in several graphs is built once. Engine.time (seconds of the scene clock, which holds in the editor view until Play) and Engine.resolution (xy = target size, zw = 1/size) are always readable, so an animated effect just reads Engine.time and moves once the scene plays. \"#pragma scene vec3 Weather.wind\" and \"#pragma view float Fade.amount\" read values shared by the scene or set per camera.\n";
     return text.str();
 }
 
@@ -1835,22 +1881,6 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
     if (name == "export_project" || name == "generate_shaders") {
         return hasString(arguments, "target_dir") ? ok() : fail(name + " requires target_dir.");
     }
-    if (name == "fork_shader") {
-        if (arguments.contains("directory")) {
-            if (!arguments["directory"].is_string()) {
-                return fail("fork_shader directory must be a string.");
-            }
-            fs::path directory = fs::path(arguments["directory"].get<std::string>()).lexically_normal();
-            if (directory != "." && !PathUtils::isSafeRelativePath(directory)) {
-                return fail("fork_shader directory must be a safe project-relative path.");
-            }
-        }
-        if (arguments.contains("fork_includes") && !arguments["fork_includes"].is_boolean()) {
-            return fail("fork_shader fork_includes must be a boolean.");
-        }
-        if (hasEntitySelector(arguments) || hasString(arguments, "shader_type")) return ok();
-        return fail("fork_shader requires entity_id/entity_name, or shader_type to fork a scene default or a post-process pass.");
-    }
     if (name == "set_post_process_pass") {
         const std::string action = arguments.value("action", "set");
         if (action != "add" && action != "remove" && action != "move" && action != "set") {
@@ -1860,6 +1890,8 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
         if (action == "move" && !arguments.contains("to_index")) return fail("set_post_process_pass move requires to_index.");
         if (arguments.contains("shader") && !arguments["shader"].is_string()) return fail("set_post_process_pass shader must be a string.");
         if (arguments.contains("enabled") && !arguments["enabled"].is_boolean()) return fail("set_post_process_pass enabled must be a boolean.");
+        if (arguments.contains("texture_name") && !arguments["texture_name"].is_string()) return fail("set_post_process_pass texture_name must be a string.");
+        if (arguments.contains("texture_path") && !arguments["texture_path"].is_string()) return fail("set_post_process_pass texture_path must be a string.");
         return ok();
     }
     if (name == "inspect_shader_uniforms") {
@@ -1882,9 +1914,19 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
         }
         return ok();
     }
-    // v0.8.4 port
-    if (name == "port_shader_fork") {
-        return hasString(arguments, "shader") ? ok() : fail("port_shader_fork requires shader.");
+    if (name == "read_graph" || name == "edit_graph") {
+        if (!hasString(arguments, "path")) return fail(name + " requires path.");
+        fs::path path = fs::path(arguments["path"].get<std::string>()).lexically_normal();
+        if (!PathUtils::isSafeRelativePath(path)) {
+            return fail("path must be a safe project-relative path.");
+        }
+        if (path.extension() != ".shader" && path.extension() != ".logic") {
+            return fail(name + " takes a .shader or .logic graph.");
+        }
+        if (name == "edit_graph" && (!arguments.contains("operations") || !arguments["operations"].is_array())) {
+            return fail("edit_graph requires an operations array.");
+        }
+        return ok();
     }
     if (name == "write_shader_file") {
         if (!hasString(arguments, "path")) return fail("write_shader_file requires path.");
@@ -1896,8 +1938,8 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
             return fail("path must be a safe project-relative path.");
         }
         const std::string ext = path.extension().string();
-        if (ext != ".vert" && ext != ".frag" && ext != ".glsl") {
-            return fail("write_shader_file only supports .vert, .frag, and .glsl files.");
+        if (ext != ".glsl") {
+            return fail("write_shader_file takes a .glsl file.");
         }
         return ok();
     }
@@ -2302,27 +2344,17 @@ std::string EditorActionRegistry::describe(const std::string& name, const Json& 
     if (name == "generate_shaders") {
         return "Generate shaders to " + arguments.value("target_dir", "");
     }
-    if (name == "fork_shader") {
-        if (arguments.contains("entity_id")) {
-            return "Fork shader for entity " + std::to_string(arguments.value("entity_id", 0u));
-        }
-        if (arguments.contains("entity_name")) {
-            return "Fork shader for \"" + arguments.value("entity_name", "") + "\"";
-        }
-        if (arguments.value("shader_type", "") == "postprocess") {
-            return "Fork post-process pass shader";
-        }
-        if (arguments.contains("shader_type")) {
-            return "Fork scene default " + arguments.value("shader_type", "") + " shader";
-        }
-        return "Fork custom shader";
-    }
     if (name == "write_shader_file") {
         return "Write shader " + arguments.value("path", "");
     }
-    // v0.8.4 port
-    if (name == "port_shader_fork") {
-        return "Port shader fork " + arguments.value("shader", "");
+    if (name == "list_graph_node_types") {
+        return "List shader graph node types";
+    }
+    if (name == "read_graph") {
+        return "Read graph " + arguments.value("path", "");
+    }
+    if (name == "edit_graph") {
+        return (arguments.value("create", false) ? "Create graph " : "Edit graph ") + arguments.value("path", "");
     }
     if (name == "inspect_shader_uniforms") {
         return "Inspect shader uniforms";

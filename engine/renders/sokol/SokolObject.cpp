@@ -374,6 +374,13 @@ void SokolObject::addTexture(std::pair<int, int> slot, ShaderStageType stage, Te
     }
 }
 
+void SokolObject::addTexture(std::pair<int, int> slot, ShaderStageType stage, TextureRender* texture, TextureRender* sampler){
+    if (slot.first != -1){
+        bind.views[slot.first] = texture->backend.getView();
+        bind.samplers[slot.second] = sampler->backend.getSampler();
+    }
+}
+
 bool SokolObject::endLoad(uint16_t pipelines, bool enableFaceCulling, bool enableDepthWrite, CullingMode cullingMode, WindingOrder windingOrder, bool prepassFaceCulling){
     const bool loaded = makePipelines(loadingDesc(), pipelines, enableFaceCulling, enableDepthWrite, cullingMode, windingOrder, prepassFaceCulling);
     loadPipelineDesc.reset();

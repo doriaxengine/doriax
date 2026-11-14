@@ -118,8 +118,7 @@ namespace {
     // fade distance past which instances can be dropped: only the built-in triangle
     // shaders shrink them to nothing, and the SSR G-buffer has no fade yet
     float instanceFadeCullEnd(const InstancedMeshComponent& instmesh, const MeshComponent& mesh, const Scene& scene){
-        if (scene.isSSREnabled() || !scene.getDefaultMeshShader().empty() ||
-            !instmesh.distanceFade || !mesh.customShader.empty() || !mesh.customDepthShader.empty() ||
+        if (scene.isSSREnabled() || !instmesh.distanceFade ||
             !(instmesh.fadeEnd > instmesh.fadeStart) || !std::isfinite(instmesh.fadeStart) ||
             !std::isfinite(instmesh.fadeEnd) || instmesh.fadeEnd < 0.0f){
             return -1.0f;
@@ -147,6 +146,54 @@ namespace {
     // an instanced mesh with culling off keeps its whole batch, bounds or not
     bool cullsBatch(const MeshComponent& mesh, const InstancedMeshComponent* instmesh){
         return mesh.worldAABB != AABB::ZERO && (!instmesh || instmesh->cullInstances);
+    }
+
+    // whether a shader file's sprites can batch
+    bool batchesShader(const Submesh& submesh){
+        if (submesh.customShaderId == 0)
+            return true;
+        const uint32_t flags = submesh.shader->shaderData.flags;
+        if (flags & (ShaderFlag_ObjectSpace | ShaderFlag_SceneColor | ShaderFlag_SceneDepth))
+            return false;
+        const Rect& rect = submesh.textureRect;
+        const bool wholeTexture = rect.getX() == 0.0f && rect.getY() == 0.0f && rect.getWidth() == 1.0f && rect.getHeight() == 1.0f;
+        if ((flags & ShaderFlag_VertexUV) && submesh.hasTextureRect && !wholeTexture)
+            return false;
+        return !(flags & ShaderFlag_VertexColor) || submesh.material.baseColorFactor == Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    // as the color pass draws it
+    bool drawsUnlit(const Submesh& submesh){
+        return (submesh.shaderProperties & 1u) || (submesh.shader && (submesh.shader->shaderData.flags & ShaderFlag_Unlit));
+    }
+
+    // a batch draws with the first sprite's values of a shader file
+    bool sharesShaderValues(const MeshComponent& a, const MeshComponent& b){
+        return a.submeshes[0].customShaderId == 0 ||
+            (a.submeshes[0].customShaderId == b.submeshes[0].customShaderId && a.shaderValuesKey == b.shaderValuesKey &&
+             a.vertexOffsetMax == b.vertexOffsetMax);
+    }
+
+    // FNV-1a over the names and values
+    void updateShaderValuesKey(MeshComponent& mesh){
+        uint64_t key = 14695981039346656037ull;
+        auto add = [&key](const void* data, size_t size){
+            const unsigned char* bytes = static_cast<const unsigned char*>(data);
+            for (size_t i = 0; i < size; i++)
+                key = (key ^ bytes[i]) * 1099511628211ull;
+        };
+
+        if (mesh.numSubmeshes > 0){
+            // an inherited shader reads the scene's values too
+            const unsigned char inherits = mesh.submeshes[0].material.shader.empty() ? 1 : 0;
+            add(&inherits, 1);
+            for (const auto& entry : mesh.submeshes[0].material.shaderUniforms){
+                add(entry.first.data(), entry.first.size() + 1);
+                const float value[4] = {entry.second.x, entry.second.y, entry.second.z, entry.second.w};
+                add(value, sizeof(value));
+            }
+        }
+        mesh.shaderValuesKey = key;
     }
 
     // nearest band first (one per doubling of the distance), then grouped by render state
@@ -201,7 +248,7 @@ namespace {
         if (block.slot == -1)
             return;
 
-        block.writeVertexContext(transform.modelMatrix, mesh.vertexOffsetMax);
+        block.writeVertexContext(view, transform.modelMatrix, mesh.vertexOffsetMax);
         applyParameters(render, block, view, resolution);
     }
 
@@ -214,15 +261,31 @@ namespace {
         applyParameters(render, block, view, resolution);
     }
 
+    // the material's values, then the shader file's after them
+    void applyMaterialParameters(ObjectRender& render, Submesh& submesh, void* material, unsigned int size,
+                                 const ShaderEffectView& view, const Vector2& resolution){
+        ShaderParameterBlock& block = submesh.paramsFS;
+        if (block.slot == -1){
+            render.applyUniformBlock(submesh.slotFSParams, size, material);
+            return;
+        }
+
+        std::memcpy(block.data.data(), material, std::min(size, block.firstOffset));
+        block.writeFragmentContext(view, true, submesh.alphaBlend);
+        applyParameters(render, block, view, resolution);
+    }
+
     // both stages of a single-shader component, rewritten first when its values changed
     template<typename T>
-    void applyParameters(ObjectRender& render, T& component, const Scene* scene, ShaderType type, const ShaderEffectView& view, const Vector2& resolution){
+    void applyParameters(ObjectRender& render, T& component, const Scene* scene, ShaderType type, const Matrix4& modelMatrix,
+                         const ShaderEffectView& view, const Vector2& resolution){
         if (component.needUpdateShaderUniforms){
-            const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(type, component.customShader);
+            const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(type, component.shader);
             component.paramsVS.writeObject(component.shaderUniforms, inherited);
             component.paramsFS.writeObject(component.shaderUniforms, inherited);
             component.needUpdateShaderUniforms = false;
         }
+        component.paramsVS.writeVertexContext(view, modelMatrix, 0.0f);
         applyParameters(render, component.paramsVS, view, resolution);
         applyParameters(render, component.paramsFS, view, resolution);
     }
@@ -232,16 +295,17 @@ namespace {
         if (!mesh.needUpdateShaderUniforms)
             return;
 
-        const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
         for (int i = 0; i < mesh.numSubmeshes; i++){
             Submesh& submesh = mesh.submeshes[i];
-            submesh.paramsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.paramsFS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.depthParamsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.depthParamsFS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.gbufferParamsVS.writeObject(mesh.shaderUniforms, inherited);
-            submesh.gbufferParamsFS.writeObject(mesh.shaderUniforms, inherited);
+            const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::MESH, submesh.material.shader);
+            submesh.paramsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.paramsFS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.depthParamsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.depthParamsFS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.gbufferParamsVS.writeObject(submesh.material.shaderUniforms, inherited);
+            submesh.gbufferParamsFS.writeObject(submesh.material.shaderUniforms, inherited);
         }
+        updateShaderValuesKey(mesh);
         mesh.needUpdateShaderUniforms = false;
     }
 
@@ -250,7 +314,7 @@ namespace {
         if (!water.needUpdateShaderUniforms)
             return;
 
-        const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
+        const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.shader);
         water.paramsVS.writeObject(water.shaderUniforms, inherited);
         water.paramsFS.writeObject(water.shaderUniforms, inherited);
         water.underwaterParamsVS.writeObject(water.shaderUniforms, inherited);
@@ -259,12 +323,24 @@ namespace {
     }
 
     // flags the components that inherit their default shader
-    template<typename ComponentArrayPtr>
-    void flagInheritedUniforms(const ComponentArrayPtr& components){
+    template<typename ComponentArrayPtr, typename Field>
+    void flagInheritedUniforms(const ComponentArrayPtr& components, Field shader){
         for (size_t i = 0; i < components->size(); i++){
             auto& component = components->getComponentFromIndex(i);
-            if (component.customShader.empty())
+            if ((component.*shader).empty())
                 component.needUpdateShaderUniforms = true;
+        }
+    }
+
+    // flags the meshes with a material that inherits the default shader
+    template<typename ComponentArrayPtr>
+    void flagInheritedMaterials(const ComponentArrayPtr& meshes){
+        for (size_t i = 0; i < meshes->size(); i++){
+            MeshComponent& mesh = meshes->getComponentFromIndex(i);
+            for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                if (mesh.submeshes[s].material.shader.empty())
+                    mesh.needUpdateShaderUniforms = true;
+            }
         }
     }
 
@@ -364,6 +440,7 @@ TextureRender RenderSystem::emptyCubeBlack;
 TextureRender RenderSystem::emptyCubeWhite;
 TextureRender RenderSystem::emptyNormal;
 TextureRender RenderSystem::emptyShadowDepth;
+TextureRender RenderSystem::shaderSamplers[9];
 
 bool RenderSystem::emptyTexturesCreated = false;
 
@@ -488,6 +565,11 @@ void RenderSystem::destroy(){
     const bool reloadView = !Engine::isViewLoaded();
 
     unsettleSprites();
+
+    for (auto& copy : shaderLevelTextures){
+        copy.second.destroy();
+    }
+    shaderLevelTextures.clear();
 
     // Before the transform traversal below, which the camera entities are part of.
     while (!mirrorCameras.empty()){
@@ -687,6 +769,18 @@ void RenderSystem::createEmptyTextures(){
         emptyCubeBlack.createTexture(
                 "empty|cube|black", 8, 8, ColorFormat::RGBA, TextureType::TEXTURE_CUBE, 6, data_array, size_array, 
                 TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::REPEAT, TextureWrap::REPEAT);
+
+        data_array[0] = (void*)pixelsWhite;
+        size_array[0] = 4;
+        const TextureFilter filters[3] = {TextureFilter::NEAREST, TextureFilter::LINEAR, TextureFilter::LINEAR_MIPMAP_LINEAR};
+        const TextureWrap wraps[3] = {TextureWrap::REPEAT, TextureWrap::CLAMP_TO_EDGE, TextureWrap::MIRRORED_REPEAT};
+        for (int f = 0; f < 3; f++){
+            for (int w = 0; w < 3; w++){
+                shaderSamplers[f * 3 + w].createTexture(
+                        "sampler|" + std::to_string(f) + "|" + std::to_string(w), 1, 1, ColorFormat::RGBA, TextureType::TEXTURE_2D, 1, data_array, size_array,
+                        filters[f], (f == 0) ? TextureFilter::NEAREST : TextureFilter::LINEAR, wraps[w], wraps[w]);
+            }
+        }
 
         emptyTexturesCreated = true;
     }
@@ -1157,18 +1251,18 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
 
                 for (int c = 0; c < (int)numMaps; c++){
                     if (light.type == LightType::POINT){
-                        fs_point_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
+                        fs_shadows.pointBias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
                             light.shadowBias,
                             (float)shadowPointAtlasSlotResolution,
                             light.cameras[c].nearFar.x,
                             light.cameras[c].nearFar.y);
                     }else{
-                        shadowProjection.lightViewProjectionMatrix[light.shadowMapIndex+c] = light.cameras[c].lightViewProjectionMatrix;
+                        fs_shadows.lightViewProjectionMatrix[light.shadowMapIndex+c] = light.cameras[c].lightViewProjectionMatrix;
 
                         float projScale = std::max(std::abs(light.cameras[c].lightProjectionMatrix[0][0]),
                                                    std::abs(light.cameras[c].lightProjectionMatrix[1][1]));
                         float texelSizeWorld = (projScale > 0.0f) ? 2.0f / (projScale * (float)shadowAtlasSlotResolution) : 0.0f;
-                        shadowProjection.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, light.cameras[c].splitBlend, 0.0, 0.0);
+                        fs_shadows.shadowParams[light.shadowMapIndex+c] = Vector4(light.shadowNormalBias * texelSizeWorld, light.cameras[c].splitBlend, 0.0, 0.0);
 
                         fs_shadows.bias_texSize_nearFar[light.shadowMapIndex+c] = Vector4(
                             light.shadowBias,
@@ -1197,7 +1291,9 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
         case ShadowQuality::HIGH:   pcfRadius = 3.0f; break;
     }
 
-    fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z, 0.0);
+    // w: 1 for perspective cameras
+    fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z,
+                                 camera.type == CameraType::CAMERA_PERSPECTIVE ? 1.0f : 0.0f);
     fs_lighting.cameraDir = Vector4(camera.worldDirection.x, camera.worldDirection.y, camera.worldDirection.z, pcfRadius);
     fs_lighting.globalIllum = Vector4(scene->getGlobalIlluminationColorLinear(), scene->getGlobalIlluminationIntensity());
 
@@ -1794,7 +1890,7 @@ void RenderSystem::renderReflectionProbeCapture(){
     updateCamera(captureCamera, captureTransform);
 
     const fs_lighting_t mainLighting = fs_lighting;
-    fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 0.0f);
+    fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 1.0f);
     fs_lighting.cameraDir = Vector4(captureCamera.worldDirection.x, captureCamera.worldDirection.y,
                                     captureCamera.worldDirection.z, mainLighting.cameraDir.w);
     applyViewLights(capturePosition);
@@ -1989,7 +2085,7 @@ void RenderSystem::initShadowPointAtlasRects(){
     for (int s = 0; s < MAX_POINT_SHADOW_ATLAS_SLOTS; s++){
         int col = s % SHADOW_POINT_ATLAS_COLS;
         int row = s / SHADOW_POINT_ATLAS_COLS;
-        fs_point_shadows.atlasRect[s] = Vector4(
+        fs_shadows.pointAtlasRect[s] = Vector4(
             (float)col / (float)SHADOW_POINT_ATLAS_COLS,
             (float)row / (float)SHADOW_POINT_ATLAS_ROWS,
             1.0f / (float)SHADOW_POINT_ATLAS_COLS,
@@ -2166,6 +2262,7 @@ Rect RenderSystem::getShadowPointAtlasSlotRect(int slotIndex) const{
 
 bool RenderSystem::checkPBRFrabebufferUpdate(Material& material){
     return (
+        ShaderTextures::isFramebufferOutdated(material.shaderTextures) ||
         material.baseColorTexture.isFramebufferOutdated() ||
         material.metallicRoughnessTexture.isFramebufferOutdated() ||
         material.normalTexture.isFramebufferOutdated() ||
@@ -2456,6 +2553,63 @@ void RenderSystem::destroyOccluder2DPass(){
     shadow2DSlotParams = -1;
     occluder2DBufferCapacity = 0;
     occluder2DLoaded = false;
+}
+
+TextureRender* RenderSystem::getShaderSampler(TextureFilter filter, TextureWrap wrap){
+    const int f = (filter == TextureFilter::NEAREST) ? 0 : (filter == TextureFilter::LINEAR) ? 1 : 2;
+    const int w = (wrap == TextureWrap::REPEAT) ? 0 : (wrap == TextureWrap::MIRRORED_REPEAT) ? 2 : 1;
+
+    return &shaderSamplers[f * 3 + w];
+}
+
+bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData& shaderData, ObjectRender& render){
+    for (const ShaderTextureInfo& parameter : shaderData.textureParameters){
+        const std::pair<int, int> slot = shaderData.getTextureParameterIndex(parameter);
+        if (slot.first == -1)
+            continue;
+
+        TextureRender* fallback = &emptyWhite;
+        if (parameter.type == TextureType::TEXTURE_CUBE){
+            fallback = (parameter.defaultTexture == ShaderTextureDefault::WHITE) ? &emptyCubeWhite : &emptyCubeBlack;
+        }else if (parameter.defaultTexture == ShaderTextureDefault::BLACK){
+            fallback = &emptyBlack;
+        }else if (parameter.defaultTexture == ShaderTextureDefault::NORMAL){
+            fallback = &emptyNormal;
+        }
+
+        const bool mipmapped = parameter.filter != TextureFilter::NEAREST && parameter.filter != TextureFilter::LINEAR;
+        TextureRender* textureRender = NULL;
+        Texture levels; // keeps the copy alive while it loads
+        for (auto& texture : textures){
+            if (texture.first == parameter.name){
+                if (!texture.second.empty() && !texture.second.isFramebuffer() && texture.second.getType() != parameter.type){
+                    Log::warn("Shader texture '%s' is not of the type its parameter declares", parameter.name.c_str());
+                    break;
+                }
+                // a mipmapped copy for trilinear sampling
+                const TextureFilter own = texture.second.getMinFilter();
+                if (mipmapped && !texture.second.isFramebuffer() && (own == TextureFilter::NEAREST || own == TextureFilter::LINEAR)){
+                    levels = texture.second;
+                    levels.setMinFilter(TextureFilter::LINEAR_MIPMAP_LINEAR);
+                    textureRender = levels.getRender(nullptr);
+                    // nothing else holds the copy, and the pool drops what nothing holds
+                    if (textureRender)
+                        shaderLevelTextures[levels.getRenderId()] = levels;
+                }
+                if (!textureRender){
+                    textureRender = texture.second.getRender(fallback);
+                }
+                break;
+            }
+        }
+        if (textureRender && !textureRender->isCreated()){
+            return false;
+        }
+
+        render.addTexture(slot, parameter.stage, textureRender ? textureRender : fallback, getShaderSampler(parameter.filter, parameter.wrap));
+    }
+
+    return true;
 }
 
 bool RenderSystem::loadDepthTexture(Material& material, ShaderData& shaderData, ObjectRender& render){
@@ -2803,6 +2957,7 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
 
     // The rest bind black, which weights none of their layers
     const int coveredMaps = arrayCreated ? detail->colorSlices / 3 : 0;
+    TextureRender* blendSampler = &emptyBlack;    // the first map's, shared by all
     for (int m = 0; m < MAX_TERRAIN_BLENDMAPS; m++){
         const bool covered = m < coveredMaps && m < static_cast<int>(terrain.blendMaps.size());
         textureRender = covered ? terrain.blendMaps[m].getRender(&emptyBlack) : NULL;
@@ -2811,9 +2966,11 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
             if (!textureRender->isCreated()){
                 return false;
             }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
+            if (m == 0)
+                blendSampler = textureRender;
+            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender, blendSampler);
         }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyBlack);
+            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyBlack, blendSampler);
         }
     }
 
@@ -3236,49 +3393,50 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
-        // terrain builds its vertices in the shader and takes no effect functions
-        const std::string vertexOffset = terrain ? std::string() : mesh.vertexOffsetShader;
-        const std::string coverage = terrain ? std::string() : mesh.coverageShader;
-        // a coverage function reads UV set 1 in every pass; a missing texture binds white
-        const bool p_coverageUV = !coverage.empty() && mesh.submeshes[i].hasTexCoord1;
-        if (p_coverageUV){
-            p_hasTexture1 = true;
-        }
+        // the material's shader, else the scene's; none for terrain
+        static const std::string noShader;
+        const std::string& ownShader = mesh.submeshes[i].material.shader;
+        const std::string& materialShader = terrain ? noShader : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
+        const uint16_t shaderFileId = ShaderPool::registerCustomShader(materialShader);
+        // what its hooks can read of the mesh, the same in every pass
+        const bool p_hookUV1 = !materialShader.empty() && mesh.submeshes[i].hasTexCoord1;
+        const bool p_hookNormals = !materialShader.empty() && mesh.submeshes[i].hasNormal;
+        const bool p_hookColor3 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor3;
+        const bool p_hookColor4 = !materialShader.empty() && mesh.submeshes[i].hasVertexColor4;
+        const bool p_hookUV2 = !materialShader.empty() && mesh.submeshes[i].hasTexCoord2;
+        const bool p_hookTangents = p_hookNormals && mesh.submeshes[i].hasTangent;
         mesh.submeshes[i].shaderProperties = ShaderPool::getMeshProperties(
                         p_unlit, p_hasTexture1, p_hasTexture2, p_punctual,
                         p_receiveShadows, p_hasNormal, p_hasNormalMap,
                         p_hasTangent, mesh.submeshes[i].hasVertexColor3, mesh.submeshes[i].hasVertexColor4, mesh.submeshes[i].hasTextureRect,
                         hasFog, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                         (terrain)?true:false, (instmesh)?true:false, p_ibl, p_mirror, p_ssao, p_light2d, p_shadows2d,
-                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface);
-        // a user-forked main shader overrides the built-in Mesh shader; the variant
-        // (#define) system, depth/gbuffer passes and bind-slots are unchanged.
-        // Priority: component customShader > scene default shader > built-in (empty)
-        const std::string& meshShaderSrc = mesh.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : mesh.customShader;
-        const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, mesh.customShader);
-        mesh.submeshes[i].customShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(meshShaderSrc, vertexOffset, coverage));
-        // 'Dlo': built-in shader without the point/spot paths
-        if (p_punctual && meshShaderSrc.empty() && onlyDirectionalLights){
+                        p_alphaMask, p_alphaOpaque, p_instanceFade, p_terrainSurface, p_hookUV1 && !p_hasTexture1, p_hookNormals && !p_hasNormal,
+                        p_hookUV2 && !p_hasTexture2);
+        const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::MESH, ownShader);
+        mesh.submeshes[i].shaderFileId = shaderFileId;
+        mesh.submeshes[i].customShaderId = shaderFileId;
+        // 'Dlo': without the point/spot paths
+        if (p_punctual && onlyDirectionalLights){
             mesh.submeshes[i].shaderProperties |= 1u << 28;
         }
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
         // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
-        // (SSR uses its own G-buffer shader, built below). A depth fork is built even
-        // without a pass, so its uniforms and build errors show up in the editor.
+        // (SSR uses its own G-buffer shader, built below)
         const bool needPrepass = scene->isDepthPrepassEnabled();
         bool needDepthPass = (hasShadows && mesh.castShadows) || scene->isSSAOEnabled() || needPrepass || hasWaterDepth;
-        if (needDepthPass || !mesh.customDepthShader.empty()){
+        if (needDepthPass){
             mesh.submeshes[i].depthShaderProperties = ShaderPool::getDepthMeshProperties(
                 p_depthTexture, mesh.submeshes[i].hasSkinning, mesh.submeshes[i].hasMorphTarget,
                 mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent, (terrain)?true:false, (instmesh)?true:false,
-                p_depthAlphaMask, p_instanceFade, p_coverageUV);
-            mesh.submeshes[i].customDepthShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader(mesh.customDepthShader, vertexOffset, coverage));
+                p_depthAlphaMask, p_instanceFade, p_hookUV1, p_hookNormals, p_hookColor3, p_hookColor4, p_hookUV2, p_hookTangents);
+            mesh.submeshes[i].customDepthShaderId = shaderFileId;
             mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId);
             if (!mesh.submeshes[i].depthShader->isCreated()){
                 // same fallback as the main shader below
                 if (mesh.submeshes[i].customDepthShaderId != 0 &&
                     ShaderPool::isShaderBuildFailed(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, mesh.submeshes[i].customDepthShaderId)){
-                    Log::error("Custom depth shader '%s' failed to compile; rendering '%s' with the built-in shader",
+                    Log::error("Shader '%s' failed to compile in the depth pass; rendering '%s' with the built-in shader",
                                ShaderPool::getCustomShaderName(mesh.submeshes[i].customDepthShaderId).c_str(), scene->getEntityName(entity).c_str());
                     mesh.submeshes[i].customDepthShaderId = 0;
                     mesh.submeshes[i].depthShader = ShaderPool::get(ShaderType::DEPTH, mesh.submeshes[i].depthShaderProperties, 0);
@@ -3290,8 +3448,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
             mesh.submeshes[i].depthParamsVS.resolve(depthShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].depthParamsFS.resolve(depthShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].depthParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].depthParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].depthParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
         }else if (mesh.submeshes[i].depthShader){
             // a reload keeps the handle; release it with the key it was taken with
             mesh.submeshes[i].depthShader.reset();
@@ -3310,8 +3468,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 gbufferHasBaseColorTex, mesh.submeshes[i].hasNormal, mesh.submeshes[i].hasSkinning,
                 mesh.submeshes[i].hasMorphTarget, mesh.submeshes[i].hasMorphNormal, mesh.submeshes[i].hasMorphTangent,
                 (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, p_terrainSurface && mesh.submeshes[i].hasNormal,
-                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_coverageUV);
-            mesh.submeshes[i].customGBufferShaderId = ShaderPool::registerCustomShader(ShaderPool::getCustomShader("", vertexOffset, coverage));
+                gbufferHasOcclusionTex, gbufferOcclusionUV2, p_hookUV1, p_hookColor3, p_hookColor4, p_hookUV2, p_hookTangents);
+            mesh.submeshes[i].customGBufferShaderId = shaderFileId;
             mesh.submeshes[i].gbufferShader = ShaderPool::get(ShaderType::GBUFFER, mesh.submeshes[i].gbufferShaderProperties, mesh.submeshes[i].customGBufferShaderId);
             if (!mesh.submeshes[i].gbufferShader->isCreated()){
                 // the color pass reports the failure
@@ -3325,9 +3483,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
         }
         if (!mesh.submeshes[i].shader->isCreated()){
-            // A custom shader that failed to compile falls back to the built-in shader so
+            // A shader file that failed to compile falls back to the built-in shader so
             // the object stays visible and the mesh finishes loading (otherwise needReload
-            // stays set and we retry forever). The fork is retried after its source changes
+            // stays set and we retry forever). It is retried after its source changes
             // (invalidateCustomShaders clears the failure and re-flags needReload).
             if (mesh.submeshes[i].customShaderId != 0 &&
                 ShaderPool::isShaderBuildFailed(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId)){
@@ -3341,6 +3499,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         }
         render.setShader(mesh.submeshes[i].shader.get());
         ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
+        mesh.submeshes[i].slotSceneColor = (shaderData.flags & ShaderFlag_SceneColor) ? shaderData.getTextureIndexByName("u_sceneColorTexture") : std::make_pair(-1, -1);
+        mesh.submeshes[i].slotSceneDepth = (shaderData.flags & ShaderFlag_SceneDepth) ? shaderData.getTextureIndexByName("u_depthTexture") : std::make_pair(-1, -1);
 
         mesh.submeshes[i].slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_PARAMS);
         mesh.submeshes[i].slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::PBR_FS_PARAMS);
@@ -3353,8 +3513,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // the fragment stage keeps them in the material block, having no block to spare
         mesh.submeshes[i].paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
         mesh.submeshes[i].paramsFS.resolve(shaderData, "u_fs_pbrParams", ShaderStageType::FRAGMENT);
-        mesh.submeshes[i].paramsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-        mesh.submeshes[i].paramsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+        mesh.submeshes[i].paramsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
         if (hasFog){
             mesh.submeshes[i].slotFSFog = shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG);
         }
@@ -3367,10 +3527,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 mesh.submeshes[i].slotFSReflectionProbe = shaderData.getUniformBlockIndex(UniformBlockType::FS_REFLECTION_PROBE);
             }
             if (p_receiveShadows){
-                mesh.submeshes[i].slotVSShadows = shaderData.getUniformBlockIndex(UniformBlockType::VS_SHADOWS);
                 mesh.submeshes[i].slotFSShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOWS);
-                mesh.submeshes[i].slotFSShadowProjection = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOW_PROJECTION);
-                mesh.submeshes[i].slotFSPointShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_POINT_SHADOWS);
+                shaderData.getUniformBlockMembers("u_fs_shadows", mesh.submeshes[i].sizeFSShadows);
             }
         }
         if (p_light2d){
@@ -3388,6 +3546,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotVSMorphTarget = shaderData.getUniformBlockIndex(UniformBlockType::VS_MORPHTARGET);
         }
         if (!loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
+            return false;
+        }
+        if (!loadShaderTextures(mesh.submeshes[i].material.shaderTextures, shaderData, mesh.submeshes[i].render)){
             return false;
         }
         loadShadowTextures(shaderData, mesh.submeshes[i].render, mesh.receiveLights, p_receiveShadows);
@@ -3506,6 +3667,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             depthShaderData.getUniformBlockMembers("u_vs_depthParams", mesh.submeshes[i].sizeVSDepthParams);
             if (p_depthAlphaMask){
                 mesh.submeshes[i].slotFSDepthMaterial = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_FS_MATERIAL);
+                depthShaderData.getUniformBlockMembers("u_fs_depthMaterial", mesh.submeshes[i].sizeFSDepthMaterial);
             }
             if (p_instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
@@ -3524,6 +3686,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 if (!loadDepthTexture(mesh.submeshes[i].material, depthShaderData, depthRender)){
                     return false;
                 }
+            }
+            if (!loadShaderTextures(mesh.submeshes[i].material.shaderTextures, depthShaderData, depthRender)){
+                return false;
             }
 
             if (terrain){
@@ -3548,7 +3713,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         depthRender.setIndex(buf.second->getRender(), indexattr.getDataType(), indexattr.getOffset());
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
-                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1){
+                            // optional attributes only for shaders that read them
+                            if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                                 depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3576,7 +3743,8 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                 if (bufferNameToRender.count(attr.second.getBufferName())){
                     if (attr.first == AttributeType::INDEX){
                         depthRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
-                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1){
+                    }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
+                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                         depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
@@ -3631,11 +3799,12 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             ShaderData& gbufferShaderData = mesh.submeshes[i].gbufferShader.get()->shaderData;
 
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
+            gbufferShaderData.getUniformBlockMembers("u_vs_gbufferParams", mesh.submeshes[i].sizeVSGBufferParams);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.shaderUniforms, inheritedUniforms);
-            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
+            mesh.submeshes[i].gbufferParamsFS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSGBufferSkinning = gbufferShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -3647,6 +3816,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             }
 
             if (!loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, gbufferRender)){
+                return false;
+            }
+            if (!loadShaderTextures(mesh.submeshes[i].material.shaderTextures, gbufferShaderData, gbufferRender)){
                 return false;
             }
 
@@ -3679,7 +3851,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
                             if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                                    attr.first == AttributeType::TEXCOORD2){
+                                    attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                                 gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                             }
                             if (mesh.submeshes[i].hasSkinning){
@@ -3708,7 +3880,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                     if (attr.first == AttributeType::INDEX){
                         gbufferRender.setIndex(bufferNameToRender[attr.second.getBufferName()], attr.second.getDataType(), attr.second.getOffset());
                     }else if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
-                            attr.first == AttributeType::TEXCOORD2){
+                            attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                         gbufferRender.addAttribute(gbufferShaderData.getAttrIndex(attr.first), bufferNameToRender[attr.second.getBufferName()], attr.second.getElements(), attr.second.getDataType(), bufferStride[attr.second.getBufferName()], attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
                     }
                     if (mesh.submeshes[i].hasSkinning){
@@ -3747,9 +3919,19 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
     }
 
     mesh.needReload = false;
+    updateShaderValuesKey(mesh);
     mesh.needUpdateShaderUniforms = false;
     mesh.needUpdateAABB = true;
     mesh.loadCalled = true;
+
+    mesh.readsSceneColor = false;
+    mesh.readsSceneDepth = false;
+    for (int i = 0; i < mesh.numSubmeshes; i++){
+        mesh.readsSceneColor = mesh.readsSceneColor || mesh.submeshes[i].slotSceneColor.first != -1;
+        mesh.readsSceneDepth = mesh.readsSceneDepth || mesh.submeshes[i].slotSceneDepth.first != -1;
+    }
+    if (mesh.readsSceneColor) sceneColorReaders.insert(entity); else sceneColorReaders.erase(entity);
+    if (mesh.readsSceneDepth) sceneDepthReaders.insert(entity); else sceneDepthReaders.erase(entity);
 
     // A reload recreates the terrain's per-view CDLOD node buffers empty; force a
     // re-selection next frame (the main-camera cut at view 0 is otherwise only
@@ -4322,19 +4504,17 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
     terrain.views[viewIndex].needUpdateNodesBuffer = false;
 }
 
-// Quads drawn unlit with vertex colors, optionally with Uv1, Txr, Fog, Ams and Aop: nothing else
-// in them is per object. For bigger meshes a draw with shared buffers costs less than moving the vertices
+// unlit quads with vertex colors, nothing else per object
 bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
-    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25);
+    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
 
-    // shader properties first, they rule out lit meshes; an effect function needs its own draw
+    // shader properties first, they rule out lit meshes
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        !submesh.needUpdateTexture && !submesh.lodData &&
-        mesh.vertexOffsetShader.empty() && mesh.coverageShader.empty();
+        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh);
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -4347,11 +4527,15 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
     if ((transform.billboard && transform.fakeBillboard) || !hasAffineModel(transform))
         return false;
 
+    // batched sprites skip drawMesh, so update values here
+    writeParameters(mesh, scene);
+
     // an equal pipeline means the same shader, layout and blending
     const bool alphaMask = submesh.shaderProperties & (1u << 24);
-    auto sharesState = [&](const Submesh& other){
-        return other.render.sharesState(submesh.render, spriteBatch.pipType) &&
-            (!alphaMask || other.material.alphaCutoff == submesh.material.alphaCutoff);
+    auto sharesState = [&](const MeshComponent& other){
+        const Submesh& otherSubmesh = other.submeshes[0];
+        return otherSubmesh.render.sharesState(submesh.render, spriteBatch.pipType) &&
+            (!alphaMask || otherSubmesh.material.alphaCutoff == submesh.material.alphaCutoff) && sharesShaderValues(other, mesh);
     };
 
     if (!spriteBatch.items.empty()){
@@ -4361,7 +4545,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 
         MeshComponent& first = *spriteBatch.items[0].mesh;
         const size_t batchVertices = (spriteBatch.items.size() == 1) ? first.buffer.getCount() : spriteBatch.vertices.size() / spriteBatch.layout.stride;
-        if (!sharesState(first.submeshes[0]) || batchVertices + mesh.buffer.getCount() > std::numeric_limits<uint16_t>::max()){
+        if (!sharesState(first) || batchVertices + mesh.buffer.getCount() > std::numeric_limits<uint16_t>::max()){
             flushSpriteItems();
         }
     }
@@ -4369,8 +4553,8 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
     // a sprite unlike the one drawn before it is drawn right away, so a batch starts on
     // the second sprite of a run and changing textures never wait for one
     if (spriteBatch.items.empty()){
-        Submesh* previous = spriteBatch.previous;
-        spriteBatch.previous = &submesh;
+        MeshComponent* previous = spriteBatch.previous;
+        spriteBatch.previous = &mesh;
         if (!previous || !sharesState(*previous))
             return false;
         if (cullsBatch(mesh, nullptr) && !isInsideCamera(camera, mesh.worldAABB))
@@ -4393,8 +4577,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
 // checks what an equal pipeline does not tell, and finds the attributes the batch rewrites
 bool RenderSystem::getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const{
     const Submesh& submesh = mesh.submeshes[0];
-    if (submesh.customShaderId != 0 || !mesh.customShader.empty() || !scene->getDefaultMeshShader().empty() ||
-            submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
+    if (submesh.primitiveType != PrimitiveType::TRIANGLES || !submesh.attributes.empty() || submesh.vertexCount == 0 ||
             submesh.material.baseColorTexture.isFramebuffer())
         return false;
 
@@ -4470,8 +4653,9 @@ void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
     }
 }
 
-// what a batch draws with: the color factor is already in the vertices
-void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh){
+// color and world space are already in the vertices
+void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh){
+    Submesh& submesh = mesh.submeshes[0];
     if (hasFog){
         render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
@@ -4485,7 +4669,12 @@ void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, Submesh& subme
     std::memcpy(materialParams, &submesh.material, sizeof(materialParams));
     std::fill(materialParams, materialParams + 4, 1.0f);
     const bool alphaMask = submesh.shaderProperties & (1u << 24);
-    render.applyUniformBlock(submesh.slotFSParams, sizeof(float) * (alphaMask ? 8 : 4), materialParams);
+    applyMaterialParameters(render, submesh, materialParams, sizeof(float) * (alphaMask ? 8 : 4), effectView, passResolution);
+    ShaderParameterBlock& paramsVS = submesh.paramsVS;
+    if (paramsVS.slot != -1){
+        paramsVS.writeVertexContext(effectView, Matrix4(), mesh.vertexOffsetMax);
+        applyParameters(render, paramsVS, effectView, passResolution);
+    }
 
     Matrix4 matrices[3];
     matrices[2] = spriteBatch.camera->viewProjectionMatrix;
@@ -4509,12 +4698,12 @@ bool RenderSystem::drawSpriteBatch(){
         return false;
 
     MeshComponent& mesh = *spriteBatch.items[0].mesh;
-    Submesh& submesh = mesh.submeshes[0];
-    ObjectRender& render = submesh.render;
+    ObjectRender& render = mesh.submeshes[0].render;
     if (!render.beginDraw(spriteBatch.pipType))
         return false;
 
-    applySpriteBatchUniforms(render, submesh);
+    writeParameters(mesh, scene);
+    applySpriteBatchUniforms(render, mesh);
 
     render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset);
     render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset);
@@ -4575,7 +4764,8 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
         if (wait != settleWaits.end() && spriteUpdates < wait->second.until)
             return;
     }
-    if (!canBatchSprite(mesh))
+    // shader file sprites batch without settling
+    if (mesh.submeshes[0].customShaderId != 0 || !canBatchSprite(mesh))
         return;
 
     const Submesh& submesh = mesh.submeshes[0];
@@ -4823,8 +5013,7 @@ void RenderSystem::flushSpriteSegment(){
         uint32_t previousCutoff = 0;
         for (const SpriteRun& run : spriteSegment.runs){
             MeshComponent& mesh = scene->getComponent<MeshComponent>(run.entity);
-            Submesh& submesh = mesh.submeshes[0];
-            ObjectRender& render = submesh.render;
+            ObjectRender& render = mesh.submeshes[0].render;
             const uint32_t cutoff = spriteStates[run.state].key[0];
 
             // uniforms stay applied while the pipeline does
@@ -4832,7 +5021,7 @@ void RenderSystem::flushSpriteSegment(){
                 previous = nullptr;
                 if (!render.beginDraw(spriteBatch.pipType))
                     continue;
-                applySpriteBatchUniforms(render, submesh);
+                applySpriteBatchUniforms(render, mesh);
             }
             previous = &render;
             previousCutoff = cutoff;
@@ -4924,9 +5113,21 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
 
             bool needUpdateFramebuffer = checkPBRFrabebufferUpdate(mesh.submeshes[i].material);
 
+            // a new material may bring another shader file
+            const std::string& ownShader = mesh.submeshes[i].material.shader;
+            if (mesh.submeshes[i].needUpdateTexture && !terrain && mesh.submeshes[i].shaderFileId !=
+                    ShaderPool::registerCustomShader(ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader)){
+                mesh.needReload = true;
+                return false;
+            }
+
             if (mesh.submeshes[i].needUpdateTexture || needUpdateFramebuffer){
                 ShaderData& shaderData = mesh.submeshes[i].shader.get()->shaderData;
-                if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights)){
+                if (loadPBRTextures(mesh.submeshes[i].material, shaderData, mesh.submeshes[i].render, mesh.receiveLights) &&
+                        loadShaderTextures(mesh.submeshes[i].material.shaderTextures, shaderData, mesh.submeshes[i].render)){
+                    // and other parameter values
+                    if (mesh.submeshes[i].needUpdateTexture)
+                        mesh.needUpdateShaderUniforms = true;
                     mesh.submeshes[i].needUpdateTexture = false;
                 }
             }
@@ -4963,18 +5164,16 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             // a submesh is lit (uses the lighting block + full PBR params) unless it
-            // was compiled as MATERIAL_UNLIT (property bit 0)
-            bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0));
+            // was compiled as MATERIAL_UNLIT (property bit 0, or an unlit shader file)
+            bool submeshLit = !(mesh.submeshes[i].shaderProperties & (1u << 0)) &&
+                !(mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit);
 
             if (submeshLit){
                 ShaderData& lightingShaderData = mesh.submeshes[i].shader.get()->shaderData;
                 loadSpotMaskTexture(lightingShaderData, render);
                 render.applyUniformBlock(mesh.submeshes[i].slotFSLighting, sizeof(fs_lighting_t), &fs_lighting);
                 if (hasShadows && (mesh.submeshes[i].shaderProperties & (1u << 4))){
-                    render.applyUniformBlock(mesh.submeshes[i].slotVSShadows, sizeof(shadow_projection_t), &shadowProjection);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadowProjection, sizeof(shadow_projection_t), &shadowProjection);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
-                    render.applyUniformBlock(mesh.submeshes[i].slotFSPointShadows, sizeof(fs_point_shadows_t), &fs_point_shadows);
+                    render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, mesh.submeshes[i].sizeFSShadows, &fs_shadows);
                 }
                 // USE_SSAO (property bit 21): bind the screen-space AO texture for
                 // this view (blurred AO for the main camera, empty white otherwise)
@@ -4984,6 +5183,11 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                                       currentSSAOTexture ? currentSSAOTexture : &emptyWhite);
                 }
             }
+            // the scene behind it, neutral where this camera has none
+            if (mesh.submeshes[i].slotSceneColor.first != -1)
+                render.addTexture(mesh.submeshes[i].slotSceneColor, ShaderStageType::FRAGMENT, currentSceneCopy ? currentSceneCopy : &emptyBlack);
+            if (mesh.submeshes[i].slotSceneDepth.first != -1)
+                render.addTexture(mesh.submeshes[i].slotSceneDepth, ShaderStageType::FRAGMENT, currentSceneDepthTexture ? currentSceneDepthTexture : &emptyWhite);
 
             // USE_LIGHT2D (property bit 22): dedicated 2D light path; composes with
             // both unlit (sprites) and lit submeshes, so it is applied independently
@@ -5010,16 +5214,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             // Unlit alpha-mask variants include the metallic/roughness padding
             // and alphaCutoff from the shared CPU material prefix.
             const unsigned int paramsSize = sizeof(float) * (submeshLit ? 12 : ((mesh.submeshes[i].shaderProperties & (1u << 24)) ? 8 : 4));
-            ShaderParameterBlock& paramsFS = mesh.submeshes[i].paramsFS;
-            if (paramsFS.slot != -1){
-                // the material prefix, up to the first declared member, then the members
-                std::memcpy(paramsFS.data.data(), &mesh.submeshes[i].material, std::min(paramsSize, paramsFS.firstOffset));
-                paramsFS.writeFragmentContext(effectView, true, mesh.submeshes[i].alphaBlend);
-                paramsFS.writeFrame(effectView, passResolution);
-                render.applyUniformBlock(paramsFS.slot, paramsFS.size, paramsFS.data.data());
-            }else{
-                render.applyUniformBlock(mesh.submeshes[i].slotFSParams, paramsSize, &mesh.submeshes[i].material);
-            }
+            applyMaterialParameters(render, mesh.submeshes[i], &mesh.submeshes[i].material, paramsSize, effectView, passResolution);
 
             if (mesh.submeshes[i].slotVSFade != -1 && instmesh){
                 applyInstanceFadeUniform(render, mesh.submeshes[i].slotVSFade, *instmesh);
@@ -5101,14 +5296,13 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             ObjectRender& depthRender = mesh.submeshes[i].depthRender;
 
-            if (mesh.submeshes[i].needUpdateDepthTexture &&
-                (mesh.submeshes[i].depthShaderProperties & (1u << 0))){
+            if (mesh.submeshes[i].needUpdateDepthTexture){
                 ShaderData& depthShaderData = mesh.submeshes[i].depthShader.get()->shaderData;
-                if (loadDepthTexture(mesh.submeshes[i].material, depthShaderData, mesh.submeshes[i].depthRender)){
+                const bool depthTexture = mesh.submeshes[i].depthShaderProperties & (1u << 0);
+                if ((!depthTexture || loadDepthTexture(mesh.submeshes[i].material, depthShaderData, mesh.submeshes[i].depthRender)) &&
+                        loadShaderTextures(mesh.submeshes[i].material.shaderTextures, depthShaderData, mesh.submeshes[i].depthRender)){
                     mesh.submeshes[i].needUpdateDepthTexture = false;
                 }
-            }else if (mesh.submeshes[i].needUpdateDepthTexture){
-                mesh.submeshes[i].needUpdateDepthTexture = false;
             }
 
             if (mesh.submeshes[i].needUpdateDepthTexture)
@@ -5131,14 +5325,30 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
 
-            applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, effectView, passResolution);
-            // shadow maps keep the whole silhouette unless the mesh asks
-            applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, effectView, passResolution, forSSAO || mesh.coverageShadows);
+            if (mesh.submeshes[i].depthParamsVS.slot != -1 || mesh.submeshes[i].depthParamsFS.slot != -1){
+                ShaderEffectView passView = effectView;
+                passView.pass = forSSAO ? ShaderPass::DEPTH : ShaderPass::SHADOW;
+                // depth offsets move what the camera sees, not the shadows
+                if (!forSSAO)
+                    passView.depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+                // only the prepass draws with the color pass's matrix
+                if (pipelineType != PIP_ZPREPASS && pipelineType != PIP_ZPREPASS_RTT)
+                    passView.flipY = false;
+
+                applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, passView, passResolution);
+                // shadow maps keep the whole silhouette unless the shader asks
+                const bool coverageShadows = mesh.submeshes[i].depthShader->shaderData.flags & ShaderFlag_CoverageShadows;
+                applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, passView, passResolution, forSSAO || coverageShadows);
+            }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
-                Vector4 alphaParams(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f);
-                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, sizeof(Vector4), &alphaParams);
+                // factors for a surface hook, none when unlit
+                const bool unlit = drawsUnlit(mesh.submeshes[i]);
+                Vector4 depthMaterial[4] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor,
+                    unlit ? Vector4(0.0f, 1.0f, 1.0f, 0.0f) : Vector4(material.metallicFactor, material.roughnessFactor, 0.0f, 0.0f),
+                    unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f)};
+                depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, std::min((unsigned int)sizeof(depthMaterial), mesh.submeshes[i].sizeFSDepthMaterial), depthMaterial);
             }
 
             if (mesh.submeshes[i].hasSkinning){
@@ -5410,14 +5620,14 @@ void RenderSystem::renderDepthPrePass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visibleInHierarchy || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent || mesh.readsSceneColor || mesh.readsSceneDepth)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
         TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
         TilemapComponent* tilemap = scene->findComponent<TilemapComponent>(entity);
 
-        vs_depth_t params = {transform.modelMatrix, renderVP, renderVP * transform.modelMatrix};
+        vs_depth_t params = {transform.modelMatrix, renderVP, renderVP * transform.modelMatrix, transform.normalMatrix};
         drawMeshDepth(mesh, transform, camera.farClip, camera.frustumPlanes, params, instmesh, terrain, tilemap, true, PIP_DEPTH, 0, &mainLodView);
     }
     ssaoPassRender.endRenderPass();
@@ -5454,6 +5664,7 @@ bool RenderSystem::ensureGBufferFramebuffer(unsigned int width, unsigned int hei
 bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_gbuffer_t vsGBufferParams, int iblCode, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, int instanceView, const LodView* lodView){
     if (!mesh.loaded || mesh.needReload)
         return true;
+
 
     if (terrain && terrain->needUpdateTexture){
         return false;
@@ -5495,7 +5706,8 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
 
         if (mesh.submeshes[i].needUpdateGBufferTexture){
             ShaderData& gbufferShaderData = mesh.submeshes[i].gbufferShader.get()->shaderData;
-            if (loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, mesh.submeshes[i].gbufferRender)){
+            if (loadGBufferTextures(mesh.submeshes[i].material, gbufferShaderData, mesh.submeshes[i].gbufferRender) &&
+                    loadShaderTextures(mesh.submeshes[i].material.shaderTextures, gbufferShaderData, mesh.submeshes[i].gbufferRender)){
                 mesh.submeshes[i].needUpdateGBufferTexture = false;
             }
         }
@@ -5508,7 +5720,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             return false;
         }
 
-        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferParams, sizeof(vs_gbuffer_t), &vsGBufferParams);
+        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferParams, std::min((unsigned int)sizeof(vs_gbuffer_t), mesh.submeshes[i].sizeVSGBufferParams), &vsGBufferParams);
 
         fs_gbuffer_material_t mat;
         // IBL source code of the object (renderGBufferPass), 0 for submeshes without IBL
@@ -5519,9 +5731,10 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             : -1.0f;
         mat.params = Vector4(material.roughnessFactor, material.metallicFactor, iblSource, alphaCutoff);
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
+        // unlit: no emissive, flagged in w
+        const bool unlit = drawsUnlit(mesh.submeshes[i]);
+        mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 1.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
-
-        applyFragmentParameters(gbufferRender, mesh.submeshes[i].gbufferParamsFS, effectView, passResolution, true);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -5533,7 +5746,13 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
                 gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferMorphTarget, sizeof(float) * MAX_MORPHTARGETS / 2, &mesh.morphWeights);
             }
         }
-        applyVertexParameters(gbufferRender, mesh.submeshes[i].gbufferParamsVS, mesh, transform, effectView, passResolution);
+        if (mesh.submeshes[i].gbufferParamsVS.slot != -1 || mesh.submeshes[i].gbufferParamsFS.slot != -1){
+            ShaderEffectView passView = effectView;
+            passView.pass = ShaderPass::GBUFFER;
+            passView.flipY = false;
+            applyVertexParameters(gbufferRender, mesh.submeshes[i].gbufferParamsVS, mesh, transform, passView, passResolution);
+            applyFragmentParameters(gbufferRender, mesh.submeshes[i].gbufferParamsFS, passView, passResolution, true);
+        }
 
         if (terrain){
             terrain->eyePos = terrain->views[0].nodesEyePos;
@@ -5583,7 +5802,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
             continue;
 
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-        if (!transform.visibleInHierarchy || mesh.transparent)
+        if (!transform.visibleInHierarchy || mesh.transparent || mesh.readsSceneColor || mesh.readsSceneDepth)
             continue;
 
         InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
@@ -5633,7 +5852,7 @@ void RenderSystem::renderGBufferPass(CameraComponent& camera){
         Matrix4 viewModel = viewMatrix * transform.modelMatrix;
         Matrix4 normalMatrix = viewModel.inverse().transpose();
 
-        vs_gbuffer_t params = {transform.modelMatrix, renderVP, normalMatrix};
+        vs_gbuffer_t params = {transform.modelMatrix, renderVP, normalMatrix, transform.normalMatrix};
         drawMeshGBuffer(entity, mesh, transform, camera.farClip, camera.frustumPlanes, params, iblCode, instmesh, terrain, tilemap, 0, &mainLodView);
     }
     gbufferPassRender.endRenderPass();
@@ -6033,12 +6252,12 @@ void RenderSystem::needUpdatePostProcessUniforms(){
 
 void RenderSystem::needUpdateDefaultShaderUniforms(ShaderType type){
     switch (type){
-        case ShaderType::MESH:   flagInheritedUniforms(scene->getComponentArray<MeshComponent>());   break;
-        case ShaderType::UI:     flagInheritedUniforms(scene->getComponentArray<UIComponent>());     break;
-        case ShaderType::SKYBOX: flagInheritedUniforms(scene->getComponentArray<SkyComponent>());    break;
-        case ShaderType::POINTS: flagInheritedUniforms(scene->getComponentArray<PointsComponent>()); break;
-        case ShaderType::LINES:  flagInheritedUniforms(scene->getComponentArray<LinesComponent>());  break;
-        case ShaderType::WATER:  flagInheritedUniforms(scene->getComponentArray<WaterComponent>());  break;
+        case ShaderType::MESH:   flagInheritedMaterials(scene->getComponentArray<MeshComponent>());                          break;
+        case ShaderType::UI:     flagInheritedUniforms(scene->getComponentArray<UIComponent>(), &UIComponent::shader);         break;
+        case ShaderType::SKYBOX: flagInheritedUniforms(scene->getComponentArray<SkyComponent>(), &SkyComponent::shader);       break;
+        case ShaderType::POINTS: flagInheritedUniforms(scene->getComponentArray<PointsComponent>(), &PointsComponent::shader); break;
+        case ShaderType::LINES:  flagInheritedUniforms(scene->getComponentArray<LinesComponent>(), &LinesComponent::shader);   break;
+        case ShaderType::WATER:  flagInheritedUniforms(scene->getComponentArray<WaterComponent>(), &WaterComponent::shader);   break;
         default: break;
     }
 }
@@ -6068,7 +6287,7 @@ void RenderSystem::loadPostProcess(){
         PostProcessRuntime pass;
         pass.passIndex = i;
 
-        // an empty path is the built-in passthrough, also the fallback of a failed fork
+        // empty for the built-in passthrough, also on failure
         pass.customId = ShaderPool::registerCustomShader(passes[i].shader);
         pass.shader = ShaderPool::get(ShaderType::POSTPROCESS, 0, pass.customId);
         if (pass.customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, pass.customId)){
@@ -6080,13 +6299,16 @@ void RenderSystem::loadPostProcess(){
         if (!pass.shader || !pass.shader->isCreated())
             return;
 
+        ShaderData& sd = pass.shader.get()->shaderData;
         pass.render.beginLoad(PrimitiveType::TRIANGLES);
         pass.render.setShader(pass.shader.get());
+        pass.textures = passes[i].textures;
+        if (!loadShaderTextures(pass.textures, sd, pass.render))
+            return;
         // the chain never targets the swapchain directly, renderPostProcess blits for that
         if (!pass.render.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
             return;
 
-        ShaderData& sd = pass.shader.get()->shaderData;
         pass.slotSceneColor = sd.getTextureIndexByName("u_sceneColorTexture");
         pass.slotDepth = sd.getTextureIndexByName("u_depthTexture");
         pass.slotGBuffer = sd.getTextureIndexByName("u_gbufferTexture");
@@ -6206,13 +6428,15 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
         }
 
         if (pass.render.beginDraw(PIP_RTT)){
+            if (ShaderTextures::isFramebufferOutdated(pass.textures))
+                loadShaderTextures(pass.textures, pass.shader.get()->shaderData, pass.render);
             pass.render.addTexture(pass.slotSceneColor, ShaderStageType::FRAGMENT, input);
             pass.render.addTexture(pass.slotDepth, ShaderStageType::FRAGMENT, depthTexture);
             pass.render.addTexture(pass.slotGBuffer, ShaderStageType::FRAGMENT, gbufferTexture);
             pass.render.addTexture(pass.slotSSAO, ShaderStageType::FRAGMENT, ssaoTexture);
             const Vector2 resolution((float)postProcessWidth, (float)postProcessHeight);
             applyParameters(pass.render, pass.paramsVS, effectView, resolution);
-            applyParameters(pass.render, pass.paramsFS, effectView, resolution);
+            applyFragmentParameters(pass.render, pass.paramsFS, effectView, resolution, false);
             pass.render.draw(0, 3, 1);
         }
         postProcessPassRender.endRenderPass();
@@ -6248,6 +6472,13 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
     InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
     TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
     const bool preserveAssets = mesh.needReload && !clearAssets;
+    // a reload keeps its place among the scene readers until it loads again
+    if (!preserveAssets){
+        sceneColorReaders.erase(entity);
+        sceneDepthReaders.erase(entity);
+        mesh.readsSceneColor = false;
+        mesh.readsSceneDepth = false;
+    }
 
     if (!mesh.loaded)
         return;
@@ -6329,10 +6560,10 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotFSLighting = -1;
         submesh.slotFSReflectionProbe = -1;
         submesh.slotVSSprite = -1;
-        submesh.slotVSShadows = -1;
         submesh.slotFSShadows = -1;
-        submesh.slotFSShadowProjection = -1;
-        submesh.slotFSPointShadows = -1;
+        submesh.sizeFSShadows = 0;
+        submesh.slotSceneColor = {-1, -1};
+        submesh.slotSceneDepth = {-1, -1};
         submesh.slotVSSkinning = -1;
         submesh.slotVSMorphTarget = -1;
         submesh.slotVSTerrain = -1;
@@ -6341,11 +6572,13 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
         submesh.slotFSDepthMaterial = -1;
+        submesh.sizeFSDepthMaterial = 0;
         submesh.slotVSDepthSkinning = -1;
         submesh.slotVSDepthMorphTarget = -1;
         submesh.slotVSDepthTerrain = -1;
 
         submesh.slotVSGBufferParams = -1;
+        submesh.sizeVSGBufferParams = 0;
         submesh.slotFSGBufferMaterial = -1;
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
@@ -6426,28 +6659,28 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
     }
 
     ui.shaderProperties = ShaderPool::getUIProperties(p_hasTexture, p_hasFontAtlasTexture, false, p_vertexColorVec4);
-    const std::string& uiShaderSrc = ui.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::UI) : ui.customShader;
+    const std::string& uiShaderSrc = ui.shader.empty() ? scene->getDefaultCustomShader(ShaderType::UI) : ui.shader;
     ui.customShaderId = ShaderPool::registerCustomShader(uiShaderSrc);
-    ui.shader = ShaderPool::get(ShaderType::UI, ui.shaderProperties, ui.customShaderId);
-    if (!ui.shader->isCreated()){
+    ui.shaderRender = ShaderPool::get(ShaderType::UI, ui.shaderProperties, ui.customShaderId);
+    if (!ui.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
         // object stays visible and loading finishes); retried after its source changes.
         if (ui.customShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::UI, ui.shaderProperties, ui.customShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", uiShaderSrc.c_str());
             ui.customShaderId = 0;
-            ui.shader = ShaderPool::get(ShaderType::UI, ui.shaderProperties, 0);
+            ui.shaderRender = ShaderPool::get(ShaderType::UI, ui.shaderProperties, 0);
         }
-        if (!ui.shader->isCreated())
+        if (!ui.shaderRender->isCreated())
             return false;
     }
-    render.setShader(ui.shader.get());
-    ShaderData& shaderData = ui.shader.get()->shaderData;
+    render.setShader(ui.shaderRender.get());
+    ShaderData& shaderData = ui.shaderRender.get()->shaderData;
 
     ui.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_VS_PARAMS);
     ui.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::UI_FS_PARAMS);
     ui.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     ui.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::UI, ui.customShader);
+    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::UI, ui.shader);
     ui.paramsVS.writeObject(ui.shaderUniforms, inheritedUniforms);
     ui.paramsFS.writeObject(ui.shaderUniforms, inheritedUniforms);
     ui.needUpdateShaderUniforms = false;
@@ -6496,7 +6729,10 @@ bool RenderSystem::loadUI(Entity entity, UIComponent& ui, uint16_t pipelines, bo
         }
         render.addTexture(shaderData.getTextureIndex(TextureShaderType::UI), ShaderStageType::FRAGMENT, textureRender);
     }
-    
+    if (!loadShaderTextures(ui.shaderTextures, shaderData, render)){
+        return false;
+    }
+
     ui.needUpdateTexture = false;
 
     if (!render.endLoad(pipelines, false, true, CullingMode::BACK, WindingOrder::CCW)){
@@ -6515,11 +6751,11 @@ bool RenderSystem::drawUI(UIComponent& ui, Transform& transform, PipelineType pi
     flushSpriteBatch();
     if (ui.loaded && ui.buffer.getSize() > 0){
 
-        if (ui.needUpdateTexture || ui.texture.isFramebufferOutdated()){
-            ShaderData& shaderData = ui.shader.get()->shaderData;
+        if (ui.needUpdateTexture || ui.texture.isFramebufferOutdated() || ShaderTextures::isFramebufferOutdated(ui.shaderTextures)){
+            ShaderData& shaderData = ui.shaderRender.get()->shaderData;
             ui.texture.setAlphaBorderAuto(true);
             if (TextureRender* textureRender = ui.texture.getRender(&emptyWhite))
-                if (textureRender->isCreated()){
+                if (textureRender->isCreated() && loadShaderTextures(ui.shaderTextures, shaderData, ui.render)){
                     ui.render.addTexture(shaderData.getTextureIndex(TextureShaderType::UI), ShaderStageType::FRAGMENT, textureRender);
                     ui.needUpdateTexture = false;
                 }
@@ -6550,7 +6786,7 @@ bool RenderSystem::drawUI(UIComponent& ui, Transform& transform, PipelineType pi
         render.applyUniformBlock(ui.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
         //Color
         render.applyUniformBlock(ui.slotFSParams, sizeof(float) * 4, &ui.color);
-        applyParameters(render, ui, scene, ShaderType::UI, effectView, passResolution);
+        applyParameters(render, ui, scene, ShaderType::UI, transform.modelMatrix, effectView, passResolution);
         render.draw(0, ui.vertexCount, 1);
 
     }
@@ -6566,8 +6802,8 @@ void RenderSystem::destroyUI(Entity entity, UIComponent& ui){
 
     if (!ui.needReload){
         //Destroy shader
-        if (ui.shader){
-            ui.shader.reset();
+        if (ui.shaderRender){
+            ui.shaderRender.reset();
             ShaderPool::remove(ShaderType::UI, ui.shaderProperties, ui.customShaderId);
         }
 
@@ -6622,27 +6858,27 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
     }
 
     points.shaderProperties = ShaderPool::getPointsProperties(p_hasTexture, false, true, p_hasTextureRect);
-    const std::string& pointsShaderSrc = points.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::POINTS) : points.customShader;
+    const std::string& pointsShaderSrc = points.shader.empty() ? scene->getDefaultCustomShader(ShaderType::POINTS) : points.shader;
     points.customShaderId = ShaderPool::registerCustomShader(pointsShaderSrc);
-    points.shader = ShaderPool::get(ShaderType::POINTS, points.shaderProperties, points.customShaderId);
-    if (!points.shader->isCreated()){
+    points.shaderRender = ShaderPool::get(ShaderType::POINTS, points.shaderProperties, points.customShaderId);
+    if (!points.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
         // object stays visible and loading finishes); retried after its source changes.
         if (points.customShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POINTS, points.shaderProperties, points.customShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", pointsShaderSrc.c_str());
             points.customShaderId = 0;
-            points.shader = ShaderPool::get(ShaderType::POINTS, points.shaderProperties, 0);
+            points.shaderRender = ShaderPool::get(ShaderType::POINTS, points.shaderProperties, 0);
         }
-        if (!points.shader->isCreated())
+        if (!points.shaderRender->isCreated())
             return false;
     }
-    render.setShader(points.shader.get());
-    ShaderData& shaderData = points.shader.get()->shaderData;
+    render.setShader(points.shaderRender.get());
+    ShaderData& shaderData = points.shaderRender.get()->shaderData;
 
     points.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::POINTS_VS_PARAMS);
     points.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     points.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::POINTS, points.customShader);
+    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::POINTS, points.shader);
     points.paramsVS.writeObject(points.shaderUniforms, inheritedUniforms);
     points.paramsFS.writeObject(points.shaderUniforms, inheritedUniforms);
     points.needUpdateShaderUniforms = false;
@@ -6674,6 +6910,9 @@ bool RenderSystem::loadPoints(Entity entity, PointsComponent& points, uint16_t p
             return false;
         }
         render.addTexture(shaderData.getTextureIndex(TextureShaderType::POINTS), ShaderStageType::FRAGMENT, textureRender);
+    }
+    if (!loadShaderTextures(points.shaderTextures, shaderData, render)){
+        return false;
     }
 
     points.needUpdateTexture = false;
@@ -6711,27 +6950,27 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
     render.beginLoad(PrimitiveType::LINES);
 
     lines.shaderProperties = ShaderPool::getLinesProperties(false, true);
-    const std::string& linesShaderSrc = lines.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::LINES) : lines.customShader;
+    const std::string& linesShaderSrc = lines.shader.empty() ? scene->getDefaultCustomShader(ShaderType::LINES) : lines.shader;
     lines.customShaderId = ShaderPool::registerCustomShader(linesShaderSrc);
-    lines.shader = ShaderPool::get(ShaderType::LINES, lines.shaderProperties, lines.customShaderId);
-    if (!lines.shader->isCreated()){
+    lines.shaderRender = ShaderPool::get(ShaderType::LINES, lines.shaderProperties, lines.customShaderId);
+    if (!lines.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
         // object stays visible and loading finishes); retried after its source changes.
         if (lines.customShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::LINES, lines.shaderProperties, lines.customShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", linesShaderSrc.c_str());
             lines.customShaderId = 0;
-            lines.shader = ShaderPool::get(ShaderType::LINES, lines.shaderProperties, 0);
+            lines.shaderRender = ShaderPool::get(ShaderType::LINES, lines.shaderProperties, 0);
         }
-        if (!lines.shader->isCreated())
+        if (!lines.shaderRender->isCreated())
             return false;
     }
-    render.setShader(lines.shader.get());
-    ShaderData& shaderData = lines.shader.get()->shaderData;
+    render.setShader(lines.shaderRender.get());
+    ShaderData& shaderData = lines.shaderRender.get()->shaderData;
 
     lines.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::LINES_VS_PARAMS);
     lines.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     lines.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::LINES, lines.customShader);
+    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::LINES, lines.shader);
     lines.paramsVS.writeObject(lines.shaderUniforms, inheritedUniforms);
     lines.paramsFS.writeObject(lines.shaderUniforms, inheritedUniforms);
     lines.needUpdateShaderUniforms = false;
@@ -6757,6 +6996,10 @@ bool RenderSystem::loadLines(Entity entity, LinesComponent& lines, uint16_t pipe
     }
     // buffer is dynamic
     lines.needUpdateBuffer = true;
+
+    if (!loadShaderTextures(lines.shaderTextures, shaderData, render)){
+        return false;
+    }
 
     if (!render.endLoad(pipelines, false, true, CullingMode::BACK, WindingOrder::CCW)){
         return false;
@@ -6820,11 +7063,11 @@ bool RenderSystem::drawPoints(PointsComponent& points, Transform& transform, Cam
     flushSpriteBatch();
     if (points.loaded && points.numVisible > 0){
 
-        if (points.needUpdateTexture || points.texture.isFramebufferOutdated()){
-            ShaderData& shaderData = points.shader.get()->shaderData;
+        if (points.needUpdateTexture || points.texture.isFramebufferOutdated() || ShaderTextures::isFramebufferOutdated(points.shaderTextures)){
+            ShaderData& shaderData = points.shaderRender.get()->shaderData;
             points.texture.setAlphaBorderAuto(true);
             if (TextureRender* textureRender = points.texture.getRender(&emptyWhite)){
-                if (textureRender->isCreated()){
+                if (textureRender->isCreated() && loadShaderTextures(points.shaderTextures, shaderData, points.render)){
                     points.render.addTexture(shaderData.getTextureIndex(TextureShaderType::POINTS), ShaderStageType::FRAGMENT, textureRender);
                     points.needUpdateTexture = false;
                 }
@@ -6851,7 +7094,7 @@ bool RenderSystem::drawPoints(PointsComponent& points, Transform& transform, Cam
         vsParams.mvpMatrix = transform.modelViewProjectionMatrix;
         vsParams.pointScale = computePointsScale(camera, getPointsViewportHeight(camera));
         render.applyUniformBlock(points.slotVSParams, sizeof(vs_points_params_t), &vsParams);
-        applyParameters(render, points, scene, ShaderType::POINTS, effectView, passResolution);
+        applyParameters(render, points, scene, ShaderType::POINTS, transform.modelMatrix, effectView, passResolution);
         render.draw(0, points.numVisible, 1);
     }
 
@@ -6864,8 +7107,8 @@ void RenderSystem::destroyPoints(Entity entity, PointsComponent& points){
 
     if (!points.needReload){
         //Destroy shader
-        if (points.shader){
-            points.shader.reset();
+        if (points.shaderRender){
+            points.shaderRender.reset();
             ShaderPool::remove(ShaderType::POINTS, points.shaderProperties, points.customShaderId);
         }
 
@@ -6902,6 +7145,10 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
             lines.needUpdateBuffer = false;
         }
 
+        if (ShaderTextures::isFramebufferOutdated(lines.shaderTextures) &&
+                !loadShaderTextures(lines.shaderTextures, lines.shaderRender.get()->shaderData, lines.render))
+            return true;
+
         ObjectRender& render = lines.render;
 
         if (!render.beginDraw(pipType)){
@@ -6909,7 +7156,7 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
             return false;
         }
         render.applyUniformBlock(lines.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
-        applyParameters(render, lines, scene, ShaderType::LINES, effectView, passResolution);
+        applyParameters(render, lines, scene, ShaderType::LINES, transform.modelMatrix, effectView, passResolution);
         render.draw(0, linesSize * 2, 1);
     }
 
@@ -6922,8 +7169,8 @@ void RenderSystem::destroyLines(Entity entity, LinesComponent& lines){
 
     if (!lines.needReload){
         //Destroy shader
-        if (lines.shader){
-            lines.shader.reset();
+        if (lines.shaderRender){
+            lines.shaderRender.reset();
             ShaderPool::remove(ShaderType::LINES, lines.shaderProperties, lines.customShaderId);
         }
     }
@@ -7000,28 +7247,28 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
 
     render->beginLoad(PrimitiveType::TRIANGLES);
 
-    const std::string& skyShaderSrc = sky.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::SKYBOX) : sky.customShader;
+    const std::string& skyShaderSrc = sky.shader.empty() ? scene->getDefaultCustomShader(ShaderType::SKYBOX) : sky.shader;
     sky.customShaderId = ShaderPool::registerCustomShader(skyShaderSrc);
-    sky.shader = ShaderPool::get(ShaderType::SKYBOX, 0, sky.customShaderId);
-    if (!sky.shader->isCreated()){
+    sky.shaderRender = ShaderPool::get(ShaderType::SKYBOX, 0, sky.customShaderId);
+    if (!sky.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
         // object stays visible and loading finishes); retried after its source changes.
         if (sky.customShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::SKYBOX, 0, sky.customShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", skyShaderSrc.c_str());
             sky.customShaderId = 0;
-            sky.shader = ShaderPool::get(ShaderType::SKYBOX, 0, 0);
+            sky.shaderRender = ShaderPool::get(ShaderType::SKYBOX, 0, 0);
         }
-        if (!sky.shader->isCreated())
+        if (!sky.shaderRender->isCreated())
             return false;
     }
-    render->setShader(sky.shader.get());
-    ShaderData& shaderData = sky.shader.get()->shaderData;
+    render->setShader(sky.shaderRender.get());
+    ShaderData& shaderData = sky.shaderRender.get()->shaderData;
 
     sky.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::SKY_VS_PARAMS);
     sky.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::SKY_FS_PARAMS);
     sky.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     sky.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::SKYBOX, sky.customShader);
+    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::SKYBOX, sky.shader);
     sky.paramsVS.writeObject(sky.shaderUniforms, inheritedUniforms);
     sky.paramsFS.writeObject(sky.shaderUniforms, inheritedUniforms);
     sky.needUpdateShaderUniforms = false;
@@ -7032,6 +7279,9 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
         }
         render->addTexture(shaderData.getTextureIndex(TextureShaderType::SKYCUBE), ShaderStageType::FRAGMENT, textureRender);
     } else {
+        return false;
+    }
+    if (!loadShaderTextures(sky.shaderTextures, shaderData, *render)){
         return false;
     }
 
@@ -7059,10 +7309,10 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
 bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
     if (sky.loaded){
 
-        if (sky.needUpdateTexture || sky.texture.isFramebufferOutdated()){
-            ShaderData& shaderData = sky.shader.get()->shaderData;
+        if (sky.needUpdateTexture || sky.texture.isFramebufferOutdated() || ShaderTextures::isFramebufferOutdated(sky.shaderTextures)){
+            ShaderData& shaderData = sky.shaderRender.get()->shaderData;
             if (TextureRender* textureRender = sky.texture.getRender(&emptyCubeWhite)){
-                if (textureRender->isCreated()){
+                if (textureRender->isCreated() && loadShaderTextures(sky.shaderTextures, shaderData, sky.render)){
                     sky.render.addTexture(shaderData.getTextureIndex(TextureShaderType::SKYCUBE), ShaderStageType::FRAGMENT, textureRender);
                     sky.needUpdateTexture = false;
                 }
@@ -7080,7 +7330,7 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
         }
         render.applyUniformBlock(sky.slotVSParams, sizeof(float) * 16, &sky.skyViewProjectionMatrix);
         render.applyUniformBlock(sky.slotFSParams, sizeof(float) * 4, &sky.color);
-        applyParameters(render, sky, scene, ShaderType::SKYBOX, effectView, passResolution);
+        applyParameters(render, sky, scene, ShaderType::SKYBOX, Matrix4(), effectView, passResolution);
         render.draw(0, 36, 1);
     }
 
@@ -7093,8 +7343,8 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
 
     if (!sky.needReload){
         //Destroy shader
-        if (sky.shader){
-            sky.shader.reset();
+        if (sky.shaderRender){
+            sky.shaderRender.reset();
             ShaderPool::remove(ShaderType::SKYBOX, 0, sky.customShaderId);
         }
 
@@ -7632,22 +7882,22 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
 
     const bool receiveShadows = hasLights && hasShadows && water.receiveShadows;
     water.shaderProperties = ShaderPool::getWaterProperties(hasFog, water.depthEffects, water.planarReflection, receiveShadows, water.refraction);
-    const std::string& waterShaderSrc = water.customShader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.customShader;
+    const std::string& waterShaderSrc = water.shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.shader;
     water.customShaderId = ShaderPool::registerCustomShader(waterShaderSrc);
-    water.shader = ShaderPool::get(ShaderType::WATER, water.shaderProperties, water.customShaderId);
-    if (!water.shader->isCreated()){
+    water.shaderRender = ShaderPool::get(ShaderType::WATER, water.shaderProperties, water.customShaderId);
+    if (!water.shaderRender->isCreated()){
         // A custom shader that failed to compile falls back to the built-in shader (so the
         // object stays visible and loading finishes); retried after its source changes.
         if (water.customShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::WATER, water.shaderProperties, water.customShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", waterShaderSrc.c_str());
             water.customShaderId = 0;
-            water.shader = ShaderPool::get(ShaderType::WATER, water.shaderProperties, 0);
+            water.shaderRender = ShaderPool::get(ShaderType::WATER, water.shaderProperties, 0);
         }
-        if (!water.shader->isCreated())
+        if (!water.shaderRender->isCreated())
             return false;
     }
-    render.setShader(water.shader.get());
-    ShaderData& shaderData = water.shader.get()->shaderData;
+    render.setShader(water.shaderRender.get());
+    ShaderData& shaderData = water.shaderRender.get()->shaderData;
 
     // built-in ripples as fallback, recreated after a view loss clears the pools
     if (!water.defaultNormalMap || !water.defaultNormalMap->isCreated()){
@@ -7657,28 +7907,20 @@ bool RenderSystem::loadWater(Entity entity, WaterComponent& water, uint16_t pipe
     if (!normalRender || !normalRender->isCreated())
         return false;
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::WATERNORMAL), ShaderStageType::FRAGMENT, normalRender);
+    if (!loadShaderTextures(water.shaderTextures, shaderData, render))
+        return false;
     water.needUpdateTexture = false;
 
     water.slotVSParams = shaderData.getUniformBlockIndex(UniformBlockType::WATER_VS_PARAMS);
     water.slotFSParams = shaderData.getUniformBlockIndex(UniformBlockType::WATER_FS_PARAMS);
-    // fields are only appended, so a fork of an older version gets the ones it knows
-    unsigned int fsParamsSize = 0;
-    shaderData.getUniformBlockMembers("u_fs_waterParams", fsParamsSize);
-    water.fsParamsSize = std::min(fsParamsSize, (unsigned int)sizeof(fs_water_t));
-    if (water.customShaderId != 0 && fsParamsSize < sizeof(fs_water_t)){
-        Log::warn("Custom shader '%s' is a fork of an older water shader; fork it again for the newer effects", waterShaderSrc.c_str());
-    }
     water.slotFSLighting = shaderData.getUniformBlockIndex(UniformBlockType::FS_LIGHTING);
     water.slotFSFog = hasFog ? shaderData.getUniformBlockIndex(UniformBlockType::FS_FOG) : -1;
     if (receiveShadows){
-        water.slotVSShadows = shaderData.getUniformBlockIndex(UniformBlockType::VS_SHADOWS);
         water.slotFSShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOWS);
-        water.slotFSShadowProjection = shaderData.getUniformBlockIndex(UniformBlockType::FS_SHADOW_PROJECTION);
-        water.slotFSPointShadows = shaderData.getUniformBlockIndex(UniformBlockType::FS_POINT_SHADOWS);
     }
     water.paramsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     water.paramsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
+    const ShaderUniformValues* inheritedUniforms = scene->getInheritedShaderUniforms(ShaderType::WATER, water.shader);
     water.paramsVS.writeObject(water.shaderUniforms, inheritedUniforms);
     water.paramsFS.writeObject(water.shaderUniforms, inheritedUniforms);
     water.needUpdateShaderUniforms = false;
@@ -7833,15 +8075,15 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
-    if (!isInsideCamera(camera, water.worldAABB))
+    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures))
         return false;
 
     ObjectRender& render = water.render;
-    ShaderData& shaderData = water.shader.get()->shaderData;
+    ShaderData& shaderData = water.shaderRender.get()->shaderData;
 
-    if (water.needUpdateTexture || water.normalTexture.isFramebufferOutdated()){
+    if (water.needUpdateTexture || water.normalTexture.isFramebufferOutdated() || ShaderTextures::isFramebufferOutdated(water.shaderTextures)){
         TextureRender* normalRender = water.normalTexture.getRender(water.defaultNormalMap.get());
-        if (normalRender && normalRender->isCreated()){
+        if (normalRender && normalRender->isCreated() && loadShaderTextures(water.shaderTextures, shaderData, render)){
             render.addTexture(shaderData.getTextureIndex(TextureShaderType::WATERNORMAL), ShaderStageType::FRAGMENT, normalRender);
             water.needUpdateTexture = false;
         }
@@ -7953,15 +8195,12 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     }
 
     render.applyUniformBlock(water.slotVSParams, sizeof(vs_water_t), &vsParams);
-    render.applyUniformBlock(water.slotFSParams, water.fsParamsSize, &fsParams);
+    render.applyUniformBlock(water.slotFSParams, sizeof(fs_water_t), &fsParams);
     render.applyUniformBlock(water.slotFSLighting, sizeof(fs_lighting_t), &fs_lighting);
     if (water.slotFSFog != -1){
         render.applyUniformBlock(water.slotFSFog, sizeof(float) * 8, &fs_fog);
     }
-    render.applyUniformBlock(water.slotVSShadows, sizeof(shadow_projection_t), &shadowProjection);
-    render.applyUniformBlock(water.slotFSShadowProjection, sizeof(shadow_projection_t), &shadowProjection);
     render.applyUniformBlock(water.slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
-    render.applyUniformBlock(water.slotFSPointShadows, sizeof(fs_point_shadows_t), &fs_point_shadows);
     writeParameters(water, scene);
     applyParameters(render, water.paramsVS, effectView, passResolution);
     applyParameters(render, water.paramsFS, effectView, passResolution);
@@ -7977,8 +8216,8 @@ void RenderSystem::destroyWater(Entity entity, WaterComponent& water){
 
     if (!water.needReload){
         //Destroy shader
-        if (water.shader){
-            water.shader.reset();
+        if (water.shaderRender){
+            water.shaderRender.reset();
             ShaderPool::remove(ShaderType::WATER, water.shaderProperties, water.customShaderId);
         }
         if (water.underwaterShader){
@@ -8017,13 +8256,9 @@ void RenderSystem::destroyWater(Entity entity, WaterComponent& water){
     //Shaders uniforms
     water.slotVSParams = -1;
     water.slotFSParams = -1;
-    water.fsParamsSize = 0;
     water.slotFSLighting = -1;
     water.slotFSFog = -1;
-    water.slotVSShadows = -1;
     water.slotFSShadows = -1;
-    water.slotFSShadowProjection = -1;
-    water.slotFSPointShadows = -1;
     water.paramsVS.clear();
     water.paramsFS.clear();
     water.slotUnderwaterParams = -1;
@@ -8379,12 +8614,14 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     if (water.underwaterLoaded)
         return true;
 
-    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(water.customUnderwaterShader);
+    // the water's shader file, which may fill getUnderwaterColor
+    const std::string& waterShader = water.shader.empty() ? scene->getDefaultCustomShader(ShaderType::WATER) : water.shader;
+    water.customUnderwaterShaderId = ShaderPool::registerCustomShader(waterShader);
     water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId);
     if (!water.underwaterShader->isCreated()){
-        // as in loadWater, a fork that failed to compile falls back to the built-in shader
+        // a failed shader falls back to the built-in
         if (water.customUnderwaterShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId)){
-            Log::error("Custom shader '%s' failed to compile; using the built-in shader", water.customUnderwaterShader.c_str());
+            Log::error("Custom shader '%s' failed to compile; using the built-in shader", waterShader.c_str());
             water.customUnderwaterShaderId = 0;
             water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0);
         }
@@ -8399,9 +8636,11 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     water.slotUnderwaterParams = shaderData.getUniformBlockIndex(UniformBlockType::UNDERWATER_FS_PARAMS);
     water.underwaterParamsVS.resolve(shaderData, "u_vs_params", ShaderStageType::VERTEX);
     water.underwaterParamsFS.resolve(shaderData, "u_fs_params", ShaderStageType::FRAGMENT);
-    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.customShader);
+    const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(ShaderType::WATER, water.shader);
     water.underwaterParamsVS.writeObject(water.shaderUniforms, inherited);
     water.underwaterParamsFS.writeObject(water.shaderUniforms, inherited);
+    if (!loadShaderTextures(water.shaderTextures, shaderData, water.underwaterRender))
+        return false;
     if (!water.underwaterRender.endLoad(PIP_RTT_NODEPTH, false, true, CullingMode::BACK, WindingOrder::CCW))
         return false;
 
@@ -8449,6 +8688,8 @@ void RenderSystem::drawUnderwater(WaterComponent& water, CameraComponent& camera
     params.sceneRect = currentSceneCopyRect;
 
     ShaderData& shaderData = water.underwaterShader.get()->shaderData;
+    if (ShaderTextures::isFramebufferOutdated(water.shaderTextures))
+        loadShaderTextures(water.shaderTextures, shaderData, render);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE), ShaderStageType::FRAGMENT, currentSceneCopy);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, currentSceneDepthTexture ? currentSceneDepthTexture : &emptyWhite);
     render.addTexture(shaderData.getTextureIndex(TextureShaderType::IRRADIANCEMAP), ShaderStageType::FRAGMENT, irradiance);
@@ -9302,6 +9543,12 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     // worldDirection is the camera's backward axis
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+    effectView.viewMatrix = camera.viewMatrix;
+    effectView.depthProjection = Vector4(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3],
+                                         camera.projectionMatrix[3][2], camera.projectionMatrix[3][3]);
+    effectView.flipY = isRenderingFlipped(camera);
+    effectView.viewProjection = camera.viewProjectionMatrix;
+    effectView.sceneRect = Vector4(0.0f, 0.0f, 1.0f, 1.0f);
     // depth targets start at the corner, the color pass moves this to its own
     effectView.ditherOrigin = Vector2(0.0f, 0.0f);
     effectView.time = (float)animationTime;
@@ -9414,12 +9661,6 @@ void RenderSystem::updateInstancedMesh(InstancedMeshComponent& instmesh, MeshCom
 
             Matrix4 instanceMatrix = translateMatrix * rotationMatrix * scaleMatrix;
 
-            instmesh.renderInstances.push_back({});
-            instmesh.renderInstances[instmesh.numVisible].instanceMatrix = instanceMatrix;
-            instmesh.renderInstances[instmesh.numVisible].color = instmesh.instances[i].color;
-            instmesh.renderInstances[instmesh.numVisible].textureRect = instmesh.instances[i].textureRect;
-            instmesh.numVisible++;
-
             const Vector3& scale = instmesh.instances[i].scale;
             InstanceBounds bounds;
             bounds.scale = std::max(std::abs(scale.x), std::max(std::abs(scale.y), std::abs(scale.z)));
@@ -9428,6 +9669,19 @@ void RenderSystem::updateInstancedMesh(InstancedMeshComponent& instmesh, MeshCom
             instmesh.renderBounds.push_back(bounds);
 
             mesh.aabb.merge(instanceMatrix * mesh.verticesAABB);
+
+            // the shaders put (0, 0, 0, 1) back
+            const Vector4& custom = instmesh.instances[i].custom;
+            instanceMatrix[0][3] = custom.x;
+            instanceMatrix[1][3] = custom.y;
+            instanceMatrix[2][3] = custom.z;
+            instanceMatrix[3][3] = custom.w;
+
+            instmesh.renderInstances.push_back({});
+            instmesh.renderInstances[instmesh.numVisible].instanceMatrix = instanceMatrix;
+            instmesh.renderInstances[instmesh.numVisible].color = instmesh.instances[i].color;
+            instmesh.renderInstances[instmesh.numVisible].textureRect = instmesh.instances[i].textureRect;
+            instmesh.numVisible++;
         }
     }
 
@@ -9932,7 +10186,8 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
 
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
         const Material& material = mesh.submeshes[i].material;
-        if (material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
+        if (samplesCameraTarget(camera, material.shaderTextures) ||
+            material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
             material.metallicRoughnessTexture.getFramebuffer() == camera.framebuffer ||
             material.normalTexture.getFramebuffer() == camera.framebuffer ||
             material.occlusionTexture.getFramebuffer() == camera.framebuffer ||
@@ -9946,6 +10201,15 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
 
 bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Texture& texture){
     return camera.renderToTexture && texture.getFramebuffer() == camera.framebuffer;
+}
+
+bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures){
+    for (const auto& texture : textures){
+        if (samplesCameraTarget(camera, texture.second))
+            return true;
+    }
+
+    return false;
 }
 
 bool RenderSystem::isRenderingFlipped(const CameraComponent& camera) const{
@@ -9972,7 +10236,7 @@ bool RenderSystem::isFixedResolutionActive() const{
 }
 
 void RenderSystem::updateSwapchainRedirect(){
-    // SSR, the post-process chain and the scene copy of a water need the scene in an offscreen
+    // SSR, the post-process chain and the scene copy of a water or a mesh need the scene in an offscreen
     // color buffer. Without a framebuffer destination (exported builds) the color pass is redirected
     // into it and the last pass targets the swapchain. Main scene only: a layer scene
     // composites over the scene below, and its own pass would clear it.
@@ -9996,13 +10260,13 @@ void RenderSystem::updateSwapchainRedirect(){
                     && ensurePostProcessFramebuffers(w, h);
         }
 
-        bool copyingWater = false;
+        bool copiesScene = !sceneColorReaders.empty();
         auto waters = scene->getComponentArray<WaterComponent>();
         for (int i = 0; i < waters->size(); i++){
             const WaterComponent& water = waters->getComponentFromIndex(i);
-            copyingWater = copyingWater || water.refraction || water.underwater;
+            copiesScene = copiesScene || water.refraction || water.underwater;
         }
-        if (!redirect && copyingWater){
+        if (!redirect && copiesScene){
             loadBlit();
             redirect = blitLoaded && ensureSceneColorFramebuffer(w, h);
         }
@@ -10411,6 +10675,7 @@ void RenderSystem::update(double dt){
         }
         updateWater(entity, water, *transform, pipelines, dt);
     }
+    newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty();
 
     if (hasWaterDepth != newHasWaterDepth){
         hasWaterDepth = newHasWaterDepth;
@@ -10467,7 +10732,14 @@ void RenderSystem::update(double dt){
 
             // vertex offsets reach past the bounds by their longest offset, read only when used
             auto offsetReach = [&](){
-                return (mesh.vertexOffsetShader.empty() || terrain) ? 0.0f : mesh.vertexOffsetMax;
+                if (mesh.vertexOffsetMax <= 0.0f)
+                    return 0.0f;
+                // the loaded shader file, the scene default included
+                for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+                    if (mesh.submeshes[s].customShaderId != 0)
+                        return mesh.vertexOffsetMax;
+                }
+                return 0.0f;
             };
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
@@ -10594,11 +10866,16 @@ void RenderSystem::update(double dt){
                     }
                 }
 
+                // a recreated framebuffer is new for every pass
+                if (!mesh.submeshes[s].needUpdateTexture && checkPBRFrabebufferUpdate(mesh.submeshes[s].material)){
+                    mesh.submeshes[s].needUpdateTexture = true;
+                }
+
                 if (mesh.submeshes[s].needUpdateTexture){
                     if (terrain){
                         transform.needUpdate = true;
                     }
-                    if (mesh.submeshes[s].textureShadow){
+                    if (mesh.submeshes[s].textureShadow || (mesh.submeshes[s].depthShader && !mesh.submeshes[s].depthShader->shaderData.textureParameters.empty())){
                         mesh.submeshes[s].needUpdateDepthTexture = true;
                     }
                     if (mesh.submeshes[s].gbufferShader){
@@ -10997,10 +11274,10 @@ void RenderSystem::draw(){
                     modelViewMatrix.set(2, 2, transform->worldScale.z);
 
                     const Matrix4& projection = light.cameras[cameraIndex].lightProjectionMatrix;
-                    vsDepthParams = {modelViewMatrix, projection, projection * modelViewMatrix};
+                    vsDepthParams = {modelViewMatrix, projection, projection * modelViewMatrix, transform->normalMatrix};
                 }else{
                     const Matrix4& lightVP = light.cameras[cameraIndex].lightViewProjectionMatrix;
-                    vsDepthParams = {transform->modelMatrix, lightVP, lightVP * transform->modelMatrix};
+                    vsDepthParams = {transform->modelMatrix, lightVP, lightVP * transform->modelMatrix, transform->normalMatrix};
                 }
 
                 drawMeshDepth(
@@ -11351,9 +11628,20 @@ void RenderSystem::draw(){
         PipelineType colorPip = colorPipeline(camera, offscreenTarget);
         bool distanceSort = sortsByDistance(camera);
 
+        // a mesh sampling the scene draws after a copy of it
+        bool sceneColorMeshes = false;
+        for (Entity reader : sceneColorReaders){
+            const Transform* readerTransform = scene->findComponent<Transform>(reader);
+            const MeshComponent* readerMesh = scene->findComponent<MeshComponent>(reader);
+            if (!readerTransform || !readerMesh || !readerTransform->visibleInHierarchy)
+                continue;
+            const InstancedMeshComponent* readerInstances = scene->findComponent<InstancedMeshComponent>(reader);
+            sceneColorMeshes = sceneColorMeshes || !cullsBatch(*readerMesh, readerInstances) || isInsideCamera(camera, readerMesh->worldAABB);
+        }
+
         // the main camera copies its scene before the water: refraction and the underwater fade
         // sample the copy, and SSR composites into it first so the reflections stay under the water
-        bool copyScene = isMainCamera && offscreenTarget && (refractingWater || currentUnderwater || (useSSR && !passWaters.empty()));
+        bool copyScene = isMainCamera && offscreenTarget && (refractingWater || currentUnderwater || (useSSR && !passWaters.empty()) || sceneColorMeshes);
         if (copyScene){
             loadBlit();
             copyScene = blitLoaded;
@@ -11487,7 +11775,7 @@ void RenderSystem::draw(){
                 }
                 TilemapComponent* tilemap = findComponent<TilemapComponent>(scene, entity, signature);
 
-                if (!mesh.transparent){
+                if (!mesh.transparent && !mesh.readsSceneColor && !mesh.readsSceneDepth){
                     // culled before the sort
                     if (cullsBatch(mesh, instmesh) && !isInsideCamera(camera, mesh.worldAABB))
                         continue;
@@ -11508,19 +11796,15 @@ void RenderSystem::draw(){
             }
         }
 
-        // the same draws, depth only, with the color pass's own MVP; a color fork
-        // without a depth fork is left out since its vertices may not match
+        // the same draws, depth only, with the color pass's own MVP
         if (depthPrepass){
             const PipelineType prepassPip = offscreenTarget ? PIP_ZPREPASS_RTT : PIP_ZPREPASS;
-            const bool sceneColorFork = !scene->getDefaultMeshShader().empty();
             Matrix4 renderVP = camera.viewProjectionMatrix;
             if (isRenderingFlipped(camera)){
                 renderVP = Matrix4::scaleMatrix(Vector3(1, -1, 1)) * renderVP;
             }
             for (const OpaqueRenderData& opaque : opaqueRenders){
-                if ((sceneColorFork || !opaque.mesh->customShader.empty()) && opaque.mesh->customDepthShader.empty())
-                    continue;
-                vs_depth_t params = {opaque.transform->modelMatrix, renderVP, opaque.transform->modelViewProjectionMatrix};
+                vs_depth_t params = {opaque.transform->modelMatrix, renderVP, opaque.transform->modelViewProjectionMatrix, opaque.transform->normalMatrix};
                 drawMeshDepth(*opaque.mesh, *opaque.transform, camera.farClip, camera.frustumPlanes, params, opaque.instmesh, opaque.terrain, opaque.tilemap, true, prepassPip, instanceView, lodView);
             }
         }
@@ -11530,7 +11814,7 @@ void RenderSystem::draw(){
         if (skys->size() > 0){
             SkyComponent& sky = skys->getComponentFromIndex(0);
             Entity entity = skys->getEntity(0);
-            if (sky.visible){
+            if (sky.visible && !samplesCameraTarget(camera, sky.shaderTextures)){
                 if (hasMultipleCameras || hasReflectionProbes){
                     updateSkyViewProjection(sky, camera);
                 }
@@ -11559,6 +11843,57 @@ void RenderSystem::draw(){
                 drawMesh(opaque.entity, *opaque.mesh, *opaque.transform, camera, cameraTransform, colorPip, opaque.instmesh, opaque.terrain, opaque.tilemap, terrainView, instanceView, lodView);
             }
         }
+
+        // the scene copy; SSR and the underwater fade replace the pass
+        CameraRender* passRender = &camera.render;
+        bool sceneCopied = false;
+        auto takeSceneCopy = [&](){
+            sceneCopied = true;
+            flushSpriteBatch();
+            // ended first, passes can't nest
+            camera.render.endRenderPass();
+            const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
+            if (copied){
+                if (useSSR){
+                    renderSSR(camera, &sceneCopyFramebuffer.getRender());
+                }else{
+                    renderSceneCopy(colorTarget);
+                }
+
+                // centered view rects, equal gaps above and below
+                const float copyWidth = (float)colorTarget->getWidth();
+                const float copyHeight = (float)colorTarget->getHeight();
+                currentSceneCopy = &sceneCopyFramebuffer.getRender().getColorTexture();
+                currentSceneCopyRect = Vector4(colorPassViewport.getX() / copyWidth, colorPassViewport.getY() / copyHeight,
+                        colorPassViewport.getWidth() / copyWidth, colorPassViewport.getHeight() / copyHeight);
+                effectView.sceneRect = currentSceneCopyRect;
+            }
+
+            passRender = &resumePassRender;
+            // kept for another copy between scene readers
+            resumePassRender.setStoreDepth(passWaters.size() > 1 || (!passWaters.empty() && sceneColorMeshes));
+            resumePassRender.startRenderPass(&colorTarget->getRender());
+            resumePassRender.applyViewport(colorPassViewport);
+            if (copied){
+                if (currentUnderwater){
+                    drawUnderwater(*currentUnderwater, camera, cameraTransform);
+                }else if (useSSR){
+                    drawBlit(&sceneCopyFramebuffer.getRender().getColorTexture(), PIP_RTT_NODEPTH, false);
+                }
+            }
+        };
+
+        // a new copy for what was drawn after the last one
+        bool copyOutdated = false;
+        bool waterSinceCopy = false;
+        auto refreshSceneCopy = [&](){
+            resumePassRender.endRenderPass();
+            renderSceneCopy(colorTarget);
+            resumePassRender.startRenderPass(&colorTarget->getRender());
+            resumePassRender.applyViewport(colorPassViewport);
+            copyOutdated = false;
+            waterSinceCopy = false;
+        };
 
         // in transform order, the order the batch keeps
         const bool drawSettled = !distanceSort && !depthPrepass && passWaters.empty();
@@ -11675,6 +12010,9 @@ void RenderSystem::draw(){
                     if (mesh.transparent && !passWaters.empty() && !isBehindWater(passWaters, mesh.worldAABB)){
                         afterWaterRenders.push_back({TransparentRenderType::MESH, entity, &mesh, nullptr, instmesh, terrain, tilemap, &transform, transform.distanceToCamera});
                     }else{
+                        if (mesh.readsSceneColor && copyScene && !sceneCopied){
+                            takeSceneCopy();
+                        }
                         drawMesh(entity, mesh, transform, camera, cameraTransform, colorPip, instmesh, terrain, tilemap, terrainView, instanceView, lodView);
                     }
                 }
@@ -11686,7 +12024,7 @@ void RenderSystem::draw(){
                 if (signature.test(scene->getComponentId<TextComponent>())){
                     isText = true;
                 }
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture))
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture) && !samplesCameraTarget(camera, ui.shaderTextures))
                     drawUI(ui, transform, colorPip);
 
             }else if (signature.test(scene->getComponentId<PointsComponent>())){
@@ -11696,7 +12034,7 @@ void RenderSystem::draw(){
                 // shared across all cameras and sokol only allows one sg_update_buffer per
                 // buffer per frame (VALIDATE_UPDATEBUF_ONCE). Every camera reuses the main
                 // camera's ordering computed in update().
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture)){
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture) && !samplesCameraTarget(camera, points.shaderTextures)){
                     if (!points.transparent){
                         drawPoints(points, transform, camera, cameraTransform, colorPip);
                     }else{
@@ -11716,7 +12054,7 @@ void RenderSystem::draw(){
             }else if (signature.test(scene->getComponentId<LinesComponent>())){
                 LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
 
-                if (transform.visibleInHierarchy)
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, lines.shaderTextures))
                     drawLines(lines, transform, cameraTransform, colorPip);
 
             }
@@ -11729,8 +12067,19 @@ void RenderSystem::draw(){
             }
         }
 
+        // drawn after the copy a mesh took
+        copyOutdated = currentSceneCopy != NULL;
+
         auto drawTransparent = [&](const TransparentRenderData& renderData){
             if (renderData.type == TransparentRenderType::MESH){
+                // scene readers share a copy, renewed after a water
+                if (renderData.mesh->readsSceneColor && copyScene){
+                    if (!sceneCopied){
+                        takeSceneCopy();
+                    }else if (waterSinceCopy){
+                        refreshSceneCopy();
+                    }
+                }
                 drawMesh(renderData.entity, *renderData.mesh, *renderData.transform, camera, cameraTransform, colorPip, renderData.instmesh, renderData.terrain, renderData.tilemap, terrainView, instanceView, lodView);
             }else if (renderData.type == TransparentRenderType::POINTS){
                 drawPoints(*renderData.points, *renderData.transform, camera, cameraTransform, colorPip);
@@ -11741,43 +12090,11 @@ void RenderSystem::draw(){
         while (!behindWaterRenders.empty()){
             drawTransparent(behindWaterRenders.top());
             behindWaterRenders.pop();
+            copyOutdated = currentSceneCopy != NULL;
         }
 
-        // the scene copy: an SSR composite or the underwater fade replace the pass content,
-        // a plain copy keeps it
-        CameraRender* passRender = &camera.render;
-        if (copyScene){
-            flushSpriteBatch();
-            // ended first: creating the copy framebuffer runs a clear pass, and passes can't nest
-            camera.render.endRenderPass();
-            const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
-            if (copied){
-                if (useSSR){
-                    renderSSR(camera, &sceneCopyFramebuffer.getRender());
-                }else{
-                    renderSceneCopy(colorTarget);
-                }
-
-                // view rects are centered, so the gap above the view matches the one below
-                const float copyWidth = (float)colorTarget->getWidth();
-                const float copyHeight = (float)colorTarget->getHeight();
-                currentSceneCopy = &sceneCopyFramebuffer.getRender().getColorTexture();
-                currentSceneCopyRect = Vector4(colorPassViewport.getX() / copyWidth, colorPassViewport.getY() / copyHeight,
-                        colorPassViewport.getWidth() / copyWidth, colorPassViewport.getHeight() / copyHeight);
-            }
-
-            passRender = &resumePassRender;
-            // kept for another copy between overlapping waters
-            resumePassRender.setStoreDepth(passWaters.size() > 1);
-            resumePassRender.startRenderPass(&colorTarget->getRender());
-            resumePassRender.applyViewport(colorPassViewport);
-            if (copied){
-                if (currentUnderwater){
-                    drawUnderwater(*currentUnderwater, camera, cameraTransform);
-                }else if (useSSR){
-                    drawBlit(&sceneCopyFramebuffer.getRender().getColorTexture(), PIP_RTT_NODEPTH, false);
-                }
-            }
+        if (copyScene && !sceneCopied){
+            takeSceneCopy();
         }
 
         //---------Draw water----------
@@ -11786,17 +12103,13 @@ void RenderSystem::draw(){
         std::sort(passWaters.begin(), passWaters.end(), [eyeY](const WaterRenderData& a, const WaterRenderData& b){
             return std::abs(eyeY - a.transform->worldPosition.y) > std::abs(eyeY - b.transform->worldPosition.y);
         });
-        bool copyOutdated = false;
         for (const WaterRenderData& waterData : passWaters){
             if (copyOutdated && waterData.water->refraction){
-                resumePassRender.endRenderPass();
-                renderSceneCopy(colorTarget);
-                resumePassRender.startRenderPass(&colorTarget->getRender());
-                resumePassRender.applyViewport(colorPassViewport);
-                copyOutdated = false;
+                refreshSceneCopy();
             }
             if (drawWater(waterData.entity, *waterData.water, *waterData.transform, camera, cameraTransform, colorPip, isMainCamera) && currentSceneCopy){
                 copyOutdated = true;
+                waterSinceCopy = true;
             }
         }
 

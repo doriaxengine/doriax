@@ -14,6 +14,7 @@
 #include "render/ShaderRender.h"
 #include "render/TextureRender.h"
 #include "shader/ShaderParameters.h"
+#include "shader/ShaderTextures.h"
 #include "texture/Texture.h"
 #include "util/Color.h"
 #include <memory>
@@ -42,23 +43,19 @@ namespace doriax{
         AABB worldAABB;
 
         ObjectRender render;
-        std::shared_ptr<ShaderRender> shader;
+        std::shared_ptr<ShaderRender> shaderRender;
         uint32_t shaderProperties = 0;
-        // optional user-forked shader: project-relative base path (no extension),
-        // empty = built-in. customShaderId is the resolved id for ShaderPool keys.
-        std::string customShader;
+        // .glsl file with the shader hooks, the scene default when empty
+        std::string shader;
         uint16_t customShaderId = 0;
         int slotVSParams = -1;
         int slotFSParams = -1;
-        unsigned int fsParamsSize = 0; // as the shader declares it, shorter in forks of older versions
         int slotFSLighting = -1;
         int slotFSFog = -1;
-        int slotVSShadows = -1;
         int slotFSShadows = -1;
-        int slotFSShadowProjection = -1;
-        int slotFSPointShadows = -1;
         // values of the shader's declared parameters, by name
         ShaderUniformValues shaderUniforms;
+        ShaderTextureValues shaderTextures;
         bool needUpdateShaderUniforms = false;
         ShaderParameterBlock paramsVS;
         ShaderParameterBlock paramsFS;
@@ -67,7 +64,7 @@ namespace doriax{
         bool underwaterLoaded = false;
         ObjectRender underwaterRender;
         std::shared_ptr<ShaderRender> underwaterShader;
-        std::string customUnderwaterShader; // fork of underwater.frag, built-in when empty
+        // the water's shader file, built for the fade
         uint16_t customUnderwaterShaderId = 0;
         int slotUnderwaterParams = -1;
         ShaderParameterBlock underwaterParamsVS;

@@ -19,8 +19,8 @@ constexpr uint32_t SDAT_MAGIC = 0x54414453; // 'S''D''A''T' little-endian
 // Serialization format version of the .sdat blob. Bump only when the on-disk
 // layout changes. To invalidate caches after a shader *source* change, bump the
 // cache directory version in App::getUserShaderCacheDir() instead.
-// v2 adds the declared shader parameters.
-constexpr uint32_t SDAT_VERSION = 2;
+// v2 adds the declared shader parameters, v3 the shader flags.
+constexpr uint32_t SDAT_VERSION = 3;
 
 // Sanity limits to guard against malformed files
 constexpr uint32_t kMaxString = 32u * 1024u * 1024u; // 32MB
@@ -260,6 +260,16 @@ void ShaderDataSerializerHelper::writeShaderData(Writer& out, uint64_t shaderKey
         writeFloat(out, parameter.defaultValue.z);
         writeFloat(out, parameter.defaultValue.w);
     }
+    writeU32(out, shaderData.flags);
+    writeU32(out, static_cast<uint32_t>(shaderData.textureParameters.size()));
+    for (const auto& texture : shaderData.textureParameters) {
+        writeU32(out, static_cast<uint32_t>(texture.stage));
+        writeString(out, texture.name);
+        writeU32(out, static_cast<uint32_t>(texture.type));
+        writeU32(out, static_cast<uint32_t>(texture.defaultTexture));
+        writeU32(out, static_cast<uint32_t>(texture.filter));
+        writeU32(out, static_cast<uint32_t>(texture.wrap));
+    }
 }
 
 const char* ShaderDataSerializerHelper::shaderLangName(ShaderLang lang) {
@@ -383,6 +393,18 @@ nlohmann::json ShaderDataSerializerHelper::shaderDataToJson(uint64_t shaderKey, 
         root["stages"].push_back(stageJson);
     }
 
+    root["flags"] = shaderData.flags;
+    root["textureParameters"] = nlohmann::json::array();
+    for (const auto& texture : shaderData.textureParameters) {
+        root["textureParameters"].push_back({
+            {"stage", shaderStageName(texture.stage)},
+            {"name", texture.name},
+            {"type", static_cast<uint32_t>(texture.type)},
+            {"default", static_cast<uint32_t>(texture.defaultTexture)},
+            {"filter", static_cast<uint32_t>(texture.filter)},
+            {"wrap", static_cast<uint32_t>(texture.wrap)}
+        });
+    }
     root["parameters"] = nlohmann::json::array();
     for (const auto& parameter : shaderData.parameters) {
         root["parameters"].push_back({
@@ -556,7 +578,7 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
         return setErr(err, "Invalid SDAT magic: " + filepath);
     }
 
-    if (version != SDAT_VERSION && version != 1) {
+    if (version < 1 || version > SDAT_VERSION) {
         return setErr(err, "Unsupported SDAT version: " + filepath);
     }
 
@@ -842,6 +864,34 @@ bool ShaderDataSerializerHelper::readShaderData(FileData& in, const std::string&
             parameter.scope = static_cast<ShaderParameterScope>(scope);
             parameter.type = static_cast<ShaderUniformType>(type);
             tmp.parameters.push_back(parameter);
+        }
+    }
+    if (version >= 3) {
+        uint32_t textureCount = 0;
+        if (!readU32(in, tmp.flags) || !readU32(in, textureCount)) {
+            return setErr(err, "Failed to read flags: " + filepath);
+        }
+        if (textureCount > kMaxParameters) {
+            return setErr(err, "Too many texture parameters in file: " + filepath);
+        }
+        tmp.textureParameters.reserve(textureCount);
+        for (uint32_t t = 0; t < textureCount; t++) {
+            ShaderTextureInfo texture;
+            uint32_t stage = 0;
+            uint32_t type = 0;
+            uint32_t defaultTexture = 0;
+            uint32_t filter = 0;
+            uint32_t wrap = 0;
+            if (!readU32(in, stage) || !readString(in, texture.name) || !readU32(in, type) || !readU32(in, defaultTexture) ||
+                !readU32(in, filter) || !readU32(in, wrap)) {
+                return setErr(err, "Failed to read texture parameter: " + filepath);
+            }
+            texture.stage = static_cast<ShaderStageType>(stage);
+            texture.type = static_cast<TextureType>(type);
+            texture.defaultTexture = static_cast<ShaderTextureDefault>(defaultTexture);
+            texture.filter = static_cast<TextureFilter>(filter);
+            texture.wrap = static_cast<TextureWrap>(wrap);
+            tmp.textureParameters.push_back(texture);
         }
     }
 

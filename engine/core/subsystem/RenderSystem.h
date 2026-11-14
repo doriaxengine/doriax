@@ -90,39 +90,36 @@ namespace doriax{
 		Vector4 density_start_end;
 	} fs_fog_t;
 
-	// u_fs_shadow_projection, and u_vs_shadows in shader forks that predate it
-	typedef struct shadow_projection_t {
+	// all shadows of the frame, point lights last
+	typedef struct fs_shadows_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
 	    Vector4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
-	} shadow_projection_t;
-
-	typedef struct fs_shadows_t {
         Vector4 bias_texSize_nearFar[MAX_SHADOW_ATLAS_SLOTS];
         // xy = atlas origin, zw = atlas scale (directional/spot)
         Vector4 atlasRect[MAX_SHADOW_ATLAS_SLOTS];
-	} fs_shadows_t;
-
-	typedef struct fs_point_shadows_t {
-        Vector4 bias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
+        Vector4 pointBias_texSize_nearFar[MAX_POINT_SHADOW_ATLAS_SLOTS];
         // xy = atlas origin, zw = atlas scale (point cube faces)
-        Vector4 atlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
-	} fs_point_shadows_t;
+        Vector4 pointAtlasRect[MAX_POINT_SHADOW_ATLAS_SLOTS];
+	} fs_shadows_t;
 
 	typedef struct vs_depth_t {
 		Matrix4 modelMatrix;
 		Matrix4 lightVPMatrix;
 		Matrix4 mvpMatrix; // lightVPMatrix * modelMatrix
+		Matrix4 normalMatrix; // only when hooks read the normal
 	} vs_depth_t;
 
 	typedef struct vs_gbuffer_t {
 		Matrix4 modelMatrix;
 		Matrix4 viewProjectionMatrix;
 		Matrix4 normalMatrix;       // view-space normal matrix: transpose(inverse(view*model))
+		Matrix4 worldNormalMatrix;  // only when hooks read the normal
 	} vs_gbuffer_t;
 
 	typedef struct fs_gbuffer_material_t {
 		Vector4 params;             // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutout
 		Vector4 baseColorFactor;
+		Vector4 emissiveFactor;     // for a surface hook, w = 1 when unlit
 	} fs_gbuffer_material_t;
 
 	typedef struct fs_ssao_t {
@@ -326,6 +323,10 @@ namespace doriax{
 		static TextureRender emptyCubeWhite;
 		static TextureRender emptyNormal;
 		static TextureRender emptyShadowDepth;
+		// 1x1 textures kept for their samplers
+		static TextureRender shaderSamplers[9];
+		// mipmapped copies for trilinear shader textures
+		std::unordered_map<std::string, Texture> shaderLevelTextures;
 
 		static bool emptyTexturesCreated;
 		
@@ -336,8 +337,11 @@ namespace doriax{
 		bool hasFog;
 		bool hasIBL;
 		bool hasReflectionProbes;
-		// a water samples the scene depth, so meshes need their depth shaders
+		// a water or mesh samples the scene depth
 		bool hasWaterDepth;
+		// meshes whose shader files sample the opaque scene
+		std::set<Entity> sceneColorReaders;
+		std::set<Entity> sceneDepthReaders;
 		bool hasMultipleCameras;
 		// extra cameras the last frame drew, to catch the switch back to main only
 		bool lastMultiCameraDraw;
@@ -440,7 +444,7 @@ namespace doriax{
 			CameraComponent* camera = nullptr;
 			Transform* cameraTransform = nullptr;
 			std::vector<SpriteBatchItem> items;
-			Submesh* previous = nullptr; // the sprite seen before, to tell when a run starts
+			MeshComponent* previous = nullptr; // the sprite seen before, to tell when a run starts
 			SpriteLayout layout; // of the first sprite, shared by the others
 			std::vector<unsigned char> vertices;
 			std::vector<uint16_t> indices;
@@ -599,9 +603,7 @@ namespace doriax{
 
 		fs_lighting_t fs_lighting;
 		fs_lighting2d_t fs_lighting2d;
-		shadow_projection_t shadowProjection;
 		fs_shadows_t fs_shadows;
-		fs_point_shadows_t fs_point_shadows;
 		fs_fog_t fs_fog;
 		// the camera effect functions see in the pass being drawn
 		ShaderEffectView effectView;
@@ -695,6 +697,7 @@ namespace doriax{
 			ObjectRender render;
 			int passIndex;                         // index in the scene chain (disabled passes skipped)
 			uint16_t customId;                     // 0 = built-in passthrough
+			ShaderTextureValues textures;
 			ShaderParameterBlock paramsVS;         // slot -1 when the pass declares none
 			ShaderParameterBlock paramsFS;
 			std::pair<int, int> slotSceneColor;
@@ -721,6 +724,7 @@ namespace doriax{
 
 		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
 		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
+		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		void updateSwapchainRedirect();
@@ -770,6 +774,9 @@ namespace doriax{
 		bool loadPBRTextures(Material& material, ShaderData& shaderData, ObjectRender& render, bool receiveLights);
 		void loadShadowTextures(ShaderData& shaderData, ObjectRender& render, bool receiveLights, bool receiveShadow);
 		void updateShadowBindings();
+		// the textures a shader declares
+		bool loadShaderTextures(ShaderTextureValues& textures, ShaderData& shaderData, ObjectRender& render);
+		static TextureRender* getShaderSampler(TextureFilter filter, TextureWrap wrap);
 		bool loadDepthTexture(Material& material, ShaderData& shaderData, ObjectRender& render);
 		bool loadGBufferTextures(Material& material, ShaderData& shaderData, ObjectRender& render);
 		// Every map of every layer is a slice of one array texture, so the whole terrain
@@ -806,7 +813,7 @@ namespace doriax{
 		bool getSpriteLayout(MeshComponent& mesh, SpriteLayout& layout) const;
 		void bakeSpriteVertices(unsigned char* vertices, unsigned int count, const SpriteLayout& layout, const Submesh& submesh) const;
 		void appendSpriteGeometry(const SpriteBatchItem& item);
-		void applySpriteBatchUniforms(ObjectRender& render, Submesh& submesh);
+		void applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh);
 		bool drawSpriteBatch();
 		void flushSpriteItems();
 		void flushSpriteBatch();

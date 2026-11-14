@@ -31,7 +31,7 @@
 
 using namespace doriax;
 
-// The customShaderId in a key is a session-local registry index, so a fork is
+// The customShaderId in a key is a session-local registry index, so a shader file is
 // named by its project-relative path instead, the way scenes name theirs.
 // Both directions normalize, keeping a since-retired property bit out of the file.
 YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKeys) {
@@ -39,19 +39,19 @@ YAML::Node editor::Stream::encodeShaderKeys(const std::set<ShaderKey>& shaderKey
     for (ShaderKey rawKey : shaderKeys) {
         const ShaderKey key = ShaderPool::normalizeKey(rawKey);
         const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
-        std::string customShader;
+        std::string shader;
         if (customId != 0) {
             // Without a name there is nothing stable to write, and dropping only
             // the id would turn the override into one for the built-in shader
-            customShader = ShaderPool::getCustomShaderName(customId);
-            if (customShader.empty()) continue;
+            shader = ShaderPool::getCustomShaderName(customId);
+            if (shader.empty()) continue;
         }
 
         const uint32_t properties = ShaderPool::getPropertiesFromKey(key);
         YAML::Node entry(YAML::NodeType::Map);
         entry["type"] = ShaderPool::getShaderTypeName(ShaderPool::getShaderTypeFromKey(key), true);
         if (properties) entry["properties"] = properties;
-        if (!customShader.empty()) entry["customShader"] = customShader;
+        if (!shader.empty()) entry["shader"] = shader;
         node.push_back(entry);
     }
     return node;
@@ -80,10 +80,6 @@ namespace {
 
         for (const auto& keyNode : node) {
             if (!keyNode.IsMap()) {
-                // Backward compatibility: scenes saved before forks were named by path
-                // stored the packed key, so only its stable half survives and the fork
-                // is re-paired on the next save. Remove this branch with support for them.
-                shaderKeys.push_back(ShaderPool::normalizeKey(ShaderPool::getStorageKey(keyNode.as<uint64_t>())));
                 continue;
             }
             ShaderType shaderType;
@@ -91,10 +87,14 @@ namespace {
                 continue;
             }
 
+            // a v0.8 fork, which nothing builds any more
+            if (keyNode["customShader"]) {
+                continue;
+            }
             // Keyed by name, so this returns the id the scenes resolve for it too
             uint16_t customId = 0;
-            if (keyNode["customShader"]) {
-                customId = ShaderPool::registerCustomShader(keyNode["customShader"].as<std::string>());
+            if (keyNode["shader"]) {
+                customId = ShaderPool::registerCustomShader(keyNode["shader"].as<std::string>());
             }
             const uint32_t properties = keyNode["properties"] ? keyNode["properties"].as<uint32_t>() : 0;
             shaderKeys.push_back(ShaderPool::normalizeKey(ShaderPool::getShaderKey(shaderType, properties, customId)));
@@ -1513,6 +1513,27 @@ Texture editor::Stream::decodeTexture(const YAML::Node& node) {
         if (node["releaseDataAfterLoad"]) texture.setReleaseDataAfterLoad(node["releaseDataAfterLoad"].as<bool>());
     }
     return texture;
+}
+
+// set textures only, under key; an empty entry is not saved
+void editor::Stream::encodeShaderTextures(YAML::Node& node, const char* key, const ShaderTextureValues& textures, bool embedTextureData) {
+    for (const auto& texture : textures) {
+        if (!hasTexture(texture.second))
+            continue;
+        YAML::Node item;
+        item["name"] = texture.first;
+        item["texture"] = encodeTexture(texture.second, embedTextureData);
+        node[key].push_back(item);
+    }
+}
+
+ShaderTextureValues editor::Stream::decodeShaderTextures(const YAML::Node& node) {
+    ShaderTextureValues textures;
+    for (const auto& item : node) {
+        if (item["name"] && item["texture"])
+            textures.push_back({item["name"].as<std::string>(), decodeTexture(item["texture"])});
+    }
+    return textures;
 }
 
 YAML::Node editor::Stream::encodeBuffer(const Buffer& buffer) {
@@ -3000,6 +3021,7 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
         passNode["enabled"] = pass.enabled;
         if (!pass.uniforms.empty())
             passNode["uniforms"] = encodeShaderUniforms(pass.uniforms);
+        encodeShaderTextures(passNode, "textures", pass.textures);
         sceneNode["postProcess"].push_back(passNode);
     }
 
@@ -3135,6 +3157,7 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
             pass.shader = passNode["shader"] ? passNode["shader"].as<std::string>() : "";
             pass.enabled = passNode["enabled"] ? passNode["enabled"].as<bool>() : true;
             pass.uniforms = decodeShaderUniforms(passNode["uniforms"]);
+            pass.textures = decodeShaderTextures(passNode["textures"]);
             postProcess.push_back(pass);
         }
     }
@@ -3772,6 +3795,12 @@ YAML::Node editor::Stream::encodeMaterial(const Material& material, bool embedTe
     // Encode material name
     node["name"] = material.name;
 
+    if (!material.shader.empty())
+        node["shader"] = material.shader;
+    if (!material.shaderUniforms.empty())
+        node["shaderUniforms"] = encodeShaderUniforms(material.shaderUniforms);
+    encodeShaderTextures(node, "shaderTextures", material.shaderTextures, embedTextureData);
+
     return node;
 }
 
@@ -3809,6 +3838,11 @@ Material editor::Stream::decodeMaterial(const YAML::Node& node, const Material* 
     if (node["normalTexCoord"]) material.normalTexCoord = node["normalTexCoord"].as<int>();
 
     if (node["name"]) material.name = node["name"].as<std::string>();
+
+    // Written only when set
+    material.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    material.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
+    material.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
 
     return material;
 }
@@ -4992,20 +5026,8 @@ YAML::Node editor::Stream::encodeMeshComponent(const MeshComponent& mesh, bool e
     node["cullingMode"] = cullingModeToString(mesh.cullingMode);
     node["windingOrder"] = windingOrderToString(mesh.windingOrder);
 
-    if (!mesh.customShader.empty())
-        node["customShader"] = mesh.customShader;
-    if (!mesh.customDepthShader.empty())
-        node["customDepthShader"] = mesh.customDepthShader;
-    if (!mesh.vertexOffsetShader.empty()){
-        node["vertexOffsetShader"] = mesh.vertexOffsetShader;
+    if (mesh.vertexOffsetMax != 0.0f)
         node["vertexOffsetMax"] = mesh.vertexOffsetMax;
-    }
-    if (!mesh.coverageShader.empty()){
-        node["coverageShader"] = mesh.coverageShader;
-        node["coverageShadows"] = mesh.coverageShadows;
-    }
-    if (!mesh.shaderUniforms.empty())
-        node["shaderUniforms"] = encodeShaderUniforms(mesh.shaderUniforms);
 
     //node["needUpdateBuffer"] = mesh.needUpdateBuffer;
     //node["needReload"] = mesh.needReload;
@@ -5075,13 +5097,7 @@ MeshComponent editor::Stream::decodeMeshComponent(const YAML::Node& node, const 
     if (node["windingOrder"]) mesh.windingOrder = stringToWindingOrder(node["windingOrder"].as<std::string>());
 
     // Written only when set
-    mesh.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
-    mesh.customDepthShader = node["customDepthShader"] ? node["customDepthShader"].as<std::string>() : "";
-    mesh.vertexOffsetShader = node["vertexOffsetShader"] ? node["vertexOffsetShader"].as<std::string>() : "";
     mesh.vertexOffsetMax = decodeFinite(node["vertexOffsetMax"], 0.0f);
-    mesh.coverageShader = node["coverageShader"] ? node["coverageShader"].as<std::string>() : "";
-    mesh.coverageShadows = node["coverageShadows"] ? node["coverageShadows"].as<bool>() : false;
-    mesh.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     mesh.needUpdateShaderUniforms = true;
 
     //mesh.needUpdateBuffer = node["needUpdateBuffer"].as<bool>();
@@ -5123,8 +5139,9 @@ YAML::Node editor::Stream::encodeUIComponent(const UIComponent& ui, bool encodeB
     node["pointerMoved"] = ui.pointerMoved;
     node["focused"] = ui.focused;
 
-    if (!ui.customShader.empty())
-        node["customShader"] = ui.customShader;
+    if (!ui.shader.empty())
+        node["shader"] = ui.shader;
+    encodeShaderTextures(node, "shaderTextures", ui.shaderTextures, embedTextureData);
     if (!ui.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(ui.shaderUniforms);
 
@@ -5173,7 +5190,8 @@ UIComponent editor::Stream::decodeUIComponent(const YAML::Node& node, const UICo
     if (node["focused"]) ui.focused = node["focused"].as<bool>();
 
     // Written only when set
-    ui.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    ui.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    ui.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     ui.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     ui.needUpdateShaderUniforms = true;
 
@@ -6529,8 +6547,9 @@ YAML::Node editor::Stream::encodeSkyComponent(const SkyComponent& sky) {
     node["rotation"] = sky.rotation;
     node["visible"] = sky.visible;
 
-    if (!sky.customShader.empty())
-        node["customShader"] = sky.customShader;
+    if (!sky.shader.empty())
+        node["shader"] = sky.shader;
+    encodeShaderTextures(node, "shaderTextures", sky.shaderTextures);
     if (!sky.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(sky.shaderUniforms);
 
@@ -6566,7 +6585,8 @@ SkyComponent editor::Stream::decodeSkyComponent(const YAML::Node& node, const Sk
     if (node["visible"]) sky.visible = node["visible"].as<bool>();
 
     // Written only when set
-    sky.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    sky.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    sky.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     sky.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     sky.needUpdateShaderUniforms = true;
 
@@ -6610,10 +6630,9 @@ YAML::Node editor::Stream::encodeWaterComponent(const WaterComponent& water) {
     node["wakeArea"] = water.wakeArea;
     node["wakeFade"] = water.wakeFade;
 
-    if (!water.customShader.empty())
-        node["customShader"] = water.customShader;
-    if (!water.customUnderwaterShader.empty())
-        node["customUnderwaterShader"] = water.customUnderwaterShader;
+    if (!water.shader.empty())
+        node["shader"] = water.shader;
+    encodeShaderTextures(node, "shaderTextures", water.shaderTextures);
     if (!water.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(water.shaderUniforms);
 
@@ -6662,8 +6681,8 @@ WaterComponent editor::Stream::decodeWaterComponent(const YAML::Node& node, cons
     if (node["wakeFade"]) water.wakeFade = node["wakeFade"].as<float>();
 
     // Written only when set
-    water.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
-    water.customUnderwaterShader = node["customUnderwaterShader"] ? node["customUnderwaterShader"].as<std::string>() : "";
+    water.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    water.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     water.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     water.needUpdateShaderUniforms = true;
     water.needUpdateTexture = true;
@@ -8298,6 +8317,8 @@ YAML::Node editor::Stream::encodeInstancedMeshComponent(const InstancedMeshCompo
         instNode["scale"] = encodeVector3(inst.scale);
         instNode["color"] = encodeVector4(inst.color);
         instNode["textureRect"] = encodeRect(inst.textureRect);
+        if (inst.custom != Vector4(0.0f, 0.0f, 0.0f, 0.0f))
+            instNode["custom"] = encodeVector4(inst.custom);
         instNode["visible"] = inst.visible;
         instancesNode.push_back(instNode);
     }
@@ -8328,6 +8349,7 @@ InstancedMeshComponent editor::Stream::decodeInstancedMeshComponent(const YAML::
             if (instNode["scale"]) inst.scale = decodeVector3(instNode["scale"]);
             if (instNode["color"]) inst.color = decodeVector4(instNode["color"]);
             if (instNode["textureRect"]) inst.textureRect = decodeRect(instNode["textureRect"]);
+            if (instNode["custom"]) inst.custom = decodeVector4(instNode["custom"]);
             if (instNode["visible"]) inst.visible = instNode["visible"].as<bool>();
             instmesh.instances.push_back(inst);
         }
@@ -8371,8 +8393,9 @@ YAML::Node editor::Stream::encodePointsComponent(const PointsComponent& points) 
     }
     node["points"] = pointsNode;
 
-    if (!points.customShader.empty())
-        node["customShader"] = points.customShader;
+    if (!points.shader.empty())
+        node["shader"] = points.shader;
+    encodeShaderTextures(node, "shaderTextures", points.shaderTextures);
     if (!points.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(points.shaderUniforms);
 
@@ -8413,7 +8436,8 @@ PointsComponent editor::Stream::decodePointsComponent(const YAML::Node& node, co
         }
     }
 
-    points.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    points.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    points.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     points.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     points.needUpdateShaderUniforms = true;
 
@@ -8444,8 +8468,9 @@ YAML::Node editor::Stream::encodeLinesComponent(const LinesComponent& lines) {
     }
     node["lines"] = linesNode;
 
-    if (!lines.customShader.empty())
-        node["customShader"] = lines.customShader;
+    if (!lines.shader.empty())
+        node["shader"] = lines.shader;
+    encodeShaderTextures(node, "shaderTextures", lines.shaderTextures);
     if (!lines.shaderUniforms.empty())
         node["shaderUniforms"] = encodeShaderUniforms(lines.shaderUniforms);
 
@@ -8475,7 +8500,8 @@ LinesComponent editor::Stream::decodeLinesComponent(const YAML::Node& node, cons
     }
 
     // Written only when set
-    lines.customShader = node["customShader"] ? node["customShader"].as<std::string>() : "";
+    lines.shader = node["shader"] ? node["shader"].as<std::string>() : "";
+    lines.shaderTextures = decodeShaderTextures(node["shaderTextures"]);
     lines.shaderUniforms = decodeShaderUniforms(node["shaderUniforms"]);
     lines.needUpdateShaderUniforms = true;
 

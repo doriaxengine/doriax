@@ -217,13 +217,14 @@ namespace doriax{
             bool autoTransparency;
             bool lodEnabled;
             float lodBias;
-            std::string customShader;
-            std::string customDepthShader;
-            std::string vertexOffsetShader;
             float vertexOffsetMax;
-            std::string coverageShader;
-            bool coverageShadows;
-            ShaderUniformValues shaderUniforms;
+            // what setShader and its values gave each material, in their order
+            struct MaterialShader{
+                std::string shader;
+                ShaderUniformValues shaderUniforms;
+                ShaderTextureValues shaderTextures;
+            };
+            std::vector<MaterialShader> shaders;
         };
         typedef std::map<std::pair<int, std::string>, MeshSettings> MeshSettingsByNode;
         MeshSettingsByNode collectMeshSettings(Entity entity, const ModelComponent& model, const std::string& filename) const;

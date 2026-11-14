@@ -65,15 +65,20 @@ EXCLUDED_HEADER_METHODS = {
 
 class APISymbol:
     """Represents one symbol in the engine API."""
-    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature')
+    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean')
 
-    def __init__(self, name, kind, detail='', parent='', getter='', signature=None):
+    def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False, accessor=''):
         self.name = name
         self.kind = kind
         self.detail = detail
         self.parent = parent
         self.getter = getter  # getter of a writable property
         self.signature = signature  # (params, return) of a lambda binding
+        self.bound = bound  # parameter types of the overload Lua gets, None when the binding names none
+        self.shared = shared  # a static property, read on the class
+        self.readonly = readonly  # bound with a getter and nothing to set it
+        self.accessor = accessor  # what a property is read through, whatever else it is bound with
+        self.boolean = False  # a property that holds true or false
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -119,7 +124,7 @@ def parse_binding_file(filepath):
     current_constructors = []
     pending_constructor = None
 
-    for line in lines:
+    for index, line in enumerate(lines):
         stripped = line.strip()
 
         if pending_constructor is not None:
@@ -189,7 +194,8 @@ def parse_binding_file(filepath):
             if not fname.startswith('__'):
                 symbols.append(APISymbol(
                     fname, 'StaticMethod',
-                    f'{current_lua_name}.{fname}()', current_lua_name
+                    f'{current_lua_name}.{fname}()', current_lua_name,
+                    bound=_bound_types(_binding_text(lines, index))
                 ))
             continue
 
@@ -201,7 +207,9 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     fname, 'Method',
                     f'{current_lua_name}:{fname}()', current_lua_name,
-                    signature=_lambda_signature(stripped[m.end():])
+                    getter=_bound_member(stripped[m.end():]),
+                    signature=_lambda_signature(stripped[m.end():]),
+                    bound=_bound_types(_binding_text(lines, index))
                 ))
             continue
 
@@ -219,7 +227,10 @@ def parse_binding_file(filepath):
                     kind = 'Constant'
                 symbols.append(APISymbol(
                     pname, kind,
-                    f'{current_lua_name}.{pname}', current_lua_name
+                    f'{current_lua_name}.{pname}', current_lua_name,
+                    shared=True,
+                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():])),
+                    accessor=_accessor(_call_arguments(_binding_text(lines, index)[m.start():]))
                 ))
             continue
 
@@ -232,7 +243,9 @@ def parse_binding_file(filepath):
                 symbols.append(APISymbol(
                     pname, 'Property',
                     f'{current_lua_name}.{pname}', current_lua_name,
-                    getter=args[1] if len(args) > 2 else ''
+                    getter=args[1] if len(args) > 2 else '',
+                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():])),
+                    accessor=_accessor(_call_arguments(_binding_text(lines, index)[m.start():]))
                 ))
             continue
 
@@ -363,6 +376,19 @@ def _getter_return_type(getter, cpp_methods):
     return next((ret for params, ret in overloads if not params), '')
 
 
+def _accessor(args):
+    """What a property binding reads through: the argument after the name."""
+    return args[1].strip() if len(args) > 1 else ''
+
+
+def _is_bool_property(accessor, cpp_methods, bool_members):
+    """Whether a property read through accessor holds a bool."""
+    if _simplify_return_type(_getter_return_type(accessor, cpp_methods)) == 'bool':
+        return True
+    m = RE_GETTER_MEMBER.match(accessor)
+    return bool(m) and m.group(2) in bool_members.get(m.group(1), set())
+
+
 def _copied_type(ret, class_names):
     """Type Lua gets as a copy from a getter returning ret, or ''."""
     t = _simplify_return_type(ret)
@@ -380,6 +406,106 @@ def _lambda_signature(text):
     # Lua passes neither self nor the lua_State
     params = [p for p in m.group(1).split(',')[1:] if 'lua_State' not in p]
     return _simplify_params(','.join(params)), m.group(2)
+
+
+RE_GETTER_FUNCTION = re.compile(r'&\s*[A-Za-z0-9_:]+::(?:get|is|has|can)[A-Z]|\[[^\]]*\]\s*\(|\(\s*\*\s*\)|::\s*\*\s*\)')
+
+
+def _getter_only(args):
+    """Whether a property binding gives Lua nothing to set: one function after the name.
+
+    A pointer to a data member, the other one-argument form, is written through.
+    """
+    return len(args) == 2 and bool(RE_GETTER_FUNCTION.search(args[1]))
+
+
+RE_BOUND_MEMBER = re.compile(r'&\s*[A-Za-z0-9_]+::([A-Za-z0-9_]+)')
+
+
+def _bound_member(text):
+    """The C++ method a binding names first, which the Lua name may differ from."""
+    m = RE_BOUND_MEMBER.search(text)
+    return m.group(1) if m else ''
+
+
+def _binding_text(lines, index):
+    """An add call with the lines it runs over, up to the next call of the chain."""
+    text = lines[index].strip()
+    for following in lines[index + 1:index + 12]:
+        s = following.strip()
+        if s.startswith('.') or s.startswith('//') or not s:
+            break
+        text += ' ' + s
+        if ';' in s:
+            break
+    return text
+
+
+RE_BOUND_CAST = re.compile(r'\(\s*[\w:<>\s&*]+\(\s*(?:\w+::)?\*\s*\)\s*\(([^()]*)\)')
+
+
+def _split_types(text):
+    """A parameter list split at the commas outside templates."""
+    parts, depth, current = [], 0, ''
+    for c in text:
+        if c == '<':
+            depth += 1
+        elif c == '>':
+            depth -= 1
+        if c == ',' and depth == 0:
+            parts.append(current)
+            current = ''
+        else:
+            current += c
+    parts.append(current)
+    return [_simplify_param(p) for p in parts if p.strip() and p.strip() != 'void']
+
+
+def _bound_types(text):
+    """Parameter types of the overload a binding gives Lua, or None when it names none.
+
+    Of several, the one without parameters is preferred, then the one that
+    takes a single value (a vector rather than its numbers), else the first.
+    """
+    found = []
+    text = text.replace('luabridge::constOverload<', 'luabridge::overload<')
+    marker = 'luabridge::overload<'
+    start = text.find(marker)
+    while start >= 0:
+        # templates nest, as overload<std::vector<int>>
+        begin = start + len(marker)
+        depth, end = 1, begin
+        while end < len(text) and depth:
+            depth += 1 if text[end] == '<' else (-1 if text[end] == '>' else 0)
+            end += 1
+        if depth:
+            break
+        found.append(_split_types(text[begin:end - 1]))
+        start = text.find(marker, end)
+    if not found:
+        m = RE_BOUND_CAST.search(text)
+        return _split_types(m.group(1)) if m else None
+    for count in (0, 1):
+        for types in found:
+            if len(types) == count:
+                return types
+    return found[0]
+
+
+def _param_type(param):
+    """The type of a simplified 'Type name' parameter."""
+    param = param.split('=')[0].strip()
+    parts = param.rsplit(' ', 1)
+    return parts[0] if len(parts) == 2 else param
+
+
+def _bound_overload(overloads, types):
+    """The header overload Lua calls, with its parameter names; made of the types alone when none matches."""
+    for params, ret in overloads:
+        if [_param_type(p) for p in _split_types(params)] == types:
+            return params, ret
+    returns = overloads[0][1] if overloads else ''
+    return ', '.join(f'{t} value{i + 1}' for i, t in enumerate(types)), returns
 
 
 def _simplify_params(params_str):
@@ -446,10 +572,13 @@ def parse_cpp_headers(base_dir):
     """Parse C++ headers to extract public method declarations with parameter info."""
     # class_methods[class_name] = { method_name: [(params_str, return_type), ...] }
     class_methods = {}
+    # bool_members[class_name] = { member_name, ... }
+    bool_members = {}
+    bool_member = re.compile(r'(?<![A-Za-z0-9_])bool\s+([A-Za-z0-9_]+)\s*(?:=[^;(]*)?;')
     sig_pattern = re.compile(
         r'(?:virtual\s+|inline\s+|static\s+)*'
         r'([A-Za-z0-9_:<>&*\s]+)\s+'
-        r'([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*(?:const)?\s*(?:override|final)?\s*[;{]'
+        r'([A-Za-z0-9_]+)\s*\(([^)]*)\)\s*(?:const)?\s*(?:override|final)?\s*(?:=\s*0\s*)?[;{]'
     )
     class_start = re.compile(
         r'(?:class|struct)\s+(?:[A-Z0-9_]+\s+)?([A-Za-z0-9_]+)\s*(?::[^{]+)?\{'
@@ -481,6 +610,7 @@ def parse_cpp_headers(base_dir):
 
                 if class_name not in class_methods:
                     class_methods[class_name] = {}
+                bool_members.setdefault(class_name, set()).update(bool_member.findall(public_body))
 
                 for m in sig_pattern.finditer(public_body):
                     ret_type = m.group(1).strip()
@@ -498,7 +628,7 @@ def parse_cpp_headers(base_dir):
                         class_methods[class_name][method_name] = []
                     class_methods[class_name][method_name].append((params, ret_type))
 
-    return class_methods
+    return class_methods, bool_members
 
 def generate_header(symbols, output_path):
     """Generate engine_api_suggestions.h from parsed symbols."""
@@ -581,6 +711,42 @@ def generate_header(symbols, output_path):
     lines.append('    const char* parent; // owning class/enum')
     lines.append('};')
     lines.append('')
+    # ── Static properties, as "Class.name" ───────────────────────────────
+    lines.append('inline std::unordered_set<std::string> getEngineStaticProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.shared and s.kind == 'Property')):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
+    # ── Properties Lua can only read, as "Class.name" ────────────────────
+    lines.append('inline std::unordered_set<std::string> getEngineReadOnlyProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.readonly)):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
+    # ── Properties that hold true or false, as "Class.name" ──────────────
+    lines.append('inline std::unordered_set<std::string> getEngineBoolProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in unique if s.boolean)):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
+    # ── Events scripts register for, as "Class.name" ─────────────────────
+    lines.append('inline std::unordered_set<std::string> getEngineEventProperties() {')
+    lines.append('    return {')
+    for name in sorted(set(f'{s.parent}.{s.name}' for s in events)):
+        lines.append(f'        "{escape(name)}",')
+    lines.append('    };')
+    lines.append('}')
+    lines.append('')
+
     lines.append('inline const std::vector<EngineAPISymbol>& getEngineAPISymbols() {')
     lines.append('    static const std::vector<EngineAPISymbol> symbols = {')
 
@@ -635,7 +801,7 @@ def main():
         all_symbols.extend(syms)
         print(f'  Parsed {os.path.basename(filepath)}: {len(syms)} symbols')
 
-    cpp_methods = parse_cpp_headers(engine_core_dir)
+    cpp_methods, bool_members = parse_cpp_headers(engine_core_dir)
 
     def _format_detail(parent, name, sep, overload):
         """Build a 'Parent<sep>name(params) -> Return' detail from a (params, return) pair."""
@@ -657,12 +823,19 @@ def main():
     # Update existing LuaBridge method symbols with param + return info from C++ headers
     for s in all_symbols:
         if s.kind in ('Method', 'StaticMethod') and s.parent:
-            sig = s.signature or cpp_signatures.get((s.parent, s.name))
+            sig = s.signature or cpp_signatures.get((s.parent, s.name)) or cpp_signatures.get((s.parent, s.getter))
+            # the header's shortest overload is not always the one bound
+            if s.signature is None and s.bound is not None:
+                sig = _bound_overload(cpp_methods.get(s.parent, {}).get(s.name, []), s.bound)
             if sig is not None:
                 sep = '.' if s.kind == 'StaticMethod' else ':'
                 s.detail = _format_detail(s.parent, s.name, sep, sig)
 
     lua_classes = {s.name for s in all_symbols if s.kind == 'Class'}
+
+    for s in all_symbols:
+        if s.kind == 'Property' and s.accessor:
+            s.boolean = _is_bool_property(s.accessor, cpp_methods, bool_members)
 
     # Tag properties whose getter gives Lua a copy (obj.position.y = 1 changes nothing)
     for s in all_symbols:

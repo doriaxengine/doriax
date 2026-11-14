@@ -9,6 +9,26 @@
 
 using namespace doriax;
 
+std::string ShaderTextureInfo::getSamplerName() const{
+    std::string sampler = "u_smp_";
+    if (filter == TextureFilter::NEAREST){
+        sampler += "nearest";
+    }else if (filter == TextureFilter::LINEAR){
+        sampler += "linear";
+    }else{
+        sampler += "trilinear";
+    }
+    if (wrap == TextureWrap::REPEAT){
+        sampler += "_repeat";
+    }else if (wrap == TextureWrap::MIRRORED_REPEAT){
+        sampler += "_mirror";
+    }else{
+        sampler += "_clamp";
+    }
+
+    return sampler;
+}
+
 ShaderData::ShaderData(){
 
 }
@@ -23,6 +43,8 @@ ShaderData::ShaderData(const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->textureParameters = d.textureParameters;
+    this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){
@@ -38,6 +60,8 @@ ShaderData& ShaderData::operator = (const ShaderData& d){
     this->es = d.es;
     this->stages = d.stages;
     this->parameters = d.parameters;
+    this->textureParameters = d.textureParameters;
+    this->flags = d.flags;
 
     for (int i = 0; i < stages.size(); i++){
         if (this->stages[i].bytecode.data){
@@ -165,14 +189,8 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_fog";
     }else if (type == UniformBlockType::FS_MIRROR){
         ustr = "u_fs_mirror";
-    }else if (type == UniformBlockType::VS_SHADOWS){
-        ustr = "u_vs_shadows";
     }else if (type == UniformBlockType::FS_SHADOWS){
         ustr = "u_fs_shadows";
-    }else if (type == UniformBlockType::FS_SHADOW_PROJECTION){
-        ustr = "u_fs_shadow_projection";
-    }else if (type == UniformBlockType::FS_POINT_SHADOWS){
-        ustr = "u_fs_point_shadows";
     }else if (type == UniformBlockType::SKY_VS_PARAMS){
         ustr = "u_vs_skyParams";
     }else if (type == UniformBlockType::SKY_FS_PARAMS){
@@ -378,6 +396,29 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
     }
 
     return getTextureIndexByName(texstr);
+}
+
+std::pair<int, int> ShaderData::getTextureParameterIndex(const ShaderTextureInfo& texture){
+    const std::string textureName = texture.getTextureName();
+    const std::string samplerName = texture.getSamplerName();
+    for (int s = 0; s < stages.size(); s++){
+        if (stages[s].type != texture.stage)
+            continue;
+
+        int texIndex = -1;
+        for (int te = 0; te < stages[s].textures.size(); te++){
+            if (stages[s].textures[te].name == textureName){
+                texIndex = stages[s].textures[te].slot;
+            }
+        }
+        for (int sa = 0; sa < stages[s].samplers.size(); sa++){
+            if (texIndex != -1 && stages[s].samplers[sa].name == samplerName){
+                return std::pair(texIndex, stages[s].samplers[sa].slot);
+            }
+        }
+    }
+
+    return std::pair(-1, -1);
 }
 
 std::pair<int, int> ShaderData::getTextureIndexByName(const std::string& texstr){

@@ -1,12 +1,5 @@
 #version 450
 
-// Declare values as "#pragma param float amount = 0.5 [0, 1]", and read them as
-// params.amount once main() has called loadShaderParameters(). Engine.time and
-// Engine.resolution (xy size, zw 1 / size) come from the engine.
-//
-// The fork drives the color pass only: to keep shadows (and SSAO, when SSR is off) in
-// step with positions displaced here, fork the depth shader too (Depth Shader in Properties).
-
 uniform u_vs_pbrParams {
     mat4 modelMatrix;
     mat4 normalMatrix;
@@ -31,11 +24,11 @@ invariant gl_Position;
 
 in vec3 a_position;
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
     out vec3 v_position;
 #endif
 
-#ifdef HAS_NORMALS
+#if defined(HAS_NORMALS) || defined(HOOK_NORMAL)
     in vec3 a_normal;
 #endif
 
@@ -53,10 +46,10 @@ in vec3 a_position;
 
 // with MSAA an edge pixel is shaded at its center, which can lie outside a sprite
 // or tile quad; centroid keeps the atlas UV inside the rect
+#if (defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)) || defined(HOOK_UV1)
+    in vec2 a_texcoord1;
+#endif
 #ifdef HAS_UV_SET1
-    #ifndef HAS_TERRAIN
-        in vec2 a_texcoord1;
-    #endif
     #ifdef HAS_TEXTURERECT
         centroid out vec2 v_uv1;
     #else
@@ -64,8 +57,10 @@ in vec3 a_position;
     #endif
 #endif
 
-#ifdef HAS_UV_SET2
+#if defined(HAS_UV_SET2) || defined(HOOK_UV2)
     in vec2 a_texcoord2;
+#endif
+#ifdef HAS_UV_SET2
     #ifdef HAS_TEXTURERECT
         centroid out vec2 v_uv2;
     #else
@@ -88,8 +83,20 @@ in vec3 a_position;
     out vec4 v_color;
 #endif
 // the UV set as the mesh stores it, before any texture rect, as the depth passes read it
-#if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
-    out vec2 v_coverageUV;
+#ifdef HOOK_FRAGMENT_UV1
+    out vec2 v_hookUV;
+#endif
+#if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
+    out vec3 v_hookNormal;
+#endif
+#ifdef HOOK_FRAGMENT_UV2
+    out vec2 v_hookUV2;
+#endif
+#ifdef HOOK_FRAGMENT_INSTANCE
+    flat out vec4 v_hookInstance;
+#endif
+#ifdef HOOK_VARYINGS
+    #include "shader_varyings_vs.glsl"
 #endif
 
 #ifdef HAS_INSTANCING
@@ -101,6 +108,7 @@ in vec3 a_position;
     #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
         in vec4 i_textureRect;
     #endif
+    #include "includes/instance_matrix.glsl"
 #endif
 
 #include "includes/parameters_vs.glsl"
@@ -110,8 +118,10 @@ in vec3 a_position;
 #ifdef HAS_TERRAIN
     #include "includes/terrain_vs.glsl"
 #endif
-#ifdef USE_VERTEX_OFFSET
-    #include "includes/vertex_offset.glsl"
+#if defined(USE_VERTEX_HOOKS) || defined(USE_FRAGMENT_HOOKS)
+    #define HOOK_NORMAL_MATRIX pbrParams.normalMatrix
+    #define HOOK_MODEL_MATRIX pbrParams.modelMatrix
+    #include "includes/hooks_vs.glsl"
 #endif
 
 vec4 getPosition(mat4 boneTransform){
@@ -158,15 +168,23 @@ void main() {
 
     vec4 localPos = getPosition(boneTransform);
     #ifdef HAS_INSTANCING
-        mat4 instanceMatrix = mat4(i_matrix_col1, i_matrix_col2, i_matrix_col3, i_matrix_col4);
+        mat4 instanceMatrix = getInstanceMatrix();
         vec4 pos = instanceMatrix * localPos;
     #else
         vec4 pos = localPos;
     #endif
 
+    #ifdef USE_VERTEX_HOOKS
+        VertexContext context = getVertexContext(localPos.xyz, (pbrParams.modelMatrix * pos).xyz, boneTransform);
+    #endif
     // before the fade, so a faded instance still shrinks to nothing
     #ifdef USE_VERTEX_OFFSET
-        pos.xyz += getModelOffset(localPos.xyz, (pbrParams.modelMatrix * pos).xyz);
+        pos.xyz += getModelOffset(context);
+    #endif
+    #ifdef USE_VARYINGS
+        Varyings varyings;
+        getVaryings(context, varyings);
+        writeVaryings(varyings);
     #endif
 
     #ifdef USE_INSTANCE_FADE
@@ -184,7 +202,7 @@ void main() {
 
     vec4 worldPos = pbrParams.modelMatrix * pos;
 
-    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_COVERAGE)
+    #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
         v_position = vec3(worldPos.xyz) / worldPos.w;
     #endif
 
@@ -232,8 +250,17 @@ void main() {
         #endif
     #endif
 
-    #if defined(USE_COVERAGE) && defined(HAS_UV_SET1) && !defined(HAS_TERRAIN)
-        v_coverageUV = a_texcoord1;
+    #ifdef HOOK_FRAGMENT_UV1
+        v_hookUV = a_texcoord1;
+    #endif
+    #if defined(HOOK_FRAGMENT_NORMAL) && !defined(HAS_NORMALS)
+        v_hookNormal = getHookNormal(boneTransform);
+    #endif
+    #ifdef HOOK_FRAGMENT_UV2
+        v_hookUV2 = a_texcoord2;
+    #endif
+    #ifdef HOOK_FRAGMENT_INSTANCE
+        v_hookInstance = getInstanceCustom();
     #endif
 
     #ifdef HAS_UV_SET2
@@ -261,6 +288,9 @@ void main() {
     #endif
 
     gl_Position = pbrParams.mvpMatrix * pos;
+    #ifdef USE_CLIP_POSITION
+        gl_Position = getHookClipPosition(context, gl_Position);
+    #endif
     #ifdef IS_VULKAN
         // GL [-1,1] to Vulkan [0,1] depth range (spirv-cross fixup_clipspace equivalent)
         gl_Position.z = (gl_Position.z + gl_Position.w) * 0.5;

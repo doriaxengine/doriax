@@ -6,6 +6,11 @@
 
 #include "math/Vector3.h"
 #include "texture/Texture.h"
+#include "shader/ShaderUniforms.h"
+#include "shader/ShaderTextures.h"
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace doriax{
 
@@ -51,6 +56,21 @@ namespace doriax{
         // material name or file
         std::string name = "";
 
+        // .glsl file with the shader hooks, from the project or the engine
+        std::string shader;
+        // its parameter values, by name
+        ShaderUniformValues shaderUniforms;
+        // and textures
+        ShaderTextureValues shaderTextures;
+
+        Texture getShaderTexture(const std::string& name) const {
+            return ShaderTextures::get(shaderTextures, name);
+        }
+
+        void setShaderTexture(const std::string& name, const Texture& texture) {
+            ShaderTextures::set(shaderTextures, name, texture);
+        }
+
         bool operator == (const Material& other) const {
             return baseColorFactor == other.baseColorFactor &&
                    metallicFactor == other.metallicFactor &&
@@ -69,7 +89,10 @@ namespace doriax{
                    occlusionTexCoord == other.occlusionTexCoord &&
                    emissiveTexCoord == other.emissiveTexCoord &&
                    normalTexCoord == other.normalTexCoord &&
-                   name == other.name;
+                   name == other.name &&
+                   shader == other.shader &&
+                   shaderUniforms == other.shaderUniforms &&
+                   ShaderTextures::equals(shaderTextures, other.shaderTextures);
         }
 
         bool operator != (const Material& other) const {

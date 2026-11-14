@@ -36,6 +36,9 @@ namespace doriax::editor{
         bool canRedo() const;
 
         void clear();
+
+        // every command it keeps, done or undone
+        void forEach(const std::function<void(Command*)>& function) const;
     };
 
 }

@@ -211,7 +211,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const float, const float, const float, const float>(&SkyBox::setColor))
         .addProperty("alpha", &SkyBox::getAlpha, &SkyBox::setAlpha)
         .addProperty("rotation", &SkyBox::getRotation, &SkyBox::setRotation)
-        .addProperty("customShader", &SkyBox::getCustomShader, &SkyBox::setCustomShader)
+        .addProperty("shader", &SkyBox::getShader, &SkyBox::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&SkyBox::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&SkyBox::setShaderUniform),
@@ -219,6 +219,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&SkyBox::setShaderUniform))
         .addFunction("getShaderUniform", &SkyBox::getShaderUniform)
         .addFunction("removeShaderUniform", &SkyBox::removeShaderUniform)
+        .addFunction("setShaderTexture", &SkyBox::setShaderTexture)
+        .addFunction("getShaderTexture", &SkyBox::getShaderTexture)
         .addFunction("getSkyComponent", &SkyBox::getComponent<SkyComponent>)
         .endClass();
 
@@ -492,8 +494,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("buoyancyDepth", &Water::getBuoyancyDepth, &Water::setBuoyancyDepth)
         .addProperty("wakeArea", &Water::getWakeArea, &Water::setWakeArea)
         .addProperty("wakeFade", &Water::getWakeFade, &Water::setWakeFade)
-        .addProperty("customShader", &Water::getCustomShader, &Water::setCustomShader)
-        .addProperty("customUnderwaterShader", &Water::getCustomUnderwaterShader, &Water::setCustomUnderwaterShader)
+        .addProperty("shader", &Water::getShader, &Water::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Water::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Water::setShaderUniform),
@@ -501,6 +502,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Water::setShaderUniform))
         .addFunction("getShaderUniform", &Water::getShaderUniform)
         .addFunction("removeShaderUniform", &Water::removeShaderUniform)
+        .addFunction("setShaderTexture", &Water::setShaderTexture)
+        .addFunction("getShaderTexture", &Water::getShaderTexture)
         .addFunction("getHeight", &Water::getHeight)
         .addFunction("getNormal", &Water::getNormal)
         .addFunction("getWaterComponent", &Water::getComponent<WaterComponent>)
@@ -584,19 +587,30 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("shadowsBillboard", &Mesh::isShadowsBillboard, &Mesh::setShadowsBillboard)
         .addProperty("transparent", &Mesh::isTransparent, &Mesh::setTransparent)
         .addProperty("autoTransparency", &Mesh::isAutoTransparency, &Mesh::setAutoTransparency)
-        .addProperty("customShader", &Mesh::getCustomShader, &Mesh::setCustomShader)
-        .addProperty("customDepthShader", &Mesh::getCustomDepthShader, &Mesh::setCustomDepthShader)
-        .addProperty("vertexOffsetShader", &Mesh::getVertexOffsetShader, &Mesh::setVertexOffsetShader)
+        .addProperty("shader", (std::string(Mesh::*)()const)&Mesh::getShader, (void(Mesh::*)(const std::string&))&Mesh::setShader)
+        .addFunction("setShader",
+            luabridge::overload<const std::string&>(&Mesh::setShader),
+            luabridge::overload<unsigned int, const std::string&>(&Mesh::setShader))
+        .addFunction("getShader",
+            luabridge::overload<>(&Mesh::getShader),
+            luabridge::overload<unsigned int>(&Mesh::getShader))
         .addProperty("vertexOffsetMax", &Mesh::getVertexOffsetMax, &Mesh::setVertexOffsetMax)
-        .addProperty("coverageShader", &Mesh::getCoverageShader, &Mesh::setCoverageShader)
-        .addProperty("coverageShadows", &Mesh::isCoverageShadows, &Mesh::setCoverageShadows)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Mesh::setShaderUniform),
             luabridge::overload<const std::string&, const Vector2&>(&Mesh::setShaderUniform),
-            luabridge::overload<const std::string&, float>(&Mesh::setShaderUniform))
-        .addFunction("getShaderUniform", &Mesh::getShaderUniform)
+            luabridge::overload<const std::string&, float>(&Mesh::setShaderUniform),
+            luabridge::overload<unsigned int, const std::string&, const Vector4&>(&Mesh::setShaderUniform))
+        .addFunction("getShaderUniform",
+            luabridge::overload<const std::string&>(&Mesh::getShaderUniform),
+            luabridge::overload<unsigned int, const std::string&>(&Mesh::getShaderUniform))
         .addFunction("removeShaderUniform", &Mesh::removeShaderUniform)
+        .addFunction("setShaderTexture",
+            luabridge::overload<const std::string&, const Texture&>(&Mesh::setShaderTexture),
+            luabridge::overload<unsigned int, const std::string&, const Texture&>(&Mesh::setShaderTexture))
+        .addFunction("getShaderTexture",
+            luabridge::overload<const std::string&>(&Mesh::getShaderTexture),
+            luabridge::overload<unsigned int, const std::string&>(&Mesh::getShaderTexture))
         .addFunction("setAsMirror",
             luabridge::overload<>(&Mesh::setAsMirror),
             luabridge::overload<Vector3>(&Mesh::setAsMirror))
@@ -633,6 +647,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("removeInstance", &Mesh::removeInstance)
         .addFunction("isInstanceVisible", &Mesh::isInstanceVisible)
         .addFunction("setInstanceVisible", &Mesh::setInstanceVisible)
+        .addFunction("getInstanceCustom", &Mesh::getInstanceCustom)
+        .addFunction("setInstanceCustom", &Mesh::setInstanceCustom)
         .addFunction("updateInstances", &Mesh::updateInstances)
         .addFunction("getNumInstances", &Mesh::getNumInstances)
         .addFunction("clearInstances", &Mesh::clearInstances)
@@ -850,7 +866,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<Framebuffer*>(&Points::setTexture))
         .addProperty("transparent", &Points::isTransparent, &Points::setTransparent)
         .addProperty("autoTransparency", &Points::isAutoTransparency, &Points::setAutoTransparency)
-        .addProperty("customShader", &Points::getCustomShader, &Points::setCustomShader)
+        .addProperty("shader", &Points::getShader, &Points::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Points::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Points::setShaderUniform),
@@ -858,6 +874,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Points::setShaderUniform))
         .addFunction("getShaderUniform", &Points::getShaderUniform)
         .addFunction("removeShaderUniform", &Points::removeShaderUniform)
+        .addFunction("setShaderTexture", &Points::setShaderTexture)
+        .addFunction("getShaderTexture", &Points::getShaderTexture)
         .addFunction("getPointsComponent", &Points::getComponent<PointsComponent>)
         .endClass();
 
@@ -883,7 +901,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("updateLines", &Lines::updateLines)
         .addFunction("getNumLines", &Lines::getNumLines)
         .addFunction("clearLines", &Lines::clearLines)
-        .addProperty("customShader", &Lines::getCustomShader, &Lines::setCustomShader)
+        .addProperty("shader", &Lines::getShader, &Lines::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Lines::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Lines::setShaderUniform),
@@ -891,6 +909,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Lines::setShaderUniform))
         .addFunction("getShaderUniform", &Lines::getShaderUniform)
         .addFunction("removeShaderUniform", &Lines::removeShaderUniform)
+        .addFunction("setShaderTexture", &Lines::setShaderTexture)
+        .addFunction("getShaderTexture", &Lines::getShaderTexture)
         .addFunction("getLinesComponent", &Lines::getComponent<LinesComponent>)
         .endClass();
 
@@ -990,7 +1010,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("flipY", &Polygon::isFlipY, &Polygon::setFlipY)
         .addFunction("getAABB", &Polygon::getAABB)
         .addFunction("getWorldAABB", &Polygon::getWorldAABB)
-        .addProperty("customShader", &Polygon::getCustomShader, &Polygon::setCustomShader)
+        .addProperty("shader", &Polygon::getShader, &Polygon::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Polygon::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Polygon::setShaderUniform),
@@ -998,6 +1018,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Polygon::setShaderUniform))
         .addFunction("getShaderUniform", &Polygon::getShaderUniform)
         .addFunction("removeShaderUniform", &Polygon::removeShaderUniform)
+        .addFunction("setShaderTexture", &Polygon::setShaderTexture)
+        .addFunction("getShaderTexture", &Polygon::getShaderTexture)
         .addFunction("getPolygonComponent", &Polygon::getComponent<PolygonComponent>)
         .addFunction("getUIComponent", &Polygon::getComponent<UIComponent>)
         .endClass();
@@ -1032,7 +1054,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getCharPosition", &Text::getCharPosition)
         .addFunction("getCharWidth", &Text::getCharWidth)
         .addProperty("flipY", &Text::isFlipY, &Text::setFlipY)
-        .addProperty("customShader", &Text::getCustomShader, &Text::setCustomShader)
+        .addProperty("shader", &Text::getShader, &Text::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Text::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Text::setShaderUniform),
@@ -1040,6 +1062,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Text::setShaderUniform))
         .addFunction("getShaderUniform", &Text::getShaderUniform)
         .addFunction("removeShaderUniform", &Text::removeShaderUniform)
+        .addFunction("setShaderTexture", &Text::setShaderTexture)
+        .addFunction("getShaderTexture", &Text::getShaderTexture)
         .addProperty("pivotBaseline", &Text::isPivotBaseline, &Text::setPivotBaseline)
         .addProperty("pivotCentered", &Text::isPivotCentered, &Text::setPivotCentered)
         .addFunction("getAABB", &Text::getAABB)
@@ -1072,7 +1096,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getAABB", &Image::getAABB)
         .addFunction("getWorldAABB", &Image::getWorldAABB)
         .addFunction("getUIComponent", &Image::getComponent<UIComponent>)
-        .addProperty("customShader", &Image::getCustomShader, &Image::setCustomShader)
+        .addProperty("shader", &Image::getShader, &Image::setShader)
         .addFunction("setShaderUniform",
             luabridge::overload<const std::string&, const Vector4&>(&Image::setShaderUniform),
             luabridge::overload<const std::string&, const Vector3&>(&Image::setShaderUniform),
@@ -1080,6 +1104,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
             luabridge::overload<const std::string&, float>(&Image::setShaderUniform))
         .addFunction("getShaderUniform", &Image::getShaderUniform)
         .addFunction("removeShaderUniform", &Image::removeShaderUniform)
+        .addFunction("setShaderTexture", &Image::setShaderTexture)
+        .addFunction("getShaderTexture", &Image::getShaderTexture)
         .addFunction("getImageComponent", &Image::getComponent<ImageComponent>)
         .endClass();
 
