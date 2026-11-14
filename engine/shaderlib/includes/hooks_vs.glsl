@@ -11,12 +11,12 @@ struct VertexContext {
     vec2 uv2;
     vec4 color;           // vertex color times instance color, 1 without either
     vec4 instance;        // the instance's custom value, 0 without instancing
-    vec3 objectPosition;  // the object's origin in world space, an instance's own with instancing
+    vec3 objectPosition;  // the object's world origin, an instance's own if instanced
     vec3 objectScale;
 };
 
 #ifdef HOOK_NORMAL
-    // skinned and instanced, without morph targets, so that every pass agrees
+    // skinned and instanced, no morphs, the same in every pass
     vec3 getHookNormal(mat4 boneTransform){
         vec3 normal = getSkinNormal(a_normal, boneTransform);
         #ifdef HAS_INSTANCING

@@ -1,4 +1,4 @@
-// The push of a vertex away from the scene's interaction point, in world units
+// The push of a vertex away from the interaction point
 #pragma scene vec3 Interaction.position "World position the meshes bend away from"
 #pragma scene float Interaction.radius = 0 [0, 20] "Reach of the push; 0 turns it off"
 vec3 interactionPush(vec3 localPosition, vec3 worldPosition, float strength, float height){

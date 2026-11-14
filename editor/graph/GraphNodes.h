@@ -11,7 +11,7 @@
 
 namespace doriax::editor {
 
-    // what differs between the kinds of graph, for the window and the tools that edit them all
+    // what differs between graph kinds
     class GraphNodes {
     public:
         // the type of a pin that orders what runs
@@ -24,7 +24,7 @@ namespace doriax::editor {
         static std::string getPinType(const GraphDocument& graph, const GraphNode& node, const NodePin& pin);
         static bool canLink(const GraphDocument& graph, const std::string& fromType, const std::string& toType);
         static bool isExecutionOutput(const GraphDocument& graph, int node, const std::string& pin);
-        // a link as its output takes it: execution leaves one way, a value input takes one link
+        // one link per execution output and per value input
         static void connect(GraphDocument& graph, int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
     };
 

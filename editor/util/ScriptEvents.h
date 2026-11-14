@@ -70,7 +70,7 @@ namespace doriax::editor {
 
         // "(x, y)", empty without parameters
         static std::string getParameterNames(const ScriptEvent& event);
-        // the event as Lua names it, and the line of init that makes a method handle it
+        // the Lua name of an event, and the init line that registers it
         static std::string getLuaName(const ScriptEvent& event);
         static std::string getLuaRegistration(const ScriptEvent& event, const std::string& method);
 

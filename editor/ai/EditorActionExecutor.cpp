@@ -1883,7 +1883,7 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
                 }
                 paths.push_back(assetPathFromAi(project, rel));
             }
-            // a cubemap takes one cross-layout image or its six faces; a shader's takes the six
+            // cubemaps: one cross image or six faces; shaders take six
             const bool cubeMap = (propertyName == "texture" &&
                 (component == ComponentType::SkyComponent || component == ComponentType::ReflectionProbeComponent)) ||
                 (propertyName.find("shaderTextures[") != std::string::npos && paths.size() == 6);
@@ -5202,7 +5202,7 @@ ActionResult EditorActionExecutor::generateShaders(const Json& arguments, const 
 
 namespace {
 
-// empty when the shader file is an engine one, or a .glsl or .shader graph of the project
+// empty for an engine file or a project .glsl or .shader
 std::string shaderFileError(Project* project, const std::string& shader) {
     if (ProjectUtils::isEngineShader(shader))
         return "";
@@ -5223,7 +5223,7 @@ std::string shaderFileError(Project* project, const std::string& shader) {
 } // namespace
 
 bool EditorActionExecutor::validateCustomShaderValue(const std::string& propertyName, const Json& args, std::string& error) const {
-    // a shader property takes one .glsl file, from the project or the engine
+    // shader properties take one .glsl, project or engine
     static const std::set<std::string> fileProperties = {
         "shader", "default_mesh_shader", "default_ui_shader", "default_sky_shader", "default_points_shader", "default_lines_shader", "default_water_shader"
     };
@@ -5260,7 +5260,7 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
             }
         }
         if (listed) continue;
-        // a texture is set through shaderTextures[name], or texture_name on a pass
+        // set via shaderTextures[name], or texture_name on a pass
         if (declaration.texture) {
             Json texture = {{"name", declaration.name}, {"texture", true},
                             {"type", declaration.textureType == TextureType::TEXTURE_CUBE ? "textureCube" : "texture2D"}};
@@ -5292,7 +5292,7 @@ void appendParameterMembers(Json& members, const ShaderEffectAnnotations& annota
     }
 }
 
-// the shader file a component or a mesh's material sets, empty for the scene default
+// the component's own shader file, empty for the scene's
 std::string ownShader(Scene* scene, Entity entity, ComponentType component, int submesh) {
     if (component == ComponentType::MeshComponent) {
         const MeshComponent* mesh = scene->findComponent<MeshComponent>(entity);
@@ -5727,7 +5727,7 @@ class GraphOperations {
 public:
     std::map<std::string, int> refs;
 
-    // the output node answers to output, in a function the first Function Output
+    // "output" is the output node, in a function its first one
     explicit GraphOperations(GraphDocument& graph): graph(graph), logic(graph.kind == "logic") {
         for (const GraphNode& node : graph.nodes)
             if (isSink(node) && !refs.count("output"))
@@ -5758,8 +5758,7 @@ public:
         layoutNotes();
     }
 
-    // nodes added without a position, a lane for each event: what it runs in a row,
-    // and the values a node reads below it, to its left
+    // places new logic nodes, a lane per event
     void layoutLogicNodes() {
         if (placed.empty())
             return;
@@ -5778,7 +5777,7 @@ public:
         std::map<int, int> rows;
         Vector2 origin;
         int deepest = 0;
-        // clear of the nodes that had their place, and of the ones just given theirs
+        // clear of placed nodes
         std::vector<Vector2> taken;
         for (const GraphNode& node : graph.nodes)
             if (!added(node.id))
@@ -5848,7 +5847,7 @@ public:
                 place(node, rows.size() < 6 ? (int)rows.size() : 0);
     }
 
-    // nodes added without a position, in columns by their links' distance from the outputs
+    // places new nodes in columns from the outputs
     void layoutNodes() {
         std::vector<const GraphNode*> sinks;
         for (const GraphNode& node : graph.nodes)
@@ -5908,7 +5907,7 @@ public:
         }
     }
 
-    // groups without a position frame what the call added, or the whole graph; comments go above it
+    // new groups frame what was added; comments go above
     void layoutNotes() {
         if (notes.empty())
             return;
@@ -6563,7 +6562,7 @@ ActionResult EditorActionExecutor::listGraphNodeTypes(const Json& arguments) {
     return okResult(std::to_string(list.size()) + " node types.", Json{{"node_types", list}, {"complete", detail}});
 }
 
-// the engine's classes give thousands of nodes, so they are listed by search or by class
+// thousands of nodes, listed by search or class
 ActionResult EditorActionExecutor::listLogicNodeTypes(const std::string& category, const std::string& search) {
     constexpr size_t limit = 120;
     const bool detail = !search.empty() || !category.empty();
@@ -6596,7 +6595,7 @@ ActionResult EditorActionExecutor::listLogicNodeTypes(const std::string& categor
             if (!all)
                 continue;
         }
-        // a search is cut short; a class, or the graph's own nodes, is given whole
+        // a search is cut short, a class listed whole
         if (!search.empty() && ++matched > limit)
             continue;
         if (detail) {

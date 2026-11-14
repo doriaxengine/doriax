@@ -1575,7 +1575,7 @@ std::string editor::Factory::createScriptComponent(int indentSpaces, EntityRegis
         std::string idx = std::to_string(i);
         code << ind << "script.scripts.push_back(ScriptEntry());\n";
         code << ind << "script.scripts[" << idx << "].type = " << formatScriptType(script.scripts[i].type) << ";\n";
-        // a logic graph ships as the script written from it, under the graph's name
+        // a logic graph ships as its script
         std::string scriptPath = script.scripts[i].path;
         if (Util::isLogicGraphFile(scriptPath))
             scriptPath = scriptPath.substr(0, scriptPath.rfind('.')) + ".lua";

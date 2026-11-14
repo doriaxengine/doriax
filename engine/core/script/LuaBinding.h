@@ -59,7 +59,7 @@ namespace doriax {
         static bool pushEntityHandleByType(lua_State* L, Scene* scene, Entity entity, const std::string& ptrTypeName);
 
     public:
-        // where a script entry's file is read from, when not under lua://; empty for the usual place
+        // maps a script path to a file, empty for the usual one
         static void setScriptPathResolver(std::function<std::string(const std::string&)> resolver);
 
         LuaBinding();

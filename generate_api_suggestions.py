@@ -738,7 +738,7 @@ def generate_header(symbols, output_path):
     lines.append('}')
     lines.append('')
 
-    # ── Events, which scripts register for rather than read, as "Class.name" ──
+    # ── Events scripts register for, as "Class.name" ─────────────────────
     lines.append('inline std::unordered_set<std::string> getEngineEventProperties() {')
     lines.append('    return {')
     for name in sorted(set(f'{s.parent}.{s.name}' for s in events)):

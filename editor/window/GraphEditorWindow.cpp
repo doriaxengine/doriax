@@ -38,7 +38,7 @@ namespace {
 
     using namespace doriax::editor;
 
-    // the scene builds a graph this long after its last edit, so a drag builds once
+    // delay before the scene builds an edit, so a drag builds once
     constexpr double previewDelay = 0.35;
     constexpr float gridSnap = 10.0f;
 
@@ -66,7 +66,7 @@ namespace {
     }
 
     ImU32 logicNodeColor(const NodeType& type) {
-        // the engine's classes, which may be named as a category of the graph's own
+        // engine classes, which may share a category name
         if (LogicNodes::isEngineType(type.id))
             return IM_COL32(45, 95, 135, 255);
         const std::string& category = type.category;
@@ -169,8 +169,7 @@ namespace {
         return true;
     }
 
-    // the next row: its name, then the hidden label of the field that follows, which fills
-    // the row but for what trails it
+    // the next row: name, then the field's hidden label
     const char* field(const std::string& label, float trailing = 0.0f) {
         static std::string id;
         ImGui::TableNextRow();
@@ -229,7 +228,7 @@ namespace {
         return document.read(text.str(), error) && document.kind == "shader" && document.type == "function";
     }
 
-    // the function graphs of a project, by path, past hidden folders such as .doriax
+    // a project's function graphs, skipping hidden folders
     std::vector<std::string> findFunctionGraphs(const std::filesystem::path& root) {
         std::vector<std::string> found;
         std::error_code ec;
@@ -247,7 +246,7 @@ namespace {
         return found;
     }
 
-    // where the preview of the selected node builds from, beside the graph it shows
+    // the node preview's source, beside the graph
     std::string nodePreviewKey(const std::filesystem::path& graph) {
         return graph.generic_string() + ".node.shader";
     }
@@ -467,7 +466,7 @@ void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::s
     // a script is written when the graph is saved
     if (GraphNodes::isLogic(instance.document))
         return;
-    // the scene builds what the window shows, saved or not, and keeps the last that compiled
+    // the scene builds what the window shows, if it compiles
     if (!instance.compiled.success)
         return;
     if (text == instance.savedText)
@@ -828,7 +827,7 @@ editor::CanvasModel editor::GraphEditorWindow::buildModel(const Instance& instan
         model.nodes.push_back(item);
     }
 
-    // a link whose pin is gone, after a signature or a function changed, is not drawn
+    // links to pins that are gone are not drawn
     auto hasPin = [&](int id, const std::string& pin, bool output) {
         for (const CanvasNode& node : model.nodes) {
             if (node.id != id)
@@ -955,7 +954,7 @@ void editor::GraphEditorWindow::paste(Instance& instance, const std::string& tex
         low = Vector2(std::min(low.x, group.rect.x), std::min(low.y, group.rect.y));
     const Vector2 offset = snapped(position) - low;
 
-    // a parameter is matched by name, and added when this graph has none by that name
+    // parameters match by name, added when missing
     std::map<int, int> parameters;
     auto parameterFor = [&](int id) -> int {
         auto known = parameters.find(id);
@@ -1193,7 +1192,7 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
     // what fits this graph, and the dropped link when there is one
     const GraphDocument& document = instance.document;
     const bool logic = GraphNodes::isLogic(document);
-    // the engine's classes apart: some are named as a category of the graph's own, as Input
+    // engine classes apart, some share a category name
     std::map<std::string, std::vector<const NodeType*>> categories;
     std::map<std::string, std::vector<const NodeType*>> engineCategories;
     for (const NodeType* type : GraphNodes::getRegistry(document).getTypes()) {
@@ -1262,8 +1261,7 @@ void editor::GraphEditorWindow::drawAddPopup(Instance& instance) {
     };
     ImGui::BeginChild("##nodes", Theme::dpi(ImVec2(logic ? 340.0f : 260.0f, 320.0f)));
     if (!words.empty()) {
-        // the names that start with what was typed come first, the short ones before the long,
-        // and a graph's own node before one of an engine class with its name
+        // names starting with the text first, short before long
         struct Found {
             int rank;
             size_t length;
@@ -1357,7 +1355,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
         ImGui::EndPopup();
     }
 
-    // each one folds like a script in Properties, so several can be open and set side by side
+    // each folds like a script in Properties
     int removed = 0;
     int edited = 0;
     for (GraphParameter& item : document.parameters) {
@@ -1753,7 +1751,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
 }
 
 void editor::GraphEditorWindow::drawPreview(Instance& instance) {
-    // the scene shows the other types where they draw; a function, its first output on a mesh
+    // other types show in the scene; functions on a mesh
     const bool mesh = instance.document.type == "mesh" || (instance.document.type == "function" && instance.compiled.type == "mesh");
     if (!mesh || !ImGui::CollapsingHeader("Preview", ImGuiTreeNodeFlags_DefaultOpen))
         return;
@@ -1822,7 +1820,7 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     } else {
         Widgets::image(Backend::getImGuiTexture(preview.getTexture().getRender()), ImVec2(width, width));
     }
-    // the shapes as the scene toolbar shows its modes: the one in use is disabled
+    // shape buttons, the one in use disabled
     static const struct { const char* label; ShaderPreviewRender::ShapeType shape; const char* tooltip; } shapes[] = {
         {ICON_FA_CIRCLE "##sphere", ShaderPreviewRender::ShapeType::SPHERE, "Sphere"},
         {ICON_FA_CUBE "##cube", ShaderPreviewRender::ShapeType::CUBE, "Cube"},
@@ -2056,7 +2054,7 @@ void editor::GraphEditorWindow::show() {
         if (!instance.compiled.functions.empty() && instance.compiledGeneration != ShaderBuilder::getCustomShaderGeneration())
             compile(instance);
 
-        // a change on disk is taken when nothing here is unsaved, looked for once a second
+        // disk changes, checked once a second, when nothing is unsaved
         std::error_code ec;
         const bool check = ImGui::GetTime() >= instance.checkAt;
         if (check)

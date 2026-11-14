@@ -15,21 +15,19 @@ namespace doriax::editor {
 
     // code holds a shader file, as one written by hand
     struct ShaderGraphResult : GraphResult {
-        std::string type;                        // what the code fills, as mesh; a function's preview names its own
+        std::string type;                        // what the code fills, as mesh, or a function preview's type
         std::vector<std::string> functions;      // the function graphs its Subgraph nodes read
         // pin numbers a live compile left out, by parameter
         std::vector<std::pair<std::string, Vector4>> liveValues;
     };
 
-    // reads the graph file a Subgraph node names, by its path in the project
+    // reads a Subgraph's graph file by project path
     using ShaderGraphReader = std::function<bool(const std::string& path, std::string& text)>;
 
     // a .shader graph to the .glsl shader file it stands for
     class ShaderGraphCompiler {
     public:
-        // source names the graph in the first line of the code; a function graph compiles to a
-        // preview of its outputs, drawn in the first shader type all its nodes fit
-        // live: collection for pin numbers, set without a rebuild
+        // source names the graph; live is the pin numbers' collection
         static ShaderGraphResult compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader = nullptr,
                                          const std::string& live = "");
 
@@ -37,12 +35,10 @@ namespace doriax::editor {
         static std::string getLiveCollection(const std::string& source);
         static bool isLiveCollection(const std::string& collection);
 
-        // the pins of a Subgraph node calling this function, in the order its nodes stand
+        // the pins of a Subgraph calling this function
         static bool getFunctionPins(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::string* error = nullptr);
 
-        // a mesh graph that draws one node's first output in place of what it draws, as Final
-        // Color or, from nodes that work per vertex, Vertex Offset; false for a node with none
-        // reader reads called functions to pick the output
+        // a mesh graph drawing one node's first output; false for none
         static bool previewNode(const GraphDocument& graph, int node, GraphDocument& preview, const ShaderGraphReader& reader = nullptr);
     };
 

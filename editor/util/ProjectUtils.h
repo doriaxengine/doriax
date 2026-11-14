@@ -103,33 +103,31 @@ public:
     // Fills a Texture with the editor built-in default skybox cubemap.
     static void setDefaultSkyTexture(Texture& outTexture);
 
-    // a starting shader file of the type, and the same written under shaders/; its project path, empty on failure
+    // a template shader file, and one written under shaders/
     static std::string getShaderTemplate(ShaderType shaderType);
     static std::string writeShaderTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
-    // a shader graph with only the type's output node, and the same written under shaders/
+    // a shader graph template, and one written under shaders/
     static std::string getShaderGraphTemplate(ShaderType shaderType);
     static std::string writeShaderGraphTemplate(const std::filesystem::path& projectRoot, const std::string& desiredName, ShaderType shaderType);
-    // a function graph passing one value through, for Subgraph nodes to call
+    // a function graph passing one value through
     static std::string getShaderFunctionTemplate();
     // a script graph with the two events most scripts start from
     static std::string getLogicGraphTemplate();
-    // where the Lua script of a logic graph is kept, out of the project's own files; empty
-    // for a graph outside the Lua directory
+    // a logic graph's hidden script; empty outside the Lua directory
     static std::filesystem::path getLogicScriptPath(const Project* project, const std::filesystem::path& graph);
     static bool writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const std::string& code, std::string& error);
-    // the script of a graph, or of every graph in a folder, that was deleted or moved
+    // the script of a deleted or moved graph, or folder
     static void removeLogicScript(const Project* project, const std::filesystem::path& graph);
-    // the script of a graph, written again when the graph or the compiler changed; empty when
-    // there is none to run. What stops it goes to error, or once to the log
+    // writes the script when the graph or compiler changed; empty when none
     static std::filesystem::path buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error = nullptr);
     // a project copy of an engine shader file
     static std::string copyEngineShaderToProject(const std::filesystem::path& projectRoot, const std::string& enginePath, const std::string& desiredName);
-    // the engine's shader files of the type, under shaders/; a project file of the same path wins
+    // the engine's shader files of a type; project files win
     static std::vector<std::string> getEngineShaders(ShaderType shaderType);
     static bool isEngineShader(const std::string& path);
     // a shader file from the project, else the engine library
     static bool readShaderSource(const std::filesystem::path& projectRoot, const std::string& path, std::string& source);
-    // the shader file a component draws with, its own or the scene default; a mesh's of one submesh
+    // the shader a component draws with, its own or the scene's
     static std::string getComponentShader(Scene* scene, ComponentType cpType, ShaderType shaderType, Entity entity, int submesh = -1);
 
     // Builds a MultiPropertyCmd that removes tile at tileIndex from a TilemapComponent.

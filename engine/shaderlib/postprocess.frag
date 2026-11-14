@@ -1,7 +1,6 @@
 #version 450
 
-// Post-process pass: a passthrough of the scene color, or the getColor() of the pass's
-// shader file. The engine binds only the scene textures the file's calls read.
+// Post-process pass: a passthrough, or the shader file's getColor
 
 in vec2 v_texcoord;
 out vec4 frag_color;

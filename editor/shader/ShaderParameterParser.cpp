@@ -580,7 +580,7 @@ std::string editor::ShaderParameterParser::generateVaryings(ShaderStageType stag
     for (const auto& [type, name] : varyings)
         code << " " << type << " " << name << ";";
     code << " };\n";
-    // a pass whose fragment hooks do not run still compiles getVaryings, and passes nothing
+    // passes without fragment hooks still compile getVaryings
     code << "#ifdef USE_VARYINGS\n";
     for (const auto& [type, name] : varyings)
         code << (vertex ? "out " : "in ") << type << " v_var_" << name << ";\n";

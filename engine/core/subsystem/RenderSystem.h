@@ -90,7 +90,7 @@ namespace doriax{
 		Vector4 density_start_end;
 	} fs_fog_t;
 
-	// every shadow of the frame; the point lights last, so a variant without them takes the start
+	// all shadows of the frame, point lights last
 	typedef struct fs_shadows_t {
 	    Matrix4 lightViewProjectionMatrix[MAX_SHADOW_ATLAS_SLOTS];
 	    Vector4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y
@@ -337,7 +337,7 @@ namespace doriax{
 		bool hasFog;
 		bool hasIBL;
 		bool hasReflectionProbes;
-		// a water or a mesh samples the scene depth, so meshes need their depth shaders
+		// a water or mesh samples the scene depth
 		bool hasWaterDepth;
 		// meshes whose shader files sample the opaque scene
 		std::set<Entity> sceneColorReaders;

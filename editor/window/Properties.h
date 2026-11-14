@@ -295,15 +295,15 @@ namespace doriax::editor{
         void setParticleBursts(ComponentType cpType, SceneProject* sceneProject, Entity entity, const std::vector<ParticleBurst>& bursts);
         void setParticleColorGradient(ComponentType cpType, SceneProject* sceneProject, Entity entity, const ParticleColorGradient& gradient);
         void drawParticleFrameList(ComponentType cpType, const std::string& propertyId, const std::string& tableId, SceneProject* sceneProject, const std::vector<Entity>& entities);
-        // "Shaders" section of a component: its shader file, a mesh's longest vertex offset
+        // a component's shader file and vertex offset limit
         void drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities);
         // a material's shader file
         void drawMaterialShaderRow(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);
-        // a shader file slot: new from a template, the engine's ones, pick, copy, open, clear
+        // a shader file slot with its buttons
         void drawShaderFileRow(ShaderType shaderType, const std::string& current, const std::string& defaultName,
                                const std::function<void(const std::string&)>& setShader, const std::string& idSuffix,
                                const std::string& inheritedShader = std::string());
-        // the texture parameters of a shader file, at prefix + "shaderTextures[name]"
+        // texture parameters, at prefix + "shaderTextures[name]"
         void drawShaderTextureRows(ComponentType cpType, SceneProject* sceneProject, const std::vector<Entity>& entities,
                                    const ShaderEffectAnnotations& annotations, const std::string& prefix, const std::function<void()>& onChanged);
         enum class ShaderUniformEdit { NONE, CHANGED, RESET };
@@ -323,7 +323,7 @@ namespace doriax::editor{
         // the #pragma param rows of one shader file and the shared values it reads; false when empty
         bool drawShaderParameters(const std::string& title, uint32_t sceneId, const ShaderEffectAnnotations& annotations, const ShaderUniformValues& values,
                                   const ShaderUniformValues* inherited, const std::function<Command*(const ShaderUniformValues&)>& makeCmd);
-        // the textures and parameters of the component's shader file, stored by name in shaderUniforms
+        // the component shader's textures and parameters
         void drawComponentShaderParameters(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, Entity entity);
         // and its parameters
         void drawMaterialShaderParameters(SceneProject* sceneProject, const std::vector<Entity>& entities, unsigned int submesh, const std::function<void()>& onChanged);

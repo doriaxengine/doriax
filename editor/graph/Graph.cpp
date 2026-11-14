@@ -41,7 +41,7 @@ namespace {
         return value;
     }
 
-    // whether a text would be read back as a number, so it is written quoted
+    // text that reads as a number is written quoted
     bool readsAsNumber(const std::string& text) {
         float number = 0.0f;
         return YAML::convert<float>::decode(YAML::Node(text), number);

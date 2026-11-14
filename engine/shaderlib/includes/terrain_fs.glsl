@@ -2,7 +2,7 @@ uniform texture2D u_blendMap;
 uniform texture2D u_blendMap1;
 uniform texture2D u_blendMap2;
 uniform texture2DArray u_terrainDetail;
-// the three blend maps share a sampler, the terrain has no slot to spare
+// the blend maps share a sampler
 uniform sampler u_blendMap_smp;
 uniform sampler u_terrainDetail_smp;
 

@@ -24,7 +24,7 @@ uniform u_fs_skyParams {
         vec2 pixel;
     };
 
-    // the fragment stage of the shader file, mapped in by the shader builder
+    // the shader file's fragment stage
     #include "shader_hooks_fs.glsl"
 #endif
 

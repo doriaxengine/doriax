@@ -54,7 +54,7 @@ namespace doriax::editor {
         std::set<std::string> contextReads;
         // and of a surface, or set: getSurface both reads and writes it
         std::set<std::string> surfaceReads;
-        // scene inputs they sample: sceneColor, sceneDepth, sceneNormal, sceneOcclusion
+        // sceneColor, sceneDepth, sceneNormal, sceneOcclusion
         std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
@@ -63,7 +63,7 @@ namespace doriax::editor {
         bool unlit = false;
         // "#pragma varying vec3 tipColor", type and name
         std::vector<std::pair<std::string, std::string>> varyings;
-        // "#pragma surface_replaces baseColor alpha", fields the surface hook sets from scratch
+        // "#pragma surface_replaces baseColor alpha"
         std::set<std::string> surfaceReplaces;
         // the code reads Engine.time or Engine.resolution
         bool engineTime = false;
@@ -92,7 +92,7 @@ namespace doriax::editor {
 
         // the other stage's section blanked
         static std::string getStageSource(const std::string& source, ShaderStageType stage);
-        // "#pragma stage" lines as #if on SHADER_STAGE_VERTEX and SHADER_STAGE_FRAGMENT
+        // "#pragma stage" lines as #if on the stage defines
         static std::string getStageConditions(const std::string& source);
 
         static std::string getTypeName(ShaderUniformType type);
@@ -101,9 +101,9 @@ namespace doriax::editor {
         // member of the generated block: p_name, s_Collection_name, v_Collection_name
         static std::string getMemberName(const ShaderParameterDeclaration& declaration);
 
-        // the "#pragma shader" name of a program; the mesh passes share "mesh", the underwater fade "water"
+        // the "#pragma shader" name: mesh passes share "mesh"
         static std::string getShaderFileType(ShaderType shaderType);
-        // shader_params_vs.glsl or shader_params_fs.glsl, with the context the hooks read
+        // shader_params_vs/fs.glsl with the hooks' context
         static std::string generateHeader(ShaderStageType stage, const ShaderEffectAnnotations& annotations, uint32_t context,
                                           std::vector<ShaderParameterInfo>& parameters, std::vector<ShaderTextureInfo>& textures);
         // the Varyings struct and its outputs or inputs

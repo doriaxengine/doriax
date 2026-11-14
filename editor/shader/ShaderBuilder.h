@@ -116,22 +116,21 @@ namespace doriax::editor {
         // Drops cached builds and dependency snapshots for all custom variants so the
         // next get() recompiles. Called after source mutations and project switches.
         static void invalidateCustomShaders();
-        // the same for one shader file or graph, which nothing else includes, and the graphs
-        // whose Subgraph nodes call it; returns all of them
+        // one shader file or graph and its callers; returns them
         static std::vector<std::string> invalidateCustomShader(const std::string& shader);
-        // counts the calls above, for renders outside the project's scenes to reload
+        // bumped by the calls above
         static uint32_t getCustomShaderGeneration();
 
-        // an open graph's edits, built in place of its file until saved or closed
+        // an open graph's edits, built until saved or closed
         static void setGraphSource(const std::string& shader, const std::string& text);
         static void clearGraphSource(const std::string& shader);
         // open graphs build pin numbers as parameters; true when changed
         static bool setGraphLive(const std::string& shader, bool live);
         // writes a graph's code to the generated files
         static void writeGraphCode(Project* project, const std::string& shader, const std::string& code);
-        // a graph as the editor holds it, edited or saved, which Subgraph nodes read
+        // a graph as the editor holds it, edited or saved
         static bool readGraphSource(Project* project, const std::string& path, std::string& text);
-        // a function graph's pins as Subgraph nodes show them, as edited; false when it is none
+        // a function graph's pins, as edited; false for no function
         static bool getFunctionPins(Project* project, const std::string& path, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs);
 
         static void requestShutdown();

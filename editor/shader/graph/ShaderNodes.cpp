@@ -119,7 +119,7 @@ bool editor::ShaderNodes::canLink(const std::string& fromType, const std::string
     const bool toTexture = toType == "texture2D" || toType == "textureCube";
     if (fromTexture || toTexture || fromType == "bool" || toType == "bool")
         return fromType == toType;
-    // a vector feeds no scalar, and a vec2 no longer vector; dynamic pins settle on what they get
+    // no vector into a scalar, no vec2 into a longer vector
     auto size = [](const std::string& type) {
         return type == "vec2" ? 2 : (type == "vec3" ? 3 : (type == "vec4" || type == "color" ? 4 : (type == "dynamic" || type == "parameter" || type == "mask" ? 0 : 1)));
     };
@@ -818,7 +818,7 @@ vec2 graphParallax(texture2D graphTexture, sampler graphSampler, vec2 graphUV, v
     parallax.stage = ShaderNodeStage::FRAGMENT;
     parallax.shaderTypes = {"mesh"};
 
-    // tangent space runs along the UV set's u and v and the normal; view space is the camera's, z toward the eye
+    // tangent space: u, v and the normal; view space: z to the eye
     ShaderNodeType& transform = add("vector/transform", "Transform", "Vector", "A direction taken from one space to another: world, tangent or view.",
         {in("in", "In", "vec3", std::vector<float>{0.0f, 0.0f, 1.0f})}, {out("out", "Out", "vec3")}, {"{in}"});
     transform.settings = {choice("spaces", "Spaces", {"tangentToWorld", "worldToTangent", "worldToView", "viewToWorld", "tangentToView", "viewToTangent"})};

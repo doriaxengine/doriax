@@ -560,7 +560,7 @@ void ScriptCreateDialog::show() {
     std::string baseName = m_baseNameBuffer;
     bool hasBase = !baseName.empty();
     std::string name = sanitizeClassName(baseName);
-    // a Lua module or a graph is named in Lua, which keeps other words for itself
+    // Lua keywords cannot name a module or graph
     if (isLua && LogicNodes::isLuaKeyword(name))
         name += "Script";
 

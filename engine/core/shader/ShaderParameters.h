@@ -72,7 +72,7 @@ namespace doriax{
         float time = 0.0f;
         ShaderPass pass = ShaderPass::COLOR;
         Matrix4 viewMatrix;
-        // the projection's z and w terms of view depth, then their constants; 0 where depth offsets do not apply
+        // projection terms of view depth; 0 without depth offsets
         Vector4 depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         // drawn with the y-flipped matrix of GL offscreen targets
         bool flipY = false;

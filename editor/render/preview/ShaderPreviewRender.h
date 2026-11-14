@@ -13,7 +13,7 @@
 
 namespace doriax::editor{
 
-    // a lit shape drawn with a mesh shader file, as the graph window shows it
+    // a lit shape with a mesh shader, for the graph window
     class ShaderPreviewRender{
     public:
         enum class ShapeType{

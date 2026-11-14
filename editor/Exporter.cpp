@@ -1998,7 +1998,7 @@ bool editor::Exporter::copyLua() try {
         // Skip C++ source/header files; registered scripts ship via copyCppScripts
         if (!entry.is_regular_file() || isCppSourceFile(entry.path())) continue;
 
-        // A logic graph ships as the script written from it, in the graph's place
+        // a logic graph ships as its script
         if (Util::isLogicGraphFile(entry.path().string())) {
             std::string problem;
             const fs::path script = ProjectUtils::buildLogicScript(project, entry.path(), &problem);

@@ -12,7 +12,7 @@
 
 namespace doriax::editor {
 
-    // a constant, a default or a node setting: numbers, or a word such as white
+    // a pin value or setting: numbers, or a word like white
     struct GraphValue {
         std::vector<float> numbers;
         std::string text;
@@ -23,7 +23,7 @@ namespace doriax::editor {
         GraphValue(const char* word): text(word) {}
         GraphValue(std::string word): text(std::move(word)) {}
 
-        // the shortest text that reads back as the same float, with a point whatever the locale
+        // shortest text that reads back the same, any locale
         static std::string formatNumber(float value);
         // a whole text as a number; false when it is anything else
         static bool parseNumber(const std::string& text, float& value);
@@ -86,7 +86,7 @@ namespace doriax::editor {
         int version = formatVersion;
         std::string kind;            // shader or logic
         std::string type;            // what it fills, as mesh; script for a logic graph
-        int nextId = 1;              // ids are shared by parameters, nodes, groups and comments, never reused
+        int nextId = 1;              // one id space for every item, never reused
         std::vector<GraphParameter> parameters;
         std::vector<GraphNode> nodes;
         std::vector<GraphLink> links;
@@ -106,7 +106,7 @@ namespace doriax::editor {
         void moveNodes(const std::vector<int>& ids, const Vector2& delta);
         // an input takes one link, so this replaces the one there
         void connect(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
-        // execution leaves an output one way, and enters an input from any number
+        // one link per execution output, many per input
         void connectExecution(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
         void disconnect(int toNode, const std::string& toPin);
         void disconnect(int fromNode, const std::string& fromPin, int toNode, const std::string& toPin);
@@ -120,7 +120,7 @@ namespace doriax::editor {
         const GraphParameter* findParameter(const std::string& name) const;
         // what feeds an input, null when nothing does
         const GraphLink* findLinkInto(int node, const std::string& pin) const;
-        // whether a node's outputs reach another, so a link back would close a loop
+        // whether from reaches to, so a link back would loop
         bool feeds(int from, int to) const;
     };
 

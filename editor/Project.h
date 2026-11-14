@@ -575,7 +575,7 @@ namespace doriax::editor{
         // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
         // and cannot compile, so a variant the editor never draws with is missing there.
         void buildStandaloneShaderCache();
-        // flags what draws with the shader for a reload, or with any shader file when null
+        // reloads what uses the shader, or any shader file when null
         void flagCustomShaderUsers(const std::string* shader);
 
     public:
@@ -677,7 +677,7 @@ namespace doriax::editor{
         // False for files the assets root only reaches with "..", which the runtime cannot resolve.
         bool isInsideAssetsPath(const std::filesystem::path& path) const;
         std::filesystem::path resolveLuaPath(const std::filesystem::path& luaRelative) const;
-        // the Lua a script entry runs: its file, or the script written from a logic graph
+        // a script entry's Lua file, or its logic graph's script
         std::filesystem::path resolveLuaSource(const std::filesystem::path& luaRelative) const;
         std::filesystem::path normalizeToLuaRelative(const std::filesystem::path& path) const;
 
@@ -859,7 +859,7 @@ namespace doriax::editor{
         // Flushes the compiled shader file caches and flags what uses one for reload,
         // so editing a shader file updates the viewport.
         void invalidateCustomShaders();
-        // the same for one shader file or graph that nothing includes, the other shaders kept
+        // the same for one shader file or graph and its callers
         void invalidateCustomShader(const std::string& shader);
 
         SceneProject* getScene(uint32_t sceneId);

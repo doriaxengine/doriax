@@ -1,5 +1,4 @@
-// Fragment hooks of water: getColor on the surface, getUnderwaterColor on the fade a camera
-// below it sees. One shader file fills both, so both programs know both contexts.
+// Fragment hooks of water: getColor and getUnderwaterColor
 
 struct FragmentContext {
     vec3 worldPosition;
@@ -15,5 +14,5 @@ struct UnderwaterContext {
     vec2 pixel;
 };
 
-// the fragment stage of the shader file, mapped in by the shader builder
+// the shader file's fragment stage
 #include "shader_hooks_fs.glsl"

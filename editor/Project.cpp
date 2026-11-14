@@ -1362,7 +1362,7 @@ void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, 
         return;
     }
 
-    // the scripts written from logic graphs are written again under their new names
+    // scripts of renamed logic graphs are written again
     if (Util::isLogicGraphFile(oldPath.string()) || oldPath.extension().empty()) {
         ProjectUtils::removeLogicScript(this, oldPath);
     }
@@ -1668,8 +1668,7 @@ void editor::Project::cleanupAssetFilePath(const std::filesystem::path& deletedP
 }
 
 void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::string&)>& transform) {
-    // visit every shader file of a registry, apply the transform, and flag a shader
-    // reload on the entities that changed
+    // transforms a registry's shader paths, reloading what changed
     auto applyToRegistry = [&](EntityRegistry* registry) -> bool {
         bool changed = false;
         auto applyToArray = [&](auto arr, auto shaderField) {
@@ -1704,7 +1703,7 @@ void editor::Project::applyCustomShaderPathChange(const std::function<bool(std::
         return changed;
     };
 
-    // the scene's default shaders and post-process passes; their setters flag the reload
+    // scene default shaders and post-process passes
     auto applyToScene = [&](Scene* scene) -> bool {
         bool changed = false;
         for (ShaderType type : {ShaderType::MESH, ShaderType::UI, ShaderType::SKYBOX, ShaderType::POINTS, ShaderType::LINES, ShaderType::WATER}) {
@@ -1838,7 +1837,7 @@ void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deleted
         return;
     }
 
-    // deleting the file or its folder leaves the reference dangling, so it resets to the built-in
+    // a deleted file falls back to the built-in shader
     applyCustomShaderPathChange([&](std::string& path) -> bool {
         if (!matchesRelativeString(deletedRelative, path))
             return false;
@@ -2831,7 +2830,7 @@ bool editor::Project::visitAssetPathsInMaterialFiles(const std::function<bool(st
     }, failed);
 }
 
-// every .material file of the project, written back when visit changes it
+// visits the project's .material files, saving changes
 bool editor::Project::visitMaterialFiles(const std::function<bool(Material&)>& visit, std::vector<std::filesystem::path>* failed){
     if (projectPath.empty()){
         return false;

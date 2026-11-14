@@ -2990,7 +2990,7 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v67: one fragment shadow block, one terrain blend sampler.
     // v68: object, camera planes and view matrix for hooks.
     // v69: flags for what the hooks read, which sprite batching asks.
-    // v70: varyings type in passes that read none, shadows for getLight on any side.
+    // v70: varyings type where unread, getLight shadows on any side.
     // v71: fragment uv1 reads flagged for sprite batching.
     // v72: depth surface hooks start from material factors.
     // v73: G-buffer surface hooks get the emissive factor.

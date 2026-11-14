@@ -3728,7 +3728,7 @@ void MeshSystem::updateFoliageLayer(TerrainComponent& terrain, TerrainFoliageLay
             instmesh.fadeEnd = fadeEnd;
             instmesh.cullNearDistance = preview ? 0.0f : std::clamp(layer.minDrawDistance * distanceScale, 0.0f, drawDistance);
             mesh.castShadows = layer.castShadows;
-            // wind sway runs the engine's wind shader, where the material has none of its own
+            // wind sway uses the engine's wind shader
             static const std::string windShader = "shaders/wind.glsl";
             const bool sway = layer.windSway > 0.0f;
             const float swayHeight = mesh.verticesAABB.getMaximum().y;

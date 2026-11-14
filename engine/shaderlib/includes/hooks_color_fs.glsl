@@ -1,16 +1,16 @@
-// Fragment hooks of UI, points and lines, on their color before it is written
+// Fragment hooks of UI, points and lines
 #include "includes/parameters_fs.glsl"
 
 struct FragmentContext {
     vec3 worldPosition;
-    vec2 uv1;             // the texture coordinate, a point's after its rotation and rect; 0 on lines
+    vec2 uv1;             // a point's after its rotation and rect; 0 on lines
     vec4 color;           // vertex color, 1 without
     vec4 textureColor;    // the texture or font sample, linear; 1 without a texture
     vec4 tint;            // the UI color, 1 on points and lines
     vec2 pixel;
 };
 
-// the fragment stage of the shader file, mapped in by the shader builder
+// the shader file's fragment stage
 #include "shader_hooks_fs.glsl"
 
 // always 1; keeps unused inputs alive so the stages pair

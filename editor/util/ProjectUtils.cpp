@@ -151,13 +151,13 @@ std::string sanitizeShaderName(const std::string& desiredName) {
     return name;
 }
 
-// writes a shader file under a free name in the default shader directory; empty on failure
+// writes a shader file under a free name; empty on failure
 std::string writeShaderFile(const std::filesystem::path& projectRoot, const std::string& desiredName, const std::string& content, const std::string& extension = ".glsl") {
     const std::filesystem::path dirRel = "shaders";
     const std::string baseName = sanitizeShaderName(desiredName);
     std::string name = baseName;
     int suffix = 2;
-    // an engine shader's path is taken too, or the file would stand in for it everywhere
+    // engine shader paths count as taken
     auto taken = [&](const std::string& candidate) {
         return std::filesystem::exists(projectRoot / dirRel / (candidate + extension)) ||
             editor::ProjectUtils::isEngineShader((dirRel / (candidate + extension)).generic_string());
@@ -341,7 +341,7 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
 
 namespace {
 
-    // what a script was written from: the graph's text and the compiler that read it
+    // the graph text and compiler version, as a stamp
     std::string logicStamp(const std::string& graphText) {
         constexpr int compilerVersion = 2;
         uint64_t hash = 1469598103934665603ull;
@@ -360,13 +360,13 @@ namespace {
     };
 
     std::mutex logicBuildMutex;
-    // the graphs looked at, by path, so one is read again only when its file changes
+    // graphs by path, read again when their file changes
     std::map<std::string, LogicBuild> logicBuilds;
 
 }
 
 std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph) {
-    // by its place under the Lua directory, which a graph elsewhere has none of
+    // mirrors the graph's path under the Lua directory
     std::filesystem::path script = project->normalizeToLuaRelative(project->resolveLuaPath(project->normalizeToLuaRelative(graph)));
     if (script.empty() || script.is_absolute() || *script.begin() == "..")
         return {};
@@ -393,7 +393,7 @@ bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::f
 
     std::error_code ec;
     std::filesystem::create_directories(script.parent_path(), ec);
-    // replaced whole, so a scene starting meanwhile reads one script or the other
+    // replaced whole, never read half written
     if (!FileUtils::writeFileReplacing(script, stamped)) {
         error = "could not write the script of " + graph.filename().string();
         return false;

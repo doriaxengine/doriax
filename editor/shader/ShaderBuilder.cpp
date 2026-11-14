@@ -65,7 +65,7 @@ std::unordered_set<std::string> liveGraphs;
 std::unordered_map<std::string, std::unordered_set<std::string>> graphDependents;
 std::atomic<uint32_t> customShaderGeneration{0};
 
-// the pins Subgraph nodes show, read again once shaders were invalidated
+// Subgraph pins, read again after invalidation
 struct FunctionPinsEntry {
     uint32_t generation = 0;
     bool valid = false;
@@ -104,8 +104,7 @@ std::string customSourceCacheKey(editor::Project* project, const std::string& sh
     return project->getProjectPath().lexically_normal().generic_string() + '\n' + shader;
 }
 
-// a shader file and the files it includes, keyed by '/' and their project path, which no
-// engine include can name, even at the project root; an export takes a graph as saved
+// a shader file and its includes, keyed by '/' and project path
 std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project* project, const std::string& shader,
                                                                  editor::ShaderSourceUse use = editor::ShaderSourceUse::EDITOR) {
     if (!project || shader.empty()) {
@@ -115,7 +114,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     }
 
     std::string cacheKey = customSourceCacheKey(project, shader);
-    // the edits are copied under the lock, the files read and compiled without it
+    // edits copied under the lock, files read without it
     std::unordered_map<std::string, std::string> edits;
     const uint32_t generation = customShaderGeneration;
     // cached sources are the editor's, exports and runs may skip them
@@ -140,7 +139,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     std::filesystem::path projectRoot = project->getProjectPath();
     std::string signatureInput;
 
-    // a project file, else an engine one; failures are not cached, the file may appear at any moment
+    // a project file, else an engine one; failures not cached
     std::string source;
     std::error_code ec;
     if (editor::ProjectUtils::isEngineShader(shader) && !std::filesystem::exists(projectRoot / shader, ec)) {
@@ -165,7 +164,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 snapshot->error = shader + ": " + error;
                 return snapshot;
             }
-            // the functions it calls, as edited unless an export reads the saved files
+            // called functions, as edited unless exporting
             auto readFunction = [&](const std::string& path, std::string& text) {
                 if (auto function = edits.find(path); function != edits.end()) {
                     text = function->second;
@@ -203,8 +202,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
 
-    // includes resolve from the including file's folder, then the project root, then
-    // the engine library, where one name can be another file
+    // includes: the file's folder, the project root, then the engine
     std::unordered_set<std::string> visited;
     std::unordered_map<std::string, std::string> paths;
     std::function<std::string(const std::string&, const std::filesystem::path&)> visitSource =
@@ -373,7 +371,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     const bool useVertexHooks = useVertexOffset || useClipPosition || useVaryings;
     if (vertexHooks.varyingsHook && vertexHooks.varyings.empty())
         throw std::runtime_error(shaderAsset + " fills varyings without declaring any with #pragma varying");
-    // GLES3 guarantees 15 vectors between the stages, the engine's own take most of them
+    // GLES3 has 15 varying vectors, the engine uses most
     if (vertexHooks.varyings.size() > 4)
         throw std::runtime_error(shaderAsset + " declares " + std::to_string(vertexHooks.varyings.size()) + " varyings, the limit is 4");
     if (useVertexHooks)
@@ -384,7 +382,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_CLIP_POSITION", "1"});
     if (useVaryings)
         args.defines.push_back({"USE_VARYINGS", "1"});
-    // getVaryings is compiled with the other vertex hooks even where nothing reads them
+    // getVaryings compiles with the vertex hooks
     const bool varyingsType = vertexHooks.varyingsHook && useVertexHooks;
     if (varyingsType)
         args.defines.push_back({"HOOK_VARYINGS", "1"});
@@ -416,7 +414,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if (useSurface && replaces.count("emissive"))
         args.defines.push_back({"SURFACE_REPLACES_EMISSIVE_MAP", "1"});
 
-    // an unlit shader compiles the unlit variant under whatever key the lights gave the mesh
+    // an unlit shader builds unlit under any light key
     if ((vertexHooks.unlit || fragmentHooks.unlit) && passType == ShaderType::MESH) {
         const bool light2D = defined("USE_LIGHT2D");
         const bool normals = defined("HAS_NORMALS");
@@ -432,7 +430,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         declared.flags |= ShaderFlag_Unlit;
     }
 
-    // a tangent frame needs the normal, and without mesh tangents the UVs it is derived from
+    // tangents need the normal, and UVs without mesh tangents
     std::set<std::string> fragmentReads = fragmentHooks.contextReads;
     const bool tangentFrame = meshPass && useFragmentHooks && (fragmentReads.count("tangent") || fragmentReads.count("bitangent"));
     if (tangentFrame) {
@@ -447,8 +445,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
         fragmentReads.insert("color");
 
-    // what the hooks read of the vertices, where this pass has it; a UI always has UVs,
-    // and the other types compute what they give in place
+    // vertex data the hooks read, where the pass has it
     const struct { const char* field; const char* name; bool available; } inputs[] = {
         {"uv1", "UV1", passType == ShaderType::UI || (meshPass && (defined("HAS_UV_SET1") || defined("HAS_HOOK_UV1")) && !defined("HAS_TERRAIN"))},
         {"uv2", "UV2", meshPass && (defined("HAS_UV_SET2") || defined("HAS_HOOK_UV2")) && !defined("HAS_TERRAIN")},
@@ -467,7 +464,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
     if (tangentFrame) {
         args.defines.push_back({"HOOK_FRAGMENT_TANGENT", "1"});
-        // the color pass has the mesh's tangents already, the depth passes take the attribute
+        // depth passes take the tangent attribute
         if (passType != ShaderType::MESH && defined("HAS_TANGENTS"))
             args.defines.push_back({"HOOK_TANGENT", "1"});
     }
@@ -502,7 +499,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     declarations.insert(declarations.end(), fragmentAnnotations.parameters.begin(), fragmentAnnotations.parameters.end());
     editor::ShaderParameterParser::checkDeclarations(declarations, errors);
 
-    // shadow maps and the camera depth share the depth program, the clip position tells them apart
+    // shadows and camera depth share the program
     if (useClipPosition && passType == ShaderType::DEPTH)
         vertexAnnotations.enginePass = true;
     if (varyingsType) {
@@ -510,8 +507,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.fileBuffers["shader_varyings_fs.glsl"] = editor::ShaderParameterParser::generateVaryings(ShaderStageType::FRAGMENT, vertexHooks.varyings);
     }
 
-    // the scene inputs a post-process pass or a mesh's color pass samples; a mesh's other
-    // passes draw before the scene exists and get neutral values
+    // scene inputs, neutral in passes drawn before the scene
     const bool postProcess = useColor && passType == ShaderType::POSTPROCESS;
     const bool colorPass = useFragmentHooks && passType == ShaderType::MESH;
     const bool sceneColor = colorPass && fragmentHooks.sceneReads.count("sceneColor");
@@ -542,7 +538,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // the object's matrix, which the vertex stage has
     if (meshPass && useVertexHooks && (vertexHooks.contextReads.count("objectPosition") || vertexHooks.contextReads.count("objectScale")))
         args.defines.push_back({"HOOK_OBJECT", "1"});
-    // what a batch of sprites drawn in world space would change for the hooks
+    // what sprite batching changes for the hooks
     if (passType == ShaderType::MESH) {
         const std::set<std::string>& vertexReads = vertexHooks.contextReads;
         const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
@@ -1260,7 +1256,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     if (customId == 0)
         return;
 
-    // the shader file and the project files it includes, over the engine library
+    // the shader file and its project includes
     if (!project) {
         throw std::runtime_error("Shader file requested without a project");
     }
@@ -1558,7 +1554,7 @@ void editor::ShaderBuilder::clearGraphSource(const std::string& shader) {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     if (graphSources.erase(shader) == 0)
         return;
-    // what was resolved with the edits goes with them, so an export never takes it
+    // drop what was resolved with the edits
     customShaderGeneration++;
     customSourceCache.clear();
 }

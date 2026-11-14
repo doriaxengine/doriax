@@ -76,9 +76,8 @@ namespace doriax{
         uint32_t depthShaderProperties = 0;
         uint32_t gbufferShaderProperties = 0;
 
-        // the shader file's id each pass was taken with (0 = built-in), so the
-        // matching ShaderPool::remove uses the same key
-        uint16_t shaderFileId = 0;   // the file asked for; customShaderId is 0 once it failed to build
+        // ids each pass was taken with, for ShaderPool::remove
+        uint16_t shaderFileId = 0;   // the file asked for; customShaderId is 0 once it failed
         uint16_t customShaderId = 0;
         uint16_t customDepthShaderId = 0;
         uint16_t customGBufferShaderId = 0;
@@ -104,7 +103,7 @@ namespace doriax{
         std::pair<int, int> slotSceneDepth = {-1, -1};
 
         int slotVSDepthParams = -1;
-        unsigned int sizeVSDepthParams = 0; // reflected: the normal matrix is there only when a hook reads normals
+        unsigned int sizeVSDepthParams = 0; // reflected: the normal matrix only when a hook reads normals
         int slotFSDepthMaterial = -1;
         unsigned int sizeFSDepthMaterial = 0;
         int slotVSDepthFade = -1;
@@ -120,7 +119,7 @@ namespace doriax{
         int slotVSGBufferTerrain = -1;
         int slotFSGBufferTerrainLayers = -1;
 
-        // declared parameters of each pass and stage, filled from the material's shaderUniforms
+        // declared parameters per pass and stage
         ShaderParameterBlock paramsVS;
         ShaderParameterBlock paramsFS;
         ShaderParameterBlock depthParamsVS;
@@ -214,7 +213,7 @@ namespace doriax{
 
         bool transparent = false;
         bool autoTransparency = true;
-        // a material's shader file samples the scene, so the mesh draws after what it samples
+        // the shader samples the scene, so the mesh draws after it
         bool readsSceneColor = false;
         bool readsSceneDepth = false;
 

@@ -26,7 +26,7 @@ namespace doriax::editor {
     // the pins that are a node's own, false for a node with its type's
     using GraphNodePins = std::function<bool(const GraphNode& node, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs)>;
 
-    // a graph and what it compiles to; links name their ends as node.pin, or a parameter by name
+    // a graph and its result; links as node.pin
     inline nlohmann::json graphJson(const GraphDocument& graph, const GraphResult& compiled, const GraphNodePins& ownPins = nullptr) {
         nlohmann::json out = {{"kind", graph.kind}, {"type", graph.type}};
         out["parameters"] = nlohmann::json::array();

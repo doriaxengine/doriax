@@ -148,8 +148,7 @@ namespace {
         return mesh.worldAABB != AABB::ZERO && (!instmesh || instmesh->cullInstances);
     }
 
-    // a shader file batches unless its hooks read object space or the scene behind; the stored
-    // UVs need the whole texture, and the vertex color a white material
+    // whether a shader file's sprites can batch
     bool batchesShader(const Submesh& submesh){
         if (submesh.customShaderId == 0)
             return true;
@@ -262,7 +261,7 @@ namespace {
         applyParameters(render, block, view, resolution);
     }
 
-    // the material's values, then a shader file's own after them in the same block
+    // the material's values, then the shader file's after them
     void applyMaterialParameters(ObjectRender& render, Submesh& submesh, void* material, unsigned int size,
                                  const ShaderEffectView& view, const Vector2& resolution){
         ShaderParameterBlock& block = submesh.paramsFS;
@@ -2587,8 +2586,7 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
                     Log::warn("Shader texture '%s' is not of the type its parameter declares", parameter.name.c_str());
                     break;
                 }
-                // a trilinear sampler reads levels the texture's own filter would not build:
-                // a copy asks for them, so the texture given stays as it was set
+                // a mipmapped copy for trilinear sampling
                 const TextureFilter own = texture.second.getMinFilter();
                 if (mipmapped && !texture.second.isFramebuffer() && (own == TextureFilter::NEAREST || own == TextureFilter::LINEAR)){
                     levels = texture.second;
@@ -2957,9 +2955,9 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
     slotTex = shaderData.getTextureIndex(TextureShaderType::TERRAINDETAIL);
     render.addTexture(slotTex, ShaderStageType::FRAGMENT, arrayCreated ? &detail->render : &emptyArrayWhite);
 
-    // The rest bind black, which weights none of their layers. They share the first map's sampler.
+    // The rest bind black, which weights none of their layers
     const int coveredMaps = arrayCreated ? detail->colorSlices / 3 : 0;
-    TextureRender* blendSampler = &emptyBlack;
+    TextureRender* blendSampler = &emptyBlack;    // the first map's, shared by all
     for (int m = 0; m < MAX_TERRAIN_BLENDMAPS; m++){
         const bool covered = m < coveredMaps && m < static_cast<int>(terrain.blendMaps.size());
         textureRender = covered ? terrain.blendMaps[m].getRender(&emptyBlack) : NULL;
@@ -3395,7 +3393,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         // Opted in per field, not per band, so emptying the band (editor preview) neither
         // rebuilds the shader nor drops the variant from an export.
         const bool p_instanceFade = instmesh && instmesh->distanceFade;
-        // the material's shader file, else the scene's; terrain builds its vertices in the shader and takes none
+        // the material's shader, else the scene's; none for terrain
         static const std::string noShader;
         const std::string& ownShader = mesh.submeshes[i].material.shader;
         const std::string& materialShader = terrain ? noShader : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
@@ -3715,7 +3713,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
                         depthRender.setIndex(buf.second->getRender(), indexattr.getDataType(), indexattr.getOffset());
                     }else{
                         for (auto const &attr : buf.second->getAttributes()){
-                            // normals, tangents, colors and the second UV set only reach a shader that reads them
+                            // optional attributes only for shaders that read them
                             if (attr.first == AttributeType::POSITION || attr.first == AttributeType::TEXCOORD1 || attr.first == AttributeType::NORMAL ||
                                     attr.first == AttributeType::TEXCOORD2 || attr.first == AttributeType::TANGENT || attr.first == AttributeType::COLOR){
                                 depthRender.addAttribute(depthShaderData.getAttrIndex(attr.first), buf.second->getRender(), attr.second.getElements(), attr.second.getDataType(), buf.second->getStride(), attr.second.getOffset(), attr.second.getNormalized(), attr.second.getPerInstance());
@@ -4506,8 +4504,7 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
     terrain.views[viewIndex].needUpdateNodesBuffer = false;
 }
 
-// Quads drawn unlit with vertex colors, optionally with Uv1, Txr, Fog, Ams, Aop, Hu1 and Hnr: nothing
-// else in them is per object. For bigger meshes a draw with shared buffers costs less than moving the vertices
+// unlit quads with vertex colors, nothing else per object
 bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
     constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
@@ -4656,7 +4653,7 @@ void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
     }
 }
 
-// what a batch draws with: the color factor is already in the vertices, and the vertices in world space
+// color and world space are already in the vertices
 void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh){
     Submesh& submesh = mesh.submeshes[0];
     if (hasFog){
@@ -4767,7 +4764,7 @@ void RenderSystem::settleSprite(Entity entity, Signature signature, MeshComponen
         if (wait != settleWaits.end() && spriteUpdates < wait->second.until)
             return;
     }
-    // the values of a shader file are compared every frame, so its sprites batch without settling
+    // shader file sprites batch without settling
     if (mesh.submeshes[0].customShaderId != 0 || !canBatchSprite(mesh))
         return;
 
@@ -6290,7 +6287,7 @@ void RenderSystem::loadPostProcess(){
         PostProcessRuntime pass;
         pass.passIndex = i;
 
-        // an empty path is the built-in passthrough, also the fallback of a failed shader
+        // empty for the built-in passthrough, also on failure
         pass.customId = ShaderPool::registerCustomShader(passes[i].shader);
         pass.shader = ShaderPool::get(ShaderType::POSTPROCESS, 0, pass.customId);
         if (pass.customId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, pass.customId)){
@@ -8622,7 +8619,7 @@ bool RenderSystem::loadUnderwater(WaterComponent& water){
     water.customUnderwaterShaderId = ShaderPool::registerCustomShader(waterShader);
     water.underwaterShader = ShaderPool::get(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId);
     if (!water.underwaterShader->isCreated()){
-        // as in loadWater, a shader that failed to compile falls back to the built-in one
+        // a failed shader falls back to the built-in
         if (water.customUnderwaterShaderId != 0 && ShaderPool::isShaderBuildFailed(ShaderType::UNDERWATER, 0, water.customUnderwaterShaderId)){
             Log::error("Custom shader '%s' failed to compile; using the built-in shader", waterShader.c_str());
             water.customUnderwaterShaderId = 0;
@@ -11847,14 +11844,13 @@ void RenderSystem::draw(){
             }
         }
 
-        // the scene copy: an SSR composite or the underwater fade replace the pass content,
-        // a plain copy keeps it. A pass in transform order takes it at its first mesh sampling it
+        // the scene copy; SSR and the underwater fade replace the pass
         CameraRender* passRender = &camera.render;
         bool sceneCopied = false;
         auto takeSceneCopy = [&](){
             sceneCopied = true;
             flushSpriteBatch();
-            // ended first: creating the copy framebuffer runs a clear pass, and passes can't nest
+            // ended first, passes can't nest
             camera.render.endRenderPass();
             const bool copied = ensureSceneCopyFramebuffer(colorTarget->getWidth(), colorTarget->getHeight());
             if (copied){
@@ -11864,7 +11860,7 @@ void RenderSystem::draw(){
                     renderSceneCopy(colorTarget);
                 }
 
-                // view rects are centered, so the gap above the view matches the one below
+                // centered view rects, equal gaps above and below
                 const float copyWidth = (float)colorTarget->getWidth();
                 const float copyHeight = (float)colorTarget->getHeight();
                 currentSceneCopy = &sceneCopyFramebuffer.getRender().getColorTexture();
@@ -11874,7 +11870,7 @@ void RenderSystem::draw(){
             }
 
             passRender = &resumePassRender;
-            // kept for another copy between overlapping waters, or a water and a mesh sampling the scene
+            // kept for another copy between scene readers
             resumePassRender.setStoreDepth(passWaters.size() > 1 || (!passWaters.empty() && sceneColorMeshes));
             resumePassRender.startRenderPass(&colorTarget->getRender());
             resumePassRender.applyViewport(colorPassViewport);
@@ -11887,8 +11883,7 @@ void RenderSystem::draw(){
             }
         };
 
-        // a new copy, for what was drawn after the last: a refracting water would miss it, or a
-        // mesh sampling the scene would miss a water
+        // a new copy for what was drawn after the last one
         bool copyOutdated = false;
         bool waterSinceCopy = false;
         auto refreshSceneCopy = [&](){
@@ -12077,7 +12072,7 @@ void RenderSystem::draw(){
 
         auto drawTransparent = [&](const TransparentRenderData& renderData){
             if (renderData.type == TransparentRenderType::MESH){
-                // the meshes sampling the scene share a copy, taken at the first and renewed after a water
+                // scene readers share a copy, renewed after a water
                 if (renderData.mesh->readsSceneColor && copyScene){
                     if (!sceneCopied){
                         takeSceneCopy();

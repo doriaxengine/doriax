@@ -49,7 +49,7 @@ namespace {
         return Type{name};
     }
 
-    // a float GLSL reads back the same, with a point; negative ones bracketed where they stand alone
+    // a GLSL float; negatives bracketed when alone
     std::string glslFloat(float value, bool alone) {
         if (!std::isfinite(value))
             value = 0.0f;
@@ -94,7 +94,7 @@ namespace {
         return declared ? declared->value.text : std::string();
     }
 
-    // a function's Function Inputs and Outputs as the pins of a Subgraph node calling it, top to bottom
+    // a function's inputs and outputs as Subgraph pins
     bool checkFunction(const GraphDocument& function, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs, std::vector<GraphMessage>& errors) {
         if (function.kind != "shader" || function.type != "function") {
             errors.push_back({0, "not a function graph (type: " + function.type + ")"});
@@ -238,7 +238,7 @@ namespace {
         return reach;
     }
 
-    // texture(t, uv) as textureLod(t, uv, 0.0): vertices have no screen derivatives
+    // textureLod in vertex code: no derivatives there
     std::string fixedLevel(const std::string& code) {
         std::string out;
         size_t at = 0;
@@ -260,8 +260,7 @@ namespace {
         return out + code.substr(std::min(at, code.size()));
     }
 
-    // the words a template leaves in the code: comments go before macros expand, and
-    // {input}, @field and %value are replaced
+    // identifiers a template leaves in the code
     void collectIdentifiers(const std::string& code, std::set<std::string>& names) {
         for (size_t i = 0; i < code.size();) {
             if (code.compare(i, 2, "//") == 0) {
@@ -287,7 +286,7 @@ namespace {
         }
     }
 
-    // a parameter is a member and a texture a define, so neither can take a GLSL word
+    // GLSL keywords cannot name parameters or textures
     bool isKeyword(const std::string& name) {
         static const std::set<std::string> keywords = {
             "attribute", "const", "uniform", "varying", "buffer", "shared", "centroid", "flat", "smooth", "layout", "break",
@@ -384,7 +383,7 @@ namespace {
     class Compiler {
     public:
         Compiler(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader): graph(graph), source(source), reader(reader) {}
-        // a function's preview: a graph of that type calling it once, with one output into slot
+        // a function's preview: one call, one output into slot
         Compiler(const GraphDocument& function, const std::string& source, const ShaderGraphReader& reader,
                  const std::string& type, const std::string& output, const std::string& slot);
 
@@ -485,8 +484,7 @@ namespace {
         }
     }
 
-    // a copy of the function takes the call's place: what fed the call feeds its Function
-    // Inputs, and what read the call reads its Function Outputs
+    // inlines a copy of the function in the call's place
     bool Compiler::inlineCall(const GraphNode& call) {
         const bool preview = call.id == previewCall;
         const std::string file = settingText(call, "file");
@@ -529,7 +527,7 @@ namespace {
             }
         }
 
-        // a preview reports on the function's own nodes, a call on the Subgraph node
+        // errors point at the function's nodes or the call
         const int target = origin.count(call.id) ? origin[call.id] : call.id;
         auto cameFrom = [&](int id, int own) {
             origin[id] = preview ? own : target;
@@ -603,7 +601,7 @@ namespace {
                 copy->inputs["default"] = constant->second;
         }
 
-        // each output passes through an input node that turns its value to the output's type
+        // outputs go through an input that converts the type
         std::set<int> sinks;
         for (const GraphNode& node : function.nodes) {
             if (node.type != "function/output")
@@ -1139,7 +1137,7 @@ namespace {
             return true;
         }
 
-        // inputs, then the size the dynamic ones settle on: the smallest vector linked, floats aside
+        // inputs; dynamic ones take the smallest vector linked
         std::map<std::string, Value> raw;
         int dynamicSize = 0;
         for (const NodePin& input : pinsIn) {
@@ -1164,7 +1162,7 @@ namespace {
             inputs[input.name] = converted.code;
         }
 
-        // the code of this output: by the node's first setting, per vertex, or the plain one
+        // this output's code: by setting, per vertex, or plain
         const size_t index = output - &pinsOut.front();
         const std::vector<std::string>* code = &type->code;
         if (!type->variants.empty() && !type->settings.empty()) {
@@ -1380,7 +1378,7 @@ namespace {
             error(varyings.back().node, "a graph passes at most 4 values from the vertices to the fragments, this one " + std::to_string(varyings.size()));
         if (!result.errors.empty())
             return;
-        // with nothing set it draws as the type does by default, through a color hook that keeps it
+        // nothing set: a color hook that keeps the default
         if (bodies.empty() && varyings.empty()) {
             Body& body = bodies["getColor"];
             for (const Hook& hook : hooks)

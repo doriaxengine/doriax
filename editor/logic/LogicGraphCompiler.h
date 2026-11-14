@@ -14,7 +14,7 @@ namespace doriax::editor {
     // a .logic graph to the Lua script it stands for
     class LogicGraphCompiler {
     public:
-        // source names the graph in the first line of the code, module the script
+        // source names the graph, module the script
         static GraphResult compile(const GraphDocument& graph, const std::string& source, const std::string& module);
 
         // whether a script's first line says a graph wrote it

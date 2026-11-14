@@ -110,7 +110,7 @@ static void markTextureUpdate(Scene* scene, Entity entity, editor::ComponentType
     }
 }
 
-// a component rendering with its scene default shader fell back to the built-in
+// whether the scene default shader fell back to the built-in
 template<typename T, typename Field>
 static bool isDefaultShaderFailed(Scene* scene, editor::ComponentType cpType, Field shader) {
     auto components = scene->getComponentArray<T>();
@@ -5082,7 +5082,7 @@ void editor::Properties::drawTransform(ComponentType cpType, SceneProject* scene
 }
 
 void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType shaderType, SceneProject* sceneProject, std::vector<Entity> entities){
-    // a mesh's shader files are on its materials; shown only for a single selection
+    // single selection; a mesh's shader files are on its materials
     if (entities.size() != 1)
         return;
 
@@ -5113,7 +5113,7 @@ void editor::Properties::drawCustomShaderRow(ComponentType cpType, ShaderType sh
             ImGui::TableSetColumnIndex(1);
             ImGui::TextDisabled("Underwater fade failed to build");
         }
-        // a failed shader keeps rendering, the runtime falls back to the built-in
+        // a failed shader draws with the built-in
         if (Catalog::isCustomShaderBuildFailed(sceneProject->scene, shaderEntity, cpType)) {
             ImGui::TableNextRow();
             ImGui::TableSetColumnIndex(1);
@@ -5783,7 +5783,7 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
             drawShaderFileRow(ShaderType::POSTPROCESS, passes[i].shader, sceneProject->name + " Post " + std::to_string(i + 1), setShader,
                               "post_process_" + std::to_string(i));
 
-            // a failed shader keeps rendering, the runtime falls back to the built-in
+            // a failed shader draws with the built-in
             if (!passes[i].shader.empty() &&
                     ShaderPool::isShaderBuildFailed(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(passes[i].shader))){
                 ImGui::TableNextRow();
@@ -5816,7 +5816,7 @@ void editor::Properties::drawScenePostProcess(SceneProject* sceneProject){
     }
 }
 
-// a pass lives in the scene's chain, not on an entity, so its textures have rows of their own
+// pass textures are in the scene, not on an entity
 void editor::Properties::drawPassTextureRows(uint32_t sceneId, const std::vector<PostProcessPass>& passes, size_t index, const ShaderEffectAnnotations& annotations){
     std::vector<const ShaderParameterDeclaration*> textures;
     for (const ShaderParameterDeclaration& declaration : annotations.parameters) {

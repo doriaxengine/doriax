@@ -6,7 +6,7 @@
 struct FragmentContext {
     vec3 worldPosition;
     vec3 normal;        // world space, facing the viewer; (0, 1, 0) without normals
-    vec3 tangent;       // world space, along u; from the uv1 derivatives without mesh tangents
+    vec3 tangent;       // world space, along u; from uv1 without mesh tangents
     vec3 bitangent;
     vec2 uv1;           // as the mesh stores it, 0 without the set
     vec2 uv2;
@@ -19,9 +19,9 @@ struct FragmentContext {
     vec2 pixel;         // from a corner every pass shares
     vec2 screenUV;      // in the camera's view, 0 at the top left; 0 unless read
     bool frontFacing;
-    float nearPlane;    // the camera's clip planes, as distances from the eye; 0 unless read
+    float nearPlane;    // clip plane distances from the eye; 0 unless read
     float farPlane;
-    mat3 worldToView;   // turns a world direction into the camera's space; identity unless read
+    mat3 worldToView;   // world directions into camera space; identity unless read
 };
 
 // one light reaching the surface, for getLight()
@@ -46,7 +46,7 @@ struct Surface {
     vec3 emissive;      // linear
 };
 
-// the scene drawn before the mesh, in 3D its opaque part; black where there is none
+// the scene drawn before the mesh, black where none
 #ifdef HOOK_SCENE_COLOR
     uniform texture2D u_sceneColorTexture;
     uniform sampler u_sceneColor_smp;
@@ -68,7 +68,7 @@ struct Surface {
     uniform texture2D u_depthTexture;
     uniform sampler u_depth_smp;
 
-    // distance from the eye along the view, in world units; the far plane where nothing was drawn
+    // view distance in world units, far plane where empty
     float sceneDepth(vec2 screenUV){
         float depth = decodeDepth(texture(sampler2D(u_depthTexture, u_depth_smp), vec2(screenUV.x, ndcYToDepthUV(1.0 - screenUV.y * 2.0))));
         depth = min(depth, 1.0) * 2.0 - 1.0;
@@ -81,7 +81,7 @@ struct Surface {
     }
 #endif
 
-// the fragment stage of the shader file, mapped in by the shader builder
+// the shader file's fragment stage
 #include "shader_hooks_fs.glsl"
 
 // flat normal toward the camera, for meshes without normals
@@ -141,7 +141,7 @@ float keepHookInputs(FragmentContext context){
 }
 
 #ifdef HOOK_FRAGMENT_TANGENT
-    // after the normal; turned with it on back faces, as the material's normal map does
+    // after the normal, turned with it on back faces
     void setTangents(inout FragmentContext context, vec3 tangent, vec3 bitangent){
         context.tangent = context.frontFacing ? normalize(tangent) : -normalize(tangent);
         context.bitangent = context.frontFacing ? normalize(bitangent) : -normalize(bitangent);
@@ -174,7 +174,7 @@ float keepHookInputs(FragmentContext context){
 #endif
 
 #ifdef USE_COVERAGE
-// discards a removed fragment; returns the alpha factor of a blended one
+// discards cut fragments, returns the blend alpha
 float applyCoverage(FragmentContext context){
     // shadow maps keeping their silhouette
     if (paramsFS.effect_pass.z < 0.5)

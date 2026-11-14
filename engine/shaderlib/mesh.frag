@@ -178,8 +178,7 @@ uniform u_fs_pbrParams {
 
 #ifdef USE_SHADOWS
 
-    // one block for every shadow, the point lights last so a variant without them takes the start;
-    // shadows.glsl projects v_position here, so no per-slot varyings are interpolated
+    // all shadows in one block, point lights last
     uniform u_fs_shadows {
         mat4 lightVPMatrix[MAX_SHADOW_ATLAS_SLOTS];
         vec4 shadowParams[MAX_SHADOW_ATLAS_SLOTS]; // normalBias in .x, splitBlend in .y

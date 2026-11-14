@@ -12,7 +12,7 @@
 
 namespace doriax::editor {
 
-    // how a node that runs is written; the others are one statement, or a value
+    // how a node with execution pins is written
     enum class LogicFlow {
         NONE,
         EVENT,
@@ -26,11 +26,9 @@ namespace doriax::editor {
         RETURN
     };
 
-    // Pin types: number, bool, string, any, and the engine's own as Lua names them (Vector3, Object,
-    // an enum). A class goes into a pin of a class it derives from, and any takes everything.
+    // pin types: number, bool, string, any and the engine's classes
     struct LogicNodeType : NodeType {
-        // the Lua of each output of a value node, in their order, or the statement of a node that
-        // runs, whose value its first output keeps: {name} is an input or a setting
+        // Lua per output, or a statement; {name} is an input or setting
         std::vector<std::string> code;
         LogicFlow flow = LogicFlow::NONE;
         bool atomic = false;         // a call or a name, read without parentheses
@@ -50,7 +48,7 @@ namespace doriax::editor {
 
         const LogicNodeType* find(const std::string& id) const;
 
-        // the pins of one node: a variable's type, the class a Self node stands for
+        // a node's pins, with variable types and Self's class
         static void getPins(const GraphDocument& graph, const GraphNode& node, const LogicNodeType& type, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs);
         static bool canLink(const std::string& fromType, const std::string& toType);
 
@@ -59,16 +57,16 @@ namespace doriax::editor {
         static const std::vector<std::string>& getVariableTypes();
         // what a new variable of a type holds
         static GraphValue getVariableDefault(const std::string& variableType);
-        // how many numbers a pin type is made of, 1 for a type that is not a vector
+        // numbers in a pin type, 1 for scalars
         static int getComponentCount(const std::string& pinType);
-        // whether a node type stands for a method, a property or a constant of the engine's API
+        // a method, property or constant of the engine API
         static bool isEngineType(const std::string& id);
         // setPosition as Set Position
         static std::string getTitle(const std::string& name);
         static bool isLuaKeyword(const std::string& word);
         // the members of an engine enum, empty for another type
         static const std::vector<std::string>& getEnumMembers(const std::string& type);
-        // whether a class is built from a scene and an entity, as Object(self.scene, self.entity)
+        // classes built as Object(self.scene, self.entity)
         static bool isEntityClass(const std::string& type);
 
     private:

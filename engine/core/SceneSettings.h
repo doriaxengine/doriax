@@ -35,7 +35,7 @@ namespace doriax{
     // One user post-process pass: a shader file whose getColor runs over the scene color.
     // Uniforms and textures hold the values of its #pragma param declarations, by name.
     struct PostProcessPass {
-        std::string shader; // project-relative shader file or graph, empty = built-in passthrough
+        std::string shader; // project-relative shader file or graph, empty = passthrough
         bool enabled = true;
         ShaderUniformValues uniforms;
         ShaderTextureValues textures;
@@ -107,8 +107,7 @@ namespace doriax{
         unsigned int fixedResolutionHeight = 360;
         TextureFilter fixedResolutionFilter = TextureFilter::NEAREST;
 
-        // scene-wide shader files (project-relative .glsl), used by components and materials
-        // without one; empty = engine built-in
+        // scene default shader files; empty for the built-in
         std::string defaultMeshShader;
         std::string defaultUIShader;
         std::string defaultSkyShader;

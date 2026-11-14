@@ -46,7 +46,7 @@ namespace doriax::editor {
         const NodeSetting* findSetting(const std::string& name) const;
     };
 
-    // the node types of one graph kind; the canvas, the MCP tools and the docs walk it
+    // the node types of one graph kind
     class NodeRegistry {
     public:
         virtual ~NodeRegistry() = default;

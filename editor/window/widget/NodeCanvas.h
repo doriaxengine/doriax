@@ -54,7 +54,7 @@ namespace doriax::editor {
         ImVec2 position;
     };
 
-    // what the canvas draws; the window builds it from its document each frame
+    // what the canvas draws, rebuilt each frame
     struct CanvasModel {
         std::vector<CanvasNode> nodes;
         std::vector<CanvasLink> links;
@@ -62,7 +62,7 @@ namespace doriax::editor {
         std::vector<CanvasComment> comments;
     };
 
-    // what was done on the canvas, for the window to turn into edits of its document
+    // a canvas action, for the window to apply
     struct CanvasEdit {
         enum class Kind {
             MOVE,            // ids by delta

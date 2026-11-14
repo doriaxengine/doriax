@@ -4094,7 +4094,7 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
 
     switch (component) {
         case ComponentType::MeshComponent:
-            // a model root without submeshes is drawn by its parts and builds nothing; terrain takes no shader file
+            // a model root is drawn by its parts; terrain takes no shader
             if (MeshComponent* mesh = scene->findComponent<TerrainComponent>(entity) ? nullptr : scene->findComponent<MeshComponent>(entity)) {
                 for (unsigned int i = 0; i < mesh->numSubmeshes; i++) {
                     if (failed(mesh->submeshes[i].material.shader, ShaderType::MESH,
@@ -4131,7 +4131,7 @@ bool editor::Catalog::isCustomShaderBuildFailed(Scene* scene, Entity entity, Com
 }
 
 bool editor::Catalog::isCustomUnderwaterShaderBuildFailed(Scene* scene, Entity entity) {
-    // the fade of a water's shader file; a failed one reloads on the built-in, which registers no custom id
+    // the water's fade shader; a failed one has no custom id
     WaterComponent* water = scene->findComponent<WaterComponent>(entity);
     if (!water)
         return false;

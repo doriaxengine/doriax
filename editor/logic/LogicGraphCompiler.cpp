@@ -71,7 +71,7 @@ namespace {
         return text.substr(1, text.size() - 2);
     }
 
-    // what a text setting holds; a file written by hand may give it as a number
+    // a text setting, which a hand-written file may give as a number
     std::string settingText(const GraphValue& value) {
         return value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text;
     }
@@ -185,7 +185,7 @@ namespace {
             std::string registration;
             std::vector<Line> body;
             std::vector<std::string> locals;
-            bool returnsBool = false;    // an event the engine asks, which a script answers true unless it says otherwise
+            bool returnsBool = false;    // an engine query, true unless the script says otherwise
         };
 
         const GraphDocument& graph;
@@ -196,13 +196,13 @@ namespace {
         // of the function being written
         Function* function = nullptr;
         std::set<int> ran;                   // the nodes written so far
-        std::vector<int> running;            // the nodes whose statements are being written, outermost first
+        std::vector<int> running;            // nodes being written, outermost first
         std::vector<int> bodies;             // the loops whose body is being written
         std::map<std::string, std::string> shared; // the values the statement being written reads more than once
         std::map<int, int> readers;          // how many inputs each node feeds
         int statementIndent = 1;
         int sharedCount = 0;
-        bool sharing = true;                 // off where a value has to be read again, as a loop's condition
+        bool sharing = true;                 // off where a value is read again, as a loop condition
         bool overflow = false;               // the function grew past what a graph should make
         std::vector<int> reading;            // the value nodes being read
         std::set<std::string> kept;          // its locals
@@ -212,7 +212,7 @@ namespace {
         std::vector<Line> helpers;           // the functions of Lua Expression and Lua Code nodes
         std::set<std::string> usedHelpers;
 
-        // the file's name, unless the script calls something by that name: Camera as CameraScript
+        // the file name, or Camera as CameraScript on a clash
         static std::string tableName(const std::string& name) {
             static const std::set<std::string> globals = {
                 "math", "string", "table", "os", "io", "coroutine", "utf8", "debug", "package", "tostring", "tonumber", "ipairs", "pairs",
@@ -307,7 +307,7 @@ namespace {
                 return std::to_string((int)std::lround(variable.value.number()));
             if (variable.type == "entity")
                 return "nil";
-            // the properties table lists a vector's numbers, a script holds the vector
+            // properties list a vector's numbers, scripts hold the vector
             GraphValue value = variable.value;
             // a color given without alpha is opaque
             if (variable.type == "color4" && value.numbers.size() == 3)
@@ -397,7 +397,7 @@ namespace {
             return "v" + std::to_string(node->id);
         }
 
-        // the script's entity as an engine class, made once when the script starts
+        // the entity as an engine class, made in init
         std::string selfObject(const std::string& type) {
             const std::string field = "self._" + type;
             const std::string made = field + " = " + type + "(self.scene, self.entity)";
@@ -519,8 +519,7 @@ namespace {
                 error(node.id, "Too many values feed one another in a row; keep one in a variable on the way");
                 return "nil";
             }
-            // a value several inputs of a statement read is worked out once for it
-            // a name or a constant is read as it is
+            // shared values once per statement, names and constants inline
             const bool plain = type.atomic && type.inputs.empty() && (type.code.empty() || type.code.front().find('(') == std::string::npos);
             const bool once = sharing && sharedCount < 150 && readers[node.id] > 1 && !plain;
             const std::string key = std::to_string(node.id) + "." + pin;
@@ -568,7 +567,7 @@ namespace {
         }
 
         void line(int indent, const std::string& text, int node) {
-            // paths that meet are written once for each way in, which doubles at every meeting
+            // joined paths repeat, doubling at each join
             constexpr size_t limit = 5000;
             if (function->body.size() >= limit) {
                 if (!overflow)
@@ -597,7 +596,7 @@ namespace {
                 write(link->toNode, indent);
         }
 
-        // a side that may not run: what it keeps is not there for what comes after it
+        // a branch that may not run keeps nothing after it
         void block(const GraphNode& node, const std::string& pin, int indent) {
             const std::set<int> before = ran;
             follow(node, pin, indent);
@@ -744,7 +743,7 @@ namespace {
             function = nullptr;
         }
 
-        // what Lua says of the script, which the code typed into nodes can break
+        // typed Lua code can break the script
         bool checkSyntax() {
             lua_State* L = luaL_newstate();
             if (!L)

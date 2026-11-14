@@ -1,5 +1,4 @@
-// Fragment hooks of post-process passes, which own their pixel. The scene inputs other
-// than the color are declared only when the shader file calls their function.
+// Fragment hooks of post-process passes
 #include "includes/srgb.glsl"
 #include "includes/depth_util.glsl"
 
@@ -13,7 +12,7 @@ vec4 sceneColor(vec2 uv){
     return sRGBToLinear(texture(sampler2D(u_sceneColorTexture, u_sceneColor_smp), uv));
 }
 
-// depth, normals and occlusion keep the orientation of the depth targets
+// depth, normals and occlusion in the depth targets' orientation
 vec2 getSceneDepthUV(vec2 uv){
     return vec2(uv.x, ndcYToDepthUV(1.0 - uv.y * 2.0));
 }
@@ -22,7 +21,7 @@ vec2 getSceneDepthUV(vec2 uv){
     uniform texture2D u_depthTexture;
     uniform sampler u_depth_smp;
 
-    // distance from the eye along the view, in world units; the far plane where nothing was drawn
+    // view distance in world units, far plane where empty
     float sceneDepth(vec2 uv){
         float depth = min(decodeDepth(texture(sampler2D(u_depthTexture, u_depth_smp), getSceneDepthUV(uv))), 1.0) * 2.0 - 1.0;
         vec4 terms = paramsFS.effect_projection;
@@ -36,7 +35,7 @@ vec2 getSceneDepthUV(vec2 uv){
     uniform texture2D u_gbufferTexture;
     uniform sampler u_gbuffer_smp;
 
-    // world space, from the G-buffer that SSR draws; with SSR off it reads nothing useful
+    // world space, from the SSR G-buffer
     vec3 sceneNormal(vec2 uv){
         vec2 encoded = texture(sampler2D(u_gbufferTexture, u_gbuffer_smp), getSceneDepthUV(uv)).rg;
         return normalize(octDecode(encoded) * mat3(paramsFS.effect_worldToView));
@@ -53,5 +52,5 @@ vec2 getSceneDepthUV(vec2 uv){
     }
 #endif
 
-// the fragment stage of the shader file, mapped in by the shader builder
+// the shader file's fragment stage
 #include "shader_hooks_fs.glsl"

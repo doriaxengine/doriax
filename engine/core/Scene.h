@@ -275,7 +275,7 @@ namespace doriax{
         void setDefaultShaderUniform(ShaderType type, const std::string& name, float value);
         Vector4 getDefaultShaderUniform(ShaderType type, const std::string& name) const;
         bool removeDefaultShaderUniform(ShaderType type, const std::string& name);
-        // the values a component with this shader inherits, null when it has its own
+        // inherited values of this shader, null when it has its own
         const ShaderUniformValues* getInheritedShaderUniforms(ShaderType type, const std::string& shader) const;
 
         // ordered user post-process chain; setting it rebuilds the RenderSystem passes

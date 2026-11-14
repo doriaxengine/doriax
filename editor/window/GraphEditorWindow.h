@@ -22,7 +22,7 @@ namespace doriax::editor {
     class Project;
     class GraphEditCmd;
 
-    // .shader and .logic graphs open for editing, each in a docked window with its own undo history
+    // .shader and .logic graphs, each docked with its own undo
     class GraphEditorWindow {
     private:
         struct Instance {
@@ -87,7 +87,7 @@ namespace doriax::editor {
         const std::string& getBuiltCode(const Instance& instance) const;
         // an open graph follows its file to another path
         void moveInstance(const std::string& oldKey, const std::string& newKey);
-        // one undoable step: what changed in the document since it was last applied
+        // one undo step for what changed in the document
         void edit(Instance& instance, const std::string& mergeKey = std::string());
         void applyText(Instance& instance, const std::string& text);
         void documentChanged(Instance& instance, const std::string& text);
@@ -122,7 +122,7 @@ namespace doriax::editor {
 
         bool isFileOpen(const std::filesystem::path& path) const;
         bool isFileModified(const std::filesystem::path& path) const;
-        // an outside edit of an open graph, taken as one undoable step and saved; false when not open
+        // an outside edit, as one undo step, saved; false when closed
         bool replaceFileText(const std::filesystem::path& path, const std::string& text);
         // remaps open graphs and their histories
         void remapOpenGraphs(const std::function<bool(GraphDocument&)>& remap);

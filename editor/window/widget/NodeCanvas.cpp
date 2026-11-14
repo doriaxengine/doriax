@@ -274,7 +274,7 @@ void editor::NodeCanvas::drawNode(ImDrawList* drawList, const CanvasNode& node, 
     drawList->AddRectFilled(min, ImVec2(max.x, min.y + headerHeight * scale), node.color, rounding, ImDrawFlags_RoundCornersTop);
     const ImU32 border = !node.error.empty() ? IM_COL32(230, 70, 60, 255) : (selected ? highlight : IM_COL32(15, 15, 15, 255));
     drawList->AddRect(min, max, border, rounding, 0, (selected || !node.error.empty() ? 2.0f : 1.0f) * Theme::dpiScale());
-    // a node with an error keeps its red outline, so the selection goes around it
+    // selection rings an error node's red outline
     if (selected && !node.error.empty()) {
         const float gap = 3.0f * Theme::dpiScale();
         drawList->AddRect(ImVec2(min.x - gap, min.y - gap), ImVec2(max.x + gap, max.y + gap), highlight, rounding + gap, 0, 2.0f * Theme::dpiScale());
@@ -394,8 +394,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             gesture = Gesture::NONE;
     }
 
-    // left press: a pin starts a link, a node, comment or group title is picked and moved,
-    // a group's corner resizes it, a link is picked, nothing starts a box
+    // left press: link, move, resize, pick a link or start a box
     if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && gesture == Gesture::NONE) {
         int node = 0;
         std::string pin;
@@ -408,7 +407,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
             pinName = pin;
             pinOutput = output;
             detachedLink.clear();
-            // a fed input gives up its link, to be dropped elsewhere; an execution input takes more
+            // dragging from a fed input moves its link
             if (!output && !isExecutionInput(model, node, pin)) {
                 for (const CanvasLink& existing : model.links) {
                     if (existing.toNode == node && existing.toPin == pin) {
@@ -516,7 +515,7 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
         gesture = Gesture::NONE;
     }
 
-    // a double click on a link puts a reroute on it, one on a node opens what it stands for
+    // double click: a reroute on a link, open a node
     if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         const CanvasLink* link = nullptr;
         if (const int node = nodeAt(mouse)) {

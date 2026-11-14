@@ -31,8 +31,7 @@ namespace doriax::editor {
         return node;
     }
 
-    // a shader graph and what it compiles to, with the pins that are a node's own:
-    // a Subgraph's function, a signature, a function's value type
+    // a shader graph and its result, with each node's own pins
     inline nlohmann::json shaderGraphJson(const GraphDocument& graph, const GraphResult& compiled) {
         return graphJson(graph, compiled, [](const GraphNode& node, std::vector<NodePin>& inputs, std::vector<NodePin>& outputs) {
             const ShaderNodeType* type = ShaderNodes::get().find(node.type);
