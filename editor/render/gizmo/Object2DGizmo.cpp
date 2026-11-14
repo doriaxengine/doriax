@@ -88,22 +88,9 @@ void editor::Object2DGizmo::updateLines(){
         lines->addLine(Vector3(-s, -gap, 0), Vector3( s, -gap, 0), color);
         lines->addLine(Vector3(-s,    0, 0), Vector3( s,    0, 0), color);
         lines->addLine(Vector3(-s,  gap, 0), Vector3( s,  gap, 0), color);
-        lines->setVisible(true);
-        return;
     }
 
-    float halfWidth = width / 2.0f;
-    float halfHeight = height / 2.0f;
-
-    Vector3 bl(-halfWidth, -halfHeight, 0);
-    Vector3 br(halfWidth, -halfHeight, 0);
-    Vector3 tr(halfWidth, halfHeight, 0);
-    Vector3 tl(-halfWidth, halfHeight, 0);
-
-    lines->addLine(bl, br, color);
-    lines->addLine(br, tr, color);
-    lines->addLine(tr, tl, color);
-    lines->addLine(tl, bl, color);
+    lines->setVisible(showCross);
 }
 
 void editor::Object2DGizmo::setCenter(Vector3 point){
@@ -116,7 +103,6 @@ void editor::Object2DGizmo::setSize(float width, float height){
         this->height = height;
 
         updateRects();
-        updateLines();
     }
 }
 

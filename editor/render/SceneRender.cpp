@@ -52,7 +52,8 @@ editor::SceneRender::SceneRender(Scene* scene, bool use2DGizmos, bool enable3DOv
 
     this->zoom = 1.0f;
 
-    selLines = new Lines(scene);
+    // 2D has no depth test, overlay keeps it above sprites
+    selLines = new Lines(use2DGizmos ? toolslayer.getScene() : scene);
     selLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
     selLines->setVisible(false);
 
@@ -799,6 +800,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
 
     toolslayer.setShowAnchorGizmo(showAnchorGizmo);
 
+    bool object2DRects = false;
     auto syncObject2DGizmoMode = [&](){
         if (toolslayer.getGizmoSelected() != GizmoSelected::OBJECT2D){
             return;
@@ -834,6 +836,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
             showRects = canResize2D && !isCamera && !isInstancedMesh && !showCross;
         }
 
+        object2DRects = showRects;
         toolslayer.setShowObject2DRects(showRects);
         toolslayer.setShowObject2DCross(showCross);
     };
@@ -966,10 +969,9 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
 
     toolslayer.updateCamera(cameracomp, cameratransform);
 
-    // Determine selLines visibility: hide for single entity with OBJECT2D gizmo (none while playing) or empty selBB
-    bool object2DGizmo = toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D && !isPlaying;
+    // Determine selLines visibility: hide for single entity with OBJECT2D rects (none while playing) or empty selBB
     bool showSelLines = selectionVisibility;
-    if (!multipleEntitiesSelected && (object2DGizmo || selBB.size() == 0)) {
+    if (!multipleEntitiesSelected && ((object2DRects && !isPlaying) || selBB.size() == 0)) {
         if (selectedTileIndex < 0 && selectedInstanceIndex < 0) {
             showSelLines = false;
         }
