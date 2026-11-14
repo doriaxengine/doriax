@@ -16,9 +16,9 @@ struct VertexContext {
 };
 
 #ifdef HOOK_NORMAL
-    // skinned and instanced, no morphs, the same in every pass
+    // morphed, skinned and instanced, the same in every pass
     vec3 getHookNormal(mat4 boneTransform){
-        vec3 normal = getSkinNormal(a_normal, boneTransform);
+        vec3 normal = getSkinNormal(getMorphNormal(a_normal), boneTransform);
         #ifdef HAS_INSTANCING
             normal = instanceNormal(mat3(i_matrix_col1.xyz, i_matrix_col2.xyz, i_matrix_col3.xyz), normal);
         #endif
@@ -29,7 +29,7 @@ struct VertexContext {
 #ifdef HOOK_TANGENT
     // skinned and instanced like the hook normal; w is the bitangent's sign
     vec4 getHookTangent(mat4 boneTransform){
-        vec3 tangent = getSkinTangent(a_tangent.xyz, boneTransform);
+        vec3 tangent = getSkinTangent(getMorphTangent(a_tangent.xyz), boneTransform);
         #ifdef HAS_INSTANCING
             tangent = mat3(i_matrix_col1.xyz, i_matrix_col2.xyz, i_matrix_col3.xyz) * tangent;
         #endif

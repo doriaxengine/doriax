@@ -8,7 +8,7 @@
 // The build defines DEPTH_SHADER (see ShaderBuilder) for the same reason depth.vert does:
 // it suppresses the morph-normal machinery and, unless HAS_TERRAIN_PBR samples them, the
 // terrain texture-coordinate varyings. Skinning and terrain normals are still applied;
-// per-target morph-normal blending is not (fine for SSR).
+// per-target morph normals only reach the hooks (fine for SSR).
 
 uniform u_vs_gbufferParams {
     mat4 modelMatrix;

@@ -95,14 +95,16 @@ NormalInfo getNormalInfo(){
         #ifdef HAS_NORMALS
             ng = normalize(v_normal);
         #else
-            // flat, toward the camera: the sign flips with the target's y
             ng = normalize(cross(dFdx(v_position), dFdy(v_position)));
-            vec3 toCamera = lighting.eyePos.w > 0.5 ? lighting.eyePos.xyz - v_position : lighting.cameraDir.xyz;
-            if (dot(ng, toCamera) < 0.0)
-                ng = -ng;
-            // undone by the back face flip below
-            if (!gl_FrontFacing)
-                ng = -ng;
+            // flat, toward the camera: the sign flips with the target's y
+            #if defined(USE_PUNCTUAL) || defined(USE_IBL)
+                vec3 toCamera = lighting.eyePos.w > 0.5 ? lighting.eyePos.xyz - v_position : lighting.cameraDir.xyz;
+                if (dot(ng, toCamera) < 0.0)
+                    ng = -ng;
+                // undone by the back face flip below
+                if (!gl_FrontFacing)
+                    ng = -ng;
+            #endif
         #endif
         #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
             vec2 normalUV = getNormalUV();

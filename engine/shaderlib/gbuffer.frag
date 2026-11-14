@@ -167,7 +167,9 @@ void main() {
             surface.baseColor *= context.color.rgb;
             surface.alpha *= context.color.a;
         #endif
-        #ifdef HAS_NORMALS
+        #ifdef HOOK_FRAGMENT_NORMAL
+            vec3 normal = context.normal;
+        #elif defined(HAS_NORMALS)
             vec3 normal = n * mat3(paramsFS.effect_worldToView);
         #else
             // without normals, the flat one the color pass makes

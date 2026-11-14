@@ -2996,7 +2996,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v73: G-buffer surface hooks get the emissive factor.
     // v74: depth reads the surface normal, unlit hooks match.
     // v75: vertex color in hook surfaces, flat normals fixed.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v75";
+    // v76: morphed hook normals, flat normals without lights.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v76";
 }
 
 void editor::App::pushTabNotificationStyle(){

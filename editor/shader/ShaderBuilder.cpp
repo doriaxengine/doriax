@@ -438,8 +438,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         if (!defined("HAS_TANGENTS"))
             fragmentReads.insert("uv1");
     }
-    // depth takes the surface normal from the context
-    if (passType == ShaderType::DEPTH && useSurface && fragmentHooks.surfaceReads.count("normal"))
+    // depth and G-buffer take the surface normal from the context
+    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface && fragmentHooks.surfaceReads.count("normal"))
         fragmentReads.insert("normal");
     // and tints the surface with the vertex color
     if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
