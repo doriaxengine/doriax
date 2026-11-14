@@ -45,6 +45,7 @@ namespace doriax::editor {
             uint32_t previewGeneration = 0;
             bool previewSelection = false;           // the preview draws the selected node
             std::string nodePreviewOf;               // the node and graph text it was last worked out for
+            int nodePreviewNode = 0;                 // that node, 0 while it has nothing that compiles to draw
             std::string nodePreviewCode;             // and the code it built
             std::string builtCode;                   // what the scene was last asked to build
             std::string liveCode;                    // a shader graph's code as the scene builds it, its pin numbers left out

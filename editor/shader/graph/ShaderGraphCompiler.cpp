@@ -1324,8 +1324,9 @@ namespace {
             Value value;
             if (!inputValue(body, *output, *outputType, pin, value))
                 continue;
-            // a preview draws what a caller would have to combine first: a vec2 as red and green
-            if (previewed && value.type.name == "vec2" && pinType(pin.type).size() > 2)
+            // a preview draws what a graph would have to combine first, a vec2 as red and green:
+            // only a function's and a selected node's link one here, the window does not
+            if (value.type.name == "vec2" && pinType(pin.type).size() > 2)
                 value = Value{"vec3(" + value.code + ", 0.0)", Type{"vec3"}};
             Value converted;
             if (!convert(value, pinType(pin.type), converted, output->id, pin.label))

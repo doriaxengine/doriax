@@ -628,6 +628,8 @@ bool editor::GraphEditorWindow::handleFileRename(const std::filesystem::path& ol
     ShaderBuilder::clearGraphSource(oldKey);
     ShaderBuilder::clearGraphSource(nodePreviewKey(oldKey));
     instance->nodePreviewOf.clear();
+    instance->nodePreviewNode = 0;
+    instance->nodePreviewCode.clear();
     instance->filepath = std::filesystem::path(newKey);
     instance->focusRequested = true;
     if (GraphNodes::isLogic(instance->document)) {
@@ -1714,21 +1716,25 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     std::string shader = instance.filepath.generic_string();
     GraphDocument nodeGraph;
     if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph)) {
-        shader = nodePreviewKey(instance.filepath);
+        const std::string key = nodePreviewKey(instance.filepath);
         // built again once a drag ends, and only when its code changed
         const std::string of = std::to_string(instance.inspected) + "\n" + instance.text;
         if (of != instance.nodePreviewOf && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             instance.nodePreviewOf = of;
             Project* owner = project;
-            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, shader, [owner](const std::string& path, std::string& text) {
+            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, [owner](const std::string& path, std::string& text) {
                 return ShaderBuilder::readGraphSource(owner, path, text);
             });
-            if (built.code != instance.nodePreviewCode) {
+            instance.nodePreviewNode = built.success ? instance.inspected : 0;
+            if (built.success && built.code != instance.nodePreviewCode) {
                 instance.nodePreviewCode = built.code;
-                ShaderBuilder::setGraphSource(shader, nodeGraph.write());
-                project->invalidateCustomShader(shader);
+                ShaderBuilder::setGraphSource(key, nodeGraph.write());
+                project->invalidateCustomShader(key);
             }
         }
+        // the graph draws until this node's own was worked out, and for a node that does not compile
+        if (instance.nodePreviewNode == instance.inspected)
+            shader = key;
     }
     preview.setShader(shader);
     // the project's shaders were built anew, this one too
