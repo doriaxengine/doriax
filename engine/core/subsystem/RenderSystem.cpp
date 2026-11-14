@@ -5343,7 +5343,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
                     (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
                 Vector4 depthMaterial[4] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor,
-                    unlit ? Vector4(0.0f, 1.0f, 0.0f, 0.0f) : Vector4(material.metallicFactor, material.roughnessFactor, 0.0f, 0.0f),
+                    unlit ? Vector4(0.0f, 1.0f, 1.0f, 0.0f) : Vector4(material.metallicFactor, material.roughnessFactor, 0.0f, 0.0f),
                     unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f)};
                 depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, std::min((unsigned int)sizeof(depthMaterial), mesh.submeshes[i].sizeFSDepthMaterial), depthMaterial);
             }
@@ -5731,7 +5731,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         // none where the color pass is unlit, which gives a surface hook none either
         const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
             (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
-        mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
+        mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 1.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
         if (mesh.submeshes[i].hasSkinning){

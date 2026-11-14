@@ -25,7 +25,7 @@ in vec3 v_normal;
 uniform u_fs_gbufferMaterial {
     vec4 params;        // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutoff (-1 = disabled)
     vec4 baseColorFactor;
-    vec4 emissiveFactor; // what a surface hook starts from, as in the color pass with no map
+    vec4 emissiveFactor; // what a surface hook starts from, as in the color pass with no map; w = 1 where that pass is unlit
 } gbufferMaterial;
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
@@ -157,14 +157,16 @@ void main() {
     #endif
 
     #ifdef USE_SURFACE
-        // as the color pass shades it, with the normal turned to world space and back
+        // as the color pass shades it, with the normal turned to world space and back; an
+        // unlit one gives the hook none of the material's lighting fields, and shades with none
+        bool unlit = gbufferMaterial.emissiveFactor.w > 0.5;
         Surface surface;
         surface.baseColor = baseColor.rgb;
         surface.alpha = baseColor.a;
-        surface.normal = n * mat3(paramsFS.effect_worldToView);
-        surface.metallic = metallic;
-        surface.roughness = roughness;
-        surface.occlusion = occlusion;
+        surface.normal = unlit ? vec3(0.0, 1.0, 0.0) : n * mat3(paramsFS.effect_worldToView);
+        surface.metallic = unlit ? 0.0 : metallic;
+        surface.roughness = unlit ? 1.0 : roughness;
+        surface.occlusion = unlit ? 1.0 : occlusion;
         // the factor, so an alpha made of it cuts what the color pass draws; its map is not sampled here
         surface.emissive = gbufferMaterial.emissiveFactor.rgb;
         getSurface(context, surface);
@@ -172,10 +174,12 @@ void main() {
             discard;
         }
         baseColor.rgb = surface.baseColor;
-        n = normalize(mat3(paramsFS.effect_worldToView) * surface.normal);
-        roughness = surface.roughness;
-        metallic = surface.metallic;
-        occlusion = surface.occlusion;
+        if (!unlit) {
+            n = normalize(mat3(paramsFS.effect_worldToView) * surface.normal);
+            roughness = surface.roughness;
+            metallic = surface.metallic;
+            occlusion = surface.occlusion;
+        }
     #endif
 
     frag_gbuffer = vec4(octEncode(n), clamp(roughness, 0.0, 1.0), clamp(metallic, 0.0, 1.0));

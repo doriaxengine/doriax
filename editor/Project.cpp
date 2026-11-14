@@ -1826,7 +1826,7 @@ void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const 
         out << graph.write();
     }
     if (graphEditor)
-        graphEditor->remapEditedGraphs(remap);
+        graphEditor->remapOpenGraphs(remap);
 }
 
 void editor::Project::cleanupShaderFilePath(const std::filesystem::path& deletedPath) {

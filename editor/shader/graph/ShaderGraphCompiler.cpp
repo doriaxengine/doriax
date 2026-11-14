@@ -139,12 +139,29 @@ namespace {
         return errors.empty();
     }
 
-    // the first shader type all of a function's nodes fit, which its preview draws in
-    std::string previewType(const GraphDocument& function) {
+    // the types of a graph's nodes, with those of the functions its Subgraph nodes call
+    void collectNodeTypes(const GraphDocument& graph, const ShaderGraphReader& reader, std::vector<const ShaderNodeType*>& types, std::set<std::string>& read) {
+        for (const GraphNode& node : graph.nodes) {
+            if (const ShaderNodeType* type = ShaderNodes::get().find(node.type))
+                types.push_back(type);
+            if (node.type != "utility/subgraph" || !reader)
+                continue;
+            const std::string file = settingText(node, "file");
+            std::string text, error;
+            GraphDocument function;
+            if (read.insert(file).second && reader(file, text) && function.read(text, error))
+                collectNodeTypes(function, reader, types, read);
+        }
+    }
+
+    // the first shader type all of a function's nodes fit, those it calls included, which its preview draws in
+    std::string previewType(const GraphDocument& function, const ShaderGraphReader& reader) {
+        std::vector<const ShaderNodeType*> types;
+        std::set<std::string> read;
+        collectNodeTypes(function, reader, types, read);
         for (const char* candidate : {"mesh", "ui", "points", "lines", "sky", "water", "postprocess"}) {
-            const bool fits = std::all_of(function.nodes.begin(), function.nodes.end(), [&](const GraphNode& node) {
-                const ShaderNodeType* type = ShaderNodes::get().find(node.type);
-                if (!type || type->shaderTypes.empty() || node.type.rfind("function/", 0) == 0)
+            const bool fits = std::all_of(types.begin(), types.end(), [&](const ShaderNodeType* type) {
+                if (type->shaderTypes.empty() || type->id.rfind("function/", 0) == 0)
                     return true;
                 return std::find(type->shaderTypes.begin(), type->shaderTypes.end(), candidate) != type->shaderTypes.end();
             });
@@ -1459,7 +1476,7 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
     std::vector<NodePin> inputs, outputs;
     if (!checkFunction(graph, inputs, outputs, result.errors))
         return result;
-    const std::string type = previewType(graph);
+    const std::string type = previewType(graph, reader);
     const bool vertexSlot = ShaderNodes::get().find("output/" + type)->findInput("vertexOffset") != nullptr;
     for (size_t i = 0; i < outputs.size(); i++) {
         // what only one hook has, in what the output is made of, decides where it draws

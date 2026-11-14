@@ -29,6 +29,11 @@ bool editor::GraphEditCmd::mergeWith(editor::Command*){
     return false;
 }
 
+void editor::GraphEditCmd::remapTexts(const std::function<std::string(const std::string&)>& remap){
+    before = remap(before);
+    after = remap(after);
+}
+
 bool editor::GraphEditCmd::extend(const std::string& key, const std::string& after){
     if (!canMerge() || key.empty() || key != this->key){
         return false;

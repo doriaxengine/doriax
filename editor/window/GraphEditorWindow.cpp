@@ -586,26 +586,39 @@ bool editor::GraphEditorWindow::isFileModified(const std::filesystem::path& path
     return it != instances.end() && it->second->loadError.empty() && it->second->text != it->second->savedText;
 }
 
-void editor::GraphEditorWindow::remapEditedGraphs(const std::function<bool(GraphDocument&)>& remap) {
+void editor::GraphEditorWindow::remapOpenGraphs(const std::function<bool(GraphDocument&)>& remap) {
+    // a text as the change leaves it, itself when it names nothing that changed
+    auto remapText = [&remap](const std::string& text) {
+        GraphDocument graph;
+        std::string error;
+        if (!graph.read(text, error) || !remap(graph))
+            return text;
+        return graph.write();
+    };
     for (auto& entry : instances) {
         Instance& instance = *entry.second;
-        if (!instance.loadError.empty())
+        // only shader graphs call functions
+        if (!instance.loadError.empty() || GraphNodes::isLogic(instance.document))
             continue;
+        // the states undo and redo go back to take it too, or they would bring the old paths back;
+        // the change is no step of its own, since undoing it would too
+        instance.history->forEach([&remapText](Command* command) {
+            if (GraphEditCmd* edit = dynamic_cast<GraphEditCmd*>(command))
+                edit->remapTexts(remapText);
+        });
         const bool edited = instance.text != instance.savedText;
         if (!remap(instance.document))
             continue;
-        if (edited) {
-            edit(instance);
-            continue;
+        const std::string text = instance.document.write();
+        // the file was written the same way, unless unsaved edits keep it to their save
+        if (!edited) {
+            instance.savedText = text;
+            std::error_code ec;
+            const auto writeTime = std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec);
+            if (!ec)
+                instance.writeTime = writeTime;
         }
-        // its file was written the same way: the window holds it at once, with its history,
-        // where waiting to read it back would leave a preview on the old paths meanwhile
-        instance.text = instance.savedText = instance.document.write();
-        compile(instance);
-        std::error_code ec;
-        const auto writeTime = std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec);
-        if (!ec)
-            instance.writeTime = writeTime;
+        documentChanged(instance, text);
     }
 }
 

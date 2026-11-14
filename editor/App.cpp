@@ -2994,7 +2994,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v71: uv1 read by a fragment hook is flagged for sprite batching.
     // v72: the depth passes start a surface hook from the material's factors.
     // v73: the G-buffer gives a surface hook the material's emissive factor.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v73";
+    // v74: depth passes give a surface hook the normal it reads, and unlit hooks start alike in every pass.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v74";
 }
 
 void editor::App::pushTabNotificationStyle(){

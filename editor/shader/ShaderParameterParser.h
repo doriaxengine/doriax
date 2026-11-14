@@ -52,6 +52,8 @@ namespace doriax::editor {
         bool light = false;
         // fields they read of their context
         std::set<std::string> contextReads;
+        // and of a surface, or set: getSurface both reads and writes it
+        std::set<std::string> surfaceReads;
         // scene inputs they sample: sceneColor, sceneDepth, sceneNormal, sceneOcclusion
         std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"

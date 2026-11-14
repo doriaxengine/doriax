@@ -94,6 +94,12 @@ bool editor::CommandHistory::canRedo() const{
     return index < list.size();
 }
 
+void editor::CommandHistory::forEach(const std::function<void(Command*)>& function) const{
+    for (Command* command : list){
+        function(command);
+    }
+}
+
 void editor::CommandHistory::clear(){
     for (int i = 0; i < list.size(); i++){
         delete list[i];

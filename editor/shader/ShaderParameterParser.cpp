@@ -189,6 +189,7 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     out.light = out.light || definesHook(code, "getLight", "FragmentContext");
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
+    scanContextReads(code, "Surface", out.surfaceReads);
     for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
         if (callsFunction(code, input))
             out.sceneReads.insert(input);

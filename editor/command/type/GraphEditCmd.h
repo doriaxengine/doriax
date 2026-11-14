@@ -31,6 +31,9 @@ namespace doriax::editor{
 
         // a drag or typing goes on in the same step
         bool extend(const std::string& key, const std::string& after);
+
+        // both texts through a change every state of the graph takes, as a function's new path
+        void remapTexts(const std::function<std::string(const std::string&)>& remap);
     };
 
 }
