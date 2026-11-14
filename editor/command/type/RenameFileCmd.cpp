@@ -3,27 +3,9 @@
 
 #include "RenameFileCmd.h"
 
-#include "EditorHost.h"
 #include "util/Util.h"
-#include "window/CodeEditor.h"
-#include "window/GraphEditorWindow.h"
-#include "window/ImageViewerWindow.h"
 
 using namespace doriax;
-
-namespace {
-
-    // an open tab still holds the old path, where a later save would write the file again
-    void remapWindows(const fs::path& from, const fs::path& to) {
-        if (editor::CodeEditor* codeEditor = editor::getEditorHost().getCodeEditor())
-            codeEditor->handleFileRename(from, to);
-        if (editor::ImageViewerWindow* imageViewer = editor::getEditorHost().getImageViewerWindow())
-            imageViewer->handleFileRename(from, to);
-        if (editor::GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
-            graphEditor->handleFileRename(from, to);
-    }
-
-}
 
 editor::RenameFileCmd::RenameFileCmd(Project* project, std::string oldName, std::string newName, std::string directory){
     this->project = project;
@@ -83,7 +65,7 @@ bool editor::RenameFileCmd::execute(){
                     project->remapShaderFilePath(sourceFs, destFs);
                     project->invalidateCustomShaders();
                 }
-                remapWindows(sourceFs, destFs);
+                Project::remapWindowFilePath(sourceFs, destFs);
             }
         }
     } catch (const fs::filesystem_error& e) {
@@ -125,7 +107,7 @@ void editor::RenameFileCmd::undo(){
                     project->remapShaderFilePath(sourceFs, destFs);
                     project->invalidateCustomShaders();
                 }
-                remapWindows(sourceFs, destFs);
+                Project::remapWindowFilePath(sourceFs, destFs);
             }
         }
     } catch (const fs::filesystem_error& e) {

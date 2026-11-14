@@ -335,11 +335,17 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
         Material& material = mesh.submeshes[i].material;
         const MeshSystem::MeshSettings::MaterialShader& saved = settings.shaders[each ? i : 0];
-        if (!material.shader.empty() || (saved.shader.empty() && saved.shaderUniforms.empty() && saved.shaderTextures.empty()))
+        if (saved.shader.empty() && saved.shaderUniforms.empty() && saved.shaderTextures.empty())
             continue;
-        material.shader = saved.shader;
-        material.shaderUniforms = saved.shaderUniforms;
-        material.shaderTextures = saved.shaderTextures;
+        if (material.shader.empty())
+            material.shader = saved.shader;
+        // the values are of the shader they were given for, which an override may have put back already
+        if (material.shader != saved.shader)
+            continue;
+        if (material.shaderUniforms.empty())
+            material.shaderUniforms = saved.shaderUniforms;
+        if (material.shaderTextures.empty())
+            material.shaderTextures = saved.shaderTextures;
         mesh.submeshes[i].needUpdateTexture = true;
         mesh.needUpdateShaderUniforms = true;
         mesh.needReload = true;

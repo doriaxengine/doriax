@@ -589,8 +589,23 @@ bool editor::GraphEditorWindow::isFileModified(const std::filesystem::path& path
 void editor::GraphEditorWindow::remapEditedGraphs(const std::function<bool(GraphDocument&)>& remap) {
     for (auto& entry : instances) {
         Instance& instance = *entry.second;
-        if (instance.loadError.empty() && instance.text != instance.savedText && remap(instance.document))
+        if (!instance.loadError.empty())
+            continue;
+        const bool edited = instance.text != instance.savedText;
+        if (!remap(instance.document))
+            continue;
+        if (edited) {
             edit(instance);
+            continue;
+        }
+        // its file was written the same way: the window holds it at once, with its history,
+        // where waiting to read it back would leave a preview on the old paths meanwhile
+        instance.text = instance.savedText = instance.document.write();
+        compile(instance);
+        std::error_code ec;
+        const auto writeTime = std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec);
+        if (!ec)
+            instance.writeTime = writeTime;
     }
 }
 
@@ -646,6 +661,7 @@ void editor::GraphEditorWindow::moveInstance(const std::string& oldKey, const st
     instance->nodePreviewOf.clear();
     instance->nodePreviewNode = 0;
     instance->nodePreviewCode.clear();
+    instance->nodePreviewSource.clear();
     instance->filepath = std::filesystem::path(newKey);
     instance->focusRequested = true;
     if (GraphNodes::isLogic(instance->document)) {
@@ -1742,10 +1758,16 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
             instance.nodePreviewOf = of;
             const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, reader);
             instance.nodePreviewNode = built.success ? instance.inspected : 0;
+            const std::string source = built.success ? nodeGraph.write() : std::string();
             if (built.success && built.code != instance.nodePreviewCode) {
                 instance.nodePreviewCode = built.code;
-                ShaderBuilder::setGraphSource(key, nodeGraph.write());
+                instance.nodePreviewSource = source;
+                ShaderBuilder::setGraphSource(key, source);
                 project->invalidateCustomShader(key);
+            } else if (built.success && source != instance.nodePreviewSource) {
+                // the same code from another text, as a function that moved: the next build reads this one
+                instance.nodePreviewSource = source;
+                ShaderBuilder::setGraphSource(key, source);
             }
         }
         // the graph draws until this node's own was worked out, and for a node that does not compile

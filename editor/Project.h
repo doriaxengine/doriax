@@ -796,6 +796,9 @@ namespace doriax::editor{
         void remapScriptFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void remapAssetFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void remapShaderFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
+        // the code, image and graph windows showing a file or the files of a folder follow it:
+        // a tab left on the old path would write the file there again on its next save
+        static void remapWindowFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);
         void cleanupMaterialFilePath(const std::filesystem::path& deletedPath);
         void cleanupSceneFilePath(const std::filesystem::path& deletedPath);
         void cleanupEntityBundleFilePath(const std::filesystem::path& deletedPath);

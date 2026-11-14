@@ -1770,9 +1770,20 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         path = updated;
         return true;
     });
-    // only a graph, or a folder that may hold one, is named by Subgraph nodes
-    if (oldRelative.extension().empty() || Util::isShaderGraphFile(oldRelative.string()))
+    // only a graph, or a folder that may hold one, is named by Subgraph nodes; the move is
+    // done by now, and a folder may have a dot in its name
+    std::error_code ec;
+    if (fs::is_directory(projectPath / newRelative, ec) || Util::isShaderGraphFile(oldRelative.string()))
         remapSubgraphFunctions(oldRelative, newRelative);
+}
+
+void editor::Project::remapWindowFilePath(const std::filesystem::path& oldPath, const std::filesystem::path& newPath) {
+    if (CodeEditor* codeEditor = editor::getEditorHost().getCodeEditor())
+        codeEditor->handleFileRename(oldPath, newPath);
+    if (ImageViewerWindow* imageViewer = editor::getEditorHost().getImageViewerWindow())
+        imageViewer->handleFileRename(oldPath, newPath);
+    if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
+        graphEditor->handleFileRename(oldPath, newPath);
 }
 
 // Subgraph nodes name their function by path, in the graph files

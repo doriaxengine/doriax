@@ -80,6 +80,8 @@ void editor::CopyFileCmd::remapPaths(const fs::path& from, const fs::path& to, b
     if (isDir || Util::isScriptFile(extension) || Util::isLogicGraphFile(extension)) project->remapScriptFilePath(from, to);
     if (isDir || Util::isAssetFile(extension)) project->remapAssetFilePath(from, to);
     if (isDir || Util::isShaderFile(extension)) project->remapShaderFilePath(from, to);
+    // only a move comes here, and the windows showing what moved go with it
+    Project::remapWindowFilePath(from, to);
 }
 
 // Two files sharing a scene id make the loader give one a new id on every load

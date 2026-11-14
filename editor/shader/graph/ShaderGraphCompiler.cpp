@@ -154,51 +154,51 @@ namespace {
         return "mesh";
     }
 
-    // whether a node that works per vertex feeds this one
-    bool fedPerVertex(const GraphDocument& function, int node, std::set<int>& seen) {
-        if (!seen.insert(node).second)
-            return false;
-        for (const GraphLink& link : function.links) {
-            if (link.toNode != node || link.fromPin.empty())
-                continue;
-            const GraphNode* from = function.findNode(link.fromNode);
-            const ShaderNodeType* type = from ? ShaderNodes::get().find(from->type) : nullptr;
-            if ((type && type->stage == ShaderNodeStage::VERTEX) || fedPerVertex(function, link.fromNode, seen))
-                return true;
-        }
-        return false;
-    }
+    // what a value is made of that decides where it can be drawn
+    struct Needs {
+        bool light = false;      // a Light node, which only Light has
+        bool material = false;   // a Material node, which only the surface outputs and Light have
+        bool vertex = false;     // a node that works per vertex
+    };
 
-    // whether a function graph holds a node of a type, in itself or in the functions it calls
-    bool functionHolds(const std::string& file, const char* type, const ShaderGraphReader& reader, std::set<std::string>& read) {
-        std::string text, error;
-        GraphDocument function;
-        if (!reader || !read.insert(file).second || !reader(file, text) || !function.read(text, error))
-            return false;
-        for (const GraphNode& node : function.nodes) {
-            if (node.type == type)
-                return true;
-            if (node.type == "utility/subgraph" && functionHolds(settingText(node, "file"), type, reader, read))
-                return true;
-        }
-        return false;
-    }
+    // Follows what feeds one output of a node, into the functions its Subgraph nodes call: only
+    // the nodes its value comes from count, not all a graph holds. inputs takes the names of
+    // the Function Inputs met, which tell a caller which of its links matter
+    void collectNeeds(const GraphDocument& graph, int nodeId, const std::string& pin, const ShaderGraphReader& reader, Needs& needs,
+                      std::set<std::string>& seen, std::set<std::string>* inputs, int depth) {
+        const std::string output = pin.substr(0, pin.find('.'));
+        if (!seen.insert(std::to_string(nodeId) + "." + output).second)
+            return;
+        const GraphNode* node = graph.findNode(nodeId);
+        if (!node)
+            return;
+        const ShaderNodeType* type = ShaderNodes::get().find(node->type);
+        needs.light = needs.light || node->type == "input/light";
+        needs.material = needs.material || node->type == "input/material";
+        needs.vertex = needs.vertex || (type && type->stage == ShaderNodeStage::VERTEX);
+        if (inputs && node->type == "function/input")
+            inputs->insert(settingText(*node, "name"));
 
-    // whether a node is of a type, or is fed by one that is, a Subgraph being all its function holds
-    bool fedBy(const GraphDocument& graph, int node, const char* type, std::set<int>& seen, const ShaderGraphReader& reader) {
-        if (!seen.insert(node).second)
-            return false;
-        const GraphNode* found = graph.findNode(node);
-        if (found && found->type == type)
-            return true;
+        // of a Subgraph, the links its function reads for that output; all of them when it cannot be read
         std::set<std::string> read;
-        if (found && found->type == "utility/subgraph" && functionHolds(settingText(*found, "file"), type, reader, read))
-            return true;
-        for (const GraphLink& link : graph.links) {
-            if (link.toNode == node && !link.fromPin.empty() && fedBy(graph, link.fromNode, type, seen, reader))
-                return true;
+        bool known = false;
+        if (node->type == "utility/subgraph" && reader && depth < 16) {
+            std::string text, error;
+            GraphDocument function;
+            if (reader(settingText(*node, "file"), text) && function.read(text, error)) {
+                for (const GraphNode& inner : function.nodes) {
+                    if (inner.type != "function/output" || settingText(inner, "name") != output)
+                        continue;
+                    known = true;
+                    std::set<std::string> innerSeen;
+                    collectNeeds(function, inner.id, "", reader, needs, innerSeen, &read, depth + 1);
+                }
+            }
         }
-        return false;
+        for (const GraphLink& link : graph.links) {
+            if (link.toNode == nodeId && !link.fromPin.empty() && (!known || read.count(link.toPin)))
+                collectNeeds(graph, link.fromNode, link.fromPin, reader, needs, seen, inputs, depth);
+        }
     }
 
     // "rgba.xyz" is a swizzle of output rgba, "xyz" one of the first output
@@ -1461,19 +1461,16 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
         return result;
     const std::string type = previewType(graph);
     const bool vertexSlot = ShaderNodes::get().find("output/" + type)->findInput("vertexOffset") != nullptr;
-    // what only one hook has decides where the preview draws
-    auto holds = [&](const char* nodeType) {
-        return std::any_of(graph.nodes.begin(), graph.nodes.end(), [&](const GraphNode& node) { return node.type == nodeType; });
-    };
-    const char* fragmentSlot = holds("input/light") ? "light" : (holds("input/material") ? "emissive" : "color");
     for (size_t i = 0; i < outputs.size(); i++) {
-        bool perVertex = false;
+        // what only one hook has, in what the output is made of, decides where it draws
+        Needs needs;
         for (const GraphNode& node : graph.nodes) {
-            std::set<int> seen;
+            std::set<std::string> seen;
             if (node.type == "function/output" && settingText(node, "name") == outputs[i].name)
-                perVertex = vertexSlot && fedPerVertex(graph, node.id, seen);
+                collectNeeds(graph, node.id, "", reader, needs, seen, nullptr, 0);
         }
-        ShaderGraphResult drawn = Compiler(graph, source, reader, type, outputs[i].name, perVertex ? "vertexOffset" : fragmentSlot).run();
+        const char* slot = (vertexSlot && needs.vertex) ? "vertexOffset" : (needs.light ? "light" : (needs.material ? "emissive" : "color"));
+        ShaderGraphResult drawn = Compiler(graph, source, reader, type, outputs[i].name, slot).run();
         if (i == 0) {
             result.type = drawn.type;
             result.code = drawn.code;
@@ -1518,11 +1515,10 @@ bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int no
     output->inputs.clear();
     const int draw = output->id;
     preview.links.erase(std::remove_if(preview.links.begin(), preview.links.end(), [&](const GraphLink& link) { return link.toNode == draw; }), preview.links.end());
-    std::set<int> seen;
-    const bool perVertex = type->stage == ShaderNodeStage::VERTEX || fedPerVertex(graph, node, seen);
-    // what only one hook has decides where it draws, as a function's preview does
-    std::set<int> light, material;
-    const char* fragmentSlot = fedBy(graph, node, "input/light", light, reader) ? "light" : (fedBy(graph, node, "input/material", material, reader) ? "emissive" : "color");
-    preview.connect(node, outputs.front().name, draw, perVertex ? "vertexOffset" : fragmentSlot);
+    // what only one hook has, in what the node's value is made of, decides where it draws
+    Needs needs;
+    std::set<std::string> seen;
+    collectNeeds(graph, node, outputs.front().name, reader, needs, seen, nullptr, 0);
+    preview.connect(node, outputs.front().name, draw, needs.vertex ? "vertexOffset" : (needs.light ? "light" : (needs.material ? "emissive" : "color")));
     return true;
 }
