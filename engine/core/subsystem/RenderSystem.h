@@ -119,7 +119,7 @@ namespace doriax{
 	typedef struct fs_gbuffer_material_t {
 		Vector4 params;             // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutout
 		Vector4 baseColorFactor;
-		Vector4 emissiveFactor;     // for a surface hook; w = 1 where the color pass is unlit
+		Vector4 emissiveFactor;     // for a surface hook, w = 1 when unlit
 	} fs_gbuffer_material_t;
 
 	typedef struct fs_ssao_t {
@@ -325,7 +325,7 @@ namespace doriax{
 		static TextureRender emptyShadowDepth;
 		// 1x1 textures kept for their samplers
 		static TextureRender shaderSamplers[9];
-		// the mipmapped copies trilinear shader textures read, by render id, kept with the scene
+		// mipmapped copies for trilinear shader textures
 		std::unordered_map<std::string, Texture> shaderLevelTextures;
 
 		static bool emptyTexturesCreated;

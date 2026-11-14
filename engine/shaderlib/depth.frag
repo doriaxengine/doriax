@@ -38,7 +38,7 @@ in vec2 v_projZW;
         vec4 alphaParams; // x = baseColorFactor.a, y = alphaCutoff
         #ifdef USE_SURFACE
             vec4 baseColorFactor;
-            vec4 surfaceFactors; // x = metallic, y = roughness, as the color pass gives them with no maps; z = 1 where that pass is unlit
+            vec4 surfaceFactors; // x = metallic, y = roughness, z = 1 when unlit
             vec4 emissiveFactor;
         #endif
     } depthMaterial;
@@ -116,8 +116,7 @@ void main() {
         #endif
         // an unlit color pass gives no normal, but this placeholder
         surface.normal = depthMaterial.surfaceFactors.z > 0.5 ? vec3(0.0, 1.0, 0.0) : normal;
-        // the material's factors, so an alpha made of them cuts what the color pass draws;
-        // its other maps are not sampled here
+        // factors only, the maps are not sampled here
         surface.metallic = depthMaterial.surfaceFactors.x;
         surface.roughness = depthMaterial.surfaceFactors.y;
         surface.occlusion = 1.0;

@@ -44,13 +44,13 @@ namespace doriax::editor {
             std::unique_ptr<ShaderPreviewRender> preview;
             uint32_t previewGeneration = 0;
             bool previewSelection = false;           // the preview draws the selected node
-            std::string nodePreviewOf;               // the node and graph text it was last worked out for
-            int nodePreviewNode = 0;                 // that node, 0 while it has nothing that compiles to draw
-            std::string nodePreviewSource;           // the graph it was built from, as the builder holds it
+            std::string nodePreviewOf;               // the node and graph it was worked out for
+            int nodePreviewNode = 0;                 // that node, 0 until it compiles
+            std::string nodePreviewSource;           // the graph text it was built from
             std::string nodePreviewCode;             // and the code it built
             std::string builtCode;                   // what the scene was last asked to build
-            std::string liveCode;                    // a shader graph's code as the scene builds it, its pin numbers left out
-            std::vector<std::pair<std::string, Vector4>> liveValues;    // those numbers, as last given to the scenes
+            std::string liveCode;                    // code with pin numbers as parameters
+            std::vector<std::pair<std::string, Vector4>> liveValues;    // those pin numbers, as last set
             uint32_t compiledGeneration = 0;         // the shaders compiled was checked against
             double checkAt = 0.0;                    // when the file is next looked at
 
@@ -116,7 +116,7 @@ namespace doriax::editor {
         void openFile(const std::filesystem::path& path, bool dockToCentral = true);
         void closeFile(const std::filesystem::path& path);
         void closeAll();
-        // the shaders were destroyed to be built anew: no preview draws with what it held
+        // after shaders were destroyed for a rebuild
         void reloadPreviews();
         void show();
 
@@ -124,8 +124,7 @@ namespace doriax::editor {
         bool isFileModified(const std::filesystem::path& path) const;
         // an outside edit of an open graph, taken as one undoable step and saved; false when not open
         bool replaceFileText(const std::filesystem::path& path, const std::string& text);
-        // changes the open graphs and every step of their histories, as a function that moved; their
-        // files were changed on disk the same way
+        // remaps open graphs and their histories
         void remapOpenGraphs(const std::function<bool(GraphDocument&)>& remap);
         bool isFocused() const;
         bool handleFileRename(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);

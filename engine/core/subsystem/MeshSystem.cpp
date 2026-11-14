@@ -321,10 +321,7 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
-    // what was given before the model loaded goes to the materials that came without a shader:
-    // each its own when the model has as many as before, as one loaded again, else the one
-    // shader every material shared, which was given to the mesh. The values go with or
-    // without a shader, since a material that draws with the scene's has them too
+    // shader settings given before loading, per material
     const bool each = settings.shaders.size() == mesh.numSubmeshes;
     bool shared = !settings.shaders.empty();
     for (size_t i = 1; i < settings.shaders.size(); i++){
@@ -339,7 +336,7 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
             continue;
         if (material.shader.empty())
             material.shader = saved.shader;
-        // the values are of the shader they were given for, which an override may have put back already
+        // values only with the shader they were set for
         if (material.shader != saved.shader)
             continue;
         if (material.shaderUniforms.empty())
@@ -6169,7 +6166,7 @@ bool MeshSystem::loadOBJ(Entity entity, const std::string filename, bool asyncLo
     std::reverse(mesh.submeshes.data(), mesh.submeshes.data() + mesh.numSubmeshes);
 
     applySubmeshOverrides(submeshOverrides, entity, model);
-    // the file's materials name no shader: the one set on the mesh before it loaded stays
+    // keeps the shader set before loading
     setMeshSettings(meshSettings, mesh);
 
     calculateMeshAABB(mesh);

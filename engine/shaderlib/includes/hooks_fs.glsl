@@ -84,8 +84,7 @@ struct Surface {
 // the fragment stage of the shader file, mapped in by the shader builder
 #include "shader_hooks_fs.glsl"
 
-// the face's normal from the position's slope, toward the camera, as the color pass makes it
-// for a mesh without normals
+// flat normal toward the camera, for meshes without normals
 vec3 getFlatNormal(vec3 worldPosition, vec3 view){
     vec3 normal = normalize(cross(dFdx(worldPosition), dFdy(worldPosition)));
     return dot(normal, view) < 0.0 ? -normal : normal;

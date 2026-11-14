@@ -2073,7 +2073,7 @@ void editor::ResourcesWindow::handleRename(){
                     } else if (fs::exists(newPath)) {
                         ImGui::OpenPopup("File Already Exists");
                     } else {
-                        // the command moves the windows that show the file, so its undo moves them back
+                        // the command moves open tabs, undo included
                         project->getProjectCommandHistory()->addCommand(new RenameFileCmd(project, fileBeingRenamed, newName.string(), currentPath.string()));
                         scanDirectory(currentPath);
                         isRenaming = false;

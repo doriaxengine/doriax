@@ -42,8 +42,7 @@ namespace {
     constexpr double previewDelay = 0.35;
     constexpr float gridSnap = 10.0f;
 
-    // the pixels of a preview drawn this wide, as the scene view counts them on this window's
-    // screen, in steps so that a small move of the panel's edge keeps the target it has
+    // render pixels for a drawn width, in steps of 64
     unsigned int previewPixels(float width) {
         ImGuiViewport* viewport = ImGui::GetWindowViewport();
         const ImVec2 framebufferScale = (viewport && viewport->FramebufferScale.x > 0.0f) ? viewport->FramebufferScale : ImGui::GetIO().DisplayFramebufferScale;
@@ -377,14 +376,14 @@ bool editor::GraphEditorWindow::load(Instance& instance) {
     instance.builtCode = getBuiltCode(instance);
     if (!GraphNodes::isLogic(instance.document)) {
         const bool live = ShaderBuilder::setGraphLive(key, instance.document.type != "function");
-        // what the scene built of the graph before is not what the file holds now, or how it is built
+        // rebuilt for the reloaded file or the live mode
         if (reopened || live)
             project->invalidateCustomShader(key);
     }
     return true;
 }
 
-// what the scene builds of a graph, which a pin's number is no part of while the graph is open
+// the code the scene builds, live while open
 const std::string& editor::GraphEditorWindow::getBuiltCode(const Instance& instance) const {
     return instance.liveCode.empty() ? instance.compiled.code : instance.liveCode;
 }
@@ -403,8 +402,7 @@ void editor::GraphEditorWindow::compile(Instance& instance) {
     instance.compiled = ShaderGraphCompiler::compile(instance.document, shader, reader);
     instance.compiledGeneration = ShaderBuilder::getCustomShaderGeneration();
 
-    // the scene builds an open graph with its pin numbers as values set here, so
-    // typing one draws at once; a function is built into the graphs that call it
+    // open graphs build live; functions build into their callers
     instance.liveCode.clear();
     if (!instance.compiled.success || instance.document.type == "function")
         return;
@@ -442,7 +440,7 @@ bool editor::GraphEditorWindow::save(Instance& instance) {
     // the file holds the edits now
     const std::string key = instance.filepath.generic_string();
     ShaderBuilder::clearGraphSource(key);
-    // only pin numbers changed since the scene built it, and those are set: the code's file is all there is to write
+    // only pin numbers changed: just write the code file
     if (!instance.liveCode.empty() && instance.previewAt < 0.0 && instance.liveCode == instance.builtCode) {
         ShaderBuilder::writeGraphCode(project, key, instance.compiled.code);
         return true;
@@ -476,7 +474,7 @@ void editor::GraphEditorWindow::documentChanged(Instance& instance, const std::s
         ShaderBuilder::clearGraphSource(key);
     else
         ShaderBuilder::setGraphSource(key, text);
-    // moving nodes changes no code, nor does a pin's number; a function's shows one output of several
+    // no rebuild for moves or pin numbers, but functions
     if (instance.document.type == "function" || getBuiltCode(instance) != instance.builtCode) {
         instance.builtCode = getBuiltCode(instance);
         instance.previewAt = ImGui::GetTime() + previewDelay;
@@ -597,7 +595,7 @@ bool editor::GraphEditorWindow::isFileModified(const std::filesystem::path& path
 }
 
 void editor::GraphEditorWindow::remapOpenGraphs(const std::function<bool(GraphDocument&)>& remap) {
-    // a text as the change leaves it, itself when it names nothing that changed
+    // the text remapped, or unchanged
     auto remapText = [&remap](const std::string& text) {
         GraphDocument graph;
         std::string error;
@@ -610,13 +608,12 @@ void editor::GraphEditorWindow::remapOpenGraphs(const std::function<bool(GraphDo
         // only shader graphs call functions
         if (!instance.loadError.empty() || GraphNodes::isLogic(instance.document))
             continue;
-        // the states undo and redo go back to take it too, or they would bring the old paths back;
-        // the change is no step of its own, since undoing it would too
+        // history too, without an undo step of its own
         instance.history->forEach([&remapText](Command* command) {
             if (GraphEditCmd* edit = dynamic_cast<GraphEditCmd*>(command))
                 edit->remapTexts(remapText);
         });
-        // the file was written the same way, unsaved edits or not, so discarding them leaves no old path
+        // the file on disk was remapped too
         const std::string saved = remapText(instance.savedText);
         if (saved != instance.savedText) {
             instance.savedText = saved;
@@ -1767,7 +1764,7 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
         instance.previewGeneration = ShaderBuilder::getCustomShaderGeneration();
     }
     ShaderPreviewRender& preview = *instance.preview;
-    // as big as it is drawn, once a drag of the panel's edge ends: a new target each frame would stutter
+    // resized when the drag ends, not every frame
     const bool resized = pixels != preview.getSize() && !ImGui::IsMouseDown(ImGuiMouseButton_Left);
     if (resized)
         preview.setSize(pixels);
@@ -1775,8 +1772,7 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     std::string shader = instance.filepath.generic_string();
     if (instance.previewSelection) {
         const std::string key = nodePreviewKey(instance.filepath);
-        // worked out again once a drag ends, when the selection, the graph or a function it calls
-        // changed, which may move it to another output; built again only when its code changed
+        // redone when the selection, graph or functions change
         const std::string of = std::to_string(instance.inspected) + "\n" + std::to_string(ShaderBuilder::getCustomShaderGeneration()) + "\n" + instance.text;
         if (of != instance.nodePreviewOf && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             instance.nodePreviewOf = of;
@@ -1797,13 +1793,13 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
                     ShaderBuilder::setGraphSource(key, source);
                     project->invalidateCustomShader(key);
                 } else if (built.success && source != instance.nodePreviewSource) {
-                    // the same code from another text, as a function that moved: the next build reads this one
+                    // same code from new text, as a moved function
                     instance.nodePreviewSource = source;
                     ShaderBuilder::setGraphSource(key, source);
                 }
             }
         }
-        // the graph draws until this node's own was worked out, and for one with nothing to draw or that does not compile
+        // the graph shows until the node preview builds
         if (instance.nodePreviewNode != 0 && instance.nodePreviewNode == instance.inspected)
             shader = key;
     }
@@ -1817,7 +1813,7 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     preview.render();
 
     if (resized) {
-        // the new target is drawn in the next frame, its background shows until then
+        // the new target draws next frame
         const Vector4 background = preview.getScene()->getBackgroundColor();
         const ImVec2 corner = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddRectFilled(corner, ImVec2(corner.x + width, corner.y + width),
@@ -1943,7 +1939,7 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     // a logic graph's script is kept by the editor
     if (logic)
         return;
-    // apart at the right: it ends the graph's use, where the others edit it
+    // on its own at the right
     const char* label = ICON_FA_FILE_CODE " Convert";
     const float width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
     ImGui::SameLine();
@@ -2102,8 +2098,7 @@ void editor::GraphEditorWindow::show() {
             }
             drawToolbar(instance);
 
-            // the panel is resized at its edge; what scrolls is a child inside it, so the
-            // scrollbar keeps off that edge and the fields off both
+            // an inner child scrolls, so the scrollbar keeps off the edge
             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, Theme::dpi(ImVec2(5.0f, 8.0f)));
             ImGui::BeginChild("##side", ImVec2(Theme::dpi(290.0f), 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_ResizeX | ImGuiChildFlags_AlwaysUseWindowPadding,
                               ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);

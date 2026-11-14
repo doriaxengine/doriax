@@ -129,7 +129,7 @@ uniform u_fs_pbrParams {
         vec4 position_type[MAX_LIGHTS]; //position.xyz and type.w
         vec4 inCone_ouCone_shadows_cascades[MAX_LIGHTS]; //innerConeCos.x, outerConeCos.y, shadowMapIndex.z (-1.0 if no shadow), numCascades.w
         vec4 spotUp_maskAspect[MAX_LIGHTS]; //spot projection up.xyz; mask width/height in .w (0 = default circle)
-        vec4 eyePos; //eyePos.xyz, 1.0 in .w for a perspective camera
+        vec4 eyePos; //eyePos.xyz and perspective.w
         vec4 cameraDir; //camera backward axis.xyz
         vec4 globalIllum; //globalColor.xyz and globalIntensity.w
         vec4 envColor; //environment color.rgb (linear) and environment rotation.w (radians)

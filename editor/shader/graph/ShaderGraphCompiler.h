@@ -17,7 +17,7 @@ namespace doriax::editor {
     struct ShaderGraphResult : GraphResult {
         std::string type;                        // what the code fills, as mesh; a function's preview names its own
         std::vector<std::string> functions;      // the function graphs its Subgraph nodes read
-        // the numbers a live compile left out of the code, by the scene parameter that reads each
+        // pin numbers a live compile left out, by parameter
         std::vector<std::pair<std::string, Vector4>> liveValues;
     };
 
@@ -29,12 +29,11 @@ namespace doriax::editor {
     public:
         // source names the graph in the first line of the code; a function graph compiles to a
         // preview of its outputs, drawn in the first shader type all its nodes fit
-        // live names a collection: the numbers typed on pins are then scene parameters of it, so
-        // an editor changes them with no new build
+        // live: collection for pin numbers, set without a rebuild
         static ShaderGraphResult compile(const GraphDocument& graph, const std::string& source, const ShaderGraphReader& reader = nullptr,
                                          const std::string& live = "");
 
-        // the collection of a graph's live numbers, from its path, and whether a collection is one
+        // a graph's live collection, from its path
         static std::string getLiveCollection(const std::string& source);
         static bool isLiveCollection(const std::string& collection);
 
@@ -43,7 +42,7 @@ namespace doriax::editor {
 
         // a mesh graph that draws one node's first output in place of what it draws, as Final
         // Color or, from nodes that work per vertex, Vertex Offset; false for a node with none
-        // the reader tells what the functions of its Subgraph nodes read, which picks the output
+        // reader reads called functions to pick the output
         static bool previewNode(const GraphDocument& graph, int node, GraphDocument& preview, const ShaderGraphReader& reader = nullptr);
     };
 

@@ -25,7 +25,7 @@ in vec3 v_normal;
 uniform u_fs_gbufferMaterial {
     vec4 params;        // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutoff (-1 = disabled)
     vec4 baseColorFactor;
-    vec4 emissiveFactor; // what a surface hook starts from, as in the color pass with no map; w = 1 where that pass is unlit
+    vec4 emissiveFactor; // for a surface hook, w = 1 when unlit
 } gbufferMaterial;
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
@@ -157,8 +157,7 @@ void main() {
     #endif
 
     #ifdef USE_SURFACE
-        // as the color pass shades it, with the normal turned to world space and back; an
-        // unlit one gives the hook none of the material's lighting fields, and shades with none
+        // as the color pass gives it, unlit gets none
         bool unlit = gbufferMaterial.emissiveFactor.w > 0.5;
         Surface surface;
         surface.baseColor = baseColor.rgb;
@@ -178,7 +177,7 @@ void main() {
         surface.metallic = unlit ? 0.0 : metallic;
         surface.roughness = unlit ? 1.0 : roughness;
         surface.occlusion = unlit ? 1.0 : occlusion;
-        // the factor, so an alpha made of it cuts what the color pass draws; its map is not sampled here
+        // factor only, the map is not sampled here
         surface.emissive = gbufferMaterial.emissiveFactor.rgb;
         getSurface(context, surface);
         if (gbufferMaterial.params.w >= 0.0 && surface.alpha * keepHookInputs(context) < gbufferMaterial.params.w) {

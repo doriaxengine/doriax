@@ -2860,7 +2860,7 @@ void editor::App::saveAllCodeEditors() {
     if (codeEditor) {
         codeEditor->saveAll();
     }
-    // a logic graph's script is written from its saved file, as a script's code is read from its own
+    // logic graphs write their scripts on save
     if (graphEditorWindow) {
         graphEditorWindow->saveAll();
     }
@@ -2991,11 +2991,11 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v68: object, camera planes and view matrix for hooks.
     // v69: flags for what the hooks read, which sprite batching asks.
     // v70: varyings type in passes that read none, shadows for getLight on any side.
-    // v71: uv1 read by a fragment hook is flagged for sprite batching.
-    // v72: the depth passes start a surface hook from the material's factors.
-    // v73: the G-buffer gives a surface hook the material's emissive factor.
-    // v74: depth passes give a surface hook the normal it reads, and unlit hooks start alike in every pass.
-    // v75: vertex colors tint a hook's surface in every pass; flat normals face the camera everywhere.
+    // v71: fragment uv1 reads flagged for sprite batching.
+    // v72: depth surface hooks start from material factors.
+    // v73: G-buffer surface hooks get the emissive factor.
+    // v74: depth reads the surface normal, unlit hooks match.
+    // v75: vertex color in hook surfaces, flat normals fixed.
     return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v75";
 }
 

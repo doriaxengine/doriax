@@ -1770,8 +1770,7 @@ void editor::Project::remapShaderFilePath(const std::filesystem::path& oldPath, 
         path = updated;
         return true;
     });
-    // only a graph, or a folder that may hold one, is named by Subgraph nodes; the move is
-    // done by now, and a folder may have a dot in its name
+    // a graph, or a folder that may hold graphs
     std::error_code ec;
     if (fs::is_directory(projectPath / newRelative, ec) || Util::isShaderGraphFile(oldRelative.string()))
         remapSubgraphFunctions(oldRelative, newRelative);
@@ -1811,7 +1810,7 @@ void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const 
                 it.disable_recursion_pending();
             continue;
         }
-        // the saved version too of one with unsaved edits, which may be discarded
+        // edited graphs too, their edits may be discarded
         if (it->path().extension() != ".shader")
             continue;
         std::ifstream in(it->path(), std::ios::binary);
@@ -4275,7 +4274,7 @@ void editor::Project::invalidateCustomShader(const std::string& shader) {
 }
 
 void editor::Project::flagCustomShaderUsers(const std::string* shader) {
-    // a graph window's preview is a scene of its own, which may be drawn this very frame
+    // graph previews draw outside the project scenes
     if (GraphEditorWindow* graphEditor = editor::getEditorHost().getGraphEditorWindow())
         graphEditor->reloadPreviews();
 

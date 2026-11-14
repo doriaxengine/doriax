@@ -107,7 +107,7 @@ void editor::ShaderPreviewRender::requestRender(){
 }
 
 void editor::ShaderPreviewRender::render(){
-    // a scene drawn once makes the editor draw its own too, so an idle preview asks for nothing
+    // an idle preview lets the editor idle too
     auto renderSystem = scene->getSystem<RenderSystem>();
     if (renderSystem && !renderSystem->isAllLoaded())
         requestRender();

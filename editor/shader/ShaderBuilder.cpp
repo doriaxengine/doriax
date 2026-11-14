@@ -118,8 +118,7 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     // the edits are copied under the lock, the files read and compiled without it
     std::unordered_map<std::string, std::string> edits;
     const uint32_t generation = customShaderGeneration;
-    // the cache holds what the editor draws: an export reads past it once a graph is edited or
-    // live, which it may have taken in as itself or as a function, and a run past a live graph
+    // cached sources are the editor's, exports and runs may skip them
     bool saved = false;
     bool direct = false;
     bool live = false;
@@ -441,10 +440,10 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         if (!defined("HAS_TANGENTS"))
             fragmentReads.insert("uv1");
     }
-    // the depth passes start the surface's normal from the context's, where the color pass has its own
+    // depth takes the surface normal from the context
     if (passType == ShaderType::DEPTH && useSurface && fragmentHooks.surfaceReads.count("normal"))
         fragmentReads.insert("normal");
-    // and the depth and G-buffer passes tint it with the vertex and instance color, as the color pass does
+    // and tints the surface with the vertex color
     if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
         fragmentReads.insert("color");
 
@@ -549,7 +548,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
         if (normal || (useVertexHooks && (vertexReads.count("localPosition") || vertexReads.count("objectPosition") || vertexReads.count("objectScale"))))
             declared.flags |= ShaderFlag_ObjectSpace;
-        // either stage gets uv1 as stored, and a batch stores the texture region in it
+        // a batch writes the texture region into uv1
         if ((useVertexHooks && vertexReads.count("uv1")) || (useFragmentHooks && fragmentReads.count("uv1")))
             declared.flags |= ShaderFlag_VertexUV;
         if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
@@ -648,7 +647,7 @@ editor::ShaderEffectAnnotations editor::ShaderBuilder::getShaderAnnotations(Proj
     ShaderParameterParser::parseTree("/" + shader, lookup, ShaderStageType::FRAGMENT, annotations);
     // the clashes the build would stop at
     ShaderParameterParser::checkDeclarations(annotations.parameters, annotations.errors);
-    // a live graph's pin numbers are the graph window's, not parameters to show
+    // pin numbers of live graphs are not parameters
     annotations.parameters.erase(std::remove_if(annotations.parameters.begin(), annotations.parameters.end(), [](const ShaderParameterDeclaration& declaration) {
         return ShaderGraphCompiler::isLiveCollection(declaration.collection);
     }), annotations.parameters.end());
@@ -1027,7 +1026,7 @@ ShaderBuildResult editor::ShaderBuilder::buildShader(ShaderKey shaderKey, Projec
         const bool live = isLiveShader(shaderKey);
         std::filesystem::path cachePath = getShaderCachePath(shaderKey, project, live);
         bool fresh = !isCustom || !isCustomCacheStale(shaderKey, project, cachePath);
-        // a pass that reads none of the pin numbers was filed under the plain name
+        // a pass without pin numbers has the plain name
         if (!fresh && live) {
             cachePath = getShaderCachePath(shaderKey, project);
             fresh = !isCustomCacheStale(shaderKey, project, cachePath);
@@ -1105,7 +1104,7 @@ void editor::ShaderBuilder::buildMissingShaders(const std::set<ShaderKey>& shade
         return;
     }
 
-    // a run cannot be given a graph's pin numbers, so its files hold them whatever the editor draws
+    // runs need the pin numbers in the code
     for (const ShaderKey& shaderKey : shaderKeys) {
         const std::filesystem::path cachePath = getShaderCachePath(shaderKey, project);
         const bool isCustom = ShaderPool::getCustomIdFromKey(shaderKey) != 0;
@@ -1451,8 +1450,7 @@ bool editor::ShaderBuilder::saveShaderDataCache(ShaderKey shaderKey, Project* pr
         return false;
     }
 
-    // the file follows what was built, whatever the graph's window did meanwhile: one
-    // with pin numbers left to the editor never takes the name a run loads
+    // named by what was built, so runs never load live code
     const bool live = std::any_of(shaderData.parameters.begin(), shaderData.parameters.end(), [](const ShaderParameterInfo& parameter) {
         return ShaderGraphCompiler::isLiveCollection(parameter.collection);
     });

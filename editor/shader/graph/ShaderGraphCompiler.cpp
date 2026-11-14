@@ -139,7 +139,7 @@ namespace {
         return errors.empty();
     }
 
-    // the types of a graph's nodes, with those of the functions its Subgraph nodes call
+    // node types, with those of called functions
     void collectNodeTypes(const GraphDocument& graph, const ShaderGraphReader& reader, std::vector<const ShaderNodeType*>& types, std::set<std::string>& read) {
         for (const GraphNode& node : graph.nodes) {
             if (const ShaderNodeType* type = ShaderNodes::get().find(node.type))
@@ -154,7 +154,7 @@ namespace {
         }
     }
 
-    // the first shader type all of a function's nodes fit, those it calls included, which its preview draws in
+    // the first shader type all of a function's nodes fit
     std::string previewType(const GraphDocument& function, const ShaderGraphReader& reader) {
         std::vector<const ShaderNodeType*> types;
         std::set<std::string> read;
@@ -171,16 +171,14 @@ namespace {
         return "mesh";
     }
 
-    // what a value is made of that decides where it can be drawn
+    // what decides where a value can draw
     struct Needs {
-        bool light = false;      // a Light node, which only Light has
-        bool material = false;   // a Material node, which only the surface outputs and Light have
-        bool vertex = false;     // a node that works per vertex
+        bool light = false;      // a Light node
+        bool material = false;   // a Material node
+        bool vertex = false;     // a per vertex node
     };
 
-    // Follows what feeds one output of a node, into the functions its Subgraph nodes call: only
-    // the nodes its value comes from count, not all a graph holds. inputs takes the names of
-    // the Function Inputs met, which tell a caller which of its links matter
+    // what feeds an output, through called functions
     void collectNeeds(const GraphDocument& graph, int nodeId, const std::string& pin, const ShaderGraphReader& reader, Needs& needs,
                       std::set<std::string>& seen, std::set<std::string>* inputs, int depth) {
         const std::string output = pin.substr(0, pin.find('.'));
@@ -196,7 +194,7 @@ namespace {
         if (inputs && node->type == "function/input")
             inputs->insert(settingText(*node, "name"));
 
-        // of a Subgraph, the links its function reads for that output; all of them when it cannot be read
+        // a Subgraph only follows the inputs its output reads
         std::set<std::string> read;
         bool known = false;
         if (node->type == "utility/subgraph" && reader && depth < 16) {
@@ -392,7 +390,7 @@ namespace {
 
         ShaderGraphResult run();
 
-        // the collection pin numbers are read from, none when the code holds them
+        // collection of live pin numbers, empty for literals
         std::string live;
 
     private:
@@ -1028,11 +1026,11 @@ namespace {
         return true;
     }
 
-    // a number left to a scene parameter, which the editor fills as it is typed
+    // a pin number as a parameter of the live collection
     bool Compiler::liveNumber(Body& body, const GraphNode& node, const NodePin& pin, const GraphValue& constant, const Type& wanted, std::string& code) {
-        // a stage has only so many uniform components, and a graph has other uses for them
+        // uniform space is limited
         constexpr size_t most = 96;
-        // a pin of a Custom Function is named by its code, and not every name makes a parameter's
+        // custom function pins may not make valid names
         const std::string name = "n" + std::to_string(node.id) + "_" + pin.name;
         if (live.empty() || !wanted.vector() || !ShaderParameters::isValidName(name))
             return false;
@@ -1359,8 +1357,7 @@ namespace {
             Value value;
             if (!inputValue(body, *output, *outputType, pin, value))
                 continue;
-            // a preview draws what a graph would have to combine first, a vec2 as red and green:
-            // only a function's and a selected node's link one here, the window does not
+            // previews draw a vec2 as red and green
             if (value.type.name == "vec2" && pinType(pin.type).size() > 2)
                 value = Value{"vec3(" + value.code + ", 0.0)", Type{"vec3"}};
             Value converted;
@@ -1450,7 +1447,7 @@ namespace {
 }
 
 std::string editor::ShaderGraphCompiler::getLiveCollection(const std::string& source) {
-    // FNV-1a, the same from one run to the next so a built shader is found again
+    // FNV-1a, stable across runs for the disk cache
     uint32_t hash = 2166136261u;
     for (unsigned char c : source)
         hash = (hash ^ c) * 16777619u;
@@ -1479,7 +1476,7 @@ editor::ShaderGraphResult editor::ShaderGraphCompiler::compile(const GraphDocume
     const std::string type = previewType(graph, reader);
     const bool vertexSlot = ShaderNodes::get().find("output/" + type)->findInput("vertexOffset") != nullptr;
     for (size_t i = 0; i < outputs.size(); i++) {
-        // what only one hook has, in what the output is made of, decides where it draws
+        // the hook its inputs need decides where it draws
         Needs needs;
         for (const GraphNode& node : graph.nodes) {
             std::set<std::string> seen;
@@ -1532,7 +1529,7 @@ bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int no
     output->inputs.clear();
     const int draw = output->id;
     preview.links.erase(std::remove_if(preview.links.begin(), preview.links.end(), [&](const GraphLink& link) { return link.toNode == draw; }), preview.links.end());
-    // what only one hook has, in what the node's value is made of, decides where it draws
+    // the hook its inputs need decides where it draws
     Needs needs;
     std::set<std::string> seen;
     collectNeeds(graph, node, outputs.front().name, reader, needs, seen, nullptr, 0);

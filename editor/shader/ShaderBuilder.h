@@ -34,11 +34,11 @@ namespace doriax::editor {
         uint32_t flags = 0;
     };
 
-    // which form of a project's shader files a build takes
+    // the sources a build takes
     enum class ShaderSourceUse {
-        EDITOR,     // as the editor draws: unsaved graph edits, and an open graph's pin numbers left to it
-        RUN,        // as a run of the project draws: unsaved graph edits, the numbers in the code
-        SAVED       // as an export takes them: the files
+        EDITOR,     // edits, live pin numbers while open
+        RUN,        // edits, pin numbers in the code
+        SAVED       // the files, as exports take them
     };
 
     class ShaderBuilder {
@@ -86,9 +86,9 @@ namespace doriax::editor {
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR);
         std::string getShaderDisplayName(ShaderKey key);
 
-        // live names the file of a build that left a graph's pin numbers to the editor, which no run loads
+        // live for a build with pin numbers as parameters
         static std::filesystem::path getShaderCachePath(ShaderKey shaderKey, Project* project, bool live = false);
-        // whether the editor draws this shader with an open graph's pin numbers left to it
+        // whether an open graph builds it with live pin numbers
         static bool isLiveShader(ShaderKey shaderKey);
 
         // Compares the cached source signature with the shader file and the exact
@@ -125,11 +125,9 @@ namespace doriax::editor {
         // an open graph's edits, built in place of its file until saved or closed
         static void setGraphSource(const std::string& shader, const std::string& text);
         static void clearGraphSource(const std::string& shader);
-        // a graph open in the editor is built with its pin numbers as values the editor sets,
-        // so changing one needs no new build; an export and the generated file keep the numbers
-        // true when it changed
+        // open graphs build pin numbers as parameters; true when changed
         static bool setGraphLive(const std::string& shader, bool live);
-        // the code of a graph in the project's generated files, which a build writes too
+        // writes a graph's code to the generated files
         static void writeGraphCode(Project* project, const std::string& shader, const std::string& code);
         // a graph as the editor holds it, edited or saved, which Subgraph nodes read
         static bool readGraphSource(Project* project, const std::string& path, std::string& text);

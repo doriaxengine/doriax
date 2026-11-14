@@ -99,8 +99,7 @@ namespace {
 std::string editor::GraphValue::formatNumber(float value) {
     if (value == 0.0f)
         return "0";
-    // std::to_chars for floats is missing from the older systems the editor runs on:
-    // the fewest digits that read back the same, with an exponent only where zeros would pile up
+    // float to_chars is missing on older macOS
     char scientific[48];
     int digits = 1;
     for (; digits <= 9; digits++) {
@@ -123,8 +122,7 @@ std::string editor::GraphValue::formatNumber(float value) {
 }
 
 bool editor::GraphValue::parseNumber(const std::string& text, float& value) {
-    // digits with a point and an exponent at most, the same on every system: one
-    // library reads 0x10 or inf as numbers where another leaves them text
+    // plain decimals only, the same on every platform
     size_t at = 0;
     auto run = [&]() {
         const size_t start = at;

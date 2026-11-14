@@ -163,6 +163,11 @@ namespace {
         return !(flags & ShaderFlag_VertexColor) || submesh.material.baseColorFactor == Vector4(1.0f, 1.0f, 1.0f, 1.0f);
     }
 
+    // as the color pass draws it
+    bool drawsUnlit(const Submesh& submesh){
+        return (submesh.shaderProperties & 1u) || (submesh.shader && (submesh.shader->shaderData.flags & ShaderFlag_Unlit));
+    }
+
     // a batch draws with the first sprite's values of a shader file
     bool sharesShaderValues(const MeshComponent& a, const MeshComponent& b){
         return a.submeshes[0].customShaderId == 0 ||
@@ -180,7 +185,7 @@ namespace {
         };
 
         if (mesh.numSubmeshes > 0){
-            // one that inherits the scene's shader reads the scene's values of it too
+            // an inherited shader reads the scene's values too
             const unsigned char inherits = mesh.submeshes[0].material.shader.empty() ? 1 : 0;
             add(&inherits, 1);
             for (const auto& entry : mesh.submeshes[0].material.shaderUniforms){
@@ -1287,7 +1292,7 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
         case ShadowQuality::HIGH:   pcfRadius = 3.0f; break;
     }
 
-    // w: 1 for a perspective camera, whose eye the view goes to, 0 for one whose view is its backward axis
+    // w: 1 for perspective cameras
     fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z,
                                  camera.type == CameraType::CAMERA_PERSPECTIVE ? 1.0f : 0.0f);
     fs_lighting.cameraDir = Vector4(camera.worldDirection.x, camera.worldDirection.y, camera.worldDirection.z, pcfRadius);
@@ -2575,7 +2580,7 @@ bool RenderSystem::loadShaderTextures(ShaderTextureValues& textures, ShaderData&
 
         const bool mipmapped = parameter.filter != TextureFilter::NEAREST && parameter.filter != TextureFilter::LINEAR;
         TextureRender* textureRender = NULL;
-        Texture levels; // owns what it gives while an image still loads
+        Texture levels; // keeps the copy alive while it loads
         for (auto& texture : textures){
             if (texture.first == parameter.name){
                 if (!texture.second.empty() && !texture.second.isFramebuffer() && texture.second.getType() != parameter.type){
@@ -4525,7 +4530,7 @@ bool RenderSystem::batchSprite(Entity entity, MeshComponent& mesh, Transform& tr
     if ((transform.billboard && transform.fakeBillboard) || !hasAffineModel(transform))
         return false;
 
-    // a batched sprite never draws by itself, so its changed values are taken here
+    // batched sprites skip drawMesh, so update values here
     writeParameters(mesh, scene);
 
     // an equal pipeline means the same shader, layout and blending
@@ -5341,9 +5346,8 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
-                // the base color and the factors only for a surface hook, which an unlit color pass gives none
-                const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
-                    (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
+                // factors for a surface hook, none when unlit
+                const bool unlit = drawsUnlit(mesh.submeshes[i]);
                 Vector4 depthMaterial[4] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor,
                     unlit ? Vector4(0.0f, 1.0f, 1.0f, 0.0f) : Vector4(material.metallicFactor, material.roughnessFactor, 0.0f, 0.0f),
                     unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f)};
@@ -5730,9 +5734,8 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             : -1.0f;
         mat.params = Vector4(material.roughnessFactor, material.metallicFactor, iblSource, alphaCutoff);
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
-        // none where the color pass is unlit, which gives a surface hook none either
-        const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
-            (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
+        // unlit: no emissive, flagged in w
+        const bool unlit = drawsUnlit(mesh.submeshes[i]);
         mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 1.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
@@ -10866,8 +10869,7 @@ void RenderSystem::update(double dt){
                     }
                 }
 
-                // a framebuffer made anew, as a resized one, is a new texture for every pass: the
-                // color pass alone would take it and leave the depth and G-buffer on the old one
+                // a recreated framebuffer is new for every pass
                 if (!mesh.submeshes[s].needUpdateTexture && checkPBRFrabebufferUpdate(mesh.submeshes[s].material)){
                     mesh.submeshes[s].needUpdateTexture = true;
                 }
