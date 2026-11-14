@@ -120,7 +120,7 @@ namespace doriax::editor {
         static std::vector<std::string> invalidateCustomShader(const std::string& shader);
         // bumped by the calls above
         static uint32_t getCustomShaderGeneration();
-        // cached shaders whose files changed on disk
+        // shaders whose files changed on disk, until they are invalidated
         static std::vector<std::string> getChangedCustomShaders();
 
         // an open graph's edits, built until saved or closed

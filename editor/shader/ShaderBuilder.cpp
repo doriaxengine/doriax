@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <map>
 #include <memory>
 #include <sstream>
 #include <unordered_set>
@@ -53,12 +54,13 @@ struct CustomSourceSnapshot {
     std::unordered_map<std::string, std::string> projectBuffers;
     std::string signature;
     std::vector<int> graphLines;     // of a graph, the node each line of its code came from
-    // files read from disk, with their times
-    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> files;
 };
 
 std::mutex customSourceCacheMutex;
 std::unordered_map<std::string, std::shared_ptr<const CustomSourceSnapshot>> customSourceCache;
+using FileTimes = std::map<std::filesystem::path, std::filesystem::file_time_type>;
+// files resolutions read or missed, with the time first seen, by cache key
+std::unordered_map<std::string, FileTimes> sourceFiles;
 // graphs edited in the editor, by path, until saved
 std::unordered_map<std::string, std::string> graphSources;
 // the graphs open in the editor, whose pin numbers are values it sets
@@ -140,15 +142,22 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     auto snapshot = std::make_shared<CustomSourceSnapshot>();
     std::filesystem::path projectRoot = project->getProjectPath();
     std::string signatureInput;
+    // timed before the read, kept until invalidated; exports leave it alone
     auto track = [&](const std::filesystem::path& path) {
+        if (saved)
+            return;
         std::error_code ec;
-        snapshot->files.emplace_back(path, std::filesystem::last_write_time(path, ec));
+        const std::filesystem::file_time_type time = std::filesystem::last_write_time(path, ec);
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        sourceFiles[cacheKey].emplace(path, time);
     };
 
     // a project file, else an engine one; failures not cached
     std::string source;
     std::error_code ec;
     if (editor::ProjectUtils::isEngineShader(shader) && !std::filesystem::exists(projectRoot / shader, ec)) {
+        // a project file made there would take its place
+        track(projectRoot / shader);
         source = editor::shaderMap.at(shader);
         appendSignaturePart(signatureInput, "engine:" + shader, source);
     } else {
@@ -158,11 +167,12 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         }
         if (edited != edits.end()) {
             source = edited->second;
-        } else if (!readTextFile(projectRoot / shader, source)) {
-            snapshot->error = "Could not open shader file: " + shader;
-            return snapshot;
         } else {
             track(projectRoot / shader);
+            if (!readTextFile(projectRoot / shader, source)) {
+                snapshot->error = "Could not open shader file: " + shader;
+                return snapshot;
+            }
         }
         // a graph stands for the shader file it compiles to
         if (editor::Util::isShaderGraphFile(shader)) {
@@ -178,10 +188,10 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                     text = function->second;
                     return true;
                 }
-                if (!editor::Util::isSafeRelativePath(path) || !readTextFile(projectRoot / path, text))
+                if (!editor::Util::isSafeRelativePath(path))
                     return false;
                 track(projectRoot / path);
-                return true;
+                return readTextFile(projectRoot / path, text);
             };
             const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction,
                 live ? editor::ShaderGraphCompiler::getLiveCollection(shader) : std::string());
@@ -208,7 +218,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
         shader + "\"\n#include \"shader_textures_end_fs.glsl\"\n";
 
-    auto readCandidate = [](const std::filesystem::path& path, std::string& content) {
+    // watched even when absent, as a file made there would come first
+    auto readCandidate = [&](const std::filesystem::path& path, std::string& content) {
+        track(path);
         std::error_code ec;
         return std::filesystem::is_regular_file(path, ec) && readTextFile(path, content);
     };
@@ -235,11 +247,9 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 if (!folder.empty() && readCandidate(projectRoot / folder / key, content)) {
                     origin = "local:" + key;
                     path = "/" + (folder / key).lexically_normal().generic_string();
-                    track(projectRoot / folder / key);
                 } else if (readCandidate(projectRoot / key, content)) {
                     origin = "project:" + key;
                     path = "/" + std::filesystem::path(key).lexically_normal().generic_string();
-                    track(projectRoot / key);
                 } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
                     origin = "engine:" + key;
                     content = engineIt->second;
@@ -317,6 +327,7 @@ void clearCustomSourceCache() {
     std::lock_guard<std::mutex> lock(customSourceCacheMutex);
     customSourceCache.clear();
     graphDependents.clear();
+    sourceFiles.clear();
 }
 
 // parameter headers, hook defines and flags; throws on a bad annotation
@@ -1577,22 +1588,20 @@ uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {
 }
 
 std::vector<std::string> editor::ShaderBuilder::getChangedCustomShaders() {
-    std::vector<std::pair<std::string, std::shared_ptr<const CustomSourceSnapshot>>> snapshots;
+    std::unordered_map<std::string, FileTimes> watched;
     {
         std::lock_guard<std::mutex> lock(customSourceCacheMutex);
-        for (const auto& [key, snapshot] : customSourceCache)
-            snapshots.emplace_back(key.substr(key.find('\n') + 1), snapshot);
+        watched = sourceFiles;
     }
-    // files read without the lock
+    // files looked at without the lock
     std::vector<std::string> changed;
-    for (const auto& [shader, snapshot] : snapshots) {
-        for (const auto& [path, time] : snapshot->files) {
+    for (const auto& [key, files] : watched) {
+        const bool edited = std::any_of(files.begin(), files.end(), [](const auto& file) {
             std::error_code ec;
-            if (std::filesystem::last_write_time(path, ec) != time) {
-                changed.push_back(shader);
-                break;
-            }
-        }
+            return std::filesystem::last_write_time(file.first, ec) != file.second;
+        });
+        if (edited)
+            changed.push_back(key.substr(key.find('\n') + 1));
     }
     return changed;
 }
@@ -1614,6 +1623,9 @@ std::vector<std::string> editor::ShaderBuilder::invalidateCustomShader(const std
         }
         for (auto it = customSourceCache.begin(); it != customSourceCache.end();)
             it = listed(it->first.substr(it->first.find('\n') + 1)) ? customSourceCache.erase(it) : std::next(it);
+        // their changes are taken, watched again as they resolve
+        for (auto it = sourceFiles.begin(); it != sourceFiles.end();)
+            it = listed(it->first.substr(it->first.find('\n') + 1)) ? sourceFiles.erase(it) : std::next(it);
     }
     auto named = [&](ShaderKey key) {
         const uint16_t customId = ShaderPool::getCustomIdFromKey(key);
