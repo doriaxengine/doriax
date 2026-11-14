@@ -53,7 +53,7 @@ void editor::ShaderPreviewRender::createShape(){
     else if (shapeType == ShapeType::PLANE)
         shape->createPlane(2.0, 2.0);
     else
-        shape->createSphere(1.0);
+        shape->createSphere(1.0, 96, 48);    // round at the size a wide panel draws it
 
     Material material;
     material.shader = shader;
@@ -84,6 +84,17 @@ void editor::ShaderPreviewRender::setShape(ShapeType type){
 
 editor::ShaderPreviewRender::ShapeType editor::ShaderPreviewRender::getShape() const{
     return shapeType;
+}
+
+void editor::ShaderPreviewRender::setSize(unsigned int size){
+    if (size == getSize())
+        return;
+    camera->setFramebufferSize(size, size);
+    requestRender();
+}
+
+unsigned int editor::ShaderPreviewRender::getSize() const{
+    return camera->getComponent<CameraComponent>().framebufferWidth;
 }
 
 void editor::ShaderPreviewRender::reload(){

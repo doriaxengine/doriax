@@ -47,6 +47,9 @@ namespace doriax::editor{
         const std::string& getShader() const;
         void setShape(ShapeType type);
         ShapeType getShape() const;
+        // its width and height in pixels; its target is made anew, empty until the next draw
+        void setSize(unsigned int size);
+        unsigned int getSize() const;
 
         // takes the shader again, once it was built anew
         void reload();

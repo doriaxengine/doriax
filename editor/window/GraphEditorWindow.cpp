@@ -41,7 +41,17 @@ namespace {
     // the scene builds a graph this long after its last edit, so a drag builds once
     constexpr double previewDelay = 0.35;
     constexpr float gridSnap = 10.0f;
-    constexpr unsigned int previewSize = 256;
+
+    // the pixels of a preview drawn this wide, as the scene view counts them on this window's
+    // screen, in steps so that a small move of the panel's edge keeps the target it has
+    unsigned int previewPixels(float width) {
+        ImGuiViewport* viewport = ImGui::GetWindowViewport();
+        const ImVec2 framebufferScale = (viewport && viewport->FramebufferScale.x > 0.0f) ? viewport->FramebufferScale : ImGui::GetIO().DisplayFramebufferScale;
+        const float dpiScale = (viewport && viewport->DpiScale >= 0.5f && viewport->DpiScale <= 8.0f) ? viewport->DpiScale : 1.0f;
+        const float pixels = std::max(width, 1.0f) * Backend::sceneRenderScale(framebufferScale, dpiScale).x;
+        const unsigned int steps = (unsigned int)std::ceil(pixels / 64.0f);
+        return std::clamp(steps * 64u, 128u, 1024u);
+    }
 
     const ImVec4 errorColor(0.9f, 0.45f, 0.4f, 1.0f);
 
@@ -1751,11 +1761,17 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     const bool mesh = instance.document.type == "mesh" || (instance.document.type == "function" && instance.compiled.type == "mesh");
     if (!mesh || !ImGui::CollapsingHeader("Preview", ImGuiTreeNodeFlags_DefaultOpen))
         return;
+    const float width = ImGui::GetContentRegionAvail().x;
+    const unsigned int pixels = previewPixels(width);
     if (!instance.preview) {
-        instance.preview = std::make_unique<ShaderPreviewRender>(previewSize);
+        instance.preview = std::make_unique<ShaderPreviewRender>(pixels);
         instance.previewGeneration = ShaderBuilder::getCustomShaderGeneration();
     }
     ShaderPreviewRender& preview = *instance.preview;
+    // as big as it is drawn, once a drag of the panel's edge ends: a new target each frame would stutter
+    const bool resized = pixels != preview.getSize() && !ImGui::IsMouseDown(ImGuiMouseButton_Left);
+    if (resized)
+        preview.setSize(pixels);
     // the selected node's value, through a graph of its own
     std::string shader = instance.filepath.generic_string();
     GraphDocument nodeGraph;
@@ -1796,8 +1812,16 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
     }
     preview.render();
 
-    const float width = ImGui::GetContentRegionAvail().x;
-    Widgets::image(Backend::getImGuiTexture(preview.getTexture().getRender()), ImVec2(width, width));
+    if (resized) {
+        // the new target is drawn in the next frame, its background shows until then
+        const Vector4 background = preview.getScene()->getBackgroundColor();
+        const ImVec2 corner = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddRectFilled(corner, ImVec2(corner.x + width, corner.y + width),
+            ImGui::ColorConvertFloat4ToU32(ImVec4(background.x, background.y, background.z, 1.0f)));
+        ImGui::Dummy(ImVec2(width, width));
+    } else {
+        Widgets::image(Backend::getImGuiTexture(preview.getTexture().getRender()), ImVec2(width, width));
+    }
     // the shapes as the scene toolbar shows its modes: the one in use is disabled
     static const struct { const char* label; ShaderPreviewRender::ShapeType shape; const char* tooltip; } shapes[] = {
         {ICON_FA_CIRCLE "##sphere", ShaderPreviewRender::ShapeType::SPHERE, "Sphere"},
