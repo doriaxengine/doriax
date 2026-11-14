@@ -5728,6 +5728,10 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
             : -1.0f;
         mat.params = Vector4(material.roughnessFactor, material.metallicFactor, iblSource, alphaCutoff);
         mat.baseColorFactor = mesh.submeshes[i].material.baseColorFactor;
+        // none where the color pass is unlit, which gives a surface hook none either
+        const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
+            (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
+        mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
 
         if (mesh.submeshes[i].hasSkinning){

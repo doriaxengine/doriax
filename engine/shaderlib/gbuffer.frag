@@ -25,6 +25,7 @@ in vec3 v_normal;
 uniform u_fs_gbufferMaterial {
     vec4 params;        // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutoff (-1 = disabled)
     vec4 baseColorFactor;
+    vec4 emissiveFactor; // what a surface hook starts from, as in the color pass with no map
 } gbufferMaterial;
 
 #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
@@ -164,7 +165,8 @@ void main() {
         surface.metallic = metallic;
         surface.roughness = roughness;
         surface.occlusion = occlusion;
-        surface.emissive = vec3(0.0);
+        // the factor, so an alpha made of it cuts what the color pass draws; its map is not sampled here
+        surface.emissive = gbufferMaterial.emissiveFactor.rgb;
         getSurface(context, surface);
         if (gbufferMaterial.params.w >= 0.0 && surface.alpha * keepHookInputs(context) < gbufferMaterial.params.w) {
             discard;

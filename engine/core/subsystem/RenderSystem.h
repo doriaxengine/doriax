@@ -119,6 +119,7 @@ namespace doriax{
 	typedef struct fs_gbuffer_material_t {
 		Vector4 params;             // x = roughness, y = metallic, z = IBL source code / 255, w = alpha cutout
 		Vector4 baseColorFactor;
+		Vector4 emissiveFactor;     // for a surface hook
 	} fs_gbuffer_material_t;
 
 	typedef struct fs_ssao_t {
