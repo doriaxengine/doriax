@@ -616,19 +616,18 @@ void editor::GraphEditorWindow::remapOpenGraphs(const std::function<bool(GraphDo
             if (GraphEditCmd* edit = dynamic_cast<GraphEditCmd*>(command))
                 edit->remapTexts(remapText);
         });
-        const bool edited = instance.text != instance.savedText;
-        if (!remap(instance.document))
-            continue;
-        const std::string text = instance.document.write();
-        // the file was written the same way, unless unsaved edits keep it to their save
-        if (!edited) {
-            instance.savedText = text;
+        // the file was written the same way, unsaved edits or not, so discarding them leaves no old path
+        const std::string saved = remapText(instance.savedText);
+        if (saved != instance.savedText) {
+            instance.savedText = saved;
             std::error_code ec;
             const auto writeTime = std::filesystem::last_write_time(project->getProjectPath() / instance.filepath, ec);
             if (!ec)
                 instance.writeTime = writeTime;
         }
-        documentChanged(instance, text);
+        if (!remap(instance.document))
+            continue;
+        documentChanged(instance, instance.document.write());
     }
 }
 
@@ -1774,33 +1773,38 @@ void editor::GraphEditorWindow::drawPreview(Instance& instance) {
         preview.setSize(pixels);
     // the selected node's value, through a graph of its own
     std::string shader = instance.filepath.generic_string();
-    GraphDocument nodeGraph;
-    Project* owner = project;
-    const ShaderGraphReader reader = [owner](const std::string& path, std::string& text) {
-        return ShaderBuilder::readGraphSource(owner, path, text);
-    };
-    if (instance.previewSelection && ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph, reader)) {
+    if (instance.previewSelection) {
         const std::string key = nodePreviewKey(instance.filepath);
-        // built again once a drag ends, and only when its code changed
-        const std::string of = std::to_string(instance.inspected) + "\n" + instance.text;
+        // worked out again once a drag ends, when the selection, the graph or a function it calls
+        // changed, which may move it to another output; built again only when its code changed
+        const std::string of = std::to_string(instance.inspected) + "\n" + std::to_string(ShaderBuilder::getCustomShaderGeneration()) + "\n" + instance.text;
         if (of != instance.nodePreviewOf && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             instance.nodePreviewOf = of;
-            const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, reader);
-            instance.nodePreviewNode = built.success ? instance.inspected : 0;
-            const std::string source = built.success ? nodeGraph.write() : std::string();
-            if (built.success && built.code != instance.nodePreviewCode) {
-                instance.nodePreviewCode = built.code;
-                instance.nodePreviewSource = source;
-                ShaderBuilder::setGraphSource(key, source);
-                project->invalidateCustomShader(key);
-            } else if (built.success && source != instance.nodePreviewSource) {
-                // the same code from another text, as a function that moved: the next build reads this one
-                instance.nodePreviewSource = source;
-                ShaderBuilder::setGraphSource(key, source);
+            instance.nodePreviewNode = 0;
+            Project* owner = project;
+            const ShaderGraphReader reader = [owner](const std::string& path, std::string& text) {
+                return ShaderBuilder::readGraphSource(owner, path, text);
+            };
+            GraphDocument nodeGraph;
+            if (ShaderGraphCompiler::previewNode(instance.document, instance.inspected, nodeGraph, reader)) {
+                const ShaderGraphResult built = ShaderGraphCompiler::compile(nodeGraph, key, reader);
+                const std::string source = built.success ? nodeGraph.write() : std::string();
+                if (built.success)
+                    instance.nodePreviewNode = instance.inspected;
+                if (built.success && built.code != instance.nodePreviewCode) {
+                    instance.nodePreviewCode = built.code;
+                    instance.nodePreviewSource = source;
+                    ShaderBuilder::setGraphSource(key, source);
+                    project->invalidateCustomShader(key);
+                } else if (built.success && source != instance.nodePreviewSource) {
+                    // the same code from another text, as a function that moved: the next build reads this one
+                    instance.nodePreviewSource = source;
+                    ShaderBuilder::setGraphSource(key, source);
+                }
             }
         }
-        // the graph draws until this node's own was worked out, and for a node that does not compile
-        if (instance.nodePreviewNode == instance.inspected)
+        // the graph draws until this node's own was worked out, and for one with nothing to draw or that does not compile
+        if (instance.nodePreviewNode != 0 && instance.nodePreviewNode == instance.inspected)
             shader = key;
     }
     preview.setShader(shader);

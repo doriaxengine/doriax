@@ -1811,8 +1811,8 @@ void editor::Project::remapSubgraphFunctions(const fs::path& oldRelative, const 
                 it.disable_recursion_pending();
             continue;
         }
-        // one with unsaved edits takes it in its window
-        if (it->path().extension() != ".shader" || (graphEditor && graphEditor->isFileModified(it->path())))
+        // the saved version too of one with unsaved edits, which may be discarded
+        if (it->path().extension() != ".shader")
             continue;
         std::ifstream in(it->path(), std::ios::binary);
         std::stringstream text;

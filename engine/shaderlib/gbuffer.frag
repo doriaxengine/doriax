@@ -163,7 +163,18 @@ void main() {
         Surface surface;
         surface.baseColor = baseColor.rgb;
         surface.alpha = baseColor.a;
-        surface.normal = unlit ? vec3(0.0, 1.0, 0.0) : n * mat3(paramsFS.effect_worldToView);
+        #ifdef HOOK_FRAGMENT_COLOR
+            // the vertex and instance color tint it, as in the color pass
+            surface.baseColor *= context.color.rgb;
+            surface.alpha *= context.color.a;
+        #endif
+        #ifdef HAS_NORMALS
+            vec3 normal = n * mat3(paramsFS.effect_worldToView);
+        #else
+            // without normals, the flat one the color pass makes
+            vec3 normal = getFlatNormal(context.worldPosition, context.view);
+        #endif
+        surface.normal = unlit ? vec3(0.0, 1.0, 0.0) : normal;
         surface.metallic = unlit ? 0.0 : metallic;
         surface.roughness = unlit ? 1.0 : roughness;
         surface.occlusion = unlit ? 1.0 : occlusion;

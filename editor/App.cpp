@@ -2995,7 +2995,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v72: the depth passes start a surface hook from the material's factors.
     // v73: the G-buffer gives a surface hook the material's emissive factor.
     // v74: depth passes give a surface hook the normal it reads, and unlit hooks start alike in every pass.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v74";
+    // v75: vertex colors tint a hook's surface in every pass; flat normals face the camera everywhere.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v75";
 }
 
 void editor::App::pushTabNotificationStyle(){

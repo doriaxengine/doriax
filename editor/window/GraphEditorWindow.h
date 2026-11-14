@@ -124,8 +124,8 @@ namespace doriax::editor {
         bool isFileModified(const std::filesystem::path& path) const;
         // an outside edit of an open graph, taken as one undoable step and saved; false when not open
         bool replaceFileText(const std::filesystem::path& path, const std::string& text);
-        // changes the open graphs and every step of their histories, as a function that moved; the
-        // file of one with no unsaved edits was changed on disk the same way
+        // changes the open graphs and every step of their histories, as a function that moved; their
+        // files were changed on disk the same way
         void remapOpenGraphs(const std::function<bool(GraphDocument&)>& remap);
         bool isFocused() const;
         bool handleFileRename(const std::filesystem::path& oldPath, const std::filesystem::path& newPath);

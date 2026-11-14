@@ -1287,7 +1287,9 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
         case ShadowQuality::HIGH:   pcfRadius = 3.0f; break;
     }
 
-    fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z, 0.0);
+    // w: 1 for a perspective camera, whose eye the view goes to, 0 for one whose view is its backward axis
+    fs_lighting.eyePos = Vector4(cameraTransform.worldPosition.x, cameraTransform.worldPosition.y, cameraTransform.worldPosition.z,
+                                 camera.type == CameraType::CAMERA_PERSPECTIVE ? 1.0f : 0.0f);
     fs_lighting.cameraDir = Vector4(camera.worldDirection.x, camera.worldDirection.y, camera.worldDirection.z, pcfRadius);
     fs_lighting.globalIllum = Vector4(scene->getGlobalIlluminationColorLinear(), scene->getGlobalIlluminationIntensity());
 
@@ -1884,7 +1886,7 @@ void RenderSystem::renderReflectionProbeCapture(){
     updateCamera(captureCamera, captureTransform);
 
     const fs_lighting_t mainLighting = fs_lighting;
-    fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 0.0f);
+    fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 1.0f);
     fs_lighting.cameraDir = Vector4(captureCamera.worldDirection.x, captureCamera.worldDirection.y,
                                     captureCamera.worldDirection.z, mainLighting.cameraDir.w);
     applyViewLights(capturePosition);

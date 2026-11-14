@@ -95,7 +95,15 @@ NormalInfo getNormalInfo(){
         #ifdef HAS_NORMALS
             ng = normalize(v_normal);
         #else
+            // flat, toward the camera: the slope's cross product turns with the target's y axis,
+            // which is not the same on every backend and target
             ng = normalize(cross(dFdx(v_position), dFdy(v_position)));
+            vec3 toCamera = lighting.eyePos.w > 0.5 ? lighting.eyePos.xyz - v_position : lighting.cameraDir.xyz;
+            if (dot(ng, toCamera) < 0.0)
+                ng = -ng;
+            // a back face takes the reverse below as a vertex normal does, and so still faces the camera
+            if (!gl_FrontFacing)
+                ng = -ng;
         #endif
         #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
             vec2 normalUV = getNormalUV();

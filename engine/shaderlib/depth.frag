@@ -103,8 +103,19 @@ void main() {
             surface.baseColor *= sRGBToLinear(texColor).rgb;
         #endif
         surface.alpha = alpha;
+        #ifdef HOOK_FRAGMENT_COLOR
+            // the vertex and instance color tint it, as in the color pass
+            surface.baseColor *= context.color.rgb;
+            surface.alpha *= context.color.a;
+        #endif
+        #ifdef HOOK_FRAGMENT_NORMAL
+            vec3 normal = context.normal;
+        #else
+            // without normals, the flat one the color pass makes
+            vec3 normal = getFlatNormal(context.worldPosition, context.view);
+        #endif
         // an unlit color pass gives no normal, but this placeholder
-        surface.normal = depthMaterial.surfaceFactors.z > 0.5 ? vec3(0.0, 1.0, 0.0) : context.normal;
+        surface.normal = depthMaterial.surfaceFactors.z > 0.5 ? vec3(0.0, 1.0, 0.0) : normal;
         // the material's factors, so an alpha made of them cuts what the color pass draws;
         // its other maps are not sampled here
         surface.metallic = depthMaterial.surfaceFactors.x;

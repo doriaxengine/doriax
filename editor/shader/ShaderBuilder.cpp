@@ -444,6 +444,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // the depth passes start the surface's normal from the context's, where the color pass has its own
     if (passType == ShaderType::DEPTH && useSurface && fragmentHooks.surfaceReads.count("normal"))
         fragmentReads.insert("normal");
+    // and the depth and G-buffer passes tint it with the vertex and instance color, as the color pass does
+    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
+        fragmentReads.insert("color");
 
     // what the hooks read of the vertices, where this pass has it; a UI always has UVs,
     // and the other types compute what they give in place
