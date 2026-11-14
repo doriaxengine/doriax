@@ -169,6 +169,20 @@ namespace {
         return false;
     }
 
+    // whether a node is of a type, or is fed by one that is
+    bool fedBy(const GraphDocument& graph, int node, const char* type, std::set<int>& seen) {
+        if (!seen.insert(node).second)
+            return false;
+        const GraphNode* found = graph.findNode(node);
+        if (found && found->type == type)
+            return true;
+        for (const GraphLink& link : graph.links) {
+            if (link.toNode == node && !link.fromPin.empty() && fedBy(graph, link.fromNode, type, seen))
+                return true;
+        }
+        return false;
+    }
+
     // "rgba.xyz" is a swizzle of output rgba, "xyz" one of the first output
     void splitSwizzle(const std::string& pin, std::string& output, std::string& swizzle) {
         const size_t dot = pin.find('.');
@@ -1487,6 +1501,9 @@ bool editor::ShaderGraphCompiler::previewNode(const GraphDocument& graph, int no
     preview.links.erase(std::remove_if(preview.links.begin(), preview.links.end(), [&](const GraphLink& link) { return link.toNode == draw; }), preview.links.end());
     std::set<int> seen;
     const bool perVertex = type->stage == ShaderNodeStage::VERTEX || fedPerVertex(graph, node, seen);
-    preview.connect(node, outputs.front().name, draw, perVertex ? "vertexOffset" : "color");
+    // what only one hook has decides where it draws, as a function's preview does
+    std::set<int> light, material;
+    const char* fragmentSlot = fedBy(graph, node, "input/light", light) ? "light" : (fedBy(graph, node, "input/material", material) ? "emissive" : "color");
+    preview.connect(node, outputs.front().name, draw, perVertex ? "vertexOffset" : fragmentSlot);
     return true;
 }

@@ -2065,7 +2065,6 @@ void editor::ResourcesWindow::handleRename(){
             fs::path newName = FileUtils::pathFromUtf8(nameBuffer);
             if (!newName.empty() && newName != fs::path(fileBeingRenamed)) {
                 try {
-                    fs::path oldPath = currentPath / fileBeingRenamed;
                     fs::path newPath = currentPath / newName;
 
                     // Check if the target file already exists
@@ -2074,10 +2073,8 @@ void editor::ResourcesWindow::handleRename(){
                     } else if (fs::exists(newPath)) {
                         ImGui::OpenPopup("File Already Exists");
                     } else {
+                        // the command moves the windows that show the file, so its undo moves them back
                         project->getProjectCommandHistory()->addCommand(new RenameFileCmd(project, fileBeingRenamed, newName.string(), currentPath.string()));
-                        codeEditor->handleFileRename(oldPath, newPath);
-                        imageViewerWindow->handleFileRename(oldPath, newPath);
-                        graphEditorWindow->handleFileRename(oldPath, newPath);
                         scanDirectory(currentPath);
                         isRenaming = false;
                         ImGui::CloseCurrentPopup();

@@ -325,8 +325,9 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
     mesh.lodEnabled = settings.lodEnabled;
     mesh.lodBias = settings.lodBias;
     mesh.vertexOffsetMax = settings.vertexOffsetMax;
-    // a shader given before the model loaded goes to the materials that came without one
-    if (settings.shader.empty())
+    // a shader given before the model loaded goes to the materials that came without one, and
+    // so do its values, which one that draws with the scene's shader has with no shader of its own
+    if (settings.shader.empty() && settings.shaderUniforms.empty() && settings.shaderTextures.empty())
         return;
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
         Material& material = mesh.submeshes[i].material;
@@ -336,6 +337,7 @@ static void setMeshSettings(const MeshSystem::MeshSettings& settings, MeshCompon
         material.shaderUniforms = settings.shaderUniforms;
         material.shaderTextures = settings.shaderTextures;
         mesh.submeshes[i].needUpdateTexture = true;
+        mesh.needUpdateShaderUniforms = true;
         mesh.needReload = true;
     }
 }
@@ -5883,6 +5885,7 @@ bool MeshSystem::loadOBJ(Entity entity, const std::string filename, bool asyncLo
 
     // Taken before the submeshes are rewritten, put back once they are filled.
     const SubmeshOverrides submeshOverrides = collectSubmeshOverrides(entity, model);
+    const MeshSettings meshSettings = getMeshSettings(mesh);
 
     scene->getSystem<RenderSystem>()->prepareMeshForDataReload(entity, mesh);
 
@@ -6156,6 +6159,8 @@ bool MeshSystem::loadOBJ(Entity entity, const std::string filename, bool asyncLo
     std::reverse(mesh.submeshes.data(), mesh.submeshes.data() + mesh.numSubmeshes);
 
     applySubmeshOverrides(submeshOverrides, entity, model);
+    // the file's materials name no shader: the one set on the mesh before it loaded stays
+    setMeshSettings(meshSettings, mesh);
 
     calculateMeshAABB(mesh);
 

@@ -38,6 +38,8 @@ in vec2 v_projZW;
         vec4 alphaParams; // x = baseColorFactor.a, y = alphaCutoff
         #ifdef USE_SURFACE
             vec4 baseColorFactor;
+            vec4 surfaceFactors; // x = metallic, y = roughness, as the color pass gives them with no maps
+            vec4 emissiveFactor;
         #endif
     } depthMaterial;
 #endif
@@ -102,10 +104,12 @@ void main() {
         #endif
         surface.alpha = alpha;
         surface.normal = context.normal;
-        surface.metallic = 0.0;
-        surface.roughness = 1.0;
+        // the material's factors, so an alpha made of them cuts what the color pass draws;
+        // its other maps are not sampled here
+        surface.metallic = depthMaterial.surfaceFactors.x;
+        surface.roughness = depthMaterial.surfaceFactors.y;
         surface.occlusion = 1.0;
-        surface.emissive = vec3(0.0);
+        surface.emissive = depthMaterial.emissiveFactor.rgb;
         getSurface(context, surface);
         alpha = surface.alpha * keepHookInputs(context);
     #endif

@@ -5339,8 +5339,12 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
                 const Material& material = mesh.submeshes[i].material;
-                // the base color only for a surface hook
-                Vector4 depthMaterial[2] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor};
+                // the base color and the factors only for a surface hook, which an unlit color pass gives none
+                const bool unlit = (mesh.submeshes[i].shaderProperties & 1u) ||
+                    (mesh.submeshes[i].shader && (mesh.submeshes[i].shader->shaderData.flags & ShaderFlag_Unlit));
+                Vector4 depthMaterial[4] = {Vector4(material.baseColorFactor.w, material.alphaCutoff, 0.0f, 0.0f), material.baseColorFactor,
+                    unlit ? Vector4(0.0f, 1.0f, 0.0f, 0.0f) : Vector4(material.metallicFactor, material.roughnessFactor, 0.0f, 0.0f),
+                    unlit ? Vector4(0.0f, 0.0f, 0.0f, 0.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f)};
                 depthRender.applyUniformBlock(mesh.submeshes[i].slotFSDepthMaterial, std::min((unsigned int)sizeof(depthMaterial), mesh.submeshes[i].sizeFSDepthMaterial), depthMaterial);
             }
 

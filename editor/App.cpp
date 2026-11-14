@@ -2988,7 +2988,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v69: flags for what the hooks read, which sprite batching asks.
     // v70: varyings type in passes that read none, shadows for getLight on any side.
     // v71: uv1 read by a fragment hook is flagged for sprite batching.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v71";
+    // v72: the depth passes start a surface hook from the material's factors.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v72";
 }
 
 void editor::App::pushTabNotificationStyle(){
