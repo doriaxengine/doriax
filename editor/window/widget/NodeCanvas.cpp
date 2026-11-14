@@ -341,6 +341,10 @@ void editor::NodeCanvas::draw(const CanvasModel& model, std::vector<CanvasEdit>&
 
     layoutNodes(model);
 
+    // a resize undoes the framing
+    if (canvasSize.x != framedSize.x || canvasSize.y != framedSize.y)
+        framed = false;
+
     // the graph, or the selection, centered
     if (framePending && !layouts.empty()) {
         ImVec2 low(1e9f, 1e9f), high(-1e9f, -1e9f);

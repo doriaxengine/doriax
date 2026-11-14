@@ -165,6 +165,9 @@ namespace doriax::editor{
         bool tabsOrderDirty = false;
         double tabsOrderChangeTime = 0.0;
 
+        // when shader files are next looked at
+        double shaderCheckAt = 0.0;
+
         // Backing buffer for ImGui's io.IniFilename (must outlive ImGui).
         std::string layoutIniPath;
 

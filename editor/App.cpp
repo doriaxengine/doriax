@@ -1981,6 +1981,13 @@ void editor::App::show(){
         processNextSaveDialog();
     }
 
+    // shader files edited outside the editor
+    if (!projectLoading && ImGui::GetTime() >= shaderCheckAt) {
+        shaderCheckAt = ImGui::GetTime() + 1.0;
+        for (const std::string& shader : ShaderBuilder::getChangedCustomShaders())
+            project.invalidateCustomShader(shader);
+    }
+
     structureWindow->show();
     resourcesWindow->show();
     imageViewerWindow->show();

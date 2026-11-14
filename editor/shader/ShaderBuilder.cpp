@@ -53,6 +53,8 @@ struct CustomSourceSnapshot {
     std::unordered_map<std::string, std::string> projectBuffers;
     std::string signature;
     std::vector<int> graphLines;     // of a graph, the node each line of its code came from
+    // files read from disk, with their times
+    std::vector<std::pair<std::filesystem::path, std::filesystem::file_time_type>> files;
 };
 
 std::mutex customSourceCacheMutex;
@@ -138,6 +140,10 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
     auto snapshot = std::make_shared<CustomSourceSnapshot>();
     std::filesystem::path projectRoot = project->getProjectPath();
     std::string signatureInput;
+    auto track = [&](const std::filesystem::path& path) {
+        std::error_code ec;
+        snapshot->files.emplace_back(path, std::filesystem::last_write_time(path, ec));
+    };
 
     // a project file, else an engine one; failures not cached
     std::string source;
@@ -155,6 +161,8 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         } else if (!readTextFile(projectRoot / shader, source)) {
             snapshot->error = "Could not open shader file: " + shader;
             return snapshot;
+        } else {
+            track(projectRoot / shader);
         }
         // a graph stands for the shader file it compiles to
         if (editor::Util::isShaderGraphFile(shader)) {
@@ -170,7 +178,10 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                     text = function->second;
                     return true;
                 }
-                return editor::Util::isSafeRelativePath(path) && readTextFile(projectRoot / path, text);
+                if (!editor::Util::isSafeRelativePath(path) || !readTextFile(projectRoot / path, text))
+                    return false;
+                track(projectRoot / path);
+                return true;
             };
             const editor::ShaderGraphResult compiled = editor::ShaderGraphCompiler::compile(graph, shader, readFunction,
                 live ? editor::ShaderGraphCompiler::getLiveCollection(shader) : std::string());
@@ -224,9 +235,11 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
                 if (!folder.empty() && readCandidate(projectRoot / folder / key, content)) {
                     origin = "local:" + key;
                     path = "/" + (folder / key).lexically_normal().generic_string();
+                    track(projectRoot / folder / key);
                 } else if (readCandidate(projectRoot / key, content)) {
                     origin = "project:" + key;
                     path = "/" + std::filesystem::path(key).lexically_normal().generic_string();
+                    track(projectRoot / key);
                 } else if (auto engineIt = editor::shaderMap.find(key); engineIt != editor::shaderMap.end()) {
                     origin = "engine:" + key;
                     content = engineIt->second;
@@ -1561,6 +1574,27 @@ void editor::ShaderBuilder::clearGraphSource(const std::string& shader) {
 
 uint32_t editor::ShaderBuilder::getCustomShaderGeneration() {
     return customShaderGeneration;
+}
+
+std::vector<std::string> editor::ShaderBuilder::getChangedCustomShaders() {
+    std::vector<std::pair<std::string, std::shared_ptr<const CustomSourceSnapshot>>> snapshots;
+    {
+        std::lock_guard<std::mutex> lock(customSourceCacheMutex);
+        for (const auto& [key, snapshot] : customSourceCache)
+            snapshots.emplace_back(key.substr(key.find('\n') + 1), snapshot);
+    }
+    // files read without the lock
+    std::vector<std::string> changed;
+    for (const auto& [shader, snapshot] : snapshots) {
+        for (const auto& [path, time] : snapshot->files) {
+            std::error_code ec;
+            if (std::filesystem::last_write_time(path, ec) != time) {
+                changed.push_back(shader);
+                break;
+            }
+        }
+    }
+    return changed;
 }
 
 std::vector<std::string> editor::ShaderBuilder::invalidateCustomShader(const std::string& shader) {

@@ -218,19 +218,20 @@ def parse_binding_file(filepath):
         if m:
             pname = m.group(1)
             if not pname.startswith('__'):
-                # Check if it's an event callback (lambda pattern)
-                if '[]' in stripped or 'lua_State' in stripped:
+                args = _call_arguments(_binding_text(lines, index)[m.start():])
+                # an event takes the Lua function through a lua_State setter
+                if len(args) > 2 and 'lua_State' in args[2]:
                     kind = 'Event'
-                elif RE_STATIC_ACCESSOR.search(stripped):
-                    kind = 'Property'  # Lua-only, C++ calls the accessor
+                elif '[]' in stripped or RE_STATIC_ACCESSOR.search(stripped):
+                    kind = 'Property'  # Lua-only, read through an accessor or a lambda
                 else:
                     kind = 'Constant'
                 symbols.append(APISymbol(
                     pname, kind,
                     f'{current_lua_name}.{pname}', current_lua_name,
                     shared=True,
-                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():])),
-                    accessor=_accessor(_call_arguments(_binding_text(lines, index)[m.start():]))
+                    readonly=_getter_only(args),
+                    accessor=_accessor(args)
                 ))
             continue
 
