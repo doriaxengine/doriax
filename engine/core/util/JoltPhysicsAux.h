@@ -124,7 +124,8 @@ namespace doriax{
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 			// a character's inner body is not a Body3D
-			if (!scene->findComponent<Body3DComponent>(inBodyUserData)){
+			Body3DComponent* body = scene->findComponent<Body3DComponent>(inBodyUserData);
+			if (!body || body->body != inBodyID){
 				return;
 			}
 			ActivationScope activation(physicsSystem);
@@ -137,11 +138,33 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
-			if (!scene->findComponent<Body3DComponent>(inBodyUserData)){
+			Body3DComponent* body = scene->findComponent<Body3DComponent>(inBodyUserData);
+			if (!body || body->body != inBodyID){
 				return;
 			}
 			ActivationScope activation(physicsSystem);
 			physicsSystem->onBodyDeactivated3D(Body3D(scene, inBodyUserData));
+		}
+	};
+
+	// standing still, a character stays on a slope it can walk
+	class JoltCharacterListener : public JPH::CharacterContactListener{
+	private:
+		Scene* scene;
+
+	public:
+		explicit JoltCharacterListener(Scene* scene){
+			this->scene = scene;
+		}
+
+		virtual void OnContactSolve(const JPH::CharacterVirtual *inCharacter, const JPH::BodyID &inBodyID2, const JPH::SubShapeID &inSubShapeID2,
+				JPH::RVec3Arg inContactPosition, JPH::Vec3Arg inContactNormal, JPH::Vec3Arg inContactVelocity, const JPH::PhysicsMaterial *inContactMaterial,
+				JPH::Vec3Arg inCharacterVelocity, JPH::Vec3 &ioNewCharacterVelocity) override{
+			Character3DComponent* character = scene->findComponent<Character3DComponent>(static_cast<Entity>(inCharacter->GetUserData()));
+			const bool standing = character && character->moveVelocity.x == 0.0f && character->moveVelocity.z == 0.0f;
+			if (standing && inContactVelocity.IsNearZero() && !inCharacter->IsSlopeTooSteep(inContactNormal)){
+				ioNewCharacterVelocity = JPH::Vec3::sZero();
+			}
 		}
 	};
 

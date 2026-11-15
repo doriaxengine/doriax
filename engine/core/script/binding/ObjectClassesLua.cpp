@@ -277,6 +277,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
 #ifdef DORIAX_PHYSICS_3D
         .addFunction("getBody3D", &Object::getBody3D)
         .addFunction("removeBody3D", &Object::removeBody3D)
+        .addFunction("getCharacter3D", &Object::getCharacter3D)
+        .addFunction("removeCharacter3D", &Object::removeCharacter3D)
 #endif
         .addFunction("getRay", &Object::getRay)
         .addFunction("getTransform", &Object::getComponent<Transform>)

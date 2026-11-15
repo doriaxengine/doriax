@@ -27,7 +27,6 @@
 #include "Jolt/Jolt.h"
 #include "Jolt/Core/JobSystemThreadPool.h"
 #include "Jolt/Physics/Body/MotionQuality.h"
-#include "Jolt/Physics/Character/CharacterVirtual.h"
 #include "Jolt/Physics/PhysicsSystem.h"
 #include "Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h"
 #include "Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h"
@@ -42,6 +41,7 @@
 namespace doriax{
 
 	class JoltActivationListener;
+	class JoltCharacterListener;
 	class JoltContactListener;
 	
 
@@ -79,6 +79,7 @@ namespace doriax{
 		bool useLockedInterfaces3D() const;
 
 		JoltActivationListener* activationListener3D;
+		JoltCharacterListener* characterListener3D;
 		JoltContactListener* contactListener3D;
 
         // Process-wide singletons shared by every scene; not owned here.
@@ -217,6 +218,8 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_3D
 		void createBody3D(Entity entity);
 		void removeBody3D(Entity entity);
+		void createCharacter3D(Entity entity);
+		void removeCharacter3D(Entity entity);
 #endif
 
 #ifdef DORIAX_PHYSICS_2D
@@ -238,7 +241,7 @@ namespace doriax{
 		void destroyCharacter3D(Character3DComponent& character);
 		// teleports and finds its ground again at once
 		void setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position);
-		// with checkFit, false when the new capsule does not fit where it stands
+		// with checkFit, false when the new capsule does not fit
 		bool setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit);
 #endif
 

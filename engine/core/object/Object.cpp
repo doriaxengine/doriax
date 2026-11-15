@@ -268,6 +268,15 @@ Body3D Object::getBody3D(){
 void Object::removeBody3D(){
     scene->getSystem<PhysicsSystem>()->removeBody3D(entity);
 }
+
+Character3D Object::getCharacter3D(){
+    scene->getSystem<PhysicsSystem>()->createCharacter3D(entity);
+    return Character3D(scene, entity);
+}
+
+void Object::removeCharacter3D(){
+    scene->getSystem<PhysicsSystem>()->removeCharacter3D(entity);
+}
 #endif
 
 Ray Object::getRay(Vector3 direction){

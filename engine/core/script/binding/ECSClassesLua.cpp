@@ -274,6 +274,8 @@ void LuaBinding::registerECSClasses(lua_State *L){
 #ifdef DORIAX_PHYSICS_3D
         .addFunction("createBody3D", &PhysicsSystem::createBody3D)
         .addFunction("removeBody3D", &PhysicsSystem::removeBody3D)
+        .addFunction("createCharacter3D", &PhysicsSystem::createCharacter3D)
+        .addFunction("removeCharacter3D", &PhysicsSystem::removeCharacter3D)
         .addFunction("loadBody3D", &PhysicsSystem::loadBody3D)
         .addFunction("destroyBody3D", &PhysicsSystem::destroyBody3D)
         //.addFunction("loadShape3D", &PhysicsSystem::loadShape3D) // has jolt components

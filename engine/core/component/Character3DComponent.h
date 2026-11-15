@@ -44,7 +44,6 @@ namespace doriax{
         bool needJump = false;
 
         bool needReloadCharacter = true;
-        bool newCharacter = true;
         Vector3 loadedScale = Vector3::UNIT_SCALE;
         // position before the last step, drawn towards the current one
         Vector3 previousPosition;

@@ -87,6 +87,7 @@ namespace {
         }
     }
 
+#ifdef DORIAX_PHYSICS_3D
     // like setTransformWorldPose, leaving the rotation as it is
     void setTransformWorldPosition(Scene* scene, Transform& transform, Vector3& position){
         Vector3 localPosition = position;
@@ -104,7 +105,6 @@ namespace {
         }
     }
 
-#ifdef DORIAX_PHYSICS_3D
     // Jolt's global allocator/factory/type registration is process-wide; run once
     // (the old per-constructor path re-created and leaked a Factory per scene).
     void ensureJoltGlobalInit(){
@@ -573,6 +573,8 @@ PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
     contactListener3D = new JoltContactListener(scene, this);
     world3D.SetContactListener(contactListener3D);
 
+    characterListener3D = new JoltCharacterListener(scene);
+
     lock3DBodies = true;
 #endif
 }
@@ -637,6 +639,7 @@ PhysicsSystem::~PhysicsSystem(){
 #ifdef DORIAX_PHYSICS_3D
     delete activationListener3D;
     delete contactListener3D;
+    delete characterListener3D;
 
     //delete world3D;
     // temp_allocator and job_system are process-shared singletons (see constructor); not owned here.
@@ -1901,6 +1904,23 @@ void PhysicsSystem::removeBody3D(Entity entity){
         scene->removeComponent<Body3DComponent>(entity);
     }
 }
+
+void PhysicsSystem::createCharacter3D(Entity entity){
+    Signature signature = scene->getSignature(entity);
+
+    if (!signature.test(scene->getComponentId<Character3DComponent>())){
+        scene->addComponent<Character3DComponent>(entity);
+    }
+}
+
+void PhysicsSystem::removeCharacter3D(Entity entity){
+    Signature signature = scene->getSignature(entity);
+
+    if (signature.test(scene->getComponentId<Character3DComponent>())){
+        destroyCharacter3D(scene->getComponent<Character3DComponent>(entity));
+        scene->removeComponent<Character3DComponent>(entity);
+    }
+}
 #endif
 
 #ifdef DORIAX_PHYSICS_2D
@@ -2138,6 +2158,8 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
     settings->mShape = createCharacterShape3D(entity, character.height, character.radius, 1.0f);
     if (!settings->mShape){
         Log::error("Cannot create the capsule of 3D Character entity: %u", entity);
+        // tried again when a setting changes
+        character.needReloadCharacter = false;
         return false;
     }
     settings->mMaxSlopeAngle = Angle::defaultToRad(character.maxSlopeAngle);
@@ -2155,6 +2177,7 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
     const Vector3 position = transform ? transform->worldPosition : Vector3::ZERO;
 
     character.character = new JPH::CharacterVirtual(settings, JPH::RVec3(position.x, position.y, position.z), JPH::Quat::sIdentity(), entity, &world3D);
+    character.character->SetListener(characterListener3D);
     character.character->SetCharacterVsCharacterCollision(&characterCollision3D);
     characterCollision3D.Add(character.character);
     refreshCharacter3DContacts(character.character);
@@ -2186,7 +2209,7 @@ void PhysicsSystem::destroyCharacter3D(Character3DComponent& character){
 
 void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position){
     // the next step takes it from the transform
-    if (steppingWorld3D || callingActivation3D){
+    if (steppingWorld3D || callingActivation3D || !character.character){
         if (Transform* transform = scene->findComponent<Transform>(entity)){
             setTransformWorldPosition(scene, *transform, position);
         }
@@ -2204,6 +2227,9 @@ void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& 
 bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit){
     if (steppingWorld3D || callingActivation3D){
         Log::error("Cannot change a 3D character shape while the physics world is stepping");
+        return false;
+    }
+    if (!character.character){
         return false;
     }
 
@@ -2238,7 +2264,10 @@ void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& chara
     resolveWorldPose(scene, entity);
 
     // a scale animation keeps its motion
-    if (entityWorldScale(scene, entity) != character.loadedScale){
+    const Vector3 scale = entityWorldScale(scene, entity);
+    if (scale != character.loadedScale){
+        // a scale no capsule fits is reported once
+        character.loadedScale = scale;
         setCharacter3DShape(entity, character, character.height, character.radius, false);
     }
 
@@ -3772,7 +3801,7 @@ void PhysicsSystem::load(){
     auto characters3d = scene->getComponentArray<Character3DComponent>();
     for (size_t i = 0; i < characters3d->size(); i++){
         Character3DComponent& character = characters3d->getComponentFromIndex(i);
-        if (character.needReloadCharacter || !character.character){
+        if (character.needReloadCharacter){
             loadCharacter3D(characters3d->getEntity(i));
         }
     }
@@ -3914,7 +3943,7 @@ void PhysicsSystem::fixedUpdate(double dt){
         Character3DComponent& character = characters3d->getComponentFromIndex(i);
         Entity entity = characters3d->getEntity(i);
 
-        if (!character.character || character.needReloadCharacter){
+        if (character.needReloadCharacter){
             loadCharacter3D(entity);
         }
 

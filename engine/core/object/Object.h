@@ -10,6 +10,7 @@
 #endif
 #ifdef DORIAX_PHYSICS_3D
 #include "Body3D.h"
+#include "Character3D.h"
 #endif
 #include "math/Ray.h"
 
@@ -85,6 +86,8 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_3D
         Body3D getBody3D();
         void removeBody3D();
+        Character3D getCharacter3D();
+        void removeCharacter3D();
 #endif
 
         Ray getRay(Vector3 direction);
