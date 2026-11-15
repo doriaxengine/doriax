@@ -33,6 +33,7 @@ static const WebPortalType webPortalValues[] = { WebPortalType::NONE, WebPortalT
 static const int webPortalCount = sizeof(webPortalValues) / sizeof(webPortalValues[0]);
 
 static const char* cxxStandardNames[] = { "C++17", "C++20", "C++23" };
+static const char* logicLanguageNames[] = { "Lua", "C++" };
 static const int cxxStandardCount = sizeof(cxxStandardNames) / sizeof(cxxStandardNames[0]);
 static_assert(std::size(cxxStandardNames) == std::size(cxxStandards));
 
@@ -843,6 +844,7 @@ void ProjectSettingsWindow::open(Project* project) {
     m_luaDir = project->getLuaDir();
     m_scriptDirs = project->getScriptDirs();
     m_cxxStandardIndex = findCxxStandardIndex(project->getCxxStandard());
+    m_logicLanguageIndex = project->getLogicLanguage() == LogicLanguage::CPP ? 1 : 0;
     m_physics2DEnabled = project->isPhysics2DEnabled();
     m_physics3DEnabled = project->isPhysics3DEnabled();
 
@@ -1338,6 +1340,11 @@ void ProjectSettingsWindow::drawBuildSettings() {
             "Language standard for C++ scripts in Play and exported games. Saved with the project. "
             "Exports also compile the engine with this standard. "
             "Choose a compatible compiler in Editor Settings > Desktop.");
+
+        drawComboSetting("Logic Graphs", "##LogicLanguage", logicLanguageNames, 2, m_logicLanguageIndex,
+            Project::defaultLogicLanguage == LogicLanguage::CPP ? 1 : 0,
+            "What logic graphs are written as. Lua runs at once; C++ is compiled with the C++ scripts "
+            "when Play starts and needs the build tools. A graph can set its own in its window.");
     });
 }
 
@@ -1732,6 +1739,7 @@ bool ProjectSettingsWindow::applySettings() {
         m_cxxStandardIndex = 0;
     }
     m_project->setCxxStandard(cxxStandards[m_cxxStandardIndex]);
+    m_project->setLogicLanguage(m_logicLanguageIndex == 1 ? LogicLanguage::CPP : LogicLanguage::LUA);
     m_project->setPhysics2DEnabled(m_physics2DEnabled);
     m_project->setPhysics3DEnabled(m_physics3DEnabled);
 

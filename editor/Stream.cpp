@@ -1959,6 +1959,9 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
     if (project->getCxxStandard() != Project::defaultCxxStandard) {
         root["cxxStandard"] = project->getCxxStandard();
     }
+    if (project->getLogicLanguage() != Project::defaultLogicLanguage) {
+        root["logicLanguage"] = LogicGraphCompiler::getLanguageName(project->getLogicLanguage());
+    }
     if (project->isPhysics2DEnabled() != Project::defaultPhysics2DEnabled) {
         root["physics2D"] = project->isPhysics2DEnabled();
     }
@@ -2272,6 +2275,12 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
 
     if (node["cxxStandard"]) {
         project->setCxxStandard(node["cxxStandard"].as<int>());
+    }
+
+    if (node["logicLanguage"]) {
+        LogicLanguage language = Project::defaultLogicLanguage;
+        LogicGraphCompiler::findLanguage(node["logicLanguage"].as<std::string>(), language);
+        project->setLogicLanguage(language);
     }
 
     if (node["physics2D"]) {

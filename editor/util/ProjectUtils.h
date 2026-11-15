@@ -113,9 +113,15 @@ public:
     static std::string getShaderFunctionTemplate();
     // a script graph with the two events most scripts start from
     static std::string getLogicGraphTemplate();
-    // a logic graph's hidden script; empty outside the Lua directory
-    static std::filesystem::path getLogicScriptPath(const Project* project, const std::filesystem::path& graph);
-    static bool writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const std::string& code, std::string& error);
+    // a logic graph's language: its own, else the project's
+    static LogicLanguage getLogicLanguage(const Project* project, const GraphDocument& graph);
+    static LogicLanguage getLogicLanguage(const Project* project, const std::filesystem::path& graph);
+    // a graph as the project writes it
+    static GraphResult compileLogicGraph(const Project* project, const GraphDocument& graph, const std::string& fileName);
+    // a graph's hidden script; empty outside the Lua directory
+    static std::filesystem::path getLogicScriptPath(const Project* project, const std::filesystem::path& graph, LogicLanguage language = LogicLanguage::LUA);
+    static bool writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const GraphResult& compiled,
+                                 LogicLanguage language, std::string& error);
     // the script of a deleted or moved graph, or folder
     static void removeLogicScript(const Project* project, const std::filesystem::path& graph);
     // writes the script when the graph or compiler changed; empty when none

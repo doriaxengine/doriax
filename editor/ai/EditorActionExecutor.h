@@ -99,6 +99,7 @@ private:
     ActionResult setProjectAssetDirs(const Json& arguments);
     ActionResult checkCppBuildTools();
     ActionResult setProjectCxxStandard(const Json& arguments);
+    ActionResult setProjectLogicLanguage(const Json& arguments);
     ActionResult updateProjectBuildFile(const Json& arguments);
     ActionResult createBundleFromEntity(const Json& arguments);
     ActionResult importBundleInstance(const Json& arguments);

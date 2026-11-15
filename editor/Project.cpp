@@ -2604,6 +2604,21 @@ int editor::Project::getCxxStandard() const{
     return cxxStandard;
 }
 
+void editor::Project::setLogicLanguage(LogicLanguage language){
+    if (logicLanguage == language) {
+        return;
+    }
+    logicLanguage = language;
+    // the generated project lists the graphs written as C++
+    if (modelLoaded) {
+        markGeneratedSourcesDirty();
+    }
+}
+
+editor::LogicLanguage editor::Project::getLogicLanguage() const{
+    return logicLanguage;
+}
+
 void editor::Project::setPhysics2DEnabled(bool enabled){
     this->physics2DEnabled = enabled;
 }
@@ -5233,6 +5248,7 @@ void editor::Project::resetConfigs() {
     luaDir = defaultLuaDir;
     scriptDirs.clear();
     cxxStandard = defaultCxxStandard;
+    logicLanguage = defaultLogicLanguage;
     physics2DEnabled = defaultPhysics2DEnabled;
     physics3DEnabled = defaultPhysics3DEnabled;
     packNativeResources = defaultPackNativeResources;
@@ -5327,7 +5343,63 @@ std::vector<editor::SceneScriptSource> editor::Project::collectAllSceneCppScript
         }
     }
 
+    for (SceneScriptSource& script : collectLogicCppScripts()) {
+        const bool sameClass = std::any_of(mergedScripts.begin(), mergedScripts.end(),
+            [&](const SceneScriptSource& other) { return other.className == script.className; });
+        if (sameClass) {
+            Out::error("%s.logic is not built: a C++ script already has the class %s", script.logicPath.c_str(), script.className.c_str());
+            continue;
+        }
+        mergedScripts.push_back(std::move(script));
+    }
+
     return mergedScripts;
+}
+
+std::vector<editor::SceneScriptSource> editor::Project::collectLogicCppScripts() const {
+    std::vector<fs::path> graphs;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(getLuaPath(), fs::directory_options::skip_permission_denied, ec);
+         !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        // the folders an export leaves out of the Lua directory
+        const std::string name = it->path().filename().string();
+        if (it.depth() == 0 && it->is_directory(ec) && (name.empty() || name[0] == '.' || name == "build")) {
+            it.disable_recursion_pending();
+            continue;
+        }
+        if (it->is_regular_file(ec) && Util::isLogicGraphFile(name)) {
+            graphs.push_back(it->path());
+        }
+    }
+    // the directory order is not the same everywhere
+    std::sort(graphs.begin(), graphs.end());
+
+    std::vector<SceneScriptSource> scripts;
+    for (const fs::path& graph : graphs) {
+        if (ProjectUtils::getLogicLanguage(this, graph) != LogicLanguage::CPP) {
+            continue;
+        }
+        // entries name a graph's script as the .lua an export ships
+        if (fs::exists(fs::path(graph).replace_extension(".lua"), ec)) {
+            Out::error("%s is not built: a Lua script beside it has its name", graph.filename().string().c_str());
+            continue;
+        }
+        const fs::path source = ProjectUtils::buildLogicScript(this, graph);
+        const fs::path header = fs::path(source).replace_extension(".h");
+        if (source.empty() || !fs::exists(source, ec) || !fs::exists(header, ec)) {
+            continue;
+        }
+
+        SceneScriptSource script;
+        script.path = fs::relative(source, getProjectPath(), ec);
+        script.headerPath = fs::relative(header, getProjectPath(), ec);
+        script.className = source.stem().string();
+        script.properties = toScriptPropertyInfos(ScriptParser::parseScriptProperties(header));
+        script.logicPath = FileUtils::pathToGenericUtf8(normalizeToLuaRelative(graph).replace_extension());
+        scripts.push_back(std::move(script));
+    }
+
+    return scripts;
 }
 
 std::vector<editor::BundleSceneInfo> editor::Project::collectAllBundles() const {
@@ -7579,6 +7651,16 @@ bool editor::Project::updateScriptProperties(SceneProject* sceneProject, Entity 
             if (scriptEntry.path.empty()) continue;
 
             fs::path fullPath = resolveLuaSource(scriptEntry.path);
+
+            // a logic graph written as C++ declares them in its header
+            if (Util::isLogicGraphFile(scriptEntry.path) && ProjectUtils::getLogicLanguage(this, fs::path(scriptEntry.path)) == LogicLanguage::CPP) {
+                const fs::path header = fs::path(fullPath).replace_extension(".h");
+                std::error_code ec;
+                if (!fullPath.empty() && fs::exists(header, ec)) {
+                    hasChanges |= mergeScriptProperties(scriptEntry.properties, ScriptParser::parseScriptProperties(header));
+                }
+                continue;
+            }
 
             ScriptEntry parsedEntry = scriptEntry;
 

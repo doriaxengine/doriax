@@ -176,6 +176,7 @@ bool editor::GraphDocument::read(const std::string& text, std::string& error) {
         }
         kind = root["kind"] ? root["kind"].as<std::string>() : std::string();
         type = root["type"] ? root["type"].as<std::string>() : std::string();
+        language = root["language"] ? root["language"].as<std::string>() : std::string();
         nextId = root["nextId"] ? root["nextId"].as<int>() : 1;
 
         for (const YAML::Node& item : root["parameters"]) {
@@ -295,6 +296,8 @@ std::string editor::GraphDocument::write() const {
     out << YAML::Key << "version" << YAML::Value << version;
     out << YAML::Key << "kind" << YAML::Value << kind;
     out << YAML::Key << "type" << YAML::Value << type;
+    if (!language.empty())
+        out << YAML::Key << "language" << YAML::Value << language;
     out << YAML::Key << "nextId" << YAML::Value << nextId;
 
     if (!parameters.empty()) {

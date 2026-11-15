@@ -181,6 +181,48 @@ bool editor::LogicNodes::isLuaKeyword(const std::string& word) {
     return keywords.count(word) > 0;
 }
 
+bool editor::LogicNodes::isCppKeyword(const std::string& word) {
+    static const std::set<std::string> keywords = {
+        "alignas", "alignof", "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break", "case", "catch", "char", "char8_t",
+        "char16_t", "char32_t", "class", "compl", "concept", "const", "consteval", "constexpr", "constinit", "const_cast", "continue",
+        "co_await", "co_return", "co_yield", "decltype", "default", "delete", "do", "double",
+        "dynamic_cast", "else", "enum", "explicit", "export", "extern", "false", "float", "for", "friend", "goto", "if", "inline",
+        "int", "long", "mutable", "namespace", "new", "noexcept", "not", "not_eq", "nullptr", "operator", "or", "or_eq", "private",
+        "protected", "public", "register", "reinterpret_cast", "requires", "return", "short", "signed", "sizeof", "static",
+        "static_assert", "static_cast", "struct", "switch", "template", "this", "thread_local", "throw", "true", "try", "typedef", "typeid",
+        "typename", "union", "unsigned", "using", "virtual", "void", "volatile", "wchar_t", "while", "xor", "xor_eq"};
+    return keywords.count(word) > 0;
+}
+
+const std::string* editor::LogicNodes::findCppSymbol(const std::string& key, bool write) {
+    static const std::map<std::string, std::pair<std::string, std::string>> symbols = [] {
+        std::map<std::string, std::pair<std::string, std::string>> list;
+        for (const EngineCppSymbol& symbol : getEngineCppSymbols())
+            list[symbol.key] = {symbol.read, symbol.write};
+        return list;
+    }();
+    auto it = symbols.find(key);
+    if (it == symbols.end())
+        return nullptr;
+    const std::string& text = write ? it->second.second : it->second.first;
+    return text.empty() ? nullptr : &text;
+}
+
+const std::string* editor::LogicNodes::findHeader(const std::string& type) {
+    static const std::map<std::string, std::string> headers = [] {
+        std::map<std::string, std::string> list;
+        for (const EngineTypeHeader& item : getEngineTypeHeaders())
+            list[item.name] = item.header;
+        return list;
+    }();
+    auto it = headers.find(type);
+    return it != headers.end() ? &it->second : nullptr;
+}
+
+bool editor::LogicNodes::isPointerClass(const std::string& type) {
+    return type == "Scene" || (type.size() > 6 && type.compare(type.size() - 6, 6, "System") == 0);
+}
+
 bool editor::LogicNodes::isEngineType(const std::string& id) {
     const std::string group = id.substr(0, id.find('/'));
     return group == "call" || group == "get" || group == "set" || group == "const";
@@ -381,6 +423,16 @@ void editor::LogicNodes::addEngineApi() {
             std::string call = method ? "{self}:" + name + "(" : parent + "." + name + "(";
             if (method)
                 inputs.push_back(in("self", parent.c_str(), parent));
+            // a bound C++ member, or a lambda that only passes on
+            std::string cppCall;
+            if (const std::string* callee = findCppSymbol("call/" + parent + "." + name))
+                cppCall = (method ? "{self}." : std::string()) + *callee + "(";
+            else if (!method && parent == "System")
+                cppCall = "System::instance()." + name + "(";
+            else if (!method && parent == "Log")
+                cppCall = "Log::" + name + "(\"%s\", nodes::text(";
+            else if (method && parent == "Scene" && name.size() > 9 && name.compare(name.size() - 6, 6, "System") == 0)
+                cppCall = "{self}.getSystem<" + name.substr(3) + ">().get(";
 
             std::string list = detail.substr(open + 1, close - open - 1);
             int count = 0;
@@ -421,6 +473,10 @@ void editor::LogicNodes::addEngineApi() {
 
             LogicNodeType& type = add("call/" + parent + "." + name, editor::LogicNodes::getTitle(name), parent, detail, std::move(inputs), std::move(outputs), {call});
             type.atomic = true;
+            if (!cppCall.empty()) {
+                const std::string arguments = call.substr(call.find('(') + 1);
+                type.cpp = {cppCall + (parent == "Log" && !method ? arguments + ".c_str())" : arguments)};
+            }
         } else if (kind == "Property") {
             // an event is registered for, through its event node
             static const std::unordered_set<std::string> events = getEngineEventProperties();
@@ -444,6 +500,8 @@ void editor::LogicNodes::addEngineApi() {
                 }
                 LogicNodeType& constant = add("const/" + parent + "." + name, parent + "." + name, parent, detail, {}, {out("value", "", "number")}, {parent + "." + name});
                 constant.atomic = true;
+                if (const std::string* read = findCppSymbol("prop/" + parent + "." + name))
+                    constant.cpp = {*read};
                 continue;
             }
 
@@ -460,14 +518,24 @@ void editor::LogicNodes::addEngineApi() {
             LogicNodeType& get = add("get/" + parent + "." + name, "Get " + editor::LogicNodes::getTitle(name), parent, "Reads " + parent + "." + name + ".",
                                      std::move(getInputs), {out("value", "", valueType)}, {access});
             get.atomic = true;
+            const std::string* read = findCppSymbol("prop/" + parent + "." + name);
+            const std::string target = shared ? std::string() : std::string("{self}.");
+            if (read)
+                get.cpp = {target + *read};
             // one bound with a getter alone is read, not set
             static const std::unordered_set<std::string> readOnly = getEngineReadOnlyProperties();
-            if (!readOnly.count(parent + "." + name))
-                add("set/" + parent + "." + name, "Set " + editor::LogicNodes::getTitle(name), parent, "Sets " + parent + "." + name + ".",
+            if (!readOnly.count(parent + "." + name)) {
+                LogicNodeType& set = add("set/" + parent + "." + name, "Set " + editor::LogicNodes::getTitle(name), parent, "Sets " + parent + "." + name + ".",
                     std::move(setInputs), {execOut()}, {access + " = {value}"});
+                const std::string* write = findCppSymbol("prop/" + parent + "." + name, true);
+                if (read && write)
+                    set.cpp = {*write == "=" ? target + *read + " = {value}" : target + *write + "({value})"};
+            }
         } else if (kind == "Constant") {
             LogicNodeType& constant = add("const/" + parent + "." + name, parent + "." + name, parent, detail, {}, {out("value", "", parent)}, {parent + "." + name});
             constant.atomic = true;
+            if (const std::string* read = findCppSymbol("prop/" + parent + "." + name))
+                constant.cpp = {*read};
         }
     }
 
@@ -475,6 +543,7 @@ void editor::LogicNodes::addEngineApi() {
         LogicNodeType& type = add("enum/" + name, name, "Enums", "A value of " + name + ".", {}, {out("value", "", name)}, {name + ".{value}"});
         type.settings = {choice("value", "Value", members)};
         type.atomic = true;
+        type.cpp = {"@enum/" + name + ".{value}"};
     }
 
     if (!keys.empty()) {
@@ -482,6 +551,7 @@ void editor::LogicNodes::addEngineApi() {
         key.settings = {choice("key", "Key", keys)};
         key.settings[0].value = "SPACE";
         key.atomic = true;
+        key.cpp = {"@prop/Input.KEY_{key}"};
     }
 }
 
@@ -663,20 +733,65 @@ editor::LogicNodes::LogicNodes() {
     {
         add("utility/print", "Print", "Utility", "Writes a line to the log.", {execIn(), in("text", "Text", "any", "")}, {execOut()}, {"Log.print(tostring({text}))"}).textInputs = true;
 
-        LogicNodeType& expression = add("utility/expression", "Lua Expression", "Utility",
-            "A value written in Lua. It reads the inputs as a, b, c and d, and the script as self.",
+        LogicNodeType& expression = add("utility/expression", "Code Expression", "Utility",
+            "A value written in the script's language, Lua or C++. It reads the inputs as a, b, c and d, and the script as self, or this in C++.",
             {in("a", "A", "any"), in("b", "B", "any"), in("c", "C", "any"), in("d", "D", "any")}, {out("value", "", "any")}, {});
         expression.settings = {setting("code", "Code", "text", "a")};
 
-        LogicNodeType& statement = add("utility/statement", "Lua Code", "Utility",
-            "Lines written in Lua. They read the inputs as a, b, c and d, the script as self, and give a value with return.",
+        LogicNodeType& statement = add("utility/statement", "Code", "Utility",
+            "Lines written in the script's language, Lua or C++. They read the inputs as a, b, c and d, the script as self, or this in C++, and give a value with return.",
             {execIn(), in("a", "A", "any"), in("b", "B", "any"), in("c", "C", "any"), in("d", "D", "any")}, {execOut(), out("value", "", "any")}, {});
         statement.settings = {setting("body", "Code", "text")};
 
-        add("utility/call", "Call Method", "Utility", "Calls a method of the script by name, one written in a Lua Code node or by another script.",
+        add("utility/call", "Call Method", "Utility", "Calls a method of a Lua script by name, one written in a Code node or by another script.",
             {execIn(), in("self", "Target", "any"), in("a", "A", "any"), in("b", "B", "any")}, {execOut(), out("result", "", "any")},
             {"{self}:{method}({a}, {b})"}).settings = {setting("method", "Method", "text")};
     }
 
     addEngineApi();
+
+    // C++ of the nodes above; the others read the same in both
+    static const std::map<std::string, std::vector<std::string>> cppCode = {
+        {"variable/get", {"{variable}"}},
+        {"variable/set", {"{variable} = {value}"}},
+        {"self/entity", {"entity"}},
+        {"self/scene", {"scene"}},
+        {"self/entityObject", {"{class}(scene, {entity})"}},
+        {"value/nil", {"nullptr"}},
+        {"math/divide", {"nodes::divide({a}, {b})"}},
+        {"math/modulo", {"nodes::modulo({a}, {b})"}},
+        {"math/power", {"std::pow({a}, {b})"}},
+        {"math/abs", {"std::abs({a})"}},
+        {"math/floor", {"std::floor({a})"}},
+        {"math/ceil", {"std::ceil({a})"}},
+        {"math/sqrt", {"std::sqrt({a})"}},
+        {"math/sin", {"std::sin({a})"}},
+        {"math/cos", {"std::cos({a})"}},
+        {"math/atan2", {"std::atan2({y}, {x})"}},
+        {"math/min", {"std::min<float>({a}, {b})"}},
+        {"math/max", {"std::max<float>({a}, {b})"}},
+        {"math/clamp", {"std::max<float>({min}, std::min<float>({max}, {a}))"}},
+        {"math/random", {"nodes::random()"}},
+        {"math/randomRange", {"nodes::randomRange({min}, {max})"}},
+        {"math/lerp", {"nodes::lerp({a}, {b}, {t})"}},
+        {"math/pi", {"3.14159265358979f"}},
+        {"logic/notEqual", {"{a} != {b}"}},
+        {"logic/and", {"{a} && {b}"}},
+        {"logic/or", {"{a} || {b}"}},
+        {"logic/not", {"!{a}"}},
+        {"logic/select", {"({condition} ? {a} : {b})"}},
+        {"logic/isNil", {"{a} == nullptr"}},
+        {"text/join", {"nodes::text({a}) + nodes::text({b})"}},
+        {"text/toString", {"nodes::text({a})"}},
+        {"text/toNumber", {"nodes::toNumber({a})"}},
+        {"text/length", {"nodes::length({a})"}},
+        {"text/format", {"nodes::format({format}, {a}, {b}, {c})"}},
+        {"utility/print", {"Log::print(\"%s\", nodes::text({text}).c_str())"}},
+        {"utility/call", {}}};
+    for (const auto& type : types) {
+        if (isEngineType(type->id) || !type->cpp.empty())
+            continue;
+        auto listed = cppCode.find(type->id);
+        type->cpp = listed != cppCode.end() ? listed->second : type->code;
+    }
 }

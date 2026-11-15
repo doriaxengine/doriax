@@ -86,6 +86,155 @@ namespace {
         return text[0] == '-' ? "(" + text + ")" : text;
     }
 
+    // a line of C++ without its // comment
+    std::string uncommented(const std::string& line) {
+        char quote = 0;
+        for (size_t i = 0; i + 1 < line.size(); i++) {
+            if (quote && line[i] == '\\')
+                i++;
+            else if (quote)
+                quote = line[i] == quote ? 0 : quote;
+            else if (line[i] == '"' || line[i] == '\'')
+                quote = line[i];
+            else if (line[i] == '/' && line[i + 1] == '/')
+                return line.substr(0, i);
+        }
+        return line;
+    }
+
+    std::string cppNumber(float value) {
+        if (!std::isfinite(value))
+            return value != value ? "NAN" : (value > 0.0f ? "INFINITY" : "-INFINITY");
+        std::string text = GraphValue::formatNumber(value);
+        if (text.find_first_of(".e") == std::string::npos)
+            text += ".0";
+        return text + "f";
+    }
+
+    // the type of a variable in the class's header
+    std::string cppType(const std::string& variableType) {
+        if (variableType == "float" || variableType == "int" || variableType == "bool")
+            return variableType;
+        if (variableType == "string")
+            return "std::string";
+        if (variableType == "entity")
+            return "doriax::Object*";
+        return "doriax::" + LogicNodes::getVariablePinType(variableType);
+    }
+
+    // what some C++ nodes call, as nodes:: above the script
+    struct CppHelper {
+        const char* name;
+        std::vector<const char*> needs;
+        std::vector<const char*> lines;
+    };
+
+    const std::vector<CppHelper>& cppHelpers() {
+        static const std::vector<CppHelper> list = {
+            {"text", {}, {
+                "template<typename T>",
+                "std::string text(const T& value) {",
+                "    if constexpr (std::is_null_pointer_v<T>) {",
+                "        return \"nil\";",
+                "    } else if constexpr (std::is_same_v<T, bool>) {",
+                "        return value ? \"true\" : \"false\";",
+                "    } else if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>) {",
+                "        char buffer[40];",
+                "        snprintf(buffer, sizeof(buffer), std::is_same_v<T, float> ? \"%.7g\" : \"%.14g\", (double)value);",
+                "        return buffer;",
+                "    } else if constexpr (std::is_convertible_v<T, std::string>) {",
+                "        return value;",
+                "    } else {",
+                "        return value.toString();",
+                "    }",
+                "}"}},
+            {"number", {}, {
+                "template<typename T>",
+                "double number(const T& value) {",
+                "    if constexpr (std::is_arithmetic_v<T> || std::is_enum_v<T>)",
+                "        return (double)value;",
+                "    else if constexpr (std::is_convertible_v<T, std::string>)",
+                "        return std::strtod(std::string(value).c_str(), nullptr);",
+                "    else",
+                "        return 0.0;",
+                "}"}},
+            {"toNumber", {"number"}, {
+                "template<typename T>",
+                "float toNumber(const T& value) {",
+                "    return (float)number(value);",
+                "}"}},
+            {"length", {}, {
+                "template<typename T>",
+                "float length(const T& value) {",
+                "    if constexpr (std::is_convertible_v<T, std::string>)",
+                "        return (float)std::string(value).size();",
+                "    else",
+                "        return (float)value.size();",
+                "}"}},
+            {"format", {"text", "number"}, {
+                "template<typename... Args>",
+                "std::string format(const std::string& pattern, const Args&... args) {",
+                "    const std::string texts[] = {text(args)..., std::string()};",
+                "    const double numbers[] = {number(args)..., 0.0};",
+                "    std::string result;",
+                "    size_t next = 0;",
+                "    for (size_t i = 0; i < pattern.size(); i++) {",
+                "        const size_t end = pattern[i] == '%' ? pattern.find_first_of(\"sdiuxXcfgeE%\", i + 1) : std::string::npos;",
+                "        if (end == std::string::npos) {",
+                "            result += pattern[i];",
+                "            continue;",
+                "        }",
+                "        std::string spec = pattern.substr(i, end - i + 1);",
+                "        const char kind = pattern[end];",
+                "        i = end;",
+                "        if (kind == '%' || next >= sizeof...(Args)) {",
+                "            result += kind == '%' ? \"%\" : \"\";",
+                "            continue;",
+                "        }",
+                "        char buffer[128];",
+                "        if (kind == 's') {",
+                "            result += texts[next++];",
+                "            continue;",
+                "        } else if (kind == 'c') {",
+                "            snprintf(buffer, sizeof(buffer), spec.c_str(), (int)numbers[next++]);",
+                "        } else if (std::strchr(\"diuxX\", kind)) {",
+                "            spec.insert(spec.size() - 1, \"ll\");",
+                "            snprintf(buffer, sizeof(buffer), spec.c_str(), (long long)numbers[next++]);",
+                "        } else {",
+                "            snprintf(buffer, sizeof(buffer), spec.c_str(), numbers[next++]);",
+                "        }",
+                "        result += buffer;",
+                "    }",
+                "    return result;",
+                "}"}},
+            {"divide", {}, {
+                "template<typename A, typename B>",
+                "auto divide(const A& a, const B& b) {",
+                "    if constexpr (std::is_arithmetic_v<A> && std::is_arithmetic_v<B>)",
+                "        return (float)a / (float)b;",
+                "    else",
+                "        return a / b;",
+                "}"}},
+            {"modulo", {}, {
+                "inline float modulo(float a, float b) {",
+                "    return a - std::floor(a / b) * b;",
+                "}"}},
+            {"lerp", {}, {
+                "template<typename A, typename B>",
+                "auto lerp(const A& a, const B& b, float t) {",
+                "    return a + (b - a) * t;",
+                "}"}},
+            {"random", {}, {
+                "inline float random() {",
+                "    return (float)std::rand() / ((float)RAND_MAX + 1.0f);",
+                "}"}},
+            {"randomRange", {"random"}, {
+                "inline float randomRange(float min, float max) {",
+                "    return min + random() * (max - min);",
+                "}"}}};
+        return list;
+    }
+
     // the functions some nodes call, written once above the script
     const std::vector<std::pair<std::string, std::vector<std::string>>>& helperFunctions() {
         static const std::vector<std::pair<std::string, std::vector<std::string>>> list = {
@@ -97,14 +246,15 @@ namespace {
 
     class Compiler {
     public:
-        Compiler(const GraphDocument& graph, const std::string& source, const std::string& name): graph(graph), source(source), module(tableName(name)) {}
+        Compiler(const GraphDocument& graph, const std::string& source, const std::string& name, bool cpp):
+            graph(graph), source(source), module(tableName(name)), cpp(cpp) {}
 
         GraphResult run() {
             if (graph.kind != "logic") {
                 error(0, "Not a logic graph");
                 return result;
             }
-            if (!isIdentifier(module))
+            if (!isIdentifier(module) || (cpp && LogicNodes::isCppKeyword(module)))
                 error(0, "The file name gives the script its name, so it starts with a letter and has only letters, digits and _");
 
             checkVariables();
@@ -114,9 +264,13 @@ namespace {
             if (!result.errors.empty())
                 return result;
 
-            for (const GraphLink& link : graph.links)
-                if (!link.fromPin.empty())
-                    readers[link.fromNode]++;
+            for (const GraphLink& link : graph.links) {
+                if (link.fromPin.empty())
+                    continue;
+                readers[link.fromNode]++;
+                if (pinKind(link.fromNode, link.fromPin) == PinKind::DATA)
+                    valueRead.insert(link.fromNode);
+            }
 
             // the events, in the order their nodes stand
             std::vector<const GraphNode*> events;
@@ -142,7 +296,8 @@ namespace {
                     function.name = methodName(event);
                     for (const ScriptEventParam& param : event.params)
                         function.params.push_back(param.name);
-                    function.registration = ScriptEvents::getLuaRegistration(event, function.name);
+                    function.registration = cpp ? ScriptEvents::getCppRegistration(event, function.name) : ScriptEvents::getLuaRegistration(event, function.name);
+                    function.event = type.event;
                     function.returnsBool = event.returnsBool;
                 }
                 if (type.event >= 0 && !taken.insert(function.name).second) {
@@ -167,50 +322,15 @@ namespace {
             if (!result.errors.empty())
                 return result;
 
+            if (cpp) {
+                writeCpp(start, functions);
+                result.success = true;
+                return result;
+            }
             write(start, functions);
             result.success = checkSyntax();
             return result;
         }
-
-    private:
-        struct Line {
-            std::string text;
-            int node = 0;
-        };
-
-        struct Function {
-            int node = 0;
-            std::string name;
-            std::vector<std::string> params;
-            std::string registration;
-            std::vector<Line> body;
-            std::vector<std::string> locals;
-            bool returnsBool = false;    // an engine query, true unless the script says otherwise
-        };
-
-        const GraphDocument& graph;
-        const std::string& source;
-        const std::string module;            // the local the script's table is kept in
-        GraphResult result;
-
-        // of the function being written
-        Function* function = nullptr;
-        std::set<int> ran;                   // the nodes written so far
-        std::vector<int> running;            // nodes being written, outermost first
-        std::vector<int> bodies;             // the loops whose body is being written
-        std::map<std::string, std::string> shared; // the values the statement being written reads more than once
-        std::map<int, int> readers;          // how many inputs each node feeds
-        int statementIndent = 1;
-        int sharedCount = 0;
-        bool sharing = true;                 // off where a value is read again, as a loop condition
-        bool overflow = false;               // the function grew past what a graph should make
-        std::vector<int> reading;            // the value nodes being read
-        std::set<std::string> kept;          // its locals
-
-        std::vector<std::string> state;      // lines of init: what Flip Flop starts as
-        std::vector<std::string> objects;    // lines of init: the entity as the classes the graph uses
-        std::vector<Line> helpers;           // the functions of Lua Expression and Lua Code nodes
-        std::set<std::string> usedHelpers;
 
         // the file name, or Camera as CameraScript on a clash
         static std::string tableName(const std::string& name) {
@@ -226,6 +346,121 @@ namespace {
             return taken ? name + "Script" : name;
         }
 
+    private:
+        struct Line {
+            std::string text;
+            int node = 0;
+        };
+
+        struct Function {
+            int node = 0;
+            std::string name;
+            std::vector<std::string> params;
+            std::string registration;
+            std::vector<Line> body;
+            std::vector<std::string> locals;
+            int event = -1;
+            bool returnsBool = false;    // an engine query, true unless the script says otherwise
+        };
+
+        const GraphDocument& graph;
+        const std::string& source;
+        const std::string module;            // the local the script's table is kept in, or the C++ class
+        const bool cpp;
+        GraphResult result;
+
+        // of the function being written
+        Function* function = nullptr;
+        std::set<int> ran;                   // the nodes written so far
+        std::vector<int> running;            // nodes being written, outermost first
+        std::vector<int> bodies;             // the loops whose body is being written
+        std::map<std::string, std::string> shared; // the values the statement being written reads more than once
+        std::map<int, int> readers;          // how many inputs each node feeds
+        std::set<int> valueRead;             // the nodes with a value output linked
+        std::vector<std::set<std::string>> scopes; // C++ locals declared, innermost last
+        int statementIndent = 1;
+        int sharedCount = 0;
+        bool sharing = true;                 // off where a value is read again, as a loop condition
+        bool overflow = false;               // the function grew past what a graph should make
+        std::vector<int> reading;            // the value nodes being read
+        std::set<std::string> kept;          // its locals
+
+        std::vector<std::string> state;      // lines of init: what Flip Flop starts as
+        std::vector<std::string> objects;    // lines of init: the entity as the classes the graph uses
+        std::vector<Line> helpers;           // the functions of Code Expression and Code nodes
+        std::set<std::string> usedHelpers;
+
+        PinKind pinKind(int id, const std::string& pin) const {
+            const GraphNode* node = graph.findNode(id);
+            const LogicNodeType* type = node ? LogicNodes::get().find(node->type) : nullptr;
+            const NodePin* output = type ? type->findOutput(pin) : nullptr;
+            return output ? output->kind : PinKind::DATA;
+        }
+
+        const std::vector<std::string>& codes(const LogicNodeType& type) const {
+            return cpp ? type.cpp : type.code;
+        }
+
+        // a node only Lua has, in a graph written as C++
+        bool luaOnly(const GraphNode& node, const LogicNodeType& type) {
+            if (!cpp || !type.cpp.empty() || type.flow != LogicFlow::NONE || node.type == "utility/expression" || node.type == "utility/statement")
+                return false;
+            error(node.id, type.name + " has no C++ form; set the graph's output to Lua to use it");
+            return true;
+        }
+
+        // a member a parameter or a local of the function would hide
+        std::string member(const std::string& name) const {
+            if (!cpp)
+                return "self." + name;
+            static const char* locals[] = {"v", "t", "index", "item", "last", "code"};
+            bool hidden = function && std::find(function->params.begin(), function->params.end(), name) != function->params.end();
+            for (const char* local : locals) {
+                const size_t length = std::char_traits<char>::length(local);
+                hidden |= name.size() > length && name.compare(0, length, local) == 0 && std::isdigit(static_cast<unsigned char>(name[length]));
+            }
+            return hidden ? "this->" + name : name;
+        }
+
+        std::string number(float value) const {
+            return cpp ? cppNumber(value) : formatNumber(value);
+        }
+
+        // the first time in the scopes open, when C++ declares it
+        bool declare(const std::string& name) {
+            for (const std::set<std::string>& scope : scopes)
+                if (scope.count(name))
+                    return false;
+            scopes.back().insert(name);
+            return true;
+        }
+
+        // what a link gives, as the pin it enters takes it in C++
+        std::string converted(const std::string& read, const GraphLink& link, const std::string& to) const {
+            std::string from;
+            if (link.fromPin.empty()) {
+                const GraphParameter* variable = graph.findParameter(link.fromNode);
+                from = variable ? LogicNodes::getVariablePinType(variable->type) : std::string();
+            } else if (const GraphNode* node = graph.findNode(link.fromNode)) {
+                if (const LogicNodeType* type = LogicNodes::get().find(node->type)) {
+                    std::vector<NodePin> inputs, outputs;
+                    LogicNodes::getPins(graph, *node, *type, inputs, outputs);
+                    for (const NodePin& pin : outputs)
+                        if (pin.name == link.fromPin)
+                            from = pin.type;
+                }
+            }
+            // an enum and a number are not each other in C++
+            const std::vector<std::string>& members = LogicNodes::getEnumMembers(to);
+            if (from == "number" && !members.empty()) {
+                const std::string* first = LogicNodes::findCppSymbol("enum/" + to + "." + members.front());
+                return first ? "static_cast<decltype(" + *first + ")>(" + unwrapped(read) + ")" : read;
+            }
+            if (to == "number" && !LogicNodes::getEnumMembers(from).empty())
+                return "static_cast<int>(" + unwrapped(read) + ")";
+            return read;
+        }
+
         void error(int node, const std::string& text) {
             for (const GraphMessage& message : result.errors)
                 if (message.node == node && message.text == text)
@@ -234,7 +469,8 @@ namespace {
         }
 
         std::string methodName(const ScriptEvent& event) const {
-            const std::string name = ScriptEvents::getLuaName(event);
+            // the C++ macro registers an engine event by its own name
+            const std::string name = cpp ? std::string(event.name) : ScriptEvents::getLuaName(event);
             if (event.source == ScriptEventSource::Engine || event.source == ScriptEventSource::Input)
                 return name;
             // onPress of a Button as onButtonPress
@@ -257,6 +493,10 @@ namespace {
             for (const GraphParameter& variable : graph.parameters) {
                 if (!isIdentifier(variable.name))
                     error(0, "The variable name " + variable.name + " is not one Lua takes: letters, digits and _, not starting with a digit");
+                else if (cpp && LogicNodes::isCppKeyword(variable.name))
+                    error(0, "The variable name " + variable.name + " is a word of C++");
+                else if (cpp && variable.runtime && variable.type == "entity")
+                    error(0, "The entity variable " + variable.name + " is private, and C++ takes an entity only from Properties");
                 else if (reserved.count(variable.name) || variable.name[0] == '_')
                     error(0, "The variable name " + variable.name + " is one the script keeps for itself");
                 else if (!names.insert(variable.name).second)
@@ -279,26 +519,47 @@ namespace {
             if (type == "bool")
                 return value.text.empty() ? (value.number() != 0.0f ? "true" : "false") : (value.text == "true" ? "true" : "false");
             if (type == "number")
-                return operand(value.number());
+                return beside(value.number());
             if (type == "string")
                 return quote(value.text.empty() && !value.numbers.empty() ? formatNumber(value.number()) : value.text);
             if (int size = vectorSize(type)) {
                 std::string text = type + "(";
                 for (int i = 0; i < size; i++)
-                    text += (i ? ", " : "") + formatNumber(value.number(i));
+                    text += (i ? ", " : "") + number(value.number(i));
                 return text + ")";
             }
             if (type == "Quaternion")
-                return "Quaternion(" + formatNumber(value.number(0)) + ", " + formatNumber(value.number(1)) + ", " + formatNumber(value.number(2)) + ")";
+                return "Quaternion(" + number(value.number(0)) + ", " + number(value.number(1)) + ", " + number(value.number(2)) + ")";
             if (!LogicNodes::getEnumMembers(type).empty())
-                return value.text.empty() ? formatNumber(value.number()) : type + "." + value.text;
+                return enumLiteral(type, value);
             if (type == "any") {
+                // a std::string, so it joins and compares as text
                 if (!value.text.empty())
-                    return quote(value.text);
+                    return cpp ? "std::string(" + quote(value.text) + ")" : quote(value.text);
                 if (!value.numbers.empty())
-                    return operand(value.number());
+                    return beside(value.number());
             }
-            return "nil";
+            return none();
+        }
+
+        // a number where it stands beside an operator: -1 as (-1)
+        std::string beside(float value) const {
+            if (!cpp)
+                return operand(value);
+            const std::string text = cppNumber(value);
+            return text[0] == '-' ? "(" + text + ")" : text;
+        }
+
+        std::string enumLiteral(const std::string& type, const GraphValue& value) const {
+            if (!cpp)
+                return value.text.empty() ? formatNumber(value.number()) : type + "." + value.text;
+            const std::vector<std::string>& members = LogicNodes::getEnumMembers(type);
+            const std::string* named = LogicNodes::findCppSymbol("enum/" + type + "." + (value.text.empty() ? members.front() : value.text));
+            if (!named)
+                return "0";
+            if (!value.text.empty())
+                return *named;
+            return "static_cast<decltype(" + *named + ")>(" + std::to_string((int)std::lround(value.number())) + ")";
         }
 
         std::string variableDefault(const GraphParameter& variable, bool property) const {
@@ -306,7 +567,9 @@ namespace {
             if (variable.type == "int")
                 return std::to_string((int)std::lround(variable.value.number()));
             if (variable.type == "entity")
-                return "nil";
+                return cpp ? "nullptr" : "nil";
+            if (cpp && variable.type == "float")
+                return cppNumber(variable.value.number());
             // properties list a vector's numbers, scripts hold the vector
             GraphValue value = variable.value;
             // a color given without alpha is opaque
@@ -323,29 +586,42 @@ namespace {
 
         // what an input reads: its link, else its constant
         std::string input(const GraphNode& node, const NodePin& pin) {
-            if (const GraphLink* link = graph.findLinkInto(node.id, pin.name))
-                return output(*link, node.id);
+            if (const GraphLink* link = graph.findLinkInto(node.id, pin.name)) {
+                // Is Nil asks an entity variable's pointer, not its entity
+                const GraphParameter* variable = cpp && node.type == "logic/isNil" ? linkedVariable(*link) : nullptr;
+                if (variable && variable->type == "entity")
+                    return member(variable->name);
+                const std::string read = output(*link, node.id);
+                return cpp ? converted(read, *link, pin.type) : read;
+            }
             auto constant = node.inputs.find(pin.name);
             const GraphValue& value = constant != node.inputs.end() ? constant->second : pin.value;
             const LogicNodeType* type = LogicNodes::get().find(node.type);
             if (value.empty() && pin.type == "any" && type && type->textInputs)
-                return "\"\"";
+                return cpp ? "std::string()" : "\"\"";
             if (pin.name == "self" && value.empty()) {
                 // the script's own entity, or the script
                 if (LogicNodes::isEntityClass(pin.type))
                     return selfObject(pin.type);
                 if (pin.type == "any")
-                    return "self";
+                    return cpp ? "this" : "self";
                 if (pin.type == "Scene")
-                    return "self.scene";
+                    return cpp ? "scene" : "self.scene";
                 error(node.id, "Nothing is linked to " + pin.label + ", and the script's entity is not one");
-                return "nil";
+                return none();
             }
             if (pin.type == "Scene" && value.empty())
-                return "self.scene";
+                return cpp ? "scene" : "self.scene";
             if (pin.type == "Entity" && value.empty())
-                return "self.entity";
+                return cpp ? "entity" : "self.entity";
+            // an unset input of an engine call is default-made
+            if (cpp && value.empty() && LogicNodes::isEngineType(node.type) && pin.type != "number" && pin.type != "bool" && pin.type != "string")
+                return "{}";
             return literal(pin.type, value);
+        }
+
+        std::string none() const {
+            return cpp ? "nullptr" : "nil";
         }
 
         std::string output(const GraphLink& link, int reader) {
@@ -353,9 +629,9 @@ namespace {
                 const GraphParameter* variable = graph.findParameter(link.fromNode);
                 if (!variable) {
                     error(reader, "Reads a variable that is gone");
-                    return "nil";
+                    return none();
                 }
-                return "self." + variable->name;
+                return variableRead(*variable);
             }
             const GraphNode* node = graph.findNode(link.fromNode);
             const LogicNodeType* type = node ? LogicNodes::get().find(node->type) : nullptr;
@@ -382,13 +658,13 @@ namespace {
                     }
                     return (link.fromPin == "item" ? "item" : "index") + std::to_string(node->id);
                 case LogicFlow::FLIP_FLOP:
-                    return "self._flip" + std::to_string(node->id);
+                    return flipField(node->id);
                 default:
                     break;
             }
             if (node->type == "variable/set") {
                 const GraphParameter* variable = namedVariable(*node);
-                return variable ? "self." + variable->name : std::string("nil");
+                return variable ? variableRead(*variable) : none();
             }
             if (!ran.count(node->id)) {
                 error(reader, type->name + " has not run when its value is read; link the execution through it first");
@@ -397,13 +673,40 @@ namespace {
             return "v" + std::to_string(node->id);
         }
 
+        // the state of a Flip Flop, false until it runs
+        std::string flipField(int id) {
+            const std::string field = member("_flip" + std::to_string(id));
+            const std::string kept = cpp ? "_flip" + std::to_string(id) : field + " = false";
+            if (std::find(state.begin(), state.end(), kept) == state.end())
+                state.push_back(kept);
+            return field;
+        }
+
+        // an entity variable is a pointer in C++
+        std::string variableRead(const GraphParameter& variable) const {
+            return cpp && variable.type == "entity" ? "(*" + member(variable.name) + ")" : member(variable.name);
+        }
+
         // the entity as an engine class, made in init
         std::string selfObject(const std::string& type) {
+            if (cpp) {
+                if (std::find(objects.begin(), objects.end(), type) == objects.end())
+                    objects.push_back(type);
+                return "_as" + type;
+            }
             const std::string field = "self._" + type;
             const std::string made = field + " = " + type + "(self.scene, self.entity)";
             if (std::find(objects.begin(), objects.end(), made) == objects.end())
                 objects.push_back(made);
             return field;
+        }
+
+        // the variable a link reads, straight or through Get Variable
+        const GraphParameter* linkedVariable(const GraphLink& link) const {
+            if (link.fromPin.empty())
+                return graph.findParameter(link.fromNode);
+            const GraphNode* node = graph.findNode(link.fromNode);
+            return node && node->type == "variable/get" ? namedVariable(*node) : nullptr;
         }
 
         const GraphParameter* namedVariable(const GraphNode& node) const {
@@ -436,6 +739,11 @@ namespace {
                         const std::string read = input(node, pin);
                         text += (opens && closes) || assigned ? unwrapped(read) : read;
                         found = true;
+                        // C++ reaches a member of a pointer with ->
+                        if (cpp && LogicNodes::isPointerClass(pin.type) && close + 1 < code.size() && code[close + 1] == '.') {
+                            text += "->";
+                            i++;
+                        }
                     }
                 }
                 if (found)
@@ -449,14 +757,22 @@ namespace {
                 const GraphValue& value = stored != node.settings.end() ? stored->second : setting->value;
                 if (setting->type == "parameter") {
                     const GraphParameter* variable = graph.findParameter((int)value.number());
+                    const bool set = node.type == "variable/set";
                     if (!variable)
                         error(node.id, type.name + " names no variable");
-                    text += variable ? variable->name : std::string("_");
+                    else if (cpp && set && variable->type == "entity")
+                        error(node.id, "An entity variable is set in Properties; C++ keeps it as a pointer");
+                    if (!variable)
+                        text += "_";
+                    else if (cpp)
+                        text += set ? member(variable->name) : variableRead(*variable);
+                    else
+                        text += variable->name;
                 } else if (node.type == "value/string") {
                     // a number written unquoted in the file is the text of its digits
-                    text += quote(settingText(value));
+                    text += cpp ? "std::string(" + quote(settingText(value)) + ")" : quote(settingText(value));
                 } else if (setting->type == "number") {
-                    text += operand(value.number());
+                    text += beside(value.number());
                 } else if (setting->type == "choice") {
                     const std::string chosen = value.text.empty() ? formatNumber(value.number()) : value.text;
                     if (std::find(setting->options.begin(), setting->options.end(), chosen) == setting->options.end())
@@ -471,10 +787,17 @@ namespace {
                     text += settingText(value);
                 }
             }
+            // what the filled name is in C++, as an enum's member
+            if (cpp && !text.empty() && text[0] == '@') {
+                const std::string* symbol = LogicNodes::findCppSymbol(text.substr(1));
+                if (!symbol)
+                    error(node.id, type.name + " has no C++ form for " + text.substr(text.find('/') + 1));
+                return symbol ? *symbol : none();
+            }
             return text;
         }
 
-        // the function a Lua Expression or Lua Code node becomes, and its call
+        // the function of a Code Expression or Code node, and its call
         std::string helperCall(const GraphNode& node, const LogicNodeType& type, bool expression) {
             const char* setting = expression ? "code" : "body";
             auto stored = node.settings.find(setting);
@@ -483,6 +806,8 @@ namespace {
                 error(node.id, type.name + " has no code");
                 return "nil";
             }
+            if (cpp)
+                return lambdaCall(node, type, code, expression);
             const std::string name = std::string("nodes.") + (expression ? "expression" : "code") + std::to_string(node.id);
             const bool written = std::any_of(helpers.begin(), helpers.end(), [&](const Line& line) { return line.node == node.id; });
             if (!written) {
@@ -509,6 +834,41 @@ namespace {
             return call + ")";
         }
 
+        // the lambda of a Code Expression or Code node, and its call
+        std::string lambdaCall(const GraphNode& node, const LogicNodeType& type, const std::string& code, bool expression) {
+            const std::string head = "[&](auto&& a, auto&& b, auto&& c, auto&& d)";
+            std::string arguments;
+            for (const NodePin& pin : type.inputs)
+                if (pin.kind == PinKind::DATA)
+                    arguments += (arguments.empty() ? "" : ", ") + input(node, pin);
+
+            std::vector<std::string> lines;
+            for (size_t begin = 0; begin <= code.size();) {
+                size_t end = code.find('\n', begin);
+                if (end == std::string::npos)
+                    end = code.size();
+                lines.push_back(code.substr(begin, end - begin));
+                if (!lines.back().empty() && lines.back().back() == '\r')
+                    lines.back().pop_back();
+                begin = end + 1;
+            }
+            if (expression) {
+                // on one line, where a // comment would take the rest
+                std::string text;
+                for (const std::string& item : lines)
+                    text += (text.empty() ? "" : " ") + uncommented(item);
+                return "(" + head + " -> decltype(auto) { return (" + text + "); })(" + arguments + ")";
+            }
+            const std::string name = "code" + std::to_string(node.id);
+            if (declare(name)) {
+                line(statementIndent, "auto " + name + " = " + head + " {", node.id);
+                for (const std::string& item : lines)
+                    line(item.empty() ? 0 : statementIndent + 1, item, node.id);
+                line(statementIndent, "};", node.id);
+            }
+            return name + "(" + arguments + ")";
+        }
+
         // a value node, read where it is used
         std::string value(const GraphNode& node, const LogicNodeType& type, const std::string& pin) {
             if (std::find(reading.begin(), reading.end(), node.id) != reading.end()) {
@@ -520,7 +880,7 @@ namespace {
                 return "nil";
             }
             // shared values once per statement, names and constants inline
-            const bool plain = type.atomic && type.inputs.empty() && (type.code.empty() || type.code.front().find('(') == std::string::npos);
+            const bool plain = type.atomic && type.inputs.empty() && (codes(type).empty() || codes(type).front().find('(') == std::string::npos);
             const bool once = sharing && sharedCount < 150 && readers[node.id] > 1 && !plain;
             const std::string key = std::to_string(node.id) + "." + pin;
             if (once) {
@@ -530,7 +890,9 @@ namespace {
             }
             reading.push_back(node.id);
             std::string text;
-            if (node.type == "utility/expression") {
+            if (luaOnly(node, type)) {
+                text = none();
+            } else if (node.type == "utility/expression") {
                 text = helperCall(node, type, true);
             } else if (node.type == "self/object") {
                 auto stored = node.settings.find("class");
@@ -543,9 +905,10 @@ namespace {
                 for (size_t i = 0; i < type.outputs.size(); i++)
                     if (type.outputs[i].name == pin)
                         index = i;
-                const std::string& code = index < type.code.size() ? type.code[index] : type.code.front();
+                const std::vector<std::string>& list = codes(type);
+                const std::string& code = index < list.size() ? list[index] : list.front();
                 for (const auto& helper : helperFunctions())
-                    if (code.compare(0, helper.first.size() + 1, helper.first + "(") == 0)
+                    if (!cpp && code.compare(0, helper.first.size() + 1, helper.first + "(") == 0)
                         usedHelpers.insert(helper.first);
                 text = fill(node, type, code);
                 if (!type.atomic)
@@ -558,7 +921,10 @@ namespace {
                     if (type.outputs[i].name == pin)
                         index = i;
                 const std::string name = "t" + std::to_string(node.id) + (index ? "_" + std::to_string(index) : std::string());
-                line(statementIndent, "local " + name + " = " + unwrapped(text), node.id);
+                if (cpp)
+                    line(statementIndent, (declare(name) ? "auto " : "") + name + " = " + unwrapped(text) + ";", node.id);
+                else
+                    line(statementIndent, "local " + name + " = " + unwrapped(text), node.id);
                 sharedCount++;
                 shared[key] = name;
                 return name;
@@ -571,7 +937,7 @@ namespace {
             constexpr size_t limit = 5000;
             if (function->body.size() >= limit) {
                 if (!overflow)
-                    error(function->node, "Too much runs from this event: where paths meet, what follows is written for each of them. Let them meet less, or move the shared part into a Lua Code node");
+                    error(function->node, "Too much runs from this event: where paths meet, what follows is written for each of them. Let them meet less, or move the shared part into a Code node");
                 overflow = true;
                 return;
             }
@@ -587,7 +953,7 @@ namespace {
             function->locals.push_back(name);
             // Lua holds 200 locals in a function
             if (function->locals.size() == 180)
-                error(function->node, "Too many nodes that give a value run from this event; split it across events or Lua Code nodes");
+                error(function->node, "Too many nodes that give a value run from this event; split it across events or Code nodes");
         }
 
         // what an execution output leads to
@@ -599,7 +965,9 @@ namespace {
         // a branch that may not run keeps nothing after it
         void block(const GraphNode& node, const std::string& pin, int indent) {
             const std::set<int> before = ran;
+            scopes.emplace_back();
             follow(node, pin, indent);
+            scopes.pop_back();
             ran = before;
         }
 
@@ -627,6 +995,8 @@ namespace {
                 return;
             running.push_back(id);
             const std::string tag = std::to_string(id);
+            const std::string end = cpp ? ";" : "";
+            const std::string close = cpp ? "}" : "end";
             shared.clear();
             statementIndent = indent;
 
@@ -641,13 +1011,14 @@ namespace {
 
             switch (type->flow) {
                 case LogicFlow::BRANCH: {
-                    line(indent, "if " + unwrapped(input(*node, pin("condition"))) + " then", id);
+                    const std::string condition = unwrapped(input(*node, pin("condition")));
+                    line(indent, cpp ? "if (" + condition + ") {" : "if " + condition + " then", id);
                     block(*node, "true", indent + 1);
                     if (linkFrom(id, "false")) {
-                        line(indent, "else", id);
+                        line(indent, cpp ? "} else {" : "else", id);
                         block(*node, "false", indent + 1);
                     }
-                    line(indent, "end", id);
+                    line(indent, close, id);
                     break;
                 }
                 case LogicFlow::SEQUENCE: {
@@ -656,18 +1027,36 @@ namespace {
                     break;
                 }
                 case LogicFlow::FOR: {
-                    line(indent, "for index" + tag + " = " + unwrapped(input(*node, pin("first"))) + ", " + unwrapped(input(*node, pin("last"))) + " do", id);
+                    const std::string first = unwrapped(input(*node, pin("first")));
+                    const std::string last = unwrapped(input(*node, pin("last")));
+                    // Last is read once, as Lua reads it
+                    if (cpp)
+                        line(indent, "for (int index" + tag + " = (int)(" + first + "), last" + tag + " = (int)(" + last + "); index" + tag + " <= last" + tag + "; index" + tag + "++) {", id);
+                    else
+                        line(indent, "for index" + tag + " = " + first + ", " + last + " do", id);
                     loop(*node, indent + 1);
-                    line(indent, "end", id);
+                    line(indent, close, id);
                     follow(*node, "out", indent);
                     break;
                 }
                 case LogicFlow::FOR_EACH: {
                     if (!graph.findLinkInto(id, "list"))
                         error(id, "For Each has no list linked");
-                    line(indent, "for index" + tag + ", item" + tag + " in ipairs(" + unwrapped(input(*node, pin("list"))) + ") do", id);
-                    loop(*node, indent + 1);
-                    line(indent, "end", id);
+                    const std::string list = unwrapped(input(*node, pin("list")));
+                    if (cpp) {
+                        // Index counts from 1 in both
+                        line(indent, "{", id);
+                        line(indent + 1, "int index" + tag + " = 0;", id);
+                        line(indent + 1, "for (auto& item" + tag + " : " + list + ") {", id);
+                        line(indent + 2, "index" + tag + "++;", id);
+                        loop(*node, indent + 2);
+                        line(indent + 1, "}", id);
+                        line(indent, "}", id);
+                    } else {
+                        line(indent, "for index" + tag + ", item" + tag + " in ipairs(" + list + ") do", id);
+                        loop(*node, indent + 1);
+                        line(indent, "end", id);
+                    }
                     follow(*node, "out", indent);
                     break;
                 }
@@ -676,34 +1065,39 @@ namespace {
                     sharing = false;
                     const std::string condition = unwrapped(input(*node, pin("condition")));
                     sharing = true;
-                    line(indent, "while " + condition + " do", id);
+                    line(indent, cpp ? "while (" + condition + ") {" : "while " + condition + " do", id);
                     loop(*node, indent + 1);
-                    line(indent, "end", id);
+                    line(indent, close, id);
                     follow(*node, "out", indent);
                     break;
                 }
                 case LogicFlow::ONCE: {
-                    line(indent, "if not self._once" + tag + " then", id);
-                    line(indent + 1, "self._once" + tag + " = true", id);
+                    const std::string field = member("_once" + tag);
+                    if (cpp && std::find(state.begin(), state.end(), "_once" + tag) == state.end())
+                        state.push_back("_once" + tag);
+                    line(indent, cpp ? "if (!" + field + ") {" : "if not " + field + " then", id);
+                    line(indent + 1, field + " = true" + end, id);
                     block(*node, "out", indent + 1);
-                    line(indent, "end", id);
+                    line(indent, close, id);
                     break;
                 }
                 case LogicFlow::FLIP_FLOP: {
-                    const std::string field = "self._flip" + tag;
-                    if (std::find(state.begin(), state.end(), field + " = false") == state.end())
-                        state.push_back(field + " = false");
-                    line(indent, field + " = not " + field, id);
-                    line(indent, "if " + field + " then", id);
+                    const std::string field = flipField(id);
+                    line(indent, field + (cpp ? " = !" : " = not ") + field + end, id);
+                    line(indent, cpp ? "if (" + field + ") {" : "if " + field + " then", id);
                     block(*node, "a", indent + 1);
                     if (linkFrom(id, "b")) {
-                        line(indent, "else", id);
+                        line(indent, cpp ? "} else {" : "else", id);
                         block(*node, "b", indent + 1);
                     }
-                    line(indent, "end", id);
+                    line(indent, close, id);
                     break;
                 }
                 case LogicFlow::RETURN: {
+                    if (cpp) {
+                        line(indent, function->returnsBool ? "return " + unwrapped(input(*node, pin("value"))) + ";" : "return;", id);
+                        break;
+                    }
                     // Lua takes a return only at the end of a block
                     line(indent, function->returnsBool ? "do return " + unwrapped(input(*node, pin("value"))) + " end" : "do return end", id);
                     break;
@@ -711,15 +1105,22 @@ namespace {
                 default: {
                     const bool hasValue = std::any_of(outputs.begin(), outputs.end(), [](const NodePin& output) { return output.kind == PinKind::DATA; });
                     std::string statement;
-                    if (node->type == "utility/statement")
+                    if (luaOnly(*node, *type))
+                        statement.clear();
+                    else if (node->type == "utility/statement")
                         statement = helperCall(*node, *type, false);
                     else
-                        statement = type->code.empty() ? std::string() : fill(*node, *type, type->code.front());
+                        statement = codes(*type).empty() ? std::string() : fill(*node, *type, codes(*type).front());
                     if (hasValue && node->type != "variable/set") {
-                        keep("v" + tag);
-                        statement = "v" + tag + " = " + statement;
+                        if (!cpp) {
+                            keep("v" + tag);
+                            statement = "v" + tag + " = " + statement;
+                        } else if (valueRead.count(id)) {
+                            // kept only when read: a call may give nothing in C++
+                            statement = (declare("v" + tag) ? "auto v" : "v") + tag + " = " + statement;
+                        }
                     }
-                    line(indent, statement, id);
+                    line(indent, statement + end, id);
                     ran.insert(id);
                     follow(*node, "out", indent);
                     break;
@@ -739,6 +1140,7 @@ namespace {
             overflow = false;
             reading.clear();
             kept.clear();
+            scopes.assign(1, {});
             follow(event, "out", 1);
             function = nullptr;
         }
@@ -851,6 +1253,178 @@ namespace {
 
             emit("return " + module);
         }
+
+        std::string cppDefault(const GraphParameter& variable) const {
+            const std::string value = variableDefault(variable, false);
+            return vectorSize(LogicNodes::getVariablePinType(variable.type)) ? "doriax::" + value : value;
+        }
+
+        std::set<std::string> headersOf(const std::set<std::string>& types) const {
+            std::set<std::string> files;
+            for (const std::string& type : types)
+                if (const std::string* file = LogicNodes::findHeader(type))
+                    files.insert(*file);
+            return files;
+        }
+
+        // the header, then the source of the C++ class
+        void writeCpp(const Function& start, const std::vector<Function>& functions) {
+            const std::string note = "// Written by the Doriax editor from " + source + ". Edit the graph: saving it writes this file again.";
+            const std::string unit = indentUnit;
+            std::string& header = result.header;
+            auto head = [&](const std::string& text) { header += text + "\n"; };
+
+            std::set<std::string> classes(objects.begin(), objects.end());
+            std::vector<const GraphParameter*> shown, hidden;
+            for (const GraphParameter& variable : graph.parameters) {
+                (variable.runtime ? hidden : shown).push_back(&variable);
+                if (variable.type == "entity")
+                    classes.insert("Object");
+            }
+
+            head(note);
+            head("#pragma once");
+            head("");
+            head("#include \"ScriptBase.h\"");
+            head("#include \"ScriptProperty.h\"");
+            for (const std::string& file : headersOf(classes))
+                head("#include \"" + file + "\"");
+            head("");
+            head("class " + module + " : public doriax::ScriptBase {");
+            head("public:");
+            for (const GraphParameter* variable : shown) {
+                const bool color = variable->type.rfind("color", 0) == 0;
+                head(unit + "DPROPERTY(" + quote(LogicNodes::getTitle(variable->name)) + (color ? (variable->type == "color3" ? ", Color3" : ", Color4") : "") + ")");
+                head(unit + cppType(variable->type) + " " + variable->name + " = " + cppDefault(*variable) + ";");
+                head("");
+            }
+            head(unit + module + "(doriax::Scene* scene, doriax::Entity entity);");
+            if (!functions.empty())
+                head("");
+            for (const Function& item : functions)
+                head(unit + ScriptEvents::getCppSignature(ScriptEvents::getEvents()[item.event], item.name, true) + ";");
+            if (!hidden.empty() || !objects.empty() || !state.empty() || start.node) {
+                head("");
+                head("private:");
+                for (const GraphParameter* variable : hidden)
+                    head(unit + cppType(variable->type) + " " + variable->name + " = " + cppDefault(*variable) + ";");
+                for (const std::string& name : objects)
+                    head(unit + "doriax::" + name + " _as" + name + ";");
+                for (const std::string& field : state)
+                    head(unit + "bool " + field + " = false;");
+                if (start.node) {
+                    if (!hidden.empty() || !objects.empty() || !state.empty())
+                        head("");
+                    head(unit + "void _start();");
+                }
+            }
+            head("};");
+
+            // what the bodies call says what the source includes
+            std::string all;
+            for (const Line& body : start.body)
+                all += body.text + "\n";
+            for (const Function& item : functions)
+                for (const Line& body : item.body)
+                    all += body.text + "\n";
+            std::set<std::string> used;
+            for (const CppHelper& helper : cppHelpers())
+                if (all.find(std::string("nodes::") + helper.name + "(") != std::string::npos)
+                    used.insert(helper.name);
+            for (const CppHelper& helper : cppHelpers())
+                if (used.count(helper.name))
+                    used.insert(helper.needs.begin(), helper.needs.end());
+
+            // the engine classes the nodes name
+            std::set<std::string> named;
+            for (const GraphNode& node : graph.nodes) {
+                const LogicNodeType* type = LogicNodes::get().find(node.type);
+                if (!type)
+                    continue;
+                const size_t slash = node.type.find('/');
+                named.insert(node.type.substr(slash + 1, node.type.find('.', slash) - slash - 1));
+                std::vector<NodePin> inputs, outputs;
+                LogicNodes::getPins(graph, node, *type, inputs, outputs);
+                for (const NodePin& pin : inputs)
+                    named.insert(pin.type);
+                for (const NodePin& pin : outputs)
+                    named.insert(pin.type);
+            }
+            for (const std::string& name : classes)
+                named.erase(name);
+
+            emit(note);
+            emit("#include \"" + module + ".h\"");
+            emit("");
+            emit("#include \"Doriax.h\"");
+            for (const std::string& file : headersOf(named))
+                emit("#include \"" + file + "\"");
+            if (all.find("std::") != std::string::npos || all.find("NAN") != std::string::npos || all.find("INFINITY") != std::string::npos || !used.empty()) {
+                emit("");
+                if (all.find("std::min<") != std::string::npos || all.find("std::max<") != std::string::npos)
+                    emit("#include <algorithm>");
+                emit("#include <cmath>");
+                if (!used.empty()) {
+                    emit("#include <cstdio>");
+                    emit("#include <cstdlib>");
+                    emit("#include <cstring>");
+                    emit("#include <string>");
+                    emit("#include <type_traits>");
+                }
+            }
+            emit("");
+            emit("using namespace doriax;");
+            emit("");
+
+            if (!used.empty()) {
+                emit("namespace {");
+                emit("namespace nodes {");
+                emit("");
+                for (const CppHelper& helper : cppHelpers()) {
+                    if (!used.count(helper.name))
+                        continue;
+                    for (const char* text : helper.lines)
+                        emit(text);
+                    emit("");
+                }
+                emit("}");
+                emit("}");
+                emit("");
+            }
+
+            std::string made = "ScriptBase(scene, entity)";
+            for (const std::string& name : objects)
+                made += ", _as" + name + "(scene, entity)";
+            emit(module + "::" + module + "(Scene* scene, Entity entity): " + made + " {", start.node);
+            // On Start waits for the first update, with properties set
+            if (start.node)
+                emit(unit + "REGISTER_EVENT(Engine::onUpdate, _start);", start.node);
+            for (const Function& item : functions)
+                emit(unit + item.registration, item.node);
+            emit("}", start.node);
+            emit("");
+
+            if (start.node) {
+                emit("void " + module + "::_start() {", start.node);
+                emit(unit + "UNREGISTER_EVENT(Engine::onUpdate, _start);", start.node);
+                for (const Line& body : start.body)
+                    emit(body.text, body.node);
+                emit("}", start.node);
+                emit("");
+            }
+
+            for (size_t i = 0; i < functions.size(); i++) {
+                const Function& item = functions[i];
+                emit(ScriptEvents::getCppSignature(ScriptEvents::getEvents()[item.event], module + "::" + item.name, false) + " {", item.node);
+                for (const Line& body : item.body)
+                    emit(body.text, body.node);
+                if (item.returnsBool)
+                    emit(unit + "return true;", item.node);
+                emit("}", item.node);
+                if (i + 1 < functions.size())
+                    emit("");
+            }
+        }
     };
 
 }
@@ -863,6 +1437,21 @@ std::string editor::LogicGraphCompiler::getModuleName(const std::string& path) {
     return std::filesystem::path(path).stem().string();
 }
 
-editor::GraphResult editor::LogicGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const std::string& module) {
-    return Compiler(graph, source, module).run();
+std::string editor::LogicGraphCompiler::getLanguageName(LogicLanguage language) {
+    return language == LogicLanguage::CPP ? "cpp" : "lua";
+}
+
+bool editor::LogicGraphCompiler::findLanguage(const std::string& name, LogicLanguage& language) {
+    if (name != "lua" && name != "cpp")
+        return false;
+    language = name == "cpp" ? LogicLanguage::CPP : LogicLanguage::LUA;
+    return true;
+}
+
+std::string editor::LogicGraphCompiler::getClassName(const std::string& module) {
+    return Compiler::tableName(module);
+}
+
+editor::GraphResult editor::LogicGraphCompiler::compile(const GraphDocument& graph, const std::string& source, const std::string& module, LogicLanguage language) {
+    return Compiler(graph, source, module, language == LogicLanguage::CPP).run();
 }

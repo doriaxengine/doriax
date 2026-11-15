@@ -1261,6 +1261,14 @@ std::string ScriptEvents::getLuaRegistration(const ScriptEvent& event, const std
     return luaRegistration(event, method);
 }
 
+std::string ScriptEvents::getCppSignature(const ScriptEvent& event, const std::string& method, bool qualify) {
+    return cppSignature(event, method, qualify);
+}
+
+std::string ScriptEvents::getCppRegistration(const ScriptEvent& event, const std::string& method) {
+    return cppRegistration(event, method, false, false);
+}
+
 ScriptEventScan ScriptEvents::scanLua(const std::string& text) {
     ScriptEventScan scan;
     LuaScript script;

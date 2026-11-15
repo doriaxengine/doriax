@@ -73,6 +73,9 @@ namespace doriax::editor {
         // the Lua name of an event, and the init line that registers it
         static std::string getLuaName(const ScriptEvent& event);
         static std::string getLuaRegistration(const ScriptEvent& event, const std::string& method);
+        // the C++ handler of an event, and the line that registers it
+        static std::string getCppSignature(const ScriptEvent& event, const std::string& method, bool qualify);
+        static std::string getCppRegistration(const ScriptEvent& event, const std::string& method);
 
         static ScriptEventScan scanLua(const std::string& text);
         static ScriptEventChange addLua(const std::string& text, size_t event);

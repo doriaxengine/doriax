@@ -16,6 +16,7 @@
 #include "util/ScriptParser.h"
 #include "util/ScopedDefaultEntityPool.h"
 #include "util/CxxStandards.h"
+#include "logic/LogicGraphCompiler.h"
 #include "util/ProjectLock.h"
 
 #include "yaml-cpp/yaml.h"
@@ -336,6 +337,7 @@ namespace doriax::editor{
         std::filesystem::path luaDir;
         std::vector<std::filesystem::path> scriptDirs;  // extra C++ include and source roots
         int cxxStandard;  // C++ standard for Play and exported builds
+        LogicLanguage logicLanguage;  // what logic graphs are written as, unless one sets its own
         bool physics2DEnabled;  // Box2D in exported builds; Play always has it
         bool physics3DEnabled;  // Jolt in exported builds; Play always has it
         bool packNativeResources;
@@ -482,7 +484,7 @@ namespace doriax::editor{
         void removeBundleInstanceTracking(uint32_t sceneId, Entity rootEntity);
         void removeBundleInstanceTracking(SceneProject* sceneProject, Entity rootEntity);
 
-        std::vector<SceneScriptSource> collectAllSceneCppScripts() const;
+        std::vector<SceneScriptSource> collectLogicCppScripts() const;
         std::vector<BundleSceneInfo> collectAllBundles() const;
 
         void pauseEngineScene(Scene* scene, bool pause) const;
@@ -597,6 +599,7 @@ namespace doriax::editor{
         static constexpr bool defaultPhysics2DEnabled = true;
         static constexpr bool defaultPhysics3DEnabled = true;
         static constexpr int defaultCxxStandard = cxxStandards[0];
+        static constexpr LogicLanguage defaultLogicLanguage = LogicLanguage::LUA;
 
         Project();
 
@@ -659,6 +662,10 @@ namespace doriax::editor{
 
         void setCxxStandard(int standard);
         int getCxxStandard() const;
+        void setLogicLanguage(LogicLanguage language);
+        LogicLanguage getLogicLanguage() const;
+        // the C++ scripts of scenes and bundles, and C++ logic graphs
+        std::vector<SceneScriptSource> collectAllSceneCppScripts() const;
 
         void setPhysics2DEnabled(bool enabled);
         bool isPhysics2DEnabled() const;

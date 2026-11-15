@@ -17,6 +17,7 @@ namespace doriax::editor {
     struct GraphResult {
         bool success = false;
         std::string code;
+        std::string header;          // of a C++ script, empty otherwise
         std::vector<GraphMessage> errors;
         std::vector<int> lineNodes;  // the node each line of code came from, 0 for none
 

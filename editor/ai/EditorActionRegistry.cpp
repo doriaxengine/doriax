@@ -855,6 +855,14 @@ const std::vector<ToolDefinition>& cachedTools() {
             false
         },
         {
+            "set_project_logic_language",
+            "Set what the project's logic graphs (.logic) are written as: lua, which runs at once, or cpp, compiled with the C++ scripts when play starts and in exports. A graph with a language of its own keeps it (edit_graph language). Read the current value from get_project_summary (logic_language).",
+            objectSchema({
+                {"language", stringSchema("lua or cpp")}
+            }, {"language"}),
+            false
+        },
+        {
             "update_project_build_file",
             "Write ProjectBuild.cmake at the project root: the optional CMake hook carrying extra include directories, libraries, and compile definitions. The generated CMakeLists.txt is rewritten on every build, so it is never the place for custom build settings and the user must never be asked to edit it. Attach settings to ${DORIAX_TARGET} instead of a literal target name (it differs between the editor and exported builds) and use ${DORIAX_SCRIPTS_DIR} as the root of script paths. This replaces the whole file, so read the current one with read_resource_file first and keep the settings it already has.",
             objectSchema({
@@ -990,19 +998,20 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "read_graph",
-            "Read a shader graph (.shader) or a logic graph (.logic, a script made of nodes; include_code returns the Lua it compiles to): its type, parameters (the values Properties shows), nodes with their id, type, position, settings and constant inputs, links (from node.pin, or a parameter by name, into node.pin), groups and comments, and whether it compiles, with the node of each error; a Subgraph node lists its pins, its function's inputs and outputs, and a function graph compiles to a preview of its outputs. include_code adds the GLSL file it compiles to. A graph is used where a .glsl shader file is: a material's shader (set_component_property submeshes[N].material.shader), a component's shader, or a post-process pass. Change it with edit_graph.",
+            "Read a shader graph (.shader) or a logic graph (.logic, a script made of nodes; language says whether it is written as lua or cpp, and include_code returns that script, with a C++ one's header): its type, parameters (the values Properties shows), nodes with their id, type, position, settings and constant inputs, links (from node.pin, or a parameter by name, into node.pin), groups and comments, and whether it compiles, with the node of each error; a Subgraph node lists its pins, its function's inputs and outputs, and a function graph compiles to a preview of its outputs. include_code adds the GLSL file it compiles to. A graph is used where a .glsl shader file is: a material's shader (set_component_property submeshes[N].material.shader), a component's shader, or a post-process pass. Change it with edit_graph.",
             objectSchema({
                 {"path", stringSchema("Project-relative .shader or .logic file")},
-                {"include_code", boolSchema("Also return the GLSL, or the Lua, the graph compiles to")}
+                {"include_code", boolSchema("Also return the GLSL, or the Lua or C++, the graph compiles to")}
             }, {"path"}),
             true
         },
         {
             "edit_graph",
-            "Change a shader graph (.shader) or a logic graph (.logic) with operations applied in order as one step. A logic graph is created with create=true and a .logic path inside the Lua directory, without graph_type, and starts empty: add its events (event/start, event/Engine.onUpdate), link execution from their out pin through the nodes that run (an execution output takes one link, and connecting it again moves it), and feed values into their inputs; add_parameter adds its variables (type float, int, bool, string, vector2, vector3, vector4, color3, color4 or entity; runtime=true keeps one private), which variable/get and variable/set name in their variable setting. The Lua it compiles to is kept by the editor, out of the project's files: attach the graph itself to an entity with attach_script (type lua, path the .logic as script returns it, class_name as returned). Nothing is written when one fails, and the error names it. create=true makes a new graph holding only the output node of graph_type before the operations run, or for a function graph one Function Output. Operations: add_node (type, ref, position); remove (node, or ids); move (node, position); connect (from node.pin, or node.pin.xyz for a swizzle, to node.pin, replacing what fed that input); disconnect (to); set (node, name of a setting or an input, and number_value, vector_value, string_value or bool_value; reset=true drops an input's constant); add_parameter (name, type float, vec2, vec3, vec4, int, color, texture2D or textureCube, a default in a value field, min and max, runtime, description; filter nearest, linear or trilinear and wrap repeat, clamp or mirror for textures, whose default is white, black or normal); set_parameter (name, new_name and the same fields); remove_parameter (name); add_group (text as its title, position, size); add_comment (text, position). A node is named by its id, by output for the output node, or by the ref an add_node of the same call gave it. A Parameter node, or a texture node, takes its parameter by name through set with name parameter or texture; a Subgraph node takes its function graph's path through set with name file, then connects by the function's input and output names. Nodes added without a position are laid out in columns by how far their links are from the output; a group without one frames the nodes the call added, and a comment goes above them. Returns the graph as read_graph does, plus refs with the ids they were given. A graph open in the editor takes the change as one undoable step; one with unsaved edits there is refused. Find node types with list_graph_node_types.",
+            "Change a shader graph (.shader) or a logic graph (.logic) with operations applied in order as one step. A logic graph is created with create=true and a .logic path inside the Lua directory, without graph_type, and starts empty: add its events (event/start, event/Engine.onUpdate), link execution from their out pin through the nodes that run (an execution output takes one link, and connecting it again moves it), and feed values into their inputs; add_parameter adds its variables (type float, int, bool, string, vector2, vector3, vector4, color3, color4 or entity; runtime=true keeps one private), which variable/get and variable/set name in their variable setting. It is written as Lua, or as a C++ class where the project's logic_language or the graph's own language (lua, cpp, or project to take the project's) says so; the script is kept by the editor, out of the project's files: attach the graph itself to an entity with attach_script (type lua in both languages, path the .logic as script returns it, class_name as returned). Code Expression and Code nodes hold code in the graph's language. Nothing is written when one fails, and the error names it. create=true makes a new graph holding only the output node of graph_type before the operations run, or for a function graph one Function Output. Operations: add_node (type, ref, position); remove (node, or ids); move (node, position); connect (from node.pin, or node.pin.xyz for a swizzle, to node.pin, replacing what fed that input); disconnect (to); set (node, name of a setting or an input, and number_value, vector_value, string_value or bool_value; reset=true drops an input's constant); add_parameter (name, type float, vec2, vec3, vec4, int, color, texture2D or textureCube, a default in a value field, min and max, runtime, description; filter nearest, linear or trilinear and wrap repeat, clamp or mirror for textures, whose default is white, black or normal); set_parameter (name, new_name and the same fields); remove_parameter (name); add_group (text as its title, position, size); add_comment (text, position). A node is named by its id, by output for the output node, or by the ref an add_node of the same call gave it. A Parameter node, or a texture node, takes its parameter by name through set with name parameter or texture; a Subgraph node takes its function graph's path through set with name file, then connects by the function's input and output names. Nodes added without a position are laid out in columns by how far their links are from the output; a group without one frames the nodes the call added, and a comment goes above them. Returns the graph as read_graph does, plus refs with the ids they were given. A graph open in the editor takes the change as one undoable step; one with unsaved edits there is refused. Find node types with list_graph_node_types.",
             objectSchema({
                 {"path", stringSchema("Project-relative .shader or .logic file")},
                 {"create", boolSchema("Make a new graph at path first: a shader graph holding only the output node of graph_type, or an empty logic graph")},
+                {"language", stringSchema("What a logic graph is written as: lua, cpp, or project for the project's logic_language")},
                 {"graph_type", stringSchema("Type of the new graph: mesh, ui, points, lines, sky, water, postprocess or function")},
                 {"operations", {
                     {"type", "array"},
@@ -1848,6 +1857,10 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
         return hasString(arguments, "assets_dir") || hasString(arguments, "lua_dir")
             ? ok() : fail("set_project_asset_dirs requires assets_dir or lua_dir.");
     }
+    if (name == "set_project_logic_language") {
+        const std::string language = arguments.value("language", "");
+        return language == "lua" || language == "cpp" ? ok() : fail("set_project_logic_language requires language (lua or cpp).");
+    }
     if (name == "set_project_cxx_standard") {
         if (!arguments.contains("cxx_standard") || !arguments["cxx_standard"].is_number_integer()) {
             return fail("set_project_cxx_standard requires cxx_standard (" + cxxStandardList() + ").");
@@ -2311,6 +2324,9 @@ std::string EditorActionRegistry::describe(const std::string& name, const Json& 
             return "Set project C++ standard to C++" + std::to_string(arguments["cxx_standard"].get<int>());
         }
         return "Set project C++ standard";
+    }
+    if (name == "set_project_logic_language") {
+        return "Write logic graphs as " + std::string(arguments.value("language", "") == "cpp" ? "C++" : "Lua");
     }
     if (name == "update_project_build_file") {
         return "Update ProjectBuild.cmake";

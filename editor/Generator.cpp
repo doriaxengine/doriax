@@ -730,10 +730,40 @@ std::string editor::Generator::buildInitSceneScriptsSource(const std::vector<Sce
         sourceContent += "}\n\n";
     }
 
+    const bool anyLogic = std::any_of(scriptFiles.begin(), scriptFiles.end(),
+        [](const editor::SceneScriptSource& s) { return !s.logicPath.empty(); });
+    if (anyLogic) {
+        // a C++ logic graph is attached like a Lua one
+        sourceContent += "static void useLogicClasses(doriax::Scene* scene) {\n";
+        sourceContent += "    static const std::unordered_map<std::string, std::string> classes = {\n";
+        for (const auto& s : scriptFiles) {
+            if (s.logicPath.empty()) {
+                continue;
+            }
+            sourceContent += "        {\"" + s.logicPath + ".logic\", \"" + s.className + "\"},\n";
+            sourceContent += "        {\"" + s.logicPath + ".lua\", \"" + s.className + "\"},\n";
+        }
+        sourceContent += "    };\n";
+        sourceContent += "    const auto& scriptsArray = scene->getComponentArray<ScriptComponent>();\n";
+        sourceContent += "    for (size_t i = 0; i < scriptsArray->size(); i++) {\n";
+        sourceContent += "        for (doriax::ScriptEntry& scriptEntry : scriptsArray->getComponentFromIndex(i).scripts) {\n";
+        sourceContent += "            if (scriptEntry.type != ScriptType::LUA || !scriptEntry.enabled || scriptEntry.instance) continue;\n";
+        sourceContent += "            auto found = classes.find(scriptEntry.path);\n";
+        sourceContent += "            if (found == classes.end()) continue;\n";
+        sourceContent += "            scriptEntry.type = ScriptType::CPP;\n";
+        sourceContent += "            scriptEntry.className = found->second;\n";
+        sourceContent += "        }\n";
+        sourceContent += "    }\n";
+        sourceContent += "}\n\n";
+    }
+
     // starts only the scripts not started yet, so spawned bundles use it too
     sourceContent += "extern \"C\" void PROJECT_API initScripts(doriax::Scene* scene) {\n";
     if (!scriptFiles.empty()) {
         sourceContent += "    if (stoppingScenes.count(scene)) return;\n";
+    }
+    if (anyLogic) {
+        sourceContent += "    useLogicClasses(scene);\n";
     }
     sourceContent += "    LuaBinding::initializeLuaScripts(scene);\n";
 
@@ -1228,6 +1258,7 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     sourceContent += "#include <deque>\n";
     sourceContent += "#include <set>\n";
     sourceContent += "#include <tuple>\n";
+    sourceContent += "#include <unordered_map>\n";
     sourceContent += "#include <vector>\n";
     sourceContent += "#include <string>\n";
     sourceContent += "#include <stdio.h>\n";

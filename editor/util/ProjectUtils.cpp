@@ -356,6 +356,9 @@ namespace {
 
     struct LogicBuild {
         std::filesystem::file_time_type graphTime;
+        std::string language;        // the graph's own, empty for the project's
+        editor::LogicLanguage built = editor::LogicLanguage::LUA;
+        bool checked = false;        // whether its script was looked at
         std::string error;
     };
 
@@ -363,63 +366,122 @@ namespace {
     // graphs by path, read again when their file changes
     std::map<std::string, LogicBuild> logicBuilds;
 
+    editor::LogicLanguage logicLanguage(const editor::Project* project, const std::string& own) {
+        editor::LogicLanguage language = project->getLogicLanguage();
+        editor::LogicGraphCompiler::findLanguage(own, language);
+        return language;
+    }
+
+    // written only when it differs, so builds stay incremental
+    bool writeScriptFile(const std::filesystem::path& file, const std::string& text) {
+        std::ifstream existing(file, std::ios::binary);
+        std::stringstream held;
+        held << existing.rdbuf();
+        existing.close();
+        if (existing && held.str() == text)
+            return true;
+        // replaced whole, never read half written
+        return editor::FileUtils::writeFileReplacing(file, text);
+    }
+
 }
 
-std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph) {
+editor::LogicLanguage editor::ProjectUtils::getLogicLanguage(const Project* project, const GraphDocument& graph) {
+    return logicLanguage(project, graph.language);
+}
+
+editor::LogicLanguage editor::ProjectUtils::getLogicLanguage(const Project* project, const std::filesystem::path& graph) {
+    const std::filesystem::path fullPath = project->resolveLuaPath(project->normalizeToLuaRelative(graph));
+    std::lock_guard<std::mutex> lock(logicBuildMutex);
+    std::error_code ec;
+    const auto graphTime = std::filesystem::last_write_time(fullPath, ec);
+    LogicBuild& known = logicBuilds[fullPath.string()];
+    if (ec || known.graphTime != graphTime) {
+        std::ifstream file(fullPath, std::ios::binary);
+        std::stringstream text;
+        text << file.rdbuf();
+        GraphDocument document;
+        std::string problem;
+        known = LogicBuild();
+        known.graphTime = graphTime;
+        if (document.read(text.str(), problem))
+            known.language = document.language;
+    }
+    return logicLanguage(project, known.language);
+}
+
+editor::GraphResult editor::ProjectUtils::compileLogicGraph(const Project* project, const GraphDocument& graph, const std::string& fileName) {
+    return LogicGraphCompiler::compile(graph, fileName, LogicGraphCompiler::getModuleName(fileName), getLogicLanguage(project, graph));
+}
+
+std::filesystem::path editor::ProjectUtils::getLogicScriptPath(const Project* project, const std::filesystem::path& graph, LogicLanguage language) {
     // mirrors the graph's path under the Lua directory
     std::filesystem::path script = project->normalizeToLuaRelative(project->resolveLuaPath(project->normalizeToLuaRelative(graph)));
     if (script.empty() || script.is_absolute() || *script.begin() == "..")
         return {};
-    script.replace_extension(".lua");
+    // a C++ file has the name of its class
+    if (language == LogicLanguage::CPP)
+        script.replace_filename(LogicGraphCompiler::getClassName(script.stem().string()) + ".cpp");
+    else
+        script.replace_extension(".lua");
     return project->getProjectInternalPath() / "generated" / "logic" / script;
 }
 
-bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const std::string& code, std::string& error) {
-    const std::filesystem::path script = getLogicScriptPath(project, graph);
+bool editor::ProjectUtils::writeLogicScript(const Project* project, const std::filesystem::path& graph, const std::string& graphText, const GraphResult& compiled,
+                                            LogicLanguage language, std::string& error) {
+    const std::filesystem::path script = getLogicScriptPath(project, graph, language);
     if (script.empty()) {
         error = graph.filename().string() + " is outside the project's Lua directory, where a logic graph has to be";
         return false;
     }
     // the first line says what it was written from
-    std::string stamped = code;
-    stamped.insert(std::min(stamped.find('\n'), stamped.size()), " " + logicStamp(graphText));
-
-    std::ifstream existing(script, std::ios::binary);
-    std::stringstream held;
-    held << existing.rdbuf();
-    existing.close();
-    if (held.str() == stamped)
-        return true;
+    const std::string stamp = " " + logicStamp(graphText);
+    auto stamped = [&](std::string text) {
+        text.insert(std::min(text.find('\n'), text.size()), stamp);
+        return text;
+    };
 
     std::error_code ec;
     std::filesystem::create_directories(script.parent_path(), ec);
-    // replaced whole, never read half written
-    if (!FileUtils::writeFileReplacing(script, stamped)) {
+    bool written = writeScriptFile(script, stamped(compiled.code));
+    if (language == LogicLanguage::CPP)
+        written = writeScriptFile(std::filesystem::path(script).replace_extension(".h"), stamped(compiled.header)) && written;
+    if (!written) {
         error = "could not write the script of " + graph.filename().string();
         return false;
     }
+    // the other language's script is no longer the graph's
+    const std::filesystem::path other = getLogicScriptPath(project, graph, language == LogicLanguage::CPP ? LogicLanguage::LUA : LogicLanguage::CPP);
+    std::filesystem::remove(other, ec);
+    if (language == LogicLanguage::LUA)
+        std::filesystem::remove(std::filesystem::path(other).replace_extension(".h"), ec);
     return true;
 }
 
 void editor::ProjectUtils::removeLogicScript(const Project* project, const std::filesystem::path& graph) {
     const std::filesystem::path script = getLogicScriptPath(project, graph);
     std::error_code ec;
-    if (!script.empty())
-        std::filesystem::remove_all(graph.extension().empty() ? std::filesystem::path(script).replace_extension() : script, ec);
+    if (!script.empty() && graph.extension().empty()) {
+        std::filesystem::remove_all(std::filesystem::path(script).replace_extension(), ec);
+    } else if (!script.empty()) {
+        const std::filesystem::path source = getLogicScriptPath(project, graph, LogicLanguage::CPP);
+        std::filesystem::remove(script, ec);
+        std::filesystem::remove(source, ec);
+        std::filesystem::remove(std::filesystem::path(source).replace_extension(".h"), ec);
+    }
     std::lock_guard<std::mutex> lock(logicBuildMutex);
     logicBuilds.clear();
 }
 
 std::filesystem::path editor::ProjectUtils::buildLogicScript(const Project* project, const std::filesystem::path& graph, std::string* error) {
     const std::filesystem::path fullPath = project->resolveLuaPath(project->normalizeToLuaRelative(graph));
-    const std::filesystem::path script = getLogicScriptPath(project, graph);
     auto fail = [&](const std::string& problem, bool log) {
         if (error)
             *error = problem;
         else if (log)
             Out::error("%s: %s", fullPath.filename().string().c_str(), problem.c_str());
     };
-    if (script.empty()) {
+    if (getLogicScriptPath(project, graph).empty()) {
         fail("outside the project's Lua directory, where a logic graph has to be", true);
         return {};
     }
@@ -429,40 +491,55 @@ std::filesystem::path editor::ProjectUtils::buildLogicScript(const Project* proj
     const auto graphTime = std::filesystem::last_write_time(fullPath, ec);
     if (ec) {
         // a graph that is gone leaves no script to run
-        std::filesystem::remove(script, ec);
+        const std::filesystem::path source = getLogicScriptPath(project, graph, LogicLanguage::CPP);
+        std::filesystem::remove(getLogicScriptPath(project, graph), ec);
+        std::filesystem::remove(source, ec);
+        std::filesystem::remove(std::filesystem::path(source).replace_extension(".h"), ec);
         logicBuilds.erase(fullPath.string());
         fail("the graph is missing", false);
         return {};
     }
     auto known = logicBuilds.find(fullPath.string());
-    if (known != logicBuilds.end() && known->second.graphTime == graphTime && std::filesystem::exists(script, ec) == known->second.error.empty()) {
-        if (!known->second.error.empty())
-            fail(known->second.error, false);
-        return script;
+    if (known != logicBuilds.end() && known->second.checked && known->second.graphTime == graphTime) {
+        const LogicLanguage language = logicLanguage(project, known->second.language);
+        const std::filesystem::path script = getLogicScriptPath(project, graph, language);
+        if (known->second.built == language && std::filesystem::exists(script, ec) == known->second.error.empty()) {
+            if (!known->second.error.empty())
+                fail(known->second.error, false);
+            return script;
+        }
     }
 
     std::ifstream file(fullPath, std::ios::binary);
     std::stringstream text;
     text << file.rdbuf();
     std::string problem;
+    GraphDocument document;
+    const bool read = document.read(text.str(), problem);
+    const LogicLanguage language = logicLanguage(project, document.language);
+    const std::filesystem::path script = getLogicScriptPath(project, graph, language);
 
     // written from this text by this compiler already
     std::ifstream held(script, std::ios::binary);
     std::string firstLine;
-    const bool current = held && std::getline(held, firstLine) && firstLine.find(logicStamp(text.str())) != std::string::npos;
+    bool current = held && std::getline(held, firstLine) && firstLine.find(logicStamp(text.str())) != std::string::npos;
     held.close();
-    if (!current) {
-        GraphDocument document;
-        if (document.read(text.str(), problem)) {
-            const std::string name = fullPath.filename().string();
-            const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name));
-            if (compiled.success)
-                writeLogicScript(project, fullPath, text.str(), compiled.code, problem);
-            else
-                problem = compiled.describeErrors();
-        }
+    if (language == LogicLanguage::CPP)
+        current = current && std::filesystem::exists(std::filesystem::path(script).replace_extension(".h"), ec);
+    if (read && !current) {
+        const std::string name = fullPath.filename().string();
+        const GraphResult compiled = LogicGraphCompiler::compile(document, name, LogicGraphCompiler::getModuleName(name), language);
+        if (compiled.success)
+            writeLogicScript(project, fullPath, text.str(), compiled, language, problem);
+        else
+            problem = compiled.describeErrors();
     }
-    logicBuilds[fullPath.string()] = {graphTime, problem};
+    LogicBuild& build = logicBuilds[fullPath.string()];
+    build.graphTime = graphTime;
+    build.language = document.language;
+    build.built = language;
+    build.checked = true;
+    build.error = problem;
     // said once for each change of the graph
     if (!problem.empty())
         fail(problem, true);

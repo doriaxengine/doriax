@@ -86,6 +86,7 @@ namespace doriax::editor {
         int version = formatVersion;
         std::string kind;            // shader or logic
         std::string type;            // what it fills, as mesh; script for a logic graph
+        std::string language;        // lua or cpp of a logic graph, empty for the project's
         int nextId = 1;              // one id space for every item, never reused
         std::vector<GraphParameter> parameters;
         std::vector<GraphNode> nodes;

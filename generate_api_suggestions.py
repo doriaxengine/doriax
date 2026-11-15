@@ -21,6 +21,7 @@ import glob
 RE_NAMESPACE_BEGIN = re.compile(r'\.beginNamespace\(\s*"([^"]+)"\s*\)')
 RE_NAMESPACE_END = re.compile(r'\.endNamespace\(\)')
 RE_ADD_VARIABLE = re.compile(r'\.addVariable\(\s*"([^"]+)"')
+RE_ADD_VARIABLE_VALUE = re.compile(r'\.addVariable\(\s*"([^"]+)"\s*,\s*([A-Za-z0-9_:]+)\s*\)')
 
 RE_BEGIN_CLASS = re.compile(
     r'\.beginClass\s*<\s*([^>]+?)\s*>\s*\(\s*"([^"]+)"\s*\)'
@@ -65,7 +66,8 @@ EXCLUDED_HEADER_METHODS = {
 
 class APISymbol:
     """Represents one symbol in the engine API."""
-    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean')
+    __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean',
+                 'mutator', 'cpp_read', 'cpp_write')
 
     def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False, accessor=''):
         self.name = name
@@ -79,6 +81,9 @@ class APISymbol:
         self.readonly = readonly  # bound with a getter and nothing to set it
         self.accessor = accessor  # what a property is read through, whatever else it is bound with
         self.boolean = False  # a property that holds true or false
+        self.mutator = ''  # what a property is set through
+        self.cpp_read = ''  # the symbol in C++: a member, a call or a value
+        self.cpp_write = ''  # the setter of a property, '=' for a data member
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -108,12 +113,15 @@ def parse_binding_file(filepath):
             continue
 
         values = RE_ADD_VARIABLE.findall(ns_body)
+        cpp_values = dict(RE_ADD_VARIABLE_VALUE.findall(ns_body))
         if values:
             symbols.append(APISymbol(ns_name, 'Enum', f'enum {ns_name}'))
             for val_name in values:
-                symbols.append(APISymbol(
+                member = APISymbol(
                     val_name, 'EnumMember', f'{ns_name}.{val_name}', ns_name
-                ))
+                )
+                member.cpp_read = cpp_values.get(val_name, '')
+                symbols.append(member)
 
     # ── Parse classes ───────────────────────────────────────────────────
     # We process the file line-by-line with state tracking
@@ -192,11 +200,15 @@ def parse_binding_file(filepath):
         if m:
             fname = m.group(1)
             if not fname.startswith('__'):
-                symbols.append(APISymbol(
+                static = APISymbol(
                     fname, 'StaticMethod',
                     f'{current_lua_name}.{fname}()', current_lua_name,
                     bound=_bound_types(_binding_text(lines, index))
-                ))
+                )
+                callee = _cpp_callee(_binding_text(lines, index)[m.end():])
+                if callee:
+                    static.cpp_read = f'{callee[0]}::{callee[1]}'
+                symbols.append(static)
             continue
 
         # Member function
@@ -204,13 +216,17 @@ def parse_binding_file(filepath):
         if m:
             fname = m.group(1)
             if not fname.startswith('__'):
-                symbols.append(APISymbol(
+                method = APISymbol(
                     fname, 'Method',
                     f'{current_lua_name}:{fname}()', current_lua_name,
                     getter=_bound_member(stripped[m.end():]),
                     signature=_lambda_signature(stripped[m.end():]),
                     bound=_bound_types(_binding_text(lines, index))
-                ))
+                )
+                callee = _cpp_callee(_binding_text(lines, index)[m.end():])
+                if callee:
+                    method.cpp_read = callee[1]
+                symbols.append(method)
             continue
 
         # Static property
@@ -226,13 +242,15 @@ def parse_binding_file(filepath):
                     kind = 'Property'  # Lua-only, read through an accessor or a lambda
                 else:
                     kind = 'Constant'
-                symbols.append(APISymbol(
+                shared = APISymbol(
                     pname, kind,
                     f'{current_lua_name}.{pname}', current_lua_name,
                     shared=True,
                     readonly=_getter_only(args),
                     accessor=_accessor(args)
-                ))
+                )
+                shared.mutator = args[2].strip() if len(args) > 2 else ''
+                symbols.append(shared)
             continue
 
         # Member property
@@ -241,13 +259,16 @@ def parse_binding_file(filepath):
             pname = m.group(1)
             if not pname.startswith('__'):
                 args = _call_arguments(stripped[m.start():])
-                symbols.append(APISymbol(
+                bound_args = _call_arguments(_binding_text(lines, index)[m.start():])
+                member = APISymbol(
                     pname, 'Property',
                     f'{current_lua_name}.{pname}', current_lua_name,
                     getter=args[1] if len(args) > 2 else '',
-                    readonly=_getter_only(_call_arguments(_binding_text(lines, index)[m.start():])),
-                    accessor=_accessor(_call_arguments(_binding_text(lines, index)[m.start():]))
-                ))
+                    readonly=_getter_only(bound_args),
+                    accessor=_accessor(bound_args)
+                )
+                member.mutator = bound_args[2].strip() if len(bound_args) > 2 else ''
+                symbols.append(member)
             continue
 
     return symbols
@@ -429,6 +450,59 @@ def _bound_member(text):
     return m.group(1) if m else ''
 
 
+RE_MEMBER_POINTER = re.compile(r'&\s*([A-Za-z0-9_]+)::([A-Za-z0-9_]+)\s*$')
+RE_CALLEE = re.compile(r'&\s*([A-Za-z0-9_]+)::([A-Za-z0-9_]+(?:<[A-Za-z0-9_:]+>)?)\s*[,)]')
+RE_CONSTANT_COPY = re.compile(r'constantCopy<[^,]+,\s*([A-Za-z0-9_:]+)\s*>')
+RE_VALUE_LAMBDA = re.compile(r'^\[\]\s*\(\s*\)\s*(?:->\s*[\w:<> ]+?)?\s*\{\s*return\s+([A-Za-z0-9_:]+)\s*;\s*\}$')
+RE_ACCESSOR_NAME = re.compile(r'^(?:get|is|has|can|set)[A-Z]')
+
+
+def _member_pointer(arg):
+    """(class, member) of an &C::m argument, cast or not; None for anything else."""
+    m = RE_MEMBER_POINTER.search(arg.strip())
+    return (m.group(1), m.group(2)) if m and '[' not in arg else None
+
+
+def _cpp_callee(text):
+    """(class, member) a function binding calls, None when a lambda stands first."""
+    m = RE_CALLEE.search(text)
+    lam = text.find('[')
+    if not m or (0 <= lam < m.start()) or m.group(2) == 'operator':
+        return None
+    return m.group(1), m.group(2)
+
+
+def _is_cpp_method(cls, name, cpp_methods, method_names, bool_members):
+    """Whether C::name is a method rather than a data member."""
+    if name in cpp_methods.get(cls, {}):
+        return True
+    if name in bool_members.get(cls, set()):
+        return False
+    return name in method_names and bool(RE_ACCESSOR_NAME.match(name))
+
+
+def _cpp_property(symbol, cpp_methods, method_names, bool_members):
+    """(read, write) of a property in C++: a getter call or a member, and its setter or '='."""
+    read = write = ''
+    accessor = symbol.accessor
+    getter = _member_pointer(accessor)
+    scope = (lambda c: c + '::') if symbol.shared else (lambda c: '')
+    if getter:
+        method = _is_cpp_method(getter[0], getter[1], cpp_methods, method_names, bool_members)
+        read = scope(getter[0]) + getter[1] + ('()' if method else '')
+        if not method and not symbol.mutator and not symbol.shared:
+            write = '='
+    elif symbol.shared:
+        # the template's comma splits it in two
+        m = RE_CONSTANT_COPY.search(accessor + ', ' + symbol.mutator) or RE_VALUE_LAMBDA.match(accessor)
+        return (m.group(1) if m else ''), ''
+    setter = _member_pointer(symbol.mutator) if symbol.mutator else None
+    if read and setter:
+        method = _is_cpp_method(setter[0], setter[1], cpp_methods, method_names, bool_members)
+        write = scope(setter[0]) + setter[1] if method else '='
+    return read, write
+
+
 def _binding_text(lines, index):
     """An add call with the lines it runs over, up to the next call of the chain."""
     text = lines[index].strip()
@@ -569,6 +643,12 @@ def _call_arguments(text):
     return args
 
 
+RE_ENUM_START = re.compile(r'\benum\s+(?:class\s+)?([A-Za-z0-9_]+)\s*(?::[^{;]+)?\{')
+
+# type_headers[name] = header of a class or enum, from the engine core
+type_headers = {}
+
+
 def parse_cpp_headers(base_dir):
     """Parse C++ headers to extract public method declarations with parameter info."""
     # class_methods[class_name] = { method_name: [(params_str, return_type), ...] }
@@ -597,8 +677,13 @@ def parse_cpp_headers(base_dir):
             text = re.sub(r'//.*', '', text)
             text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
 
+            relative = os.path.relpath(path, base_dir).replace(os.sep, '/')
+            for em in RE_ENUM_START.finditer(text):
+                type_headers.setdefault(em.group(1), relative)
+
             for cm in class_start.finditer(text):
                 class_name = cm.group(1)
+                type_headers.setdefault(class_name, relative)
                 brace_pos = cm.end() - 1  # position of '{'
                 body = _extract_class_body(text, brace_pos)
                 if not body:
@@ -748,6 +833,55 @@ def generate_header(symbols, output_path):
     lines.append('}')
     lines.append('')
 
+    # ── The bound symbols in C++, by "call/", "prop/" or "enum/" ──────────
+    lines.append('struct EngineCppSymbol {')
+    lines.append('    const char* key;')
+    lines.append('    const char* read;   // a member, a call or a value')
+    lines.append('    const char* write;  // a setter, or = for a data member')
+    lines.append('};')
+    lines.append('')
+    lines.append('inline const std::vector<EngineCppSymbol>& getEngineCppSymbols() {')
+    lines.append('    static const std::vector<EngineCppSymbol> symbols = {')
+    cpp_groups = {'Method': 'call', 'StaticMethod': 'call', 'Property': 'prop', 'Constant': 'prop', 'EnumMember': 'enum'}
+    cpp_seen = set()
+    for s in unique:
+        group = cpp_groups.get(s.kind)
+        if not group or not s.cpp_read or not s.parent:
+            continue
+        key = f'{group}/{s.parent}.{s.name}'
+        if key in cpp_seen:
+            continue
+        cpp_seen.add(key)
+        lines.append(f'        {{"{escape(key)}", "{escape(s.cpp_read)}", "{escape(s.cpp_write)}"}},')
+    lines.append('    };')
+    lines.append('    return symbols;')
+    lines.append('}')
+    lines.append('')
+
+    # ── The header of each bound class and enum, from the engine core ────
+    lines.append('struct EngineTypeHeader {')
+    lines.append('    const char* name;')
+    lines.append('    const char* header;')
+    lines.append('};')
+    lines.append('')
+    lines.append('inline const std::vector<EngineTypeHeader>& getEngineTypeHeaders() {')
+    lines.append('    static const std::vector<EngineTypeHeader> headers = {')
+    listed = {}
+    for name in class_names:
+        if name in type_headers:
+            listed[name] = type_headers[name]
+    for s in enum_members:
+        # LightType::POINT, or Plane::Side::BOTH of a class
+        owner = s.cpp_read.split('::')[0]
+        if s.parent not in listed and owner in type_headers:
+            listed[s.parent] = type_headers[owner]
+    for name in sorted(listed):
+        lines.append(f'        {{"{escape(name)}", "{escape(listed[name])}"}},')
+    lines.append('    };')
+    lines.append('    return headers;')
+    lines.append('}')
+    lines.append('')
+
     lines.append('inline const std::vector<EngineAPISymbol>& getEngineAPISymbols() {')
     lines.append('    static const std::vector<EngineAPISymbol> symbols = {')
 
@@ -837,6 +971,11 @@ def main():
     for s in all_symbols:
         if s.kind == 'Property' and s.accessor:
             s.boolean = _is_bool_property(s.accessor, cpp_methods, bool_members)
+
+    method_names = {name for methods_dict in cpp_methods.values() for name in methods_dict}
+    for s in all_symbols:
+        if s.kind in ('Property', 'Constant') and s.accessor:
+            s.cpp_read, s.cpp_write = _cpp_property(s, cpp_methods, method_names, bool_members)
 
     # Tag properties whose getter gives Lua a copy (obj.position.y = 1 changes nothing)
     for s in all_symbols:

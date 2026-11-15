@@ -30,6 +30,8 @@ namespace doriax::editor {
     struct LogicNodeType : NodeType {
         // Lua per output, or a statement; {name} is an input or setting
         std::vector<std::string> code;
+        // in C++; empty when Lua only, @ looks the result up
+        std::vector<std::string> cpp;
         LogicFlow flow = LogicFlow::NONE;
         bool atomic = false;         // a call or a name, read without parentheses
         bool textInputs = false;     // an any input left unset reads as empty text
@@ -64,6 +66,13 @@ namespace doriax::editor {
         // setPosition as Set Position
         static std::string getTitle(const std::string& name);
         static bool isLuaKeyword(const std::string& word);
+        static bool isCppKeyword(const std::string& word);
+        // a bound symbol in C++, by call/, prop/ or enum/
+        static const std::string* findCppSymbol(const std::string& key, bool write = false);
+        // classes C++ holds by pointer, as Scene
+        static bool isPointerClass(const std::string& type);
+        // the header of an engine class or enum, null for another type
+        static const std::string* findHeader(const std::string& type);
         // the members of an engine enum, empty for another type
         static const std::vector<std::string>& getEnumMembers(const std::string& type);
         // classes built as Object(self.scene, self.entity)

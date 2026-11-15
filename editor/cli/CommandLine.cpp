@@ -679,16 +679,27 @@ int CommandLine::runLogicNodesCommand(int argc, char** argv, const char* executa
 
     const std::string commandName = getCommandName(executableName);
     bool check = false;
+    bool cpp = false;
+    std::string dump;
     for (int i = 1; i < argc; i++) {
         const std::string argument = argv[i];
         if (argument == "-h" || argument == "--help") {
-            std::cout << "Usage:\n  " << commandName << " logic-nodes [--check]\n\n"
+            std::cout << "Usage:\n  " << commandName << " logic-nodes [--check] [--cpp] [--dump <dir>]\n\n"
                       << "Prints every logic graph node type as JSON: pins, settings and whether it runs in execution order.\n"
-                      << "With --check, compiles a graph around each node type instead and prints the ones that fail.\n";
+                      << "With --check, compiles a graph around each node type instead and prints the ones that fail.\n"
+                      << "With --cpp, the check writes C++ scripts; with --dump, each script goes to the directory.\n";
             return 0;
+        }
+        if (argument == "--cpp") {
+            cpp = true;
+            continue;
         }
         if (argument == "--check") {
             check = true;
+            continue;
+        }
+        if (argument == "--dump" && i + 1 < argc) {
+            dump = argv[++i];
             continue;
         }
         std::cerr << commandName << " logic-nodes: unknown argument '" << argument << "'\n";
@@ -722,20 +733,25 @@ int CommandLine::runLogicNodesCommand(int argc, char** argv, const char* executa
                     else if (setting.name == "method")
                         added.settings[setting.name] = GraphValue("update");
                     else if (setting.name == "body")
-                        added.settings[setting.name] = GraphValue("return a");
+                        added.settings[setting.name] = GraphValue(cpp ? "return a;" : "return a");
                 }
                 // an object the script has none of comes from somewhere
                 if (const NodePin* target = type.findInput("self"); target && !LogicNodes::isEntityClass(target->type) && target->type != "any") {
                     const int source = graph.addNode("utility/expression", Vector2(0.0f, 100.0f));
-                    graph.findNode(source)->settings["code"] = GraphValue("self");
+                    const std::string object = "static_cast<" + target->type + "*>(nullptr)";
+                    graph.findNode(source)->settings["code"] = GraphValue(!cpp ? "self" : (LogicNodes::isPointerClass(target->type) ? object : "*" + object));
                     graph.connect(source, "value", node, "self");
                 }
                 if (type.flow == LogicFlow::FOR_EACH) {
                     const int list = graph.addNode("utility/expression", Vector2(0.0f, 200.0f));
-                    graph.findNode(list)->settings["code"] = GraphValue("{}");
+                    graph.findNode(list)->settings["code"] = GraphValue(cpp ? "std::vector<int>()" : "{}");
                     graph.connect(list, "value", node, "list");
                 }
-                const int print = graph.addNode("utility/print", Vector2(400.0f, 0.0f));
+                // C++ only takes the value, it may not print it
+                const int print = graph.addNode(cpp ? "utility/statement" : "utility/print", Vector2(400.0f, 0.0f));
+                if (cpp)
+                    graph.findNode(print)->settings["body"] = GraphValue("(void)a;");
+                const char* taken = cpp ? "a" : "text";
                 if (type.flow == LogicFlow::EVENT) {
                     graph.connectExecution(node, "out", print, "in");
                 } else {
@@ -746,22 +762,29 @@ int CommandLine::runLogicNodesCommand(int argc, char** argv, const char* executa
                         for (const NodePin& pin : type.outputs) {
                             if (pin.kind == PinKind::EXECUTION && !graph.findLinkInto(print, "in"))
                                 graph.connectExecution(node, pin.name, print, "in");
-                            else if (pin.kind == PinKind::DATA && !graph.findLinkInto(print, "text"))
-                                graph.connect(node, pin.name, print, "text");
+                            else if (pin.kind == PinKind::DATA && !graph.findLinkInto(print, taken))
+                                graph.connect(node, pin.name, print, taken);
                         }
                     } else {
                         graph.connectExecution(start, "out", print, "in");
                         size_t index = 0;
                         for (const NodePin& pin : type.outputs)
                             if (pin.kind == PinKind::DATA && index++ == run)
-                                graph.connect(node, pin.name, print, "text");
+                                graph.connect(node, pin.name, print, taken);
                     }
                 }
                 graphs++;
-                const GraphResult result = LogicGraphCompiler::compile(graph, "Check.logic", "Check");
+                const std::string name = "Check" + std::to_string(graphs);
+                // a C++ script says in its first line which node it checks
+                const GraphResult result = cpp ? LogicGraphCompiler::compile(graph, type.id, name, LogicLanguage::CPP)
+                                               : LogicGraphCompiler::compile(graph, "Check.logic", "Check");
                 if (!result.success) {
                     failed++;
                     std::cout << type.id << ": " << result.describeErrors() << "\n";
+                } else if (!dump.empty()) {
+                    std::ofstream(fs::path(dump) / (name + (cpp ? ".cpp" : ".lua")), std::ios::binary) << result.code;
+                    if (cpp)
+                        std::ofstream(fs::path(dump) / (name + ".h"), std::ios::binary) << result.header;
                 }
             }
         }
@@ -782,15 +805,19 @@ int CommandLine::runLogicCommand(int argc, char** argv, const char* executableNa
     const std::string commandName = getCommandName(executableName);
     std::string input;
     std::string output;
+    std::string asked;
     for (int i = 1; i < argc; i++) {
         const std::string argument = argv[i];
         if (argument == "-h" || argument == "--help") {
-            std::cout << "Usage:\n  " << commandName << " logic <file.logic> [--out <file.lua>]\n\n"
-                      << "Writes the Lua script a logic graph stands for, to the file or to the output.\n";
+            std::cout << "Usage:\n  " << commandName << " logic <file.logic> [--language lua|cpp] [--out <file>]\n\n"
+                      << "Writes the script a logic graph stands for, to the file or to the output: Lua, or a C++ class\n"
+                      << "with its header beside the file. Without --language it is the graph's own, else Lua.\n";
             return 0;
         }
         if ((argument == "-o" || argument == "--out") && i + 1 < argc) {
             output = argv[++i];
+        } else if (argument == "--language" && i + 1 < argc) {
+            asked = argv[++i];
         } else if (input.empty() && argument[0] != '-') {
             input = argument;
         } else {
@@ -818,17 +845,27 @@ int CommandLine::runLogicCommand(int argc, char** argv, const char* executableNa
         return 1;
     }
     const std::string name = std::filesystem::path(input).filename().string();
-    const GraphResult result = LogicGraphCompiler::compile(graph, name, LogicGraphCompiler::getModuleName(input));
+    // the graph's own language, unless one is asked for
+    LogicLanguage language = LogicLanguage::LUA;
+    LogicGraphCompiler::findLanguage(graph.language, language);
+    if (!asked.empty() && !LogicGraphCompiler::findLanguage(asked, language)) {
+        std::cerr << commandName << " logic: --language is lua or cpp\n";
+        return 2;
+    }
+    const GraphResult result = LogicGraphCompiler::compile(graph, name, LogicGraphCompiler::getModuleName(input), language);
     if (!result.success) {
         std::cerr << input << ": " << result.describeErrors() << "\n";
         return 1;
     }
     if (output.empty()) {
-        std::cout << result.code;
+        std::cout << result.header << result.code;
         return 0;
     }
     std::ofstream written(output, std::ios::binary | std::ios::trunc);
     written << result.code;
+    // a C++ script has its header beside it
+    if (language == LogicLanguage::CPP)
+        std::ofstream(std::filesystem::path(output).replace_extension(".h"), std::ios::binary | std::ios::trunc) << result.header;
     return written ? 0 : 1;
 }
 

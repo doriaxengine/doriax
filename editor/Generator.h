@@ -31,6 +31,7 @@ namespace doriax::editor {
         fs::path headerPath;
         std::string className;
         std::vector<ScriptPropertyInfo> properties;
+        std::string logicPath;  // of a logic graph written as C++, without extension
     };
 
 

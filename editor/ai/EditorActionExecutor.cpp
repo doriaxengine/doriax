@@ -2513,6 +2513,7 @@ ActionResult EditorActionExecutor::dispatch(const std::string& name,
     if (name == "set_project_asset_dirs") return setProjectAssetDirs(arguments);
     if (name == "check_cpp_build_tools") return checkCppBuildTools();
     if (name == "set_project_cxx_standard") return setProjectCxxStandard(arguments);
+    if (name == "set_project_logic_language") return setProjectLogicLanguage(arguments);
     if (name == "update_project_build_file") return updateProjectBuildFile(arguments);
     if (name == "create_bundle_from_entity") return createBundleFromEntity(arguments);
     if (name == "import_bundle_instance") return importBundleInstance(arguments);
@@ -2578,6 +2579,7 @@ ActionResult EditorActionExecutor::getProjectSummary() {
         data["script_dirs"].push_back(FileUtils::pathToGenericUtf8(scriptDir));
     }
     data["cxx_standard"] = project->getCxxStandard();
+    data["logic_language"] = LogicGraphCompiler::getLanguageName(project->getLogicLanguage());
     data["canvas"] = {{"width", project->getCanvasWidth()}, {"height", project->getCanvasHeight()}};
     data["scaling_mode"] = Stream::scalingModeToString(project->getScalingMode());
     data["window"] = {{"width", project->getWindowWidth()}, {"height", project->getWindowHeight()}};
@@ -4827,6 +4829,23 @@ ActionResult EditorActionExecutor::setProjectCxxStandard(const Json& arguments) 
                     Json{{"cxx_standard", project->getCxxStandard()}});
 }
 
+ActionResult EditorActionExecutor::setProjectLogicLanguage(const Json& arguments) {
+    LogicLanguage language = project->getLogicLanguage();
+    if (!LogicGraphCompiler::findLanguage(arguments.value("language", ""), language)) {
+        return failResult("set_project_logic_language requires language (lua or cpp).");
+    }
+
+    const LogicLanguage previous = project->getLogicLanguage();
+    project->setLogicLanguage(language);
+    if (!project->saveProjectFile()) {
+        project->setLogicLanguage(previous);
+        return failResult("Failed to save the project with the new logic graph language.");
+    }
+
+    return okResult("Logic graphs without a language of their own are written as " + std::string(language == LogicLanguage::CPP ? "C++" : "Lua") + ".",
+                    Json{{"logic_language", LogicGraphCompiler::getLanguageName(language)}});
+}
+
 ActionResult EditorActionExecutor::updateProjectBuildFile(const Json& arguments) {
     const std::string content = arguments.value("content", "");
     constexpr size_t kMaxBuildFileBytes = 256 * 1024;
@@ -6514,12 +6533,16 @@ bool readGraphFile(const fs::path& path, GraphDocument& graph, std::string& erro
 
 // what a graph compiles to, as JSON with its nodes
 Json compiledGraphJson(Project* project, const GraphDocument& graph, const std::string& key, GraphResult& compiled) {
-    if (graph.kind == "logic") {
-        compiled = LogicGraphCompiler::compile(graph, fs::path(key).filename().string(), LogicGraphCompiler::getModuleName(key));
-    } else {
+    if (graph.kind != "logic") {
         compiled = ShaderGraphCompiler::compile(graph, key, graphReader(project));
+        return shaderGraphJson(graph, compiled);
     }
-    return graph.kind == "logic" ? graphJson(graph, compiled) : shaderGraphJson(graph, compiled);
+    compiled = ProjectUtils::compileLogicGraph(project, graph, fs::path(key).filename().string());
+    Json data = graphJson(graph, compiled);
+    // what it is written as, and whether that is its own choice
+    data["language"] = LogicGraphCompiler::getLanguageName(ProjectUtils::getLogicLanguage(project, graph));
+    data["own_language"] = !graph.language.empty();
+    return data;
 }
 
 }
@@ -6641,8 +6664,11 @@ ActionResult EditorActionExecutor::readGraph(const Json& arguments) {
     GraphResult compiled;
     Json data = compiledGraphJson(project, graph, key, compiled);
     data["path"] = key;
-    if (arguments.value("include_code", false) && compiled.success)
+    if (arguments.value("include_code", false) && compiled.success) {
         data["code"] = compiled.code;
+        if (!compiled.header.empty())
+            data["header"] = compiled.header;
+    }
     GraphEditorWindow* window = editor::getEditorHost().getGraphEditorWindow();
     if (window && window->isFileModified(rel))
         data["unsaved_in_editor"] = true;
@@ -6691,6 +6717,13 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
 
     if (graph.kind == "logic" && ProjectUtils::getLogicScriptPath(project, fullPath).empty())
         return failResult("A logic graph goes inside the project's Lua directory, where its script is kept.");
+    if (arguments.contains("language")) {
+        const std::string language = arguments.value("language", "");
+        LogicLanguage known;
+        if (graph.kind != "logic" || (language != "project" && !LogicGraphCompiler::findLanguage(language, known)))
+            return failResult("language is lua, cpp or project, for a logic graph.");
+        graph.language = language == "project" ? std::string() : language;
+    }
 
     GraphOperations operations(graph);
     const Json& list = arguments["operations"];
@@ -6715,7 +6748,11 @@ ActionResult EditorActionExecutor::editGraph(const Json& arguments) {
         if (graph.kind == "logic") {
             // the script the entities run, written when the graph compiles
             std::string scriptError;
-            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, text, compiled.code, scriptError))
+            const LogicLanguage language = ProjectUtils::getLogicLanguage(project, graph);
+            // the generated project lists the graphs written as C++
+            if (language == LogicLanguage::CPP || fs::exists(ProjectUtils::getLogicScriptPath(project, fullPath, LogicLanguage::CPP), ec))
+                project->markGeneratedSourcesDirty();
+            if (compiled.success && !ProjectUtils::writeLogicScript(project, fullPath, text, compiled, language, scriptError))
                 return failResult("Graph written, but not its script: " + scriptError);
         } else {
             project->invalidateCustomShader(key);

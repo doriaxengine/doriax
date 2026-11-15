@@ -5,6 +5,7 @@
 
 #include "command/CommandHistory.h"
 #include "graph/Graph.h"
+#include "logic/LogicGraphCompiler.h"
 #include "render/preview/ShaderPreviewRender.h"
 #include "shader/graph/ShaderGraphCompiler.h"
 #include "widget/NodeCanvas.h"
@@ -35,6 +36,7 @@ namespace doriax::editor {
             GraphEditCmd* lastEdit = nullptr;        // the step a drag or typing still extends
             NodeCanvas canvas;
             ShaderGraphResult compiled;
+            LogicLanguage language = LogicLanguage::LUA;    // what a logic graph was compiled as
             std::filesystem::file_time_type writeTime;
             bool isOpen = true;
             bool focusRequested = false;

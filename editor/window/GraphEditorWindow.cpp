@@ -390,8 +390,8 @@ const std::string& editor::GraphEditorWindow::getBuiltCode(const Instance& insta
 
 void editor::GraphEditorWindow::compile(Instance& instance) {
     if (GraphNodes::isLogic(instance.document)) {
-        const std::string name = instance.filepath.filename().string();
-        static_cast<GraphResult&>(instance.compiled) = LogicGraphCompiler::compile(instance.document, name, LogicGraphCompiler::getModuleName(name));
+        instance.language = ProjectUtils::getLogicLanguage(project, instance.document);
+        static_cast<GraphResult&>(instance.compiled) = ProjectUtils::compileLogicGraph(project, instance.document, instance.filepath.filename().string());
         return;
     }
     Project* owner = project;
@@ -455,8 +455,13 @@ void editor::GraphEditorWindow::writeScript(Instance& instance) {
         Out::warning("%s has errors, so its script keeps what it had", instance.filepath.generic_string().c_str());
         return;
     }
+    const std::filesystem::path graph = project->getProjectPath() / instance.filepath;
+    // the generated project lists the graphs written as C++
+    std::error_code ec;
+    if (instance.language == LogicLanguage::CPP || std::filesystem::exists(ProjectUtils::getLogicScriptPath(project, graph, LogicLanguage::CPP), ec))
+        project->markGeneratedSourcesDirty();
     std::string error;
-    if (!ProjectUtils::writeLogicScript(project, project->getProjectPath() / instance.filepath, instance.savedText, instance.compiled.code, error))
+    if (!ProjectUtils::writeLogicScript(project, graph, instance.savedText, instance.compiled, instance.language, error))
         Out::error("%s", error.c_str());
 }
 
@@ -1924,20 +1929,36 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
     if (ImGui::Button(instance.showCode ? ICON_FA_DIAGRAM_PROJECT " Graph" : ICON_FA_CODE " Code"))
         instance.showCode = !instance.showCode;
     const bool logic = GraphNodes::isLogic(instance.document);
-    ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : (logic ? "The Lua script the graph makes" : "The shader code the graph makes"));
+    const bool cpp = logic && instance.language == LogicLanguage::CPP;
+    ImGui::SetItemTooltip(instance.showCode ? "Back to the graph" : (logic ? (cpp ? "The C++ class the graph makes" : "The Lua script the graph makes") : "The shader code the graph makes"));
     ImGui::SameLine();
     const bool function = instance.document.type == "function";
     if (instance.compiled.success && logic)
-        ImGui::TextDisabled(ICON_FA_CHECK " script");
+        ImGui::TextDisabled(ICON_FA_CHECK " %s script", cpp ? "C++" : "Lua");
     else if (instance.compiled.success && function)
         ImGui::TextDisabled(ICON_FA_CHECK " function");
     else if (instance.compiled.success)
         ImGui::TextDisabled(ICON_FA_CHECK " %s shader", instance.document.type.c_str());
     else
         ImGui::TextColored(errorColor, ICON_FA_TRIANGLE_EXCLAMATION " %d error%s", (int)instance.compiled.errors.size(), instance.compiled.errors.size() == 1 ? "" : "s");
-    // a logic graph's script is kept by the editor
-    if (logic)
+    // the editor keeps a logic graph's script, in this language
+    if (logic) {
+        const std::string inherited = std::string("Project (") + (project->getLogicLanguage() == LogicLanguage::CPP ? "C++" : "Lua") + ")";
+        const char* names[] = {inherited.c_str(), "Lua", "C++"};
+        const char* values[] = {"", "lua", "cpp"};
+        int current = instance.document.language == "lua" ? 1 : (instance.document.language == "cpp" ? 2 : 0);
+        const float width = ImGui::CalcTextSize("Project (Lua)").x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SameLine();
+        if (ImGui::GetContentRegionAvail().x > width)
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - width);
+        ImGui::SetNextItemWidth(width);
+        if (ImGui::Combo("##language", &current, names, 3)) {
+            instance.document.language = values[current];
+            edit(instance);
+        }
+        ImGui::SetItemTooltip("What the graph is written as. Project takes the Logic Graphs setting of Project Settings");
         return;
+    }
     // on its own at the right
     const char* label = ICON_FA_FILE_CODE " Convert";
     const float width = ImGui::CalcTextSize(label).x + ImGui::GetStyle().FramePadding.x * 2.0f;
@@ -1969,6 +1990,9 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
 void editor::GraphEditorWindow::drawCanvas(Instance& instance) {
     if (instance.showCode) {
         std::string code = instance.compiled.success ? instance.compiled.code : instance.compiled.describeErrors();
+        // a C++ script is its header, then its source
+        if (instance.compiled.success && !instance.compiled.header.empty())
+            code = instance.compiled.header + "\n" + code;
         ImGui::PushFont(App::getCodeFont(), 0.0f);
         editTextMultiline("##code", code, ImGui::GetContentRegionAvail(), ImGuiInputTextFlags_ReadOnly);
         ImGui::PopFont();
@@ -2053,6 +2077,9 @@ void editor::GraphEditorWindow::show() {
 
         // a function it calls changed: its errors and code are of the old one
         if (!instance.compiled.functions.empty() && instance.compiledGeneration != ShaderBuilder::getCustomShaderGeneration())
+            compile(instance);
+        // the project's language changed under a graph that takes it
+        if (instance.loadError.empty() && GraphNodes::isLogic(instance.document) && instance.language != ProjectUtils::getLogicLanguage(project, instance.document))
             compile(instance);
 
         // disk changes, checked once a second, when nothing is unsaved

@@ -1754,6 +1754,10 @@ bool editor::Exporter::copyGenerated() try {
             if (entry.is_regular_file() && excludedFiles.count(relativePath.filename().string())) {
                 continue;
             }
+            // logic graph scripts ship with the Lua or the C++ scripts
+            if (*relativePath.begin() == "logic") {
+                continue;
+            }
 
             fs::path destPath = generatedDst / relativePath;
             if (entry.is_directory()) {
@@ -2013,6 +2017,8 @@ bool editor::Exporter::copyLua() try {
                 setError("Cannot export: " + relPath.generic_string() + " and " + scriptSrc.filename().string() + " would be the same script; rename one of them");
                 return false;
             }
+            // one written as C++ goes with the C++ scripts
+            if (ProjectUtils::getLogicLanguage(project, entry.path()) == LogicLanguage::CPP) continue;
             fs::path destPath = luaDst / relPath;
             destPath.replace_extension(".lua");
             fs::create_directories(destPath.parent_path());
@@ -2054,46 +2060,55 @@ bool editor::Exporter::copyCppScripts() try {
         return relPath;
     };
 
+    std::vector<SceneScriptSource> scripts;
     for (const auto& sceneProject : project->getScenes()) {
-        for (const auto& script : sceneProject.cppScripts) {
-            // Copy source file
-            if (!script.path.empty()) {
-                fs::path srcPath = script.path;
-                if (srcPath.is_relative()) {
-                    srcPath = project->getProjectPath() / srcPath;
-                }
-                std::string pathKey = srcPath.string();
-                if (copiedPaths.count(pathKey)) continue;
-                copiedPaths.insert(pathKey);
+        scripts.insert(scripts.end(), sceneProject.cppScripts.begin(), sceneProject.cppScripts.end());
+    }
+    // logic graphs written as C++, which no scene lists
+    for (const SceneScriptSource& script : project->collectAllSceneCppScripts()) {
+        if (!script.logicPath.empty()) {
+            scripts.push_back(script);
+        }
+    }
 
-                if (fs::exists(srcPath)) {
-                    const fs::path relPath = projectRelativePath(srcPath);
-                    if (!relPath.empty()) {
-                        fs::path dstPath = scriptsDst / relPath;
-                        fs::create_directories(dstPath.parent_path());
-                        fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing);
-                        cppExportedPaths.insert(fs::path("scripts") / relPath);
-                    }
+    for (const auto& script : scripts) {
+        // Copy source file
+        if (!script.path.empty()) {
+            fs::path srcPath = script.path;
+            if (srcPath.is_relative()) {
+                srcPath = project->getProjectPath() / srcPath;
+            }
+            std::string pathKey = srcPath.string();
+            if (copiedPaths.count(pathKey)) continue;
+            copiedPaths.insert(pathKey);
+
+            if (fs::exists(srcPath)) {
+                const fs::path relPath = projectRelativePath(srcPath);
+                if (!relPath.empty()) {
+                    fs::path dstPath = scriptsDst / relPath;
+                    fs::create_directories(dstPath.parent_path());
+                    fs::copy_file(srcPath, dstPath, fs::copy_options::overwrite_existing);
+                    cppExportedPaths.insert(fs::path("scripts") / relPath);
                 }
             }
+        }
 
-            // Copy header file
-            if (!script.headerPath.empty()) {
-                fs::path hdrPath = script.headerPath;
-                if (hdrPath.is_relative()) {
-                    hdrPath = project->getProjectPath() / hdrPath;
-                }
-                std::string pathKey = hdrPath.string();
-                if (copiedPaths.count(pathKey)) continue;
-                copiedPaths.insert(pathKey);
+        // Copy header file
+        if (!script.headerPath.empty()) {
+            fs::path hdrPath = script.headerPath;
+            if (hdrPath.is_relative()) {
+                hdrPath = project->getProjectPath() / hdrPath;
+            }
+            std::string pathKey = hdrPath.string();
+            if (copiedPaths.count(pathKey)) continue;
+            copiedPaths.insert(pathKey);
 
-                if (fs::exists(hdrPath)) {
-                    const fs::path relPath = projectRelativePath(hdrPath);
-                    if (!relPath.empty()) {
-                        fs::path dstPath = scriptsDst / relPath;
-                        fs::create_directories(dstPath.parent_path());
-                        fs::copy_file(hdrPath, dstPath, fs::copy_options::overwrite_existing);
-                    }
+            if (fs::exists(hdrPath)) {
+                const fs::path relPath = projectRelativePath(hdrPath);
+                if (!relPath.empty()) {
+                    fs::path dstPath = scriptsDst / relPath;
+                    fs::create_directories(dstPath.parent_path());
+                    fs::copy_file(hdrPath, dstPath, fs::copy_options::overwrite_existing);
                 }
             }
         }
