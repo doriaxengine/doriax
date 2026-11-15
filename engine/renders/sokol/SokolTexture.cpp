@@ -214,9 +214,10 @@ sg_image SokolTexture::generateMipmaps(const sg_image_desc* desc_){
             const unsigned char* srcslice = source + (slice * source_width * source_height * pixel_size);
             unsigned char* miptarget = target + (slice * target_width * target_height * pixel_size);
 
-            for (int x = 0; x < target_width; ++x)
+            // row by row, as the pixels lie in memory
+            for (int y = 0; y < target_height; ++y)
             {
-                for (int y = 0; y < target_height; ++y)
+                for (int x = 0; x < target_width; ++x)
                 {
                     for (int chanell = 0; chanell < pixel_size; ++chanell)
                     {
