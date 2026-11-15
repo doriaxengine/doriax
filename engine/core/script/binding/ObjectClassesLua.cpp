@@ -1500,9 +1500,20 @@ void LuaBinding::registerObjectClasses(lua_State *L){
 
 #ifdef DORIAX_PHYSICS_3D
     luabridge::getGlobalNamespace(L)
-        .deriveClass<Body3D, EntityHandle>("Body3D")
+        .deriveClass<Collider3D, EntityHandle>("Collider3D")
         .addConstructor <void (Scene*, Entity)> ()
-        .addFunction("getAttachedObject", &Body3D::getAttachedObject)
+        .addFunction("getAttachedObject", &Collider3D::getAttachedObject)
+        .addFunction("isBody3D", &Collider3D::isBody3D)
+        .addFunction("isCharacter3D", &Collider3D::isCharacter3D)
+        .addFunction("getBody3D", &Collider3D::getBody3D)
+        .addFunction("getCharacter3D", &Collider3D::getCharacter3D)
+        .addProperty("position", &Collider3D::getPosition)
+        .addProperty("linearVelocity", &Collider3D::getLinearVelocity)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .deriveClass<Body3D, Collider3D>("Body3D")
+        .addConstructor <void (Scene*, Entity)> ()
         .addFunction("load", &Body3D::load)
         .addFunction("createBoxShape", 
             luabridge::overload<float, float, float>(&Body3D::createBoxShape),
@@ -1600,9 +1611,8 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .endClass();
 
     luabridge::getGlobalNamespace(L)
-        .deriveClass<Character3D, EntityHandle>("Character3D")
+        .deriveClass<Character3D, Collider3D>("Character3D")
         .addConstructor <void (Scene*, Entity)> ()
-        .addFunction("getAttachedObject", &Character3D::getAttachedObject)
         .addFunction("load", &Character3D::load)
         .addProperty("moveVelocity", &Character3D::getMoveVelocity, &Character3D::setMoveVelocity)
         .addFunction("jump", &Character3D::jump)

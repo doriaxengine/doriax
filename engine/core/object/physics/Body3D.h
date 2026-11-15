@@ -8,7 +8,7 @@
 #error "Body3D needs 3D Physics, enabled in Project Settings > Build"
 #endif
 
-#include "EntityHandle.h"
+#include "Collider3D.h"
 #include "math/Vector2.h"
 #include "component/Body3DComponent.h"
 
@@ -18,8 +18,6 @@
 
 namespace doriax{
 
-    class Object;
-
     struct DORIAX_API SubmergedVolume3D{
         float totalVolume = 0.0f;
         float submergedVolume = 0.0f;
@@ -27,7 +25,7 @@ namespace doriax{
         Vector3 centerOfBuoyancy = Vector3::ZERO; // world space
     };
 
-    class DORIAX_API Body3D: public EntityHandle{
+    class DORIAX_API Body3D: public Collider3D{
     protected:
         void checkBody(const Body3DComponent& body) const;
 
@@ -46,8 +44,6 @@ namespace doriax{
         const JPH::Body& getJoltBody() const;
         JPH::Body& getJoltBodyWrite() const;
         JPH::Body* getJoltBodyNoLock() const;
-
-        Object getAttachedObject();
 
         void load();
 

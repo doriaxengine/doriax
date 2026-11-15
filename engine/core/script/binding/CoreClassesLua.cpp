@@ -762,24 +762,24 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .endClass();
 
     luabridge::getGlobalNamespace(L)
-        .beginClass<FunctionSubscribe<void(Body3D, Body3D, Contact3D)>>("FunctionSubscribe_V_B3B3C3")
-        .addFunction("__call", &FunctionSubscribe<void(Body3D, Body3D, Contact3D)>::call)
-        .addFunction("call", &FunctionSubscribe<void(Body3D, Body3D, Contact3D)>::call)
-        .addFunction("add", (bool (FunctionSubscribe<void(Body3D, Body3D, Contact3D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<void(Body3D, Body3D, Contact3D)>::add)
+        .beginClass<FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)>>("FunctionSubscribe_V_CL3CL3C3")
+        .addFunction("__call", &FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)>::call)
+        .addFunction("call", &FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)>::call)
+        .addFunction("add", (bool (FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)>::add)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
-        .beginClass<FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)>>("FunctionSubscribe_V_B3B3ULUL")
-        .addFunction("__call", &FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)>::call)
-        .addFunction("call", &FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)>::call)
-        .addFunction("add", (bool (FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)>::*)(const std::string&, lua_State*))&FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)>::add)
+        .beginClass<FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)>>("FunctionSubscribe_V_CL3CL3ULUL")
+        .addFunction("__call", &FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)>::call)
+        .addFunction("call", &FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)>::call)
+        .addFunction("add", (bool (FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)>::*)(const std::string&, lua_State*))&FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)>::add)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
-        .beginClass<FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>>("FunctionSubscribe_B_B3B3V3CR3")
-        .addFunction("__call", &FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::call)
-        .addFunction("call", &FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::call)
-        .addFunction("add", (bool (FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)>::add)
+        .beginClass<FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)>>("FunctionSubscribe_B_CL3CL3V3CR3")
+        .addFunction("__call", &FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)>::call)
+        .addFunction("call", &FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)>::call)
+        .addFunction("add", (bool (FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)>::*)(const std::string&, lua_State*))&FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)>::add)
         .endClass();
 #endif
 

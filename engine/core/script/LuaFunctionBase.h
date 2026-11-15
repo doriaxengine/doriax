@@ -15,6 +15,7 @@ namespace doriax{
     class Manifold2D;
     class Contact2D;
     class Body3D;
+    class Collider3D;
     class Contact3D;
     class CollideShapeResult3D;
     enum class AdMobFormat;
@@ -70,6 +71,7 @@ namespace doriax{
         void push_value(lua_State *vm, Contact2D o);
         void push_value(lua_State *vm, Manifold2D o);
         void push_value(lua_State *vm, Body3D o);
+        void push_value(lua_State *vm, Collider3D o);
         void push_value(lua_State *vm, Contact3D o);
         void push_value(lua_State *vm, CollideShapeResult3D o);
         void push_value(lua_State *vm, AdMobFormat o);

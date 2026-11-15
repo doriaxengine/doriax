@@ -13,6 +13,7 @@
 #endif
 #ifdef DORIAX_PHYSICS_3D
 #include "object/physics/Body3D.h"
+#include "object/physics/Character3D.h"
 #include "object/physics/Contact3D.h"
 #include "object/physics/CollideShapeResult3D.h"
 #endif
@@ -226,6 +227,12 @@ void LuaFunctionBase::push_value(lua_State *vm, Contact2D o){
 #ifdef DORIAX_PHYSICS_3D
 void LuaFunctionBase::push_value(lua_State *vm, Body3D o){
     if (!luabridge::push<Body3D>(vm, o))
+        throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
+}
+
+// Lua gets the body or the character itself
+void LuaFunctionBase::push_value(lua_State *vm, Collider3D o){
+    if (!(o.isCharacter3D() ? luabridge::push<Character3D>(vm, o.getCharacter3D()) : luabridge::push<Body3D>(vm, o.getBody3D())))
         throw luabridge::makeErrorCode(luabridge::ErrorCode::LuaStackOverflow);
 }
 

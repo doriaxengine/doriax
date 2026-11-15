@@ -8,14 +8,12 @@
 #error "Character3D needs 3D Physics, enabled in Project Settings > Build"
 #endif
 
-#include "EntityHandle.h"
+#include "Collider3D.h"
 #include "component/Character3DComponent.h"
 
 namespace doriax{
 
-    class Object;
-
-    class DORIAX_API Character3D: public EntityHandle{
+    class DORIAX_API Character3D: public Collider3D{
     protected:
         void checkCharacter(const Character3DComponent& character) const;
 
@@ -27,8 +25,6 @@ namespace doriax{
         Character3D& operator=(const Character3D& rhs);
 
         JPH::CharacterVirtual* getJoltCharacter() const;
-
-        Object getAttachedObject();
 
         void load();
 

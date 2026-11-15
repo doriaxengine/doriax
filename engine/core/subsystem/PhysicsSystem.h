@@ -203,11 +203,12 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_3D
 		FunctionSubscribe<void(Body3D)> onBodyActivated3D;
 		FunctionSubscribe<void(Body3D)> onBodyDeactivated3D;
-		FunctionSubscribe<void(Body3D, Body3D, Contact3D)> onContactAdded3D;
-		FunctionSubscribe<void(Body3D, Body3D, Contact3D)> onContactPersisted3D;
-		FunctionSubscribe<void(Body3D, Body3D, unsigned long, unsigned long)> onContactRemoved3D;
+		// each side is a Body3D or a Character3D, through its inner body
+		FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)> onContactAdded3D;
+		FunctionSubscribe<void(Collider3D, Collider3D, Contact3D)> onContactPersisted3D;
+		FunctionSubscribe<void(Collider3D, Collider3D, unsigned long, unsigned long)> onContactRemoved3D;
 
-		FunctionSubscribe<bool(Body3D, Body3D, Vector3, CollideShapeResult3D)> shouldCollide3D;
+		FunctionSubscribe<bool(Collider3D, Collider3D, Vector3, CollideShapeResult3D)> shouldCollide3D;
 #endif
 
 #ifdef DORIAX_PHYSICS_2D

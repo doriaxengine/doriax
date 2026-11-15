@@ -12,17 +12,17 @@ using namespace doriax;
 static_assert((int)JPH::CharacterVirtual::EGroundState::OnGround == (int)Character3DGroundState::ON_GROUND
     && (int)JPH::CharacterVirtual::EGroundState::InAir == (int)Character3DGroundState::IN_AIR, "Character3DGroundState must keep Jolt's order");
 
-Character3D::Character3D(Scene* scene, Entity entity): EntityHandle(scene, entity){
+Character3D::Character3D(Scene* scene, Entity entity): Collider3D(scene, entity){
 }
 
 Character3D::~Character3D(){
 }
 
-Character3D::Character3D(const Character3D& rhs): EntityHandle(rhs){
+Character3D::Character3D(const Character3D& rhs): Collider3D(rhs){
 }
 
 Character3D& Character3D::operator=(const Character3D& rhs){
-    EntityHandle::operator = (rhs);
+    Collider3D::operator = (rhs);
 
     return *this;
 }
@@ -45,10 +45,6 @@ JPH::CharacterVirtual* Character3D::getJoltCharacter() const{
     checkCharacter(character);
 
     return character.character;
-}
-
-Object Character3D::getAttachedObject(){
-    return Object(scene, entity);
 }
 
 void Character3D::load(){

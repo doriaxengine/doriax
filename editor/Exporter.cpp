@@ -3178,7 +3178,7 @@ bool editor::Exporter::writeAppleProjectSettings() {
     if (!project->isPhysics3DEnabled()) {
         removeProjectLinesContaining("DORIAX_PHYSICS_3D,");
         excludedPhysicsSources.insert(excludedPhysicsSources.end(), {
-            "Body3D.cpp", "Character3D.cpp", "CollideShapeResult3D.cpp", "Contact3D.cpp", "Joint3D.cpp"
+            "Body3D.cpp", "Character3D.cpp", "Collider3D.cpp", "CollideShapeResult3D.cpp", "Contact3D.cpp", "Joint3D.cpp"
         });
         if (!unlinkBackend("joltphysics")) return false;
     }

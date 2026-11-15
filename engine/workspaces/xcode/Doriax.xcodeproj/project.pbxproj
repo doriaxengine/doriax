@@ -112,8 +112,11 @@
 		7105CAB52AD61CB6007C91BA /* Body3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CAB02AD61CB6007C91BA /* Body3D.cpp */; };
 		7105CAB62AD61CB6007C91BA /* Body3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CAB02AD61CB6007C91BA /* Body3D.cpp */; };
 		16419F828B9D2434E465E150 /* Character3D.h in Headers */ = {isa = PBXBuildFile; fileRef = BC8960A923B8C1E9392456DE /* Character3D.h */; };
+		45664BF8BA47FD0FCC0190FE /* Collider3D.h in Headers */ = {isa = PBXBuildFile; fileRef = 79E73AB984C09818BFBFC845 /* Collider3D.h */; };
 		0822E8F36C031199972A8469 /* Character3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BD9C66B3AD3C2D6D1A3D1FA7 /* Character3D.cpp */; };
+		783C968201B3F626AC0ED070 /* Collider3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D096F60042459159C2894B15 /* Collider3D.cpp */; };
 		37F8A88B17FC695A07A0CA6E /* Character3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = BD9C66B3AD3C2D6D1A3D1FA7 /* Character3D.cpp */; };
+		D92317751956F4FEBE5EDE11 /* Collider3D.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D096F60042459159C2894B15 /* Collider3D.cpp */; };
 		3EB13B9046685257BDD640FB /* Character3DComponent.h in Headers */ = {isa = PBXBuildFile; fileRef = 06671AD11C80317FA3B1799D /* Character3DComponent.h */; };
 		7105CAB72AD61CB6007C91BA /* Joint3D.h in Headers */ = {isa = PBXBuildFile; fileRef = 7105CAB12AD61CB6007C91BA /* Joint3D.h */; };
 		7105CC9D2AD61DA5007C91BA /* DebugRendererPlayback.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 7105CAED2AD61DA4007C91BA /* DebugRendererPlayback.cpp */; };
@@ -1560,7 +1563,9 @@
 		7105CAAF2AD61CB5007C91BA /* Body3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Body3D.h; sourceTree = "<group>"; };
 		7105CAB02AD61CB6007C91BA /* Body3D.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Body3D.cpp; sourceTree = "<group>"; };
 		BC8960A923B8C1E9392456DE /* Character3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Character3D.h; sourceTree = "<group>"; };
+		79E73AB984C09818BFBFC845 /* Collider3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Collider3D.h; sourceTree = "<group>"; };
 		BD9C66B3AD3C2D6D1A3D1FA7 /* Character3D.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Character3D.cpp; sourceTree = "<group>"; };
+		D096F60042459159C2894B15 /* Collider3D.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Collider3D.cpp; sourceTree = "<group>"; };
 		06671AD11C80317FA3B1799D /* Character3DComponent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Character3DComponent.h; sourceTree = "<group>"; };
 		7105CAB12AD61CB6007C91BA /* Joint3D.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Joint3D.h; sourceTree = "<group>"; };
 		7105CACB2AD61D1F007C91BA /* libjoltphysics-macos.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libjoltphysics-macos.a"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -5725,7 +5730,9 @@
 				7105CAB02AD61CB6007C91BA /* Body3D.cpp */,
 				7105CAAF2AD61CB5007C91BA /* Body3D.h */,
 				BD9C66B3AD3C2D6D1A3D1FA7 /* Character3D.cpp */,
+				D096F60042459159C2894B15 /* Collider3D.cpp */,
 				BC8960A923B8C1E9392456DE /* Character3D.h */,
+				79E73AB984C09818BFBFC845 /* Collider3D.h */,
 				71EA6DA32AE20B8C00CA9A75 /* CollideShapeResult3D.cpp */,
 				71EA6DA22AE20B8C00CA9A75 /* CollideShapeResult3D.h */,
 				71651FED2AA804B4008D9BF5 /* Contact2D.cpp */,
@@ -6054,6 +6061,7 @@
 				714741FB2B029F7D00C891FF /* TextureDataPool.h in Headers */,
 				7105CAB42AD61CB6007C91BA /* Body3D.h in Headers */,
 				16419F828B9D2434E465E150 /* Character3D.h in Headers */,
+				45664BF8BA47FD0FCC0190FE /* Collider3D.h in Headers */,
 				1787AD8E2F673CE000DB1D75 /* BundleComponent.h in Headers */,
 				71E824862A9C238900C8E6F2 /* Joint2DComponent.h in Headers */,
 				717AD9862919E1CB007D7DB5 /* UILayout.h in Headers */,
@@ -7438,6 +7446,7 @@
 				710506AF297F4483002DD23C /* Shape.cpp in Sources */,
 				7105CAB62AD61CB6007C91BA /* Body3D.cpp in Sources */,
 				37F8A88B17FC695A07A0CA6E /* Character3D.cpp in Sources */,
+				D92317751956F4FEBE5EDE11 /* Collider3D.cpp in Sources */,
 				7105CAB32AD61CB6007C91BA /* Joint3D.cpp in Sources */,
 				713D82B3259D307F00567F9F /* SokolObject.cpp in Sources */,
 				713D82B4259D307F00567F9F /* SokolBuffer.cpp in Sources */,
@@ -7638,6 +7647,7 @@
 				710506AE297F4483002DD23C /* Shape.cpp in Sources */,
 				7105CAB52AD61CB6007C91BA /* Body3D.cpp in Sources */,
 				0822E8F36C031199972A8469 /* Character3D.cpp in Sources */,
+				783C968201B3F626AC0ED070 /* Collider3D.cpp in Sources */,
 				7105CAB22AD61CB6007C91BA /* Joint3D.cpp in Sources */,
 				7162FD5825963AE00075B97D /* InterleavedBuffer.cpp in Sources */,
 				7162FD5925963AE00075B97D /* Buffer.cpp in Sources */,

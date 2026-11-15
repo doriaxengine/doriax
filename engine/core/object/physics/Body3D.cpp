@@ -51,17 +51,17 @@ static int appendShape3D(Body3DComponent& body){
     return static_cast<int>(index);
 }
 
-Body3D::Body3D(Scene* scene, Entity entity): EntityHandle(scene, entity){
+Body3D::Body3D(Scene* scene, Entity entity): Collider3D(scene, entity){
 }
 
 Body3D::~Body3D(){
 }
 
-Body3D::Body3D(const Body3D& rhs): EntityHandle(rhs){
+Body3D::Body3D(const Body3D& rhs): Collider3D(rhs){
 }
 
 Body3D& Body3D::operator=(const Body3D& rhs){
-    EntityHandle::operator = (rhs);
+    Collider3D::operator = (rhs);
 
     return *this;
 }
@@ -114,10 +114,6 @@ JPH::Body* Body3D::getJoltBodyNoLock() const{
     Body3DComponent& body = getComponent<Body3DComponent>();
 
     return getBodyLockInterface().TryGetBody(body.body);
-}
-
-Object Body3D::getAttachedObject(){
-    return Object(scene, entity);
 }
 
 void Body3D::load(){

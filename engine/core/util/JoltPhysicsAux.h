@@ -172,6 +172,16 @@ namespace doriax{
     private:
         Scene* scene;
         PhysicsSystem* physicsSystem;
+
+        // the body of a Body3D, or the inner body of a character that has none
+        bool isCollider3D(const JPH::BodyID& id, Entity entity) const{
+            if (Body3DComponent* body = scene->findComponent<Body3DComponent>(entity)){
+                return body->body == id;
+            }
+            Character3DComponent* character = scene->findComponent<Character3DComponent>(entity);
+            return character && character->character && character->character->GetInnerBodyID() == id;
+        }
+
 	public:
         JoltContactListener(Scene* scene, PhysicsSystem* physicsSystem){
             this->scene = scene;
@@ -187,12 +197,13 @@ namespace doriax{
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 
 			Entity entity1 = inBody1.GetUserData();
-			Body3D body1(scene, entity1);
-
 			Entity entity2 = inBody2.GetUserData();
-			Body3D body2(scene, entity2);
 
-			if (!physicsSystem->shouldCollide3D.callRet(body1, body2, Vector3(inBaseOffset.GetX(), inBaseOffset.GetY(), inBaseOffset.GetZ()), CollideShapeResult3D(scene, &inBody1, &inBody2, &inCollisionResult), true)){
+			if (!isCollider3D(inBody1.GetID(), entity1) || !isCollider3D(inBody2.GetID(), entity2)){
+				return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+			}
+
+			if (!physicsSystem->shouldCollide3D.callRet(Collider3D(scene, entity1), Collider3D(scene, entity2), Vector3(inBaseOffset.GetX(), inBaseOffset.GetY(), inBaseOffset.GetZ()), CollideShapeResult3D(scene, &inBody1, &inBody2, &inCollisionResult), true)){
 				return JPH::ValidateResult::RejectAllContactsForThisBodyPair;
 			}
 
@@ -207,12 +218,13 @@ namespace doriax{
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 
 			Entity entity1 = inBody1.GetUserData();
-			Body3D body1(scene, entity1);
-
 			Entity entity2 = inBody2.GetUserData();
-			Body3D body2(scene, entity2);
 
-			physicsSystem->onContactAdded3D(body1, body2, Contact3D(scene, &inBody1, &inBody2, &inManifold, &ioSettings));
+			if (!isCollider3D(inBody1.GetID(), entity1) || !isCollider3D(inBody2.GetID(), entity2)){
+				return;
+			}
+
+			physicsSystem->onContactAdded3D(Collider3D(scene, entity1), Collider3D(scene, entity2), Contact3D(scene, &inBody1, &inBody2, &inManifold, &ioSettings));
 		}
 
 		virtual void OnContactPersisted(const JPH::Body &inBody1, const JPH::Body &inBody2, const JPH::ContactManifold &inManifold, JPH::ContactSettings &ioSettings) override{
@@ -223,12 +235,13 @@ namespace doriax{
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
 
 			Entity entity1 = inBody1.GetUserData();
-			Body3D body1(scene, entity1);
-
 			Entity entity2 = inBody2.GetUserData();
-			Body3D body2(scene, entity2);
 
-			physicsSystem->onContactPersisted3D(body1, body2, Contact3D(scene, &inBody1, &inBody2, &inManifold, &ioSettings));
+			if (!isCollider3D(inBody1.GetID(), entity1) || !isCollider3D(inBody2.GetID(), entity2)){
+				return;
+			}
+
+			physicsSystem->onContactPersisted3D(Collider3D(scene, entity1), Collider3D(scene, entity2), Contact3D(scene, &inBody1, &inBody2, &inManifold, &ioSettings));
 		}
 
 		virtual void OnContactRemoved(const JPH::SubShapeIDPair &inSubShapePair) override{
@@ -261,10 +274,14 @@ namespace doriax{
 			Entity entity1 = body_interface.GetUserData(body1Id);
 			Entity entity2 = body_interface.GetUserData(body2Id);
 
+			if (!isCollider3D(body1Id, entity1) || !isCollider3D(body2Id, entity2)){
+				return;
+			}
+
 			size_t shapeIndex1 = shape1->GetSubShapeUserData(inSubShapePair.GetSubShapeID1());
 			size_t shapeIndex2 = shape2->GetSubShapeUserData(inSubShapePair.GetSubShapeID2());
 
-			physicsSystem->onContactRemoved3D(Body3D(scene, entity1), Body3D(scene, entity2), (unsigned long)shapeIndex1, (unsigned long)shapeIndex2);
+			physicsSystem->onContactRemoved3D(Collider3D(scene, entity1), Collider3D(scene, entity2), (unsigned long)shapeIndex1, (unsigned long)shapeIndex2);
 		}
 	};
 

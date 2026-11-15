@@ -145,6 +145,7 @@
 #ifdef DORIAX_PHYSICS_3D
 #include "object/physics/Body3D.h"
 #include "object/physics/Character3D.h"
+#include "object/physics/Collider3D.h"
 #include "object/physics/CollideShapeResult3D.h"
 #include "object/physics/Contact3D.h"
 #include "object/physics/Joint3D.h"
