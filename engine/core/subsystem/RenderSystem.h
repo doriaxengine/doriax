@@ -782,7 +782,8 @@ namespace doriax{
 		// Every map of every layer is a slice of one array texture, so the whole terrain
 		// costs a single bind slot. Kept here, not on the component, which stays copiable.
 		struct TerrainDetailArray{
-			TextureRender render;
+			// shared by the terrains built from the same sources
+			std::shared_ptr<TextureRender> render;
 			// what each slice was built from, in array order
 			std::vector<std::string> sliceKeys;
 			// how many leading slices hold layer colors (rounded up to whole blend maps)

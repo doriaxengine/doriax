@@ -2749,13 +2749,16 @@ RenderSystem::TerrainDetailArray* RenderSystem::getTerrainDetailArray(Entity ent
         minFilter = TextureFilter::LINEAR_MIPMAP_LINEAR;
     }
 
+    auto matches = [&](const TerrainDetailArray& other){
+        return other.sliceKeys == sliceKeys && other.minFilter == minFilter && other.magFilter == sampled->getMagFilter() &&
+               other.wrapU == sampled->getWrapU() && other.wrapV == sampled->getWrapV();
+    };
+
     auto it = terrainDetailArrays.find(entity);
     if (it != terrainDetailArrays.end()){
-        const TerrainDetailArray& cached = it->second;
-        if (cached.sliceKeys == sliceKeys && cached.minFilter == minFilter && cached.magFilter == sampled->getMagFilter() &&
-            cached.wrapU == sampled->getWrapU() && cached.wrapV == sampled->getWrapV()){
+        if (matches(it->second)){
             // A set that could not be built is remembered, not retried every frame
-            return cached.failed ? NULL : &it->second;
+            return it->second.failed ? NULL : &it->second;
         }
         destroyTerrainDetailArray(entity);
     }
@@ -2773,6 +2776,19 @@ RenderSystem::TerrainDetailArray* RenderSystem::getTerrainDetailArray(Entity ent
         entry.failed = failed;
         return entry;
     };
+
+    std::shared_ptr<TextureRender> shared;
+    for (const auto& entry : terrainDetailArrays){
+        if (!entry.second.failed && matches(entry.second)){
+            shared = entry.second.render;
+            break;
+        }
+    }
+    if (shared){
+        TerrainDetailArray& detail = remember(false);
+        detail.render = shared;
+        return &detail;
+    }
 
     // A map shared by several layers is read once, and the array takes the largest of them
     std::map<std::string, TextureData> sources;
@@ -2878,7 +2894,8 @@ RenderSystem::TerrainDetailArray* RenderSystem::getTerrainDetailArray(Entity ent
     }
 
     TerrainDetailArray& detail = remember(false);
-    if (!detail.render.createTexture("terrain|detail|" + std::to_string(entity), width, height,
+    detail.render = std::make_shared<TextureRender>();
+    if (!detail.render->createTexture("terrain|detail|" + std::to_string(entity), width, height,
             ColorFormat::RGBA, TextureType::TEXTURE_ARRAY, (int)sliceKeys.size(), data.data(), size.data(),
             minFilter, sampled->getMagFilter(), sampled->getWrapU(), sampled->getWrapV())){
         detail.failed = true;
@@ -2891,7 +2908,10 @@ RenderSystem::TerrainDetailArray* RenderSystem::getTerrainDetailArray(Entity ent
 void RenderSystem::destroyTerrainDetailArray(Entity entity){
     auto it = terrainDetailArrays.find(entity);
     if (it != terrainDetailArrays.end()){
-        it->second.render.destroyTexture();
+        // the last terrain using it
+        if (it->second.render.use_count() == 1){
+            it->second.render->destroyTexture();
+        }
         terrainDetailArrays.erase(it);
     }
 }
@@ -2951,9 +2971,9 @@ bool RenderSystem::loadTerrainTextures(Entity entity, TerrainComponent& terrain,
     // The array comes first: how deep it came out is what decides which blend maps may
     // weight anything, and the white fallback is a single slice.
     TerrainDetailArray* detail = getTerrainDetailArray(entity, terrain);
-    const bool arrayCreated = detail && detail->render.isCreated();
+    const bool arrayCreated = detail && detail->render->isCreated();
     slotTex = shaderData.getTextureIndex(TextureShaderType::TERRAINDETAIL);
-    render.addTexture(slotTex, ShaderStageType::FRAGMENT, arrayCreated ? &detail->render : &emptyArrayWhite);
+    render.addTexture(slotTex, ShaderStageType::FRAGMENT, arrayCreated ? detail->render.get() : &emptyArrayWhite);
 
     // The rest bind black, which weights none of their layers
     const int coveredMaps = arrayCreated ? detail->colorSlices / 3 : 0;
