@@ -2666,8 +2666,7 @@ void editor::TerrainEditWindow::drawLayerSurface(TerrainComponent& terrain, int 
     if (layer.pbr){
         terrainPropertyRow("Tint", "Multiplies the layer color", true);
         Vector4 tint = Color::linearTosRGB(layer.colorFactor);
-        if (ImGui::ColorEdit4("##tint", &tint.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel |
-                              ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf)){
+        if (ImGui::ColorEdit4("##tint", &tint.x, UIUtils::colorSwatchFlags)){
             const Vector4 linear = Color::sRGBToLinear(tint);
             edit([&](TerrainSurfaceLayer& target){ target.colorFactor = linear; }, true);
         }
