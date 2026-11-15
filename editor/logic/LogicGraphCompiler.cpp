@@ -701,6 +701,14 @@ namespace {
             return field;
         }
 
+        // a pointer in C++, as Get Framebuffer of a Camera gives
+        bool readsPointer(const GraphNode& node, const NodePin& pin) const {
+            const GraphLink* link = graph.findLinkInto(node.id, pin.name);
+            const GraphNode* from = link && !link->fromPin.empty() ? graph.findNode(link->fromNode) : nullptr;
+            const LogicNodeType* type = from ? LogicNodes::get().find(from->type) : nullptr;
+            return type && type->result == CppResult::POINTER;
+        }
+
         // the variable a link reads, straight or through Get Variable
         const GraphParameter* linkedVariable(const GraphLink& link) const {
             if (link.fromPin.empty())
@@ -740,7 +748,7 @@ namespace {
                         text += (opens && closes) || assigned ? unwrapped(read) : read;
                         found = true;
                         // C++ reaches a member of a pointer with ->
-                        if (cpp && LogicNodes::isPointerClass(pin.type) && close + 1 < code.size() && code[close + 1] == '.') {
+                        if (cpp && close + 1 < code.size() && code[close + 1] == '.' && (LogicNodes::isPointerClass(pin.type) || readsPointer(node, pin))) {
                             text += "->";
                             i++;
                         }
@@ -920,11 +928,18 @@ namespace {
                 for (size_t i = 0; i < type.outputs.size(); i++)
                     if (type.outputs[i].name == pin)
                         index = i;
-                const std::string name = "t" + std::to_string(node.id) + (index ? "_" + std::to_string(index) : std::string());
-                if (cpp)
+                std::string name = "t" + std::to_string(node.id) + (index ? "_" + std::to_string(index) : std::string());
+                if (cpp && type.result == CppResult::REFERENCE) {
+                    // a reference reaches the component, and each statement declares its own
+                    const std::string base = name;
+                    for (int count = 2; !declare(name); count++)
+                        name = base + "_" + std::to_string(count);
+                    line(statementIndent, "auto&& " + name + " = " + unwrapped(text) + ";", node.id);
+                } else if (cpp) {
                     line(statementIndent, (declare(name) ? "auto " : "") + name + " = " + unwrapped(text) + ";", node.id);
-                else
+                } else {
                     line(statementIndent, "local " + name + " = " + unwrapped(text), node.id);
+                }
                 sharedCount++;
                 shared[key] = name;
                 return name;
@@ -1395,18 +1410,33 @@ namespace {
             std::string made = "ScriptBase(scene, entity)";
             for (const std::string& name : objects)
                 made += ", _as" + name + "(scene, entity)";
+            // the updates that run On Start stay registered after it
+            auto starting = [](const Function& item) {
+                const ScriptEvent& event = ScriptEvents::getEvents()[item.event];
+                const std::string name = event.name;
+                return event.source == ScriptEventSource::Engine && (name == "onUpdate" || name == "onFixedUpdate");
+            };
+
             emit(module + "::" + module + "(Scene* scene, Entity entity): " + made + " {", start.node);
-            // On Start waits for the first update, with properties set
-            if (start.node)
+            // On Start waits for the first update or fixed update, with properties set
+            if (start.node) {
+                emit(unit + "REGISTER_EVENT(Engine::onFixedUpdate, _start);", start.node);
                 emit(unit + "REGISTER_EVENT(Engine::onUpdate, _start);", start.node);
+            }
             for (const Function& item : functions)
-                emit(unit + item.registration, item.node);
+                if (!start.node || starting(item))
+                    emit(unit + item.registration, item.node);
             emit("}", start.node);
             emit("");
 
             if (start.node) {
                 emit("void " + module + "::_start() {", start.node);
+                emit(unit + "UNREGISTER_EVENT(Engine::onFixedUpdate, _start);", start.node);
                 emit(unit + "UNREGISTER_EVENT(Engine::onUpdate, _start);", start.node);
+                // the other events wait for it; a Return can end its body
+                for (const Function& item : functions)
+                    if (!starting(item))
+                        emit(unit + item.registration, item.node);
                 for (const Line& body : start.body)
                     emit(body.text, body.node);
                 emit("}", start.node);

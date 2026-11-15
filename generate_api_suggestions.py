@@ -67,7 +67,7 @@ EXCLUDED_HEADER_METHODS = {
 class APISymbol:
     """Represents one symbol in the engine API."""
     __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean',
-                 'mutator', 'cpp_read', 'cpp_write')
+                 'mutator', 'cpp_read', 'cpp_write', 'callee', 'cpp_result')
 
     def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False, accessor=''):
         self.name = name
@@ -84,6 +84,8 @@ class APISymbol:
         self.mutator = ''  # what a property is set through
         self.cpp_read = ''  # the symbol in C++: a member, a call or a value
         self.cpp_write = ''  # the setter of a property, '=' for a data member
+        self.callee = None  # (class, member) a function binding calls
+        self.cpp_result = ''  # what the C++ read gives: '*' a pointer, '&' a reference, '' a value
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -208,6 +210,7 @@ def parse_binding_file(filepath):
                 callee = _cpp_callee(_binding_text(lines, index)[m.end():])
                 if callee:
                     static.cpp_read = f'{callee[0]}::{callee[1]}'
+                    static.callee = callee
                 symbols.append(static)
             continue
 
@@ -226,6 +229,7 @@ def parse_binding_file(filepath):
                 callee = _cpp_callee(_binding_text(lines, index)[m.end():])
                 if callee:
                     method.cpp_read = callee[1]
+                    method.callee = callee
                 symbols.append(method)
             continue
 
@@ -501,6 +505,29 @@ def _cpp_property(symbol, cpp_methods, method_names, bool_members):
         method = _is_cpp_method(setter[0], setter[1], cpp_methods, method_names, bool_members)
         write = scope(setter[0]) + setter[1] if method else '='
     return read, write
+
+
+def _result_kind(ret):
+    """'*' for a pointer return type, '&' for a reference C++ can change through, '' for a value."""
+    if '*' in ret:
+        return '*'
+    if '&' in ret and not re.search(r'\bconst\b', ret):
+        return '&'
+    return ''
+
+
+def _callee_return(symbol, cpp_methods):
+    """C++ return type of the member a function binding calls, '' when unknown."""
+    cls, member = symbol.callee
+    # the header list leaves it out; it gives the component itself
+    if member.startswith('getComponent<'):
+        return 'T&'
+    overloads = cpp_methods.get(cls, {}).get(member) or cpp_methods.get(symbol.parent, {}).get(member, [])
+    if not overloads:
+        return ''
+    if symbol.bound is not None:
+        return _bound_overload(overloads, symbol.bound)[1]
+    return min(overloads, key=lambda o: len(o[0]))[1]
 
 
 def _binding_text(lines, index):
@@ -838,6 +865,7 @@ def generate_header(symbols, output_path):
     lines.append('    const char* key;')
     lines.append('    const char* read;   // a member, a call or a value')
     lines.append('    const char* write;  // a setter, or = for a data member')
+    lines.append('    const char* result; // * for a pointer, & for a reference it can change')
     lines.append('};')
     lines.append('')
     lines.append('inline const std::vector<EngineCppSymbol>& getEngineCppSymbols() {')
@@ -852,7 +880,7 @@ def generate_header(symbols, output_path):
         if key in cpp_seen:
             continue
         cpp_seen.add(key)
-        lines.append(f'        {{"{escape(key)}", "{escape(s.cpp_read)}", "{escape(s.cpp_write)}"}},')
+        lines.append(f'        {{"{escape(key)}", "{escape(s.cpp_read)}", "{escape(s.cpp_write)}", "{s.cpp_result}"}},')
     lines.append('    };')
     lines.append('    return symbols;')
     lines.append('}')
@@ -976,6 +1004,13 @@ def main():
     for s in all_symbols:
         if s.kind in ('Property', 'Constant') and s.accessor:
             s.cpp_read, s.cpp_write = _cpp_property(s, cpp_methods, method_names, bool_members)
+
+    # a logic graph reaches a pointer's members with -> and keeps a reference as one
+    for s in all_symbols:
+        if s.kind in ('Method', 'StaticMethod') and s.callee:
+            s.cpp_result = _result_kind(_callee_return(s, cpp_methods))
+        elif s.kind in ('Property', 'Constant') and s.cpp_read:
+            s.cpp_result = _result_kind(_getter_return_type(s.accessor, cpp_methods))
 
     # Tag properties whose getter gives Lua a copy (obj.position.y = 1 changes nothing)
     for s in all_symbols:

@@ -26,12 +26,20 @@ namespace doriax::editor {
         RETURN
     };
 
+    // what the C++ form of a node gives
+    enum class CppResult {
+        VALUE,
+        REFERENCE,   // one the graph can change through, as a component
+        POINTER      // its members are reached with ->
+    };
+
     // pin types: number, bool, string, any and the engine's classes
     struct LogicNodeType : NodeType {
         // Lua per output, or a statement; {name} is an input or setting
         std::vector<std::string> code;
         // in C++; empty when Lua only, @ looks the result up
         std::vector<std::string> cpp;
+        CppResult result = CppResult::VALUE;
         LogicFlow flow = LogicFlow::NONE;
         bool atomic = false;         // a call or a name, read without parentheses
         bool textInputs = false;     // an any input left unset reads as empty text
@@ -69,6 +77,8 @@ namespace doriax::editor {
         static bool isCppKeyword(const std::string& word);
         // a bound symbol in C++, by call/, prop/ or enum/
         static const std::string* findCppSymbol(const std::string& key, bool write = false);
+        // what that symbol gives when read
+        static CppResult getCppResult(const std::string& key);
         // classes C++ holds by pointer, as Scene
         static bool isPointerClass(const std::string& type);
         // the header of an engine class or enum, null for another type

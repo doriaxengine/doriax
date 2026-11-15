@@ -155,6 +155,27 @@ namespace {
         return false;
     }
 
+    struct CppSymbol {
+        std::string read;
+        std::string write;
+        editor::CppResult result = editor::CppResult::VALUE;
+    };
+
+    const CppSymbol* cppSymbol(const std::string& key) {
+        static const std::map<std::string, CppSymbol> symbols = [] {
+            std::map<std::string, CppSymbol> list;
+            for (const editor::EngineCppSymbol& symbol : editor::getEngineCppSymbols()) {
+                const std::string result = symbol.result;
+                const editor::CppResult kind = result == "*" ? editor::CppResult::POINTER
+                                             : (result == "&" ? editor::CppResult::REFERENCE : editor::CppResult::VALUE);
+                list[symbol.key] = {symbol.read, symbol.write, kind};
+            }
+            return list;
+        }();
+        auto it = symbols.find(key);
+        return it != symbols.end() ? &it->second : nullptr;
+    }
+
 }
 
 std::string editor::LogicNodes::getTitle(const std::string& name) {
@@ -195,17 +216,16 @@ bool editor::LogicNodes::isCppKeyword(const std::string& word) {
 }
 
 const std::string* editor::LogicNodes::findCppSymbol(const std::string& key, bool write) {
-    static const std::map<std::string, std::pair<std::string, std::string>> symbols = [] {
-        std::map<std::string, std::pair<std::string, std::string>> list;
-        for (const EngineCppSymbol& symbol : getEngineCppSymbols())
-            list[symbol.key] = {symbol.read, symbol.write};
-        return list;
-    }();
-    auto it = symbols.find(key);
-    if (it == symbols.end())
+    const CppSymbol* symbol = cppSymbol(key);
+    if (!symbol)
         return nullptr;
-    const std::string& text = write ? it->second.second : it->second.first;
+    const std::string& text = write ? symbol->write : symbol->read;
     return text.empty() ? nullptr : &text;
+}
+
+editor::CppResult editor::LogicNodes::getCppResult(const std::string& key) {
+    const CppSymbol* symbol = cppSymbol(key);
+    return symbol ? symbol->result : CppResult::VALUE;
 }
 
 const std::string* editor::LogicNodes::findHeader(const std::string& type) {
@@ -425,14 +445,17 @@ void editor::LogicNodes::addEngineApi() {
                 inputs.push_back(in("self", parent.c_str(), parent));
             // a bound C++ member, or a lambda that only passes on
             std::string cppCall;
+            CppResult cppResult = getCppResult("call/" + parent + "." + name);
             if (const std::string* callee = findCppSymbol("call/" + parent + "." + name))
                 cppCall = (method ? "{self}." : std::string()) + *callee + "(";
             else if (!method && parent == "System")
                 cppCall = "System::instance()." + name + "(";
             else if (!method && parent == "Log")
                 cppCall = "Log::" + name + "(\"%s\", nodes::text(";
-            else if (method && parent == "Scene" && name.size() > 9 && name.compare(name.size() - 6, 6, "System") == 0)
+            else if (method && parent == "Scene" && name.size() > 9 && name.compare(name.size() - 6, 6, "System") == 0) {
                 cppCall = "{self}.getSystem<" + name.substr(3) + ">().get(";
+                cppResult = CppResult::POINTER;
+            }
 
             std::string list = detail.substr(open + 1, close - open - 1);
             int count = 0;
@@ -476,6 +499,7 @@ void editor::LogicNodes::addEngineApi() {
             if (!cppCall.empty()) {
                 const std::string arguments = call.substr(call.find('(') + 1);
                 type.cpp = {cppCall + (parent == "Log" && !method ? arguments + ".c_str())" : arguments)};
+                type.result = cppResult;
             }
         } else if (kind == "Property") {
             // an event is registered for, through its event node
@@ -520,8 +544,10 @@ void editor::LogicNodes::addEngineApi() {
             get.atomic = true;
             const std::string* read = findCppSymbol("prop/" + parent + "." + name);
             const std::string target = shared ? std::string() : std::string("{self}.");
-            if (read)
+            if (read) {
                 get.cpp = {target + *read};
+                get.result = getCppResult("prop/" + parent + "." + name);
+            }
             // one bound with a getter alone is read, not set
             static const std::unordered_set<std::string> readOnly = getEngineReadOnlyProperties();
             if (!readOnly.count(parent + "." + name)) {
@@ -614,6 +640,7 @@ editor::LogicNodes::LogicNodes() {
         entity.atomic = true;
         LogicNodeType& scene = add("self/scene", "Self Scene", "Self", "The scene of the script's entity.", {}, {out("value", "", "Scene")}, {"self.scene"});
         scene.atomic = true;
+        scene.result = CppResult::POINTER;
         LogicNodeType& object = add("self/object", "Self", "Self", "The script's entity as an engine class, as Object, Mesh or Sprite.",
             {}, {out("value", "", "Object")}, {"self._{class}"});
         object.settings = {setting("class", "Class", "text", "Object")};
