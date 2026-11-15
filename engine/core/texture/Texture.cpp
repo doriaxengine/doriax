@@ -3,6 +3,8 @@
 
 #include "Texture.h"
 
+#include "Engine.h"
+#include "manager/SceneManager.h"
 #include "render/SystemRender.h"
 
 using namespace doriax;
@@ -513,6 +515,13 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
         return &framebuffer->getRender().getColorTexture();
     }
 
+    // an empty render means try again, and is kept between tries
+    std::shared_ptr<TextureRender> waiting = (render && !render->isCreated()) ? render : nullptr;
+    auto wait = [&](){
+        render = waiting ? waiting : std::make_shared<TextureRender>();
+        return render.get();
+    };
+
     // Fast path: GPU texture already created and cached.
     render = TexturePool::get(getRenderId());
     if (render){
@@ -521,8 +530,7 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
 
     TextureLoadResult texResult = load();
     if (texResult.state == ResourceLoadState::Loading){
-        render = std::make_shared<TextureRender>();
-        return render.get();
+        return wait();
     }
 
     if (texResult.state != ResourceLoadState::Finished || !hasTexturePixels(data, numFaces)){
@@ -530,6 +538,10 @@ TextureRender* Texture::getRender(TextureRender* fallBackTexture){
     }
 
     if (!id.empty()){
+        // a few per frame, unless a loading scene covers the wait
+        if (Engine::isAsyncLoading() && !SceneManager::isLoading() && !TexturePool::canUpload()){
+            return wait();
+        }
         render = TexturePool::get(getRenderId(), type, data, minFilter, magFilter, wrapU, wrapV);
     }
 

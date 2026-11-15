@@ -35,6 +35,9 @@ namespace doriax{
         static void clear();
         // destroys only entries no one else references (safe while other scenes are alive)
         static void clearUnused();
+        // streamed textures share a slice of each frame, the rest wait
+        static void beginFrame();
+        static bool canUpload();
 
     };
 }

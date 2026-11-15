@@ -1142,6 +1142,7 @@ void Engine::runFrame(bool draw){
 
     // async uploads of the last frame, while the scenes that queued them still exist
     SystemRender::executeQueue();
+    TexturePool::beginFrame();
 
     frameRunning = true;
 

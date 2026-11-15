@@ -6,9 +6,18 @@
 #include "Engine.h"
 #include "Log.h"
 
+#include <algorithm>
 #include <vector>
 
 using namespace doriax;
+
+namespace{
+    // a frame gives streamed textures this share of its time
+    constexpr double uploadShare = 0.25;
+    // and never less than this, in seconds
+    constexpr double uploadSlice = 0.004;
+    double uploadTime = 0.0;
+}
 
 textures_t& TexturePool::getMap(){
     //To prevent similar problem of static init fiasco but on deinitialization
@@ -86,7 +95,12 @@ std::shared_ptr<TextureRender> TexturePool::get(const std::string& id, TextureTy
 		shared->destroyTexture();
 	}
 
-	if (!shared->createTexture(id, data->at(0).getWidth(), data->at(0).getHeight(), data->at(0).getColorFormat(), type, numFaces, data_array, size_array, minFilter, magFilter, wrapU, wrapV)){
+	const double start = Engine::getSystemTime();
+	const bool created = shared->createTexture(id, data->at(0).getWidth(), data->at(0).getHeight(), data->at(0).getColorFormat(), type, numFaces, data_array, size_array, minFilter, magFilter, wrapU, wrapV);
+	if (!Engine::isAsyncThread()){
+		uploadTime += Engine::getSystemTime() - start;
+	}
+	if (!created){
 		shared->destroyTexture();
 		if (it != map.end()){
 			map.erase(it);
@@ -100,6 +114,15 @@ std::shared_ptr<TextureRender> TexturePool::get(const std::string& id, TextureTy
 	getInvalidated().erase(id);
 
 	return shared;
+}
+
+void TexturePool::beginFrame(){
+	uploadTime = 0.0;
+}
+
+bool TexturePool::canUpload(){
+	// a worker thread only queues its upload
+	return Engine::isAsyncThread() || uploadTime < std::max(uploadSlice, uploadShare * Engine::getDeltatime());
 }
 
 void TexturePool::add(const std::string& id, std::shared_ptr<TextureRender> render){
