@@ -874,6 +874,8 @@ std::string editor::Structure::getObjectIcon(Signature signature, Scene* scene){
         return ICON_FA_FILE_AUDIO;
     }else if (signature.test(scene->getComponentId<Body2DComponent>()) || signature.test(scene->getComponentId<Body3DComponent>())){
         return ICON_FA_WEIGHT_HANGING;
+    }else if (signature.test(scene->getComponentId<Character3DComponent>())){
+        return ICON_FA_PERSON_WALKING;
     }else if (signature.test(scene->getComponentId<Transform>())){
         return ICON_FA_SITEMAP;
     }

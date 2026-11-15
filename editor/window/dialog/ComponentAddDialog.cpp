@@ -63,7 +63,8 @@ void ComponentAddDialog::initializeCategories() {
             {ComponentType::Body2DComponent, ICON_FA_CIRCLE, "2D Physics Body", "2D rigid body", ImVec4(0.8f, 0.3f, 0.3f, 1.0f)},
             {ComponentType::Body3DComponent, ICON_FA_CUBE, "3D Physics Body", "3D rigid body", ImVec4(0.9f, 0.4f, 0.4f, 1.0f)},
             {ComponentType::Joint2DComponent, ICON_FA_LINK, "2D Joint", "2D physics joint", ImVec4(0.7f, 0.5f, 0.3f, 1.0f)},
-            {ComponentType::Joint3DComponent, ICON_FA_LINK, "3D Joint", "3D physics joint", ImVec4(0.8f, 0.6f, 0.4f, 1.0f)}
+            {ComponentType::Joint3DComponent, ICON_FA_LINK, "3D Joint", "3D physics joint", ImVec4(0.8f, 0.6f, 0.4f, 1.0f)},
+            {ComponentType::Character3DComponent, ICON_FA_PERSON_WALKING, "3D Character", "Walks on ground, ramps and steps", ImVec4(0.9f, 0.55f, 0.35f, 1.0f)}
         }},
         {"Animation", ICON_FA_PLAY, ImVec4(0.9f, 0.6f, 0.2f, 1.0f), {
             {ComponentType::AnimationComponent, ICON_FA_FILM, "Animation", "Animation player", ImVec4(0.9f, 0.6f, 0.2f, 1.0f)},

@@ -11724,6 +11724,56 @@ void editor::Properties::drawJoint2DComponent(ComponentType cpType, SceneProject
     endTable();
 }
 
+void editor::Properties::drawCharacter3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    RowSettings settingsValue;
+    settingsValue.stepSize = 0.01f;
+
+    RowSettings settingsSlope;
+    settingsSlope.stepSize = 1.0f;
+    settingsSlope.format = "%.1f";
+    settingsSlope.help = "Steepest ramp it walks up, it slides down steeper ones.";
+
+    RowSettings settingsStepUp = settingsValue;
+    settingsStepUp.help = "Highest step it climbs while walking.";
+
+    RowSettings settingsStepDown = settingsValue;
+    settingsStepDown.help = "How far down it keeps to the ground on ramps and steps.";
+
+    RowSettings settingsAirControl;
+    settingsAirControl.help = "1 steers in the air as on the ground, 0 keeps its momentum.";
+
+    RowSettings settingsMass;
+    settingsMass.stepSize = 1.0f;
+
+    RowSettings settingsStrength = settingsMass;
+    settingsStrength.help = "Force it pushes dynamic bodies with, in N.";
+
+    RowSettings settingsPadding;
+    settingsPadding.stepSize = 0.001f;
+    settingsPadding.format = "%.3f";
+
+    RowSettings settingsInnerBody;
+    settingsInnerBody.help = "A body in the capsule, so rays and sensors find it.";
+
+    beginTable(cpType, getLabelSize("Gravity Factor"));
+    propertyRow(RowPropertyType::FloatPositive, cpType, "height", "Height", sceneProject, entities, settingsValue);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "radius", "Radius", sceneProject, entities, settingsValue);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "maxSlopeAngle", "Max Slope", sceneProject, entities, settingsSlope);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "stepUp", "Step Up", sceneProject, entities, settingsStepUp);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "stepDown", "Step Down", sceneProject, entities, settingsStepDown);
+    propertyRow(RowPropertyType::Float, cpType, "gravityFactor", "Gravity Factor", sceneProject, entities, settingsValue);
+    propertyRow(RowPropertyType::Float_0_1, cpType, "airControl", "Air Control", sceneProject, entities, settingsAirControl);
+    endTable();
+
+    ImGui::SeparatorText("Contacts");
+    beginTable(cpType, getLabelSize("Max Strength"), "character3d_contacts");
+    propertyRow(RowPropertyType::FloatPositive, cpType, "mass", "Mass", sceneProject, entities, settingsMass);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "maxStrength", "Max Strength", sceneProject, entities, settingsStrength);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "padding", "Padding", sceneProject, entities, settingsPadding);
+    propertyRow(RowPropertyType::Bool, cpType, "innerBody", "Inner Body", sceneProject, entities, settingsInnerBody);
+    endTable();
+}
+
 void editor::Properties::drawJoint3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     Joint3DComponent& joint = sceneProject->scene->getComponent<Joint3DComponent>(entities[0]);
 
@@ -14132,6 +14182,8 @@ void editor::Properties::show(){
                     drawJoint2DComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::Joint3DComponent){
                     drawJoint3DComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::Character3DComponent){
+                    drawCharacter3DComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::ActionComponent){
                     drawActionComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::TimedActionComponent){

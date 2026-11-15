@@ -378,6 +378,7 @@ namespace doriax::editor{
         void drawBody3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawJoint2DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawJoint3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawCharacter3DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawTimedActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawPositionActionComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);

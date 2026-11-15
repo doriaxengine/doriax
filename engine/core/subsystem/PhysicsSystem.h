@@ -23,9 +23,11 @@
 #include "object/physics/Body3D.h"
 #include "object/physics/CollideShapeResult3D.h"
 #include "object/physics/Contact3D.h"
+#include "component/Character3DComponent.h"
 #include "Jolt/Jolt.h"
 #include "Jolt/Core/JobSystemThreadPool.h"
 #include "Jolt/Physics/Body/MotionQuality.h"
+#include "Jolt/Physics/Character/CharacterVirtual.h"
 #include "Jolt/Physics/PhysicsSystem.h"
 #include "Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceMask.h"
 #include "Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterMask.h"
@@ -89,6 +91,9 @@ namespace doriax{
 		// destroyed first, releasing while the world they belong to is still alive.
 		std::vector<JPH::BodyID> pendingBodyDestroy3D;
 		std::vector<JPH::Ref<JPH::TwoBodyConstraint>> pendingJointDestroy3D;
+		std::vector<JPH::CharacterVirtual*> pendingCharacterDestroy3D;
+
+		JPH::CharacterVsCharacterCollisionSimple characterCollision3D;
 
 		JPH::BroadPhaseLayerInterfaceMask* broad_phase_layer_interface;
 		JPH::ObjectVsBroadPhaseLayerFilterMask* object_vs_broadphase_layer_filter;
@@ -115,6 +120,10 @@ namespace doriax{
 		bool createShape3DForIndex(Entity entity, Body3DComponent& body, size_t index);
 
 		bool createGenericJoltBody(Entity entity, Body3DComponent& body, const JPH::ShapeRefC shape);
+
+		JPH::ShapeRefC createCharacterShape3D(Entity entity, float height, float radius, float size);
+		void refreshCharacter3DContacts(JPH::CharacterVirtual* character);
+		void updateCharacter3D(Entity entity, Character3DComponent& character, float stepTime);
 
 		static Vector3 absScale(const Vector3& scale);
 		static float maxScaleXZ(const Vector3& scale);
@@ -224,6 +233,13 @@ namespace doriax{
 		bool loadBody3D(Entity entity);
 		void loadAndPlaceBody3D(Entity entity);
 		void destroyBody3D(Body3DComponent& body);
+
+		bool loadCharacter3D(Entity entity);
+		void destroyCharacter3D(Character3DComponent& character);
+		// teleports and finds its ground again at once
+		void setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position);
+		// false when the new capsule does not fit where it stands
+		bool setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius);
 #endif
 
 		// Draws the body in its entity, alpha of the way from its pose before the last step.
@@ -233,6 +249,7 @@ namespace doriax{
 #endif
 #ifdef DORIAX_PHYSICS_3D
 		void updateTransformFromBody3D(Entity entity, Body3DComponent& body, float alpha);
+		void updateTransformFromCharacter3D(Entity entity, Character3DComponent& character, float alpha);
 #endif
 
 		// Geometry of the entity's meshes, or of its model's mesh nodes when it has none.

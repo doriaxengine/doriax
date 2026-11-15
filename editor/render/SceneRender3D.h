@@ -64,6 +64,7 @@ namespace doriax::editor{
         std::map<Entity, Lines*> trackLines;
         std::map<Entity, Lines*> reflectionProbeLines;
         std::map<Entity, Lines*> waterExclusionLines;
+        std::map<Entity, Lines*> characterLines;
 
         ViewportGizmo viewgizmo;
 
@@ -100,6 +101,8 @@ namespace doriax::editor{
         void createOrUpdateReflectionProbeLines(Entity entity, const Transform& transform, const ReflectionProbeComponent& probe, bool visible);
         bool instanciateWaterExclusionLines(Entity entity);
         void createOrUpdateWaterExclusionLines(Entity entity, const Transform& transform, const WaterExclusionComponent& exclusion, bool visible);
+        bool instanciateCharacterLines(Entity entity);
+        void createOrUpdateCharacterLines(Entity entity, const Transform& transform, const Character3DComponent& character, bool visible, bool highlighted);
         void createCameraFrustum(Entity entity, const Transform& transform, const CameraComponent& cameraComponent, bool fixedSizeFrustum, bool isMainCamera);
         void createDirectionalLightArrow(Entity entity, const Transform& transform, const LightComponent& light, bool isSelected);
         void createPointLightSphere(Entity entity, const Transform& transform, const LightComponent& light, bool isSelected);

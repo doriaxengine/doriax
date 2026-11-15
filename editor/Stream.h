@@ -391,6 +391,9 @@ namespace doriax::editor {
         static YAML::Node encodeJoint3DComponent(const Joint3DComponent& joint);
         static Joint3DComponent decodeJoint3DComponent(const YAML::Node& node, const Joint3DComponent* oldJoint = nullptr);
 
+        static YAML::Node encodeCharacter3DComponent(const Character3DComponent& character);
+        static Character3DComponent decodeCharacter3DComponent(const YAML::Node& node, const Character3DComponent* oldCharacter = nullptr);
+
         static std::string actionStateToString(ActionState state);
         static ActionState stringToActionState(const std::string& str);
 

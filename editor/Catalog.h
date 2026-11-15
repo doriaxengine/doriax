@@ -65,6 +65,7 @@ namespace doriax::editor{
         UpdateFlags_Body2D_Shapes       = (uint64_t)1 << 40,
         // applies a 3D joint's motor without rebuilding the joint
         UpdateFlags_Joint3D_Motor       = (uint64_t)1 << 41,
+        UpdateFlags_Character3D         = (uint64_t)1 << 42,
         // handlers that touch the whole scene, must be masked out when applying all flags
         UpdateFlags_SceneWide = UpdateFlags_Scene_Mesh_Reload | UpdateFlags_Reflection_Probe_Recapture_All
     };
@@ -127,7 +128,8 @@ namespace doriax::editor{
         ReflectionProbeComponent,
         WaterComponent,
         WaterExclusionComponent,
-        SkinComponent
+        SkinComponent,
+        Character3DComponent
     };
 
     enum class PropertyType{

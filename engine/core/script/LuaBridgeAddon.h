@@ -137,6 +137,7 @@ namespace luabridge
     template<> struct Stack<Body3DMotionQuality> : EnumWrapper<Body3DMotionQuality>{};
     template<> struct Stack<Shape3DBuildQuality> : EnumWrapper<Shape3DBuildQuality>{};
     template<> struct Stack<Joint3DMotorState> : EnumWrapper<Joint3DMotorState>{};
+    template<> struct Stack<Character3DGroundState> : EnumWrapper<Character3DGroundState>{};
 
     template <>
     struct Stack <Touch>

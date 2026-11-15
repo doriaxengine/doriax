@@ -68,6 +68,7 @@
 #include "component/Joint2DComponent.h"
 #include "component/Body3DComponent.h"
 #include "component/Joint3DComponent.h"
+#include "component/Character3DComponent.h"
 
 using namespace doriax;
 
@@ -1422,6 +1423,23 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("autoAnchors", &Joint3DComponent::autoAnchors, &Joint3DComponent::autoAnchors)
         .addProperty("needUpdateJoint", &Joint3DComponent::needUpdateJoint, &Joint3DComponent::needUpdateJoint)
         .addProperty("needUpdateMotor", &Joint3DComponent::needUpdateMotor, &Joint3DComponent::needUpdateMotor)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Character3DComponent>("Character3DComponent")
+        .addProperty("height", &Character3DComponent::height, &Character3DComponent::height)
+        .addProperty("radius", &Character3DComponent::radius, &Character3DComponent::radius)
+        .addProperty("maxSlopeAngle", &Character3DComponent::maxSlopeAngle, &Character3DComponent::maxSlopeAngle)
+        .addProperty("stepUp", &Character3DComponent::stepUp, &Character3DComponent::stepUp)
+        .addProperty("stepDown", &Character3DComponent::stepDown, &Character3DComponent::stepDown)
+        .addProperty("mass", &Character3DComponent::mass, &Character3DComponent::mass)
+        .addProperty("maxStrength", &Character3DComponent::maxStrength, &Character3DComponent::maxStrength)
+        .addProperty("padding", &Character3DComponent::padding, &Character3DComponent::padding)
+        .addProperty("gravityFactor", &Character3DComponent::gravityFactor, &Character3DComponent::gravityFactor)
+        .addProperty("airControl", &Character3DComponent::airControl, &Character3DComponent::airControl)
+        .addProperty("innerBody", &Character3DComponent::innerBody, &Character3DComponent::innerBody)
+        .addProperty("moveVelocity", &Character3DComponent::moveVelocity, &Character3DComponent::moveVelocity)
+        .addProperty("needReloadCharacter", &Character3DComponent::needReloadCharacter, &Character3DComponent::needReloadCharacter)
         .endClass();
 #endif
 

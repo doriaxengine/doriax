@@ -2027,6 +2027,27 @@ std::string editor::Factory::createJoint3DComponent(int indentSpaces, EntityRegi
     return code.str();
 }
 
+std::string editor::Factory::createCharacter3DComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting) {
+    if (!scene->findComponent<Character3DComponent>(entity)) return "";
+    Character3DComponent& character = scene->getComponent<Character3DComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "Character3DComponent character3d;\n";
+    code << ind << "character3d.height = " << formatFloat(character.height) << ";\n";
+    code << ind << "character3d.radius = " << formatFloat(character.radius) << ";\n";
+    code << ind << "character3d.maxSlopeAngle = " << formatFloat(character.maxSlopeAngle) << ";\n";
+    code << ind << "character3d.stepUp = " << formatFloat(character.stepUp) << ";\n";
+    code << ind << "character3d.stepDown = " << formatFloat(character.stepDown) << ";\n";
+    code << ind << "character3d.mass = " << formatFloat(character.mass) << ";\n";
+    code << ind << "character3d.maxStrength = " << formatFloat(character.maxStrength) << ";\n";
+    code << ind << "character3d.padding = " << formatFloat(character.padding) << ";\n";
+    code << ind << "character3d.gravityFactor = " << formatFloat(character.gravityFactor) << ";\n";
+    code << ind << "character3d.airControl = " << formatFloat(character.airControl) << ";\n";
+    code << ind << "character3d.innerBody = " << formatBool(character.innerBody) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "Character3DComponent", "character3d", assignExisting);
+    return code.str();
+}
+
 std::string editor::Factory::createActionComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<ActionComponent>(entity)) return "";
     ActionComponent& action = scene->getComponent<ActionComponent>(entity);
@@ -2401,6 +2422,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::Body3DComponent: return guardPhysicsCode(createBody3DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames), "DORIAX_PHYSICS_3D");
         case ComponentType::Joint2DComponent: return guardPhysicsCode(createJoint2DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames), "DORIAX_PHYSICS_2D");
         case ComponentType::Joint3DComponent: return guardPhysicsCode(createJoint3DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames), "DORIAX_PHYSICS_3D");
+        case ComponentType::Character3DComponent: return guardPhysicsCode(createCharacter3DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting), "DORIAX_PHYSICS_3D");
         case ComponentType::ActionComponent: return createActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::TimedActionComponent: return createTimedActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::PositionActionComponent: return createPositionActionComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

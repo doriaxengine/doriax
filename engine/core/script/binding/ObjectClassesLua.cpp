@@ -48,6 +48,7 @@
 #endif
 #ifdef DORIAX_PHYSICS_3D
 #include "Body3D.h"
+#include "Character3D.h"
 #include "Joint3D.h"
 #include "Contact3D.h"
 #include "CollideShapeResult3D.h"
@@ -134,6 +135,14 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addVariable("VELOCITY", Joint3DMotorState::VELOCITY)
         .addVariable("POSITION", Joint3DMotorState::POSITION)
         .addVariable("POSITION_AND_VELOCITY", Joint3DMotorState::POSITION_AND_VELOCITY)
+        .endNamespace();
+
+    luabridge::getGlobalNamespace(L)
+        .beginNamespace("Character3DGroundState")
+        .addVariable("ON_GROUND", Character3DGroundState::ON_GROUND)
+        .addVariable("ON_STEEP_GROUND", Character3DGroundState::ON_STEEP_GROUND)
+        .addVariable("NOT_SUPPORTED", Character3DGroundState::NOT_SUPPORTED)
+        .addVariable("IN_AIR", Character3DGroundState::IN_AIR)
         .endNamespace();
 #endif
 
@@ -1586,6 +1595,36 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("submergedVolume", &SubmergedVolume3D::submergedVolume)
         .addProperty("fraction", &SubmergedVolume3D::fraction)
         .addProperty("centerOfBuoyancy", &SubmergedVolume3D::centerOfBuoyancy)
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .deriveClass<Character3D, EntityHandle>("Character3D")
+        .addConstructor <void (Scene*, Entity)> ()
+        .addFunction("getAttachedObject", &Character3D::getAttachedObject)
+        .addFunction("load", &Character3D::load)
+        .addProperty("moveVelocity", &Character3D::getMoveVelocity, &Character3D::setMoveVelocity)
+        .addFunction("jump", &Character3D::jump)
+        .addProperty("linearVelocity", &Character3D::getLinearVelocity, &Character3D::setLinearVelocity)
+        .addProperty("position", &Character3D::getPosition, &Character3D::setPosition)
+        .addFunction("getGroundState", &Character3D::getGroundState)
+        .addFunction("isOnGround", &Character3D::isOnGround)
+        .addFunction("isSupported", &Character3D::isSupported)
+        .addFunction("getGroundPosition", &Character3D::getGroundPosition)
+        .addFunction("getGroundNormal", &Character3D::getGroundNormal)
+        .addFunction("getGroundVelocity", &Character3D::getGroundVelocity)
+        .addFunction("getGroundEntity", &Character3D::getGroundEntity)
+        .addFunction("isSlopeTooSteep", &Character3D::isSlopeTooSteep)
+        .addFunction("setShape", &Character3D::setShape)
+        .addFunction("getHeight", &Character3D::getHeight)
+        .addFunction("getRadius", &Character3D::getRadius)
+        .addProperty("maxSlopeAngle", &Character3D::getMaxSlopeAngle, &Character3D::setMaxSlopeAngle)
+        .addProperty("stepUp", &Character3D::getStepUp, &Character3D::setStepUp)
+        .addProperty("stepDown", &Character3D::getStepDown, &Character3D::setStepDown)
+        .addProperty("mass", &Character3D::getMass, &Character3D::setMass)
+        .addProperty("maxStrength", &Character3D::getMaxStrength, &Character3D::setMaxStrength)
+        .addProperty("gravityFactor", &Character3D::getGravityFactor, &Character3D::setGravityFactor)
+        .addProperty("airControl", &Character3D::getAirControl, &Character3D::setAirControl)
+        .addFunction("getCharacter3DComponent", [] (Character3D* self) -> Character3DComponent& { return self->getComponent<Character3DComponent>(); })
         .endClass();
 
     luabridge::getGlobalNamespace(L)

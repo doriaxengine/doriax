@@ -1681,7 +1681,7 @@ bool editor::Exporter::loadAndSaveAllScenes() {
                     }
                 }
                 if (!names.empty()) {
-                    Out::warning("%s Physics is off, so its bodies and joints are left out of the export. Scenes using them: %s", backend, names.c_str());
+                    Out::warning("%s Physics is off, so its bodies, joints and characters are left out of the export. Scenes using them: %s", backend, names.c_str());
                 }
             };
             if (!project->isPhysics2DEnabled()) {
@@ -1691,7 +1691,8 @@ bool editor::Exporter::loadAndSaveAllScenes() {
             }
             if (!project->isPhysics3DEnabled()) {
                 warnDroppedPhysics("3D", [](Scene* scene) {
-                    return scene->getComponentArray<Body3DComponent>()->size() > 0 || scene->getComponentArray<Joint3DComponent>()->size() > 0;
+                    return scene->getComponentArray<Body3DComponent>()->size() > 0 || scene->getComponentArray<Joint3DComponent>()->size() > 0
+                        || scene->getComponentArray<Character3DComponent>()->size() > 0;
                 });
             }
 
@@ -3162,7 +3163,7 @@ bool editor::Exporter::writeAppleProjectSettings() {
     if (!project->isPhysics3DEnabled()) {
         removeProjectLinesContaining("DORIAX_PHYSICS_3D,");
         excludedPhysicsSources.insert(excludedPhysicsSources.end(), {
-            "Body3D.cpp", "CollideShapeResult3D.cpp", "Contact3D.cpp", "Joint3D.cpp"
+            "Body3D.cpp", "Character3D.cpp", "CollideShapeResult3D.cpp", "Contact3D.cpp", "Joint3D.cpp"
         });
         if (!unlinkBackend("joltphysics")) return false;
     }

@@ -985,6 +985,7 @@ endif()
 if(DORIAX_PHYSICS_3D)
     list(APPEND DORIAX_SRCS
         core/object/physics/Body3D.cpp
+        core/object/physics/Character3D.cpp
         core/object/physics/CollideShapeResult3D.cpp
         core/object/physics/Contact3D.cpp
         core/object/physics/Joint3D.cpp

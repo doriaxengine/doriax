@@ -58,6 +58,7 @@ EntityRegistry::EntityRegistry() {
 #ifdef DORIAX_PHYSICS_3D
     registerComponent<Body3DComponent>();
     registerComponent<Joint3DComponent>();
+    registerComponent<Character3DComponent>();
 #endif
     registerComponent<InstancedMeshComponent>();
     registerComponent<BundleComponent>();

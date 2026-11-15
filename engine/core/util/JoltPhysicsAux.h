@@ -123,6 +123,10 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+			// a character's inner body is not a Body3D
+			if (!scene->findComponent<Body3DComponent>(inBodyUserData)){
+				return;
+			}
 			ActivationScope activation(physicsSystem);
 			physicsSystem->onBodyActivated3D(Body3D(scene, inBodyUserData));
 		}
@@ -133,6 +137,9 @@ namespace doriax{
 			}
 
 			std::lock_guard<std::recursive_mutex> lock(joltCallbackMutex);
+			if (!scene->findComponent<Body3DComponent>(inBodyUserData)){
+				return;
+			}
 			ActivationScope activation(physicsSystem);
 			physicsSystem->onBodyDeactivated3D(Body3D(scene, inBodyUserData));
 		}

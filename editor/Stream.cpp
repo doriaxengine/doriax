@@ -4071,6 +4071,10 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         compNode[Catalog::getComponentName(ComponentType::Joint3DComponent, true)] = encodeJoint3DComponent(joint);
     }
 
+    if (signature.test(registry->getComponentId<Character3DComponent>())) {
+        compNode[Catalog::getComponentName(ComponentType::Character3DComponent, true)] = encodeCharacter3DComponent(registry->getComponent<Character3DComponent>(entity));
+    }
+
     if (signature.test(registry->getComponentId<ActionComponent>())) {
         ActionComponent action = registry->getComponent<ActionComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::ActionComponent, true)] = encodeActionComponent(action);
@@ -4618,6 +4622,19 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         }else{
             uint64_t flags = Catalog::getChangedUpdateFlags(ComponentType::Joint3DComponent, existing, &joint);
             registry->getComponent<Joint3DComponent>(entity) = joint;
+            Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::Character3DComponent, true);
+    if (compNode[compName]) {
+        Character3DComponent* existing = registry->findComponent<Character3DComponent>(entity);
+        Character3DComponent character = decodeCharacter3DComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<Character3DComponent>())){
+            registry->addComponent<Character3DComponent>(entity, character);
+        }else{
+            uint64_t flags = Catalog::getChangedUpdateFlags(ComponentType::Character3DComponent, existing, &character);
+            registry->getComponent<Character3DComponent>(entity) = character;
             Catalog::updateEntity(registry, entity, flags);
         }
     }
@@ -7376,6 +7393,57 @@ Joint3DComponent editor::Stream::decodeJoint3DComponent(const YAML::Node& node, 
     }
 
     return joint;
+}
+
+// ==============================
+// Character3DComponent encode/decode
+// ==============================
+
+YAML::Node editor::Stream::encodeCharacter3DComponent(const Character3DComponent& character) {
+    YAML::Node node;
+
+    node["height"] = character.height;
+    node["radius"] = character.radius;
+    node["maxSlopeAngle"] = character.maxSlopeAngle;
+    node["stepUp"] = character.stepUp;
+    node["stepDown"] = character.stepDown;
+    node["mass"] = character.mass;
+    node["maxStrength"] = character.maxStrength;
+    node["padding"] = character.padding;
+    node["gravityFactor"] = character.gravityFactor;
+    node["airControl"] = character.airControl;
+    node["innerBody"] = character.innerBody;
+
+    return node;
+}
+
+Character3DComponent editor::Stream::decodeCharacter3DComponent(const YAML::Node& node, const Character3DComponent* oldCharacter) {
+    Character3DComponent character;
+
+    if (oldCharacter) {
+        character = *oldCharacter;
+    }
+
+    if (node["height"]) character.height = node["height"].as<float>();
+    if (node["radius"]) character.radius = node["radius"].as<float>();
+    if (node["maxSlopeAngle"]) character.maxSlopeAngle = node["maxSlopeAngle"].as<float>();
+    if (node["stepUp"]) character.stepUp = node["stepUp"].as<float>();
+    if (node["stepDown"]) character.stepDown = node["stepDown"].as<float>();
+    if (node["mass"]) character.mass = node["mass"].as<float>();
+    if (node["maxStrength"]) character.maxStrength = node["maxStrength"].as<float>();
+    if (node["padding"]) character.padding = node["padding"].as<float>();
+    if (node["gravityFactor"]) character.gravityFactor = node["gravityFactor"].as<float>();
+    if (node["airControl"]) character.airControl = node["airControl"].as<float>();
+    if (node["innerBody"]) character.innerBody = node["innerBody"].as<bool>();
+
+    // a restored scene starts it again, standing still
+    if (oldCharacter && oldCharacter->character) {
+        character.needReloadCharacter = true;
+        character.moveVelocity = Vector3::ZERO;
+        character.needJump = false;
+    }
+
+    return character;
 }
 
 // ── ActionComponent ──

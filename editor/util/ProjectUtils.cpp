@@ -1320,6 +1320,13 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
                 registry->addComponent<Joint3DComponent>(entity, Stream::decodeJoint3DComponent(componentNode));
             }
             break;
+        case ComponentType::Character3DComponent:
+            if (!componentNode.IsDefined() || componentNode.IsNull()){
+                registry->addComponent<Character3DComponent>(entity, {});
+            }else{
+                registry->addComponent<Character3DComponent>(entity, Stream::decodeCharacter3DComponent(componentNode));
+            }
+            break;
         case ComponentType::KeyframeTracksComponent:
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<KeyframeTracksComponent>(entity, {});
@@ -1781,6 +1788,12 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
                 oldComponent = Stream::encodeJoint3DComponent(registry->getComponent<Joint3DComponent>(entity));
             }
             registry->removeComponent<Joint3DComponent>(entity);
+            break;
+        case ComponentType::Character3DComponent:
+            if (encodeComponent){
+                oldComponent = Stream::encodeCharacter3DComponent(registry->getComponent<Character3DComponent>(entity));
+            }
+            registry->removeComponent<Character3DComponent>(entity);
             break;
         case ComponentType::KeyframeTracksComponent:
             if (encodeComponent){
@@ -2400,6 +2413,7 @@ editor::ProjectUtils::EntityClassInfo editor::ProjectUtils::getEntityClassInfo(S
     if (signature.test(scene->getComponentId<WaterExclusionComponent>())) return objectClass("WaterExclusion");
     if (signature.test(scene->getComponentId<Body2DComponent>()))      return handleClass("Body2D");
     if (signature.test(scene->getComponentId<Body3DComponent>()))      return handleClass("Body3D");
+    if (signature.test(scene->getComponentId<Character3DComponent>())) return handleClass("Character3D");
     if (signature.test(scene->getComponentId<Joint2DComponent>()))     return handleClass("Joint2D");
     if (signature.test(scene->getComponentId<Joint3DComponent>()))     return handleClass("Joint3D");
     if (signature.test(scene->getComponentId<AlphaActionComponent>())) return handleClass("AlphaAction");

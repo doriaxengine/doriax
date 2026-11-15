@@ -87,6 +87,23 @@ namespace {
         }
     }
 
+    // like setTransformWorldPose, leaving the rotation as it is
+    void setTransformWorldPosition(Scene* scene, Transform& transform, Vector3& position){
+        Vector3 localPosition = position;
+
+        Transform* parent = (transform.parent != NULL_ENTITY) ? scene->findComponent<Transform>(transform.parent) : NULL;
+        if (parent){
+            localPosition = parent->modelMatrix.inverse() * position;
+            position = parent->modelMatrix * localPosition;
+        }
+
+        if (transform.position != localPosition){
+            transform.position = localPosition;
+            transform.worldPosition = position;
+            transform.needUpdate = true;
+        }
+    }
+
 #ifdef DORIAX_PHYSICS_3D
     // Jolt's global allocator/factory/type registration is process-wide; run once
     // (the old per-constructor path re-created and leaked a Factory per scene).
@@ -262,6 +279,21 @@ namespace {
         }
         return false;
     }
+
+    // characters collide as characters, not by inner bodies
+    class CharacterBodyFilter3D : public JPH::BodyFilter{
+    private:
+        Scene* scene;
+
+    public:
+        explicit CharacterBodyFilter3D(Scene* scene): scene(scene){
+        }
+
+        virtual bool ShouldCollideLocked(const JPH::Body &inBody) const override{
+            Character3DComponent* character = scene->findComponent<Character3DComponent>(static_cast<Entity>(inBody.GetUserData()));
+            return !character || !character->character || character->character->GetInnerBodyID() != inBody.GetID();
+        }
+    };
 #endif
 
     // joins rects in a line along the axis (0 = x, 1 = y) that share the other axis span
@@ -591,6 +623,9 @@ void PhysicsSystem::flushPendingDestroys2D(){
 PhysicsSystem::~PhysicsSystem(){
 #ifdef DORIAX_PHYSICS_3D
     flushPendingDestroys3D();
+    for (JPH::CharacterVirtual* character : characterCollision3D.mCharacters){
+        delete character;
+    }
 #endif
 #ifdef DORIAX_PHYSICS_2D
     if (b2World_IsValid(world2D)){
@@ -795,6 +830,11 @@ void PhysicsSystem::flushPendingDestroys3D(){
         body_interface.DestroyBody(bodyId);
     }
     pendingBodyDestroy3D.clear();
+
+    for (JPH::CharacterVirtual* character : pendingCharacterDestroy3D){
+        delete character;
+    }
+    pendingCharacterDestroy3D.clear();
 }
 #endif
 
@@ -850,6 +890,22 @@ void PhysicsSystem::updateTransformFromBody3D(Entity entity, Body3DComponent& bo
     setTransformWorldPose(scene, *transform, position, rotation);
     body.syncedPosition = position;
     body.syncedRotation = rotation;
+}
+
+void PhysicsSystem::updateTransformFromCharacter3D(Entity entity, Character3DComponent& character, float alpha){
+    Transform* transform = scene->findComponent<Transform>(entity);
+    if (!transform || !character.character){
+        return;
+    }
+
+    JPH::RVec3 jPosition = character.character->GetPosition();
+    Vector3 position(jPosition.GetX(), jPosition.GetY(), jPosition.GetZ());
+    if (interpolation && alpha < 1.0f){
+        position = character.previousPosition.lerp(position, alpha);
+    }
+
+    setTransformWorldPosition(scene, *transform, position);
+    character.syncedPosition = position;
 }
 #endif
 
@@ -2025,6 +2081,213 @@ void PhysicsSystem::destroyBody3D(Body3DComponent& body){
     }
 
     body.body = JPH::BodyID();
+}
+
+// capsule on the entity origin, scaled like body shapes
+JPH::ShapeRefC PhysicsSystem::createCharacterShape3D(Entity entity, float height, float radius, float size){
+    const Vector3 entityScale = absScale(entityWorldScale(scene, entity));
+    height *= entityScale.y;
+    radius *= maxScaleXZ(entityScale);
+
+    // a sphere when too short for a capsule
+    const float halfHeight = 0.5f * height - radius;
+    JPH::ShapeSettings::ShapeResult result;
+    if (halfHeight > 0.0f){
+        result = JPH::CapsuleShapeSettings(size * halfHeight, size * radius).Create();
+    }else{
+        result = JPH::SphereShapeSettings(size * radius).Create();
+    }
+    if (!result.IsValid()){
+        return NULL;
+    }
+
+    const float centerY = std::max(0.5f * height, radius);
+    result = JPH::RotatedTranslatedShapeSettings(JPH::Vec3(0.0f, centerY, 0.0f), JPH::Quat::sIdentity(), result.Get()).Create();
+    if (!result.IsValid()){
+        return NULL;
+    }
+
+    return result.Get();
+}
+
+void PhysicsSystem::refreshCharacter3DContacts(JPH::CharacterVirtual* character){
+    const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
+    character->RefreshContacts(world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
+        CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator);
+}
+
+bool PhysicsSystem::loadCharacter3D(Entity entity){
+    // the inner body needs the locks the step holds
+    if (steppingWorld3D || callingActivation3D){
+        Log::error("Cannot load a 3D character while the physics world is stepping, retrying next update");
+        return false;
+    }
+
+    resolveWorldPose(scene, entity);
+
+    Character3DComponent& character = scene->getComponent<Character3DComponent>(entity);
+    destroyCharacter3D(character);
+
+    const Vector3 entityScale = entityWorldScale(scene, entity);
+
+    JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
+    settings->mShape = createCharacterShape3D(entity, character.height, character.radius, 1.0f);
+    if (!settings->mShape){
+        Log::error("Cannot create the capsule of 3D Character entity: %u", entity);
+        return false;
+    }
+    settings->mMaxSlopeAngle = Angle::defaultToRad(character.maxSlopeAngle);
+    settings->mMass = character.mass;
+    settings->mMaxStrength = character.maxStrength;
+    settings->mCharacterPadding = character.padding;
+    // only the lower sphere stands on things
+    settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -character.radius * maxScaleXZ(absScale(entityScale)));
+    if (character.innerBody){
+        settings->mInnerBodyShape = createCharacterShape3D(entity, character.height, character.radius, 0.9f);
+        settings->mInnerBodyLayer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
+    }
+
+    Transform* transform = scene->findComponent<Transform>(entity);
+    const Vector3 position = transform ? transform->worldPosition : Vector3::ZERO;
+
+    character.character = new JPH::CharacterVirtual(settings, JPH::RVec3(position.x, position.y, position.z), JPH::Quat::sIdentity(), entity, &world3D);
+    character.character->SetCharacterVsCharacterCollision(&characterCollision3D);
+    characterCollision3D.Add(character.character);
+    refreshCharacter3DContacts(character.character);
+
+    character.needReloadCharacter = false;
+    character.loadedScale = entityScale;
+    character.previousPosition = position;
+    character.syncedPosition = position;
+
+    return true;
+}
+
+void PhysicsSystem::destroyCharacter3D(Character3DComponent& character){
+    if (!character.character){
+        return;
+    }
+
+    JPH::CharacterVirtual* jcharacter = character.character;
+    character.character = NULL;
+
+    characterCollision3D.Remove(jcharacter);
+    // its inner body needs the locks the step holds
+    if (steppingWorld3D || callingActivation3D){
+        pendingCharacterDestroy3D.push_back(jcharacter);
+    }else{
+        delete jcharacter;
+    }
+}
+
+void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position){
+    // the next step takes it from the transform
+    if (steppingWorld3D || callingActivation3D){
+        if (Transform* transform = scene->findComponent<Transform>(entity)){
+            setTransformWorldPosition(scene, *transform, position);
+        }
+        return;
+    }
+
+    character.character->SetPosition(JPH::RVec3(position.x, position.y, position.z));
+    refreshCharacter3DContacts(character.character);
+    // jumps, not interpolated
+    character.previousPosition = position;
+
+    updateTransformFromCharacter3D(entity, character, 1.0f);
+}
+
+bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius){
+    if (steppingWorld3D || callingActivation3D){
+        Log::error("Cannot change a 3D character shape while the physics world is stepping");
+        return false;
+    }
+
+    JPH::ShapeRefC shape = createCharacterShape3D(entity, height, radius, 1.0f);
+    if (!shape){
+        Log::error("Cannot create the capsule of 3D Character entity: %u", entity);
+        return false;
+    }
+
+    const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
+    if (!character.character->SetShape(shape, 1.5f * world3D.GetPhysicsSettings().mPenetrationSlop,
+            world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
+            CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator)){
+        return false;
+    }
+    if (!character.character->GetInnerBodyID().IsInvalid()){
+        character.character->SetInnerBodyShape(createCharacterShape3D(entity, height, radius, 0.9f));
+    }
+    character.character->SetSupportingVolume(JPH::Plane(JPH::Vec3::sAxisY(), -radius * maxScaleXZ(absScale(entityWorldScale(scene, entity)))));
+
+    character.height = height;
+    character.radius = radius;
+
+    return true;
+}
+
+void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& character, float stepTime){
+    JPH::CharacterVirtual* jcharacter = character.character;
+
+    // moved by a script or an animation, it jumps there
+    resolveWorldPose(scene, entity);
+    Transform* transform = scene->findComponent<Transform>(entity);
+    if (transform && transform->worldPosition != character.syncedPosition){
+        const Vector3& position = transform->worldPosition;
+        jcharacter->SetPosition(JPH::RVec3(position.x, position.y, position.z));
+        refreshCharacter3DContacts(jcharacter);
+    }
+
+    const JPH::RVec3 oldPosition = jcharacter->GetPosition();
+    character.previousPosition = Vector3(oldPosition.GetX(), oldPosition.GetY(), oldPosition.GetZ());
+
+    jcharacter->UpdateGroundVelocity();
+
+    const JPH::Vec3 up = jcharacter->GetUp();
+    const JPH::Vec3 gravity = world3D.GetGravity() * character.gravityFactor;
+    const JPH::Vec3 velocity = jcharacter->GetLinearVelocity();
+    const JPH::Vec3 verticalVelocity = velocity.Dot(up) * up;
+    const JPH::Vec3 groundVelocity = jcharacter->GetGroundVelocity();
+    JPH::Vec3 moveVelocity(character.moveVelocity.x, character.moveVelocity.y, character.moveVelocity.z);
+    moveVelocity -= moveVelocity.Dot(up) * up;
+
+    // standing, it moves with the ground until leaving it
+    const bool onGround = jcharacter->GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround;
+    JPH::Vec3 newVelocity = verticalVelocity;
+    if (onGround && (verticalVelocity - groundVelocity).Dot(up) < 0.1f){
+        newVelocity = groundVelocity;
+    }
+    if (character.needJump){
+        newVelocity = (onGround ? groundVelocity : JPH::Vec3::sZero()) + character.jumpSpeed * up;
+        character.needJump = false;
+    }
+    newVelocity += gravity * stepTime;
+
+    if (onGround){
+        newVelocity += moveVelocity;
+    }else{
+        // steers from the momentum it has
+        const JPH::Vec3 horizontalVelocity = velocity - verticalVelocity;
+        newVelocity += horizontalVelocity + (moveVelocity - horizontalVelocity) * character.airControl;
+    }
+    jcharacter->SetLinearVelocity(newVelocity);
+
+    JPH::CharacterVirtual::ExtendedUpdateSettings settings;
+    settings.mStickToFloorStepDown = -character.stepDown * up;
+    settings.mWalkStairsStepUp = character.stepUp * up;
+
+    const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
+    jcharacter->ExtendedUpdate(stepTime, gravity, settings, world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
+        CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator);
+
+    // a ceiling stops the rise
+    const float rise = jcharacter->GetLinearVelocity().Dot(up);
+    const float risen = JPH::Vec3(jcharacter->GetPosition() - oldPosition).Dot(up) / stepTime;
+    if (rise > 0.0f && risen < rise){
+        jcharacter->SetLinearVelocity(jcharacter->GetLinearVelocity() - (rise - std::max(risen, 0.0f)) * up);
+    }
+
+    updateTransformFromCharacter3D(entity, character, 1.0f);
 }
 #endif
 
@@ -3493,6 +3756,14 @@ void PhysicsSystem::load(){
             joint.needUpdateJoint = false;
         }
     }
+
+    auto characters3d = scene->getComponentArray<Character3DComponent>();
+    for (size_t i = 0; i < characters3d->size(); i++){
+        Character3DComponent& character = characters3d->getComponentFromIndex(i);
+        if (character.needReloadCharacter || !character.character){
+            loadCharacter3D(characters3d->getEntity(i));
+        }
+    }
 #endif
 }
 
@@ -3625,6 +3896,21 @@ void PhysicsSystem::fixedUpdate(double dt){
         }
     }
 
+    // before the step, like the bodies they push and stand on
+    auto characters3d = scene->getComponentArray<Character3DComponent>();
+    for (int i = 0; i < characters3d->size(); i++){
+        Character3DComponent& character = characters3d->getComponentFromIndex(i);
+        Entity entity = characters3d->getEntity(i);
+
+        if (!character.character || character.needReloadCharacter || entityWorldScale(scene, entity) != character.loadedScale){
+            loadCharacter3D(entity);
+        }
+
+        if (character.character){
+            updateCharacter3D(entity, character, fixedStep);
+        }
+    }
+
     if (bodies3d->size() > 0){
 		applyBuoyancy3D(fixedStep);
 
@@ -3640,6 +3926,9 @@ void PhysicsSystem::fixedUpdate(double dt){
 
 		StepScope stepScope(this);
 		world3D.Update(fixedStep, cCollisionSteps, temp_allocator, job_system);
+	}else{
+		// characters queued outside a step
+		flushPendingDestroys3D();
 	}
 
 	for (int i = 0; i < bodies3d->size(); i++){
@@ -3689,6 +3978,17 @@ void PhysicsSystem::interpolate(double alpha){
             updateTransformFromBody3D(entity, body, (float)alpha);
         }
     }
+
+    auto characters3d = scene->getComponentArray<Character3DComponent>();
+    for (size_t i = 0; i < characters3d->size(); i++){
+        Character3DComponent& character = characters3d->getComponentFromIndex(i);
+        Entity entity = characters3d->getEntity(i);
+        Transform* transform = scene->findComponent<Transform>(entity);
+
+        if (transform && transform->worldPosition == character.syncedPosition){
+            updateTransformFromCharacter3D(entity, character, (float)alpha);
+        }
+    }
 #endif
 }
 
@@ -3724,6 +4024,9 @@ void PhysicsSystem::onComponentRemoved(Entity entity, ComponentId componentId) {
 	} else if (componentId == scene->getComponentId<Joint3DComponent>()) {
 		Joint3DComponent& joint3d = scene->getComponent<Joint3DComponent>(entity);
 		destroyJoint3D(joint3d);
+	} else if (componentId == scene->getComponentId<Character3DComponent>()) {
+		Character3DComponent& character3d = scene->getComponent<Character3DComponent>(entity);
+		destroyCharacter3D(character3d);
 	}
 #endif
 }

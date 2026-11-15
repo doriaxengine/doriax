@@ -345,6 +345,11 @@ void editor::SceneRender3D::clearEntityOverlays(){
         delete pair.second;
     }
     waterExclusionLines.clear();
+
+    for (auto& pair : characterLines) {
+        delete pair.second;
+    }
+    characterLines.clear();
 }
 
 void editor::SceneRender3D::createLines(){
@@ -562,6 +567,66 @@ void editor::SceneRender3D::createOrUpdateWaterExclusionLines(Entity entity, con
         {0,1}, {2,3}, {4,5}, {6,7}, {0,2}, {1,3}, {4,6}, {5,7}, {0,4}, {1,5}, {2,6}, {3,7}
     };
     for (const auto& edge : edges) addLine(p[edge[0]], p[edge[1]]);
+}
+
+bool editor::SceneRender3D::instanciateCharacterLines(Entity entity){
+    if (characterLines.find(entity) == characterLines.end()) {
+        ScopedDefaultEntityPool sys(*scene, EntityPool::System);
+        characterLines[entity] = new Lines(scene);
+        return true;
+    }
+    return false;
+}
+
+// capsule sized as in PhysicsSystem, a ring at step height
+void editor::SceneRender3D::createOrUpdateCharacterLines(Entity entity, const Transform& transform, const Character3DComponent& character, bool visible, bool highlighted){
+    Lines* lines = characterLines[entity];
+    lines->clearLines();
+    lines->setVisible(transform.visibleInHierarchy && visible);
+    if (!transform.visibleInHierarchy || !visible) return;
+
+    const float alpha = highlighted ? 1.0f : 0.35f;
+    const Vector4 color(0.2f, 0.95f, 0.95f, alpha);
+    const Vector4 stepColor(1.0f, 0.75f, 0.2f, alpha);
+
+    const float height = character.height * std::fabs(transform.worldScale.y);
+    const float radius = character.radius * std::max(std::fabs(transform.worldScale.x), std::fabs(transform.worldScale.z));
+    const float centerY = std::max(0.5f * height, radius);
+    const float halfHeight = std::max(0.5f * height - radius, 0.0f);
+    const Vector3 base = transform.worldPosition;
+    const Vector3 top = base + Vector3(0, centerY + halfHeight, 0);
+    const Vector3 bottom = base + Vector3(0, centerY - halfHeight, 0);
+    const Vector3 step = base + Vector3(0, character.stepUp, 0);
+
+    const int segments = 24;
+    for (int i = 0; i < segments; i++) {
+        const float a0 = 2.0f * M_PI * i / segments;
+        const float a1 = 2.0f * M_PI * (i + 1) / segments;
+        const Vector3 d0 = Vector3(std::cos(a0), 0, std::sin(a0)) * radius;
+        const Vector3 d1 = Vector3(std::cos(a1), 0, std::sin(a1)) * radius;
+        lines->addLine(top + d0, top + d1, color);
+        lines->addLine(bottom + d0, bottom + d1, color);
+        if (character.stepUp > 0.0f) {
+            lines->addLine(step + d0, step + d1, stepColor);
+        }
+    }
+
+    const int arcSegments = 8;
+    for (int side = 0; side < 4; side++) {
+        const float angle = 0.5f * M_PI * side;
+        const Vector3 dir(std::cos(angle), 0, std::sin(angle));
+        lines->addLine(bottom + dir * radius, top + dir * radius, color);
+        for (int i = 0; i < arcSegments; i++) {
+            const float a0 = 0.5f * M_PI * i / arcSegments;
+            const float a1 = 0.5f * M_PI * (i + 1) / arcSegments;
+            const Vector3 p0 = dir * (std::cos(a0) * radius);
+            const Vector3 p1 = dir * (std::cos(a1) * radius);
+            const Vector3 up0(0, std::sin(a0) * radius, 0);
+            const Vector3 up1(0, std::sin(a1) * radius, 0);
+            lines->addLine(top + p0 + up0, top + p1 + up1, color);
+            lines->addLine(bottom + p0 - up0, bottom + p1 - up1, color);
+        }
+    }
 }
 
 // endpoint handles for a selected Lines entity, drawn as small 3-axis crosses
@@ -1873,6 +1938,9 @@ void editor::SceneRender3D::hideAllGizmos(){
     for (auto& pair : waterExclusionLines) {
         pair.second->setVisible(false);
     }
+    for (auto& pair : characterLines) {
+        pair.second->setVisible(false);
+    }
 }
 
 void editor::SceneRender3D::activate(){
@@ -2006,6 +2074,7 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
     std::set<Entity> currentTrackLines;
     std::set<Entity> currentReflectionProbes;
     std::set<Entity> currentWaterExclusions;
+    std::set<Entity> currentCharacters;
 
     // each block creates its lines first, a new lines entity can move the components
     for (Entity& entity: entities){
@@ -2074,6 +2143,16 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
             bool isVisible = displaySettings.showAllBodies || highlighted;
 
             createOrUpdateBodyLines(entity, transform, body, isVisible, highlighted);
+        }
+
+        if (signature.test(scene->getComponentId<Character3DComponent>()) && signature.test(scene->getComponentId<Transform>())) {
+            currentCharacters.insert(entity);
+            instanciateCharacterLines(entity);
+            Transform& transform = scene->getComponent<Transform>(entity);
+            Character3DComponent& character = scene->getComponent<Character3DComponent>(entity);
+
+            bool highlighted = isDescendantSelected(entity);
+            createOrUpdateCharacterLines(entity, transform, character, displaySettings.showAllBodies || highlighted, highlighted);
         }
 
         if (signature.test(scene->getComponentId<LinesComponent>()) && signature.test(scene->getComponentId<Transform>())) {
@@ -2275,6 +2354,16 @@ void editor::SceneRender3D::update(std::vector<Entity> selEntities, std::vector<
             itExclusionLines = waterExclusionLines.erase(itExclusionLines);
         } else {
             ++itExclusionLines;
+        }
+    }
+
+    auto itCharacterLines = characterLines.begin();
+    while (itCharacterLines != characterLines.end()) {
+        if (currentCharacters.find(itCharacterLines->first) == currentCharacters.end()) {
+            delete itCharacterLines->second;
+            itCharacterLines = characterLines.erase(itCharacterLines);
+        } else {
+            ++itCharacterLines;
         }
     }
 }

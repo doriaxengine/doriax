@@ -679,6 +679,20 @@ namespace {
         makeFastProperty<Joint3DComponent, bool, &Joint3DComponent::autoAnchors>("autoAnchors", PropertyType::Bool, UpdateFlags_Joint3D),
     };
 
+    static const FastPropertyDescriptor kCharacter3DProperties[] = {
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::height>("height", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::radius>("radius", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::maxSlopeAngle>("maxSlopeAngle", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::stepUp>("stepUp", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::stepDown>("stepDown", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::mass>("mass", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::maxStrength>("maxStrength", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::padding>("padding", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::gravityFactor>("gravityFactor", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::airControl>("airControl", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<Character3DComponent, bool, &Character3DComponent::innerBody>("innerBody", PropertyType::Bool, UpdateFlags_Character3D),
+    };
+
     static const FastPropertyDescriptor kMeshTopProperties[] = {
         makeFastProperty<MeshComponent, bool, &MeshComponent::receiveLights>("receiveLights", PropertyType::Bool, UpdateFlags_Mesh_Reload),
         makeFastProperty<MeshComponent, bool, &MeshComponent::receiveIBL>("receiveIBL", PropertyType::Bool, UpdateFlags_Mesh_Reload),
@@ -2026,6 +2040,10 @@ namespace {
         return resolveDirectProperties(static_cast<SkinComponent*>(comp), propertyName, kSkinProperties);
     }
 
+    PropertyData resolveCharacter3DPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<Character3DComponent*>(comp), propertyName, kCharacter3DProperties);
+    }
+
     PropertyData resolveKeyframeTracksPropertyFast(void* comp, const std::string& propertyName) {
         KeyframeTracksComponent* trackComp = static_cast<KeyframeTracksComponent*>(comp);
         if (!trackComp) return PropertyData();
@@ -2620,6 +2638,10 @@ namespace {
 
     void enumerateJoint2DProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kJoint2DProperties);
+    }
+
+    void enumerateCharacter3DProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kCharacter3DProperties);
     }
 
     void enumerateJoint3DProperties(void* compRef, std::map<std::string, PropertyData>& ps) {
@@ -3293,6 +3315,7 @@ namespace {
         {ComponentType::ScriptComponent, &findComponentPtr<ScriptComponent>, &resolveScriptPropertyFast, &enumerateScriptProperties},
         {ComponentType::Joint2DComponent, &findComponentPtr<Joint2DComponent>, &resolveJoint2DPropertyFast, &enumerateJoint2DProperties},
         {ComponentType::Joint3DComponent, &findComponentPtr<Joint3DComponent>, &resolveJoint3DPropertyFast, &enumerateJoint3DProperties},
+        {ComponentType::Character3DComponent, &findComponentPtr<Character3DComponent>, &resolveCharacter3DPropertyFast, &enumerateCharacter3DProperties},
         {ComponentType::Body2DComponent, &findComponentPtr<Body2DComponent>, &resolveBody2DPropertyFast, &enumerateBody2DProperties},
         {ComponentType::Body3DComponent, &findComponentPtr<Body3DComponent>, &resolveBody3DPropertyFast, &enumerateBody3DProperties},
         {ComponentType::InstancedMeshComponent, &findComponentPtr<InstancedMeshComponent>, &resolveInstancedMeshPropertyFast, &enumerateInstancedMeshProperties},
@@ -3429,6 +3452,8 @@ std::string editor::Catalog::getComponentName(ComponentType component, bool remo
         name = "Joint2DComponent";
     }else if(component == ComponentType::Joint3DComponent){
         name = "Joint3DComponent";
+    }else if(component == ComponentType::Character3DComponent){
+        name = "Character3DComponent";
     }else if(component == ComponentType::KeyframeTracksComponent){
         name = "KeyframeTracksComponent";
     }else if(component == ComponentType::LightComponent){
@@ -3562,6 +3587,8 @@ ComponentId editor::Catalog::getComponentId(const EntityRegistry* registry, Comp
             return registry->getComponentId<Joint2DComponent>();
         case ComponentType::Joint3DComponent:
             return registry->getComponentId<Joint3DComponent>();
+        case ComponentType::Character3DComponent:
+            return registry->getComponentId<Character3DComponent>();
         case ComponentType::KeyframeTracksComponent:
             return registry->getComponentId<KeyframeTracksComponent>();
         case ComponentType::LightComponent:
@@ -3672,6 +3699,8 @@ editor::ComponentType editor::Catalog::getComponentType(const std::string& compo
         return ComponentType::Joint2DComponent;
     }else if(normalizedName == "joint3d"){
         return ComponentType::Joint3DComponent;
+    }else if(normalizedName == "character3d"){
+        return ComponentType::Character3DComponent;
     }else if(normalizedName == "keyframetracks"){
         return ComponentType::KeyframeTracksComponent;
     }else if(normalizedName == "light"){
@@ -3850,6 +3879,9 @@ std::vector<editor::ComponentType> editor::Catalog::findComponents(EntityRegistr
     }
     if (registry->findComponent<Joint3DComponent>(entity)){
         ret.push_back(ComponentType::Joint3DComponent);
+    }
+    if (registry->findComponent<Character3DComponent>(entity)){
+        ret.push_back(ComponentType::Character3DComponent);
     }
     if (registry->findComponent<KeyframeTracksComponent>(entity)){
         ret.push_back(ComponentType::KeyframeTracksComponent);
@@ -4350,6 +4382,11 @@ void editor::Catalog::updateEntity(EntityRegistry* registry, Entity entity, uint
             joint->needUpdateMotor = true;
         }
     }
+    if (updateFlags & UpdateFlags_Character3D){
+        if (Character3DComponent* character = registry->findComponent<Character3DComponent>(entity)){
+            character->needReloadCharacter = true;
+        }
+    }
     if (updateFlags & UpdateFlags_Model){
         if (ModelComponent* model = registry->findComponent<ModelComponent>(entity)){
             model->needUpdateModel = true;
@@ -4623,6 +4660,11 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
         case ComponentType::Joint3DComponent:
             decodeOverTarget(targetRegistry, targetEntity, compType, &Stream::decodeJoint3DComponent,
                 Stream::encodeJoint3DComponent(sourceRegistry->getComponent<Joint3DComponent>(sourceEntity)));
+            break;
+
+        case ComponentType::Character3DComponent:
+            decodeOverTarget(targetRegistry, targetEntity, compType, &Stream::decodeCharacter3DComponent,
+                Stream::encodeCharacter3DComponent(sourceRegistry->getComponent<Character3DComponent>(sourceEntity)));
             break;
 
         case ComponentType::BoneComponent: {

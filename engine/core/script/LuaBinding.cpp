@@ -53,6 +53,7 @@
 #endif
 #ifdef DORIAX_PHYSICS_3D
 #include "object/physics/Body3D.h"
+#include "object/physics/Character3D.h"
 #include "object/physics/Joint3D.h"
 #endif
 #include "action/Action.h"
@@ -606,6 +607,7 @@ bool LuaBinding::pushEntityHandleByType(lua_State* L, doriax::Scene* scene, dori
 #endif
 #ifdef DORIAX_PHYSICS_3D
     DISPATCH_TYPE(Body3D, "body3d");
+    DISPATCH_TYPE(Character3D, "character3d");
     DISPATCH_TYPE(Joint3D, "joint3d");
 #endif
     DISPATCH_TYPE(Action, "action");
