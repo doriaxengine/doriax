@@ -238,8 +238,8 @@ namespace doriax{
 		void destroyCharacter3D(Character3DComponent& character);
 		// teleports and finds its ground again at once
 		void setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position);
-		// false when the new capsule does not fit where it stands
-		bool setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius);
+		// with checkFit, false when the new capsule does not fit where it stands
+		bool setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit);
 #endif
 
 		// Draws the body in its entity, alpha of the way from its pose before the last step.

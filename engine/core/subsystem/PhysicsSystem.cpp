@@ -2128,6 +2128,10 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
     Character3DComponent& character = scene->getComponent<Character3DComponent>(entity);
     destroyCharacter3D(character);
 
+    if (scene->findComponent<Body3DComponent>(entity)){
+        Log::warn("3D Character entity %u also has a 3D Body, both move it", entity);
+    }
+
     const Vector3 entityScale = entityWorldScale(scene, entity);
 
     JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
@@ -2197,7 +2201,7 @@ void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& 
     updateTransformFromCharacter3D(entity, character, 1.0f);
 }
 
-bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius){
+bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit){
     if (steppingWorld3D || callingActivation3D){
         Log::error("Cannot change a 3D character shape while the physics world is stepping");
         return false;
@@ -2209,8 +2213,9 @@ bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& cha
         return false;
     }
 
+    const float maxPenetration = checkFit ? 1.5f * world3D.GetPhysicsSettings().mPenetrationSlop : std::numeric_limits<float>::max();
     const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
-    if (!character.character->SetShape(shape, 1.5f * world3D.GetPhysicsSettings().mPenetrationSlop,
+    if (!character.character->SetShape(shape, maxPenetration,
             world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
             CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator)){
         return false;
@@ -2222,6 +2227,7 @@ bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& cha
 
     character.height = height;
     character.radius = radius;
+    character.loadedScale = entityWorldScale(scene, entity);
 
     return true;
 }
@@ -2229,8 +2235,14 @@ bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& cha
 void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& character, float stepTime){
     JPH::CharacterVirtual* jcharacter = character.character;
 
-    // moved by a script or an animation, it jumps there
     resolveWorldPose(scene, entity);
+
+    // a scale animation keeps its motion
+    if (entityWorldScale(scene, entity) != character.loadedScale){
+        setCharacter3DShape(entity, character, character.height, character.radius, false);
+    }
+
+    // moved by a script or an animation, it jumps there
     Transform* transform = scene->findComponent<Transform>(entity);
     if (transform && transform->worldPosition != character.syncedPosition){
         const Vector3& position = transform->worldPosition;
@@ -3902,7 +3914,7 @@ void PhysicsSystem::fixedUpdate(double dt){
         Character3DComponent& character = characters3d->getComponentFromIndex(i);
         Entity entity = characters3d->getEntity(i);
 
-        if (!character.character || character.needReloadCharacter || entityWorldScale(scene, entity) != character.loadedScale){
+        if (!character.character || character.needReloadCharacter){
             loadCharacter3D(entity);
         }
 

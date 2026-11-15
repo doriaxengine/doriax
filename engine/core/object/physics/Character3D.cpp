@@ -139,7 +139,7 @@ bool Character3D::setShape(float height, float radius){
 
     checkCharacter(character);
 
-    return scene->getSystem<PhysicsSystem>()->setCharacter3DShape(entity, character, height, radius);
+    return scene->getSystem<PhysicsSystem>()->setCharacter3DShape(entity, character, height, radius, true);
 }
 
 float Character3D::getHeight() const{
