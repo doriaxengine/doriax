@@ -10,6 +10,11 @@
 namespace doriax::editor {
     class UIUtils {
     public:
+        // Color properties show only a swatch, numbers are typed in its picker
+        static constexpr ImGuiColorEditFlags colorSwatchFlags = ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf;
+        // Same swatch for shader colors, which are raw floats and may go above 1
+        static constexpr ImGuiColorEditFlags colorSwatchFlagsHDR = colorSwatchFlags | ImGuiColorEditFlags_Float | ImGuiColorEditFlags_HDR;
+
         // Draw a search input field with a magnifying glass icon button
         // Returns true if the input text changed
         // If fixedWidth > 0, uses that width; otherwise uses available content region width

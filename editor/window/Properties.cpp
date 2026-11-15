@@ -610,12 +610,12 @@ void editor::Properties::drawScenePropertyRow(SceneProject* sceneProject, const 
             break;
         case ScenePropertyInputType::ColorRGB:
             if constexpr (std::is_same_v<T, Vector3>) {
-                changed = ImGui::ColorEdit3(("##" + propertyName).c_str(), (float*)&value.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+                changed = ImGui::ColorEdit3(("##" + propertyName).c_str(), (float*)&value.x, UIUtils::colorSwatchFlags);
             }
             break;
         case ScenePropertyInputType::ColorRGBA:
             if constexpr (std::is_same_v<T, Vector4>) {
-                changed = ImGui::ColorEdit4(("##" + propertyName).c_str(), (float*)&value.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+                changed = ImGui::ColorEdit4(("##" + propertyName).c_str(), (float*)&value.x, UIUtils::colorSwatchFlags);
             }
             break;
         case ScenePropertyInputType::Combo:
@@ -3352,7 +3352,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::ColorEdit3((label+"##checkbox_"+id).c_str(), (float*)&newValue.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf)){
+        if (ImGui::ColorEdit3((label+"##checkbox_"+id).c_str(), (float*)&newValue.x, UIUtils::colorSwatchFlags)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector3>(project, sceneProject->id, entity, cpType, id, Color::sRGBToLinear(newValue), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -3395,7 +3395,7 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
 
         if (dif)
             ImGui::PushStyleColor(ImGuiCol_FrameBg, ImGui::GetStyle().Colors[ImGuiCol_TextDisabled]);
-        if (ImGui::ColorEdit4((label+"##checkbox_"+id).c_str(), (float*)&newValue.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf)){
+        if (ImGui::ColorEdit4((label+"##checkbox_"+id).c_str(), (float*)&newValue.x, UIUtils::colorSwatchFlags)){
             for (Entity& entity : entities){
                 cmd = new PropertyCmd<Vector4>(project, sceneProject->id, entity, cpType, id, Color::sRGBToLinear(newValue), settings.onValueChanged);
                 CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
@@ -5348,7 +5348,7 @@ editor::Properties::ShaderUniformEdit editor::Properties::drawParameterRow(const
         for (int i = 0; i < 4; i++)
             fields[i] = (float)ints[i];
     } else if (declaration.color && components >= 3) {
-        changed = components == 3 ? ImGui::ColorEdit3(id.c_str(), fields, ImGuiColorEditFlags_Float) : ImGui::ColorEdit4(id.c_str(), fields, ImGuiColorEditFlags_Float);
+        changed = components == 3 ? ImGui::ColorEdit3(id.c_str(), fields, UIUtils::colorSwatchFlagsHDR) : ImGui::ColorEdit4(id.c_str(), fields, UIUtils::colorSwatchFlagsHDR);
     } else {
         const float speed = ranged ? (declaration.maxValue - declaration.minValue) / 200.0f : 0.01f;
         changed = UIUtils::dragScalarN(id.c_str(), ImGuiDataType_Float, fields, components, speed,
@@ -9915,7 +9915,7 @@ void editor::Properties::drawParticlesComponent(ComponentType cpType, SceneProje
                         propertyHeader("Color " + std::to_string(i), -1, false, false);
                         ImGui::SetNextItemWidth(-FLT_MIN);
                         float col[3] = { stop.color.x, stop.color.y, stop.color.z };
-                        if (ImGui::ColorEdit3("##particle_grad_color", col, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf)) {
+                        if (ImGui::ColorEdit3("##particle_grad_color", col, UIUtils::colorSwatchFlags)) {
                             stop.color = Vector3(col[0], col[1], col[2]);
                             ParticleColorGradient newGrad = *gradient;
                             newGrad.stops[i] = stop;

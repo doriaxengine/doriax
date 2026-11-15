@@ -157,12 +157,12 @@ namespace doriax::editor {
                     break;
                 case ScenePropertyType::COLOR_RGB:
                     if constexpr (std::is_same_v<T, Vector3>) {
-                        changed = ImGui::ColorEdit3(("##" + propertyName).c_str(), (float*)&value.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+                        changed = ImGui::ColorEdit3(("##" + propertyName).c_str(), (float*)&value.x, UIUtils::colorSwatchFlags);
                     }
                     break;
                 case ScenePropertyType::COLOR_RGBA:
                     if constexpr (std::is_same_v<T, Vector4>) {
-                        changed = ImGui::ColorEdit4(("##" + propertyName).c_str(), (float*)&value.x, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_AlphaBar | ImGuiColorEditFlags_AlphaPreviewHalf);
+                        changed = ImGui::ColorEdit4(("##" + propertyName).c_str(), (float*)&value.x, UIUtils::colorSwatchFlags);
                     }
                     break;
                 case ScenePropertyType::COMBO:

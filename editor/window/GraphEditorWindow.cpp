@@ -20,6 +20,7 @@
 #include "shader/graph/ShaderNodes.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
+#include "util/UIUtils.h"
 #include "util/Util.h"
 
 #include "imgui_internal.h"
@@ -1437,9 +1438,9 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                         if ((set = ImGui::DragInt(field("Default"), &value)))
                             values[0] = (float)value;
                     } else if (parameter->type == "color3") {
-                        set = ImGui::ColorEdit3(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                        set = ImGui::ColorEdit3(field("Default"), values.data(), UIUtils::colorSwatchFlagsHDR);
                     } else if (parameter->type == "color4") {
-                        set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                        set = ImGui::ColorEdit4(field("Default"), values.data(), UIUtils::colorSwatchFlagsHDR);
                     } else {
                         set = ImGui::DragScalarN(field("Default"), ImGuiDataType_Float, values.data(), (int)values.size(), 0.01f);
                     }
@@ -1476,7 +1477,7 @@ void editor::GraphEditorWindow::drawParameters(Instance& instance) {
                 values.resize(count, parameter->type == "color" ? 1.0f : 0.0f);
                 bool set = false;
                 if (parameter->type == "color") {
-                    set = ImGui::ColorEdit4(field("Default"), values.data(), ImGuiColorEditFlags_Float);
+                    set = ImGui::ColorEdit4(field("Default"), values.data(), UIUtils::colorSwatchFlagsHDR);
                 } else if (parameter->type == "int") {
                     int value = (int)std::lround(values[0]);
                     if ((set = ImGui::DragInt(field("Default"), &value)))
@@ -1535,7 +1536,7 @@ bool editor::GraphEditorWindow::drawLayoutInspector(Instance& instance) {
             continue;
         changed |= editText(field("Title"), group.title);
         float color[4] = {group.color.x, group.color.y, group.color.z, group.color.w};
-        if (ImGui::ColorEdit4(field("Color"), color, ImGuiColorEditFlags_AlphaBar)) {
+        if (ImGui::ColorEdit4(field("Color"), color, UIUtils::colorSwatchFlags)) {
             group.color = Vector4(color[0], color[1], color[2], color[3]);
             changed = true;
         }
@@ -1651,7 +1652,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             numbers.resize(componentCount(outType), outType == "color" ? 1.0f : 0.0f);
             bool set = false;
             if (outType == "color") {
-                set = ImGui::ColorEdit4(id, numbers.data(), ImGuiColorEditFlags_Float);
+                set = ImGui::ColorEdit4(id, numbers.data(), UIUtils::colorSwatchFlagsHDR);
             } else if (outType == "int") {
                 int number = (int)std::lround(numbers[0]);
                 if ((set = ImGui::DragInt(id, &number)))
@@ -1717,7 +1718,7 @@ void editor::GraphEditorWindow::drawInspector(Instance& instance) {
             const char* id = field(pin.label, constant != node->inputs.end() ? iconWidth() : 0.0f);
             bool set = false;
             if (pin.type == "color") {
-                set = ImGui::ColorEdit4(id, numbers.data(), ImGuiColorEditFlags_Float);
+                set = ImGui::ColorEdit4(id, numbers.data(), UIUtils::colorSwatchFlagsHDR);
             } else if (pin.type == "bool") {
                 bool on = numbers[0] != 0.0f;
                 if ((set = ImGui::Checkbox(id, &on)))
