@@ -1488,7 +1488,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "read_output_log",
-            "Read the editor's recent output log: build/compiler messages, warnings, errors, and runtime script crashes. Use this to VERIFY a script after starting the scene with control_play_mode -- a C++ compile error appears here as a build failure ('C++ script build failed' plus compiler output), and a Lua or C++ runtime error appears as a 'Script crash in scene ...' entry. If you see errors, stop play, fix the script, and verify again.",
+            "Read the editor's recent output log: build/compiler messages, warnings, errors, and runtime script crashes. Use this to VERIFY a script after starting the scene with control_play_mode -- a C++ compile error appears here as a build failure ('C++ script build failed' plus compiler output), and a Lua or C++ runtime error appears as a 'Script crash in scene ...' entry. Lines the running project wrote (Log calls, script crashes, engine messages during play) start with [Project], as in '[Project] [Error] ...'; the others come from the editor. If you see errors, stop play, fix the script, and verify again.",
             objectSchema({
                 {"max_lines", integerSchema("Maximum number of recent log entries to return, 1-600. Defaults to 150")},
                 {"errors_only", boolSchema("When true, return only error/warning/build entries")}

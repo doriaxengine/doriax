@@ -38,7 +38,7 @@
 #include "Theme.h"
 #include "Widgets.h"
 #include "Stream.h"
-#include "Log.h"
+#include "Out.h"
 #include "subsystem/MeshSystem.h"
 #include "util/FileDialogs.h"
 #include "util/FileUtils.h"
@@ -355,7 +355,7 @@ void editor::ResourcesWindow::processMaterialThumbnails() {
 
         Framebuffer* framebuffer = materialRender.getFramebuffer();
         if (!framebuffer) {
-            Log::warn("Thumbnail render produced no framebuffer for material: %s", pending.path.string().c_str());
+            Out::warning("Thumbnail render produced no framebuffer for material: %s", pending.path.string().c_str());
             {
                 std::lock_guard<std::mutex> thumbnailLock(thumbnailMutex);
                 if (pending.generation == thumbnailGeneration) {
@@ -435,7 +435,7 @@ void editor::ResourcesWindow::processModelThumbnails() {
 
         Framebuffer* framebuffer = modelRender.getFramebuffer();
         if (!framebuffer) {
-            Log::warn("Thumbnail render produced no framebuffer for model: %s", pending.path.string().c_str());
+            Out::warning("Thumbnail render produced no framebuffer for model: %s", pending.path.string().c_str());
             // Release the scene while hasPendingModelRender still parks the worker;
             // clearing the flags first would let a wakeup start a new load into the
             // scene being torn down here.
@@ -462,7 +462,7 @@ void editor::ResourcesWindow::processModelThumbnails() {
             [this, pending, thumbnailPath]() {
                 std::error_code ec;
                 if (!fs::exists(thumbnailPath, ec) || ec) {
-                    Log::warn("Failed to save model thumbnail '%s': %s",
+                    Out::warning("Failed to save model thumbnail '%s': %s",
                               thumbnailPath.string().c_str(), ec ? ec.message().c_str() : "output file is missing");
                 }
                 bool publish = false;
@@ -2202,7 +2202,7 @@ void editor::ResourcesWindow::importExternalPaths(const std::vector<std::string>
             // copying a directory into itself would recurse forever
             fs::path relative = currentPath.lexically_normal().lexically_relative(source);
             if (!relative.empty() && *relative.begin() != "..") {
-                Log::error("Cannot import '%s': destination is inside it", source.string().c_str());
+                Out::error("Cannot import '%s': destination is inside it", source.string().c_str());
                 continue;
             }
         }
@@ -2292,9 +2292,9 @@ void editor::ResourcesWindow::thumbnailWorker() {
                 Engine::AsyncThreadScope asyncThreadScope;
                 Engine::executeSceneOnce(materialRender.getScene());
             } catch (const std::exception& e) {
-                Log::error("Failed to warm thumbnail preview: %s", e.what());
+                Out::error("Failed to warm thumbnail preview: %s", e.what());
             } catch (...) {
-                Log::error("Failed to warm thumbnail preview: unknown error");
+                Out::error("Failed to warm thumbnail preview: unknown error");
             }
             {
                 std::lock_guard<std::mutex> lock(thumbnailMutex);
@@ -2420,7 +2420,7 @@ void editor::ResourcesWindow::thumbnailWorker() {
                         }
                     }
                 } else {
-                    Log::error("Failed to load model for thumbnail: %s", thumbFile.path.string().c_str());
+                    Out::error("Failed to load model for thumbnail: %s", thumbFile.path.string().c_str());
                     std::lock_guard<std::mutex> lock(thumbnailMutex);
                     pendingThumbnailRequests.erase(thumbnailRequestKey(thumbFile.path));
                 }
@@ -2442,14 +2442,14 @@ void editor::ResourcesWindow::thumbnailWorker() {
         }
         } catch (const std::exception& e) {
             MeshSystem::setImageDecodeMaxDimension(0);
-            Log::error("Unhandled thumbnail error for '%s': %s", thumbFile.path.string().c_str(), e.what());
+            Out::error("Unhandled thumbnail error for '%s': %s", thumbFile.path.string().c_str(), e.what());
             std::lock_guard<std::mutex> lock(thumbnailMutex);
             if (thumbFile.generation == thumbnailGeneration) {
                 pendingThumbnailRequests.erase(thumbnailRequestKey(thumbFile.path));
             }
         } catch (...) {
             MeshSystem::setImageDecodeMaxDimension(0);
-            Log::error("Unhandled thumbnail error for '%s'", thumbFile.path.string().c_str());
+            Out::error("Unhandled thumbnail error for '%s'", thumbFile.path.string().c_str());
             std::lock_guard<std::mutex> lock(thumbnailMutex);
             if (thumbFile.generation == thumbnailGeneration) {
                 pendingThumbnailRequests.erase(thumbnailRequestKey(thumbFile.path));

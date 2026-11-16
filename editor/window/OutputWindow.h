@@ -14,11 +14,22 @@ namespace doriax::editor {
         Warning,
         Error,
         Success,
-        Build
+        Build,
+        Debug,
+        Verbose,
+        Count
+    };
+
+    // Who wrote the line: the editor or the project being played
+    enum class LogSource {
+        Editor,
+        Project,
+        Count
     };
 
     struct LogData {
         LogType type;
+        LogSource source;
         std::string message;
         float timestamp;
     };
@@ -31,6 +42,7 @@ namespace doriax::editor {
         std::vector<LogData> logs;
         size_t storedLogLineCount;           // Raw log lines kept before wrapping/filtering
         std::vector<LogType> lineTypes;      // One per displayed line
+        std::vector<int> linePrefixLen;      // Prefix length of the entry each displayed line belongs to
         std::vector<char> lineHardBreak;     // 1 if displayed line ends with a hard newline, 0 if soft-wrapped
 
         static constexpr size_t MAX_STORED_LOG_LINES = 10000;
@@ -44,7 +56,8 @@ namespace doriax::editor {
         bool hasStoredSelection;
         bool isSelecting;                    // dragging selection?
 
-        bool typeFilters[5];
+        bool typeFilters[static_cast<size_t>(LogType::Count)];
+        bool sourceFilters[static_cast<size_t>(LogSource::Count)];
 
         // Auto-scroll
         bool autoScroll;                // when true, keep pinned to bottom
@@ -89,14 +102,19 @@ namespace doriax::editor {
         void clear();
         void addLog(LogType type, const char* fmt, ...);
         void addLog(LogType type, const std::string& message);
+        void addLog(LogType type, LogSource source, const std::string& message);
+
+        // Text form, "[Project] [Warning] " for the played project
+        static std::string getPrefix(LogType type, LogSource source);
         void show();
         void setOpen(bool open);
         bool isOpen() const;
 
-        // Return the most recent log entries as prefixed text (e.g. "[Error] ..."),
-        // oldest-first. When onlyProblems is true, keep only Error/Warning/Build
-        // entries (build compiler output is logged as Build). Used by the AI to read
-        // build errors and runtime script crashes after starting a scene.
+        // Return the most recent log entries as prefixed text (e.g. "[Error] ...",
+        // "[Project] [Error] ..." when the played project wrote it), oldest-first.
+        // When onlyProblems is true, keep only Error/Warning/Build entries (build
+        // compiler output is logged as Build). Used by the AI to read build errors
+        // and runtime script crashes after starting a scene.
         std::string getRecentLogText(size_t maxEntries, bool onlyProblems) const;
     };
 }

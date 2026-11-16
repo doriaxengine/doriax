@@ -4,6 +4,7 @@
 #include "ModelLoadCmd.h"
 
 #include "Stream.h"
+#include "Out.h"
 #include "util/ProjectUtils.h"
 #include "Engine.h"
 #include "subsystem/MeshSystem.h"
@@ -247,7 +248,7 @@ void editor::ModelLoadCmd::attachToNodes(Scene* scene, const ModelComponent& mod
         }
         Entity parent = findModelNode(model, entry.parent);
         if (parent == NULL_ENTITY) {
-            Log::warn("Node %d '%s' is no longer in '%s', '%s' was moved to the model", entry.parent.index,
+            Out::warning("Node %d '%s' is no longer in '%s', '%s' was moved to the model", entry.parent.index,
                 entry.parent.name.c_str(), model.filename.c_str(), scene->getEntityName(entry.entity).c_str());
             continue;
         }
@@ -283,7 +284,7 @@ void editor::ModelLoadCmd::restoreArrangement(SceneProject* sceneProject, const 
             reason = "its parent is gone";
         }
         if (!reason.empty()) {
-            Log::warn("Mesh part %d '%s' of '%s' stays where the file puts it: %s", moved.part.index,
+            Out::warning("Mesh part %d '%s' of '%s' stays where the file puts it: %s", moved.part.index,
                 moved.part.name.c_str(), model.filename.c_str(), reason.c_str());
             continue;
         }
@@ -296,7 +297,7 @@ void editor::ModelLoadCmd::restoreArrangement(SceneProject* sceneProject, const 
     }
     for (const Placement& placement : placements) {
         if (placement.part == placement.parent || scene->isParentOf(placement.part, placement.parent)) {
-            Log::warn("Cannot restore mesh part %d '%s' of '%s': it would contain its parent",
+            Out::warning("Cannot restore mesh part %d '%s' of '%s': it would contain its parent",
                 placement.moved->part.index, placement.moved->part.name.c_str(), model.filename.c_str());
             // Back to where the loader put it, unless that is now below the part as well
             if (!scene->isParentOf(placement.part, placement.defaultParent)) {
@@ -340,7 +341,7 @@ void editor::ModelLoadCmd::finalizeLoad(){
 
     for (Entity reused : reusedEntities) {
         if (!isMappedMeshNode(newModel, reused)) {
-            Log::warn("Mesh part '%s' is no longer in '%s' and became a plain entity",
+            Out::warning("Mesh part '%s' is no longer in '%s' and became a plain entity",
                 scene->getEntityName(reused).c_str(), newModel.filename.c_str());
         }
     }
@@ -401,11 +402,11 @@ bool editor::ModelLoadCmd::execute(){
 
     Signature signature = scene->getSignature(entity);
     if (!signature.test(scene->getComponentId<Transform>())){
-        Log::error("Entity %lu does not have a Transform component", entity);
+        Out::error("Entity %lu does not have a Transform component", entity);
         return false;
     }
     if (!signature.test(scene->getComponentId<ModelComponent>())){
-        Log::error("Entity %lu does not have a ModelComponent", entity);
+        Out::error("Entity %lu does not have a ModelComponent", entity);
         return false;
     }
 
@@ -416,11 +417,11 @@ bool editor::ModelLoadCmd::execute(){
     if (hasMergeStaticMeshesOverride && mergeStaticMeshesOverride) {
         std::string reason;
         if (!scene->getSystem<MeshSystem>()->canMergeStaticModel(model, &reason)) {
-            Log::warn("Cannot merge static model '%s': %s", model.filename.c_str(), reason.c_str());
+            Out::warning("Cannot merge static model '%s': %s", model.filename.c_str(), reason.c_str());
             return false;
         }
         if (ProjectUtils::hasCustomMeshParenting(scene, entity)) {
-            Log::warn("Cannot merge static model '%s': reset the mesh parenting first", model.filename.c_str());
+            Out::warning("Cannot merge static model '%s': reset the mesh parenting first", model.filename.c_str());
             return false;
         }
     }

@@ -93,6 +93,7 @@ private:
     // Editor viewport settings
     static bool multiViewportEnabled;
     static bool editorVSyncEnabled;
+    static bool outputClearOnPlay;
     static float uiScale;
     static PanelVisibilitySettings panelVisibility;
 
@@ -180,6 +181,10 @@ public:
     // VSync for the editor's own frames; Play mode and builds use the project setting
     static bool getEditorVSyncEnabled();
     static void setEditorVSyncEnabled(bool enabled);
+
+    // Output window is emptied when Play starts
+    static bool getOutputClearOnPlay();
+    static void setOutputClearOnPlay(bool enabled);
 
     // Multiplies the display scale the system reports
     static float getUiScale();

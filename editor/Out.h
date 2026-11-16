@@ -13,7 +13,7 @@ namespace doriax::editor {
     class Out {
     private:
         static OutputWindow* outputWindow;
-        static void logMessage(LogType type, const std::string& message, const char* fallbackPrefix, std::ostream& fallbackStream);
+        static void logMessage(LogType type, LogSource source, const std::string& message);
 
         // Helper method for formatting with no arguments
         static std::string formatMessage(const char* fmt) {
@@ -60,6 +60,9 @@ namespace doriax::editor {
         static void warning(const std::string& message);
         static void error(const std::string& message);
         static void build(const std::string& message);
+
+        // Any type and source, used for the played project's lines
+        static void log(LogType type, LogSource source, const std::string& message);
 
         // Overloads for const char* without formatting
         static void info(const char* message) { info(std::string(message)); }

@@ -96,6 +96,7 @@ float AppSettings::resourcesLeftPanelWidth = 200.0f;
 float AppSettings::codeEditorFontSize = AppSettings::defaultCodeEditorFontSize;
 bool AppSettings::multiViewportEnabled = false;
 bool AppSettings::editorVSyncEnabled = true;
+bool AppSettings::outputClearOnPlay = false;
 float AppSettings::uiScale = 1.0f;
 PanelVisibilitySettings AppSettings::panelVisibility;
 ai::Settings AppSettings::aiSettings;
@@ -246,6 +247,9 @@ bool AppSettings::loadSettings() {
             if (editorNode["vsync"]) {
                 editorVSyncEnabled = editorNode["vsync"].as<bool>();
             }
+            if (editorNode["output_clear_on_play"]) {
+                outputClearOnPlay = editorNode["output_clear_on_play"].as<bool>();
+            }
             if (editorNode["ui_scale"]) {
                 setUiScale(editorNode["ui_scale"].as<float>());
             }
@@ -392,6 +396,7 @@ bool AppSettings::saveSettings() {
         YAML::Node editorNode;
         editorNode["multi_viewport"] = multiViewportEnabled;
         editorNode["vsync"] = editorVSyncEnabled;
+        editorNode["output_clear_on_play"] = outputClearOnPlay;
         editorNode["ui_scale"] = uiScale;
         YAML::Node panelsNode;
         panelsNode["structure"] = panelVisibility.structure;
@@ -640,6 +645,14 @@ bool AppSettings::getEditorVSyncEnabled() {
 
 void AppSettings::setEditorVSyncEnabled(bool enabled) {
     editorVSyncEnabled = enabled;
+}
+
+bool AppSettings::getOutputClearOnPlay() {
+    return outputClearOnPlay;
+}
+
+void AppSettings::setOutputClearOnPlay(bool enabled) {
+    outputClearOnPlay = enabled;
 }
 
 float AppSettings::getUiScale() {

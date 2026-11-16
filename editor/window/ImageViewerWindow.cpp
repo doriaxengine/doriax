@@ -6,7 +6,7 @@
 #include "Backend.h"
 #include "Theme.h"
 #include "external/IconsFontAwesome6.h"
-#include "Log.h"
+#include "Out.h"
 #include "Project.h"
 
 #include <algorithm>
@@ -72,7 +72,7 @@ void editor::ImageViewerWindow::loadImage(Instance& instance) {
         imageData.releaseImageData();
         retireTexture(instance.texture);
         instance.loadError = "The image could not be decoded.";
-        Log::error("Unable to preview image '%s'", fullPath.string().c_str());
+        Out::error("Unable to preview image '%s'", fullPath.string().c_str());
         return;
     }
 
@@ -86,7 +86,7 @@ void editor::ImageViewerWindow::loadImage(Instance& instance) {
         imageData.releaseImageData();
         retireTexture(instance.texture);
         instance.loadError = "The image was decoded, but its GPU texture could not be created.";
-        Log::error("Unable to create image viewer texture for '%s'", fullPath.string().c_str());
+        Out::error("Unable to create image viewer texture for '%s'", fullPath.string().c_str());
         return;
     }
 

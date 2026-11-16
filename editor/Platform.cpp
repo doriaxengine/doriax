@@ -87,18 +87,25 @@ void editor::Platform::quit(){
 }
 
 void editor::Platform::platformLog(const int type, const char *fmt, va_list args){
-    char buf[4096];
-    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_list sizeArgs;
+    va_copy(sizeArgs, args);
+    const int size = vsnprintf(nullptr, 0, fmt, sizeArgs);
+    va_end(sizeArgs);
+    if (size < 0) return;
 
+    std::string message(static_cast<size_t>(size), '\0');
+    vsnprintf(message.data(), message.size() + 1, fmt, args);
+
+    LogType logType = LogType::Info;
     switch (type) {
-        case D_LOG_WARN:
-            editor::Out::warning(buf);
-            break;
-        case D_LOG_ERROR:
-            editor::Out::error(buf);
-            break;
-        default:
-            editor::Out::info(buf);
-            break;
+        case D_LOG_VERBOSE: logType = LogType::Verbose; break;
+        case D_LOG_DEBUG:   logType = LogType::Debug; break;
+        case D_LOG_WARN:    logType = LogType::Warning; break;
+        case D_LOG_ERROR:   logType = LogType::Error; break;
+        default: break;
     }
+
+    // During Play the engine log is the project's, not the editor's
+    const LogSource source = project->isPlaySessionActive() ? LogSource::Project : LogSource::Editor;
+    editor::Out::log(logType, source, message);
 }

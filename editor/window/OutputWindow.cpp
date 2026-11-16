@@ -5,6 +5,7 @@
 #include "external/IconsFontAwesome6.h"
 #include "util/UIUtils.h"
 #include "App.h"
+#include "AppSettings.h"
 #include "Theme.h"
 #include <ctime>
 #include <iomanip>
@@ -32,6 +33,8 @@ static ImVec4 GetLogTypeColor(LogType type) {
         case LogType::Error:   return ImVec4(1.00f, 0.45f, 0.45f, 1.00f); // red
         case LogType::Success: return ImVec4(0.55f, 1.00f, 0.55f, 1.00f); // green
         case LogType::Build:   return ImVec4(0.60f, 0.85f, 1.00f, 1.00f); // sky
+        case LogType::Debug:   return ImVec4(0.70f, 0.72f, 0.80f, 1.00f); // dim gray-blue
+        case LogType::Verbose: return ImVec4(0.58f, 0.60f, 0.66f, 1.00f); // gray
         default:               return ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
     }
 }
@@ -49,8 +52,11 @@ OutputWindow::OutputWindow() {
     lastScrollY = 0.0f;      // initialize scroll tracking
     userScrollInputPending = false;
     pendingScrollToBottom = false;
-    for (int i = 0; i < 5; i++) {
-        typeFilters[i] = true;
+    for (bool& enabled : typeFilters) {
+        enabled = true;
+    }
+    for (bool& enabled : sourceFilters) {
+        enabled = true;
     }
     searchMatchCase = false; // default: case-insensitive
     hasNotification = false;
@@ -94,6 +100,7 @@ void OutputWindow::resetDisplayBuffer() {
     lineOffsets.clear();
     lineOffsets.push_back(0);
     lineTypes.clear();
+    linePrefixLen.clear();
     lineHardBreak.clear();
     selectionStart = selectionEnd = -1;
     hasStoredSelection = false;
@@ -172,9 +179,15 @@ void OutputWindow::addLog(LogType type, const char* fmt, ...) {
     addLog(type, std::string(temp));
 }
 
+static std::string getDisplayPrefix(LogType type, LogSource source);
+
 void OutputWindow::addLog(LogType type, const std::string& message) {
+    addLog(type, LogSource::Editor, message);
+}
+
+void OutputWindow::addLog(LogType type, LogSource source, const std::string& message) {
     // Store the raw log entry
-    LogData logEntry{type, message, getElapsedSeconds()};
+    LogData logEntry{type, source, message, getElapsedSeconds()};
     logs.push_back(logEntry);
     storedLogLineCount += countRawLines(message);
     const bool trimmed = enforceStoredLineLimit();
@@ -189,16 +202,7 @@ void OutputWindow::addLog(LogType type, const std::string& message) {
         return;
     }
 
-    // Basic formatting for initial display (append quickly for incremental feel)
-    std::string typeStr;
-    switch(type) {
-        case LogType::Error: typeStr = "Error"; break;
-        case LogType::Success: typeStr = "Success"; break;
-        case LogType::Info: typeStr = "Info"; break;
-        case LogType::Warning: typeStr = "Warning"; break;
-        case LogType::Build: typeStr = "Build"; break;
-    }
-    std::string formattedMessage = "[" + typeStr + "] " + message + "\n";
+    std::string formattedMessage = getDisplayPrefix(type, source) + message + "\n";
 
     // Append raw for immediate feedback (will be rebuilt and recolored on next frame)
     int oldSize = buf.size();
@@ -208,15 +212,35 @@ void OutputWindow::addLog(LogType type, const std::string& message) {
             lineOffsets.push_back(oldSize + 1);
 }
 
-static std::string getTypePrefixString(LogType type) {
+static const char* getTypeName(LogType type) {
     switch(type) {
-        case LogType::Error: return "[Error] ";
-        case LogType::Success: return "[Success] ";
-        case LogType::Info: return "[Info] ";
-        case LogType::Warning: return "[Warning] ";
-        case LogType::Build: return "[Build] ";
-        default: return "[Unknown] ";
+        case LogType::Error: return "Error";
+        case LogType::Success: return "Success";
+        case LogType::Info: return "Info";
+        case LogType::Warning: return "Warning";
+        case LogType::Build: return "Build";
+        case LogType::Debug: return "Debug";
+        case LogType::Verbose: return "Verbose";
+        default: return "Unknown";
     }
+}
+
+// Plain print of the played project has no level
+static std::string getTypePrefix(LogType type, LogSource source) {
+    if (source == LogSource::Project && type == LogType::Info) return {};
+    return std::string("[") + getTypeName(type) + "] ";
+}
+
+static const char* const PROJECT_ICON_PREFIX = ICON_FA_PLAY " ";
+static const char* const PROJECT_TEXT_PREFIX = "[Project] ";
+
+// Drawn form: the Play icon marks the played project's lines
+static std::string getDisplayPrefix(LogType type, LogSource source) {
+    return (source == LogSource::Project ? PROJECT_ICON_PREFIX : "") + getTypePrefix(type, source);
+}
+
+std::string OutputWindow::getPrefix(LogType type, LogSource source) {
+    return (source == LogSource::Project ? PROJECT_TEXT_PREFIX : "") + getTypePrefix(type, source);
 }
 
 std::string OutputWindow::getRecentLogText(size_t maxEntries, bool onlyProblems) const {
@@ -234,7 +258,7 @@ std::string OutputWindow::getRecentLogText(size_t maxEntries, bool onlyProblems)
     // Emit oldest-first so the text reads in chronological order.
     std::string out;
     for (auto it = selected.rbegin(); it != selected.rend(); ++it) {
-        out += getTypePrefixString((*it)->type);
+        out += getPrefix((*it)->type, (*it)->source);
         out += (*it)->message;
         out.push_back('\n');
     }
@@ -256,24 +280,23 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
     lineOffsets.clear();
     lineOffsets.push_back(0);
     lineTypes.clear();
+    linePrefixLen.clear();
     lineHardBreak.clear();
 
     ImFont* font = ImGui::GetFont();
     float fontSize = ImGui::GetFontSize();
 
+    const float spaceWidth = ImMax(1.0f, font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, " ").x);
+
     for (size_t logIndex = 0; logIndex < logs.size(); ++logIndex) {
         const auto& log = logs[logIndex];
-        std::string prefix = getTypePrefixString(log.type);
+        std::string prefix = getDisplayPrefix(log.type, log.source);
         float prefixWidth = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, prefix.c_str()).x;
+        // Wrapped lines indent by the prefix width, not its bytes
+        const int prefixLen = static_cast<int>(prefixWidth / spaceWidth + 0.5f);
 
-        bool typeAllowed = false;
-        switch(log.type) {
-            case LogType::Info: typeAllowed = typeFilters[0]; break;
-            case LogType::Warning: typeAllowed = typeFilters[1]; break;
-            case LogType::Error: typeAllowed = typeFilters[2]; break;
-            case LogType::Success: typeAllowed = typeFilters[3]; break;
-            case LogType::Build: typeAllowed = typeFilters[4]; break;
-        }
+        const bool typeAllowed = typeFilters[static_cast<size_t>(log.type)]
+                              && sourceFilters[static_cast<size_t>(log.source)];
 
         // Empty message: just print the prefix as its own line
         if (log.message.empty()) {
@@ -285,12 +308,13 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
                 }
                 lineOffsets.push_back(buf.size());
                 lineTypes.push_back(log.type);
+                linePrefixLen.push_back(prefixLen);
                 lineHardBreak.push_back(appendedNewline ? 1 : 0);
             }
             continue;
         }
 
-        std::string indentation(prefix.length(), ' ');
+        std::string indentation(static_cast<size_t>(prefixLen), ' ');
         float indentWidth = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, indentation.c_str()).x;
 
         std::string currentLine = prefix;
@@ -327,6 +351,7 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
                     if (addNewline) buf.append("\n");
                     lineOffsets.push_back(buf.size());
                     lineTypes.push_back(log.type);
+                    linePrefixLen.push_back(prefixLen);
                     lineHardBreak.push_back(addNewline ? 1 : 0); // hard break from original newline
                 }
                 currentLine.clear();
@@ -346,6 +371,7 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
                     buf.append("\n");
                     lineOffsets.push_back(buf.size());
                     lineTypes.push_back(log.type);
+                    linePrefixLen.push_back(prefixLen);
                     lineHardBreak.push_back(0); // soft wrap
                 }
                 currentLine = indentation;
@@ -369,6 +395,7 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
                 }
                 lineOffsets.push_back(buf.size());
                 lineTypes.push_back(log.type);
+                linePrefixLen.push_back(prefixLen);
                 lineHardBreak.push_back(appendNewlineBetweenLogs ? 1 : 0); // hard break between logs
             }
         }
@@ -531,9 +558,7 @@ std::string OutputWindow::buildCopyText(int startInclusive, int endExclusive) co
 
             bool prevSoft = (i > 0) && (i - 1) < static_cast<int>(lineHardBreak.size()) && (lineHardBreak[i - 1] == 0);
             if (prevSoft) {
-                int indentMax = static_cast<int>(getTypePrefixString(
-                    (i >= 0 && i < static_cast<int>(lineTypes.size())) ? lineTypes[i] : LogType::Info
-                ).size());
+                int indentMax = (i >= 0 && i < static_cast<int>(linePrefixLen.size())) ? linePrefixLen[i] : 0;
                 int indentActual = 0;
                 int scanEnd = std::min(le, ls + indentMax);
                 while (ls + indentActual < scanEnd && buf[ls + indentActual] == ' ') {
@@ -561,6 +586,12 @@ std::string OutputWindow::buildCopyText(int startInclusive, int endExclusive) co
                 }
             }
         }
+    }
+
+    // The icon is a private glyph, copied text gets the word
+    const std::string icon = ICON_FA_PLAY;
+    for (size_t pos = out.find(icon); pos != std::string::npos; pos = out.find(icon, pos)) {
+        out.replace(pos, icon.size(), "[Project]");
     }
 
     return out;
@@ -692,11 +723,11 @@ void OutputWindow::show() {
 
     // Filter button (filter icon)
     bool anyFilterDisabled = false;
-    for (int i = 0; i < 5; i++) {
-        if (!typeFilters[i]) {
-            anyFilterDisabled = true;
-            break;
-        }
+    for (bool enabled : typeFilters) {
+        if (!enabled) anyFilterDisabled = true;
+    }
+    for (bool enabled : sourceFilters) {
+        if (!enabled) anyFilterDisabled = true;
     }
     if (anyFilterDisabled || filter.IsActive()) {
         ImGui::PushStyleColor(ImGuiCol_Button, Theme::Colors::ButtonActivated);
@@ -712,9 +743,18 @@ void OutputWindow::show() {
         bool filterChanged = false;
 
         // Type filters
-        const char* filterNames[] = {"Info", "Warning", "Error", "Success", "Build"};
-        for (int i = 0; i < 5; i++) {
-            if (ImGui::Checkbox(filterNames[i], &typeFilters[i])) {
+        for (size_t i = 0; i < static_cast<size_t>(LogType::Count); i++) {
+            if (ImGui::Checkbox(getTypeName(static_cast<LogType>(i)), &typeFilters[i])) {
+                filterChanged = true;
+            }
+        }
+
+        ImGui::Separator();
+
+        // Source filters
+        const char* sourceNames[] = {"Editor", "Project"};
+        for (size_t i = 0; i < static_cast<size_t>(LogSource::Count); i++) {
+            if (ImGui::Checkbox(sourceNames[i], &sourceFilters[i])) {
                 filterChanged = true;
             }
         }
@@ -966,6 +1006,11 @@ void OutputWindow::show() {
 
         if (ImGui::MenuItem(ICON_FA_TRASH " Clear", nullptr, false, hasContent)) {
             clear();
+        }
+        bool clearOnPlay = AppSettings::getOutputClearOnPlay();
+        if (ImGui::MenuItem(ICON_FA_BROOM " Clear on Play", nullptr, &clearOnPlay)) {
+            AppSettings::setOutputClearOnPlay(clearOnPlay);
+            AppSettings::saveSettings();
         }
 
         ImGui::Separator();

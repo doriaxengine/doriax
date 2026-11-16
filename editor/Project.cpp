@@ -10853,7 +10853,8 @@ void editor::Project::start(uint32_t sceneId) {
             SceneProject* sceneProject = getScene(sceneId);
             std::string sceneName = sceneProject ? sceneProject->name : "Unknown";
 
-            Out::error("Script crash in scene '%s' (ID: %u)\nLocation: %s\nError: %s", sceneName.c_str(), sceneId, tag.c_str(), errorInfo.c_str());
+            Out::log(LogType::Error, LogSource::Project, "Script crash in scene '" + sceneName + "' (ID: " + std::to_string(sceneId)
+                + ")\nLocation: " + tag + "\nError: " + errorInfo);
 
             // 1. Pause immediately.
             // This sets a flag to prevent the Engine from starting the NEXT frame update.
@@ -10869,6 +10870,12 @@ void editor::Project::start(uint32_t sceneId) {
                 stop(sceneId);
             }).detach();
         };
+
+    if (AppSettings::getOutputClearOnPlay()) {
+        if (OutputWindow* output = Out::getOutputWindow()) {
+            output->clear();
+        }
+    }
 
     auto session = std::make_shared<PlaySession>();
     session->mainSceneId = sceneId;

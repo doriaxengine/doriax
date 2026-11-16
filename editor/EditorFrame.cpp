@@ -5,7 +5,7 @@
 
 #include "AppSettings.h"
 #include "Backend.h"
-#include "Log.h"
+#include "Out.h"
 
 #include "imgui.h"
 
@@ -127,7 +127,7 @@ bool EditorFrame::run(EditorFrameState& state){
     // submits are dropped after a GPU reset, so the window would just stop
     // updating. Checked after updateTarget, which is where a loss often lands.
     if (renderer->isDeviceLost()){
-        Log::error("Graphics device was reset, closing the editor without saving");
+        Out::error("Graphics device was reset, closing the editor without saving");
         return false;
     }
     if (!targetReady){

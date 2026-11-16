@@ -7205,7 +7205,7 @@ Body3DComponent editor::Stream::decodeBody3DComponent(const YAML::Node& node, co
 
                 const float physicsOffset = (body.shapes[i].position * bodyScale).length();
                 if (body.numShapes == 1 && physicsOffset > MAX_SINGLE_SHAPE_PHYSICS_OFFSET) {
-                    Log::warn("Body3D shape position after transform scale is too large (%.2f). Physics may be unstable.", physicsOffset);
+                    Out::warning("Body3D shape position after transform scale is too large (%.2f). Physics may be unstable.", physicsOffset);
                 }
             }
             if (node["shapes"][i]["rotation"]) {

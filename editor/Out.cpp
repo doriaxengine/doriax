@@ -31,7 +31,22 @@ const char* logTypeLabel(LogType type) {
         case LogType::Error:   return "ERROR";
         case LogType::Success: return "OK   ";
         case LogType::Build:   return "BUILD";
+        case LogType::Debug:   return "DEBUG";
+        case LogType::Verbose: return "VERB ";
         default:               return "INFO ";
+    }
+}
+
+// Without an Output window the lines go to the console
+const char* consolePrefix(LogType type) {
+    switch (type) {
+        case LogType::Warning: return "[WARNING] ";
+        case LogType::Error:   return "[ERROR] ";
+        case LogType::Success: return "[SUCCESS] ";
+        case LogType::Build:   return "[BUILD] ";
+        case LogType::Debug:   return "[DEBUG] ";
+        case LogType::Verbose: return "[VERBOSE] ";
+        default:               return "[INFO] ";
     }
 }
 
@@ -48,13 +63,14 @@ std::string timestamp() {
     return buffer;
 }
 
-void writeToLogFile(LogType type, const std::string& message) {
+void writeToLogFile(LogType type, LogSource source, const std::string& message) {
     std::lock_guard<std::mutex> lock(logFileMutex);
     if (!logFileStream.is_open()) {
         return;
     }
     // Flushed per line, the lines just before a crash are the ones worth having.
-    logFileStream << timestamp() << " [" << logTypeLabel(type) << "] " << message << std::endl;
+    logFileStream << timestamp() << " [" << logTypeLabel(type) << "] "
+                  << (source == LogSource::Project ? "[Project] " : "") << message << std::endl;
 }
 
 }
@@ -91,26 +107,28 @@ void Out::setLogFile(const std::filesystem::path& path) {
                   << timestamp() << " ===" << std::endl;
 }
 
-void Out::logMessage(LogType type, const std::string& text, const char* fallbackPrefix, std::ostream& fallbackStream) {
+void Out::logMessage(LogType type, LogSource source, const std::string& text) {
     const std::string message = TextEncoding::legacyToUtf8(text);
 
     // Before the hop to the main thread, so a worker's last message still reaches the file.
-    writeToLogFile(type, message);
+    writeToLogFile(type, source, message);
 
     if (OutputWindow* window = Out::getOutputWindow()) {
         EditorHost& host = getEditorHost();
         if (host.isMainThread()) {
-            window->addLog(type, message);
+            window->addLog(type, source, message);
             return;
         }
 
-        host.enqueueMainThreadTask([type, message]() {
+        host.enqueueMainThreadTask([type, source, message]() {
             if (OutputWindow* window = Out::getOutputWindow()) {
-                window->addLog(type, message);
+                window->addLog(type, source, message);
             }
         });
     } else {
-        fallbackStream << fallbackPrefix << message << std::endl;
+        const bool problem = type == LogType::Error || type == LogType::Build;
+        (problem ? std::cerr : std::cout) << consolePrefix(type)
+            << (source == LogSource::Project ? "[PROJECT] " : "") << message << std::endl;
     }
 }
 
@@ -130,23 +148,27 @@ std::string Out::getRecentLog(size_t maxEntries, bool onlyProblems) {
 }
 
 void Out::info(const std::string& message) {
-    logMessage(LogType::Info, message, "[INFO] ", std::cout);
+    logMessage(LogType::Info, LogSource::Editor, message);
 }
 
 void Out::success(const std::string& message) {
-    logMessage(LogType::Success, message, "[SUCCESS] ", std::cout);
+    logMessage(LogType::Success, LogSource::Editor, message);
 }
 
 void Out::warning(const std::string& message) {
-    logMessage(LogType::Warning, message, "[WARNING] ", std::cout);
+    logMessage(LogType::Warning, LogSource::Editor, message);
 }
 
 void Out::error(const std::string& message) {
-    logMessage(LogType::Error, message, "[ERROR] ", std::cerr);
+    logMessage(LogType::Error, LogSource::Editor, message);
 }
 
 void Out::build(const std::string& message) {
-    logMessage(LogType::Build, message, "[BUILD] ", std::cerr);
+    logMessage(LogType::Build, LogSource::Editor, message);
+}
+
+void Out::log(LogType type, LogSource source, const std::string& message) {
+    logMessage(type, source, message);
 }
 
 void Out::editor_assert(bool condition, const std::string& message) {
