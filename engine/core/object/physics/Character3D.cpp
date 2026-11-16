@@ -85,10 +85,10 @@ Vector3 Character3D::getPosition() const{
     return Vector3(position.GetX(), position.GetY(), position.GetZ());
 }
 
+// one not built yet starts there
 void Character3D::setPosition(Vector3 position){
     Character3DComponent& character = getComponent<Character3DComponent>();
 
-    checkCharacter(character);
     scene->getSystem<PhysicsSystem>()->setCharacter3DPosition(entity, character, position);
 }
 
@@ -130,10 +130,9 @@ bool Character3D::isSlopeTooSteep(Vector3 normal) const{
     return getJoltCharacter()->IsSlopeTooSteep(JPH::Vec3(normal.x, normal.y, normal.z));
 }
 
+// one not built yet is built with it
 bool Character3D::setShape(float height, float radius){
     Character3DComponent& character = getComponent<Character3DComponent>();
-
-    checkCharacter(character);
 
     return scene->getSystem<PhysicsSystem>()->setCharacter3DShape(entity, character, height, radius, true);
 }

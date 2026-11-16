@@ -7445,8 +7445,8 @@ Character3DComponent editor::Stream::decodeCharacter3DComponent(const YAML::Node
     if (node["airControl"]) character.airControl = node["airControl"].as<float>();
     if (node["innerBody"]) character.innerBody = node["innerBody"].as<bool>();
 
-    // a restored scene starts it again, standing still
-    if (oldCharacter && oldCharacter->character) {
+    // a restored scene starts it again, standing still, even one that failed to build
+    if (oldCharacter) {
         character.needReloadCharacter = true;
         character.moveVelocity = Vector3::ZERO;
         character.needJump = false;

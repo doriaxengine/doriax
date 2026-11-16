@@ -15,13 +15,14 @@ namespace doriax{
     class DORIAX_API Contact3D{
     private:
         Scene* scene;
-        const JPH::Body* body1;
-        const JPH::Body* body2;
+        // of the body a side is, 0 for a character
+        size_t shapeIndex1;
+        size_t shapeIndex2;
         const JPH::ContactManifold* contactManifold;
         JPH::ContactSettings* contactSettings;
 
     public:
-        Contact3D(Scene* scene, const JPH::Body* body1, const JPH::Body* body2, const JPH::ContactManifold* contactManifold, JPH::ContactSettings* contactSettings);
+        Contact3D(Scene* scene, size_t shapeIndex1, size_t shapeIndex2, const JPH::ContactManifold* contactManifold, JPH::ContactSettings* contactSettings);
         virtual ~Contact3D();
 
         Contact3D(const Contact3D& rhs);

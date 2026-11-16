@@ -40,13 +40,14 @@
 
 namespace doriax{
 
+	struct JoltCallbackScope;
 	class JoltActivationListener;
 	class JoltCharacterListener;
 	class JoltContactListener;
 	
 
 	class DORIAX_API PhysicsSystem : public SubSystem {
-		friend class JoltActivationListener;
+		friend struct JoltCallbackScope;
 
 	private:
 		Vector2 gravity2D;
@@ -71,7 +72,8 @@ namespace doriax{
 #ifdef DORIAX_PHYSICS_3D
 		bool lock3DBodies;
 		bool steppingWorld3D = false;
-		bool callingActivation3D = false;
+		// in a Jolt callback that may hold bodies: what changes the world waits
+		bool insideCallback3D = false;
 
 		void flushPendingDestroys3D();
 		bool prepareJoint3D(Joint3DComponent& joint, Entity bodyA, Entity bodyB);
@@ -125,6 +127,8 @@ namespace doriax{
 		JPH::ShapeRefC createCharacterShape3D(Entity entity, float height, float radius, float size);
 		void refreshCharacter3DContacts(JPH::CharacterVirtual* character);
 		void updateCharacter3D(Entity entity, Character3DComponent& character, float stepTime);
+		// not built yet, asked again, or failed at another scale
+		bool needsCharacterLoad3D(Entity entity, const Character3DComponent& character);
 
 		static Vector3 absScale(const Vector3& scale);
 		static float maxScaleXZ(const Vector3& scale);

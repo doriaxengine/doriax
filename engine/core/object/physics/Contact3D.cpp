@@ -9,10 +9,10 @@
 
 using namespace doriax;
 
-Contact3D::Contact3D(Scene* scene, const JPH::Body* body1, const JPH::Body* body2, const JPH::ContactManifold* contactManifold, JPH::ContactSettings* contactSettings){
+Contact3D::Contact3D(Scene* scene, size_t shapeIndex1, size_t shapeIndex2, const JPH::ContactManifold* contactManifold, JPH::ContactSettings* contactSettings){
     this->scene = scene;
-    this->body1 = body1;
-    this->body2 = body2;
+    this->shapeIndex1 = shapeIndex1;
+    this->shapeIndex2 = shapeIndex2;
     this->contactManifold = contactManifold;
     this->contactSettings = contactSettings;
 }
@@ -23,16 +23,16 @@ Contact3D::~Contact3D(){
 
 Contact3D::Contact3D(const Contact3D& rhs){
     scene = rhs.scene;
-    body1 = rhs.body1;
-    body2 = rhs.body2;
+    shapeIndex1 = rhs.shapeIndex1;
+    shapeIndex2 = rhs.shapeIndex2;
     contactManifold = rhs.contactManifold;
     contactSettings = rhs.contactSettings;
 }
 
 Contact3D& Contact3D::operator=(const Contact3D& rhs){
     scene = rhs.scene;
-    body1 = rhs.body1;
-    body2 = rhs.body2;
+    shapeIndex1 = rhs.shapeIndex1;
+    shapeIndex2 = rhs.shapeIndex2;
     contactManifold = rhs.contactManifold;
     contactSettings = rhs.contactSettings;
     
@@ -60,11 +60,11 @@ float Contact3D::getPenetrationDepth() const{
 }
 
 size_t Contact3D::getShapeIndex1() const{
-    return body1->GetShape()->GetSubShapeUserData(contactManifold->mSubShapeID1);
+    return shapeIndex1;
 }
 
 size_t Contact3D::getShapeIndex2() const{
-    return body2->GetShape()->GetSubShapeUserData(contactManifold->mSubShapeID2);
+    return shapeIndex2;
 }
 
 Vector3 Contact3D::getRelativeContactPointsOnA(size_t index) const{

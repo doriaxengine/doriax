@@ -14,12 +14,13 @@ namespace doriax{
     class DORIAX_API CollideShapeResult3D{
     private:
         Scene* scene;
-        const JPH::Body* body1;
-        const JPH::Body* body2;
+        // of the body a side is, 0 for a character
+        size_t shapeIndex1;
+        size_t shapeIndex2;
         const JPH::CollideShapeResult* collideShapeResult;
 
     public:
-        CollideShapeResult3D(Scene* scene, const JPH::Body* body1, const JPH::Body* body2, const JPH::CollideShapeResult* collideShapeResult);
+        CollideShapeResult3D(Scene* scene, size_t shapeIndex1, size_t shapeIndex2, const JPH::CollideShapeResult* collideShapeResult);
         virtual ~CollideShapeResult3D();
 
         CollideShapeResult3D(const CollideShapeResult3D& rhs);

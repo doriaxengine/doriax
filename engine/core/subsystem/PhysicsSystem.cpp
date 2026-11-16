@@ -573,7 +573,7 @@ PhysicsSystem::PhysicsSystem(Scene* scene): SubSystem(scene){
     contactListener3D = new JoltContactListener(scene, this);
     world3D.SetContactListener(contactListener3D);
 
-    characterListener3D = new JoltCharacterListener(scene);
+    characterListener3D = new JoltCharacterListener(scene, this);
 
     lock3DBodies = true;
 #endif
@@ -797,9 +797,9 @@ bool PhysicsSystem::isLock3DBodies() const{
 }
 
 // The step wins over lock3DBodies: a script re-arming the flag from a callback would
-// otherwise restore the deadlock. Activation callbacks too: Jolt calls them locked.
+// otherwise restore the deadlock. Activation and character callbacks too: Jolt may hold bodies.
 bool PhysicsSystem::useLockedInterfaces3D() const{
-    return lock3DBodies && !steppingWorld3D && !callingActivation3D;
+    return lock3DBodies && !steppingWorld3D && !insideCallback3D;
 }
 
 JPH::BodyInterface& PhysicsSystem::getBodyInterface3D(){
@@ -2136,9 +2136,17 @@ void PhysicsSystem::refreshCharacter3DContacts(JPH::CharacterVirtual* character)
         CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator);
 }
 
+bool PhysicsSystem::needsCharacterLoad3D(Entity entity, const Character3DComponent& character){
+    if (character.needReloadCharacter || character.character){
+        return character.needReloadCharacter;
+    }
+    resolveWorldPose(scene, entity);
+    return entityWorldScale(scene, entity) != character.loadedScale;
+}
+
 bool PhysicsSystem::loadCharacter3D(Entity entity){
     // the inner body needs the locks the step holds
-    if (steppingWorld3D || callingActivation3D){
+    if (steppingWorld3D || insideCallback3D){
         Log::error("Cannot load a 3D character while the physics world is stepping, retrying next update");
         return false;
     }
@@ -2152,14 +2160,15 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
         Log::warn("3D Character entity %u also has a 3D Body, both move it", entity);
     }
 
+    // one that fails is tried again when a setting or its scale changes
     const Vector3 entityScale = entityWorldScale(scene, entity);
+    character.needReloadCharacter = false;
+    character.loadedScale = entityScale;
 
     JPH::Ref<JPH::CharacterVirtualSettings> settings = new JPH::CharacterVirtualSettings();
     settings->mShape = createCharacterShape3D(entity, character.height, character.radius, 1.0f);
     if (!settings->mShape){
         Log::error("Cannot create the capsule of 3D Character entity: %u", entity);
-        // tried again when a setting changes
-        character.needReloadCharacter = false;
         return false;
     }
     settings->mMaxSlopeAngle = Angle::defaultToRad(character.maxSlopeAngle);
@@ -2182,8 +2191,6 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
     characterCollision3D.Add(character.character);
     refreshCharacter3DContacts(character.character);
 
-    character.needReloadCharacter = false;
-    character.loadedScale = entityScale;
     character.previousPosition = position;
     character.syncedPosition = position;
 
@@ -2198,9 +2205,10 @@ void PhysicsSystem::destroyCharacter3D(Character3DComponent& character){
     JPH::CharacterVirtual* jcharacter = character.character;
     character.character = NULL;
 
+    characterListener3D->forget(jcharacter);
     characterCollision3D.Remove(jcharacter);
     // its inner body needs the locks the step holds
-    if (steppingWorld3D || callingActivation3D){
+    if (steppingWorld3D || insideCallback3D){
         pendingCharacterDestroy3D.push_back(jcharacter);
     }else{
         delete jcharacter;
@@ -2209,7 +2217,7 @@ void PhysicsSystem::destroyCharacter3D(Character3DComponent& character){
 
 void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position){
     // the next step takes it from the transform
-    if (steppingWorld3D || callingActivation3D || !character.character){
+    if (steppingWorld3D || insideCallback3D || !character.character){
         if (Transform* transform = scene->findComponent<Transform>(entity)){
             setTransformWorldPosition(scene, *transform, position);
         }
@@ -2225,12 +2233,15 @@ void PhysicsSystem::setCharacter3DPosition(Entity entity, Character3DComponent& 
 }
 
 bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit){
-    if (steppingWorld3D || callingActivation3D){
+    if (steppingWorld3D || insideCallback3D){
         Log::error("Cannot change a 3D character shape while the physics world is stepping");
         return false;
     }
     if (!character.character){
-        return false;
+        character.height = height;
+        character.radius = radius;
+        character.needReloadCharacter = true;
+        return true;
     }
 
     JPH::ShapeRefC shape = createCharacterShape3D(entity, height, radius, 1.0f);
@@ -2278,6 +2289,7 @@ void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& chara
         jcharacter->SetPosition(JPH::RVec3(position.x, position.y, position.z));
         refreshCharacter3DContacts(jcharacter);
     }
+    const Vector3 placed = transform ? transform->worldPosition : Vector3::ZERO;
 
     const JPH::RVec3 oldPosition = jcharacter->GetPosition();
     character.previousPosition = Vector3(oldPosition.GetX(), oldPosition.GetY(), oldPosition.GetZ());
@@ -2317,6 +2329,10 @@ void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& chara
     settings.mStickToFloorStepDown = -character.stepDown * up;
     settings.mWalkStairsStepUp = character.stepUp * up;
 
+    // Jolt tracks contacts only for a listener, so it is set while something needs one
+    const bool heard = !shouldCollide3D.empty() || !onContactAdded3D.empty() || !onContactPersisted3D.empty() || !onContactRemoved3D.empty();
+    jcharacter->SetListener(heard || isCharacterStanding3D(character) ? characterListener3D : nullptr);
+
     const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
     jcharacter->ExtendedUpdate(stepTime, gravity, settings, world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
         CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator);
@@ -2328,7 +2344,16 @@ void PhysicsSystem::updateCharacter3D(Entity entity, Character3DComponent& chara
         jcharacter->SetLinearVelocity(jcharacter->GetLinearVelocity() - (rise - std::max(risen, 0.0f)) * up);
     }
 
-    updateTransformFromCharacter3D(entity, character, 1.0f);
+    // a body it woke can run a script that adds, removes or moves characters;
+    // one moved there jumps at the next step
+    Character3DComponent* current = scene->findComponent<Character3DComponent>(entity);
+    transform = scene->findComponent<Transform>(entity);
+    if (current && current->character == jcharacter && (!transform || transform->worldPosition == placed)){
+        updateTransformFromCharacter3D(entity, *current, 1.0f);
+    }
+
+    // last, as their scripts can remove the character
+    characterListener3D->dispatchContacts();
 }
 #endif
 
@@ -3688,7 +3713,7 @@ static JPH::EMotorState getJoint3DMotorStateToJolt(Joint3DMotorState state){
 
 void PhysicsSystem::updateJointMotor3D(Joint3DComponent& joint){
     // applied later while Jolt steps or runs an activation callback
-    if (steppingWorld3D || callingActivation3D){
+    if (steppingWorld3D || insideCallback3D){
         joint.needUpdateMotor = true;
         return;
     }
@@ -3801,7 +3826,7 @@ void PhysicsSystem::load(){
     auto characters3d = scene->getComponentArray<Character3DComponent>();
     for (size_t i = 0; i < characters3d->size(); i++){
         Character3DComponent& character = characters3d->getComponentFromIndex(i);
-        if (character.needReloadCharacter){
+        if (needsCharacterLoad3D(characters3d->getEntity(i), character)){
             loadCharacter3D(characters3d->getEntity(i));
         }
     }
@@ -3943,7 +3968,7 @@ void PhysicsSystem::fixedUpdate(double dt){
         Character3DComponent& character = characters3d->getComponentFromIndex(i);
         Entity entity = characters3d->getEntity(i);
 
-        if (character.needReloadCharacter){
+        if (needsCharacterLoad3D(entity, character)){
             loadCharacter3D(entity);
         }
 
