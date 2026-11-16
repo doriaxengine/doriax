@@ -4204,10 +4204,22 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
     return compNode;
 }
 
+// Appended last, a child is in place if its branch ends there
+static bool endsInBranch(EntityRegistry* registry, Entity parent){
+    auto transforms = registry->getComponentArray<Transform>();
+    Entity entity = transforms->size() > 0 ? transforms->getEntity(transforms->size() - 1) : NULL_ENTITY;
+    while (entity != NULL_ENTITY && entity != parent){
+        const Transform* transform = registry->findComponent<Transform>(entity);
+        entity = transform ? transform->parent : NULL_ENTITY;
+    }
+    return entity == parent;
+}
+
 void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegistry* registry, const YAML::Node& compNode){
     std::string compName;
 
     Signature signature = registry->getSignature(entity);
+    bool joinsBranch = false;
 
     compName = Catalog::getComponentName(ComponentType::Transform, true);
     if (compNode[compName]) {
@@ -4215,7 +4227,14 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         Transform transform = decodeTransform(compNode[compName], existing);
         transform.parent = parent;
         if (!signature.test(registry->getComponentId<Transform>())){
-            registry->addComponent<Transform>(entity, transform);
+            if (parent != NULL_ENTITY && !endsInBranch(registry, parent)){
+                // its parent kept its place: it joins the branch below
+                transform.parent = NULL_ENTITY;
+                registry->addComponent<Transform>(entity, transform);
+                joinsBranch = true;
+            }else{
+                registry->addComponent<Transform>(entity, transform);
+            }
         }else{
             uint64_t flags = Catalog::getChangedUpdateFlags(ComponentType::Transform, existing, &transform);
             registry->addEntityChild(transform.parent, entity, false);
@@ -4937,6 +4956,11 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
         }else{
             registry->getComponent<BundleComponent>(entity) = bundle;
         }
+    }
+
+    // last, so every component it has is sorted along with the Transform
+    if (joinsBranch){
+        registry->addEntityChild(parent, entity, false);
     }
 }
 
