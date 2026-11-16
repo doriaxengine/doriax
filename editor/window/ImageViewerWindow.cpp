@@ -80,7 +80,11 @@ void editor::ImageViewerWindow::loadImage(Instance& instance) {
     const std::string textureId = "editor:image-viewer:" + std::to_string(++textureGeneration);
     nextTexture.setData(textureId, imageData);
 
+    // upload now, the check below would read the per-frame slice wait as a failure
+    const bool asyncLoading = Engine::isAsyncLoading();
+    Engine::setAsyncLoading(false);
     TextureRender* render = nextTexture.getRender();
+    Engine::setAsyncLoading(asyncLoading);
     if (!render || !render->isCreated()) {
         nextTexture.destroy();
         imageData.releaseImageData();

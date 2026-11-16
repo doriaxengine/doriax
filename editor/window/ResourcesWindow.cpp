@@ -1636,6 +1636,9 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
         lastWriteTime = {};
     }
 
+    // entries keep these pointers, so upload now instead of waiting for the per-frame slice
+    const bool asyncLoading = Engine::isAsyncLoading();
+    Engine::setAsyncLoading(false);
     TextureRender* folderIconH = folderIcon.getRender();
     TextureRender* fileIconH = fileIcon.getRender();
     TextureRender* sceneIconH = sceneIcon.getRender();
@@ -1647,6 +1650,7 @@ void editor::ResourcesWindow::scanDirectory(const fs::path& path) {
     TextureRender* shaderIconH = shaderIcon.getRender();
     TextureRender* audioIconH = audioIcon.getRender();
     TextureRender* fontIconH = fontIcon.getRender();
+    Engine::setAsyncLoading(asyncLoading);
 
     files.clear();
 
@@ -2481,11 +2485,15 @@ ImTextureID editor::ResourcesWindow::getThumbnailTexture(const std::string& thum
     }
 
     TextureRender* render = cached.texture.getRender();
-    if (!render || !render->isCreated()) {
+    if (!render) {
         // GPU creation failed (e.g. texture pool exhausted); keep the entry
         // marked as failed so we don't retry every frame. LRU eviction will
         // drop it eventually, allowing a retry on a later visit.
         cached.failed = true;
+        return ImTextureID{};
+    }
+    if (!render->isCreated()) {
+        // over this frame's upload slice, try again next frame
         return ImTextureID{};
     }
 
