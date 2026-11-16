@@ -2256,7 +2256,10 @@ void editor::SceneWindow::show() {
         }
         ImGuiWindowFlags windowFlags = hasNotification[sceneProject.id] ? ImGuiWindowFlags_UnsavedDocument : 0;
         ImGui::SetNextWindowSizeConstraints(ImVec2(200, 200), ImVec2(FLT_MAX, FLT_MAX));
+        // docked tabs keep the colors pushed at Begin, so scenes stand out from file tabs
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::SceneTabText);
         const bool sceneWindowVisible = ImGui::Begin(getWindowTitle(sceneProject).c_str(), canClose ? &isOpen : nullptr, windowFlags);
+        ImGui::PopStyleColor();
         if (hasNotification[sceneProject.id]) App::popTabNotificationStyle();
 
         if (!isRuntimeActive) {

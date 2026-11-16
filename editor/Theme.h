@@ -26,6 +26,7 @@ namespace doriax::editor {
             static ImVec4 NestedHeaderActive;
             static ImVec4 DisabledGreenText;
             static ImVec4 ChildSceneText;
+            static ImVec4 SceneTabText;
             // Structure tree
             static ImVec4 RuntimeEntityText;
             static ImVec4 CameraPreviewText;

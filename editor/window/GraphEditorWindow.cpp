@@ -2103,7 +2103,7 @@ void editor::GraphEditorWindow::show() {
         ImGui::SetNextWindowSize(ImVec2(900.0f, 600.0f), ImGuiCond_FirstUseEver);
 
         const bool modified = instance.loadError.empty() && instance.text != instance.savedText;
-        const std::string title = instance.filepath.filename().string() + getWindowId(instance.filepath);
+        const std::string title = ICON_FA_DIAGRAM_PROJECT "  " + instance.filepath.filename().string() + getWindowId(instance.filepath);
         const bool visible = ImGui::Begin(title.c_str(), &instance.isOpen, modified ? ImGuiWindowFlags_UnsavedDocument : ImGuiWindowFlags_None);
         if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
             focused = lastFocused = &instance;

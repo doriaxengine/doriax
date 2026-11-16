@@ -797,7 +797,7 @@ void editor::CodeEditor::handleFileChangePopup() {
 
 std::string editor::CodeEditor::getWindowTitle(const EditorInstance& instance) const {
     std::string filename = instance.filepath.filename().string();
-    return filename + (instance.isModified ? " *" : "") + "###" + instance.filepath.string();
+    return ICON_FA_FILE_CODE "  " + filename + (instance.isModified ? " *" : "") + "###" + instance.filepath.string();
 }
 
 void editor::CodeEditor::updateScriptProperties(const EditorInstance& instance, const std::string& inMemoryContent){

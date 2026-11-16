@@ -29,6 +29,7 @@ ImVec4 doriax::editor::Theme::Colors::NestedHeaderHovered;
 ImVec4 doriax::editor::Theme::Colors::NestedHeaderActive;
 ImVec4 doriax::editor::Theme::Colors::DisabledGreenText;
 ImVec4 doriax::editor::Theme::Colors::ChildSceneText;
+ImVec4 doriax::editor::Theme::Colors::SceneTabText;
 ImVec4 doriax::editor::Theme::Colors::RuntimeEntityText;
 ImVec4 doriax::editor::Theme::Colors::CameraPreviewText;
 ImVec4 doriax::editor::Theme::Colors::SearchMatchText;
@@ -124,6 +125,7 @@ void doriax::editor::Theme::apply() {
                                        ImVec4(0.38f, 0.72f, 0.46f, 1.00f),
                                        0.58f);
     Colors::ChildSceneText = ImVec4(0.55f, 0.80f, 0.85f, 1.0f); // Soft teal for child scenes
+    Colors::SceneTabText = ImVec4(1.00f, 0.98f, 0.95f, 1.00f);
     Colors::RuntimeEntityText = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);
     Colors::CameraPreviewText = ImVec4(1.0f, 0.86f, 0.2f, 1.0f);
     Colors::SearchMatchText = ImVec4(1.0f, 1.0f, 0.5f, 1.0f);

@@ -391,7 +391,7 @@ void editor::ImageViewerWindow::show() {
         if (visibleTitle.empty()) {
             visibleTitle = "Image Viewer";
         }
-        const std::string windowTitle = visibleTitle + getWindowId(instance.filepath);
+        const std::string windowTitle = ICON_FA_IMAGE "  " + visibleTitle + getWindowId(instance.filepath);
 
         const bool visible = ImGui::Begin(windowTitle.c_str(), &instance.isOpen);
         if (visible) {
