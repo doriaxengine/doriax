@@ -408,6 +408,7 @@ namespace {
     static const FastPropertyDescriptor kBundleProperties[] = {
         makeFastProperty<BundleComponent, std::string, &BundleComponent::name>("name", PropertyType::String, UpdateFlags_None),
         makeFastProperty<BundleComponent, std::string, &BundleComponent::path>("path", PropertyType::String, UpdateFlags_None),
+        makeFastProperty<BundleComponent, bool, &BundleComponent::onDemand>("onDemand", PropertyType::Bool, UpdateFlags_None),
     };
 
     static const FastPropertyDescriptor kBoneProperties[] = {

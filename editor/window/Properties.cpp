@@ -13256,9 +13256,11 @@ void editor::Properties::drawAnimationComponent(ComponentType cpType, SceneProje
 }
 
 void editor::Properties::drawBundleComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
-    beginTable(cpType, getLabelSize("Path"));
+    // a new id, so a width saved before On Demand is dropped
+    beginTable(cpType, getLabelSize("On Demand"), "bundle");
     propertyRow(RowPropertyType::Label, cpType, "name", "Name", sceneProject, entities);
     propertyRow(RowPropertyType::Label, cpType, "path", "Path", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "onDemand", "On Demand", sceneProject, entities);
     endTable();
 }
 

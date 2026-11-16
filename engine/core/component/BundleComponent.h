@@ -11,6 +11,8 @@ namespace doriax{
     struct BundleComponent {
         std::string name;
         std::string path;
+        // members wait for BundleManager::loadBundle
+        bool onDemand = false;
     };
 
 }

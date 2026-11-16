@@ -6782,6 +6782,7 @@ YAML::Node editor::Stream::encodeBundleComponent(const BundleComponent& bundle) 
     YAML::Node node;
     node["name"] = bundle.name;
     node["path"] = bundle.path;
+    if (bundle.onDemand) node["onDemand"] = true;
     return node;
 }
 
@@ -6794,6 +6795,7 @@ BundleComponent editor::Stream::decodeBundleComponent(const YAML::Node& node, co
 
     if (node["name"]) bundle.name = node["name"].as<std::string>();
     if (node["path"]) bundle.path = node["path"].as<std::string>();
+    bundle.onDemand = node["onDemand"] && node["onDemand"].as<bool>();
 
     return bundle;
 }

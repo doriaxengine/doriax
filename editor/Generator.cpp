@@ -1376,6 +1376,8 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
                      "Reach an entity inside an instance with `scene->findEntity(name, root)`, which is also what tells two instances apart when they share a name.\n";
     agentsContent += "Each bundle header also declares `build_bundle_<name>(scene, root, members)`, the same factory appending the entities it creates to `members` in a fixed order; "
                      "generated scene sources address instance entities through it, since their ids only exist at runtime. Register and spawn with `create_bundle_<name>`.\n";
+    agentsContent += "An instance placed in a scene with `BundleComponent::onDemand` (On Demand in the editor) is only its root when the scene starts: "
+                     "`BundleManager::loadBundle(scene, root)` creates its members and `unloadBundle(scene, root)` removes them, keeping the root.\n";
     agentsContent += "Only bundles a scene instantiates and the ones listed under `standaloneBundles` in `project.yaml` are built and registered. "
                      "A bundle spawned by script alone must be in that list (Doriax Editor: Project > Bundles), otherwise `createBundle` reports it as not found.\n\n";
     agentsContent += "## Build modes\n\n";

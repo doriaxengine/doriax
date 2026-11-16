@@ -541,6 +541,9 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             luabridge::overload<const std::string&, Scene*, const std::string&>(&BundleManager::createBundle),
             luabridge::overload<const std::string&, const EntityHandle&>(&BundleManager::createBundle))
         .addStaticFunction("destroyBundle", &BundleManager::destroyBundle)
+        .addStaticFunction("loadBundle", &BundleManager::loadBundle)
+        .addStaticFunction("unloadBundle", &BundleManager::unloadBundle)
+        .addStaticFunction("isBundleLoaded", &BundleManager::isBundleLoaded)
         .addStaticFunction("getBundleId", &BundleManager::getBundleId)
         .addStaticFunction("getBundleName", &BundleManager::getBundleName)
         .addStaticFunction("getBundleNames", &BundleManager::getBundleNames)

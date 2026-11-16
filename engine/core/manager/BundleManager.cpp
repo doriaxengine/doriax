@@ -4,6 +4,7 @@
 #include "BundleManager.h"
 #include "Scene.h"
 #include "EntityHandle.h"
+#include "component/BundleComponent.h"
 #include "Log.h"
 #include "LuaBinding.h"
 
@@ -92,7 +93,7 @@ std::vector<BundleManager::BundleInstance>::iterator BundleManager::findInstance
     });
 }
 
-void BundleManager::registerBundle(uint32_t id, const std::string& name, std::function<bool(Scene*, Entity)> factory, std::function<bool(Scene*, Entity)> destroyer) {
+void BundleManager::registerBundle(uint32_t id, const std::string& name, std::function<bool(Scene*, Entity)> factory, std::function<bool(Scene*, Entity, bool)> destroyer) {
     if (BundleEntry* entry = findEntry(id)) {
         entry->name = name;
         entry->factory = std::move(factory);
@@ -169,14 +170,23 @@ Entity BundleManager::instantiate(uint32_t id, Scene* scene, Entity parent) {
         return NULL_ENTITY;
     }
 
+    return build(*entry, scene, NULL_ENTITY, parent);
+}
+
+// A given root is the scene's: a failed factory leaves it alone
+Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entity parent) {
+    const uint32_t id = entry.id;
+    const bool ownsRoot = root == NULL_ENTITY;
+
     std::vector<Entity> beforeEntities = scene->getEntityList();
     std::unordered_set<Entity> beforeSet(beforeEntities.begin(), beforeEntities.end());
 
-    Entity root = scene->createEntity();
+    if (ownsRoot)
+        root = scene->createEntity();
 
     bool ok = false;
     try {
-        ok = entry->factory && entry->factory(scene, root);
+        ok = entry.factory && entry.factory(scene, root);
     } catch (const std::exception& e) {
         Log::error("BundleManager: factory for bundle id %u threw an exception: %s", id, e.what());
     } catch (...) {
@@ -185,7 +195,7 @@ Entity BundleManager::instantiate(uint32_t id, Scene* scene, Entity parent) {
 
     if (!ok) {
         Log::error("BundleManager: factory failed for bundle id %u", id);
-        rollbackSpawnedEntities(scene, beforeSet, root);
+        rollbackSpawnedEntities(scene, beforeSet, ownsRoot ? root : NULL_ENTITY);
         return NULL_ENTITY;
     }
 
@@ -197,6 +207,7 @@ Entity BundleManager::instantiate(uint32_t id, Scene* scene, Entity parent) {
     instance.rootEntity = root;
     instance.scene = scene;
     instance.bundleId = id;
+    instance.ownsRoot = ownsRoot;
     instance.entities.push_back(root);
     for (Entity e : scene->getEntityList()) {
         if (e != root && beforeSet.find(e) == beforeSet.end())
@@ -214,6 +225,42 @@ Entity BundleManager::instantiate(uint32_t id, Scene* scene, Entity parent) {
 }
 
 bool BundleManager::destroyBundle(Scene* scene, Entity rootEntity) {
+    return release(scene, rootEntity, false);
+}
+
+bool BundleManager::loadBundle(Scene* scene, Entity rootEntity) {
+    BundleComponent* bundle = (scene && scene->isEntityCreated(rootEntity)) ? scene->findComponent<BundleComponent>(rootEntity) : nullptr;
+    if (!bundle || !bundle->onDemand) {
+        Log::error("BundleManager: entity %u is not an on-demand bundle instance", rootEntity);
+        return false;
+    }
+    if (isBundleLoaded(scene, rootEntity))
+        return true;
+
+    // registered by its path without the extension
+    std::string name = bundle->path.substr(0, bundle->path.rfind('.'));
+    std::replace(name.begin(), name.end(), '\\', '/');
+    BundleEntry* entry = findEntry(name);
+    if (!entry) {
+        Log::error("BundleManager: bundle '%s' not found", name.c_str());
+        return false;
+    }
+    return build(*entry, scene, rootEntity, NULL_ENTITY) != NULL_ENTITY;
+}
+
+bool BundleManager::unloadBundle(Scene* scene, Entity rootEntity) {
+    return findInstance(scene, rootEntity) != getInstances().end() && release(scene, rootEntity, true);
+}
+
+bool BundleManager::isBundleLoaded(Scene* scene, Entity rootEntity) {
+    if (findInstance(scene, rootEntity) != getInstances().end())
+        return true;
+    // placed without onDemand, it came with its scene
+    BundleComponent* bundle = (scene && scene->isEntityCreated(rootEntity)) ? scene->findComponent<BundleComponent>(rootEntity) : nullptr;
+    return bundle && !bundle->onDemand;
+}
+
+bool BundleManager::release(Scene* scene, Entity rootEntity, bool keepRoot) {
     auto& instances = getInstances();
     auto it = findInstance(scene, rootEntity);
     if (it == instances.end()) {
@@ -224,6 +271,10 @@ bool BundleManager::destroyBundle(Scene* scene, Entity rootEntity) {
     // removed before any script runs, it can spawn or destroy too
     BundleInstance instance = std::move(*it);
     instances.erase(it);
+
+    // a kept root keeps its scripts and the children its scene gave it
+    if (keepRoot)
+        instance.entities.erase(std::remove(instance.entities.begin(), instance.entities.end(), rootEntity), instance.entities.end());
 
     // what was parented under it goes too, a spawned bundle through its own destroy
     std::vector<Entity> entities = withDescendants(scene, instance.entities);
@@ -248,7 +299,7 @@ bool BundleManager::destroyBundle(Scene* scene, Entity rootEntity) {
     bool result = true;
     BundleEntry* entry = findEntry(instance.bundleId);
     if (entry && entry->destroyer) {
-        result = entry->destroyer(scene, rootEntity);
+        result = entry->destroyer(scene, rootEntity, keepRoot);
     } else {
         for (auto eit = entities.rbegin(); eit != entities.rend(); ++eit) {
             if (scene->isEntityCreated(*eit))
@@ -293,15 +344,15 @@ int BundleManager::getBundleCount() {
 
 void BundleManager::destroyAllInstances(Scene* scene) {
     auto& instances = getInstances();
-    std::vector<Entity> roots;
+    std::vector<std::pair<Entity, bool>> roots;
     for (const auto& inst : instances) {
         if (inst.scene == scene)
-            roots.push_back(inst.rootEntity);
+            roots.push_back({inst.rootEntity, inst.ownsRoot});
     }
-    for (Entity root : roots) {
+    for (const auto& [root, ownsRoot] : roots) {
         // a child is gone with its parent
         if (findInstance(scene, root) != instances.end())
-            destroyBundle(scene, root);
+            release(scene, root, !ownsRoot);
     }
 }
 

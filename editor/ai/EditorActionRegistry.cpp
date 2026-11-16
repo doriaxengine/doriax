@@ -884,7 +884,7 @@ const std::vector<ToolDefinition>& cachedTools() {
         },
         {
             "import_bundle_instance",
-            "Import a .bundle file as a scene instance through ImportEntityBundleCmd. It returns instance_root_id, the new entity holding the bundle's members: move, rotate or rename the instance through it.",
+            "Import a .bundle file as a scene instance through ImportEntityBundleCmd. It returns instance_root_id, the new entity holding the bundle's members: move, rotate or rename the instance through it. Set BundleComponent onDemand on that root for an instance the game only creates with BundleManager::loadBundle(scene, root).",
             objectSchema({
                 {"scene_id", integerSchema("Scene id. Omit to use the selected scene")},
                 {"bundle_path", stringSchema("Safe project-relative .bundle path")},

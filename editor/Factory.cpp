@@ -2225,6 +2225,20 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
     return code.str();
 }
 
+// an instance root: on demand, no factory comes after to tag it
+std::string editor::Factory::createBundleComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting) {
+    if (!scene->findComponent<BundleComponent>(entity)) return "";
+    BundleComponent& bundle = scene->getComponent<BundleComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "BundleComponent bundle;\n";
+    code << ind << "bundle.name = " << formatString(bundle.name) << ";\n";
+    code << ind << "bundle.path = " << formatString(bundle.path) << ";\n";
+    code << ind << "bundle.onDemand = " << formatBool(bundle.onDemand) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "BundleComponent", "bundle", assignExisting);
+    return code.str();
+}
+
 std::string editor::Factory::createBoneComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<BoneComponent>(entity)) return "";
     BoneComponent& bone = scene->getComponent<BoneComponent>(entity);
@@ -2433,6 +2447,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::SpriteAnimationComponent: return createSpriteAnimationComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::AnimationComponent: return createAnimationComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ModelComponent: return createModelComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::BundleComponent: return createBundleComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting);
         case ComponentType::BoneComponent: return createBoneComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::SkinComponent: return createSkinComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting);
         case ComponentType::KeyframeTracksComponent: return createKeyframeTracksComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
@@ -2495,6 +2510,33 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         bundleHeaderIncludes.insert(headerName);
     }
 
+    // under an on-demand member: Play drops it too
+    auto underUnloadedMember = [&](Entity entity) {
+        bool underMember = false;
+        const Transform* transform = scene->findComponent<Transform>(entity);
+        Entity parent = transform ? transform->parent : NULL_ENTITY;
+        while (parent != NULL_ENTITY) {
+            if (bundleRoots.count(parent) && !bundleMemberEntities.count(parent)) {
+                const BundleComponent* bundle = scene->findComponent<BundleComponent>(parent);
+                return underMember && bundle && bundle->onDemand;
+            }
+            underMember = underMember || bundleMemberEntities.count(parent);
+            transform = scene->findComponent<Transform>(parent);
+            parent = transform ? transform->parent : NULL_ENTITY;
+        }
+        return false;
+    };
+    std::set<Entity> unloadedLocals;
+    for (Entity entity : entities) {
+        if (!bundleMemberEntities.count(entity) && underUnloadedMember(entity)) {
+            unloadedLocals.insert(entity);
+            Out::warning("Entity %s is under a member of an on-demand instance and is skipped", scene->getEntityName(entity).c_str());
+        }
+    }
+    entities.erase(std::remove_if(entities.begin(), entities.end(), [&](Entity entity) {
+        return unloadedLocals.count(entity) > 0;
+    }), entities.end());
+
     bool usesDefaultSky = false;
     for (Entity entity : entities) {
         if (bundleMemberEntities.count(entity)) continue;
@@ -2541,6 +2583,10 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     std::unordered_map<Entity, std::string> builtVarNames; // NULL_ENTITY until the instance is built
     std::map<Entity, std::vector<Entity>> rootMembers;
     std::vector<Entity> topLevelRoots;
+    for (Entity local : unloadedLocals) {
+        memberVarNames[local] = "NULL_ENTITY";
+        builtVarNames[local] = "NULL_ENTITY";
+    }
 
     auto membersVar = [](Entity root) { return "bundleMembers_" + std::to_string(root); };
 
@@ -2562,10 +2608,32 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         }
     };
 
+    // an on-demand instance is only its root: loadBundle makes the rest
+    std::set<Entity> onDemandRoots;
+    auto mapUnloadedMembers = [&](auto&& self, const BundleInstanceInfo* bi) -> void {
+        for (Entity member : bi->orderedMembers) {
+            if (member == NULL_ENTITY) continue;
+            memberVarNames[member] = "NULL_ENTITY";
+            builtVarNames[member] = "NULL_ENTITY";
+            auto nestedIt = rootToInstance.find(member);
+            if (nestedIt != rootToInstance.end()) self(self, nestedIt->second);
+        }
+    };
+
     for (Entity entity : entities) {
         if (bundleRoots.count(entity) && !bundleMemberEntities.count(entity)) {
+            const BundleInstanceInfo* bi = rootToInstance[entity];
+            const BundleComponent* bundle = scene->findComponent<BundleComponent>(entity);
+            if (bundle && bundle->onDemand) {
+                onDemandRoots.insert(entity);
+                mapUnloadedMembers(mapUnloadedMembers, bi);
+                if (!bi->overrides.empty()) {
+                    Out::warning("On-demand instance %s loads %s as it is, its overrides are skipped", scene->getEntityName(entity).c_str(), bi->bundlePath.string().c_str());
+                }
+                continue;
+            }
             topLevelRoots.push_back(entity);
-            mapInstanceMembers(mapInstanceMembers, rootToInstance[entity], entity, 0);
+            mapInstanceMembers(mapInstanceMembers, bi, entity, 0);
         }
     }
 
@@ -2718,7 +2786,11 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
 
         std::string entityName = scene->getEntityName(entity);
         out << ind2 << "{\n";
-        if (bundleRoots.count(entity)) {
+        if (onDemandRoots.count(entity)) {
+            out << ind3 << "// Bundle instance on demand: " << rootToInstance[entity]->bundlePath.string() << " (" << entityName << ")\n";
+            out << ind3 << "scene->setEntityName(" << entity << ", " << formatString(entityName) << ");\n\n";
+            out << componentsCode;
+        } else if (bundleRoots.count(entity)) {
             const BundleInstanceInfo* bi = rootToInstance[entity];
             out << ind3 << "// Bundle instance: " << bi->bundlePath.string() << " (" << entityName << ")\n";
             out << ind3 << "scene->setEntityName(" << entity << ", " << formatString(entityName) << ");\n\n";

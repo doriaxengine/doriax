@@ -5695,6 +5695,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             sceneProject->playStateSnapshot = YAML::Node();
             sceneProject->playStateEntities.clear();
         }
+        restorePlayBundleInstances(sceneProject);
 
         // Drop the focus left during play
         sceneProject->scene->getSystem<UISystem>()->setFocus(NULL_ENTITY);
@@ -8684,7 +8685,7 @@ bool editor::Project::unimportEntityBundle(uint32_t sceneId, const std::filesyst
 }
 
 // a Play copy has the id of the scene it copies
-bool editor::Project::unimportEntityBundle(SceneProject* sceneProject, const std::filesystem::path& filepath, Entity rootEntity, const std::vector<Entity>& memberEntities) {
+bool editor::Project::unimportEntityBundle(SceneProject* sceneProject, const std::filesystem::path& filepath, Entity rootEntity, const std::vector<Entity>& memberEntities, bool keepRoot) {
     if (!sceneProject || !sceneProject->scene) {
         return false;
     }
@@ -8694,7 +8695,10 @@ bool editor::Project::unimportEntityBundle(SceneProject* sceneProject, const std
 
     // Collect all entities to destroy (members + local entities that are children of root/members)
     std::unordered_set<Entity> memberSet(memberEntities.begin(), memberEntities.end());
-    memberSet.insert(rootEntity);
+    // a kept root keeps the children its scene gave it
+    if (!keepRoot) {
+        memberSet.insert(rootEntity);
+    }
     std::vector<Entity> allEntitiesToDestroy;
 
     // Gather non-member children (local entities) from Transform hierarchy
@@ -8748,7 +8752,7 @@ bool editor::Project::unimportEntityBundle(SceneProject* sceneProject, const std
         sceneProject->entities, this, sceneId);
 
     // Destroy root entity
-    if (rootEntity != NULL_ENTITY && scene->isEntityCreated(rootEntity)) {
+    if (!keepRoot && rootEntity != NULL_ENTITY && scene->isEntityCreated(rootEntity)) {
         DeleteEntityCmd::destroyEntity(scene, rootEntity, sceneProject->entities, this, sceneId);
     }
 
@@ -10235,6 +10239,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                     entry.initializing = true;
 
                     Scene* scene = entry.runtime->scene;
+                    unloadOnDemandBundles(entry.runtime);
                     if (hasCppScripts) {
                         conector.init(scene);
                     } else {
@@ -10316,6 +10321,7 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
         entry.initializing = true;
 
         Scene* scene = entry.runtime->scene;
+        unloadOnDemandBundles(entry.runtime);
         if (conector.isLibraryConnected()) {
             conector.init(scene);
         }else{
@@ -10681,7 +10687,7 @@ void editor::Project::registerBundleManager() {
                 return false;
             },
             // Destroyer: remove bundle instance via unimportEntityBundle
-            [this, capturableBundlePath](Scene* scene, Entity root) -> bool {
+            [this, capturableBundlePath](Scene* scene, Entity root, bool keepRoot) -> bool {
                 SceneProject* sceneProject = findSceneProjectByScene(scene);
                 if (!sceneProject) return false;
 
@@ -10695,12 +10701,98 @@ void editor::Project::registerBundleManager() {
                 for (const auto& m : instance->members)
                     members.push_back(m.localEntity);
                 bool wasModified = sceneProject->isModified;
-                bool result = unimportEntityBundle(sceneProject, capturableBundlePath, root, members);
+                bool result = unimportEntityBundle(sceneProject, capturableBundlePath, root, members, keepRoot);
                 sceneProject->isModified = wasModified;
                 return result;
             }
         );
     }
+}
+
+// Play starts like an export: on-demand instances are only a root
+void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
+    if (!sceneProject || !sceneProject->scene) {
+        return;
+    }
+    Scene* scene = sceneProject->scene;
+
+    // top-level only: a nested one follows the bundle holding it
+    std::vector<std::pair<fs::path, Entity>> roots;
+    auto bundles = scene->getComponentArray<BundleComponent>();
+    for (size_t i = 0; i < bundles->size(); i++) {
+        const BundleComponent& component = bundles->getComponentFromIndex(i);
+        const Entity root = bundles->getEntity(i);
+        if (component.onDemand && findEntityBundlePathFor(sceneProject->id, root) == fs::path(component.path)) {
+            roots.push_back({component.path, root});
+        }
+    }
+    if (roots.empty()) {
+        return;
+    }
+
+    for (const auto& [bundlePath, bundle] : entityBundles) {
+        auto instances = bundle.instances.find(sceneProject->id);
+        if (instances != bundle.instances.end()) {
+            sceneProject->playBundleInstances[bundlePath] = instances->second;
+        }
+    }
+
+    sceneProject->playBundleEntities = sceneProject->entities;
+
+    // a Play copy shares the id: most members here wins
+    auto membersHere = [&](const fs::path& bundlePath, Entity root) {
+        std::vector<Entity> found;
+        EntityBundle* bundle = getEntityBundle(bundlePath);
+        if (!bundle || !bundle->instances.count(sceneProject->id)) {
+            return found;
+        }
+        for (const auto& instance : bundle->instances.at(sceneProject->id)) {
+            if (instance.rootEntity != root) {
+                continue;
+            }
+            std::vector<Entity> members;
+            for (const auto& member : instance.members) {
+                if (scene->isEntityCreated(member.localEntity) && scene->isParentOf(root, member.localEntity)) {
+                    members.push_back(member.localEntity);
+                }
+            }
+            if (members.size() >= found.size()) {
+                found = std::move(members);
+            }
+        }
+        return found;
+    };
+
+    const bool wasModified = sceneProject->isModified;
+    for (const auto& [bundlePath, root] : roots) {
+        std::vector<Entity> members = membersHere(bundlePath, root);
+        if (members.empty()) {
+            continue;
+        }
+        unimportEntityBundle(sceneProject, bundlePath, root, members, true);
+    }
+    sceneProject->isModified = wasModified;
+}
+
+// The snapshot restored the members' ids, so the old tracking fits
+void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
+    if (!sceneProject || sceneProject->playBundleInstances.empty()) {
+        return;
+    }
+    sceneProject->entities = std::move(sceneProject->playBundleEntities);
+    sceneProject->playBundleEntities.clear();
+    for (auto& [bundlePath, bundle] : entityBundles) {
+        bundle.instances.erase(sceneProject->id);
+    }
+    for (auto& [bundlePath, instances] : sceneProject->playBundleInstances) {
+        if (EntityBundle* bundle = getEntityBundle(bundlePath)) {
+            bundle->instances[sceneProject->id] = std::move(instances);
+        }
+    }
+    sceneProject->playBundleInstances.clear();
+    updateSceneBundles(sceneProject);
+    // the members' scripts left the scene's list with them
+    updateSceneCppScripts(sceneProject);
 }
 
 void editor::Project::start(uint32_t sceneId) {

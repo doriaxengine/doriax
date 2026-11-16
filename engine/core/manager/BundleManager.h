@@ -37,6 +37,10 @@ namespace doriax {
     //
     // An instance's scripts start in createBundle and stop in destroyBundle, which also removes
     // what was parented under the instance.
+    //
+    // An instance placed in a scene with BundleComponent::onDemand is only its root there:
+    //   BundleManager::loadBundle(scene, root);    // creates its members
+    //   BundleManager::unloadBundle(scene, root);  // removes them, the root stays
 
     class DORIAX_API BundleManager {
     private:
@@ -44,7 +48,7 @@ namespace doriax {
             uint32_t id;
             std::string name;
             std::function<bool(Scene*, Entity)> factory;
-            std::function<bool(Scene*, Entity)> destroyer;
+            std::function<bool(Scene*, Entity, bool)> destroyer;
         };
 
         struct BundleInstance {
@@ -52,6 +56,7 @@ namespace doriax {
             Scene* scene;
             uint32_t bundleId;
             std::vector<Entity> entities; // all entities including root
+            bool ownsRoot = true; // false when loaded on a root the scene made
         };
 
         static std::vector<BundleEntry> entries;
@@ -65,14 +70,16 @@ namespace doriax {
         static BundleEntry* findEntry(const std::string& name);
         static std::vector<BundleInstance>::iterator findInstance(Scene* scene, Entity rootEntity);
         static Entity instantiate(uint32_t id, Scene* scene, Entity parent);
+        static Entity build(BundleEntry& entry, Scene* scene, Entity root, Entity parent);
+        static bool release(Scene* scene, Entity rootEntity, bool keepRoot);
 
     public:
         // The factory must return true on success. Void-returning callables are accepted
-        // and treated as always-successful.
-        static void registerBundle(uint32_t id, const std::string& name, std::function<bool(Scene*, Entity)> factory, std::function<bool(Scene*, Entity)> destroyer = nullptr);
+        // and treated as always-successful. The destroyer's last argument asks it to keep the root.
+        static void registerBundle(uint32_t id, const std::string& name, std::function<bool(Scene*, Entity)> factory, std::function<bool(Scene*, Entity, bool)> destroyer = nullptr);
 
         template<typename Factory>
-        static auto registerBundle(uint32_t id, const std::string& name, Factory&& factory, std::function<bool(Scene*, Entity)> destroyer = nullptr)
+        static auto registerBundle(uint32_t id, const std::string& name, Factory&& factory, std::function<bool(Scene*, Entity, bool)> destroyer = nullptr)
             -> std::enable_if_t<std::is_invocable_v<Factory&, Scene*, Entity>, void>
         {
             using Result = std::invoke_result_t<Factory&, Scene*, Entity>;
@@ -106,6 +113,11 @@ namespace doriax {
         static Entity createBundle(uint32_t id, Scene* scene, Entity parent);
 
         static bool destroyBundle(Scene* scene, Entity rootEntity);
+
+        // The members of an on-demand instance, under the root its scene made
+        static bool loadBundle(Scene* scene, Entity rootEntity);
+        static bool unloadBundle(Scene* scene, Entity rootEntity);
+        static bool isBundleLoaded(Scene* scene, Entity rootEntity);
 
         static uint32_t getBundleId(const std::string& name);
         static std::string getBundleName(uint32_t id);

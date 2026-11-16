@@ -115,6 +115,9 @@ namespace doriax::editor{
         ScenePlayState playState = ScenePlayState::STOPPED;
         YAML::Node playStateSnapshot;
         std::set<Entity> playStateEntities;
+        // bundle instances before Play unloaded the on-demand ones
+        std::map<std::filesystem::path, std::vector<EntityBundle::Instance>> playBundleInstances;
+        std::vector<Entity> playBundleEntities;
         SceneMaxValues maxValues;
         std::set<ShaderKey> shaderKeys;
         // Keys may miss variants: file changed outside the editor, or saved before all of it loaded
@@ -494,6 +497,8 @@ namespace doriax::editor{
         void registerSceneManager();
         SceneResources collectPlaySceneResources(uint32_t sceneId);
         void registerBundleManager();
+        void unloadOnDemandBundles(SceneProject* sceneProject);
+        void restorePlayBundleInstances(SceneProject* sceneProject);
 
         SceneProject* findSceneProjectByScene(Scene* scene);
 
@@ -981,7 +986,7 @@ namespace doriax::editor{
 
         std::vector<Entity> importEntityBundle(SceneProject* sceneProject, std::vector<Entity>* entities, const std::filesystem::path& filepath, Entity rootEntity, bool needSaveScene = true, const YAML::Node& bundleOverrides = YAML::Node(), const YAML::Node& bundleLocalEntities = YAML::Node(), std::unordered_map<Entity, Entity>* entityRemap = nullptr);
         bool unimportEntityBundle(uint32_t sceneId, const std::filesystem::path& filepath, Entity rootEntity, const std::vector<Entity>& memberEntities);
-        bool unimportEntityBundle(SceneProject* sceneProject, const std::filesystem::path& filepath, Entity rootEntity, const std::vector<Entity>& memberEntities);
+        bool unimportEntityBundle(SceneProject* sceneProject, const std::filesystem::path& filepath, Entity rootEntity, const std::vector<Entity>& memberEntities, bool keepRoot = false);
 
         bool addEntityToBundle(uint32_t sceneId, Entity entity, Entity parent, bool createItself = true);
         bool addEntityToBundle(uint32_t sceneId, const NodeRecovery& recoveryData, Entity parent,
