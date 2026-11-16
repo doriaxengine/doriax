@@ -477,10 +477,28 @@ void LuaBinding::init(){
 
 }
 
+// print() goes to Log, stdout is not visible on every platform
+static int luaPrint(lua_State* L){
+    std::string line;
+    const int count = lua_gettop(L);
+    for (int i = 1; i <= count; i++){
+        size_t length = 0;
+        const char* text = luaL_tolstring(L, i, &length);
+        if (i > 1) line += '\t';
+        line.append(text, length);
+        lua_pop(L, 1);
+    }
+    Log::print("%s", line.c_str());
+    return 0;
+}
+
 void LuaBinding::registerClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS
     // luaL_openlibs() open all libraries: base, string, io, os, package, table, debug
     luaL_openlibs(L);
+
+    lua_pushcfunction(L, luaPrint);
+    lua_setglobal(L, "print");
 
     registerCoreClasses(L);
     registerObjectClasses(L);
