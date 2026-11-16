@@ -28,6 +28,8 @@ namespace doriax::editor{
         bool isParentBundle = false;
         bool isMainCamera = false;
         bool hasScript = false;
+        // a bundle instance the game only creates when asked
+        bool onDemand = false;
         bool hasChildScript = false;        // Bundle roots only
         bool isBone = false;
         bool isLocked = false;

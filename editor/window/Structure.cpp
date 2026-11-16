@@ -48,6 +48,11 @@ static bool hasScripts(Scene* scene, Entity entity) {
     return scriptComponent && !scriptComponent->scripts.empty();
 }
 
+static bool isOnDemand(Scene* scene, Entity entity) {
+    BundleComponent* bundle = scene->findComponent<BundleComponent>(entity);
+    return bundle && bundle->onDemand;
+}
+
 // Collapsed bundle roots also show the script icon when any child has a script
 static bool markBundleScripts(editor::TreeNode& node) {
     bool hasChildScript = false;
@@ -1932,6 +1937,17 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
         ImGui::PopStyleColor();
     }
 
+    if (node.onDemand) {
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TreeMarkText);
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetStyle().FramePadding.y * 0.5f);
+        ImGui::SetWindowFontScale(0.7f);
+        ImGui::TextUnformatted(ICON_FA_DOWNLOAD);
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopStyleColor();
+        ImGui::SetItemTooltip("Loaded on demand");
+    }
+
     if (instanceCount > 0) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::PushStyleColor(ImGuiCol_Text, Theme::Colors::TreeMarkText);
@@ -2191,6 +2207,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
                     enode.entitySceneId = childSceneId;
                     enode.isMainCamera = (entity == childScene->mainCamera);
                     enode.hasScript = hasScripts(childScene->scene, entity);
+                    enode.onDemand = isOnDemand(childScene->scene, entity);
                     enode.isBone = signature.test(childScene->scene->getComponentId<BoneComponent>());
                     enode.isBundleRoot = signature.test(childScene->scene->getComponentId<BundleComponent>());
                     enode.order = order++;
@@ -2214,6 +2231,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
                     enode.entitySceneId = childSceneId;
                     enode.isMainCamera = (entity == childScene->mainCamera);
                     enode.hasScript = hasScripts(childScene->scene, entity);
+                    enode.onDemand = isOnDemand(childScene->scene, entity);
                     enode.isBone = signature.test(childScene->scene->getComponentId<BoneComponent>());
                     enode.isBundleRoot = signature.test(childScene->scene->getComponentId<BundleComponent>());
                     enode.hasTransform = true;
@@ -2262,6 +2280,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.id = entity;
             child.isMainCamera = (entity == mainCamera);
             child.hasScript = hasScripts(sceneProject->scene, entity);
+            child.onDemand = isOnDemand(sceneProject->scene, entity);
             child.isBone = signature.test(sceneProject->scene->getComponentId<BoneComponent>());
             child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
             child.isLocked = child.isPlayCreated || ProjectUtils::isEntityLocked(sceneProject->scene, entity, ownedEntities);
@@ -2345,6 +2364,7 @@ void editor::Structure::rebuildEntityTree(SceneProject* sceneProject, TreeNode& 
             child.id = entity;
             child.isMainCamera = (entity == mainCamera);
             child.hasScript = hasScripts(sceneProject->scene, entity);
+            child.onDemand = isOnDemand(sceneProject->scene, entity);
             child.isBone = signature.test(sceneProject->scene->getComponentId<BoneComponent>());
             child.hasTransform = true;
             child.isPlayCreated = cachedPlayCreatedEntities.count(entity) > 0;
