@@ -1977,7 +1977,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
         ImGui::TextUnformatted(startActive ? ICON_FA_PLAY : ICON_FA_PAUSE);
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
-        ImGui::SetItemTooltip(startActive ? "Starts active" : "Starts inactive");
+        ImGui::SetItemTooltip(startActive ? "Starts active" : "Starts inactive (preloaded)");
     }
 
     // Eye icon toggle for child scene inline loading
