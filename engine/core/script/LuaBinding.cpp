@@ -479,16 +479,17 @@ void LuaBinding::init(){
 
 // print() goes to Log, stdout is not visible on every platform
 static int luaPrint(lua_State* L){
-    std::string line;
+    // Lua buffer: a __tostring error jumps out past C++ destructors
     const int count = lua_gettop(L);
+    luaL_Buffer line;
+    luaL_buffinit(L, &line);
     for (int i = 1; i <= count; i++){
-        size_t length = 0;
-        const char* text = luaL_tolstring(L, i, &length);
-        if (i > 1) line += '\t';
-        line.append(text, length);
-        lua_pop(L, 1);
+        if (i > 1) luaL_addchar(&line, '\t');
+        luaL_tolstring(L, i, nullptr);
+        luaL_addvalue(&line);
     }
-    Log::print("%s", line.c_str());
+    luaL_pushresult(&line);
+    Log::print("%s", lua_tostring(L, -1));
     return 0;
 }
 
