@@ -2714,6 +2714,12 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         emitInstanceOverrides(emitInstanceOverrides, rootToInstance[root]);
     }
 
+    // not built here: on-demand members and what hangs on them
+    auto notBuilt = [&](Entity entity) {
+        auto it = memberVarNames.find(entity);
+        return it != memberVarNames.end() && it->second == "NULL_ENTITY";
+    };
+
     // Camera render-to-texture links; deferred so every camera entity already exists
     std::ostringstream links;
     for (Entity entity : entities) {
@@ -2729,6 +2735,10 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
                     continue;
                 if (!scene->findComponent<CameraComponent>(cameraEntity))
                     continue;
+                if (notBuilt(entity) || notBuilt(cameraEntity)) {
+                    Out::warning("Camera texture of %s uses an on-demand instance member and is not linked", scene->getEntityName(entity).c_str());
+                    continue;
+                }
 
                 links << ind2 << "scene->getComponent<" << Catalog::getComponentName(cpType) << ">(" << formatEntity(entity, &memberVarNames) << ")."
                       << propName << ".setFramebuffer(scene->getComponent<CameraComponent>(" << formatEntity(cameraEntity, &memberVarNames) << ").framebuffer);\n";
@@ -2737,7 +2747,9 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     }
 
     std::ostringstream cameraCode;
-    if (camera != NULL_ENTITY){
+    if (camera != NULL_ENTITY && notBuilt(camera)) {
+        Out::warning("Main camera %s is in an on-demand instance, the scene starts with its default camera", scene->getEntityName(camera).c_str());
+    } else if (camera != NULL_ENTITY){
         if (std::find(entities.begin(), entities.end(), camera) == entities.end()) {
             cameraCode << "\n";
             cameraCode << ind2 << "// Default Camera " << camera << "\n";
