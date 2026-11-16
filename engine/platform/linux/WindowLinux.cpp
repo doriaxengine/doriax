@@ -156,6 +156,14 @@ namespace {
 }
 
 bool WindowLinux::openDisplay() {
+    // The engine touches the display from the async loading thread (framebuffer
+    // creation and window size queries) while the main thread polls for events,
+    // so Xlib has to be told the connection is shared. Without this the client
+    // aborts with "Unknown sequence number while processing queue" the first
+    // time two threads interleave a request. The editor does the same before it
+    // opens its own connection.
+    XInitThreads();
+
     gDisplay = XOpenDisplay(nullptr);
     if (!gDisplay) {
         std::fprintf(stderr, "Error: Could not open the X display. "
