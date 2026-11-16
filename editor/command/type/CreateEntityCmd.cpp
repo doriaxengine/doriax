@@ -435,6 +435,11 @@ bool editor::CreateEntityCmd::execute(){
         scene->addComponent<Transform>(entity, {});
         scene->addComponent<Body3DComponent>(entity, {});
 
+    }else if (type == EntityCreationType::CHARACTER3D){
+
+        scene->addComponent<Transform>(entity, {});
+        scene->addComponent<Character3DComponent>(entity, {});
+
     }else if (type == EntityCreationType::SKY){
 
         scene->addComponent<SkyComponent>(entity, {});

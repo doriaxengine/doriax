@@ -557,6 +557,10 @@ void editor::Structure::showNewEntityMenu(bool isScene, Entity parent, bool addT
             CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "Body3D", EntityCreationType::BODY3D, parent, addToBundle));
             openParent = parent;
         }
+        if (ImGui::MenuItem(ICON_FA_PERSON_WALKING"  Character 3D")){
+            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new CreateEntityCmd(project, project->getSelectedSceneId(), "Character3D", EntityCreationType::CHARACTER3D, parent, addToBundle));
+            openParent = parent;
+        }
         ImGui::EndMenu();
     }
 
@@ -1757,6 +1761,13 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
 
                     if (ImGui::MenuItem(ICON_FA_DUMBBELL "  Add Physics Body", nullptr, false, !node.isLocked && !hasBody)) {
                         CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new AddComponentCmd(project, project->getSelectedSceneId(), node.id, bodyType));
+                    }
+
+                    if (selectedScene->sceneType == SceneType::SCENE_3D) {
+                        bool hasCharacter = signature.test(selectedScene->scene->getComponentId<Character3DComponent>());
+                        if (ImGui::MenuItem(ICON_FA_PERSON_WALKING "  Add 3D Character", nullptr, false, !node.isLocked && !hasCharacter)) {
+                            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new AddComponentCmd(project, project->getSelectedSceneId(), node.id, ComponentType::Character3DComponent));
+                        }
                     }
 
                     bool canAddOccluder2D = selectedScene->sceneType == SceneType::SCENE_2D

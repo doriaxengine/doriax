@@ -68,7 +68,8 @@ namespace doriax::editor{
         TERRAIN,
         REFLECTION_PROBE,
         WATER,
-        WATER_EXCLUSION
+        WATER_EXCLUSION,
+        CHARACTER3D
     };
 
     class CreateEntityCmd: public Command{

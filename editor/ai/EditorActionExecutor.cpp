@@ -857,6 +857,7 @@ bool parseEntityType(const std::string& typeName, EntityCreationType& type) {
         {"joint3d", EntityCreationType::JOINT3D},
         {"body2d", EntityCreationType::BODY2D},
         {"body3d", EntityCreationType::BODY3D},
+        {"character3d", EntityCreationType::CHARACTER3D},
         {"sky", EntityCreationType::SKY},
         {"fog", EntityCreationType::FOG},
         {"sound", EntityCreationType::SOUND},
