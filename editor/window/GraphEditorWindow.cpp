@@ -1943,11 +1943,11 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
         ImGui::TextColored(errorColor, ICON_FA_TRIANGLE_EXCLAMATION " %d error%s", (int)instance.compiled.errors.size(), instance.compiled.errors.size() == 1 ? "" : "s");
     // the editor keeps a logic graph's script, in this language
     if (logic) {
-        const std::string inherited = std::string("Project (") + (project->getLogicLanguage() == LogicLanguage::CPP ? "C++" : "Lua") + ")";
+        const std::string inherited = std::string("Default (") + (project->getLogicLanguage() == LogicLanguage::CPP ? "C++" : "Lua") + ")";
         const char* names[] = {inherited.c_str(), "Lua", "C++"};
         const char* values[] = {"", "lua", "cpp"};
         int current = instance.document.language == "lua" ? 1 : (instance.document.language == "cpp" ? 2 : 0);
-        const float width = ImGui::CalcTextSize("Project (Lua)").x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f;
+        const float width = ImGui::CalcTextSize("Default (Lua)").x + ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.x * 2.0f;
         ImGui::SameLine();
         if (ImGui::GetContentRegionAvail().x > width)
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - width);
@@ -1956,7 +1956,7 @@ void editor::GraphEditorWindow::drawToolbar(Instance& instance) {
             instance.document.language = values[current];
             edit(instance);
         }
-        ImGui::SetItemTooltip("What the graph is written as. Project takes the Logic Graphs setting of Project Settings");
+        ImGui::SetItemTooltip("What the graph is written as. Default takes the Logic Graphs setting of Project Settings");
         return;
     }
     // on its own at the right
