@@ -10210,6 +10210,10 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                         SceneManager::setScenePtr(entry.sourceSceneId, entry.runtime->scene);
                     }
                 }
+                // all first: a script may load another scene's instance
+                for (const auto& entry : runtimeScenesToInitialize) {
+                    unloadOnDemandBundles(entry.runtime);
+                }
                 // C++ projects run Lua scripts too, through the plugin's initScripts
                 LuaBinding::clearLoadedProjectModules();
 
@@ -10239,7 +10243,6 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                     entry.initializing = true;
 
                     Scene* scene = entry.runtime->scene;
-                    unloadOnDemandBundles(entry.runtime);
                     if (hasCppScripts) {
                         conector.init(scene);
                     } else {
@@ -10308,6 +10311,10 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
             SceneManager::setScenePtr(entry.sourceSceneId, entry.runtime->scene);
         }
     }
+    // all first: a script may load another scene's instance
+    for (size_t entryIndex : stackIndices) {
+        unloadOnDemandBundles(session->runtimeScenes[entryIndex].runtime);
+    }
 
     for (size_t entryIndex : stackIndices) {
         PlayRuntimeScene& entry = session->runtimeScenes[entryIndex];
@@ -10321,7 +10328,6 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
         entry.initializing = true;
 
         Scene* scene = entry.runtime->scene;
-        unloadOnDemandBundles(entry.runtime);
         if (conector.isLibraryConnected()) {
             conector.init(scene);
         }else{
@@ -10711,7 +10717,8 @@ void editor::Project::registerBundleManager() {
 
 // Play starts like an export: on-demand instances are only a root
 void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
-    if (!sceneProject || !sceneProject->scene) {
+    // once per Play: again, it would save the unloaded state
+    if (!sceneProject || !sceneProject->scene || !sceneProject->playBundleEntities.empty()) {
         return;
     }
     Scene* scene = sceneProject->scene;
@@ -10738,26 +10745,30 @@ void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
     }
 
     sceneProject->playBundleEntities = sceneProject->entities;
+    // a removed camera member clears it on the editor's scene
+    SceneProject* editorScene = getScene(sceneProject->id);
+    sceneProject->playMainCamera = editorScene ? editorScene->mainCamera : sceneProject->mainCamera;
 
     // a Play copy shares the id: most members here wins
-    auto membersHere = [&](const fs::path& bundlePath, Entity root) {
-        std::vector<Entity> found;
+    auto findInstance = [&](const fs::path& bundlePath, Entity root) -> const EntityBundle::Instance* {
         EntityBundle* bundle = getEntityBundle(bundlePath);
         if (!bundle || !bundle->instances.count(sceneProject->id)) {
-            return found;
+            return nullptr;
         }
+        const EntityBundle::Instance* found = nullptr;
+        size_t foundHere = 0;
         for (const auto& instance : bundle->instances.at(sceneProject->id)) {
             if (instance.rootEntity != root) {
                 continue;
             }
-            std::vector<Entity> members;
-            for (const auto& member : instance.members) {
-                if (scene->isEntityCreated(member.localEntity) && scene->isParentOf(root, member.localEntity)) {
-                    members.push_back(member.localEntity);
-                }
-            }
-            if (members.size() >= found.size()) {
-                found = std::move(members);
+            size_t here = std::count_if(instance.members.begin(), instance.members.end(), [&](const EntityBundle::EntityMember& member) {
+                // one without Transform has no branch to check
+                const Entity entity = member.localEntity;
+                return scene->isEntityCreated(entity) && (!scene->findComponent<Transform>(entity) || scene->isParentOf(root, entity));
+            });
+            if (!found || here >= foundHere) {
+                found = &instance;
+                foundHere = here;
             }
         }
         return found;
@@ -10765,9 +10776,13 @@ void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
 
     const bool wasModified = sceneProject->isModified;
     for (const auto& [bundlePath, root] : roots) {
-        std::vector<Entity> members = membersHere(bundlePath, root);
-        if (members.empty()) {
+        const EntityBundle::Instance* instance = findInstance(bundlePath, root);
+        if (!instance) {
             continue;
+        }
+        std::vector<Entity> members;
+        for (const auto& member : instance->members) {
+            members.push_back(member.localEntity);
         }
         unimportEntityBundle(sceneProject, bundlePath, root, members, true);
     }
@@ -10776,7 +10791,7 @@ void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
 
 // The snapshot restored the members' ids, so the old tracking fits
 void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
-    if (!sceneProject || sceneProject->playBundleInstances.empty()) {
+    if (!sceneProject || sceneProject->playBundleEntities.empty()) {
         return;
     }
     sceneProject->entities = std::move(sceneProject->playBundleEntities);
@@ -10790,6 +10805,12 @@ void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
         }
     }
     sceneProject->playBundleInstances.clear();
+    // back to the main camera a removed camera member cleared
+    SceneProject* editorScene = getScene(sceneProject->id);
+    if (editorScene && editorScene->mainCamera == NULL_ENTITY) {
+        editorScene->mainCamera = sceneProject->playMainCamera;
+    }
+    sceneProject->playMainCamera = NULL_ENTITY;
     updateSceneBundles(sceneProject);
     // the members' scripts left the scene's list with them
     updateSceneCppScripts(sceneProject);

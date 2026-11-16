@@ -118,6 +118,7 @@ namespace doriax::editor{
         // bundle instances before Play unloaded the on-demand ones
         std::map<std::filesystem::path, std::vector<EntityBundle::Instance>> playBundleInstances;
         std::vector<Entity> playBundleEntities;
+        Entity playMainCamera = NULL_ENTITY;
         SceneMaxValues maxValues;
         std::set<ShaderKey> shaderKeys;
         // Keys may miss variants: file changed outside the editor, or saved before all of it loaded
