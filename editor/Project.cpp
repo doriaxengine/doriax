@@ -9908,8 +9908,13 @@ bool editor::Project::isAnyScenePlaying() const{
 }
 
 bool editor::Project::isPlaySessionActive() const{
-    std::scoped_lock lock(playSessionMutex);
-    return activePlaySession != nullptr;
+    // No lock: the log asks this from engine calls made under playSessionMutex
+    return playSessionLive.load(std::memory_order_acquire);
+}
+
+void editor::Project::setActivePlaySession(std::shared_ptr<PlaySession> session){
+    activePlaySession = std::move(session);
+    playSessionLive.store(activePlaySession != nullptr, std::memory_order_release);
 }
 
 bool editor::Project::isGameInputActive() const{
@@ -9963,7 +9968,7 @@ void editor::Project::failPlayStartup(const std::shared_ptr<PlaySession>& sessio
         {
             std::scoped_lock lock(playSessionMutex);
             if (activePlaySession == session) {
-                activePlaySession.reset();
+                setActivePlaySession(nullptr);
             }
         }
 
@@ -10195,7 +10200,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                     cleanupPlaySession(session);
                     {
                         std::scoped_lock lock(playSessionMutex);
-                        if (activePlaySession == session) activePlaySession.reset();
+                        if (activePlaySession == session) setActivePlaySession(nullptr);
                     }
                     session->startupThreadDone.store(true, std::memory_order_release);
                     return;
@@ -10882,7 +10887,7 @@ void editor::Project::start(uint32_t sceneId) {
 
     {
         std::scoped_lock lock(playSessionMutex);
-        activePlaySession = session;
+        setActivePlaySession(session);
     }
 
     editor::getEditorHost().stopTransientPreviews();
@@ -11114,7 +11119,7 @@ void editor::Project::stop(uint32_t sceneId) {
 
             {
                 std::scoped_lock lock(playSessionMutex);
-                if (activePlaySession == session) activePlaySession.reset();
+                if (activePlaySession == session) setActivePlaySession(nullptr);
             }
         });
     });

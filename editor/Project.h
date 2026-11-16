@@ -408,6 +408,10 @@ namespace doriax::editor{
 
         mutable std::mutex playSessionMutex;
         std::shared_ptr<PlaySession> activePlaySession;
+        // Mirrors activePlaySession, read where the mutex may already be held
+        std::atomic<bool> playSessionLive{false};
+        // Call with playSessionMutex held
+        void setActivePlaySession(std::shared_ptr<PlaySession> session);
 
         SceneProject* createRuntimeCloneFromSource(const SceneProject* source);
         void prepareRuntimeScene(PlayRuntimeScene& entry);
