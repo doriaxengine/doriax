@@ -341,9 +341,9 @@ std::string editor::ProjectUtils::getLogicGraphTemplate() {
 
 namespace {
 
-    // the graph text and compiler version, as a stamp
+    // the graph text and compiler version, as a stamp; raise it when the written code changes
     std::string logicStamp(const std::string& graphText) {
-        constexpr int compilerVersion = 2;
+        constexpr int compilerVersion = 3;
         uint64_t hash = 1469598103934665603ull;
         for (unsigned char c : graphText) {
             hash ^= c;

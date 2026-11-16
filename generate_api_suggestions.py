@@ -674,6 +674,8 @@ RE_ENUM_START = re.compile(r'\benum\s+(?:class\s+)?([A-Za-z0-9_]+)\s*(?::[^{;]+)
 
 # type_headers[name] = header of a class or enum, from the engine core
 type_headers = {}
+# pointer_members[class] = its public data members that are pointers
+pointer_members = {}
 
 
 def parse_cpp_headers(base_dir):
@@ -683,6 +685,7 @@ def parse_cpp_headers(base_dir):
     # bool_members[class_name] = { member_name, ... }
     bool_members = {}
     bool_member = re.compile(r'(?<![A-Za-z0-9_])bool\s+([A-Za-z0-9_]+)\s*(?:=[^;(]*)?;')
+    pointer_member = re.compile(r'(?<![A-Za-z0-9_:])[A-Za-z_][A-Za-z0-9_:<>]*\s*\*\s*([A-Za-z0-9_]+)\s*(?:=[^;{]*)?;')
     sig_pattern = re.compile(
         r'(?:virtual\s+|inline\s+|static\s+)*'
         r'([A-Za-z0-9_:<>&*\s]+)\s+'
@@ -724,6 +727,7 @@ def parse_cpp_headers(base_dir):
                 if class_name not in class_methods:
                     class_methods[class_name] = {}
                 bool_members.setdefault(class_name, set()).update(bool_member.findall(public_body))
+                pointer_members.setdefault(class_name, set()).update(pointer_member.findall(public_body))
 
                 for m in sig_pattern.finditer(public_body):
                     ret_type = m.group(1).strip()
@@ -1010,7 +1014,11 @@ def main():
         if s.kind in ('Method', 'StaticMethod') and s.callee:
             s.cpp_result = _result_kind(_callee_return(s, cpp_methods))
         elif s.kind in ('Property', 'Constant') and s.cpp_read:
-            s.cpp_result = _result_kind(_getter_return_type(s.accessor, cpp_methods))
+            member = _member_pointer(s.accessor)
+            if member and member[1] in pointer_members.get(member[0], set()):
+                s.cpp_result = '*'
+            else:
+                s.cpp_result = _result_kind(_getter_return_type(s.accessor, cpp_methods))
 
     # Tag properties whose getter gives Lua a copy (obj.position.y = 1 changes nothing)
     for s in all_symbols:

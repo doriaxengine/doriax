@@ -547,6 +547,8 @@ void editor::LogicNodes::addEngineApi() {
             if (read) {
                 get.cpp = {target + *read};
                 get.result = getCppResult("prop/" + parent + "." + name);
+                if (!shared && get.result == CppResult::VALUE && read->find('(') == std::string::npos)
+                    get.result = CppResult::MEMBER;
             }
             // one bound with a getter alone is read, not set
             static const std::unordered_set<std::string> readOnly = getEngineReadOnlyProperties();

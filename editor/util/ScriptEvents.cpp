@@ -50,7 +50,7 @@ const std::vector<ScriptEvent>& eventList() {
     static const std::vector<ScriptEventParam> gamepadButton = {{"int", "gamepad"}, {"int", "button"}};
     static const std::vector<ScriptEventParam> contact2D = {{"Body2D", "bodyA"}, {"unsigned long", "shapeA"}, {"Body2D", "bodyB"}, {"unsigned long", "shapeB"}};
     static const std::vector<ScriptEventParam> sensor2D = {{"Body2D", "sensorBody"}, {"unsigned long", "sensorShape"}, {"Body2D", "visitorBody"}, {"unsigned long", "visitorShape"}};
-    static const std::vector<ScriptEventParam> contact3D = {{"Collider3D", "colliderA"}, {"Collider3D", "colliderB"}, {"Contact3D", "contact"}};
+    static const std::vector<ScriptEventParam> contact3D = {{"Collider3D", "bodyA"}, {"Collider3D", "bodyB"}, {"Contact3D", "contact"}};
     static const std::vector<ScriptEventParam> adError = {{"AdMobFormat", "format"}, {"int", "errorCode"}, {"std::string", "message"}};
     static const std::vector<ScriptEventParam> errorMessage = {{"int", "errorCode"}, {"std::string", "message"}};
     static const std::vector<ScriptEventParam> billingResult = {{"BillingResponse", "response"}, {"std::string", "message"}};
@@ -136,11 +136,11 @@ const std::vector<ScriptEvent>& eventList() {
         {S::Physics3D, "onContactAdded3D", "Contacts", "Any two bodies or characters start touching", contact3D},
         {S::Physics3D, "onContactPersisted3D", "Contacts", "Any two bodies or characters keep touching", contact3D},
         {S::Physics3D, "onContactRemoved3D", "Contacts", "Any two bodies or characters stop touching",
-         {{"Collider3D", "colliderA"}, {"Collider3D", "colliderB"}, {"unsigned long", "shapeA"}, {"unsigned long", "shapeB"}}},
+         {{"Collider3D", "bodyA"}, {"Collider3D", "bodyB"}, {"unsigned long", "shapeA"}, {"unsigned long", "shapeB"}}},
         {S::Physics3D, "onBodyActivated3D", "Bodies", "Any body wakes up", {{"Body3D", "body"}}},
         {S::Physics3D, "onBodyDeactivated3D", "Bodies", "Any body goes to sleep", {{"Body3D", "body"}}},
         {S::Physics3D, "shouldCollide3D", "Filters", "Whether any two bodies or characters collide, return false to skip them",
-         {{"Collider3D", "colliderA"}, {"Collider3D", "colliderB"}, {"Vector3", "baseOffset"}, {"CollideShapeResult3D", "result"}}, true},
+         {{"Collider3D", "bodyA"}, {"Collider3D", "bodyB"}, {"Vector3", "baseOffset"}, {"CollideShapeResult3D", "result"}}, true},
 
         {S::AdMob, "onInitialized", "Setup", "Google Mobile Ads is ready to load ads", {}},
         {S::AdMob, "onConsentUpdated", "Setup", "The consent request or privacy options form finished, errorCode is 0 on success", errorMessage},

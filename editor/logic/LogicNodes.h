@@ -30,6 +30,7 @@ namespace doriax::editor {
     enum class CppResult {
         VALUE,
         REFERENCE,   // one the graph can change through, as a component
+        MEMBER,      // a data member, a reference when its object is one
         POINTER      // its members are reached with ->
     };
 

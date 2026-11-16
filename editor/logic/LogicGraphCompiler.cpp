@@ -263,6 +263,15 @@ namespace {
                     error(node.id, "Unknown node type " + node.type);
             if (!result.errors.empty())
                 return result;
+            // a pin a node no longer has, from a file written before
+            for (const GraphLink& link : graph.links) {
+                if (!link.fromPin.empty() && !hasPin(link.fromNode, link.fromPin, false))
+                    error(link.fromNode, "A link leaves from " + link.fromPin + ", which this node does not have");
+                if (!hasPin(link.toNode, link.toPin, true))
+                    error(link.toNode, "A link enters " + link.toPin + ", which this node does not have");
+            }
+            if (!result.errors.empty())
+                return result;
 
             for (const GraphLink& link : graph.links) {
                 if (link.fromPin.empty())
@@ -389,6 +398,17 @@ namespace {
         std::vector<std::string> objects;    // lines of init: the entity as the classes the graph uses
         std::vector<Line> helpers;           // the functions of Code Expression and Code nodes
         std::set<std::string> usedHelpers;
+
+        bool hasPin(int id, const std::string& pin, bool input) const {
+            const GraphNode* node = graph.findNode(id);
+            const LogicNodeType* type = node ? LogicNodes::get().find(node->type) : nullptr;
+            if (!type)
+                return false;
+            std::vector<NodePin> inputs, outputs;
+            LogicNodes::getPins(graph, *node, *type, inputs, outputs);
+            const std::vector<NodePin>& pins = input ? inputs : outputs;
+            return std::any_of(pins.begin(), pins.end(), [&](const NodePin& item) { return item.name == pin; });
+        }
 
         PinKind pinKind(int id, const std::string& pin) const {
             const GraphNode* node = graph.findNode(id);
@@ -701,12 +721,44 @@ namespace {
             return field;
         }
 
-        // a pointer in C++, as Get Framebuffer of a Camera gives
-        bool readsPointer(const GraphNode& node, const NodePin& pin) const {
-            const GraphLink* link = graph.findLinkInto(node.id, pin.name);
+        // the node and type an input reads, null when unlinked or a variable
+        const GraphNode* linkedNode(const GraphNode& node, const std::string& pin, const LogicNodeType*& type) const {
+            const GraphLink* link = graph.findLinkInto(node.id, pin);
             const GraphNode* from = link && !link->fromPin.empty() ? graph.findNode(link->fromNode) : nullptr;
-            const LogicNodeType* type = from ? LogicNodes::get().find(from->type) : nullptr;
-            return type && type->result == CppResult::POINTER;
+            type = from ? LogicNodes::get().find(from->type) : nullptr;
+            return type ? from : nullptr;
+        }
+
+        // a pointer in C++, as Get Framebuffer of a Camera gives, also through Select
+        bool readsPointer(const GraphNode& node, const std::string& pin, int depth = 0) const {
+            const LogicNodeType* type;
+            const GraphNode* from = linkedNode(node, pin, type);
+            if (!from || depth > 64)
+                return false;
+            if (from->type == "logic/select")
+                return readsPointer(*from, "a", depth + 1) || readsPointer(*from, "b", depth + 1);
+            return type->result == CppResult::POINTER;
+        }
+
+        // kept as a reference, so the graph changes it in place
+        bool heldByReference(const GraphNode& node, const LogicNodeType& type, int depth = 0) const {
+            if (depth > 64)
+                return false;
+            if (type.result == CppResult::MEMBER)
+                return readsReference(node, "self", true, depth);
+            if (node.type == "logic/select")
+                return readsReference(node, "a", false, depth) && readsReference(node, "b", false, depth);
+            return type.result == CppResult::REFERENCE;
+        }
+
+        // a variable or a named value is one too, as the script's object is for an unlinked self
+        bool readsReference(const GraphNode& node, const std::string& pin, bool unlinked, int depth) const {
+            const GraphLink* link = graph.findLinkInto(node.id, pin);
+            if (!link || link->fromPin.empty())
+                return link || unlinked;
+            const LogicNodeType* type;
+            const GraphNode* from = linkedNode(node, pin, type);
+            return from && (type->runs() || from->type == "variable/get" || heldByReference(*from, *type, depth + 1));
         }
 
         // the variable a link reads, straight or through Get Variable
@@ -748,7 +800,7 @@ namespace {
                         text += (opens && closes) || assigned ? unwrapped(read) : read;
                         found = true;
                         // C++ reaches a member of a pointer with ->
-                        if (cpp && close + 1 < code.size() && code[close + 1] == '.' && (LogicNodes::isPointerClass(pin.type) || readsPointer(node, pin))) {
+                        if (cpp && close + 1 < code.size() && code[close + 1] == '.' && (LogicNodes::isPointerClass(pin.type) || readsPointer(node, pin.name))) {
                             text += "->";
                             i++;
                         }
@@ -929,7 +981,7 @@ namespace {
                     if (type.outputs[i].name == pin)
                         index = i;
                 std::string name = "t" + std::to_string(node.id) + (index ? "_" + std::to_string(index) : std::string());
-                if (cpp && type.result == CppResult::REFERENCE) {
+                if (cpp && heldByReference(node, type)) {
                     // a reference reaches the component, and each statement declares its own
                     const std::string base = name;
                     for (int count = 2; !declare(name); count++)
