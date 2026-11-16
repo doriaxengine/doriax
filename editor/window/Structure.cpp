@@ -204,7 +204,14 @@ void editor::Structure::collectVisibleEntitySelectionOrder(const TreeNode& node,
     }
 
     if (!node.isScene && !node.isChildScene) {
-        visibleEntitySelectionOrder.push_back({getNodeSceneId(node), static_cast<Entity>(node.id)});
+        uint32_t sceneId = getNodeSceneId(node);
+        visibleEntitySelectionOrder.push_back({sceneId, static_cast<Entity>(node.id)});
+
+        // rows of a collapsed node are hidden
+        auto sceneIt = collapsedEntities.find(sceneId);
+        if (!hasSearch && sceneIt != collapsedEntities.end() && sceneIt->second.count(node.id)) {
+            return;
+        }
     }
 
     for (const auto& child : node.children) {
@@ -2546,6 +2553,10 @@ void editor::Structure::show(){
 
     showTreeNode(root);
     if (rebuildTree || collapsedChanged) {
+        if (collapsedChanged && !hasSearch) {
+            visibleEntitySelectionOrder.clear();
+            collectVisibleEntitySelectionOrder(root, false);
+        }
         collapsedChanged = false;
         syncSceneWindowSelectionHierarchy(root);
     }
