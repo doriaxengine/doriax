@@ -126,7 +126,7 @@ namespace doriax{
 
 		JPH::ShapeRefC createCharacterShape3D(Entity entity, float height, float radius, float size);
 		void refreshCharacter3DContacts(JPH::CharacterVirtual* character);
-		void updateCharacter3D(Entity entity, Character3DComponent& character, float stepTime);
+		void updateCharacter3D(Entity entity, float stepTime);
 		// not built yet, asked again, or failed at another scale
 		bool needsCharacterLoad3D(Entity entity, const Character3DComponent& character);
 
