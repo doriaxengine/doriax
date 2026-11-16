@@ -174,8 +174,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     # FindVulkan reads the VULKAN_SDK environment variable the SDK installer
     # sets. A macro, not a function, so Vulkan_FOUND lands in the caller.
     macro(doriax_find_vulkan backendOption)
-        # sokol_gfx binds every resource through VK_EXT_descriptor_buffer, which
-        # MoltenVK does not implement, so the build only fails at device selection
+        # sokol_gfx binds resources through VK_EXT_descriptor_buffer where the
+        # headers declare it, and falls back to push descriptors everywhere else
+        # (old headers, Vulkan 1.2 hardware), so any Vulkan SDK builds.
+        # MoltenVK implements neither, so the build only fails at device selection
         if(APPLE)
             message(WARNING "${backendOption}=vulkan runs on MoltenVK here, which does not implement VK_EXT_descriptor_buffer: this build will fail at startup unless the driver provides it. ${backendOption}=metal is the working macOS backend.")
         endif()

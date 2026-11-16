@@ -507,8 +507,10 @@ std::string editor::Generator::getPlatformCMakeConfig(bool vsyncEnabled, const W
     content += "\n";
     content += "    # FindVulkan reads the VULKAN_SDK environment variable the SDK installer sets\n";
     content += "    macro(doriax_find_vulkan)\n";
-    content += "        # sokol_gfx binds every resource through VK_EXT_descriptor_buffer, which\n";
-    content += "        # MoltenVK does not implement, so the build only fails at device selection\n";
+    content += "        # sokol_gfx binds resources through VK_EXT_descriptor_buffer where the\n";
+    content += "        # headers declare it, and falls back to push descriptors everywhere else\n";
+    content += "        # (old headers, Vulkan 1.2 hardware), so any Vulkan SDK builds.\n";
+    content += "        # MoltenVK implements neither, so the build only fails at device selection\n";
     content += "        if(APPLE)\n";
     content += "            message(WARNING \"DORIAX_GRAPHIC_BACKEND=vulkan runs on MoltenVK here, which does not implement VK_EXT_descriptor_buffer: this build will fail at startup unless the driver provides it. DORIAX_GRAPHIC_BACKEND=metal is the working macOS backend.\")\n";
     content += "        endif()\n";
