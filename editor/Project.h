@@ -115,10 +115,11 @@ namespace doriax::editor{
         ScenePlayState playState = ScenePlayState::STOPPED;
         YAML::Node playStateSnapshot;
         std::set<Entity> playStateEntities;
-        // bundle instances before Play unloaded the on-demand ones
+        // what Play's on-demand unload took, on the editor's scene
         std::map<std::filesystem::path, std::vector<EntityBundle::Instance>> playBundleInstances;
-        std::vector<Entity> playBundleEntities;
         Entity playMainCamera = NULL_ENTITY;
+        // this runtime's entities before the unload
+        std::vector<Entity> playBundleEntities;
         SceneMaxValues maxValues;
         std::set<ShaderKey> shaderKeys;
         // Keys may miss variants: file changed outside the editor, or saved before all of it loaded
@@ -499,6 +500,7 @@ namespace doriax::editor{
         SceneResources collectPlaySceneResources(uint32_t sceneId);
         void registerBundleManager();
         void unloadOnDemandBundles(SceneProject* sceneProject);
+        void restorePlayBundleEntities(SceneProject* sceneProject);
         void restorePlayBundleInstances(SceneProject* sceneProject);
 
         SceneProject* findSceneProjectByScene(Scene* scene);

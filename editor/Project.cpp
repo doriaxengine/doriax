@@ -5695,7 +5695,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
             sceneProject->playStateSnapshot = YAML::Node();
             sceneProject->playStateEntities.clear();
         }
-        restorePlayBundleInstances(sceneProject);
+        restorePlayBundleEntities(sceneProject);
 
         // Drop the focus left during play
         sceneProject->scene->getSystem<UISystem>()->setFocus(NULL_ENTITY);
@@ -5729,6 +5729,11 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
                 }
             });
         }
+    }
+
+    // once per scene, also for copies retired while playing
+    for (SceneProject& sceneProject : scenes) {
+        restorePlayBundleInstances(&sceneProject);
     }
 
     editor::getEditorHost().enqueueMainThreadTask([]() {
@@ -10737,17 +10742,23 @@ void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
         return;
     }
 
-    for (const auto& [bundlePath, bundle] : entityBundles) {
-        auto instances = bundle.instances.find(sceneProject->id);
-        if (instances != bundle.instances.end()) {
-            sceneProject->playBundleInstances[bundlePath] = instances->second;
-        }
-    }
-
     sceneProject->playBundleEntities = sceneProject->entities;
-    // a removed camera member clears it on the editor's scene
+
+    // once, on the editor's scene: Play copies share its records
     SceneProject* editorScene = getScene(sceneProject->id);
-    sceneProject->playMainCamera = editorScene ? editorScene->mainCamera : sceneProject->mainCamera;
+    if (!editorScene) {
+        editorScene = sceneProject;
+    }
+    if (editorScene->playBundleInstances.empty()) {
+        for (const auto& [bundlePath, bundle] : entityBundles) {
+            auto instances = bundle.instances.find(sceneProject->id);
+            if (instances != bundle.instances.end()) {
+                editorScene->playBundleInstances[bundlePath] = instances->second;
+            }
+        }
+        // removing a camera member clears it there too
+        editorScene->playMainCamera = editorScene->mainCamera;
+    }
 
     // a Play copy shares the id: most members here wins
     auto findInstance = [&](const fs::path& bundlePath, Entity root) -> const EntityBundle::Instance* {
@@ -10789,13 +10800,22 @@ void editor::Project::unloadOnDemandBundles(SceneProject* sceneProject) {
     sceneProject->isModified = wasModified;
 }
 
-// The snapshot restored the members' ids, so the old tracking fits
-void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
+// The list Play started with, now the snapshot is back
+void editor::Project::restorePlayBundleEntities(SceneProject* sceneProject) {
     if (!sceneProject || sceneProject->playBundleEntities.empty()) {
         return;
     }
     sceneProject->entities = std::move(sceneProject->playBundleEntities);
     sceneProject->playBundleEntities.clear();
+    // the members' scripts left the scene's list with them
+    updateSceneCppScripts(sceneProject);
+}
+
+// The snapshot restored the members' ids: the tracking fits
+void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
+    if (sceneProject->playBundleInstances.empty()) {
+        return;
+    }
     for (auto& [bundlePath, bundle] : entityBundles) {
         bundle.instances.erase(sceneProject->id);
     }
@@ -10805,15 +10825,11 @@ void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
         }
     }
     sceneProject->playBundleInstances.clear();
-    // back to the main camera a removed camera member cleared
-    SceneProject* editorScene = getScene(sceneProject->id);
-    if (editorScene && editorScene->mainCamera == NULL_ENTITY) {
-        editorScene->mainCamera = sceneProject->playMainCamera;
+    if (sceneProject->mainCamera == NULL_ENTITY) {
+        sceneProject->mainCamera = sceneProject->playMainCamera;
     }
     sceneProject->playMainCamera = NULL_ENTITY;
     updateSceneBundles(sceneProject);
-    // the members' scripts left the scene's list with them
-    updateSceneCppScripts(sceneProject);
 }
 
 void editor::Project::start(uint32_t sceneId) {
