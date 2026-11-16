@@ -9340,18 +9340,23 @@ void RenderSystem::updateCameraSize(Entity entity){
         }
 
         if (camera.autoResize){
-            float newLeft = rect.getX();
-            float newBottom = rect.getY();
-            float newRight = rect.getWidth();
-            float newTop = rect.getHeight();
-            if (newRight <= 0.0f || newTop <= 0.0f) return;
-            float newAspect = newRight / newTop;
+            float newWidth = rect.getWidth();
+            float newHeight = rect.getHeight();
+            if (newWidth <= 0.0f || newHeight <= 0.0f) return;
+            float newAspect = newWidth / newHeight;
 
-            if ((camera.leftClip != newLeft) || (camera.bottomClip != newBottom) || (camera.rightClip != newRight) || (camera.topClip != newTop) || (camera.aspect != newAspect)){
-                camera.leftClip = newLeft;
-                camera.bottomClip = newBottom;
-                camera.rightClip = newRight;
-                camera.topClip = newTop;
+            float width = camera.rightClip - camera.leftClip;
+            float height = camera.topClip - camera.bottomClip;
+
+            if ((width != newWidth) || (height != newHeight) || (camera.aspect != newAspect)){
+                // keeps where the camera sits in its view: bottom-left (2D) or centered (3D)
+                float leftRatio = (width > 0.0f) ? camera.leftClip / width : 0.0f;
+                float bottomRatio = (height > 0.0f) ? camera.bottomClip / height : 0.0f;
+
+                camera.leftClip = leftRatio * newWidth;
+                camera.rightClip = camera.leftClip + newWidth;
+                camera.bottomClip = bottomRatio * newHeight;
+                camera.topClip = camera.bottomClip + newHeight;
                 camera.aspect = newAspect;
 
                 camera.needUpdate = true;

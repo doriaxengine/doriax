@@ -560,13 +560,13 @@ bool editor::CreateEntityCmd::execute(){
         CameraComponent& camera = scene->getComponent<CameraComponent>(entity);
         camera.useTarget = false;
 
+        float width = static_cast<float>(Engine::getCanvasWidth());
+        float height = static_cast<float>(Engine::getCanvasHeight());
+        if (width <= 0) width = 800;
+        if (height <= 0) height = 600;
+
         if (sceneProject->sceneType == SceneType::SCENE_2D || sceneProject->sceneType == SceneType::SCENE_UI){
             camera.type = CameraType::CAMERA_ORTHO;
-
-            float width = static_cast<float>(Engine::getCanvasWidth());
-            float height = static_cast<float>(Engine::getCanvasHeight());
-            if (width <= 0) width = 800;
-            if (height <= 0) height = 600;
 
             camera.leftClip = 0;
             camera.rightClip = width;
@@ -591,6 +591,12 @@ bool editor::CreateEntityCmd::execute(){
 
             camera.nearClip = DEFAULT_PERSPECTIVE_NEAR;
             camera.farClip = DEFAULT_PERSPECTIVE_FAR;
+
+            // centered like other 3D engines, used when switched to orthographic
+            camera.leftClip = -width / 2.0f;
+            camera.rightClip = width / 2.0f;
+            camera.bottomClip = -height / 2.0f;
+            camera.topClip = height / 2.0f;
         }
 
         if (sceneProject->mainCamera == NULL_ENTITY){
