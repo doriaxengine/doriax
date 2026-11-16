@@ -25,6 +25,7 @@
 #include "EditorVersion.h"
 #include "Out.h"
 #include "AppSettings.h"
+#include "util/ExternalEditor.h"
 #include "Theme.h"
 #include "ai/McpServer.h"
 #include "resources/fonts/fa-solid-900_ttf.h"
@@ -271,6 +272,7 @@ enum class AppMenuCommand : uint32_t {
     ProjectSettings,
     ProjectScenes,
     ProjectBundles,
+    OpenInScriptEditor,
     ClearTrash,
     RunScene,
     PauseScene,
@@ -470,6 +472,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuCommand(AppMenuCommand::ProjectSettings, "Project Settings..."),
         menuCommand(AppMenuCommand::ProjectScenes, "Manage Scenes...", !isProjectBusy),
         menuCommand(AppMenuCommand::ProjectBundles, "Bundles..."),
+        menuSeparator(),
+        menuCommand(AppMenuCommand::OpenInScriptEditor, ExternalEditor::getOpenLabel() + (ExternalEditor::isEnabled() ? "" : "..."), !isProjectBusy),
         menuSeparator(),
         menuCommand(AppMenuCommand::ClearTrash, "Empty Project Trash...", !isProjectBusy)
     }));
@@ -672,6 +676,13 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
             break;
         case AppMenuCommand::ProjectBundles:
             bundlesWindow.open(&project);
+            break;
+        case AppMenuCommand::OpenInScriptEditor:
+            if (!ExternalEditor::isEnabled()) {
+                editorSettingsWindow.open(&project, EditorSettingsWindow::Tab::General);
+            } else if (project.writeGeneratedSources() && !ExternalEditor::openProject(project.getProjectPath())) {
+                registerAlert("Script Editor", ExternalEditor::getStartError());
+            }
             break;
         case AppMenuCommand::ClearTrash: {
             if (project.isAnyScenePlaying()) return;
@@ -2152,6 +2163,9 @@ bool editor::App::consumeBenchmarkExit() {
 
 void editor::App::engineInit(int argc, char** argv) {
     parseBenchmarkArgs(argc, argv);
+    if (argc == 3 && (std::strcmp(argv[1], "-p") == 0 || std::strcmp(argv[1], "--project") == 0)) {
+        startupProject = std::filesystem::absolute(argv[2]);
+    }
     reportLoadingProgress("Initializing engine...");
     Engine::systemInit(argc, argv, new editor::Platform(&project));
 
@@ -2217,6 +2231,9 @@ void editor::App::loadStartupProject() {
     }
 
     std::filesystem::path lastProjectPath = AppSettings::getLastProjectPath();
+    if (!startupProject.empty()) {
+        lastProjectPath = startupProject.filename() == "project.yaml" ? startupProject.parent_path() : startupProject;
+    }
 
     if (!lastProjectPath.empty() && std::filesystem::exists(lastProjectPath)) {
         if (project.loadProject(lastProjectPath)) {
@@ -2226,6 +2243,9 @@ void editor::App::loadStartupProject() {
         }
     } else {
         project.createTempProject("MyDoriaxProject");
+        if (!startupProject.empty()) {
+            Out::error("Project not found: \"%s\"", lastProjectPath.string().c_str());
+        }
     }
 
     projectLoading = false;

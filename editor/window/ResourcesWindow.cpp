@@ -5,6 +5,7 @@
 #include "logic/LogicNodes.h"
 #include "util/BidiText.h"
 #include "util/UIUtils.h"
+#include "util/ExternalEditor.h"
 #include "util/ProjectUtils.h"
 
 #include "ImageViewerWindow.h"
@@ -998,7 +999,7 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
                     else if (file.type == FileType::SCENE)
                         project->openScene(filePath);
                     else
-                        codeEditor->openFile(filePath.string(), true);
+                        codeEditor->openScript(filePath.string());
                 }
             }
 
@@ -1322,6 +1323,11 @@ void editor::ResourcesWindow::renderFileListing(bool showDirectories){
 
                 ImGui::Separator();
 
+                if (!file.isDirectory && ExternalEditor::isEnabled() && Util::isScriptFile(file.name)){
+                    if (ImGui::MenuItem(ICON_FA_CODE " Open in Built-in Editor")){
+                        codeEditor->openFile((currentPath / file.name).string(), true);
+                    }
+                }
                 if (ImGui::MenuItem(ICON_FA_ARROW_UP_RIGHT_FROM_SQUARE " Open in File Manager")){
                     openInFileManager(file.isDirectory ? currentPath / file.name : currentPath);
                 }

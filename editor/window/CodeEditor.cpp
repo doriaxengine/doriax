@@ -5,6 +5,7 @@
 
 #include "Backend.h"
 #include "AppSettings.h"
+#include "util/ExternalEditor.h"
 #include "util/FileUtils.h"
 #include "util/ProjectUtils.h"
 #include "util/ScriptParser.h"
@@ -1561,6 +1562,25 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
     Backend::getApp().addNewCodeWindowToDock(instance.filepath, dockToCentral);
 
     updateAllProjectSymbols();
+}
+
+void editor::CodeEditor::openScript(const std::string& filepath, int line, int column) {
+    const std::string key = toRelativePath(filepath);
+    if (ExternalEditor::isEnabled() && Util::isScriptFile(key)) {
+        if (ExternalEditor::openFile(project->getProjectPath(), resolveFilepath(key), line, column)) {
+            return;
+        }
+        Backend::getApp().registerAlert("Script Editor", ExternalEditor::getStartError());
+    }
+
+    openFile(filepath, true);
+    auto it = editors.find(key);
+    if (line > 0 && it != editors.end()) {
+        it->second.editor->SetCursorPosition(line - 1, std::max(column - 1, 0));
+        it->second.editor->RequestScrollToCursor();
+        it->second.editor->RequestFocus();
+        it->second.pendingWindowFocus = true;
+    }
 }
 
 void editor::CodeEditor::closeFile(const std::string& filepath) {

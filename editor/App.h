@@ -115,6 +115,8 @@ namespace doriax::editor{
         bool benchmarkCameraReady = false;
         uint32_t benchmarkSceneId = 0;
         std::filesystem::path benchmarkProject;
+        // from --project, instead of the last one
+        std::filesystem::path startupProject;
         std::string benchmarkScene;
         std::string benchmarkName;
         std::filesystem::path benchmarkOut;

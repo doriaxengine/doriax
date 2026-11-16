@@ -34,6 +34,15 @@ namespace doriax::editor {
         float timestamp;
     };
 
+    // A file location in a log line, as compilers and Lua print it
+    struct OutputFileLink {
+        int start = -1;     // buffer range it covers
+        int end = -1;
+        std::string path;
+        int line = 0;
+        int column = 0;
+    };
+
     class OutputWindow {
     private:
         ImGuiTextBuffer buf;
@@ -89,6 +98,11 @@ namespace doriax::editor {
 
         // Text filter helper honoring match-case
         bool passTextFilter(const char* text) const;
+
+        // Ctrl+Click or the context menu opens it
+        OutputFileLink contextLink;
+        bool findFileLink(int line, int bufferIndex, OutputFileLink& link) const;
+        void openFileLink(const OutputFileLink& link);
 
         std::string buildCopyText(int startInclusive, int endExclusive) const;
         bool copySelectionToClipboard();

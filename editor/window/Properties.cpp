@@ -9307,7 +9307,7 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
             bool hdrExists = hasHeader && std::filesystem::exists(hdrPath);
             ImGui::BeginDisabled(!hdrExists);
             if (ImGui::Button((ICON_FA_FILE_LINES "##open_hdr_" + std::to_string(scriptIdx)).c_str())) {
-                Backend::getApp().getCodeEditor()->openFile(hdrPath.string(), true);
+                Backend::getApp().getCodeEditor()->openScript(hdrPath.string());
             }
             if (ImGui::IsItemHovered()) {
                 if (hdrExists){
@@ -9332,7 +9332,7 @@ void editor::Properties::drawScriptComponent(ComponentType cpType, SceneProject*
                 if (graph)
                     Backend::getApp().getGraphEditorWindow()->openFile(srcPath);
                 else
-                    Backend::getApp().getCodeEditor()->openFile(srcPath.string(), true);
+                    Backend::getApp().getCodeEditor()->openScript(srcPath.string());
             }
             if (ImGui::IsItemHovered()) {
                 if (srcExists){

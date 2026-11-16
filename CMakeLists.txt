@@ -382,16 +382,19 @@ set(BINDING_DIR "${CMAKE_SOURCE_DIR}/engine/core/script/binding")
 set(ENGINE_CORE_DIR "${CMAKE_SOURCE_DIR}/engine/core")
 set(API_SUGGESTIONS_HEADER "${GENERATED_DIR}/engine_api_suggestions.h")
 set(GENERATE_API_SCRIPT "${CMAKE_SOURCE_DIR}/generate_api_suggestions.py")
+# Lua stubs and documented headers, laid over engine-sdk
+set(ENGINE_OVERLAY_DIR "${CMAKE_BINARY_DIR}/engine-overlay")
+set(API_DOCS_FILE "${CMAKE_SOURCE_DIR}/editor/resources/docs/api-docs.json")
 
 file(GLOB BINDING_FILES CONFIGURE_DEPENDS "${BINDING_DIR}/*.cpp")
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${ENGINE_CORE_DIR}/*.h")
 
 add_custom_command(
-    OUTPUT ${API_SUGGESTIONS_HEADER}
+    OUTPUT ${API_SUGGESTIONS_HEADER} ${ENGINE_OVERLAY_DIR}/lua-api/doriax.lua
     COMMAND ${Python3_EXECUTABLE} ${GENERATE_API_SCRIPT}
-            ${BINDING_DIR} ${API_SUGGESTIONS_HEADER} ${ENGINE_CORE_DIR}
-    DEPENDS ${GENERATE_API_SCRIPT} ${BINDING_FILES} ${ENGINE_HEADERS}
-    COMMENT "Generating engine_api_suggestions.h from Lua bindings and C++ headers"
+            ${BINDING_DIR} ${API_SUGGESTIONS_HEADER} ${ENGINE_CORE_DIR} ${ENGINE_OVERLAY_DIR} ${API_DOCS_FILE}
+    DEPENDS ${GENERATE_API_SCRIPT} ${BINDING_FILES} ${ENGINE_HEADERS} ${API_DOCS_FILE}
+    COMMENT "Generating engine_api_suggestions.h, Lua stubs and documented headers"
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
 )
 
@@ -513,7 +516,7 @@ set_property(
 include_directories (${EDITOR_DIR})
 
 add_custom_target(generate_shaders DEPENDS ${SHADERS_HEADER})
-add_custom_target(generate_api_suggestions DEPENDS ${API_SUGGESTIONS_HEADER})
+add_custom_target(generate_api_suggestions DEPENDS ${API_SUGGESTIONS_HEADER} ${ENGINE_OVERLAY_DIR}/lua-api/doriax.lua)
 
 set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/main.cpp
@@ -568,6 +571,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/util/UIUtils.cpp
     ${EDITOR_DIR}/util/CommandRunner.cpp
     ${EDITOR_DIR}/util/ShellEnv.cpp
+    ${EDITOR_DIR}/util/ExternalEditor.cpp
     ${EDITOR_DIR}/util/GitMonitor.cpp
     ${EDITOR_DIR}/util/LineDiff.cpp
     ${EDITOR_DIR}/util/SystemFonts.cpp
@@ -850,9 +854,13 @@ add_custom_target(copy_doriax_editor_engine
     COMMAND ${CMAKE_COMMAND} -E copy_directory
         ${CMAKE_SOURCE_DIR}/engine
         ${DORIAX_EDITOR_ENGINE_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${ENGINE_OVERLAY_DIR}
+        ${DORIAX_EDITOR_ENGINE_DIR}
     COMMENT "Copying engine next to the editor"
 )
 
+add_dependencies(copy_doriax_editor_engine generate_api_suggestions)
 add_dependencies(doriax-editor copy_doriax_editor_engine)
 
 set(DORIAX_EDITOR_INSTALL_TARGETS doriax-editor)
@@ -913,6 +921,10 @@ else()
     endif()
 
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/engine/
+            DESTINATION bin/engine-sdk
+            CONFIGURATIONS Release MinSizeRel
+    )
+    install(DIRECTORY ${ENGINE_OVERLAY_DIR}/
             DESTINATION bin/engine-sdk
             CONFIGURATIONS Release MinSizeRel
     )

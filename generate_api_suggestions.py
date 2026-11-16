@@ -15,8 +15,15 @@ import re
 import sys
 import os
 import glob
+import json
+import shutil
+import textwrap
 
 # ── Regex patterns ──────────────────────────────────────────────────────────
+
+# Metamethods Lua stubs type, by their LuaLS name
+LUA_OPERATORS = {'__add': 'add', '__sub': 'sub', '__mul': 'mul', '__div': 'div', '__unm': 'unm'}
+RE_OPERATOR = re.compile(r'([A-Za-z0-9_:<>]+)\s*[&*]?\s+operator\s*([+\-*/])\s*\(([^)]*)\)')
 
 RE_NAMESPACE_BEGIN = re.compile(r'\.beginNamespace\(\s*"([^"]+)"\s*\)')
 RE_NAMESPACE_END = re.compile(r'\.endNamespace\(\)')
@@ -67,7 +74,7 @@ EXCLUDED_HEADER_METHODS = {
 class APISymbol:
     """Represents one symbol in the engine API."""
     __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean',
-                 'mutator', 'cpp_read', 'cpp_write', 'callee', 'cpp_result')
+                 'mutator', 'cpp_read', 'cpp_write', 'callee', 'cpp_result', 'overloads', 'cpp_class', 'base', 'lua_signature')
 
     def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False, accessor=''):
         self.name = name
@@ -86,6 +93,10 @@ class APISymbol:
         self.cpp_write = ''  # the setter of a property, '=' for a data member
         self.callee = None  # (class, member) a function binding calls
         self.cpp_result = ''  # what the C++ read gives: '*' a pointer, '&' a reference, '' a value
+        self.overloads = []  # parameter types of every overload Lua gets
+        self.cpp_class = ''  # of a class: its C++ name and base
+        self.base = ''
+        self.lua_signature = None  # (params, return) the Lua stubs show
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -171,7 +182,10 @@ def parse_binding_file(filepath):
             if current_lua_name:
                 base_info = f' : {current_base}' if current_base else ''
                 detail = f'class {current_lua_name}{base_info}'
-                symbols.append(APISymbol(current_lua_name, 'Class', detail))
+                cls = APISymbol(current_lua_name, 'Class', detail)
+                cls.cpp_class = current_class
+                cls.base = current_base or ''
+                symbols.append(cls)
                 for constructor_detail in current_constructors:
                     symbols.append(APISymbol(
                         current_lua_name, 'Constructor',
@@ -207,6 +221,7 @@ def parse_binding_file(filepath):
                     f'{current_lua_name}.{fname}()', current_lua_name,
                     bound=_bound_types(_binding_text(lines, index))
                 )
+                static.overloads = _bound_type_lists(_binding_text(lines, index))
                 callee = _cpp_callee(_binding_text(lines, index)[m.end():])
                 if callee:
                     static.cpp_read = f'{callee[0]}::{callee[1]}'
@@ -218,6 +233,12 @@ def parse_binding_file(filepath):
         m = RE_ADD_FUNCTION.search(stripped)
         if m:
             fname = m.group(1)
+            if fname in LUA_OPERATORS:
+                operator = APISymbol(fname, 'Operator', '', current_lua_name)
+                text = _binding_text(lines, index)
+                # vectorMul takes a number or a vector
+                operator.overloads = [['float'], [current_class]] if 'vectorMul<' in text else _bound_type_lists(text)
+                symbols.append(operator)
             if not fname.startswith('__'):
                 method = APISymbol(
                     fname, 'Method',
@@ -226,6 +247,7 @@ def parse_binding_file(filepath):
                     signature=_lambda_signature(stripped[m.end():]),
                     bound=_bound_types(_binding_text(lines, index))
                 )
+                method.overloads = _bound_type_lists(_binding_text(lines, index))
                 callee = _cpp_callee(_binding_text(lines, index)[m.end():])
                 if callee:
                     method.cpp_read = callee[1]
@@ -428,7 +450,9 @@ def _lambda_signature(text):
     """(params, return) of a lambda binding, which wins over the C++ header's."""
     m = RE_LAMBDA_SIGNATURE.search(text)
     if not m:
-        return None
+        # a lambda returning self->getSystem<UISystem>()
+        m = re.search(r'\[\]\s*\([^)]*\)\s*\{\s*return\s+self->get[A-Za-z]*<([A-Za-z0-9_:]+)>\(\)', text)
+        return ('', m.group(1) + '*') if m else None
     # Lua passes neither self nor the lua_State
     params = [p for p in m.group(1).split(',')[1:] if 'lua_State' not in p]
     return _simplify_params(','.join(params)), m.group(2)
@@ -546,13 +570,13 @@ def _binding_text(lines, index):
 RE_BOUND_CAST = re.compile(r'\(\s*[\w:<>\s&*]+\(\s*(?:\w+::)?\*\s*\)\s*\(([^()]*)\)')
 
 
-def _split_types(text):
-    """A parameter list split at the commas outside templates."""
+def _split_types_raw(text):
+    """Text split at the commas outside templates and parentheses."""
     parts, depth, current = [], 0, ''
     for c in text:
-        if c == '<':
+        if c in '<(':
             depth += 1
-        elif c == '>':
+        elif c in '>)':
             depth -= 1
         if c == ',' and depth == 0:
             parts.append(current)
@@ -560,15 +584,16 @@ def _split_types(text):
         else:
             current += c
     parts.append(current)
-    return [_simplify_param(p) for p in parts if p.strip() and p.strip() != 'void']
+    return parts
 
 
-def _bound_types(text):
-    """Parameter types of the overload a binding gives Lua, or None when it names none.
+def _split_types(text):
+    """A parameter list split at the commas outside templates."""
+    return [_simplify_param(p) for p in _split_types_raw(text) if p.strip() and p.strip() != 'void']
 
-    Of several, the one without parameters is preferred, then the one that
-    takes a single value (a vector rather than its numbers), else the first.
-    """
+
+def _bound_type_lists(text):
+    """Parameter types of every overload a binding gives Lua, empty when it names none."""
     found = []
     text = text.replace('luabridge::constOverload<', 'luabridge::overload<')
     marker = 'luabridge::overload<'
@@ -586,7 +611,19 @@ def _bound_types(text):
         start = text.find(marker, end)
     if not found:
         m = RE_BOUND_CAST.search(text)
-        return _split_types(m.group(1)) if m else None
+        return [_split_types(m.group(1))] if m else []
+    return found
+
+
+def _bound_types(text):
+    """Parameter types of the overload a binding gives Lua, or None when it names none.
+
+    Of several, the one without parameters is preferred, then the one that
+    takes a single value (a vector rather than its numbers), else the first.
+    """
+    found = _bound_type_lists(text)
+    if not found:
+        return None
     for count in (0, 1):
         for types in found:
             if len(types) == count:
@@ -676,6 +713,81 @@ RE_ENUM_START = re.compile(r'\benum\s+(?:class\s+)?([A-Za-z0-9_]+)\s*(?::[^{;]+)
 type_headers = {}
 # pointer_members[class] = its public data members that are pointers
 pointer_members = {}
+# member_types[class][member] = C++ type of a public data member
+member_types = {}
+# constructors[class] = parameter lists of its public constructors
+constructors = {}
+# enum_values[enum][member] = its value, when the header gives one
+enum_values = {}
+# operator_returns[class][(operator, operand type)] = what it gives
+operator_returns = {}
+
+
+def _enum_number(expr, values):
+    """An enum initializer of numbers, earlier members, << and |; None for anything else."""
+    result = 0
+    for term in expr.split('|'):
+        operands = []
+        for operand in term.split('<<'):
+            operand = operand.strip()
+            if operand in values:
+                operands.append(values[operand])
+                continue
+            try:
+                operands.append(int(operand.rstrip('uUlL'), 0))
+            except ValueError:
+                return None
+        if None in operands or len(operands) > 2:
+            return None
+        result |= operands[0] << operands[1] if len(operands) == 2 else operands[0]
+    return result
+
+
+def _enum_values(body):
+    """Value of each member of an enum body, None where it can't be read."""
+    values = {}
+    current = -1
+    for item in body.split(','):
+        name, _, expr = item.partition('=')
+        name = name.strip()
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+            continue
+        if expr.strip():
+            current = _enum_number(expr, values)
+        elif current is not None:
+            current += 1
+        values[name] = current
+    return values
+
+
+def _data_members(body):
+    """(name, type) of the data members a public class body declares."""
+    members = []
+    body = re.sub(r'^\s*#.*$', '', body, flags=re.M)
+    # statements end at ; or at the braces of an inline body
+    for statement in re.split(r'[;{}]', body):
+        statement = re.sub(r'\s+', ' ', statement).strip()
+        if not statement or re.match(r'^(?:typedef|using|friend|enum|class|struct|template|static_assert|operator)\b', statement):
+            continue
+        # a default value, outside template brackets
+        depth = 0
+        for i, c in enumerate(statement):
+            depth += 1 if c == '<' else (-1 if c == '>' else 0)
+            if c == '=' and depth == 0:
+                statement = statement[:i].strip()
+                break
+        if re.sub(r'<[^<>]*(?:<[^<>]*>[^<>]*)*>', '', statement).find('(') >= 0:
+            continue
+        statement = re.sub(r'^(?:(?:static|inline|mutable|constexpr|const|volatile)\s+)+', '', statement)
+        # float x, y declares both
+        first, *others = _split_types_raw(statement)
+        m = re.match(r'^(.+?[\s*&>])([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?$', first.strip())
+        if m:
+            members.append((m.group(2), m.group(1).strip()))
+            for other in others:
+                if re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', other.strip()):
+                    members.append((other.strip(), m.group(1).strip()))
+    return members
 
 
 def parse_cpp_headers(base_dir):
@@ -710,6 +822,7 @@ def parse_cpp_headers(base_dir):
             relative = os.path.relpath(path, base_dir).replace(os.sep, '/')
             for em in RE_ENUM_START.finditer(text):
                 type_headers.setdefault(em.group(1), relative)
+                enum_values.setdefault(em.group(1), _enum_values(text[em.end():text.find('}', em.end())]))
 
             for cm in class_start.finditer(text):
                 class_name = cm.group(1)
@@ -729,10 +842,18 @@ def parse_cpp_headers(base_dir):
                 bool_members.setdefault(class_name, set()).update(bool_member.findall(public_body))
                 pointer_members.setdefault(class_name, set()).update(pointer_member.findall(public_body))
 
+                for name, cpp_type in _data_members(public_body):
+                    member_types.setdefault(class_name, {}).setdefault(name, cpp_type)
+                for m in RE_OPERATOR.finditer(public_body):
+                    operand = _param_type(_simplify_params(m.group(3))) if m.group(3).strip() else ''
+                    operator_returns.setdefault(class_name, {}).setdefault((m.group(2), operand), _simplify_return_type(m.group(1)))
+
                 for m in sig_pattern.finditer(public_body):
                     ret_type = m.group(1).strip()
                     method_name = m.group(2)
                     params_raw = m.group(3).strip()
+                    if method_name == class_name:
+                        constructors.setdefault(class_name, []).append(_simplify_params(params_raw))
                     if method_name == class_name or method_name.startswith('~'):
                         continue
                     # "operator bool()" is a conversion, not a method named "bool"
@@ -747,9 +868,8 @@ def parse_cpp_headers(base_dir):
 
     return class_methods, bool_members
 
-def generate_header(symbols, output_path):
-    """Generate engine_api_suggestions.h from parsed symbols."""
-    # Deduplicate: keep first occurrence per (name, kind, parent) tuple
+def _unique_symbols(symbols):
+    """The first symbol of each (name, kind, parent), constructors by their signature."""
     seen = set()
     unique = []
     for s in symbols:
@@ -757,6 +877,12 @@ def generate_header(symbols, output_path):
         if key not in seen:
             seen.add(key)
             unique.append(s)
+    return unique
+
+
+def generate_header(symbols, output_path):
+    """Generate engine_api_suggestions.h from parsed symbols."""
+    unique = _unique_symbols(symbols)
 
     # Separate into categories for organized output
     enums = [s for s in unique if s.kind == 'Enum']
@@ -944,6 +1070,342 @@ def generate_header(symbols, output_path):
           f'Enums: {len(enums)}, EnumMembers: {len(enum_members)}')
 
 
+# ── Lua stubs for lua-language-server ─────────────────────────────────────
+
+LUA_INTEGERS = {
+    'int', 'unsigned', 'unsigned int', 'long', 'unsigned long', 'long long', 'unsigned long long',
+    'short', 'unsigned short', 'unsigned char', 'wchar_t', 'size_t', 'Entity',
+    'int8_t', 'int16_t', 'int32_t', 'int64_t', 'uint8_t', 'uint16_t', 'uint32_t', 'uint64_t',
+}
+LUA_KEYWORDS = {
+    'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'global', 'goto', 'if',
+    'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
+}
+RE_CALLBACK = re.compile(r'^(?:FunctionSubscribe|function)\s*<\s*(.*?)\s*\((.*)\)\s*>$')
+
+
+def _lua_type(cpp, names):
+    """LuaLS type of a C++ type, '' for void, 'any' when Lua gets nothing known."""
+    pointer_to_char = re.search(r'\bchar\s*\*', cpp)
+    t = re.sub(r'\b(?:std|doriax)::', '', cpp)
+    t = re.sub(r'\b(?:const|volatile|virtual|static|inline|constexpr|struct|class|typename)\b', ' ', t)
+    t = re.sub(r'\s+', ' ', re.sub(r'[&*]', ' ', t)).strip()
+    # LuaBridge gives a char as a one-letter string
+    if pointer_to_char or t in ('string', 'wstring', 'char'):
+        return 'string'
+    if t in ('', 'void'):
+        return ''
+    if t == 'bool':
+        return 'boolean'
+    if t in ('float', 'double'):
+        return 'number'
+    if t in LUA_INTEGERS:
+        return 'integer'
+    m = RE_CALLBACK.match(t)
+    if m:
+        params = [_lua_type(p, names) or 'any' for p in _split_types_raw(m.group(2)) if p.strip() not in ('', 'void')]
+        returns = _lua_type(m.group(1), names)
+        return 'fun(' + ', '.join(f'a{i + 1}: {p}' for i, p in enumerate(params)) + ')' + (f': {returns}' if returns else '')
+    m = re.match(r'^(?:vector|array|list|deque|set|unordered_set)\s*<(.*)>$', t)
+    if m:
+        return (_lua_type(_split_types_raw(m.group(1))[0], names) or 'any') + '[]'
+    m = re.match(r'^(?:map|unordered_map)\s*<(.*)>$', t)
+    if m:
+        key, value = (_split_types_raw(m.group(1)) + ['', ''])[:2]
+        return f'table<{_lua_type(key, names) or "any"}, {_lua_type(value, names) or "any"}>'
+    return names.get(t) or names.get(t.split('::')[-1]) or 'any'
+
+
+def _lua_params(params, names):
+    """(name, type, optional) of a simplified C++ parameter list."""
+    result = []
+    for i, param in enumerate(p for p in _split_types_raw(params) if p.strip()):
+        declaration, _, default = param.partition('=')
+        parts = declaration.strip().rsplit(' ', 1)
+        cpp_type, name = (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
+        if 'lua_State' in cpp_type:
+            continue
+        if cpp_type == '...':
+            result.append(('...', 'any', False))
+            continue
+        if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+            name = f'p{i + 1}'
+        if name in LUA_KEYWORDS:
+            name += '_'
+        result.append((name, _lua_type(cpp_type, names) or 'any', bool(default.strip())))
+    return result
+
+
+def _lua_comment(text):
+    return [f'---{line}' for line in text.split('\n')] if text else []
+
+
+def _lua_function(owner, sep, name, params, returns, doc, names):
+    lines = _lua_comment(doc)
+    lua_params = _lua_params(params, names)
+    for param, lua_type, optional in lua_params:
+        lines.append(f'---@param {param}{"?" if optional else ""} {lua_type}')
+    lua_return = _lua_type(returns, names)
+    if lua_return:
+        lines.append(f'---@return {lua_return}')
+    lines.append(f'function {owner}{sep}{name}({", ".join(p[0] for p in lua_params)}) end')
+    return lines
+
+
+def _member_type(accessor, cpp_methods):
+    """C++ type a property reads through its accessor, '' when unknown."""
+    m = re.search(r'constantCopy<\s*([A-Za-z0-9_:]+)', accessor)
+    if m:
+        return m.group(1)
+    m = RE_LAMBDA_SIGNATURE.search(accessor)
+    if m:
+        return m.group(2)
+    ret = _getter_return_type(accessor, cpp_methods)
+    if ret:
+        return ret
+    m = re.search(r'&\s*([A-Za-z0-9_]+)::([A-Za-z0-9_]+)', accessor)
+    if not m:
+        # a lambda returning &self->onPress
+        m = re.search(r'^\[\]\s*\(\s*(?:const\s+)?([A-Za-z0-9_]+)\s*[*&].*?return\s*&?\s*self->([A-Za-z0-9_]+)', accessor)
+    if m:
+        return member_types.get(m.group(1), {}).get(m.group(2), '')
+    return ''
+
+
+LUA_PRELUDE = [
+    '---@meta doriax',
+    '-- Doriax engine API for lua-language-server, generated from the engine bindings.',
+    '',
+    '---A Lua script attached to an entity, as self in its methods',
+    '---@class LuaScript',
+    '---@field scene Scene',
+    '---@field entity integer',
+    '',
+    '---Calls self:methodName on an engine event, such as "onUpdate"',
+    '---@param script LuaScript',
+    '---@param methodName string',
+    '---@param tag? string',
+    'function RegisterEngineEvent(script, methodName, tag) end',
+    '',
+    '---Calls self:methodName when a component event fires, such as a button\'s onClick',
+    '---@param script LuaScript',
+    '---@param event any',
+    '---@param methodName string',
+    '---@param tag? string',
+    'function RegisterEvent(script, event, methodName, tag) end',
+    '',
+]
+
+
+def _lua_enum(name, members, docs):
+    lines = _lua_comment(docs.get(name, {}).get('description', ''))
+    lines.append(f'---@enum {name}')
+    lines.append(f'{name} = {{')
+    for i, member in enumerate(members):
+        owner, _, value_name = member.cpp_read.rpartition('::')
+        value = enum_values.get(owner.split('::')[-1], {}).get(value_name)
+        lines.append(f'    {member.name} = {value if value is not None else i},')
+    return lines + ['}', '']
+
+
+def _lua_class(name, cls, members, doc, names, cpp_methods, types):
+    """A class with its operators, fields and constructors, and its table."""
+    member_docs = doc.get('members', {})
+    lines = _lua_comment(doc.get('description', ''))
+    if doc.get('url'):
+        lines.append(f'---[Doriax reference]({doc["url"]})')
+    base = names.get(cls.base, '') if cls.base else ''
+    lines.append(f'---@class {name}' + (f': {base}' if base else ''))
+
+    for s in members:
+        if s.kind != 'Operator':
+            continue
+        op = LUA_OPERATORS[s.name]
+        if op == 'unm':
+            lines.append(f'---@operator unm: {name}')
+            continue
+        symbol = {'add': '+', 'sub': '-', 'mul': '*', 'div': '/'}[op]
+        for overload in s.overloads:
+            operand = overload[0] if overload else ''
+            result = operator_returns.get(cls.cpp_class, {}).get((symbol, operand)) or name
+            lines.append(f'---@operator {op}({_lua_type(operand, names) or "any"}): {_lua_type(result, names) or name}')
+
+    for s in members:
+        if s.kind not in ('Property', 'Constant', 'Event') or s.name in LUA_KEYWORDS:
+            continue
+        lua_type = _lua_type(_member_type(s.accessor, cpp_methods), names) or 'any'
+        types.append(lua_type)
+        notes = member_docs.get(s.name, '')
+        if s.readonly or s.kind == 'Constant':
+            notes = ('Read-only. ' + notes).strip()
+        elif s.detail.endswith('(copy)'):
+            notes = ('A copy: set the whole value to change it. ' + notes).strip()
+        lines.append(f'---@field {s.name} {lua_type}' + (f' {notes}' if notes else ''))
+
+    for s in members:
+        if s.kind != 'Constructor':
+            continue
+        params = s.detail[s.detail.find('(') + 1:-1]
+        bound = [_param_type(p) for p in _split_types(params)]
+        header = next((c for c in constructors.get(cls.cpp_class or name, [])
+                       if [_param_type(p) for p in _split_types(c)] == bound), params)
+        lua_params = ', '.join(f'{p}{"?" if o else ""}: {t}' for p, t, o in _lua_params(header, names))
+        lines.append(f'---@overload fun({lua_params}): {name}')
+    return lines + [f'{name} = {{}}', '']
+
+
+def _lua_methods(name, members, doc, names, cpp_methods, types):
+    """A definition of each method, and one more of each other overload Lua gets."""
+    member_docs = doc.get('members', {})
+    lines = []
+    for s in members:
+        if s.kind not in ('Method', 'StaticMethod'):
+            continue
+        sep = '.' if s.kind == 'StaticMethod' else ':'
+        params, returns = s.lua_signature or ('...', '')
+        # getComponent<FogComponent> or getSystem<UISystem>
+        template = re.match(r'^get[A-Za-z]*<([A-Za-z0-9_:]+)>$', s.callee[1]) if s.callee else None
+        if template:
+            params, returns = '', template.group(1)
+        if params == '...':
+            types.append('any')
+            lines += _lua_comment(member_docs.get(s.name, ''))
+            lines.append('---@param ... any')
+            lines.append(f'function {name}{sep}{s.name}(...) end')
+        else:
+            types.append(_lua_type(returns, names) or 'void')
+            lines += _lua_function(name, sep, s.name, params, returns, member_docs.get(s.name, ''), names)
+        overloads = cpp_methods.get(s.callee[0], {}).get(s.callee[1], []) if s.callee else []
+        for bound in s.overloads:
+            other = _bound_overload(overloads, bound)
+            if other[0] != params:
+                lines += _lua_function(name, sep, s.name, other[0], other[1] or returns, '', names)
+        lines.append('')
+    return lines
+
+
+def generate_lua_stubs(symbols, cpp_methods, docs, output_path):
+    """Write a lua-language-server definition file of the bound API."""
+    symbols = _unique_symbols(symbols)
+    classes = {s.name: s for s in symbols if s.kind == 'Class'}
+    enums = {}
+    members = {}
+    for s in symbols:
+        if s.kind == 'EnumMember' and s.parent not in classes:
+            enums.setdefault(s.parent, []).append(s)
+        elif s.parent in classes and s.kind not in ('Class', 'CppMethod', 'EnumMember'):
+            members.setdefault(s.parent, []).append(s)
+    names = {name: name for name in classes}
+    names.update({cls.cpp_class: name for name, cls in classes.items() if cls.cpp_class})
+    names.update({name: name for name in enums})
+
+    types = []  # every type written, to tell how many are known
+    lines = list(LUA_PRELUDE)
+    for name in sorted(enums):
+        lines += _lua_enum(name, enums[name], docs)
+    for name in sorted(classes):
+        doc = docs.get(name, {})
+        lines += _lua_class(name, classes[name], members.get(name, []), doc, names, cpp_methods, types)
+        lines += _lua_methods(name, members.get(name, []), doc, names, cpp_methods, types)
+
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(lines))
+    print(f'[generate_api_suggestions] Generated {output_path} ({len(types) - types.count("any")} typed, {types.count("any")} any)')
+
+
+# ── Doc comments in the engine headers copied next to the editor ──────────
+
+RE_CLASS_LINE = re.compile(r'^\s*(?:class|struct)\s+(?:DORIAX_API\s+)?([A-Za-z0-9_]+)\b')
+RE_MEMBER_LINE = re.compile(r'^\s*(?:(?:virtual|static|inline|explicit|constexpr)\s+)*[A-Za-z_][\w:<>,\s*&]*?\b([A-Za-z_]\w*)\s*[(=;]')
+
+
+def _doc_lines(indent, text):
+    return [f'{indent}/// {line}' for line in textwrap.wrap(text, 96)]
+
+
+def _annotate_header(text, class_docs):
+    """The header with /// comments above each documented class and member."""
+    out = []
+    depth = 0
+    stack = []  # (class, depth of its body)
+    pending = None
+    for line in text.split('\n'):
+        code = re.sub(r'//.*', '', line)
+        indent = line[:len(line) - len(line.lstrip())]
+        # never inside a macro continued over lines
+        documented = out and (out[-1].strip().startswith('///') or out[-1].rstrip().endswith('\\'))
+        m = RE_CLASS_LINE.match(code)
+        current = stack[-1][0] if stack and stack[-1][1] == depth else None
+        if m and m.group(1) in class_docs and not code.rstrip().endswith(';'):
+            pending = m.group(1)
+            description, url, _ = class_docs[pending]
+            if not documented and (description or url):
+                out += _doc_lines(indent, description) + ([f'{indent}/// {url}'] if url else [])
+        elif current and not documented:
+            m = RE_MEMBER_LINE.match(code)
+            if m and m.group(1) in class_docs[current][2]:
+                out += _doc_lines(indent, class_docs[current][2][m.group(1)])
+        out.append(line)
+        for c in code:
+            if c == '{':
+                depth += 1
+                if pending:
+                    stack.append((pending, depth))
+                    pending = None
+            elif c == '}':
+                if stack and stack[-1][1] == depth:
+                    stack.pop()
+                depth -= 1
+        if code.rstrip().endswith(';'):
+            pending = None
+    return '\n'.join(out)
+
+
+def annotate_headers(symbols, cpp_methods, docs, engine_core_dir, overlay_dir):
+    """Write documented copies of the engine headers under overlay_dir."""
+    classes = {s.name: s for s in symbols if s.kind == 'Class'}
+    # C++ class -> (description, url, {member: text})
+    class_docs = {}
+    def add(cpp_class, member, text):
+        class_docs.setdefault(cpp_class, ('', '', {}))[2].setdefault(member, text)
+
+    for name, doc in docs.items():
+        cpp_class = classes[name].cpp_class if name in classes else name
+        class_docs[cpp_class] = (doc.get('description', ''), doc.get('url', ''), {})
+        for member, text in doc.get('members', {}).items():
+            if member in cpp_methods.get(cpp_class, {}) or member in member_types.get(cpp_class, {}):
+                add(cpp_class, member, text)
+
+    # a Lua name documents the C++ members it is bound to
+    for s in symbols:
+        text = docs.get(s.parent, {}).get('members', {}).get(s.name)
+        if not text or s.parent not in classes:
+            continue
+        if s.kind in ('Method', 'StaticMethod') and s.callee:
+            add(s.callee[0], s.callee[1].split('<')[0], text)
+        elif s.kind in ('Property', 'Constant', 'Event'):
+            for owner, member in re.findall(r'&\s*([A-Za-z0-9_]+)::([A-Za-z0-9_]+)', s.accessor + ' ' + s.mutator):
+                add(owner, member, text)
+
+    headers = {}
+    for cpp_class in class_docs:
+        if cpp_class in type_headers:
+            headers.setdefault(type_headers[cpp_class], []).append(cpp_class)
+
+    root = os.path.basename(os.path.normpath(engine_core_dir))
+    for relative in sorted(headers):
+        with open(os.path.join(engine_core_dir, relative), encoding='utf-8') as f:
+            text = f.read()
+        annotated = _annotate_header(text, class_docs)
+        if annotated != text:
+            path = os.path.join(overlay_dir, root, relative)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w', encoding='utf-8', newline='') as f:
+                f.write(annotated)
+    print(f'[generate_api_suggestions] Documented {len(headers)} engine headers')
+
+
 def main():
     if len(sys.argv) < 3:
         print(f'Usage: {sys.argv[0]} <binding_dir> <output_header>')
@@ -956,6 +1418,9 @@ def main():
     binding_dir = sys.argv[1]
     output_path = sys.argv[2]
     engine_core_dir = sys.argv[3] if len(sys.argv) > 3 else os.path.abspath(os.path.join(binding_dir, '..', '..'))
+    # Lua stubs and documented headers, with the docs they take
+    overlay_dir = sys.argv[4] if len(sys.argv) > 4 else ''
+    docs_path = sys.argv[5] if len(sys.argv) > 5 else ''
 
     binding_files = sorted(glob.glob(os.path.join(binding_dir, '*.cpp')))
     if not binding_files:
@@ -994,6 +1459,7 @@ def main():
             # the header's shortest overload is not always the one bound
             if s.signature is None and s.bound is not None:
                 sig = _bound_overload(cpp_methods.get(s.parent, {}).get(s.name, []), s.bound)
+            s.lua_signature = sig
             if sig is not None:
                 sep = '.' if s.kind == 'StaticMethod' else ':'
                 s.detail = _format_detail(s.parent, s.name, sep, sig)
@@ -1046,6 +1512,15 @@ def main():
     all_symbols.extend(cpp_symbols)
 
     generate_header(all_symbols, output_path)
+
+    if overlay_dir:
+        docs = {}
+        if docs_path and os.path.exists(docs_path):
+            with open(docs_path, encoding='utf-8') as f:
+                docs = json.load(f)
+        shutil.rmtree(overlay_dir, ignore_errors=True)
+        generate_lua_stubs(all_symbols, cpp_methods, docs, os.path.join(overlay_dir, 'lua-api', 'doriax.lua'))
+        annotate_headers(all_symbols, cpp_methods, docs, engine_core_dir, overlay_dir)
 
 
 if __name__ == '__main__':

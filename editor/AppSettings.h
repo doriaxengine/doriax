@@ -35,6 +35,23 @@ struct PanelVisibilitySettings {
     }
 };
 
+// Where Lua and C++ scripts open
+enum class ScriptEditor {
+    BUILTIN,
+    VSCODE,
+    VISUAL_STUDIO,
+    CLION,
+    RIDER,
+    CUSTOM
+};
+
+// Debug information of the C++ scripts built for Play
+enum class ScriptDebugInfo {
+    NONE,
+    SYMBOLS,
+    NO_OPTIMIZATION
+};
+
 // Compiler paths and job count are machine-specific, so they live in the project's
 // own .doriax/user/build.yaml rather than in project.yaml, and travel with the
 // project when it moves.
@@ -43,6 +60,7 @@ struct LocalBuildSettings {
     std::string cxxCompiler;
     std::string generator;
     unsigned int buildJobs = 0; // 0 = automatic
+    ScriptDebugInfo debugInfo = ScriptDebugInfo::SYMBOLS;
     bool configured = false;    // set on read: false = no entry, so default toolchain
 };
 
@@ -89,6 +107,8 @@ private:
 
     // Code editor settings
     static float codeEditorFontSize;
+    static ScriptEditor scriptEditor;
+    static std::string scriptEditorCommand;
 
     // Editor viewport settings
     static bool multiViewportEnabled;
@@ -109,6 +129,8 @@ public:
     static bool setExportTargetDir(const std::filesystem::path& projectFile, const std::string& mode, const std::filesystem::path& targetDir);
 
     static LocalBuildSettings getBuildSettings(const std::filesystem::path& projectFile);
+    // as build.yaml and the generated CMake read it
+    static const char* getDebugInfoName(ScriptDebugInfo debugInfo);
     static bool setBuildSettings(const std::filesystem::path& projectFile, const LocalBuildSettings& value);
 
     // Initialization
@@ -173,6 +195,12 @@ public:
 
     static float getCodeEditorFontSize();
     static void setCodeEditorFontSize(float size);
+
+    static ScriptEditor getScriptEditor();
+    static void setScriptEditor(ScriptEditor editor);
+    // {project}, {file}, {line} and {column} are replaced
+    static std::string getScriptEditorCommand();
+    static void setScriptEditorCommand(const std::string& command);
 
     // Multi-viewport: allow dockable windows to be dragged out into their own OS window
     static bool getMultiViewportEnabled();

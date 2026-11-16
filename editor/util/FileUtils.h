@@ -28,7 +28,7 @@ namespace doriax::editor {
 
 class FileUtils {
 public:
-    static std::filesystem::path getExecutableDir() {
+    static std::filesystem::path getExecutablePath() {
         namespace fs = std::filesystem;
 
         fs::path executablePath;
@@ -89,7 +89,11 @@ public:
             normalizedPath = executablePath;
         }
 
-        return normalizedPath.parent_path();
+        return normalizedPath;
+    }
+
+    static std::filesystem::path getExecutableDir() {
+        return getExecutablePath().parent_path();
     }
 
     // Inside Doriax.app the SDK sits in Contents/Resources: codesign treats

@@ -60,6 +60,12 @@ namespace doriax::editor {
 
         std::string m_emsdkOverride;
         EmsdkInfo m_emsdkInfo;
+        ScriptEditor m_scriptEditor = ScriptEditor::BUILTIN;
+        std::array<char, 512> m_scriptEditorCommand{};
+        // detection runs processes, so once per choice
+        std::optional<ScriptEditor> m_detectedEditor;
+        std::string m_detectedEditorPath;
+        ScriptDebugInfo m_debugInfo = ScriptDebugInfo::SYMBOLS;
         bool m_editorVSyncEnabled = true;
         int m_uiScalePercent = 100;
         std::filesystem::path m_defaultExportDirectory;

@@ -5491,8 +5491,10 @@ void editor::Project::copyEngineApiToProject() {
                 const bool isPlatformSource =
                     !relPath.empty() && relPath.begin()->string() == "platform" &&
                     (ext == ".cpp" || ext == ".mm" || ext == ".m");
+                // definitions for lua-language-server
+                const bool isLuaApi = !relPath.empty() && relPath.begin()->string() == "lua-api" && ext == ".lua";
 
-                if (ext == ".h" || ext == ".hpp" || ext == ".inl" || ext == ".glsl" || ext == ".frag" || ext == ".vert" || isPlatformSource) {
+                if (ext == ".h" || ext == ".hpp" || ext == ".inl" || ext == ".glsl" || ext == ".frag" || ext == ".vert" || isPlatformSource || isLuaApi) {
                     auto destPath = engineApiDest / relPath;
                     std::filesystem::create_directories(destPath.parent_path());
 
@@ -5960,6 +5962,7 @@ const char* versionControlIgnore =
     ".vscode/\n"
     ".idea/\n"
     "*.user\n"
+    "CMakeUserPresets.json\n"
     "\n"
     "# Written by the game while it runs, Play mode included.\n"
     "UserSettings.xml\n"
@@ -6642,20 +6645,27 @@ void editor::Project::updateGeneratedSources() {
 
     // nothing to update until a save or play creates the build
     std::error_code ec;
-    if (!fs::exists(getProjectPath() / "CMakeLists.txt", ec)) {
-        return;
-    }
-
-    try {
-        writeMissingSceneSources();
-        configureGenerator();
-    } catch (const std::exception& e) {
-        Out::error("Failed to update generated sources: %s", e.what());
+    if (fs::exists(getProjectPath() / "CMakeLists.txt", ec)) {
+        writeGeneratedSources();
     }
 }
 
 void editor::Project::markGeneratedSourcesDirty() {
     generatedSourcesDirty.store(true);
+}
+
+bool editor::Project::writeGeneratedSources() {
+    if (isAnyScenePlaying()) {
+        return false;
+    }
+    try {
+        writeMissingSceneSources();
+        configureGenerator();
+    } catch (const std::exception& e) {
+        Out::error("Failed to update generated sources: %s", e.what());
+        return false;
+    }
+    return true;
 }
 
 void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesystem::path& path, std::function<void(bool)> callback) {
@@ -10167,7 +10177,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
             }
 
             fs::path buildPath = getProjectInternalPath() / "build";
-            generator.build(getProjectPath(), getProjectInternalPath(), buildPath, playKit.cCompiler, playKit.cxxCompiler, playKit.generator, buildSettings.buildJobs);
+            generator.build(getProjectPath(), getProjectInternalPath(), buildPath, playKit.cCompiler, playKit.cxxCompiler, playKit.generator, buildSettings.buildJobs, buildSettings.debugInfo);
             generator.waitForBuildToComplete();
 
             if (isCancelled()) { markStartupDone(); return; }

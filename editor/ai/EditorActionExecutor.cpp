@@ -4260,6 +4260,7 @@ ActionResult EditorActionExecutor::createScript(const Json& arguments) {
         std::ofstream f(sourceFull, std::ios::binary | std::ios::trunc);
         if (!f) return failResult("Failed to create Lua script file.");
         f << "-- " << className << ".lua\n\n";
+        f << "---@class " << className << ": LuaScript\n";
         f << "local " << className << " = {\n";
         f << "    properties = {\n";
         f << "        { name = \"speed\", displayName = \"Speed\", type = \"float\", default = 5.0 },\n";

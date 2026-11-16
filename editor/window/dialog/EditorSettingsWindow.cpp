@@ -11,6 +11,7 @@
 #include "ai/McpServer.h"
 #include "ai/SecretStore.h"
 #include "external/IconsFontAwesome6.h"
+#include "util/ExternalEditor.h"
 #include "util/FileDialogs.h"
 #include "util/UIUtils.h"
 #include "window/Widgets.h"
@@ -198,6 +199,10 @@ void EditorSettingsWindow::open(Project* project, std::optional<Tab> tab, bool e
 
     m_emsdkDetected = false;
     m_emsdkOverride = AppSettings::getEmsdkPath();
+    m_scriptEditor = AppSettings::getScriptEditor();
+    setBuffer(m_scriptEditorCommand.data(), m_scriptEditorCommand.size(), AppSettings::getScriptEditorCommand());
+    m_detectedEditor.reset();
+    m_debugInfo = projectBuildSettings().debugInfo;
     m_editorVSyncEnabled = AppSettings::getEditorVSyncEnabled();
     m_uiScalePercent = static_cast<int>(std::lround(AppSettings::getUiScale() * 100.0f));
     m_defaultExportDirectory = AppSettings::getDefaultExportDirectory();
@@ -428,6 +433,38 @@ void EditorSettingsWindow::drawGeneralSettings() {
             }
         );
 
+        if (beginSettingsRow("Script Editor",
+                             "Where Lua and C++ scripts open from Resources, Properties and the file links in Output.",
+                             m_scriptEditor != ScriptEditor::BUILTIN)) {
+            m_scriptEditor = ScriptEditor::BUILTIN;
+        }
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::BeginCombo("##EditorScriptEditor", ExternalEditor::getName(m_scriptEditor))) {
+            for (ScriptEditor choice : ExternalEditor::getChoices()) {
+                const bool selected = choice == m_scriptEditor;
+                if (ImGui::Selectable(ExternalEditor::getName(choice), selected)) {
+                    m_scriptEditor = choice;
+                }
+                if (selected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+        if (m_scriptEditor == ScriptEditor::CUSTOM) {
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##EditorScriptEditorCommand", "subl {file}:{line}:{column}", m_scriptEditorCommand.data(), m_scriptEditorCommand.size());
+            ImGui::TextDisabled("{project}, {file}, {line} and {column} are replaced");
+        } else if (m_scriptEditor != ScriptEditor::BUILTIN) {
+            if (m_detectedEditor != m_scriptEditor) {
+                m_detectedEditor = m_scriptEditor;
+                m_detectedEditorPath = ExternalEditor::findExecutable(m_scriptEditor);
+            }
+            if (m_detectedEditorPath.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION " Not found");
+            } else {
+                ImGui::TextDisabled("Detected: %s", m_detectedEditorPath.c_str());
+            }
+        }
+
         if (beginSettingsRow("Editor VSync",
                              "VSync for the editor UI. Play mode and exported builds use the project VSync setting.",
                              m_editorVSyncEnabled != true)) {
@@ -550,6 +587,17 @@ void EditorSettingsWindow::drawCMakeSettings() {
                     stored.cxxCompiler.empty() ? stored.generator.c_str() : stored.cxxCompiler.c_str());
                 ImGui::PopStyleColor();
             }
+        }
+
+        if (beginSettingsRow("Debug Info", "Debug information of the C++ scripts built for Play, for a debugger attached to the editor. "
+                "Without optimization, stepping and variables are exact but scripts run slower.", m_debugInfo != ScriptDebugInfo::SYMBOLS)) {
+            m_debugInfo = ScriptDebugInfo::SYMBOLS;
+        }
+        static constexpr const char* debugInfoNames[] = { "None", "Symbols", "Symbols, No Optimization" };
+        ImGui::SetNextItemWidth(-1);
+        int debugInfo = static_cast<int>(m_debugInfo);
+        if (ImGui::Combo("##EditorDebugInfo", &debugInfo, debugInfoNames, IM_ARRAYSIZE(debugInfoNames))) {
+            m_debugInfo = static_cast<ScriptDebugInfo>(debugInfo);
         }
 
     });
@@ -905,6 +953,7 @@ bool EditorSettingsWindow::applySettings() {
             build.cxxCompiler = kit.cxxCompiler;
             build.generator = kit.generator;
         }
+        build.debugInfo = m_debugInfo;
         if (m_project) {
             const auto file = m_project->getProjectPath() / "project.yaml";
             build.buildJobs = AppSettings::getBuildSettings(file).buildJobs;
@@ -914,6 +963,8 @@ bool EditorSettingsWindow::applySettings() {
         AppSettings::setLastCMakeKit(build.cCompiler, build.cxxCompiler, build.generator);
     }
     AppSettings::setEmsdkPath(m_emsdkOverride);
+    AppSettings::setScriptEditor(m_scriptEditor);
+    AppSettings::setScriptEditorCommand(m_scriptEditorCommand.data());
     applyAiSettings();
     AppSettings::setMcpSettings(m_mcpSettings);
     Backend::getApp().getMcpServer()->applySettings(m_mcpSettings);

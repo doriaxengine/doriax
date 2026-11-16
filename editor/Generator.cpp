@@ -12,6 +12,7 @@
 #include "util/FileUtils.h"
 #include "util/ShellEnv.h"
 #include "util/Util.h"
+#include "json.hpp"
 
 #include <cstdlib>
 #include <cctype>
@@ -40,6 +41,7 @@
 #endif
 
 using namespace doriax;
+using OrderedJson = nlohmann::ordered_json;
 
 std::string editor::Generator::getGeneratorPlatform(const std::string& generator) {
 #ifdef _WIN32
@@ -208,7 +210,29 @@ bool editor::Generator::resolveDefaultKit(std::string& cCompiler, std::string& c
     return false;
 }
 
-bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs) {
+#ifdef _WIN32
+// a PDB a debugger holds can't be relinked
+std::string editor::Generator::getPdbName(const fs::path& buildPath) const {
+    const fs::path nameFile = buildPath / ".doriax_pdb";
+    std::string name;
+    std::ifstream(nameFile) >> name;
+    if (name.rfind(targetName, 0) != 0) {
+        name = targetName;
+    }
+    HANDLE pdb = CreateFileW((buildPath / (name + ".pdb")).wstring().c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (pdb != INVALID_HANDLE_VALUE) {
+        CloseHandle(pdb);
+    } else if (GetLastError() == ERROR_SHARING_VIOLATION) {
+        name = targetName + "-" + std::to_string(GetTickCount64());
+    }
+    std::error_code ec;
+    fs::create_directories(buildPath, ec);
+    std::ofstream(nameFile) << name;
+    return name;
+}
+#endif
+
+bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo) {
     if (!clearStaleCMakeCache(projectPath, buildPath)) {
         return false;
     }
@@ -361,6 +385,12 @@ bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::pa
     // The generated CMakeLists.txt stays machine-independent; the effective
     // local limit is supplied through the build tree's cache on every configure.
     cmakeCommand += "-DDORIAX_PARALLEL_BUILD_JOBS=" + std::to_string(parallelJobs) + " ";
+    cmakeCommand += "-DDORIAX_DEBUG_INFO=" + std::string(AppSettings::getDebugInfoName(debugInfo)) + " ";
+#ifdef _WIN32
+    if (debugInfo != ScriptDebugInfo::NONE) {
+        cmakeCommand += "-DDORIAX_PDB_NAME=" + getPdbName(buildPath) + " ";
+    }
+#endif
     cmakeCommand += "\"" + toCMakePath(projectPath.string()) + "\" ";
     cmakeCommand += "-B \"" + toCMakePath(buildPath.string()) + "\" ";
     cmakeCommand += "-DDORIAX_LIB_DIR=\"" + toCMakePath(exePath.string()) + "\"";
@@ -915,6 +945,15 @@ std::string editor::Generator::buildCleanupSceneScriptsSource(const std::vector<
     return sourceContent;
 }
 
+// include roots of the engine API snapshot
+static const char* engineApiIncludeDirs[] = {
+    "", "libs/sokol", "libs/box2d/include", "libs/joltphysics", "renders",
+    "core", "core/action", "core/action/keyframe", "core/buffer", "core/component", "core/ecs",
+    "core/io", "core/manager", "core/math", "core/object", "core/object/sound", "core/object/ui",
+    "core/object/environment", "core/object/physics", "core/pool", "core/registry", "core/render",
+    "core/script", "core/service", "core/shader", "core/subsystem", "core/texture", "core/util"
+};
+
 std::string editor::Generator::getEditorPluginAbiCheck() {
     std::string cmakeContent;
 #ifdef _WIN32
@@ -935,6 +974,297 @@ std::string editor::Generator::getEditorPluginAbiCheck() {
     cmakeContent += "endif()\n\n";
 #endif
     return cmakeContent;
+}
+
+// build type of the editor's engine library
+static std::string getEditorConfigType() {
+#if (defined(_WIN32) && !defined(_DEBUG)) || (!defined(_WIN32) && defined(NDEBUG))
+    return "Release";
+#else
+    return "Debug";
+#endif
+}
+
+// LuaLS type of a Lua script property
+static std::string getLuaPropertyType(const std::string& type) {
+    std::string lower = type;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower == "bool" || lower == "boolean") return "boolean";
+    if (lower == "int" || lower == "integer") return "integer";
+    if (lower == "float" || lower == "number" || lower.empty()) return "number";
+    if (lower == "string") return "string";
+    if (lower == "vector2" || lower == "vec2") return "Vector2";
+    if (lower == "vector3" || lower == "vec3" || lower == "color3") return "Vector3";
+    if (lower == "vector4" || lower == "vec4" || lower == "color4") return "Vector4";
+    if (lower == "entity" || lower == "entitypointer" || lower == "pointer") return "EntityHandle";
+    return type;
+}
+
+// self of each Lua script, for lua-language-server
+static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& projectInternalPath) {
+    std::vector<fs::path> scripts;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(luaPath, fs::directory_options::skip_permission_denied, ec);
+         it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (ec) break;
+        const std::string name = it->path().filename().string();
+        if (it->is_directory(ec) && (name.empty() || name[0] == '.' || name == "build")) {
+            it.disable_recursion_pending();
+        } else if (it->path().extension() == ".lua" && it->is_regular_file(ec)) {
+            scripts.push_back(it->path());
+        }
+    }
+    std::sort(scripts.begin(), scripts.end());
+
+    const std::regex returnPattern(R"(return\s+([A-Za-z_]\w*)\s*$)");
+    const std::regex propertiesPattern(R"(\bproperties\s*=\s*\{)");
+    const std::regex namePattern(R"(\bname\s*=\s*["']([A-Za-z_]\w*)["'])");
+    const std::regex typePattern(R"(\btype\s*=\s*["']([A-Za-z_]\w*)["'])");
+    std::string stubs = "---@meta\n-- Properties of the Lua scripts in this project, written by Doriax Editor.\n";
+    for (const fs::path& script : scripts) {
+        std::ifstream in(script, std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        std::smatch match, properties;
+        if (!std::regex_search(text, properties, propertiesPattern) || !std::regex_search(text, match, returnPattern)) {
+            continue;
+        }
+        const std::string className = match[1];
+        const size_t open = properties.position(0) + properties.length(0) - 1;
+
+        // each { name = ..., type = ... } of the table
+        std::string fields;
+        int depth = 0;
+        size_t entry = 0;
+        for (size_t i = open; i < text.size(); i++) {
+            if (text[i] == '{' && ++depth == 2) {
+                entry = i;
+            } else if (text[i] == '}' && depth-- == 2) {
+                const std::string item = text.substr(entry, i - entry);
+                std::smatch name, type;
+                if (std::regex_search(item, name, namePattern)) {
+                    std::regex_search(item, type, typePattern);
+                    fields += "---@field " + name[1].str() + " " + getLuaPropertyType(type.empty() ? "" : type[1].str()) + "\n";
+                }
+            }
+            if (depth == 0) break;
+        }
+        if (!fields.empty()) {
+            stubs += "\n---@class " + className + "\n" + fields;
+        }
+    }
+
+    fs::create_directories(projectInternalPath / "lua-api", ec);
+    editor::FileUtils::writeIfChanged(projectInternalPath / "lua-api" / "scripts.lua", stubs);
+}
+
+static const std::string ideFileMarker = "// Generated by Doriax Editor. Delete this line to keep your own changes.";
+// plain JSON takes the marker as an entry
+static const std::string markerEntry = "doriax-editor";
+static const std::string markerNote = "Generated by Doriax Editor. Delete this entry to keep your own changes.";
+
+static std::string dumpJson(const OrderedJson& json) {
+    // a path in the ANSI code page must not throw
+    return json.dump(4, ' ', false, OrderedJson::error_handler_t::replace) + "\n";
+}
+
+// rewritten while it still holds the marker
+static void writeIdeFile(const fs::path& file, const std::string& marker, const std::string& content) {
+    std::error_code ec;
+    if (fs::exists(file, ec)) {
+        std::ifstream in(file, std::ios::binary);
+        const std::string current((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        if (current.find(marker) == std::string::npos) {
+            return;
+        }
+    }
+    fs::create_directories(file.parent_path(), ec);
+    editor::FileUtils::writeIfChanged(file, content);
+}
+
+static void writeVsCodeFile(const fs::path& file, const OrderedJson& json) {
+    writeIdeFile(file, ideFileMarker, ideFileMarker + "\n" + dumpJson(json));
+}
+
+static void writeVsCodeFiles(const fs::path& projectPath, const std::string& internalDir, const std::string& libName,
+                             const std::vector<std::string>& includeDirs, int cxxStandard, const editor::LocalBuildSettings& build) {
+    const fs::path vscodePath = projectPath / ".vscode";
+    const std::string internal = "${workspaceFolder}/" + internalDir;
+
+    // C/C++ extension, until a build writes compile commands
+    const std::string sourceDir = "${CMAKE_CURRENT_SOURCE_DIR}";
+    OrderedJson includePath = OrderedJson::array();
+    for (const std::string& dir : includeDirs) {
+        includePath.push_back(dir.rfind(sourceDir, 0) == 0 ? "${workspaceFolder}" + dir.substr(sourceDir.size()) : dir);
+    }
+    for (const char* dir : engineApiIncludeDirs) {
+        includePath.push_back(internal + "/engine-api" + (*dir ? "/" + std::string(dir) : ""));
+    }
+    OrderedJson defines = OrderedJson::array({"DORIAX_PHYSICS_2D", "DORIAX_PHYSICS_3D", "JPH_OBJECT_LAYER_BITS=" + std::to_string(JPH_OBJECT_LAYER_BITS),
+                                "DORIAX_SHARED", "DORIAX_EDITOR", "JPH_SHARED_LIBRARY", "DORIAX_EDITOR_PLUGIN"});
+    if (getEditorConfigType() == "Release") {
+        defines.push_back("NDEBUG");
+    }
+    OrderedJson cpp;
+    cpp["name"] = "Doriax";
+    cpp["compileCommands"] = internal + "/build/compile_commands.json";
+    if (!build.cxxCompiler.empty()) {
+        cpp["compilerPath"] = fs::path(build.cxxCompiler).generic_string();
+    }
+    cpp["cppStandard"] = "c++" + std::to_string(cxxStandard);
+    cpp["includePath"] = includePath;
+    cpp["defines"] = defines;
+    writeVsCodeFile(vscodePath / "c_cpp_properties.json", {{"version", 4}, {"configurations", OrderedJson::array({cpp})}});
+
+    writeVsCodeFile(vscodePath / "settings.json", {
+        {"cmake.buildDirectory", internal + "/externalbuild"},
+        {"clangd.arguments", OrderedJson::array({"--compile-commands-dir=" + internal + "/build"})},
+        {"files.associations", {{"*.scene", "yaml"}, {"*.bundle", "yaml"}}}
+    });
+    writeVsCodeFile(vscodePath / "extensions.json", {
+        {"recommendations", OrderedJson::array({"ms-vscode.cpptools", "ms-vscode.cmake-tools", "sumneko.lua"})}
+    });
+
+    // the standalone build of the doriax preset
+    std::string cmake = editor::AppSettings::getCMakePath();
+    if (cmake.empty()) {
+        cmake = editor::FileUtils::pathToUtf8(fs::path(editor::ShellEnv::findExecutable("cmake")));
+    }
+    cmake = cmake.empty() ? "cmake" : "\"" + cmake + "\"";
+    std::string msvcEnv;
+    if (build.generator == "Ninja") {
+        // it runs vswhere, so once
+        static const std::string ninjaEnv = editor::CommandRunner::msvcEnvPrefix(build.generator);
+        msvcEnv = ninjaEnv;
+    }
+    const std::string buildCommand = msvcEnv + cmake + " --preset doriax && " + cmake + " --build --preset doriax";
+    const std::string buildTask = "Doriax: Build Project";
+    OrderedJson task;
+    task["label"] = buildTask;
+    task["type"] = "process";
+#ifdef _WIN32
+    task["command"] = "cmd.exe";
+    task["args"] = OrderedJson::array({"/d", "/c", buildCommand});
+    task["problemMatcher"] = "$msCompile";
+#else
+    task["command"] = "/bin/sh";
+    task["args"] = OrderedJson::array({"-c", buildCommand});
+    task["problemMatcher"] = "$gcc";
+#endif
+    task["options"] = {{"cwd", "${workspaceFolder}"}};
+    task["group"] = "build";
+    writeVsCodeFile(vscodePath / "tasks.json", {{"version", "2.0.0"}, {"tasks", OrderedJson::array({task})}});
+
+    const auto debugger = [](const std::string& name, const std::string& request) {
+        OrderedJson config;
+        config["name"] = name;
+#if defined(_WIN32)
+        config["type"] = "cppvsdbg";
+#elif defined(__APPLE__)
+        config["type"] = "cppdbg";
+        config["MIMode"] = "lldb";
+#else
+        config["type"] = "cppdbg";
+        config["MIMode"] = "gdb";
+#endif
+        config["request"] = request;
+        return config;
+    };
+    const std::string editorPath = editor::FileUtils::pathToGenericUtf8(editor::FileUtils::getExecutablePath());
+    OrderedJson attach = debugger("Attach to Doriax Editor", "attach");
+#ifndef _WIN32
+    attach["program"] = editorPath;
+#endif
+    attach["processId"] = "${command:pickProcess}";
+    OrderedJson configurations = OrderedJson::array({attach});
+    // an AppImage path is gone once the editor closes
+    if (!editor::FileUtils::isEngineDirEphemeral()) {
+        OrderedJson launchEditor = debugger("Doriax Editor", "launch");
+        launchEditor["program"] = editorPath;
+        launchEditor["args"] = OrderedJson::array({"--project", "${workspaceFolder}"});
+        launchEditor["cwd"] = "${workspaceFolder}";
+        configurations.push_back(launchEditor);
+    }
+    OrderedJson run = debugger("Run Project", "launch");
+#ifdef _WIN32
+    run["program"] = internal + "/externalbuild/" + libName + ".exe";
+#else
+    run["program"] = internal + "/externalbuild/" + libName;
+#endif
+    run["cwd"] = "${workspaceFolder}";
+    run["preLaunchTask"] = buildTask;
+    configurations.push_back(run);
+    writeVsCodeFile(vscodePath / "launch.json", {{"version", "0.2.0"}, {"configurations", configurations}});
+}
+
+static void writeCMakePresets(const fs::path& projectPath, const std::string& internalDir, const editor::LocalBuildSettings& build) {
+    const std::string configType = getEditorConfigType();
+    OrderedJson configure;
+    configure["name"] = "doriax";
+    configure["displayName"] = "Doriax";
+    configure["description"] = "Standalone build linking the editor's engine library";
+    configure["binaryDir"] = "${sourceDir}/" + internalDir + "/externalbuild";
+    if (!build.generator.empty()) {
+        configure["generator"] = build.generator;
+        const std::string platform = editor::Generator::getGeneratorPlatform(build.generator);
+        if (!platform.empty()) {
+            configure["architecture"] = platform;
+        }
+#ifdef _WIN32
+        // Visual Studio sets up MSVC for a Ninja preset from it
+        if (build.generator == "Ninja") {
+            configure["architecture"] = {{"value", "x64"}, {"strategy", "external"}};
+        }
+#endif
+    }
+    OrderedJson cache;
+    if (!build.cCompiler.empty()) {
+        cache["CMAKE_C_COMPILER"] = fs::path(build.cCompiler).generic_string();
+    }
+    if (!build.cxxCompiler.empty()) {
+        cache["CMAKE_CXX_COMPILER"] = fs::path(build.cxxCompiler).generic_string();
+    }
+    cache["CMAKE_BUILD_TYPE"] = configType;
+    cache["DORIAX_DEBUG_INFO"] = editor::AppSettings::getDebugInfoName(build.debugInfo);
+    configure["cacheVariables"] = cache;
+
+    OrderedJson buildPreset;
+    buildPreset["name"] = "doriax";
+    buildPreset["configurePreset"] = "doriax";
+    buildPreset["configuration"] = configType;
+
+    OrderedJson presets;
+    presets["version"] = 3;
+    presets["vendor"] = {{markerEntry, {{"note", markerNote}}}};
+    presets["configurePresets"] = OrderedJson::array({configure});
+    presets["buildPresets"] = OrderedJson::array({buildPreset});
+    writeIdeFile(projectPath / "CMakeUserPresets.json", "\"" + markerEntry + "\"", dumpJson(presets));
+}
+
+// lua-language-server, also outside VS Code
+static void writeLuaServerFiles(const fs::path& projectPath, const std::string& internalDir, const fs::path& luaPath) {
+    std::error_code ec;
+    const fs::path luaRelative = fs::relative(luaPath, projectPath, ec);
+    std::string luaRoot = editor::FileUtils::pathToGenericUtf8(luaPath) + "/";
+    if (!ec && !luaRelative.empty() && *luaRelative.begin() != "..") {
+        luaRoot = luaRelative == "." ? "" : editor::FileUtils::pathToGenericUtf8(luaRelative) + "/";
+    }
+    OrderedJson luarc;
+    luarc[markerEntry] = markerNote;
+    luarc["runtime.version"] = "Lua 5.5";
+    luarc["runtime.path"] = OrderedJson::array({luaRoot + "?.lua", luaRoot + "lua/?.lua"});
+    luarc["workspace.library"] = OrderedJson::array({internalDir + "/engine-api/lua-api", internalDir + "/lua-api"});
+    writeIdeFile(projectPath / ".luarc.json", "\"" + markerEntry + "\"", dumpJson(luarc));
+    writeLuaScriptStubs(luaPath, projectPath / internalDir);
+}
+
+// IDE files, kept while they hold the marker
+static void writeIdeFiles(const fs::path& projectPath, const fs::path& relativeInternalPath, const std::string& libName,
+                          const std::vector<std::string>& includeDirs, int cxxStandard, const fs::path& luaPath) {
+    const editor::LocalBuildSettings build = editor::AppSettings::getBuildSettings(projectPath / "project.yaml");
+    const std::string internalDir = relativeInternalPath.generic_string();
+    writeVsCodeFiles(projectPath, internalDir, libName, includeDirs, cxxStandard, build);
+    writeCMakePresets(projectPath, internalDir, build);
+    writeLuaServerFiles(projectPath, internalDir, luaPath);
 }
 
 void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::path& projectInternalPath, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<editor::SceneBuildInfo>& scenes, const std::vector<editor::BundleSceneInfo>& bundles, bool vsyncEnabled, const WindowSettings& windowSettings, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard) {
@@ -1071,6 +1401,8 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
 
     cmakeContent += "set(DORIAX_API_DIR " + engineApiPathStr + ")\n\n";
 
+    cmakeContent += "# compile_commands.json for IDEs and clangd\n";
+    cmakeContent += "set(CMAKE_EXPORT_COMPILE_COMMANDS ON)\n\n";
     cmakeContent += "# C++ standard from Project Settings\n";
     cmakeContent += "set(CMAKE_CXX_STANDARD " + std::to_string(cxxStandard) + ")\n";
     cmakeContent += "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n";
@@ -1138,34 +1470,9 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "endif()\n\n";
     cmakeContent += "target_include_directories(" + libName + " ${DORIAX_LIB_SYSTEM} PRIVATE\n";
     cmakeContent += includeDirsBlock + "\n";
-    cmakeContent += "    " + engineApiPathStr + "\n";
-    cmakeContent += "    " + engineApiPathStr + "/libs/sokol\n";
-    cmakeContent += "    " + engineApiPathStr + "/libs/box2d/include\n";
-    cmakeContent += "    " + engineApiPathStr + "/libs/joltphysics\n";
-    cmakeContent += "    " + engineApiPathStr + "/renders\n";
-    cmakeContent += "    " + engineApiPathStr + "/core\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/action\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/action/keyframe\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/buffer\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/component\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/ecs\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/io\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/manager\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/math\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/object\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/object/sound\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/object/ui\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/object/environment\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/object/physics\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/pool\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/registry\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/render\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/script\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/service\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/shader\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/subsystem\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/texture\n";
-    cmakeContent += "    " + engineApiPathStr + "/core/util\n";
+    for (const char* dir : engineApiIncludeDirs) {
+        cmakeContent += "    " + engineApiPathStr + (*dir ? "/" + std::string(dir) : "") + "\n";
+    }
     cmakeContent += ")\n\n";
 
     cmakeContent += "# libdoriax is searched in DORIAX_LIB_DIR; by default it points to the Doriax editor\n";
@@ -1209,6 +1516,28 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "    elseif(NOT APPLE)\n";
     cmakeContent += "        target_link_options(" + libName + " PRIVATE -Wl,-z,defs,--no-undefined)\n";
     cmakeContent += "    endif()\n";
+    cmakeContent += "endif()\n\n";
+    cmakeContent += "# Debug information for a debugger: none, symbols or no_optimization\n";
+    cmakeContent += "set(DORIAX_DEBUG_INFO \"none\" CACHE STRING \"Debug information of the scripts\")\n";
+    cmakeContent += "if(NOT DORIAX_DEBUG_INFO STREQUAL \"none\")\n";
+    cmakeContent += "    if(MSVC)\n";
+    cmakeContent += "        target_compile_options(" + libName + " PRIVATE /Z7)\n";
+    cmakeContent += "        target_link_options(" + libName + " PRIVATE /DEBUG)\n";
+    cmakeContent += "    else()\n";
+    cmakeContent += "        target_compile_options(" + libName + " PRIVATE -g)\n";
+    cmakeContent += "    endif()\n";
+    cmakeContent += "endif()\n";
+    cmakeContent += "if(DORIAX_DEBUG_INFO STREQUAL \"no_optimization\")\n";
+    cmakeContent += "    if(MSVC)\n";
+    cmakeContent += "        string(REGEX REPLACE \"/O[12x]|/Ob[123]\" \"\" CMAKE_CXX_FLAGS_RELEASE \"${CMAKE_CXX_FLAGS_RELEASE}\")\n";
+    cmakeContent += "        target_compile_options(" + libName + " PRIVATE /Od /Ob0)\n";
+    cmakeContent += "    else()\n";
+    cmakeContent += "        target_compile_options(" + libName + " PRIVATE -O0)\n";
+    cmakeContent += "    endif()\n";
+    cmakeContent += "endif()\n";
+    cmakeContent += "# a debugger keeps its PDB open, so the editor can link a new one\n";
+    cmakeContent += "if(MSVC AND DORIAX_PDB_NAME)\n";
+    cmakeContent += "    set_target_properties(" + libName + " PROPERTIES PDB_NAME ${DORIAX_PDB_NAME})\n";
     cmakeContent += "endif()\n\n";
     cmakeContent += "# Set properties for the shared library\n";
     cmakeContent += "set_target_properties(" + libName + " PROPERTIES\n";
@@ -1303,19 +1632,7 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     FileUtils::writeIfChanged(projectInternalPath / "LocalPaths.cmake", localPathsContent);
     FileUtils::writeIfChanged(sourceFile, sourceContent);
 
-    // Generate .vscode/settings.json for VS Code if it doesn't exist
-    fs::path vscodeDir = projectPath / ".vscode";
-    if (!fs::exists(vscodeDir)) {
-        fs::create_directories(vscodeDir);
-    }
-    fs::path settingsFile = vscodeDir / "settings.json";
-    if (!fs::exists(settingsFile)) {
-        std::string settingsContent;
-        settingsContent += "{\n";
-        settingsContent += "    \"cmake.buildDirectory\": \"${workspaceFolder}/" + relativeInternalPath.generic_string() + "/externalbuild\"\n";
-        settingsContent += "}\n";
-        FileUtils::writeIfChanged(settingsFile, settingsContent);
-    }
+    writeIdeFiles(projectPath, relativeInternalPath, libName, includeDirs, cxxStandard, luaPath);
 
     fs::path agentsFile = projectPath / "AGENTS.md";
     std::string agentsContent;
@@ -1337,7 +1654,8 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     agentsContent += "- `" + relativeInternalPath.generic_string() + "/LocalPaths.cmake` (paths belonging to this machine, included by `CMakeLists.txt`)\n";
     agentsContent += "- `" + relativeInternalPath.generic_string() + "/scene_scripts.cpp`\n";
     agentsContent += "- `" + relativeInternalPath.generic_string() + "/generated/` (scene factories, bundle factories, `main.cpp`)\n";
-    agentsContent += "- `" + engineApiRelativePath.generic_string() + "/` (engine API snapshot copied from the editor)\n\n";
+    agentsContent += "- `" + engineApiRelativePath.generic_string() + "/` (engine API snapshot copied from the editor)\n";
+    agentsContent += "- `.vscode/*.json`, `CMakeUserPresets.json`, `.luarc.json` and `" + relativeInternalPath.generic_string() + "/lua-api/` (IDE files, rewritten while they keep the Doriax Editor marker)\n\n";
 
     agentsContent += "## Version control\n\n";
     agentsContent += "`project.yaml`, `*.scene`, `*.bundle`, `ProjectBuild.cmake`, `AGENTS.md` and the assets describe the game and are meant to be committed. "
@@ -1533,6 +1851,7 @@ bool editor::Generator::hasSceneSource(uint32_t sceneId, const std::string& scen
 
 void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& scenes, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<editor::BundleSceneInfo>& bundles, const fs::path& projectPath, const fs::path& projectInternalPath, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard, Scaling scalingMode, TextureStrategy textureStrategy, unsigned int canvasWidth, unsigned int canvasHeight, bool vsyncEnabled, const WindowSettings& windowSettings, const LoadingSettings& loadingSettings){
     const fs::path generatedPath = getGeneratedPath(projectInternalPath);
+    targetName = libName;
 
     // The editor used to emit a GLFW application host into every project. It is
     // gone, but projects created before that still carry the files, and nothing
@@ -2156,14 +2475,14 @@ std::string editor::Generator::checkBuildTools(bool requireEditorCompatibility, 
     return missing;
 }
 
-void editor::Generator::build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs) {
+void editor::Generator::build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo) {
     cancelBuild();
     waitForBuildToComplete();
 
     lastBuildSucceeded.store(false, std::memory_order_relaxed);
     commandRunner.resetCancel();
 
-    buildFuture = std::async(std::launch::async, [this, projectPath, buildPath, cCompiler, cxxCompiler, generator, parallelJobs]() {
+    buildFuture = std::async(std::launch::async, [this, projectPath, buildPath, cCompiler, cxxCompiler, generator, parallelJobs, debugInfo]() {
         try {
             auto startTime = std::chrono::steady_clock::now();
 
@@ -2175,10 +2494,7 @@ void editor::Generator::build(const fs::path projectPath, const fs::path project
             // the editor calls into it. Match the editor's own configuration; _DEBUG
             // is defined iff this editor was built against the debug CRT. Elsewhere
             // NDEBUG decides, since Jolt derives JPH_DEBUG (and its layouts) from it.
-            std::string configType = "Debug";
-#if (defined(_WIN32) && !defined(_DEBUG)) || (!defined(_WIN32) && defined(NDEBUG))
-            configType = "Release";
-#endif
+            const std::string configType = getEditorConfigType();
 
             // Resolve a "Default" selection to a concrete ABI-compatible kit once,
             // so configure and the build step (which both need the generator, e.g.
@@ -2196,7 +2512,7 @@ void editor::Generator::build(const fs::path projectPath, const fs::path project
             const unsigned int effectiveParallelJobs =
                 std::min(requestedOrAutomaticJobs, getMaxParallelBuildJobs());
 
-            if (!configureCMake(projectPath, buildPath, configType, cc, cxx, gen, effectiveParallelJobs)) {
+            if (!configureCMake(projectPath, buildPath, configType, cc, cxx, gen, effectiveParallelJobs, debugInfo)) {
                 if (commandRunner.isCancelRequested()) {
                     Out::warning("Build configuration cancelled.");
                 } else {

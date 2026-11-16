@@ -795,6 +795,8 @@ namespace doriax::editor{
         bool prepareFbxModelsForExport(std::string& error);
         void updateGeneratedSources();
         void markGeneratedSourcesDirty();
+        // also before the first save, for an IDE opening the project
+        bool writeGeneratedSources();
 
         //=== Linked Material part ===
 

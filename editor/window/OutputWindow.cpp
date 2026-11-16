@@ -5,6 +5,11 @@
 #include "external/IconsFontAwesome6.h"
 #include "util/UIUtils.h"
 #include "App.h"
+#include "Backend.h"
+#include "CodeEditor.h"
+#include "Project.h"
+#include "util/FileUtils.h"
+#include "util/Util.h"
 #include "AppSettings.h"
 #include "Theme.h"
 #include <ctime>
@@ -37,6 +42,32 @@ static ImVec4 GetLogTypeColor(LogType type) {
         case LogType::Verbose: return ImVec4(0.58f, 0.60f, 0.66f, 1.00f); // gray
         default:               return ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
     }
+}
+
+// A source file the editor opens, or ""
+static std::string resolveLinkPath(std::string name) {
+    if (!Util::isScriptFile(name) && !Util::isShaderFile(name)) {
+        return "";
+    }
+
+    Project* project = Backend::getApp().getProject();
+    if (name.rfind("lua://", 0) == 0) {
+        name = name.substr(6);
+    }
+    const std::filesystem::path path = FileUtils::pathFromUtf8(name);
+    std::error_code ec;
+    if (path.is_absolute()) {
+        return std::filesystem::is_regular_file(path, ec) ? path.string() : "";
+    }
+    if (!project) {
+        return "";
+    }
+    for (const std::filesystem::path& root : {project->getLuaPath(), project->getProjectPath()}) {
+        if (!root.empty() && std::filesystem::is_regular_file(root / path, ec)) {
+            return (root / path).string();
+        }
+    }
+    return "";
 }
 
 OutputWindow::OutputWindow() {
@@ -406,6 +437,96 @@ void OutputWindow::rebuildBuffer(float wrapWidth) {
         selectionStart = selectionEnd = -1;
         hasStoredSelection = false;
         isSelecting = false;
+    }
+}
+
+// file:line of GCC, Clang and Lua, file(line) of MSVC
+bool OutputWindow::findFileLink(int line, int bufferIndex, OutputFileLink& link) const {
+    const int totalLines = lineOffsets.Size - 1;
+    if (line < 0 || line >= totalLines || (int)lineHardBreak.size() != totalLines) {
+        return false;
+    }
+
+    // the entry's line, wrapped rows joined
+    int first = line;
+    int last = line;
+    while (first > 0 && !lineHardBreak[first - 1]) first--;
+    while (last + 1 < totalLines && !lineHardBreak[last]) last++;
+
+    std::string text;
+    std::vector<int> indices;
+    for (int l = first; l <= last; l++) {
+        int ls = lineOffsets[l];
+        int le = lineOffsets[l + 1];
+        if (le > ls && buf[le - 1] == '\n') le--;
+        if (l > first) ls = std::min(le, ls + linePrefixLen[l]);
+        for (int i = ls; i < le; i++) {
+            text += buf[i];
+            indices.push_back(i);
+        }
+    }
+
+    auto found = std::lower_bound(indices.begin(), indices.end(), bufferIndex);
+    if (found == indices.end() || *found != bufferIndex) {
+        return false;
+    }
+    const size_t offset = found - indices.begin();
+
+    auto isDigit = [&](size_t i) { return i < text.size() && std::isdigit((unsigned char)text[i]); };
+    auto readNumber = [&](size_t& i) {
+        int number = 0;
+        while (isDigit(i) && number < 100000000) number = number * 10 + (text[i++] - '0');
+        return number;
+    };
+    for (size_t i = 1; i < text.size(); i++) {
+        const char c = text[i];
+        if ((c != ':' && c != '(') || !isDigit(i + 1)) continue;
+
+        size_t end = i + 1;
+        const int lineNumber = readNumber(end);
+        int column = 0;
+        if (end < text.size() && text[end] == (c == ':' ? ':' : ',') && isDigit(end + 1)) {
+            end++;
+            column = readNumber(end);
+        }
+        if (c == '(') {
+            if (end >= text.size() || text[end] != ')') continue;
+            end++;
+        }
+
+        // a Lua chunk reads [string "path"]
+        size_t start = i;
+        size_t pathStart = i;
+        size_t pathEnd = i;
+        if (text[i - 1] == ']') {
+            const size_t open = text.rfind("[string \"", i);
+            if (open == std::string::npos || i < 2 || text[i - 2] != '"') continue;
+            start = open;
+            pathStart = open + 9;
+            pathEnd = i - 2;
+        } else {
+            while (start > 0 && !std::strchr(" \t\"'<>|()[],;=", text[start - 1])) start--;
+            pathStart = start;
+        }
+        if (offset < start || offset >= end || pathEnd <= pathStart) continue;
+
+        const std::string path = resolveLinkPath(text.substr(pathStart, pathEnd - pathStart));
+        if (path.empty()) {
+            return false;
+        }
+        link.start = indices[start];
+        link.end = indices[end - 1] + 1;
+        link.path = path;
+        link.line = lineNumber;
+        link.column = column;
+        return true;
+    }
+    return false;
+}
+
+void OutputWindow::openFileLink(const OutputFileLink& link) {
+    if (CodeEditor* codeEditor = Backend::getApp().getCodeEditor()) {
+        codeEditor->openScript(link.path, link.line, link.column);
     }
 }
 
@@ -860,12 +981,15 @@ void OutputWindow::show() {
     int selA = selectionStart, selB = selectionEnd;
     if (selA > selB) std::swap(selA, selB);
 
+    std::vector<std::pair<int, ImVec2>> drawnLines;
+
     while (clipper.Step()) {
         for (int line = clipper.DisplayStart; line < clipper.DisplayEnd; ++line) {
             int ls = lineStartIndex(line);
             int le = lineEndIndexExcl(line);
 
             ImVec2 linePos = ImGui::GetCursorScreenPos();
+            drawnLines.push_back({line, linePos});
 
             // Hit-test for this visual row (use full row advance so spacing clicks count)
             ImRect lineHitRect(
@@ -939,10 +1063,35 @@ void OutputWindow::show() {
         return le; // past end of line
     };
 
+    const bool outputWindowHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup);
+
+    // file location under the mouse, underlined
+    OutputFileLink hoveredLink;
+    if (ImGui::IsWindowHovered() && hoveredLine >= 0 && !isSelecting) {
+        findFileLink(hoveredLine, indexFromLineAndLocalX(hoveredLine, hoveredLocalX), hoveredLink);
+    }
+    if (hoveredLink.start >= 0) {
+        for (const auto& [line, linePos] : drawnLines) {
+            const int ls = lineStartIndex(line);
+            const int a = std::max(hoveredLink.start, hoveredLink.start < ls ? ls + linePrefixLen[line] : ls);
+            const int b = std::min(hoveredLink.end, lineEndIndexExcl(line));
+            if (a >= b) continue;
+            const float x0 = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf.begin() + ls, buf.begin() + a).x;
+            const float x1 = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, buf.begin() + ls, buf.begin() + b).x;
+            const float y = linePos.y + lineBoxHeight;
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(linePos.x + x0, y), ImVec2(linePos.x + x1, y),
+                                                ImGui::GetColorU32(GetLogTypeColor(lineTypes[line])));
+        }
+        if (!io.KeyCtrl) {
+            ImGui::SetTooltip("Ctrl+Click to open");
+        }
+    }
+    const bool openLink = hoveredLink.start >= 0 && io.KeyCtrl && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+
     // Handle mouse selection using the hovered row computed from actual drawn rectangles
-    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup)) {
+    if (outputWindowHovered) {
         if (hoveredLine >= 0) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_TextInput);
+            ImGui::SetMouseCursor(hoveredLink.start >= 0 && io.KeyCtrl ? ImGuiMouseCursor_Hand : ImGuiMouseCursor_TextInput);
         }
 
         // If cursor didn't hover a drawn row (e.g., outside vertically), derive nearest row from Y
@@ -962,7 +1111,9 @@ void OutputWindow::show() {
         // 1 click: start drag-selection
         // 2 clicks: word selection
         // 3 clicks: line selection
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (openLink) {
+            openFileLink(hoveredLink);
+        } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             int idx = indexFromLineAndLocalX(lineForMouse, xForMouse);
             int clicks = ImGui::GetIO().MouseClickedCount[ImGuiMouseButton_Left];
 
@@ -986,11 +1137,23 @@ void OutputWindow::show() {
         }
     }
 
+    if (outputWindowHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        contextLink = hoveredLink;
+    }
+
     if (ImGui::BeginPopupContextWindow("##output_context", ImGuiPopupFlags_MouseButtonRight)) {
         const bool hasContent = !buf.empty();
         const int selA = std::min(selectionStart, selectionEnd);
         const int selB = std::max(selectionStart, selectionEnd);
         const bool canCopySelection = hasStoredSelection && selB > selA;
+
+        if (contextLink.start >= 0) {
+            const std::string label = std::filesystem::path(contextLink.path).filename().string() + ":" + std::to_string(contextLink.line);
+            if (ImGui::MenuItem((ICON_FA_UP_RIGHT_FROM_SQUARE " Open " + label).c_str())) {
+                openFileLink(contextLink);
+            }
+            ImGui::Separator();
+        }
 
         if (ImGui::MenuItem(ICON_FA_COPY " Copy", "Ctrl+C", false, canCopySelection)) {
             copySelectionToClipboard();

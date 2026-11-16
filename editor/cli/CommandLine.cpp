@@ -269,6 +269,7 @@ static void printMainUsage(const std::string& commandName) {
     std::cout
         << "Usage:\n"
         << "  " << commandName << "                          Open the editor.\n"
+        << "  " << commandName << " --project <path>         Open the editor on a project.\n"
         << "  " << commandName << " export [options]         Export a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
         << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"

@@ -71,6 +71,32 @@ void migrateLegacyEndpoint(ai::Settings& settings, const std::string& url) {
                                    ai::accountKey(ai::ProviderId::OpenAICompatible, endpoint.id));
 }
 
+const char* scriptEditorToString(ScriptEditor editor) {
+    switch (editor) {
+        case ScriptEditor::VSCODE: return "vscode";
+        case ScriptEditor::VISUAL_STUDIO: return "visual_studio";
+        case ScriptEditor::CLION: return "clion";
+        case ScriptEditor::RIDER: return "rider";
+        case ScriptEditor::CUSTOM: return "custom";
+        default: return "builtin";
+    }
+}
+
+ScriptEditor scriptEditorFromString(const std::string& value) {
+    if (value == "vscode") return ScriptEditor::VSCODE;
+    if (value == "visual_studio") return ScriptEditor::VISUAL_STUDIO;
+    if (value == "clion") return ScriptEditor::CLION;
+    if (value == "rider") return ScriptEditor::RIDER;
+    if (value == "custom") return ScriptEditor::CUSTOM;
+    return ScriptEditor::BUILTIN;
+}
+
+ScriptDebugInfo debugInfoFromString(const std::string& value) {
+    if (value == "none") return ScriptDebugInfo::NONE;
+    if (value == "no_optimization") return ScriptDebugInfo::NO_OPTIMIZATION;
+    return ScriptDebugInfo::SYMBOLS;
+}
+
 } // namespace
 
 // Initialize static members
@@ -94,6 +120,8 @@ int AppSettings::resourcesLayout = 0;
 int AppSettings::resourcesItemViewStyle = 1;
 float AppSettings::resourcesLeftPanelWidth = 200.0f;
 float AppSettings::codeEditorFontSize = AppSettings::defaultCodeEditorFontSize;
+ScriptEditor AppSettings::scriptEditor = ScriptEditor::BUILTIN;
+std::string AppSettings::scriptEditorCommand;
 bool AppSettings::multiViewportEnabled = false;
 bool AppSettings::editorVSyncEnabled = true;
 bool AppSettings::outputClearOnPlay = false;
@@ -235,6 +263,12 @@ bool AppSettings::loadSettings() {
             auto codeNode = settingsData["code_editor"];
             if (codeNode["font_size"]) {
                 setCodeEditorFontSize(codeNode["font_size"].as<float>());
+            }
+            if (codeNode["script_editor"]) {
+                scriptEditor = scriptEditorFromString(codeNode["script_editor"].as<std::string>());
+            }
+            if (codeNode["script_editor_command"]) {
+                scriptEditorCommand = codeNode["script_editor_command"].as<std::string>();
             }
         }
 
@@ -390,6 +424,10 @@ bool AppSettings::saveSettings() {
         // Code editor settings
         YAML::Node codeNode;
         codeNode["font_size"] = codeEditorFontSize;
+        codeNode["script_editor"] = scriptEditorToString(scriptEditor);
+        if (!scriptEditorCommand.empty()) {
+            codeNode["script_editor_command"] = scriptEditorCommand;
+        }
         settingsData["code_editor"] = codeNode;
 
         // Editor viewport settings
@@ -631,6 +669,30 @@ void AppSettings::setCodeEditorFontSize(float size) {
     codeEditorFontSize = std::clamp(size, minCodeEditorFontSize, maxCodeEditorFontSize);
 }
 
+const char* AppSettings::getDebugInfoName(ScriptDebugInfo debugInfo) {
+    switch (debugInfo) {
+        case ScriptDebugInfo::NONE: return "none";
+        case ScriptDebugInfo::NO_OPTIMIZATION: return "no_optimization";
+        default: return "symbols";
+    }
+}
+
+ScriptEditor AppSettings::getScriptEditor() {
+    return scriptEditor;
+}
+
+void AppSettings::setScriptEditor(ScriptEditor editor) {
+    scriptEditor = editor;
+}
+
+std::string AppSettings::getScriptEditorCommand() {
+    return scriptEditorCommand;
+}
+
+void AppSettings::setScriptEditorCommand(const std::string& command) {
+    scriptEditorCommand = command;
+}
+
 bool AppSettings::getMultiViewportEnabled() {
     return multiViewportEnabled;
 }
@@ -818,6 +880,7 @@ LocalBuildSettings AppSettings::getBuildSettings(const std::filesystem::path& pr
         if (entry["cxx_compiler"]) result.cxxCompiler = entry["cxx_compiler"].as<std::string>();
         if (entry["generator"]) result.generator = entry["generator"].as<std::string>();
         if (entry["build_jobs"]) result.buildJobs = entry["build_jobs"].as<unsigned int>();
+        if (entry["debug_info"]) result.debugInfo = debugInfoFromString(entry["debug_info"].as<std::string>());
         result.configured = true;
     } catch (const std::exception& e) {
         // A value that will not convert falls back to the default toolchain
@@ -832,7 +895,7 @@ bool AppSettings::setBuildSettings(const std::filesystem::path& projectFile, con
     const auto previous = getBuildSettings(projectFile);
     if (previous.configured && previous.cCompiler == value.cCompiler
         && previous.cxxCompiler == value.cxxCompiler && previous.generator == value.generator
-        && previous.buildJobs == value.buildJobs) {
+        && previous.buildJobs == value.buildJobs && previous.debugInfo == value.debugInfo) {
         return true;
     }
 
@@ -842,6 +905,7 @@ bool AppSettings::setBuildSettings(const std::filesystem::path& projectFile, con
     if (!value.cxxCompiler.empty()) entry["cxx_compiler"] = value.cxxCompiler;
     if (!value.generator.empty()) entry["generator"] = value.generator;
     if (value.buildJobs) entry["build_jobs"] = value.buildJobs;
+    if (value.debugInfo != ScriptDebugInfo::SYMBOLS) entry["debug_info"] = getDebugInfoName(value.debugInfo);
 
     YAML::Node local = loadLocalSettings(projectFile);
     local["build"] = entry;

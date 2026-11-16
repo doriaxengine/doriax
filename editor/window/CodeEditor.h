@@ -122,6 +122,8 @@ namespace doriax::editor {
         bool hasLastFocusedUnsavedChanges() const;
 
         void openFile(const std::string& filepath, bool dockToCentral = false);
+        // in the script editor of Editor Settings; line starts at 1
+        void openScript(const std::string& filepath, int line = 0, int column = 0);
         void closeFile(const std::string& filepath);
         bool isFileOpen(const std::string& filepath) const;
         bool isFileModified(const std::string& filepath) const;
