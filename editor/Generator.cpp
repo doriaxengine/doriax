@@ -1149,7 +1149,7 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
     }
     OrderedJson cpp;
     cpp["name"] = "Doriax";
-    cpp["compileCommands"] = internal + "/build/compile_commands.json";
+    cpp["compileCommands"] = internal + "/compile_commands.json";
     if (!build.cxxCompiler.empty()) {
         cpp["compilerPath"] = fs::path(build.cxxCompiler).generic_string();
     }
@@ -1160,7 +1160,7 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
 
     writeVsCodeFile(vscodePath / "settings.json", {
         {"cmake.buildDirectory", internal + "/externalbuild"},
-        {"clangd.arguments", OrderedJson::array({"--compile-commands-dir=" + internal + "/build"})},
+        {"clangd.arguments", OrderedJson::array({"--compile-commands-dir=" + internal})},
         {"files.associations", {{"*.scene", "yaml"}, {"*.bundle", "yaml"}}}
     });
     writeVsCodeFile(vscodePath / "extensions.json", {
@@ -1599,6 +1599,11 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     cmakeContent += "# a debugger keeps its PDB open, so the editor can link a new one\n";
     cmakeContent += "if(MSVC AND DORIAX_PDB_NAME)\n";
     cmakeContent += "    set_target_properties(" + libName + " PROPERTIES PDB_NAME ${DORIAX_PDB_NAME})\n";
+    cmakeContent += "endif()\n\n";    cmakeContent += "# compile commands of the last build, Play or the preset, for IDEs\n";
+    cmakeContent += "if(CMAKE_GENERATOR MATCHES \"Makefiles|Ninja\")\n";
+    cmakeContent += "    add_custom_command(TARGET " + libName + " POST_BUILD\n";
+    cmakeContent += "        COMMAND ${CMAKE_COMMAND} -E copy_if_different \"${CMAKE_BINARY_DIR}/compile_commands.json\" \"${INTERNAL_DIR}/compile_commands.json\"\n";
+    cmakeContent += "        VERBATIM)\n";
     cmakeContent += "endif()\n\n";
     cmakeContent += "# Set properties for the shared library\n";
     cmakeContent += "set_target_properties(" + libName + " PROPERTIES\n";
