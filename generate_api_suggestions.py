@@ -1097,12 +1097,22 @@ def _fun_type(params, returns):
     return 'fun(' + ', '.join(f'{p}: {t}' for p, t in params) + ')' + (f': {returns}' if returns else '')
 
 
+def _bare_type(cpp):
+    """A C++ type without namespaces, qualifiers, references and pointers."""
+    t = re.sub(r'\b(?:std|doriax)::', '', cpp)
+    t = re.sub(r'\b(?:const|volatile|virtual|static|inline|constexpr|struct|class|typename)\b', ' ', t)
+    return re.sub(r'\s+', ' ', re.sub(r'[&*]', ' ', t)).strip()
+
+
+def _type_key(cpp):
+    """A C++ type as the names of the stubs are keyed."""
+    return _bare_type(cpp).replace(' ', '')
+
+
 def _lua_type(cpp, names):
     """LuaLS type of a C++ type, '' for void, 'any' when Lua gets nothing known."""
     pointer_to_char = re.search(r'\bchar\s*\*', cpp)
-    t = re.sub(r'\b(?:std|doriax)::', '', cpp)
-    t = re.sub(r'\b(?:const|volatile|virtual|static|inline|constexpr|struct|class|typename)\b', ' ', t)
-    t = re.sub(r'\s+', ' ', re.sub(r'[&*]', ' ', t)).strip()
+    t = _bare_type(cpp)
     # LuaBridge gives a char as a one-letter string
     if pointer_to_char or t in ('string', 'wstring', 'char'):
         return 'string'
@@ -1115,8 +1125,8 @@ def _lua_type(cpp, names):
     if t in LUA_INTEGERS:
         return 'integer'
     # an event Lua has a class of
-    if t.replace(' ', '') in names:
-        return names[t.replace(' ', '')]
+    if _type_key(t) in names:
+        return names[_type_key(t)]
     m = RE_CALLBACK.match(t)
     if m:
         return _fun_type(*_callback_signature(m.group(1), names))
@@ -1338,7 +1348,7 @@ def generate_lua_stubs(symbols, events, cpp_methods, docs, output_path):
     names = {name: name for name in classes}
     names.update({cls.cpp_class: name for name, cls in classes.items() if cls.cpp_class})
     names.update({name: name for name in enums})
-    names.update({f'FunctionSubscribe<{signature}>': name for signature, name in events.items()})
+    names.update({_type_key(f'FunctionSubscribe<{signature}>'): name for signature, name in events.items()})
     callbacks = {name: _fun_type(*_callback_signature(signature, names)) for signature, name in events.items()}
 
     types = []  # every type written, to tell how many are known
@@ -1451,12 +1461,12 @@ def annotate_headers(symbols, cpp_methods, docs, engine_core_dir, overlay_dir):
 
 
 def parse_event_classes(binding_files):
-    """Lua class of each FunctionSubscribe signature, keyed by the signature without spaces."""
+    """Lua class of each FunctionSubscribe signature bound."""
     events = {}
     for filepath in binding_files:
         with open(filepath, encoding='utf-8') as f:
             for signature, name in RE_EVENT_CLASS.findall(f.read()):
-                events.setdefault(signature.replace(' ', ''), name)
+                events.setdefault(signature.strip(), name)
     return events
 
 
