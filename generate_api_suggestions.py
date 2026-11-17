@@ -1059,7 +1059,7 @@ def generate_header(symbols, output_path):
     lines.append('')
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
 
     print(f'[generate_api_suggestions] Generated {output_path}')
@@ -1309,7 +1309,7 @@ def generate_lua_stubs(symbols, cpp_methods, docs, output_path):
         lines += _lua_methods(name, members.get(name, []), doc, names, cpp_methods, types)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w') as f:
+    with open(output_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(lines))
     print(f'[generate_api_suggestions] Generated {output_path} ({len(types) - types.count("any")} typed, {types.count("any")} any)')
 
