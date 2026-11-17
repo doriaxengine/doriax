@@ -496,22 +496,25 @@ bool OutputWindow::findFileLink(int line, int bufferIndex, OutputFileLink& link)
 
         // a Lua chunk reads [string "path"]
         size_t start = i;
-        size_t pathStart = i;
-        size_t pathEnd = i;
+        std::string path;
         if (text[i - 1] == ']') {
-            const size_t open = text.rfind("[string \"", i);
-            if (open == std::string::npos || i < 2 || text[i - 2] != '"') continue;
-            start = open;
-            pathStart = open + 9;
-            pathEnd = i - 2;
+            start = text.rfind("[string \"", i);
+            if (start == std::string::npos || i < start + 11 || text[i - 2] != '"') continue;
+            if (offset < start || offset >= end) continue;
+            path = resolveLinkPath(text.substr(start + 9, i - 2 - (start + 9)));
         } else {
-            while (start > 0 && !std::strchr(" \t\"'<>|()[],;=", text[start - 1])) start--;
-            pathStart = start;
+            // a path can hold spaces, so the longest one that exists
+            size_t first = i;
+            while (first > 0 && !std::strchr("\t\"'<>|", text[first - 1])) first--;
+            if (offset < first || offset >= end) continue;
+            for (size_t from = first; from < i && path.empty(); from++) {
+                if (text[from] != ' ' && (from == first || std::strchr(" ([],;=", text[from - 1]))) {
+                    path = resolveLinkPath(text.substr(from, i - from));
+                    start = from;
+                }
+            }
         }
-        if (offset < start || offset >= end || pathEnd <= pathStart) continue;
-
-        const std::string path = resolveLinkPath(text.substr(pathStart, pathEnd - pathStart));
-        if (path.empty()) {
+        if (path.empty() || offset < start) {
             return false;
         }
         link.start = indices[start];

@@ -1567,7 +1567,7 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
 void editor::CodeEditor::openScript(const std::string& filepath, int line, int column) {
     const std::string key = toRelativePath(filepath);
     if (ExternalEditor::isEnabled() && Util::isScriptFile(key)) {
-        if (ExternalEditor::openFile(project->getProjectPath(), resolveFilepath(key), line, column)) {
+        if (ExternalEditor::openFile(project->getProjectPath(), resolveFilepath(key).lexically_normal(), line, column)) {
             return;
         }
         Backend::getApp().registerAlert("Script Editor", ExternalEditor::getStartError());
