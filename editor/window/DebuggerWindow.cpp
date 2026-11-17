@@ -49,11 +49,12 @@ void editor::DebuggerWindow::showControls(ScriptDebugger& debugger) {
     ImGui::SameLine();
     ImGui::BeginDisabled(state != ScriptDebugger::State::RUNNING);
     if (ImGui::Button(ICON_FA_PAUSE " Pause")) debugger.pause();
-    ImGui::SetItemTooltip("Stops at the next line of Lua that runs");
+    ImGui::SetItemTooltip("F6, stops at the next line of Lua that runs");
     ImGui::EndDisabled();
 
     ImGui::SameLine();
-    if (ImGui::Button(ICON_FA_STOP " Stop")) project->stopProject();
+    if (ImGui::Button(ICON_FA_STOP " Stop")) project->stopDebug();
+    ImGui::SetItemTooltip("F7");
 
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();

@@ -274,10 +274,9 @@ enum class AppMenuCommand : uint32_t {
     ProjectScenes,
     ProjectBundles,
     OpenInScriptEditor,
-    RunProject,
-    StopProject,
     ClearTrash,
     RunScene,
+    DebugScene,
     PauseScene,
     ResumeScene,
     StopScene,
@@ -364,12 +363,12 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
     bool isProjectBusy = project.isAnyScenePlaying();
     bool isPlaying = hasSelectedScene && selectedScene->playState == ScenePlayState::PLAYING;
     bool isPaused = hasSelectedScene && selectedScene->playState == ScenePlayState::PAUSED;
-    bool isLoading = hasSelectedScene && selectedScene->playState == ScenePlayState::LOADING;
-    bool isSaving = hasSelectedScene && selectedScene->playState == ScenePlayState::SAVING;
-    bool canRun = hasSelectedScene && !isProjectBusy;
-    bool canPause = hasSelectedScene && isPlaying;
-    bool canResume = hasSelectedScene && isPaused;
-    bool canStop = hasSelectedScene && !isSaving && (isPlaying || isPaused || isLoading);
+    // a scene that runs with the debugger shares these commands
+    const ScenePlayState controlState = project.getControlState(selectedScene);
+    bool canRun = hasSelectedScene && !isProjectBusy && !project.isDebugging();
+    bool canPause = hasSelectedScene && controlState == ScenePlayState::PLAYING;
+    bool canResume = hasSelectedScene && controlState == ScenePlayState::PAUSED;
+    bool canStop = hasSelectedScene && (canPause || canResume || controlState == ScenePlayState::LOADING);
     bool canDetachCamera = hasSelectedScene && (isPlaying || isPaused);
     bool canRemove = hasSelectedScene && !isProjectBusy && project.getScenes().size() > 1;
 
@@ -478,9 +477,6 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuSeparator(),
         menuCommand(AppMenuCommand::OpenInScriptEditor, ExternalEditor::getOpenLabel() + (ExternalEditor::isEnabled() ? "" : "..."), !isProjectBusy),
         menuSeparator(),
-        menuShortcut(AppMenuCommand::RunProject, "Run Project", "Ctrl+F5", !isProjectBusy && !project.getDebugger().isActive()),
-        menuCommand(AppMenuCommand::StopProject, "Stop Project", project.getDebugger().isActive()),
-        menuSeparator(),
         menuCommand(AppMenuCommand::ClearTrash, "Empty Project Trash...", !isProjectBusy)
     }));
 
@@ -497,6 +493,7 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         }, !isProjectBusy),
         menuSeparator(),
         menuShortcut(AppMenuCommand::RunScene, "Run Current Scene", "F5", canRun),
+        menuShortcut(AppMenuCommand::DebugScene, "Debug Current Scene", "Ctrl+F5", canRun),
         menuShortcut(AppMenuCommand::PauseScene, "Pause", "F6", canPause),
         menuShortcut(AppMenuCommand::ResumeScene, "Resume", "F5", canResume),
         menuShortcut(AppMenuCommand::StopScene, "Stop", "F7", canStop),
@@ -700,32 +697,29 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 });
             break;
         }
-        case AppMenuCommand::RunProject:
-            project.runProject();
-            break;
-        case AppMenuCommand::StopProject:
-            project.stopProject();
-            break;
         case AppMenuCommand::RunScene:
-            if (project.getSelectedScene() && !project.isAnyScenePlaying())
+            if (project.getSelectedScene() && !project.isAnyScenePlaying() && !project.isDebugging())
                 project.start(project.getSelectedSceneId());
+            break;
+        case AppMenuCommand::DebugScene:
+            if (project.getSelectedScene() && !project.isAnyScenePlaying())
+                project.startDebug();
             break;
         case AppMenuCommand::PauseScene:
             if (SceneProject* scene = project.getSelectedScene();
-                scene && scene->playState == ScenePlayState::PLAYING)
+                scene && project.getControlState(scene) == ScenePlayState::PLAYING)
                 project.pause(project.getSelectedSceneId());
             break;
         case AppMenuCommand::ResumeScene:
             if (SceneProject* scene = project.getSelectedScene();
-                scene && scene->playState == ScenePlayState::PAUSED)
+                scene && project.getControlState(scene) == ScenePlayState::PAUSED)
                 project.resume(project.getSelectedSceneId());
             break;
         case AppMenuCommand::StopScene:
             if (SceneProject* scene = project.getSelectedScene(); scene &&
-                scene->playState != ScenePlayState::SAVING &&
-                (scene->playState == ScenePlayState::PLAYING ||
-                 scene->playState == ScenePlayState::PAUSED ||
-                 scene->playState == ScenePlayState::LOADING))
+                (project.getControlState(scene) == ScenePlayState::PLAYING ||
+                 project.getControlState(scene) == ScenePlayState::PAUSED ||
+                 project.getControlState(scene) == ScenePlayState::LOADING))
                 project.stop(project.getSelectedSceneId());
             break;
         case AppMenuCommand::DetachCamera:
@@ -780,10 +774,10 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 "F7    Stop\n"
                 "F8    Detach / attach camera\n"
                 "F11    Full screen\n\n"
-                "RUN PROJECT AND LUA DEBUGGER\n"
-                "Ctrl+F5    Run the project in a window of its own\n"
+                "LUA DEBUGGER\n"
+                "Ctrl+F5    Debug current scene, in a window of its own\n"
                 "F9    Toggle a breakpoint (code editor)\n"
-                "F5    Continue (while stopped)\n"
+                "F5 / F6 / F7    Continue / Pause / Stop\n"
                 "F10    Step over\n"
                 "F11 / Shift+F11    Step into / out\n\n"
                 "SCENE VIEW\n"
@@ -880,12 +874,15 @@ void editor::App::showFooter(){
         const size_t queuedResources = Engine::getQueuedResourceCount();
         SceneProject* selectedScene = project.getSelectedScene();
         const bool hasSelectedScene = selectedScene != nullptr;
-        const bool isPlaying = hasSelectedScene && selectedScene->playState == ScenePlayState::PLAYING;
-        const bool isPaused = hasSelectedScene && selectedScene->playState == ScenePlayState::PAUSED;
-        const bool isSaving = hasSelectedScene && selectedScene->playState == ScenePlayState::SAVING;
-        const bool isLoading = hasSelectedScene && selectedScene->playState == ScenePlayState::LOADING;
-        const bool isStopped = !hasSelectedScene || selectedScene->playState == ScenePlayState::STOPPED;
-        const bool isCancelling = hasSelectedScene && selectedScene->playState == ScenePlayState::CANCELLING;
+        // of the scene, or of the one that runs with the debugger
+        const ScenePlayState playState = project.getControlState(selectedScene);
+        const bool isDebugging = project.isDebugging();
+        const bool isPlaying = hasSelectedScene && playState == ScenePlayState::PLAYING;
+        const bool isPaused = hasSelectedScene && playState == ScenePlayState::PAUSED;
+        const bool isSaving = hasSelectedScene && playState == ScenePlayState::SAVING;
+        const bool isLoading = hasSelectedScene && playState == ScenePlayState::LOADING;
+        const bool isStopped = !hasSelectedScene || playState == ScenePlayState::STOPPED;
+        const bool isCancelling = hasSelectedScene && playState == ScenePlayState::CANCELLING;
         const bool isAnySaving = project.isAnySceneSaving();
         const bool canPlayPause = hasSelectedScene && !isSaving && !isLoading && !isCancelling && (isPlaying || isPaused || (isStopped && !project.isAnyScenePlaying()));
         const bool canStop = hasSelectedScene && !isSaving && !isStopped && !isCancelling;
@@ -911,7 +908,16 @@ void editor::App::showFooter(){
 
         // Left side: Status
         bool statusShown = false;
-        if (isSaving || isAnySaving) {
+        if (isDebugging) {
+            if (isLoading) {
+                ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_SPINNER " Building to debug");
+            } else if (isPaused) {
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.4f, 1.0f), ICON_FA_PAUSE " Stopped in the debugger");
+            } else {
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), ICON_FA_BUG " Debugging");
+            }
+            statusShown = true;
+        } else if (isSaving || isAnySaving) {
             ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_FLOPPY_DISK " Saving scene");
             statusShown = true;
         } else if (isLoading) {
@@ -1890,24 +1896,26 @@ void editor::App::show(){
             SceneProject* selectedScene = project.getSelectedScene();
             uint32_t selectedSceneId = project.getSelectedSceneId();
             bool hasSelectedScene = selectedScene != nullptr;
-            bool isPlaying = hasSelectedScene && selectedScene->playState == ScenePlayState::PLAYING;
-            bool isPaused = hasSelectedScene && selectedScene->playState == ScenePlayState::PAUSED;
-            bool isLoading = hasSelectedScene && selectedScene->playState == ScenePlayState::LOADING;
+            // a scene that runs with the debugger shares these keys
+            const ScenePlayState playState = project.getControlState(selectedScene);
+            bool isPlaying = hasSelectedScene && playState == ScenePlayState::PLAYING;
+            bool isPaused = hasSelectedScene && playState == ScenePlayState::PAUSED;
+            bool isLoading = hasSelectedScene && playState == ScenePlayState::LOADING;
 
-            // a script stopped in the debugger takes the step keys
+            // and a script stopped in it takes the step keys
             ScriptDebugger& debugger = project.getDebugger();
             const bool debugStopped = debugger.getState() == ScriptDebugger::State::STOPPED;
             if (debugStopped) {
-                if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) debugger.resume();
                 if (ImGui::IsKeyPressed(ImGuiKey_F10)) debugger.stepOver();
                 if (ImGui::IsKeyPressed(ImGuiKey_F11)) ImGui::GetIO().KeyShift ? debugger.stepOut() : debugger.stepInto();
-            } else if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
-                executeMenuCommand({static_cast<uint32_t>(AppMenuCommand::RunProject), {}});
-            } else if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
-                if (hasSelectedScene && !project.isAnyScenePlaying()) {
-                    project.start(selectedSceneId);
-                } else if (isPaused) {
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+                if (isPaused) {
                     project.resume(selectedSceneId);
+                } else if (ImGui::GetIO().KeyCtrl) {
+                    executeMenuCommand({static_cast<uint32_t>(AppMenuCommand::DebugScene), {}});
+                } else {
+                    executeMenuCommand({static_cast<uint32_t>(AppMenuCommand::RunScene), {}});
                 }
             }
             if (ImGui::IsKeyPressed(ImGuiKey_F6)) {
@@ -3426,7 +3434,7 @@ void editor::App::closeWindow(){
     }
 
     project.waitForPlaySessionToFinish();
-    project.stopProject();
+    project.stopDebug();
     project.getDebugger().waitForEnd();
 
     project.clearTrash();

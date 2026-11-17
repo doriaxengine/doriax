@@ -231,6 +231,7 @@ CustomTextEditor::CustomTextEditor()
     , diffPeekVersion(0)
     , diffPeekTextWidth(0.0f)
     , breakpointsEnabled(false)
+    , breakpointsMuted(false)
     , executionLine(-1)
     , suggestions(std::make_unique<SemanticSuggestions>())
     , scrollToSuggestion(false)
@@ -3781,7 +3782,10 @@ void CustomTextEditor::renderBreakpoints(ImDrawList* drawList, const ImVec2& ori
     const auto centerOf = [&](int line) { return ImVec2(centerX, origin.y + (line + 0.5f) * lineHeight); };
 
     for (int line : breakpoints) {
-        if (line >= startLine && line <= endLine) {
+        if (line < startLine || line > endLine) continue;
+        if (breakpointsMuted) {
+            drawList->AddCircle(centerOf(line), radius, BREAKPOINT_COLOR);
+        } else {
             drawList->AddCircleFilled(centerOf(line), radius, BREAKPOINT_COLOR);
         }
     }

@@ -2281,9 +2281,6 @@ void editor::SceneWindow::show() {
             bool isPlaying = (sceneProject.playState == ScenePlayState::PLAYING);
             bool isPaused = (sceneProject.playState == ScenePlayState::PAUSED);
             bool isStopped = (sceneProject.playState == ScenePlayState::STOPPED);
-            bool isSaving = (sceneProject.playState == ScenePlayState::SAVING);
-            bool isLoading = (sceneProject.playState == ScenePlayState::LOADING);
-            bool isCancelling = (sceneProject.playState == ScenePlayState::CANCELLING);
             bool isCameraDetached = sceneProject.sceneRender->isCameraDetached();
             bool isCameraPreview = isStopped && sceneProject.sceneRender->isPreviewCameraActive();
             Entity previewCameraEntity = isCameraPreview ? sceneProject.sceneRender->getPreviewCameraEntity() : NULL_ENTITY;
@@ -2296,10 +2293,17 @@ void editor::SceneWindow::show() {
             float toolbarRowY = ImGui::GetCursorPosY();
             ImGui::SetCursorPosY(toolbarRowY - (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f);
 
+            // The run buttons also serve a scene that runs with the debugger
+            const ScenePlayState runState = project->getControlState(&sceneProject);
+            const bool runs = runState == ScenePlayState::PLAYING;
+            const bool waits = runState == ScenePlayState::PAUSED;
+            const bool idle = runState == ScenePlayState::STOPPED;
+            const bool canStart = idle && !project->isAnyScenePlaying();
+
             // Play button - disabled when already playing
-            ImGui::BeginDisabled(isPlaying || isSaving || isLoading || isCancelling || (isStopped && project->isAnyScenePlaying()));
+            ImGui::BeginDisabled(!canStart && !waits);
             if (ImGui::Button(ICON_FA_PLAY " Play")) {
-                if (!isPaused) {
+                if (!waits) {
                     project->start(sceneProject.id);
                 }else{
                     project->resume(sceneProject.id);
@@ -2307,8 +2311,17 @@ void editor::SceneWindow::show() {
             }
             ImGui::EndDisabled();
 
-            // Pause/Resume button - disabled when stopped
-            ImGui::BeginDisabled(isStopped || isPaused || isSaving || isLoading || isCancelling);
+            // Debug button - the scene in a window of its own, where breakpoints stop
+            ImGui::BeginDisabled(!canStart);
+            ImGui::SameLine();
+            if (ImGui::Button(ICON_FA_BUG " Debug")) {
+                project->startDebug();
+            }
+            ImGui::SetItemTooltip("Runs the scene in a window of its own, with the Lua debugger (Ctrl+F5)");
+            ImGui::EndDisabled();
+
+            // Pause button - disabled unless it runs
+            ImGui::BeginDisabled(!runs);
             ImGui::SameLine();
             if (ImGui::Button(ICON_FA_PAUSE " Pause")) {
                 project->pause(sceneProject.id);
@@ -2316,7 +2329,7 @@ void editor::SceneWindow::show() {
             ImGui::EndDisabled();
 
             // Stop button - disabled when stopped
-            ImGui::BeginDisabled(isStopped || isSaving || isCancelling);
+            ImGui::BeginDisabled(idle || runState == ScenePlayState::SAVING || runState == ScenePlayState::CANCELLING);
             ImGui::SameLine();
             if (ImGui::Button(ICON_FA_STOP " Stop")) {
                 project->stop(sceneProject.id);

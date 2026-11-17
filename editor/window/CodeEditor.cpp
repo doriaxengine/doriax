@@ -1582,6 +1582,8 @@ void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
         lines.insert(line + 1);
     }
     debugger.setBreakpoints(instance.luaSource, lines);
+    // a scene that plays in the editor does not stop at them
+    instance.editor->SetBreakpointsMuted(project->isPlaySessionActive());
 
     const std::vector<DebugFrame>& frames = debugger.getFrames();
     const bool stoppedHere = !frames.empty() && frames[debugger.getSelectedFrame()].source == instance.luaSource;

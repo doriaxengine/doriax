@@ -10,7 +10,7 @@ namespace doriax::editor {
     class CodeEditor;
     class Project;
 
-    // Controls, call stack and variables of the project that runs with the debugger
+    // Controls, call stack and variables of the scene that runs with the debugger
     class DebuggerWindow {
     private:
         Project* project;

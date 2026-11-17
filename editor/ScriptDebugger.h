@@ -31,7 +31,7 @@ namespace doriax::editor {
         int ref = 0;
     };
 
-    // Runs the project as a process of its own and debugs its Lua scripts.
+    // Runs a scene as a process of its own and debugs its Lua scripts.
     // Files are paths from the Lua folder and lines start at 1.
     class ScriptDebugger {
     public:
@@ -49,6 +49,7 @@ namespace doriax::editor {
         State getState() const;
         bool isActive() const;
 
+        bool hasBreakpoints() const;
         void toggleBreakpoint(const std::string& file, int line);
         void setBreakpoints(const std::string& file, const std::set<int>& lines);
         const std::set<int>& getBreakpoints(const std::string& file) const;

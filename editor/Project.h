@@ -1038,10 +1038,14 @@ namespace doriax::editor{
         void toggleCameraDetached(uint32_t sceneId);
         void waitForPlaySessionToFinish();
 
-        // Builds the project and runs it as a process of its own, with the Lua debugger
-        void runProject();
-        void stopProject();
+        // Runs the selected scene in a window of its own, with the Lua debugger.
+        // pause(), resume() and stop() act on it while it runs.
+        void startDebug();
+        void stopDebug();
+        bool isDebugging() const;
         ScriptDebugger& getDebugger();
+        // What the Play controls show: the state of the scene, or of the debug run
+        ScenePlayState getControlState(const SceneProject* sceneProject) const;
 
         // A runtime scene loaded in place of the played one comes back as mainScene
         std::vector<Scene*> getRunningRuntimeLayers(uint32_t sceneId, Scene*& mainScene);

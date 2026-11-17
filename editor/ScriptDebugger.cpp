@@ -65,9 +65,9 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
     worker = std::thread([this, command, workingDir, build = std::move(build)]() {
         if (build() && !runner.isCancelRequested()) {
             state = State::RUNNING;
-            Out::info("Running the project");
+            Out::success("Scene started with the debugger");
             runner.run(command, workingDir, [this](const std::string& line) { onLine(line); });
-            Out::info("The project ended");
+            Out::info("The debugged scene ended");
         }
         getEditorHost().enqueueMainThreadTask([this]() {
             clearStop();
@@ -100,6 +100,10 @@ editor::ScriptDebugger::State editor::ScriptDebugger::getState() const {
 
 bool editor::ScriptDebugger::isActive() const {
     return state != State::IDLE;
+}
+
+bool editor::ScriptDebugger::hasBreakpoints() const {
+    return !breakpoints.empty();
 }
 
 void editor::ScriptDebugger::toggleBreakpoint(const std::string& file, int line) {

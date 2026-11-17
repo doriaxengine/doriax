@@ -226,6 +226,8 @@ namespace doriax::editor {
         void SetBreakpoints(const std::set<int>& value) { breakpoints = value; }
         const std::set<int>& GetBreakpoints() const { return breakpoints; }
         void ToggleBreakpoint(int line);
+        // Drawn hollow, while what runs does not stop at them
+        void SetBreakpointsMuted(bool muted) { breakpointsMuted = muted; }
         // Line where a debugger is stopped, -1 for none
         void SetExecutionLine(int line) { executionLine = line; }
 
@@ -363,6 +365,7 @@ namespace doriax::editor {
         float diffPeekTextWidth;
 
         bool breakpointsEnabled;
+        bool breakpointsMuted;
         std::set<int> breakpoints;
         int executionLine;
 

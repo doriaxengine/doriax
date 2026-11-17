@@ -10872,10 +10872,12 @@ void editor::Project::start(uint32_t sceneId) {
             return;
         }
     }
-    // both builds go through the same generator
-    if (debugger.getState() == ScriptDebugger::State::BUILDING) {
-        Out::warning("Cannot start: the project is being built to run");
+    if (debugger.isActive()) {
+        Out::warning("Cannot start: a scene runs with the debugger");
         return;
+    }
+    if (debugger.hasBreakpoints()) {
+        Out::info("Breakpoints do not stop a scene that plays in the editor: use Debug (Ctrl+F5)");
     }
 
     doriax::FunctionSubscribeGlobal::getCrashHandler() = 
@@ -10946,6 +10948,11 @@ void editor::Project::start(uint32_t sceneId) {
 }
 
 void editor::Project::pause(uint32_t sceneId) {
+    if (debugger.isActive()) {
+        debugger.pause();
+        return;
+    }
+
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
         Out::error("Failed to find scene %u to pause", sceneId);
@@ -10982,6 +10989,11 @@ void editor::Project::pause(uint32_t sceneId) {
 }
 
 void editor::Project::resume(uint32_t sceneId) {
+    if (debugger.isActive()) {
+        debugger.resume();
+        return;
+    }
+
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
         Out::error("Failed to find scene %u to resume", sceneId);
@@ -11019,6 +11031,11 @@ void editor::Project::resume(uint32_t sceneId) {
 }
 
 void editor::Project::stop(uint32_t sceneId) {
+    if (debugger.isActive()) {
+        stopDebug();
+        return;
+    }
+
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
         Out::error("Failed to find scene %u to stop", sceneId);
@@ -11152,7 +11169,7 @@ void editor::Project::stop(uint32_t sceneId) {
     finalizeStopThread.detach();
 }
 
-void editor::Project::runProject() {
+void editor::Project::startDebug() {
     if (debugger.isActive() || isAnyScenePlaying()) {
         return;
     }
@@ -11166,7 +11183,7 @@ void editor::Project::runProject() {
     const std::string missingTools = Generator::checkBuildTools(useDefaultKit, &kit);
     if (!missingTools.empty()) {
         editor::getEditorHost().registerAlert("Missing Build Tools",
-            "Running the project builds it, with build tools that were not found on your system:\n\n" + missingTools +
+            "Debugging a scene builds the project, with build tools that were not found on your system:\n\n" + missingTools +
             "\nPlease install the missing tools and try again.");
         return;
     }
@@ -11201,7 +11218,7 @@ void editor::Project::runProject() {
     });
 }
 
-void editor::Project::stopProject() {
+void editor::Project::stopDebug() {
     const bool building = debugger.getState() == ScriptDebugger::State::BUILDING;
     debugger.stop();
     if (building) {
@@ -11210,8 +11227,21 @@ void editor::Project::stopProject() {
     }
 }
 
+bool editor::Project::isDebugging() const {
+    return debugger.isActive();
+}
+
 editor::ScriptDebugger& editor::Project::getDebugger() {
     return debugger;
+}
+
+editor::ScenePlayState editor::Project::getControlState(const SceneProject* sceneProject) const {
+    switch (debugger.getState()) {
+        case ScriptDebugger::State::BUILDING: return ScenePlayState::LOADING;
+        case ScriptDebugger::State::RUNNING: return ScenePlayState::PLAYING;
+        case ScriptDebugger::State::STOPPED: return ScenePlayState::PAUSED;
+        default: return sceneProject ? sceneProject->playState : ScenePlayState::STOPPED;
+    }
 }
 
 void editor::Project::stopActivePlay() {
