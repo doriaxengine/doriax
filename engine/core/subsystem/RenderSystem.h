@@ -770,7 +770,6 @@ namespace doriax{
 		Matrix4 getStableDirLightProjection(const Matrix4& lightView, const Matrix4& cameraView, float fov, float ratio, float sliceNear, float sliceFar, float extension);
 		int getShadowReceiverPlanes(const CameraComponent& camera, const LightComponent& light, int cascade, Plane* planes);
 		bool checkPBRFrabebufferUpdate(Material& material);
-		bool checkPBRTextures(Material& material, bool receiveLights);
 		bool loadPBRTextures(Material& material, ShaderData& shaderData, ObjectRender& render, bool receiveLights);
 		void loadShadowTextures(ShaderData& shaderData, ObjectRender& render, bool receiveLights, bool receiveShadow);
 		void updateShadowBindings();
@@ -973,8 +972,85 @@ namespace doriax{
 
 	public:
 
+		// What the shaders of the meshes depend on in the scene
+		struct SceneShading{
+			bool lights = false;
+			bool shadows = false;
+			bool onlyDirectionalLights = false;
+			bool fog = false;
+			bool ibl = false;
+			bool reflectionProbes = false;
+			bool waterDepth = false;
+			bool lights2D = false;
+			bool shadows2D = false;
+		};
+
+		// What a submesh has of its mesh buffers, for its shaders
+		struct SubmeshAttributes{
+			bool texCoord1 = false;
+			bool texCoord2 = false;
+			bool normal = false;
+			bool normalMap = false;
+			bool tangent = false;
+			bool vertexColor3 = false;
+			bool vertexColor4 = false;
+			bool skinning = false;
+			bool morphTarget = false;
+			bool morphNormal = false;
+			bool morphTangent = false;
+		};
+
+		// The shader variants of a submesh, and what they were chosen from
+		struct SubmeshShading{
+			bool unlit = false;
+			bool punctual = false;
+			bool ibl = false;
+			bool useIBL = false;
+			bool mirror = false;
+			bool hasTexture1 = false;
+			bool hasTexture2 = false;
+			bool hasNormalMap = false;
+			bool hasNormal = false;
+			bool hasTangent = false;
+			bool receiveShadows = false;
+			bool light2d = false;
+			bool shadows2d = false;
+			bool ssao = false;
+			bool alphaMask = false;
+			bool alphaOpaque = false;
+			bool depthAlphaMask = false;
+			bool depthTexture = false;
+			bool instanceFade = false;
+			bool terrainSurface = false;
+			bool hookUV1 = false;
+			bool hookNormals = false;
+			bool hookColor3 = false;
+			bool hookColor4 = false;
+			bool hookUV2 = false;
+			bool hookTangents = false;
+			std::string materialShader;
+			uint16_t shaderFileId = 0;
+			uint32_t properties = 0;
+			// used when depthPass and gbuffer are set
+			bool depthPass = false;
+			uint32_t depthProperties = 0;
+			bool gbuffer = false;
+			uint32_t gbufferProperties = 0;
+		};
+
 		RenderSystem(Scene* scene);
 		virtual ~RenderSystem();
+
+		// as the scene draws now
+		SceneShading getSceneShading() const;
+		// from the components alone, for an editor that never drew the scene
+		SceneShading getAuthoredSceneShading() const;
+		static SubmeshAttributes getSubmeshAttributes(const MeshComponent& mesh, int submeshIndex, bool skinned);
+		// the variants loadMesh takes, the editor collects them for exports
+		SubmeshShading getSubmeshShading(Entity entity, const MeshComponent& mesh, int submeshIndex, const SubmeshAttributes& attributes, const SceneShading& shading, const InstancedMeshComponent* instmesh, const TerrainComponent* terrain) const;
+		static bool checkPBRTextures(const Material& material, bool receiveLights, const SceneShading& shading);
+		static uint32_t getUIShaderProperties(bool hasTexture, bool isText);
+		static uint32_t getPointsShaderProperties(const PointsComponent& points);
 
 		// Editor-only viewport debug override (see member declaration). Toggling it
 		// reloads every mesh, since cull mode is baked into the pipeline at load time.

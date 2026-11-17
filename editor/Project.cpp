@@ -4073,6 +4073,9 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
     Scene* scene = sceneProject->scene;
     const bool hasReflectionProbes = scene->getComponentArray<ReflectionProbeComponent>()->size() > 0;
+    RenderSystem* renderSystem = scene->getSystem<RenderSystem>().get();
+    // for what never drew, as in a headless editor
+    const RenderSystem::SceneShading authoredShading = renderSystem->getAuthoredSceneShading();
 
     // resolve the effective custom shader (component > scene default > built-in) from the
     // strings rather than the cached customShaderId, which lags a reload frame after a
@@ -4173,21 +4176,35 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customShaderId);
                     }
                 }
+            } else if (!signature.test(scene->getComponentId<TerrainComponent>()) && (mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0)) {
+                // the ones loadMesh would take; a terrain builds its geometry as it draws
+                const bool skinned = signature.test(scene->getComponentId<SkinComponent>());
+                const InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
+                for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
+                    const RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, skinned);
+                    const RenderSystem::SubmeshShading shading = renderSystem->getSubmeshShading(entity, mesh, s, attributes, authoredShading, instmesh, nullptr);
+                    insertKeys(ShaderType::MESH, shading.properties, shading.shaderFileId);
+                    // as above, whether it casts shadows or not
+                    insertKeys(ShaderType::DEPTH, shading.depthProperties, shading.shaderFileId);
+                    if (shading.gbuffer) {
+                        insertKeys(ShaderType::GBUFFER, shading.gbufferProperties, shading.shaderFileId);
+                    }
+                }
             }
         }
 
         if (signature.test(scene->getComponentId<UIComponent>())) {
             const UIComponent& ui = scene->getComponent<UIComponent>(entity);
-            if (ui.loaded || ui.shaderRender) {
-                insertKeys(ShaderType::UI, ui.shaderProperties, effectiveShaderId(ui.shader, ShaderType::UI));
-            }
+            // a text has its font atlas once it draws
+            const bool isText = signature.test(scene->getComponentId<TextComponent>());
+            const uint32_t properties = (ui.loaded || ui.shaderRender) ? ui.shaderProperties : RenderSystem::getUIShaderProperties(isText || !ui.texture.empty(), isText);
+            insertKeys(ShaderType::UI, properties, effectiveShaderId(ui.shader, ShaderType::UI));
         }
 
         if (signature.test(scene->getComponentId<PointsComponent>())) {
             const PointsComponent& pts = scene->getComponent<PointsComponent>(entity);
-            if (pts.loaded || pts.shaderRender) {
-                insertKeys(ShaderType::POINTS, pts.shaderProperties, effectiveShaderId(pts.shader, ShaderType::POINTS));
-            }
+            const uint32_t properties = (pts.loaded || pts.shaderRender) ? pts.shaderProperties : RenderSystem::getPointsShaderProperties(pts);
+            insertKeys(ShaderType::POINTS, properties, effectiveShaderId(pts.shader, ShaderType::POINTS));
         }
 
         // lines and the sky have one variant, known before they are drawn
@@ -6640,9 +6657,11 @@ void editor::Project::writeSceneSources(bool onlyMissing) {
         try {
             probe.reset(createRuntimeCloneFromSource(&sceneProject));
             writeSceneSource(probe.get());
-            // what the generator reads of it, as the file is now
+            // what the generator and the shader cache read of it, as the file is now
             updateSceneCppScripts(probe.get());
             sceneProject.cppScripts = probe->cppScripts;
+            sceneProject.shaderKeys.insert(probe->shaderKeys.begin(), probe->shaderKeys.end());
+            collectSceneShaderKeys(probe.get(), sceneProject.shaderKeys);
         } catch (const std::exception& e) {
             Out::warning("Source of scene '%s' not generated: %s", sceneProject.name.c_str(), e.what());
         }
