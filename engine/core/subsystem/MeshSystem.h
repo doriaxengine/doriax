@@ -17,6 +17,11 @@
 #include "component/TerrainComponent.h"
 #include "component/TilemapComponent.h"
 #include "component/Transform.h"
+#include "component/KeyframeTracksComponent.h"
+#include "component/TranslateTracksComponent.h"
+#include "component/RotateTracksComponent.h"
+#include "component/ScaleTracksComponent.h"
+#include "component/MorphTracksComponent.h"
 #include "math/Ray.h"
 
 #include <future>
@@ -34,6 +39,16 @@ namespace tinygltf {
 }
 
 namespace doriax{
+
+    // Keys a GLTF animation channel gives its track
+    struct DORIAX_API ModelTrackKeys{
+        std::string path;
+        KeyframeTracksComponent keyframe;
+        TranslateTracksComponent translate;
+        RotateTracksComponent rotate;
+        ScaleTracksComponent scale;
+        MorphTracksComponent morph;
+    };
 
     class DORIAX_API MeshSystem : public SubSystem {
 
@@ -234,6 +249,9 @@ namespace doriax{
         std::vector<std::pair<MeshComponent*, int>> findMorphTargets(Entity entity, const ModelComponent& model, const std::string& name) const;
 
         bool loadGLTF(Entity entity, const std::string filename, bool asyncLoad=false, bool skipEntities=false, bool changeRootTransform=true);
+        // False when the model has no such channel or cannot read it
+        static bool getModelTrackKeys(const ModelComponent& model, int animation, int channel, ModelTrackKeys& keys);
+        void setModelTrackKeys(Entity track, ModelTrackKeys& keys);
         bool loadOBJ(Entity entity, const std::string filename, bool asyncLoad=false);
 
         // Parses a model file into ModelPool without a scene, for SceneManager::preloadScene().

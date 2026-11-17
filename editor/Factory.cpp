@@ -37,6 +37,14 @@ static T sanitizeFiniteNumber(T value) {
     return std::isfinite(value) ? value : static_cast<T>(0);
 }
 
+// model tracks a scene source leaves without keys
+static thread_local const EntityRegistry* sourceRegistry = nullptr;
+static thread_local const std::unordered_set<Entity>* sourceModelTracks = nullptr;
+
+static bool isSourceModelTrack(const EntityRegistry* registry, Entity entity) {
+    return registry == sourceRegistry && sourceModelTracks->count(entity);
+}
+
 static float sanitizePositiveFiniteNumber(float value, float fallback = 1.0f) {
     if (std::isfinite(value) && value > 0.0f) {
         return value;
@@ -2220,6 +2228,12 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
     for (const auto& [name, index] : model.morphNameMapping) {
         code << ind << "modelcomp.morphNameMapping[" << formatString(name) << "] = " << formatInt(index) << ";\n";
     }
+    for (const auto& [channel, track] : model.animationTracksMapping) {
+        if (scene == sourceRegistry && !sourceModelTracks->count(track)) {
+            continue;
+        }
+        code << ind << "modelcomp.animationTracksMapping[{" << formatInt(channel.first) << ", " << formatInt(channel.second) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
+    }
 
     addComponentCode(code, ind, sceneName, entityName, entity, "ModelComponent", "modelcomp", assignExisting);
     return code.str();
@@ -2325,7 +2339,8 @@ std::string editor::Factory::createKeyframeTracksComponent(int indentSpaces, Ent
     code << ind << "kfcomp.interpolation = " << formatFloat(kf.interpolation) << ";\n";
     code << ind << "kfcomp.loop = " << formatBool(kf.loop) << ";\n";
     code << ind << "kfcomp.relative = " << formatBool(kf.relative) << ";\n";
-    if (!kf.times.empty()) {
+    const bool withKeys = !isSourceModelTrack(scene, entity);
+    if (withKeys && !kf.times.empty()) {
         code << ind << "kfcomp.times = {";
         for (size_t i = 0; i < kf.times.size(); i++) {
             if (i > 0) code << ", ";
@@ -2333,7 +2348,7 @@ std::string editor::Factory::createKeyframeTracksComponent(int indentSpaces, Ent
         }
         code << "};\n";
     }
-    if (!kf.easings.empty()) {
+    if (withKeys && !kf.easings.empty()) {
         code << ind << "kfcomp.easings = {";
         for (size_t i = 0; i < kf.easings.size(); i++) {
             if (i > 0) code << ", ";
@@ -2346,7 +2361,7 @@ std::string editor::Factory::createKeyframeTracksComponent(int indentSpaces, Ent
 }
 
 std::string editor::Factory::createTranslateTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<TranslateTracksComponent>(entity)) return "";
+    if (!scene->findComponent<TranslateTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
     TranslateTracksComponent& tt = scene->getComponent<TranslateTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
@@ -2360,7 +2375,7 @@ std::string editor::Factory::createTranslateTracksComponent(int indentSpaces, En
 }
 
 std::string editor::Factory::createRotateTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<RotateTracksComponent>(entity)) return "";
+    if (!scene->findComponent<RotateTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
     RotateTracksComponent& rt = scene->getComponent<RotateTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
@@ -2374,7 +2389,7 @@ std::string editor::Factory::createRotateTracksComponent(int indentSpaces, Entit
 }
 
 std::string editor::Factory::createScaleTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<ScaleTracksComponent>(entity)) return "";
+    if (!scene->findComponent<ScaleTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
     ScaleTracksComponent& st = scene->getComponent<ScaleTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
@@ -2388,7 +2403,7 @@ std::string editor::Factory::createScaleTracksComponent(int indentSpaces, Entity
 }
 
 std::string editor::Factory::createMorphTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<MorphTracksComponent>(entity)) return "";
+    if (!scene->findComponent<MorphTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
     MorphTracksComponent& mt = scene->getComponent<MorphTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
@@ -2493,6 +2508,18 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
 
     std::string funcId = sceneToFileName(sceneId, name);
     const std::string ind = indentation(indentSpaces);
+
+    const std::unordered_set<Entity> modelTracks = Stream::getModelBackedTracks(scene);
+    struct ModelTracksScope {
+        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks) {
+            sourceRegistry = registry;
+            sourceModelTracks = tracks;
+        }
+        ~ModelTracksScope() {
+            sourceRegistry = nullptr;
+            sourceModelTracks = nullptr;
+        }
+    } modelTracksScope(scene, &modelTracks);
 
     // Build lookup sets for bundle entities
     std::set<Entity> bundleRoots;

@@ -5524,6 +5524,7 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
     // building them for the same reason as the skeleton above (a static preview never plays them).
     if (!skipEntities && !Engine::isAsyncThread()) {
         model.animations.clear();
+        model.animationTracksMapping.clear();
 
         for (size_t i = 0; i < model.gltfModel->animations.size(); i++) {
             const tinygltf::Animation &animation = model.gltfModel->animations[i];
@@ -5547,218 +5548,46 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
             for (size_t j = 0; j < animation.channels.size(); j++) {
 
                 const tinygltf::AnimationChannel &channel = animation.channels[j];
-                if (!isValidGLTFIndex(channel.sampler, animation.samplers)) {
-                    Log::warn("Cannot load animation: %s, channel %zu has invalid sampler", animation.name.c_str(), j);
+
+                ModelTrackKeys keys;
+                if (!getModelTrackKeys(model, (int)i, (int)j, keys)) {
                     continue;
                 }
 
-                const tinygltf::AnimationSampler &sampler = animation.samplers[channel.sampler];
+                float duration = keys.keyframe.times.back();
 
-                if (!isValidGLTFIndex(sampler.input, model.gltfModel->accessors) ||
-                    !isValidGLTFIndex(sampler.output, model.gltfModel->accessors)) {
-                    Log::warn("Cannot load animation: %s, channel %zu has invalid accessor", animation.name.c_str(), j);
+                Entity track;
+
+                track = scene->createEntity();
+                if (track == NULL_ENTITY) {
                     continue;
                 }
 
-                tinygltf::Accessor accessorIn = model.gltfModel->accessors[sampler.input];
-                if (!isValidGLTFIndex(accessorIn.bufferView, model.gltfModel->bufferViews)) {
-                    Log::warn("Cannot load animation: %s, channel %zu has invalid input buffer view", animation.name.c_str(), j);
-                    continue;
+                std::string trackName = animName + " " + channel.target_path;
+                if (channel.target_node >= 0 && channel.target_node < model.gltfModel->nodes.size()) {
+                    std::string nodeName = model.gltfModel->nodes[channel.target_node].name;
+                    if (!nodeName.empty()) {
+                        trackName = nodeName + " " + channel.target_path;
+                    }
                 }
+                scene->setEntityName(track, trackName);
 
-                tinygltf::BufferView bufferViewIn = model.gltfModel->bufferViews[accessorIn.bufferView];
+                scene->addComponent<ActionComponent>(track);
+                setModelTrackKeys(track, keys);
 
-                tinygltf::Accessor accessorOut = model.gltfModel->accessors[sampler.output];
-                if (!isValidGLTFIndex(accessorOut.bufferView, model.gltfModel->bufferViews)) {
-                    Log::warn("Cannot load animation: %s, channel %zu has invalid output buffer view", animation.name.c_str(), j);
-                    continue;
-                }
+                ActionComponent& actiontrack = scene->getComponent<ActionComponent>(track);
 
-                tinygltf::BufferView bufferViewOut = model.gltfModel->bufferViews[accessorOut.bufferView];
-
-                if (!isValidGLTFIndex(bufferViewIn.buffer, model.gltfModel->buffers) ||
-                    !isValidGLTFIndex(bufferViewOut.buffer, model.gltfModel->buffers) ||
-                    accessorIn.count == 0 || accessorOut.count == 0) {
-                    Log::warn("Cannot load animation: %s, channel %zu has invalid buffer data", animation.name.c_str(), j);
-                    continue;
-                }
-
-                //TODO: Implement rotation and weights non float
-                if (accessorOut.componentType == TINYGLTF_COMPONENT_TYPE_FLOAT) {
-
-                    // GLTF sampler interpolation (glTF 2.0): LINEAR (default), STEP or CUBICSPLINE
-                    bool step = (sampler.interpolation.compare("STEP") == 0);
-                    bool cubic = (sampler.interpolation.compare("CUBICSPLINE") == 0);
-                    if (!step && !cubic && !sampler.interpolation.empty() && sampler.interpolation.compare("LINEAR") != 0) {
-                        Log::warn("Animation: %s, channel %zu has unknown interpolation \"%s\", assuming LINEAR",
-                                animation.name.c_str(), j, sampler.interpolation.c_str());
-                    }
-
-                    if (cubic && accessorIn.count < 2) {
-                        // spec: a CUBICSPLINE sampler must have at least 2 keyframes
-                        Log::warn("Cannot load animation: %s, channel %zu: CUBICSPLINE needs at least 2 keyframes",
-                                animation.name.c_str(), j);
-                        continue;
-                    }
-
-                    // CUBICSPLINE stores an (in-tangent, value, out-tangent) triple per
-                    // keyframe, so its output accessor has 3x the input elements; weights
-                    // additionally pack one scalar per morph target into each element.
-                    size_t outPerKey = cubic ? 3 : 1;
-                    if (channel.target_path.compare("weights") == 0) {
-                        if (accessorOut.count % (accessorIn.count * outPerKey) != 0) {
-                            Log::warn("Cannot load animation: %s, channel %zu has %zu output elements, not a multiple of %zu",
-                                    animation.name.c_str(), j, accessorOut.count, accessorIn.count * outPerKey);
-                            continue;
-                        }
-                    } else if (accessorOut.count != accessorIn.count * outPerKey) {
-                        Log::warn("Cannot load animation: %s, channel %zu has %zu output elements, expected %zu",
-                                animation.name.c_str(), j, accessorOut.count, accessorIn.count * outPerKey);
-                        continue;
-                    }
-
-                    std::vector<unsigned char>& inputData = model.gltfModel->buffers[bufferViewIn.buffer].data;
-                    std::vector<unsigned char>& outputData = model.gltfModel->buffers[bufferViewOut.buffer].data;
-                    if (inputData.empty() || outputData.empty()) {
-                        Log::warn("Cannot load animation: %s, channel %zu has empty buffer data", animation.name.c_str(), j);
-                        continue;
-                    }
-
-                    float *timeValues = (float *) (inputData.data() + bufferViewIn.byteOffset + accessorIn.byteOffset);
-                    float *values = (float *) (outputData.data() + bufferViewOut.byteOffset + accessorOut.byteOffset);
-
-                    float duration = timeValues[accessorIn.count - 1];
-
-                    Entity track;
-
-                    track = scene->createEntity();
-                    if (track == NULL_ENTITY) {
-                        continue;
-                    }
-
-                    std::string trackName = animName + " " + channel.target_path;
-                    if (channel.target_node >= 0 && channel.target_node < model.gltfModel->nodes.size()) {
-                        std::string nodeName = model.gltfModel->nodes[channel.target_node].name;
-                        if (!nodeName.empty()) {
-                            trackName = nodeName + " " + channel.target_path;
-                        }
-                    }
-                    scene->setEntityName(track, trackName);
-
-                    scene->addComponent<ActionComponent>(track);
-                    scene->addComponent<KeyframeTracksComponent>(track);
-
-                    ActionComponent& actiontrack = scene->getComponent<ActionComponent>(track);
-                    KeyframeTracksComponent& keyframe = scene->getComponent<KeyframeTracksComponent>(track);
-
-                    if (step && accessorIn.count > 1) {
-                        // GLTF STEP holds each key's value for its whole segment
-                        keyframe.easings.assign(accessorIn.count - 1, EaseType::STEP);
-                    }
-
-                    // CUBICSPLINE element layout per keyframe: in-tangent, value, out-tangent
-                    bool foundTrack = false;
-                    if (channel.target_path.compare("translation") == 0) {
-                        foundTrack = true;
-                        scene->addComponent<TranslateTracksComponent>(track);
-                        TranslateTracksComponent& translatetracks = scene->getComponent<TranslateTracksComponent>(track);
-                        for (int c = 0; c < accessorIn.count; c++) {
-                            const float* v = cubic ? &values[(9 * c) + 3] : &values[3 * c];
-                            Vector3 positionAc(v[0], v[1], v[2]);
-
-                            keyframe.times.push_back(timeValues[c]);
-                            translatetracks.values.push_back(positionAc);
-                            if (cubic) {
-                                const float* a = &values[9 * c];
-                                const float* b = &values[(9 * c) + 6];
-                                translatetracks.inTangents.push_back(Vector3(a[0], a[1], a[2]));
-                                translatetracks.outTangents.push_back(Vector3(b[0], b[1], b[2]));
-                            }
-                        }
-                    }
-                    if (channel.target_path.compare("rotation") == 0) {
-                        foundTrack = true;
-                        scene->addComponent<RotateTracksComponent>(track);
-                        RotateTracksComponent& rotatetracks = scene->getComponent<RotateTracksComponent>(track);
-                        for (int c = 0; c < accessorIn.count; c++) {
-                            const float* v = cubic ? &values[(12 * c) + 4] : &values[4 * c];
-                            Quaternion rotationAc(v[3], v[0], v[1], v[2]);
-
-                            keyframe.times.push_back(timeValues[c]);
-                            rotatetracks.values.push_back(rotationAc);
-                            if (cubic) {
-                                const float* a = &values[12 * c];
-                                const float* b = &values[(12 * c) + 8];
-                                rotatetracks.inTangents.push_back(Quaternion(a[3], a[0], a[1], a[2]));
-                                rotatetracks.outTangents.push_back(Quaternion(b[3], b[0], b[1], b[2]));
-                            }
-                        }
-                    }
-                    if (channel.target_path.compare("scale") == 0) {
-                        foundTrack = true;
-                        scene->addComponent<ScaleTracksComponent>(track);
-                        ScaleTracksComponent& scaletracks = scene->getComponent<ScaleTracksComponent>(track);
-                        for (int c = 0; c < accessorIn.count; c++) {
-                            const float* v = cubic ? &values[(9 * c) + 3] : &values[3 * c];
-                            Vector3 scaleAc(v[0], v[1], v[2]);
-
-                            keyframe.times.push_back(timeValues[c]);
-                            scaletracks.values.push_back(scaleAc);
-                            if (cubic) {
-                                const float* a = &values[9 * c];
-                                const float* b = &values[(9 * c) + 6];
-                                scaletracks.inTangents.push_back(Vector3(a[0], a[1], a[2]));
-                                scaletracks.outTangents.push_back(Vector3(b[0], b[1], b[2]));
-                            }
-                        }
-                    }
-                    if (channel.target_path.compare("weights") == 0) {
-                        foundTrack = true;
-                        scene->addComponent<MorphTracksComponent>(track);
-                        MorphTracksComponent& morphtracks = scene->getComponent<MorphTracksComponent>(track);
-                        int morphNum = accessorOut.count / (accessorIn.count * outPerKey);
-                        for (int c = 0; c < accessorIn.count; c++) {
-                            // CUBICSPLINE weights group per keyframe: a1..an, v1..vn, b1..bn
-                            size_t base = (size_t)morphNum * outPerKey * c;
-                            size_t vOff = base + (cubic ? morphNum : 0);
-                            std::vector<float> weightsAc;
-                            for (int m = 0; m < morphNum; m++) {
-                                weightsAc.push_back(values[vOff + m]);
-                            }
-
-                            keyframe.times.push_back(timeValues[c]);
-                            morphtracks.values.push_back(weightsAc);
-                            if (cubic) {
-                                std::vector<float> inTg;
-                                std::vector<float> outTg;
-                                for (int m = 0; m < morphNum; m++) {
-                                    inTg.push_back(values[base + m]);
-                                    outTg.push_back(values[base + (2 * morphNum) + m]);
-                                }
-                                morphtracks.inTangents.push_back(inTg);
-                                morphtracks.outTangents.push_back(outTg);
-                            }
-                        }
-                    }
-
-                    if (foundTrack) {
-                        auto targetNode = model.nodesIdMapping.find(channel.target_node);
-                        if (targetNode != model.nodesIdMapping.end())
-                            actiontrack.target = targetNode->second;
-                        else if (model.bonesIdMapping.count(channel.target_node))
-                            actiontrack.target = model.bonesIdMapping[channel.target_node];
-                        else if (model.meshNodesMapping.count(channel.target_node))
-                            actiontrack.target = model.meshNodesMapping[channel.target_node];
-                        else
-                            actiontrack.target = entity;
-                        animcomp.actions.push_back({0, duration, track});
-                    }else{
-                        scene->destroyEntity(track);
-                    }
-
-                }else{
-                    Log::error("Cannot load animation: %s, channel %i: no float elements", animation.name.c_str(), j);
-                }
+                auto targetNode = model.nodesIdMapping.find(channel.target_node);
+                if (targetNode != model.nodesIdMapping.end())
+                    actiontrack.target = targetNode->second;
+                else if (model.bonesIdMapping.count(channel.target_node))
+                    actiontrack.target = model.bonesIdMapping[channel.target_node];
+                else if (model.meshNodesMapping.count(channel.target_node))
+                    actiontrack.target = model.meshNodesMapping[channel.target_node];
+                else
+                    actiontrack.target = entity;
+                animcomp.actions.push_back({0, duration, track});
+                model.animationTracksMapping[{(int)i, (int)j}] = track;
             }
 
             // need to get here because other actions were created
@@ -5768,6 +5597,17 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
 
         }
     } // !skipEntities
+
+    // tracks saved without keys take them from the file
+    if (skipEntities && !Engine::isAsyncThread()) {
+        for (const auto& [channel, track] : model.animationTracksMapping) {
+            KeyframeTracksComponent* keyframe = scene->isEntityCreated(track) ? scene->findComponent<KeyframeTracksComponent>(track) : nullptr;
+            ModelTrackKeys keys;
+            if (keyframe && keyframe->times.empty() && getModelTrackKeys(model, channel.first, channel.second, keys)) {
+                setModelTrackKeys(track, keys);
+            }
+        }
+    }
 
     if (asyncLoad) {
         ResourceProgress::updateProgress(buildId, 0.95f); // Animations processed
@@ -5838,6 +5678,201 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
     model.loadedMergeStaticMeshes = model.mergeStaticMeshes;
 
     return true;
+}
+
+bool MeshSystem::getModelTrackKeys(const ModelComponent& model, int animationIndex, int channelIndex, ModelTrackKeys& keys){
+    if (!model.gltfModel || !isValidGLTFIndex(animationIndex, model.gltfModel->animations)) {
+        return false;
+    }
+
+    const tinygltf::Animation &animation = model.gltfModel->animations[animationIndex];
+    if (!isValidGLTFIndex(channelIndex, animation.channels)) {
+        return false;
+    }
+
+    const tinygltf::AnimationChannel &channel = animation.channels[channelIndex];
+    if (!isValidGLTFIndex(channel.sampler, animation.samplers)) {
+        Log::warn("Cannot load animation: %s, channel %i has invalid sampler", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    const tinygltf::AnimationSampler &sampler = animation.samplers[channel.sampler];
+
+    if (!isValidGLTFIndex(sampler.input, model.gltfModel->accessors) ||
+        !isValidGLTFIndex(sampler.output, model.gltfModel->accessors)) {
+        Log::warn("Cannot load animation: %s, channel %i has invalid accessor", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    const tinygltf::Accessor& accessorIn = model.gltfModel->accessors[sampler.input];
+    if (!isValidGLTFIndex(accessorIn.bufferView, model.gltfModel->bufferViews)) {
+        Log::warn("Cannot load animation: %s, channel %i has invalid input buffer view", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    const tinygltf::BufferView& bufferViewIn = model.gltfModel->bufferViews[accessorIn.bufferView];
+
+    const tinygltf::Accessor& accessorOut = model.gltfModel->accessors[sampler.output];
+    if (!isValidGLTFIndex(accessorOut.bufferView, model.gltfModel->bufferViews)) {
+        Log::warn("Cannot load animation: %s, channel %i has invalid output buffer view", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    const tinygltf::BufferView& bufferViewOut = model.gltfModel->bufferViews[accessorOut.bufferView];
+
+    if (!isValidGLTFIndex(bufferViewIn.buffer, model.gltfModel->buffers) ||
+        !isValidGLTFIndex(bufferViewOut.buffer, model.gltfModel->buffers) ||
+        accessorIn.count == 0 || accessorOut.count == 0) {
+        Log::warn("Cannot load animation: %s, channel %i has invalid buffer data", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    //TODO: Implement rotation and weights non float
+    if (accessorOut.componentType != TINYGLTF_COMPONENT_TYPE_FLOAT) {
+        Log::error("Cannot load animation: %s, channel %i: no float elements", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    // GLTF sampler interpolation (glTF 2.0): LINEAR (default), STEP or CUBICSPLINE
+    bool step = (sampler.interpolation.compare("STEP") == 0);
+    bool cubic = (sampler.interpolation.compare("CUBICSPLINE") == 0);
+    if (!step && !cubic && !sampler.interpolation.empty() && sampler.interpolation.compare("LINEAR") != 0) {
+        Log::warn("Animation: %s, channel %i has unknown interpolation \"%s\", assuming LINEAR",
+                animation.name.c_str(), channelIndex, sampler.interpolation.c_str());
+    }
+
+    if (cubic && accessorIn.count < 2) {
+        // spec: a CUBICSPLINE sampler must have at least 2 keyframes
+        Log::warn("Cannot load animation: %s, channel %i: CUBICSPLINE needs at least 2 keyframes",
+                animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    // CUBICSPLINE stores an (in-tangent, value, out-tangent) triple per
+    // keyframe, so its output accessor has 3x the input elements; weights
+    // additionally pack one scalar per morph target into each element.
+    size_t outPerKey = cubic ? 3 : 1;
+    if (channel.target_path.compare("weights") == 0) {
+        if (accessorOut.count % (accessorIn.count * outPerKey) != 0) {
+            Log::warn("Cannot load animation: %s, channel %i has %zu output elements, not a multiple of %zu",
+                    animation.name.c_str(), channelIndex, accessorOut.count, accessorIn.count * outPerKey);
+            return false;
+        }
+    } else if (accessorOut.count != accessorIn.count * outPerKey) {
+        Log::warn("Cannot load animation: %s, channel %i has %zu output elements, expected %zu",
+                animation.name.c_str(), channelIndex, accessorOut.count, accessorIn.count * outPerKey);
+        return false;
+    }
+
+    const std::vector<unsigned char>& inputData = model.gltfModel->buffers[bufferViewIn.buffer].data;
+    const std::vector<unsigned char>& outputData = model.gltfModel->buffers[bufferViewOut.buffer].data;
+    if (inputData.empty() || outputData.empty()) {
+        Log::warn("Cannot load animation: %s, channel %i has empty buffer data", animation.name.c_str(), channelIndex);
+        return false;
+    }
+
+    const float *timeValues = (const float *) (inputData.data() + bufferViewIn.byteOffset + accessorIn.byteOffset);
+    const float *values = (const float *) (outputData.data() + bufferViewOut.byteOffset + accessorOut.byteOffset);
+
+    keys.path = channel.target_path;
+    keys.keyframe.times.assign(timeValues, timeValues + accessorIn.count);
+
+    if (step && accessorIn.count > 1) {
+        // GLTF STEP holds each key's value for its whole segment
+        keys.keyframe.easings.assign(accessorIn.count - 1, EaseType::STEP);
+    }
+
+    // CUBICSPLINE element layout per keyframe: in-tangent, value, out-tangent
+    if (keys.path == "translation") {
+        for (int c = 0; c < accessorIn.count; c++) {
+            const float* v = cubic ? &values[(9 * c) + 3] : &values[3 * c];
+            keys.translate.values.push_back(Vector3(v[0], v[1], v[2]));
+            if (cubic) {
+                const float* a = &values[9 * c];
+                const float* b = &values[(9 * c) + 6];
+                keys.translate.inTangents.push_back(Vector3(a[0], a[1], a[2]));
+                keys.translate.outTangents.push_back(Vector3(b[0], b[1], b[2]));
+            }
+        }
+    } else if (keys.path == "rotation") {
+        for (int c = 0; c < accessorIn.count; c++) {
+            const float* v = cubic ? &values[(12 * c) + 4] : &values[4 * c];
+            keys.rotate.values.push_back(Quaternion(v[3], v[0], v[1], v[2]));
+            if (cubic) {
+                const float* a = &values[12 * c];
+                const float* b = &values[(12 * c) + 8];
+                keys.rotate.inTangents.push_back(Quaternion(a[3], a[0], a[1], a[2]));
+                keys.rotate.outTangents.push_back(Quaternion(b[3], b[0], b[1], b[2]));
+            }
+        }
+    } else if (keys.path == "scale") {
+        for (int c = 0; c < accessorIn.count; c++) {
+            const float* v = cubic ? &values[(9 * c) + 3] : &values[3 * c];
+            keys.scale.values.push_back(Vector3(v[0], v[1], v[2]));
+            if (cubic) {
+                const float* a = &values[9 * c];
+                const float* b = &values[(9 * c) + 6];
+                keys.scale.inTangents.push_back(Vector3(a[0], a[1], a[2]));
+                keys.scale.outTangents.push_back(Vector3(b[0], b[1], b[2]));
+            }
+        }
+    } else if (keys.path == "weights") {
+        int morphNum = accessorOut.count / (accessorIn.count * outPerKey);
+        for (int c = 0; c < accessorIn.count; c++) {
+            // CUBICSPLINE weights group per keyframe: a1..an, v1..vn, b1..bn
+            size_t base = (size_t)morphNum * outPerKey * c;
+            size_t vOff = base + (cubic ? morphNum : 0);
+            std::vector<float> weightsAc;
+            for (int m = 0; m < morphNum; m++) {
+                weightsAc.push_back(values[vOff + m]);
+            }
+
+            keys.morph.values.push_back(weightsAc);
+            if (cubic) {
+                std::vector<float> inTg;
+                std::vector<float> outTg;
+                for (int m = 0; m < morphNum; m++) {
+                    inTg.push_back(values[base + m]);
+                    outTg.push_back(values[base + (2 * morphNum) + m]);
+                }
+                keys.morph.inTangents.push_back(inTg);
+                keys.morph.outTangents.push_back(outTg);
+            }
+        }
+    } else {
+        return false;
+    }
+
+    return true;
+}
+
+template<typename T>
+static void setTrackComponent(Scene* scene, Entity track, T& tracks){
+    if (T* existing = scene->findComponent<T>(track)) {
+        *existing = std::move(tracks);
+    } else {
+        scene->addComponent<T>(track, std::move(tracks));
+    }
+}
+
+// the track keeps its own settings, like loop and relative
+void MeshSystem::setModelTrackKeys(Entity track, ModelTrackKeys& keys){
+    if (!scene->findComponent<KeyframeTracksComponent>(track)) {
+        scene->addComponent<KeyframeTracksComponent>(track);
+    }
+    KeyframeTracksComponent& keyframe = scene->getComponent<KeyframeTracksComponent>(track);
+    keyframe.times = std::move(keys.keyframe.times);
+    keyframe.easings = std::move(keys.keyframe.easings);
+
+    if (keys.path == "translation") {
+        setTrackComponent(scene, track, keys.translate);
+    } else if (keys.path == "rotation") {
+        setTrackComponent(scene, track, keys.rotate);
+    } else if (keys.path == "scale") {
+        setTrackComponent(scene, track, keys.scale);
+    } else if (keys.path == "weights") {
+        setTrackComponent(scene, track, keys.morph);
+    }
 }
 
 // An OBJ index is -1 when the face omits that attribute, and a corrupt file can point past the array
@@ -6234,6 +6269,7 @@ void MeshSystem::clearAnimationMapping(ModelComponent& model){
             scene->destroyEntity(model.animations[i]);
     }
     model.animations.clear();
+    model.animationTracksMapping.clear();
 }
 
 void MeshSystem::clearMeshNodeMapping(ModelComponent& model){

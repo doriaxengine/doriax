@@ -2617,6 +2617,14 @@ void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<En
     }
 }
 
+// model tracks a scene file is saving without keys
+thread_local const EntityRegistry* savingRegistry = nullptr;
+thread_local const std::unordered_set<Entity>* savingModelTracks = nullptr;
+
+const std::unordered_set<Entity>* getSavingModelTracks(const EntityRegistry* registry) {
+    return registry == savingRegistry ? savingModelTracks : nullptr;
+}
+
 } // namespace
 
 YAML::Node editor::Stream::encodeSceneProject(const Project* project, const SceneProject* sceneProject) {
@@ -2704,6 +2712,18 @@ YAML::Node editor::Stream::encodeSceneProject(const Project* project, const Scen
         }
         root["imports"] = importsNode;
     }
+
+    const std::unordered_set<Entity> modelTracks = getModelBackedTracks(sceneProject->scene);
+    struct ModelTracksScope {
+        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks) {
+            savingRegistry = registry;
+            savingModelTracks = tracks;
+        }
+        ~ModelTracksScope() {
+            savingRegistry = nullptr;
+            savingModelTracks = nullptr;
+        }
+    } modelTracksScope(sceneProject->scene, &modelTracks);
 
     YAML::Node entitiesNode;
     for (Entity entity : sceneProject->entities) {
@@ -3895,6 +3915,51 @@ bool editor::Stream::isModelBackedMesh(const Entity entity, const EntityRegistry
     return false;
 }
 
+template<typename T>
+static bool hasTrackValues(const EntityRegistry* registry, Entity track, const T& keys, bool used) {
+    if (!registry->getSignature(track).test(registry->getComponentId<T>())) {
+        return !used;
+    }
+    const T& tracks = registry->getComponent<T>(track);
+
+    return used && tracks.values == keys.values && tracks.inTangents == keys.inTangents && tracks.outTangents == keys.outTangents;
+}
+
+std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegistry* registry) {
+    std::unordered_set<Entity> modelTracks;
+
+    auto models = registry->getComponentArray<ModelComponent>();
+    for (size_t i = 0; i < models->size(); i++) {
+        const ModelComponent& model = models->getComponentFromIndex(i);
+        for (const auto& [channel, track] : model.animationTracksMapping) {
+            if (!registry->isEntityCreated(track) || !registry->getSignature(track).test(registry->getComponentId<KeyframeTracksComponent>())) {
+                continue;
+            }
+            const KeyframeTracksComponent& keyframe = registry->getComponent<KeyframeTracksComponent>(track);
+
+            // not loaded yet, its keys come later
+            if (!model.gltfModel) {
+                if (keyframe.times.empty()) {
+                    modelTracks.insert(track);
+                }
+                continue;
+            }
+
+            ModelTrackKeys keys;
+            if (MeshSystem::getModelTrackKeys(model, channel.first, channel.second, keys) &&
+                    keyframe.times == keys.keyframe.times && keyframe.easings == keys.keyframe.easings &&
+                    hasTrackValues(registry, track, keys.translate, keys.path == "translation") &&
+                    hasTrackValues(registry, track, keys.rotate, keys.path == "rotation") &&
+                    hasTrackValues(registry, track, keys.scale, keys.path == "scale") &&
+                    hasTrackValues(registry, track, keys.morph, keys.path == "weights")) {
+                modelTracks.insert(track);
+            }
+        }
+    }
+
+    return modelTracks;
+}
+
 bool editor::Stream::isGeneratedMesh(const EntityRegistry* registry, Signature signature) {
     return signature.test(registry->getComponentId<SpriteComponent>()) ||
            signature.test(registry->getComponentId<TilemapComponent>()) ||
@@ -3910,6 +3975,16 @@ bool editor::Stream::isGeneratedUI(const EntityRegistry* registry, Signature sig
 
 YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityRegistry* registry, Signature signature) {
     YAML::Node compNode;
+
+    // the model's file gives these tracks their keys on load
+    const std::unordered_set<Entity>* modelTracks = getSavingModelTracks(registry);
+    const bool modelTrack = modelTracks && modelTracks->count(entity);
+    if (modelTrack) {
+        signature.reset(registry->getComponentId<TranslateTracksComponent>());
+        signature.reset(registry->getComponentId<RotateTracksComponent>());
+        signature.reset(registry->getComponentId<ScaleTracksComponent>());
+        signature.reset(registry->getComponentId<MorphTracksComponent>());
+    }
 
     if (signature.test(registry->getComponentId<Transform>())) {
         Transform transform = registry->getComponent<Transform>(entity);
@@ -4057,7 +4132,7 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
 
     if (signature.test(registry->getComponentId<ModelComponent>())) {
         ModelComponent model = registry->getComponent<ModelComponent>(entity);
-        compNode[Catalog::getComponentName(ComponentType::ModelComponent, true)] = encodeModelComponent(model);
+        compNode[Catalog::getComponentName(ComponentType::ModelComponent, true)] = encodeModelComponent(model, false, modelTracks);
     }
 
     if (signature.test(registry->getComponentId<Body2DComponent>())) {
@@ -4143,6 +4218,10 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
 
     if (signature.test(registry->getComponentId<KeyframeTracksComponent>())) {
         KeyframeTracksComponent tracks = registry->getComponent<KeyframeTracksComponent>(entity);
+        if (modelTrack) {
+            tracks.times.clear();
+            tracks.easings.clear();
+        }
         compNode[Catalog::getComponentName(ComponentType::KeyframeTracksComponent, true)] = encodeKeyframeTracksComponent(tracks);
     }
 
@@ -5998,7 +6077,7 @@ TerrainComponent editor::Stream::decodeTerrainComponent(const YAML::Node& node, 
     return terrain;
 }
 
-YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, bool onlyFile) {
+YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, bool onlyFile, const std::unordered_set<Entity>* tracks) {
     YAML::Node node;
 
     if (!model.filename.empty()) {
@@ -6068,6 +6147,21 @@ YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, boo
         node["nodesIdMapping"] = nodesNode;
     }
 
+    YAML::Node tracksNode;
+    for (const auto& [channel, track] : model.animationTracksMapping) {
+        if (tracks && !tracks->count(track)) {
+            continue;
+        }
+        YAML::Node n;
+        n["animation"] = channel.first;
+        n["channel"] = channel.second;
+        n["entity"] = static_cast<uint32_t>(track);
+        tracksNode.push_back(n);
+    }
+    if (tracksNode.size() > 0) {
+        node["animationTracksMapping"] = tracksNode;
+    }
+
     return node;
 }
 
@@ -6118,12 +6212,22 @@ ModelComponent editor::Stream::decodeModelComponent(const YAML::Node& node, cons
     }
 
     // A node written with onlyFile has no skeleton, and keeps the nodes already loaded
-    if (node["skeleton"]) model.nodesIdMapping.clear();
+    if (node["skeleton"]) {
+        model.nodesIdMapping.clear();
+        model.animationTracksMapping.clear();
+    }
     if (node["nodesIdMapping"]) {
         for (const auto& mappedNode : node["nodesIdMapping"]) {
             int nodeIdx = mappedNode["node"].as<int>();
             Entity nodeEntity = static_cast<Entity>(mappedNode["entity"].as<uint32_t>());
             model.nodesIdMapping[nodeIdx] = nodeEntity;
+        }
+    }
+
+    if (node["animationTracksMapping"]) {
+        for (const auto& trackNode : node["animationTracksMapping"]) {
+            std::pair<int, int> channel(trackNode["animation"].as<int>(), trackNode["channel"].as<int>());
+            model.animationTracksMapping[channel] = static_cast<Entity>(trackNode["entity"].as<uint32_t>());
         }
     }
 

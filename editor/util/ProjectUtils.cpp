@@ -670,6 +670,7 @@ void editor::ProjectUtils::clearModelNodes(ModelComponent& model){
     model.bonesIdMapping.clear();
     model.bonesNameMapping.clear();
     model.animations.clear();
+    model.animationTracksMapping.clear();
     model.meshNodesMapping.clear();
     model.nodesIdMapping.clear();
     model.skinBindings.clear();

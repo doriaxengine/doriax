@@ -184,6 +184,9 @@ namespace doriax::editor {
         // geometry in place would be undone on the next load.
         static bool isModelBackedMesh(const Entity entity, const EntityRegistry* registry, Signature signature);
 
+        // Model tracks keyed as in their file, saved without keys
+        static std::unordered_set<Entity> getModelBackedTracks(const EntityRegistry* registry);
+
         // True when a mesh's geometry is rebuilt on load from its sprite, tilemap, mesh
         // polygon or terrain component, so its buffers and bones must not be serialized.
         static bool isGeneratedMesh(const EntityRegistry* registry, Signature signature);
@@ -349,7 +352,8 @@ namespace doriax::editor {
         static YAML::Node encodeWaterExclusionComponent(const WaterExclusionComponent& exclusion);
         static WaterExclusionComponent decodeWaterExclusionComponent(const YAML::Node& node, const WaterExclusionComponent* oldExclusion = nullptr);
 
-        static YAML::Node encodeModelComponent(const ModelComponent& model, bool onlyFile = false);
+        // With tracks, the track mapping keeps only those
+        static YAML::Node encodeModelComponent(const ModelComponent& model, bool onlyFile = false, const std::unordered_set<Entity>* tracks = nullptr);
         static ModelComponent decodeModelComponent(const YAML::Node& node, const ModelComponent* oldModel = nullptr);
 
         static YAML::Node encodeBundleComponent(const BundleComponent& bundle);

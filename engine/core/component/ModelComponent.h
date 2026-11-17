@@ -47,6 +47,8 @@ namespace doriax{
         std::map<std::string, int> morphNameMapping;
 
         std::vector<Entity> animations;
+        // Tracks by GLTF animation and channel, keyed on load when empty
+        std::map<std::pair<int, int>, Entity> animationTracksMapping;
 
         std::string filename;
 
