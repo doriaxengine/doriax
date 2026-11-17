@@ -76,7 +76,6 @@ const char* scriptEditorToString(ScriptEditor editor) {
         case ScriptEditor::VSCODE: return "vscode";
         case ScriptEditor::VISUAL_STUDIO: return "visual_studio";
         case ScriptEditor::CLION: return "clion";
-        case ScriptEditor::RIDER: return "rider";
         case ScriptEditor::CUSTOM: return "custom";
         default: return "builtin";
     }
@@ -86,7 +85,6 @@ ScriptEditor scriptEditorFromString(const std::string& value) {
     if (value == "vscode") return ScriptEditor::VSCODE;
     if (value == "visual_studio") return ScriptEditor::VISUAL_STUDIO;
     if (value == "clion") return ScriptEditor::CLION;
-    if (value == "rider") return ScriptEditor::RIDER;
     if (value == "custom") return ScriptEditor::CUSTOM;
     return ScriptEditor::BUILTIN;
 }

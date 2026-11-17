@@ -41,7 +41,6 @@ enum class ScriptEditor {
     VSCODE,
     VISUAL_STUDIO,
     CLION,
-    RIDER,
     CUSTOM
 };
 

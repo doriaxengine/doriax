@@ -60,12 +60,12 @@ namespace {
         }
     }
 
-    std::string findJetBrains(const std::string& command, const std::string& app) {
+    std::string findCLion() {
     #ifdef _WIN32
         // the launcher of the installer, then the script of Toolbox
-        std::string found = editor::ShellEnv::findExecutable(command + "64.exe");
+        std::string found = editor::ShellEnv::findExecutable("clion64.exe");
         if (found.empty()) {
-            found = editor::ShellEnv::findExecutable(command + ".cmd");
+            found = editor::ShellEnv::findExecutable("clion.cmd");
         }
         if (found.empty()) {
             // the newest install, when PATH has none
@@ -75,8 +75,8 @@ namespace {
             std::error_code ec;
             for (const fs::path& root : {fs::path(programFiles ? programFiles : "") / "JetBrains", fs::path(localAppData ? localAppData : "") / "Programs"}) {
                 for (const fs::directory_entry& entry : fs::directory_iterator(root, ec)) {
-                    if (entry.path().filename().string().find(app) != std::string::npos) {
-                        installs.push_back(entry.path() / "bin" / (command + "64.exe"));
+                    if (entry.path().filename().string().find("CLion") != std::string::npos) {
+                        installs.push_back(entry.path() / "bin" / "clion64.exe");
                     }
                 }
             }
@@ -85,16 +85,14 @@ namespace {
         }
         return found;
     #else
-        std::string found = editor::ShellEnv::findExecutable(command);
+        std::string found = editor::ShellEnv::findExecutable("clion");
         if (found.empty()) {
-            found = editor::ShellEnv::findExecutable(command + ".sh");
+            found = editor::ShellEnv::findExecutable("clion.sh");
         }
     #ifdef __APPLE__
         if (found.empty()) {
-            found = firstExisting({"/Applications/" + app + ".app/Contents/MacOS/" + command});
+            found = firstExisting({"/Applications/CLion.app/Contents/MacOS/clion"});
         }
-    #else
-        (void)app;
     #endif
         return found;
     #endif
@@ -137,9 +135,7 @@ namespace {
                 return "";
             }
             case editor::ScriptEditor::CLION:
-                return findJetBrains("clion", "CLion");
-            case editor::ScriptEditor::RIDER:
-                return findJetBrains("rider", "Rider");
+                return findCLion();
             default:
                 return "";
         }
@@ -242,7 +238,6 @@ const char* editor::ExternalEditor::getName(ScriptEditor scriptEditor) {
         case ScriptEditor::VSCODE: return "VS Code";
         case ScriptEditor::VISUAL_STUDIO: return "Visual Studio";
         case ScriptEditor::CLION: return "CLion";
-        case ScriptEditor::RIDER: return "Rider";
         case ScriptEditor::CUSTOM: return "Custom Command";
         default: return "Built-in Editor";
     }
@@ -256,7 +251,6 @@ std::vector<editor::ScriptEditor> editor::ExternalEditor::getChoices() {
         ScriptEditor::VISUAL_STUDIO,
     #endif
         ScriptEditor::CLION,
-        ScriptEditor::RIDER,
         ScriptEditor::CUSTOM
     };
 }
