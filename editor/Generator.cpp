@@ -1144,20 +1144,32 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
 #ifdef _WIN32
     task["command"] = "cmd.exe";
     task["args"] = OrderedJson::array({"/d", "/c", buildCommand});
-    task["problemMatcher"] = "$msCompile";
 #else
     task["command"] = "/bin/sh";
     task["args"] = OrderedJson::array({"-c", buildCommand});
+#endif
+#if defined(_WIN32) && !defined(__MINGW32__)
+    task["problemMatcher"] = "$msCompile";
+#else
     task["problemMatcher"] = "$gcc";
 #endif
     task["options"] = {{"cwd", "${workspaceFolder}"}};
     task["group"] = "build";
     writeVsCodeFile(vscodePath / "tasks.json", {{"version", "2.0.0"}, {"tasks", OrderedJson::array({task})}});
 
-    const auto debugger = [](const std::string& name, const std::string& request) {
+#ifdef __MINGW32__
+    // the gdb of the MinGW toolchain, VS Code finds none itself
+    std::error_code ec;
+    fs::path gdb = fs::path(build.cxxCompiler).parent_path() / "gdb.exe";
+    if (build.cxxCompiler.empty() || !fs::is_regular_file(gdb, ec)) {
+        gdb = editor::ShellEnv::findExecutable("gdb");
+    }
+    const std::string gdbPath = editor::FileUtils::pathToGenericUtf8(gdb);
+#endif
+    const auto debugger = [&](const std::string& name, const std::string& request) {
         OrderedJson config;
         config["name"] = name;
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(__MINGW32__)
         config["type"] = "cppvsdbg";
 #elif defined(__APPLE__)
         config["type"] = "cppdbg";
@@ -1166,12 +1178,17 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
         config["type"] = "cppdbg";
         config["MIMode"] = "gdb";
 #endif
+#ifdef __MINGW32__
+        if (!gdbPath.empty()) {
+            config["miDebuggerPath"] = gdbPath;
+        }
+#endif
         config["request"] = request;
         return config;
     };
     const std::string editorPath = editor::FileUtils::pathToGenericUtf8(editor::FileUtils::getExecutablePath());
     OrderedJson attach = debugger("Attach to Doriax Editor", "attach");
-#ifndef _WIN32
+#if !defined(_WIN32) || defined(__MINGW32__)
     attach["program"] = editorPath;
 #endif
     attach["processId"] = "${command:pickProcess}";
@@ -1259,8 +1276,7 @@ static void writeLuaServerFiles(const fs::path& projectPath, const std::string& 
 
 // IDE files, kept while they hold the marker
 static void writeIdeFiles(const fs::path& projectPath, const fs::path& relativeInternalPath, const std::string& libName,
-                          const std::vector<std::string>& includeDirs, int cxxStandard, const fs::path& luaPath) {
-    const editor::LocalBuildSettings build = editor::AppSettings::getBuildSettings(projectPath / "project.yaml");
+                          const std::vector<std::string>& includeDirs, int cxxStandard, const fs::path& luaPath, const editor::LocalBuildSettings& build) {
     const std::string internalDir = relativeInternalPath.generic_string();
     writeVsCodeFiles(projectPath, internalDir, libName, includeDirs, cxxStandard, build);
     writeCMakePresets(projectPath, internalDir, build);
@@ -1632,7 +1648,20 @@ void editor::Generator::writeSourceFiles(const fs::path& projectPath, const fs::
     FileUtils::writeIfChanged(projectInternalPath / "LocalPaths.cmake", localPathsContent);
     FileUtils::writeIfChanged(sourceFile, sourceContent);
 
-    writeIdeFiles(projectPath, relativeInternalPath, libName, includeDirs, cxxStandard, luaPath);
+    LocalBuildSettings build = AppSettings::getBuildSettings(projectPath / "project.yaml");
+#ifdef _WIN32
+    // Default as Play resolves it, to a kit of the editor's ABI
+    if (build.cCompiler.empty() && build.cxxCompiler.empty() && build.generator.empty()) {
+        // probing runs processes, so once
+        static const std::vector<CMakeKit> kits = detectAvailableKits();
+        if (const CMakeKit* kit = chooseDefaultKit(kits)) {
+            build.cCompiler = kit->cCompiler;
+            build.cxxCompiler = kit->cxxCompiler;
+            build.generator = kit->generator;
+        }
+    }
+#endif
+    writeIdeFiles(projectPath, relativeInternalPath, libName, includeDirs, cxxStandard, luaPath, build);
 
     fs::path agentsFile = projectPath / "AGENTS.md";
     std::string agentsContent;
