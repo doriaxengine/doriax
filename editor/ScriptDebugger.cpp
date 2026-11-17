@@ -62,16 +62,18 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
     state = State::BUILDING;
     runner.setInputPipe(true);
     runner.resetCancel();
-    worker = std::thread([this, command, workingDir, build = std::move(build)]() {
-        if (build() && !runner.isCancelRequested()) {
+    worker = std::thread([this, command, workingDir, build = std::move(build), started = ++session]() {
+        if (build() && !isStopRequested()) {
             state = State::RUNNING;
             Out::success("Scene started with the debugger");
             runner.run(command, workingDir, [this](const std::string& line) { onLine(line); });
             Out::info("The debugged scene ended");
         }
-        getEditorHost().enqueueMainThreadTask([this]() {
-            clearStop();
-            state = State::IDLE;
+        getEditorHost().enqueueMainThreadTask([this, started]() {
+            if (started == session) {
+                clearStop();
+                state = State::IDLE;
+            }
         });
     });
 }
@@ -82,15 +84,23 @@ void editor::ScriptDebugger::stop() {
     }
 }
 
+bool editor::ScriptDebugger::isStopRequested() const {
+    return runner.isCancelRequested();
+}
+
 void editor::ScriptDebugger::waitForEnd() {
     stop();
     if (worker.joinable()) {
         worker.join();
     }
+    // the task of the thread would only do it on a later frame
+    session++;
+    clearStop();
+    state = State::IDLE;
 }
 
 void editor::ScriptDebugger::reset() {
-    stop();
+    waitForEnd();
     breakpoints.clear();
 }
 

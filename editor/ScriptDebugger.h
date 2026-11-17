@@ -42,9 +42,11 @@ namespace doriax::editor {
         // build runs first, on the thread that then waits for the process
         void start(const std::string& command, const fs::path& workingDir, std::function<bool()> build);
         void stop();
-        // stops, and returns once the process is gone
+        // true from stop() on, for a build that has to end as well
+        bool isStopRequested() const;
+        // stops, and returns once the build and the process are gone
         void waitForEnd();
-        // for another project: stops, and forgets the breakpoints
+        // for another project: ends as above, and forgets the breakpoints
         void reset();
         State getState() const;
         bool isActive() const;
@@ -82,6 +84,8 @@ namespace doriax::editor {
         CommandRunner runner;
         std::thread worker;
         std::atomic<State> state{State::IDLE};
+        // of the last start, so the end of an older one changes nothing
+        unsigned int session = 0;
 
         std::map<std::string, std::set<int>> breakpoints;
 

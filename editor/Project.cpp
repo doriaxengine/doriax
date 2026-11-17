@@ -5213,6 +5213,8 @@ void editor::Project::resetEngineConfigs(bool executeViewChanged) {
 }
 
 void editor::Project::resetConfigs() {
+    // its build reads the scenes dropped below
+    stopDebug();
     debugger.reset();
 
     // Clear existing scenes
@@ -11213,6 +11215,10 @@ void editor::Project::startDebug() {
     debugger.start(command, getProjectPath(), [this, buildPath, kit, build]() {
         buildStandaloneShaderCache();
         generator.build(getProjectPath(), getProjectInternalPath(), buildPath, kit.cCompiler, kit.cxxCompiler, kit.generator, build.buildJobs, build.debugInfo, false);
+        // a stop that came before the build began cancelled nothing
+        if (debugger.isStopRequested()) {
+            generator.cancelBuild().wait();
+        }
         generator.waitForBuildToComplete();
         return generator.didLastBuildSucceed();
     });
