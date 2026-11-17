@@ -386,11 +386,13 @@ set(GENERATE_API_SCRIPT "${CMAKE_SOURCE_DIR}/generate_api_suggestions.py")
 set(ENGINE_OVERLAY_DIR "${CMAKE_BINARY_DIR}/engine-overlay")
 # Reference descriptions for IDE hovers, from a doriax-docs checkout
 set(DORIAX_DOCS_DIR "${CMAKE_SOURCE_DIR}/../doriax-docs" CACHE PATH "doriax-docs checkout, for API descriptions in IDE hovers")
-set(API_DOCS_SCRIPT "${DORIAX_DOCS_DIR}/scripts/api-docs.py")
+# Relative paths start at the source dir, not the build dir
+get_filename_component(DORIAX_DOCS_DIR_ABS "${DORIAX_DOCS_DIR}" ABSOLUTE BASE_DIR "${CMAKE_SOURCE_DIR}")
+set(API_DOCS_SCRIPT "${DORIAX_DOCS_DIR_ABS}/scripts/api-docs.py")
 set(API_DOCS_FILE "")
 if(EXISTS "${API_DOCS_SCRIPT}")
     set(API_DOCS_FILE "${CMAKE_BINARY_DIR}/api-docs.json")
-    file(GLOB API_DOCS_PAGES CONFIGURE_DEPENDS "${DORIAX_DOCS_DIR}/docs/reference/classes/*.md")
+    file(GLOB API_DOCS_PAGES CONFIGURE_DEPENDS "${DORIAX_DOCS_DIR_ABS}/docs/reference/classes/*.md")
     add_custom_command(
         OUTPUT ${API_DOCS_FILE}
         COMMAND ${Python3_EXECUTABLE} ${API_DOCS_SCRIPT} ${API_DOCS_FILE}
