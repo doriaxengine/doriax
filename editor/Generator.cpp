@@ -1967,10 +1967,23 @@ void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& sce
     for (const auto& sceneData : scenes) {
         sceneSources.insert(Factory::sceneToFileName(sceneData.id, sceneData.name) + ".cpp");
     }
+    // by identity too: a folder that ignores case keeps the old spelling
+    const auto isSceneSource = [&](const fs::path& file) {
+        if (sceneSources.count(file.filename().string())) {
+            return true;
+        }
+        std::error_code ec;
+        for (const std::string& source : sceneSources) {
+            if (fs::equivalent(file, generatedPath / source, ec)) {
+                return true;
+            }
+        }
+        return false;
+    };
     std::vector<fs::path> staleSources;
     for (const auto& entry : fs::directory_iterator(generatedPath, removeError)) {
         const std::string filename = entry.path().filename().string();
-        if (filename.rfind("scene_", 0) == 0 && entry.path().extension() == ".cpp" && !sceneSources.count(filename)) {
+        if (filename.rfind("scene_", 0) == 0 && entry.path().extension() == ".cpp" && !isSceneSource(entry.path())) {
             staleSources.push_back(entry.path());
         }
     }
