@@ -4823,7 +4823,10 @@ void CustomTextEditor::Render(const char* title, const ImVec2& size, bool border
             bool overVScrollbar = (mPos.x >= right - scrollbarSize && mPos.x <= right);
             bool overHScrollbar = (mPos.y >= bottom - scrollbarSize && mPos.y <= bottom);
 
-            ImGui::SetMouseCursor((overVScrollbar || overHScrollbar) ? ImGuiMouseCursor_Arrow : ImGuiMouseCursor_TextInput);
+            // a click in the breakpoint column places no caret
+            bool overGutter = breakpointsEnabled && gutterLineAt(mPos, origin) >= 0;
+
+            ImGui::SetMouseCursor((overVScrollbar || overHScrollbar || overGutter) ? ImGuiMouseCursor_Arrow : ImGuiMouseCursor_TextInput);
         }
 
         updateDiffPeek(origin);
