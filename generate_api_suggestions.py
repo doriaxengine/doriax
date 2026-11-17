@@ -1081,7 +1081,20 @@ LUA_KEYWORDS = {
     'and', 'break', 'do', 'else', 'elseif', 'end', 'false', 'for', 'function', 'global', 'goto', 'if',
     'in', 'local', 'nil', 'not', 'or', 'repeat', 'return', 'then', 'true', 'until', 'while',
 }
-RE_CALLBACK = re.compile(r'^(?:FunctionSubscribe|function)\s*<\s*(.*?)\s*\((.*)\)\s*>$')
+RE_CALLBACK = re.compile(r'^(?:FunctionSubscribe|function)\s*<(.*)>$')
+# Lua classes of the events, which the class parser leaves out
+RE_EVENT_CLASS = re.compile(r'\.beginClass\s*<\s*FunctionSubscribe\s*<(.*?)>\s*>\s*\(\s*"([^"]+)"\s*\)')
+
+
+def _callback_signature(signature, names):
+    """LuaLS (name, type) parameters and return type of a C++ signature like void(int, float)."""
+    m = re.match(r'^(.*?)\s*\((.*)\)$', signature.strip())
+    params = [p for p in _split_types_raw(m.group(2)) if p.strip() not in ('', 'void')]
+    return [(f'a{i + 1}', _lua_type(p, names) or 'any') for i, p in enumerate(params)], _lua_type(m.group(1), names)
+
+
+def _fun_type(params, returns):
+    return 'fun(' + ', '.join(f'{p}: {t}' for p, t in params) + ')' + (f': {returns}' if returns else '')
 
 
 def _lua_type(cpp, names):
@@ -1101,11 +1114,12 @@ def _lua_type(cpp, names):
         return 'number'
     if t in LUA_INTEGERS:
         return 'integer'
+    # an event Lua has a class of
+    if t.replace(' ', '') in names:
+        return names[t.replace(' ', '')]
     m = RE_CALLBACK.match(t)
     if m:
-        params = [_lua_type(p, names) or 'any' for p in _split_types_raw(m.group(2)) if p.strip() not in ('', 'void')]
-        returns = _lua_type(m.group(1), names)
-        return 'fun(' + ', '.join(f'a{i + 1}: {p}' for i, p in enumerate(params)) + ')' + (f': {returns}' if returns else '')
+        return _fun_type(*_callback_signature(m.group(1), names))
     m = re.match(r'^(?:vector|array|list|deque|set|unordered_set)\s*<(.*)>$', t)
     if m:
         return (_lua_type(_split_types_raw(m.group(1))[0], names) or 'any') + '[]'
@@ -1208,7 +1222,30 @@ def _lua_enum(name, members, docs):
     return lines + ['}', '']
 
 
-def _lua_class(name, cls, members, doc, names, cpp_methods, types):
+def _lua_event(name, signature, names):
+    """An engine event: called as a function, and add subscribes one more."""
+    params, returns = _callback_signature(signature, names)
+    lines = [
+        f'---@class {name}',
+        f'---@overload {_fun_type(params, returns)}',
+        f'{name} = {{}}',
+        '',
+        '---Calls func each time the event is called, under a tag',
+        '---@param tag string',
+        f'---@param func {_fun_type(params, returns)}',
+        '---@return boolean',
+        f'function {name}:add(tag, func) end',
+        '',
+        '---Calls every function added',
+    ]
+    lines += [f'---@param {p} {t}' for p, t in params]
+    if returns:
+        lines.append(f'---@return {returns}')
+    lines.append(f'function {name}:call({", ".join(p for p, _ in params)}) end')
+    return lines + ['']
+
+
+def _lua_class(name, cls, members, doc, names, cpp_methods, callbacks, types):
     """A class with its operators, fields and constructors, and its table."""
     member_docs = doc.get('members', {})
     lines = _lua_comment(doc.get('description', ''))
@@ -1234,6 +1271,9 @@ def _lua_class(name, cls, members, doc, names, cpp_methods, types):
         if s.kind not in ('Property', 'Constant', 'Event') or s.name in LUA_KEYWORDS:
             continue
         lua_type = _lua_type(_member_type(s.accessor, cpp_methods), names) or 'any'
+        # an event also takes a function, as btn.onPress = function() end
+        if lua_type in callbacks and 'lua_State' in s.mutator:
+            lua_type += '|' + callbacks[lua_type]
         types.append(lua_type)
         notes = member_docs.get(s.name, '')
         if s.readonly or s.kind == 'Constant':
@@ -1284,8 +1324,8 @@ def _lua_methods(name, members, doc, names, cpp_methods, types):
     return lines
 
 
-def generate_lua_stubs(symbols, cpp_methods, docs, output_path):
-    """Write a lua-language-server definition file of the bound API."""
+def generate_lua_stubs(symbols, events, cpp_methods, docs, output_path):
+    """Write a lua-language-server definition file of the bound API and its events."""
     symbols = _unique_symbols(symbols)
     classes = {s.name: s for s in symbols if s.kind == 'Class'}
     enums = {}
@@ -1298,14 +1338,18 @@ def generate_lua_stubs(symbols, cpp_methods, docs, output_path):
     names = {name: name for name in classes}
     names.update({cls.cpp_class: name for name, cls in classes.items() if cls.cpp_class})
     names.update({name: name for name in enums})
+    names.update({f'FunctionSubscribe<{signature}>': name for signature, name in events.items()})
+    callbacks = {name: _fun_type(*_callback_signature(signature, names)) for signature, name in events.items()}
 
     types = []  # every type written, to tell how many are known
     lines = list(LUA_PRELUDE)
     for name in sorted(enums):
         lines += _lua_enum(name, enums[name], docs)
+    for signature, name in sorted(events.items(), key=lambda item: item[1]):
+        lines += _lua_event(name, signature, names)
     for name in sorted(classes):
         doc = docs.get(name, {})
-        lines += _lua_class(name, classes[name], members.get(name, []), doc, names, cpp_methods, types)
+        lines += _lua_class(name, classes[name], members.get(name, []), doc, names, cpp_methods, callbacks, types)
         lines += _lua_methods(name, members.get(name, []), doc, names, cpp_methods, types)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -1404,6 +1448,16 @@ def annotate_headers(symbols, cpp_methods, docs, engine_core_dir, overlay_dir):
             with open(path, 'w', encoding='utf-8', newline='') as f:
                 f.write(annotated)
     print(f'[generate_api_suggestions] Documented {len(headers)} engine headers')
+
+
+def parse_event_classes(binding_files):
+    """Lua class of each FunctionSubscribe signature, keyed by the signature without spaces."""
+    events = {}
+    for filepath in binding_files:
+        with open(filepath, encoding='utf-8') as f:
+            for signature, name in RE_EVENT_CLASS.findall(f.read()):
+                events.setdefault(signature.replace(' ', ''), name)
+    return events
 
 
 def main():
@@ -1519,7 +1573,8 @@ def main():
             with open(docs_path, encoding='utf-8') as f:
                 docs = json.load(f)
         shutil.rmtree(overlay_dir, ignore_errors=True)
-        generate_lua_stubs(all_symbols, cpp_methods, docs, os.path.join(overlay_dir, 'lua-api', 'doriax.lua'))
+        generate_lua_stubs(all_symbols, parse_event_classes(binding_files), cpp_methods, docs,
+                           os.path.join(overlay_dir, 'lua-api', 'doriax.lua'))
         annotate_headers(all_symbols, cpp_methods, docs, engine_core_dir, overlay_dir)
 
 
