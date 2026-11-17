@@ -797,6 +797,8 @@ namespace doriax::editor{
         void markGeneratedSourcesDirty();
         // also before the first save, for an IDE opening the project
         bool writeGeneratedSources();
+        // a debugger may attach unless Debug Info is None
+        void updateDebuggerAccess();
 
         //=== Linked Material part ===
 

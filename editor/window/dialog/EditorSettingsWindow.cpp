@@ -958,6 +958,7 @@ bool EditorSettingsWindow::applySettings() {
             const auto file = m_project->getProjectPath() / "project.yaml";
             build.buildJobs = AppSettings::getBuildSettings(file).buildJobs;
             AppSettings::setBuildSettings(file, build);
+            m_project->updateDebuggerAccess();
         }
         // Also the editor-wide default, so a new project starts from it
         AppSettings::setLastCMakeKit(build.cCompiler, build.cxxCompiler, build.generator);

@@ -7,21 +7,12 @@
 
 #include <cstring>
 
-#ifdef __linux__
-    #include <sys/prctl.h>
-#endif
-
 using namespace doriax;
 
 int main(int argc, char* argv[]) {
     // A desktop launcher starts the editor without the user's shell environment,
     // so the build tools go back on PATH before anything can spawn a command.
     editor::ShellEnv::bootstrapPath();
-
-#ifdef __linux__
-    // a debugger can attach without root under Yama
-    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
-#endif
 
     // CLI subcommands run before the backend starts, so they never create a window.
     if (argc >= 2 && std::strcmp(argv[1], "export") == 0) {

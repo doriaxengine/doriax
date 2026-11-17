@@ -21,6 +21,9 @@
     #include <sys/wait.h>
     extern char** environ;
 #endif
+#ifdef __linux__
+    #include <sys/prctl.h>
+#endif
 
 using namespace doriax;
 
@@ -348,4 +351,12 @@ bool editor::ExternalEditor::openProject(const fs::path& projectPath) {
         return false;
     }
     return run({exe, project});
+}
+
+void editor::ExternalEditor::setDebuggerAllowed(bool allowed) {
+#ifdef __linux__
+    prctl(PR_SET_PTRACER, allowed ? PR_SET_PTRACER_ANY : 0, 0, 0, 0);
+#else
+    (void)allowed;
+#endif
 }

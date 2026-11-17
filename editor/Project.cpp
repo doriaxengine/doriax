@@ -50,6 +50,7 @@
 #include "util/SHA1.h"
 #include "util/GraphicUtils.h"
 #include "util/CameraTextureLink.h"
+#include "util/ExternalEditor.h"
 #include "util/ProjectUtils.h"
 #include "util/Util.h"
 #include "json.hpp"
@@ -5854,6 +5855,7 @@ bool editor::Project::createTempProject(std::string projectName, bool deleteIfEx
             saveProject();
             createNewScene("New Scene", SceneType::SCENE_3D);
             copyEngineApiToProject();
+            updateDebuggerAccess();
         } else {
             Out::info("Project directory already exists: \"%s\"", projectPath.string().c_str());
             loadProject(projectPath);
@@ -6248,6 +6250,7 @@ bool editor::Project::loadProject(const std::filesystem::path path, bool updateL
         if (editor::getEditorHost().shouldSyncEngineApi()) {
             copyEngineApiToProject();
         }
+        updateDebuggerAccess();
 
         editor::getEditorHost().updateResourcesPath();
 
@@ -6666,6 +6669,11 @@ bool editor::Project::writeGeneratedSources() {
         return false;
     }
     return true;
+}
+
+void editor::Project::updateDebuggerAccess() {
+    const LocalBuildSettings build = AppSettings::getBuildSettings(getProjectPath() / "project.yaml");
+    ExternalEditor::setDebuggerAllowed(build.debugInfo != ScriptDebugInfo::NONE);
 }
 
 void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesystem::path& path, std::function<void(bool)> callback) {
