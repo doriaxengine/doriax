@@ -547,6 +547,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/Conector.cpp
     ${EDITOR_DIR}/EditorHost.cpp
     ${EDITOR_DIR}/Generator.cpp
+    ${EDITOR_DIR}/ScriptDebugger.cpp
     ${EDITOR_DIR}/Stream.cpp
     ${EDITOR_DIR}/Workspace.cpp
     ${EDITOR_DIR}/Exporter.cpp
@@ -604,6 +605,7 @@ set(DORIAX_EDITOR_SOURCES
 
     ${EDITOR_DIR}/window/Properties.cpp
     ${EDITOR_DIR}/window/OutputWindow.cpp
+    ${EDITOR_DIR}/window/DebuggerWindow.cpp
     ${EDITOR_DIR}/window/SceneWindow.cpp
     ${EDITOR_DIR}/window/Structure.cpp
     ${EDITOR_DIR}/window/ResourcesWindow.cpp

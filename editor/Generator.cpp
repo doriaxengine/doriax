@@ -232,7 +232,7 @@ std::string editor::Generator::getPdbName(const fs::path& buildPath) const {
 }
 #endif
 
-bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo) {
+bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo, bool plugin) {
     if (!clearStaleCMakeCache(projectPath, buildPath)) {
         return false;
     }
@@ -379,9 +379,9 @@ bool editor::Generator::configureCMake(const fs::path& projectPath, const fs::pa
         cmakeCommand += "-DCMAKE_CXX_COMPILER=\"" + toCMakePath(cxxCompiler) + "\" ";
     }
     cmakeCommand += "-DCMAKE_BUILD_TYPE=" + configType + " ";
-    // When configuring from inside the editor, ensure the generated project builds
-    // in "plugin" mode (no Factory main.cpp/scene sources added).
-    cmakeCommand += "-DDORIAX_EDITOR_PLUGIN=ON ";
+    // Play loads the scripts as a plugin (no Factory main.cpp/scene sources added),
+    // Run Project builds the whole executable
+    cmakeCommand += std::string("-DDORIAX_EDITOR_PLUGIN=") + (plugin ? "ON " : "OFF ");
     // The generated CMakeLists.txt stays machine-independent; the effective
     // local limit is supplied through the build tree's cache on every configure.
     cmakeCommand += "-DDORIAX_PARALLEL_BUILD_JOBS=" + std::to_string(parallelJobs) + " ";
@@ -2556,14 +2556,14 @@ std::string editor::Generator::checkBuildTools(bool requireEditorCompatibility, 
     return missing;
 }
 
-void editor::Generator::build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo) {
+void editor::Generator::build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo, bool plugin) {
     cancelBuild();
     waitForBuildToComplete();
 
     lastBuildSucceeded.store(false, std::memory_order_relaxed);
     commandRunner.resetCancel();
 
-    buildFuture = std::async(std::launch::async, [this, projectPath, buildPath, cCompiler, cxxCompiler, generator, parallelJobs, debugInfo]() {
+    buildFuture = std::async(std::launch::async, [this, projectPath, buildPath, cCompiler, cxxCompiler, generator, parallelJobs, debugInfo, plugin]() {
         try {
             auto startTime = std::chrono::steady_clock::now();
 
@@ -2593,7 +2593,7 @@ void editor::Generator::build(const fs::path projectPath, const fs::path project
             const unsigned int effectiveParallelJobs =
                 std::min(requestedOrAutomaticJobs, getMaxParallelBuildJobs());
 
-            if (!configureCMake(projectPath, buildPath, configType, cc, cxx, gen, effectiveParallelJobs, debugInfo)) {
+            if (!configureCMake(projectPath, buildPath, configType, cc, cxx, gen, effectiveParallelJobs, debugInfo, plugin)) {
                 if (commandRunner.isCancelRequested()) {
                     Out::warning("Build configuration cancelled.");
                 } else {

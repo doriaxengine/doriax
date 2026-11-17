@@ -30,6 +30,10 @@ namespace doriax::editor {
         bool run(const std::string& command, const fs::path& workingDir,
                  const std::function<void(const std::string&)>& onLine = {});
 
+        // The next run() gets a pipe as its input, which write() feeds
+        void setInputPipe(bool enabled);
+        bool write(const std::string& text);
+
         // Request cancellation and terminate the running process (if any).
         void cancel();
         bool isCancelRequested() const;
@@ -56,15 +60,18 @@ namespace doriax::editor {
         void terminateCurrentProcess();
 
         std::atomic<bool> cancelRequested{false};
+        bool inputPipe = false;
 
 #ifdef _WIN32
         HANDLE currentProcessHandle = NULL;
         // Job object the child is assigned to, so termination kills the whole
         // process tree (cmake and the compilers it spawns), not just cmd.exe.
         HANDLE currentJobHandle = NULL;
+        HANDLE currentInputHandle = NULL;
         std::mutex processHandleMutex;
 #else
         pid_t currentProcessPid = 0;
+        int currentInputFd = -1;
         std::mutex processPidMutex;
 #endif
     };

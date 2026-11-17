@@ -11,6 +11,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <set>
 #include <chrono>
 #include <cstdint>
 
@@ -220,6 +221,14 @@ namespace doriax::editor {
         void SetDiffBase(const std::string& text);
         void ClearDiffBase();
 
+        // Breakpoints, toggled with a click on a line number. Lines start at 0.
+        void SetBreakpointsEnabled(bool enable) { breakpointsEnabled = enable; }
+        void SetBreakpoints(const std::set<int>& value) { breakpoints = value; }
+        const std::set<int>& GetBreakpoints() const { return breakpoints; }
+        void ToggleBreakpoint(int line);
+        // Line where a debugger is stopped, -1 for none
+        void SetExecutionLine(int line) { executionLine = line; }
+
         // Rendering
         void Render(const char* title, const ImVec2& size = ImVec2(0, 0), bool border = false);
 
@@ -353,6 +362,10 @@ namespace doriax::editor {
         std::vector<DiffPeekRow> diffPeekRows;
         float diffPeekTextWidth;
 
+        bool breakpointsEnabled;
+        std::set<int> breakpoints;
+        int executionLine;
+
         // Semantic suggestions engine
         std::unique_ptr<SemanticSuggestions> suggestions;
         std::vector<SuggestionItem> currentSuggestions;
@@ -440,6 +453,12 @@ namespace doriax::editor {
         int diffChangeAt(const ImVec2& point, const ImVec2& origin) const;
         void renderDiffGutter(ImDrawList* drawList, const ImVec2& origin, int startLine, int endLine);
         void renderDiffOverview();
+        // Line of the gutter under the point, -1 for none
+        int gutterLineAt(const ImVec2& point, const ImVec2& origin) const;
+        // Keeps the breakpoints on their lines when count lines come or go after one
+        void moveBreakpoints(int afterLine, int count);
+        void remapBreakpoints(const std::vector<std::string>& previous);
+        void renderBreakpoints(ImDrawList* drawList, const ImVec2& origin, int startLine, int endLine);
         void updateDiffPeek(const ImVec2& origin);
         void buildDiffPeekRows(const LineChange& change);
         void renderDiffPeek(const ImVec2& origin);

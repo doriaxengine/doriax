@@ -34,6 +34,7 @@ namespace doriax::editor {
         bool pendingWindowFocus; // focus the window when it is drawn next
         uint64_t diffBaseVersion; // of the GitFileBase the change marks come from, 0 for none
         bool crlf; // the file uses CRLF line endings, kept on save
+        std::string luaSource; // name the debugger knows a Lua file by, set when first drawn
 
         EditorInstance() : isOpen(true), languageType(SyntaxLanguage::None), isModified(false), lastCheckTime(0.0), savedUndoIndex(0), propertyInsertUndoIndex(-1), pendingWindowFocus(false), diffBaseVersion(0), crlf(false) {}
     };
@@ -85,6 +86,7 @@ namespace doriax::editor {
 
         fs::path resolveFilepath(const fs::path& relPath) const;
         std::string toRelativePath(const std::string& filepath) const;
+        void updateDebugger(EditorInstance& instance);
         void insertLuaEntityProperty(EditorInstance& instance, Entity entity, uint32_t entitySceneId);
         void insertCppEntityProperty(EditorInstance& instance, Entity entity, uint32_t entitySceneId);
 
@@ -124,6 +126,8 @@ namespace doriax::editor {
         void openFile(const std::string& filepath, bool dockToCentral = false);
         // in the script editor of Editor Settings; line starts at 1
         void openScript(const std::string& filepath, int line = 0, int column = 0);
+        // in this editor, with the cursor on the line
+        void openFileAt(const std::string& filepath, int line, int column = 0);
         void closeFile(const std::string& filepath);
         bool isFileOpen(const std::string& filepath) const;
         bool isFileModified(const std::string& filepath) const;

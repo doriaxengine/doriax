@@ -104,6 +104,11 @@ void splitLines(const std::string& text, std::vector<std::string>& out) {
 constexpr ImU32 DIFF_ADDED_COLOR = IM_COL32(0x2E, 0xA0, 0x43, 0xFF);
 constexpr ImU32 DIFF_MODIFIED_COLOR = IM_COL32(0x00, 0x78, 0xD4, 0xFF);
 constexpr ImU32 DIFF_DELETED_COLOR = IM_COL32(0xF8, 0x51, 0x49, 0xFF);
+// and its debugger colors
+constexpr ImU32 BREAKPOINT_COLOR = IM_COL32(0xE5, 0x14, 0x00, 0xFF);
+constexpr ImU32 BREAKPOINT_HINT_COLOR = IM_COL32(0xE5, 0x14, 0x00, 0x66);
+constexpr ImU32 EXECUTION_COLOR = IM_COL32(0xFF, 0xCC, 0x00, 0xFF);
+constexpr ImU32 EXECUTION_LINE_COLOR = IM_COL32(0xFF, 0xFF, 0x00, 0x33);
 
 ImU32 diffColor(const LineChange& change) {
     if (change.originalStart == change.originalEnd) return DIFF_ADDED_COLOR;
@@ -225,6 +230,8 @@ CustomTextEditor::CustomTextEditor()
     , diffPeekHovered(false)
     , diffPeekVersion(0)
     , diffPeekTextWidth(0.0f)
+    , breakpointsEnabled(false)
+    , executionLine(-1)
     , suggestions(std::make_unique<SemanticSuggestions>())
     , scrollToSuggestion(false)
 {
@@ -521,7 +528,13 @@ const char* CustomTextEditor::GetLanguageName() const {
 }
 
 void CustomTextEditor::setLinesFromText(const std::string& text) {
+    if (breakpoints.empty()) {
+        splitLines(text, lines);
+        return;
+    }
+    const std::vector<std::string> previous = std::move(lines);
     splitLines(text, lines);
+    remapBreakpoints(previous);
 }
 
 void CustomTextEditor::SetText(const std::string& text) {
@@ -951,6 +964,8 @@ TextPosition CustomTextEditor::insertTextAtCursor(Cursor& cursor, const std::str
 
             lines[line] = before;
             lines.insert(lines.begin() + line + 1, after);
+            // a break at the start of a line pushes its breakpoint down too
+            moveBreakpoints(before.empty() ? line - 1 : line, 1);
 
             ++line;
             col = 0;
@@ -973,6 +988,7 @@ TextPosition CustomTextEditor::insertTextAtCursor(Cursor& cursor, const std::str
                     if (opens && closes) {
                         // Break the block open: an indented line for the content and one for the closer
                         lines.insert(lines.begin() + line + 1, getIndentString(indent) + after);
+                        moveBreakpoints(line, 1);
                         after.clear();
                         tailColumn = indent;
                     }
@@ -1240,6 +1256,7 @@ void CustomTextEditor::deleteRange(const TextPosition& start, const TextPosition
 
         lines[minPos.line] = before + after;
         lines.erase(lines.begin() + minPos.line + 1, lines.begin() + maxPos.line + 1);
+        moveBreakpoints(minPos.line, minPos.line - maxPos.line);
     }
 
     if (showParamHint) {
@@ -3396,6 +3413,13 @@ void CustomTextEditor::handleMouseInput() {
         if (onFontZoom) onFontZoom(io.MouseWheel > 0.0f ? 1 : -1);
     }
 
+    const int gutterLine = breakpointsEnabled ? gutterLineAt(mousePos, contentPos) : -1;
+    if (gutterLine >= 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        showContextMenu = false;
+        ToggleBreakpoint(gutterLine);
+        return;
+    }
+
     if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
         showContextMenu = false;
         TextPosition clickPos = screenToText(mousePos, contentPos);
@@ -3698,6 +3722,78 @@ void CustomTextEditor::renderLineNumbers(ImDrawList* drawList, const ImVec2& ori
 float CustomTextEditor::diffGutterX(const ImVec2& origin) const {
     const float numbersEnd = showLineNumbers ? leftMargin + lineNumberDigits * charWidth : 0.0f;
     return std::round(origin.x + numbersEnd + leftMargin * 0.5f);
+}
+
+void CustomTextEditor::ToggleBreakpoint(int line) {
+    if (line < 0 || line >= static_cast<int>(lines.size())) return;
+    if (!breakpoints.erase(line)) breakpoints.insert(line);
+}
+
+void CustomTextEditor::moveBreakpoints(int afterLine, int count) {
+    if (breakpoints.empty()) return;
+
+    std::set<int> moved;
+    for (int line : breakpoints) {
+        if (line <= afterLine) {
+            moved.insert(line);
+        } else if (line + count > afterLine) {
+            moved.insert(line + count);
+        } else {
+            // its line is gone, the one that took the text keeps it
+            moved.insert(afterLine);
+        }
+    }
+    breakpoints = std::move(moved);
+}
+
+// After the whole text is replaced, as an undo or a reload does: the lines
+// before the change keep their breakpoints, the ones after it move with it
+void CustomTextEditor::remapBreakpoints(const std::vector<std::string>& previous) {
+    const int oldCount = static_cast<int>(previous.size());
+    const int newCount = static_cast<int>(lines.size());
+    int same = 0;
+    while (same < oldCount && same < newCount && previous[same] == lines[same]) same++;
+    int sameEnd = 0;
+    while (sameEnd < oldCount - same && sameEnd < newCount - same && previous[oldCount - 1 - sameEnd] == lines[newCount - 1 - sameEnd]) sameEnd++;
+
+    std::set<int> moved;
+    for (int line : breakpoints) {
+        if (line >= oldCount - sameEnd) {
+            line += newCount - oldCount;
+        } else if (line >= same) {
+            line = std::min(line, newCount - sameEnd - 1);
+        }
+        moved.insert(std::clamp(line, 0, newCount - 1));
+    }
+    breakpoints = std::move(moved);
+}
+
+int CustomTextEditor::gutterLineAt(const ImVec2& point, const ImVec2& origin) const {
+    if (!showLineNumbers || point.x < origin.x || point.x >= origin.x + lineNumberWidth) return -1;
+
+    const int line = static_cast<int>(std::floor((point.y - origin.y) / lineHeight));
+    return line >= 0 && line < static_cast<int>(lines.size()) ? line : -1;
+}
+
+void CustomTextEditor::renderBreakpoints(ImDrawList* drawList, const ImVec2& origin, int startLine, int endLine) {
+    const float centerX = origin.x + leftMargin * 0.5f;
+    const float radius = std::min(leftMargin * 0.4f, lineHeight * 0.3f);
+    const auto centerOf = [&](int line) { return ImVec2(centerX, origin.y + (line + 0.5f) * lineHeight); };
+
+    for (int line : breakpoints) {
+        if (line >= startLine && line <= endLine) {
+            drawList->AddCircleFilled(centerOf(line), radius, BREAKPOINT_COLOR);
+        }
+    }
+    if (executionLine >= startLine && executionLine <= endLine) {
+        const ImVec2 center = centerOf(executionLine);
+        drawList->AddTriangleFilled(ImVec2(center.x - radius, center.y - radius), ImVec2(center.x + radius, center.y), ImVec2(center.x - radius, center.y + radius), EXECUTION_COLOR);
+    }
+    // where a click would put one
+    const int hovered = breakpointsEnabled && ImGui::IsWindowHovered() ? gutterLineAt(ImGui::GetIO().MousePos, origin) : -1;
+    if (hovered >= 0 && !breakpoints.count(hovered)) {
+        drawList->AddCircleFilled(centerOf(hovered), radius, BREAKPOINT_HINT_COLOR);
+    }
 }
 
 int CustomTextEditor::diffChangeAt(const ImVec2& point, const ImVec2& origin) const {
@@ -4737,10 +4833,16 @@ void CustomTextEditor::Render(const char* title, const ImVec2& size, bool border
             );
         }
 
+        if (executionLine >= 0) {
+            float y = origin.y + executionLine * lineHeight;
+            drawList->AddRectFilled(ImVec2(origin.x, y), ImVec2(origin.x + contentSize.x, y + lineHeight), EXECUTION_LINE_COLOR);
+        }
+
         renderSearchHighlights(drawList, origin, startLine, endLine);
         renderSelections(drawList, origin, startLine, endLine);
         renderMatchingBrackets(drawList, origin);
         renderLineNumbers(drawList, origin, startLine, endLine);
+        renderBreakpoints(drawList, origin, startLine, endLine);
         renderDiffGutter(drawList, origin, startLine, endLine);
         renderText(drawList, origin, startLine, endLine);
         renderCursors(drawList, origin);

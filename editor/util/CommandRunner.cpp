@@ -195,6 +195,21 @@ void editor::CommandRunner::resetCancel() {
     cancelRequested.store(false, std::memory_order_relaxed);
 }
 
+void editor::CommandRunner::setInputPipe(bool enabled) {
+    inputPipe = enabled;
+}
+
+bool editor::CommandRunner::write(const std::string& text) {
+    #ifdef _WIN32
+        std::lock_guard<std::mutex> lock(processHandleMutex);
+        DWORD written = 0;
+        return currentInputHandle && WriteFile(currentInputHandle, text.data(), static_cast<DWORD>(text.size()), &written, nullptr) && written == text.size();
+    #else
+        std::lock_guard<std::mutex> lock(processPidMutex);
+        return currentInputFd >= 0 && ::write(currentInputFd, text.data(), text.size()) == static_cast<ssize_t>(text.size());
+    #endif
+}
+
 void editor::CommandRunner::terminateCurrentProcess() {
     #ifdef _WIN32
         HANDLE handleSnapshot = nullptr;
@@ -255,12 +270,18 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         }
         SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
 
+        HANDLE hInputRead = nullptr;
+        HANDLE hInputWrite = nullptr;
+        if (inputPipe && CreatePipe(&hInputRead, &hInputWrite, &sa, 0)) {
+            SetHandleInformation(hInputWrite, HANDLE_FLAG_INHERIT, 0);
+        }
+
         STARTUPINFOA si{};
         si.cb = sizeof(STARTUPINFOA);
         si.dwFlags = STARTF_USESTDHANDLES;
         si.hStdOutput = hWritePipe;
         si.hStdError  = hWritePipe;
-        si.hStdInput  = nullptr;
+        si.hStdInput  = hInputRead;
 
         PROCESS_INFORMATION pi{};
         std::string cmdLine = "cmd.exe " + cmdQuoting(command);
@@ -290,6 +311,8 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
             DWORD err = GetLastError();
             CloseHandle(hReadPipe);
             CloseHandle(hWritePipe);
+            if (hInputRead) CloseHandle(hInputRead);
+            if (hInputWrite) CloseHandle(hInputWrite);
             if (hJob) CloseHandle(hJob);
             Out::error("Failed to create process. Error code: %lu", err);
             return false;
@@ -305,11 +328,13 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         ResumeThread(pi.hThread);
 
         CloseHandle(hWritePipe);
+        if (hInputRead) CloseHandle(hInputRead);
 
         {
             std::lock_guard<std::mutex> lock(processHandleMutex);
             currentProcessHandle = pi.hProcess;
             currentJobHandle = hJob;
+            currentInputHandle = hInputWrite;
         }
 
         constexpr size_t BUFFER_SIZE = 4096;
@@ -393,7 +418,9 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
             std::lock_guard<std::mutex> lock(processHandleMutex);
             currentProcessHandle = NULL;
             currentJobHandle = NULL;
+            currentInputHandle = NULL;
         }
+        if (hInputWrite) CloseHandle(hInputWrite);
         CloseHandle(pi.hProcess);
         if (hJob) CloseHandle(hJob);
 
@@ -415,6 +442,15 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
         posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDERR_FILENO);
         posix_spawn_file_actions_addclose(&actions, pipefd[1]);
+
+        int inputfd[2] = { -1, -1 };
+        if (inputPipe && pipe(inputfd) == 0) {
+            // a write to a process that ended must not end the editor
+            signal(SIGPIPE, SIG_IGN);
+            fcntl(inputfd[1], F_SETFD, FD_CLOEXEC);
+            posix_spawn_file_actions_adddup2(&actions, inputfd[0], STDIN_FILENO);
+            posix_spawn_file_actions_addclose(&actions, inputfd[0]);
+        }
 
         pid_t pid = 0;
         std::string workDirStr = workingDir.string();
@@ -441,9 +477,11 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         posix_spawnattr_destroy(&attr);
         posix_spawn_file_actions_destroy(&actions);
         close(pipefd[1]);
+        if (inputfd[0] >= 0) close(inputfd[0]);
 
         if (spawnResult != 0) {
             close(pipefd[0]);
+            if (inputfd[1] >= 0) close(inputfd[1]);
             Out::error("Failed to spawn process (POSIX): %s", strerror(spawnResult));
             return false;
         }
@@ -451,6 +489,7 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         {
             std::lock_guard<std::mutex> lock(processPidMutex);
             currentProcessPid = pid;
+            currentInputFd = inputfd[1];
         }
 
         constexpr size_t BUFFER_SIZE = 4096;
@@ -544,7 +583,9 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         {
             std::lock_guard<std::mutex> lock(processPidMutex);
             currentProcessPid = 0;
+            currentInputFd = -1;
         }
+        if (inputfd[1] >= 0) close(inputfd[1]);
 
         if (cancelRequested.load(std::memory_order_relaxed)) {
             return false;

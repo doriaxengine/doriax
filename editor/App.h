@@ -12,6 +12,7 @@
 #include "window/Properties.h"
 #include "window/Structure.h"
 #include "window/OutputWindow.h"
+#include "window/DebuggerWindow.h"
 #include "window/SceneWindow.h"
 #include "window/ResourcesWindow.h"
 #include "window/ImageViewerWindow.h"
@@ -142,6 +143,7 @@ namespace doriax::editor{
         Structure* structureWindow;
         Properties* propertiesWindow;
         OutputWindow* outputWindow;
+        DebuggerWindow* debuggerWindow;
         SceneWindow* sceneWindow;
         CodeEditor* codeEditor;
         ResourcesWindow* resourcesWindow;

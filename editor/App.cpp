@@ -110,6 +110,7 @@ editor::App::App(){
     propertiesWindow->setSceneWindow(sceneWindow);
     structureWindow = new Structure(&project, sceneWindow);
     codeEditor = new CodeEditor(&project, &gitMonitor);
+    debuggerWindow = new DebuggerWindow(&project, codeEditor);
     imageViewerWindow = new ImageViewerWindow(&project);
     graphEditorWindow = new GraphEditorWindow(&project);
     resourcesWindow = new ResourcesWindow(&project, codeEditor, imageViewerWindow, graphEditorWindow);
@@ -273,6 +274,8 @@ enum class AppMenuCommand : uint32_t {
     ProjectScenes,
     ProjectBundles,
     OpenInScriptEditor,
+    RunProject,
+    StopProject,
     ClearTrash,
     RunScene,
     PauseScene,
@@ -474,6 +477,9 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuCommand(AppMenuCommand::ProjectBundles, "Bundles..."),
         menuSeparator(),
         menuCommand(AppMenuCommand::OpenInScriptEditor, ExternalEditor::getOpenLabel() + (ExternalEditor::isEnabled() ? "" : "..."), !isProjectBusy),
+        menuSeparator(),
+        menuShortcut(AppMenuCommand::RunProject, "Run Project", "Ctrl+F5", !isProjectBusy && !project.getDebugger().isActive()),
+        menuCommand(AppMenuCommand::StopProject, "Stop Project", project.getDebugger().isActive()),
         menuSeparator(),
         menuCommand(AppMenuCommand::ClearTrash, "Empty Project Trash...", !isProjectBusy)
     }));
@@ -694,6 +700,12 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 });
             break;
         }
+        case AppMenuCommand::RunProject:
+            project.runProject();
+            break;
+        case AppMenuCommand::StopProject:
+            project.stopProject();
+            break;
         case AppMenuCommand::RunScene:
             if (project.getSelectedScene() && !project.isAnyScenePlaying())
                 project.start(project.getSelectedSceneId());
@@ -768,6 +780,12 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 "F7    Stop\n"
                 "F8    Detach / attach camera\n"
                 "F11    Full screen\n\n"
+                "RUN PROJECT AND LUA DEBUGGER\n"
+                "Ctrl+F5    Run the project in a window of its own\n"
+                "F9    Toggle a breakpoint (code editor)\n"
+                "F5    Continue (while stopped)\n"
+                "F10    Step over\n"
+                "F11 / Shift+F11    Step into / out\n\n"
                 "SCENE VIEW\n"
                 "W / E / R    Move / Rotate / Scale\n"
                 "T    Toggle local / global transforms\n"
@@ -1876,7 +1894,16 @@ void editor::App::show(){
             bool isPaused = hasSelectedScene && selectedScene->playState == ScenePlayState::PAUSED;
             bool isLoading = hasSelectedScene && selectedScene->playState == ScenePlayState::LOADING;
 
-            if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
+            // a script stopped in the debugger takes the step keys
+            ScriptDebugger& debugger = project.getDebugger();
+            const bool debugStopped = debugger.getState() == ScriptDebugger::State::STOPPED;
+            if (debugStopped) {
+                if (ImGui::IsKeyPressed(ImGuiKey_F5, false)) debugger.resume();
+                if (ImGui::IsKeyPressed(ImGuiKey_F10)) debugger.stepOver();
+                if (ImGui::IsKeyPressed(ImGuiKey_F11)) ImGui::GetIO().KeyShift ? debugger.stepOut() : debugger.stepInto();
+            } else if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F5, false)) {
+                executeMenuCommand({static_cast<uint32_t>(AppMenuCommand::RunProject), {}});
+            } else if (ImGui::IsKeyPressed(ImGuiKey_F5)) {
                 if (hasSelectedScene && !project.isAnyScenePlaying()) {
                     project.start(selectedSceneId);
                 } else if (isPaused) {
@@ -1896,7 +1923,7 @@ void editor::App::show(){
             if (ImGui::IsKeyPressed(ImGuiKey_F8, false)) {
                 project.toggleCameraDetached(selectedSceneId);
             }
-            if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
+            if (!debugStopped && ImGui::IsKeyPressed(ImGuiKey_F11, false)) {
                 sceneWindow->toggleFullscreen(selectedSceneId);
             }
         }
@@ -2004,6 +2031,7 @@ void editor::App::show(){
     imageViewerWindow->show();
     graphEditorWindow->show();
     outputWindow->show();
+    debuggerWindow->show();
     animationWindow->show();
     terrainEditWindow->show();
     propertiesWindow->show();
@@ -3398,6 +3426,8 @@ void editor::App::closeWindow(){
     }
 
     project.waitForPlaySessionToFinish();
+    project.stopProject();
+    project.getDebugger().waitForEnd();
 
     project.clearTrash();
 

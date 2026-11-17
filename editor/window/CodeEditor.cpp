@@ -1564,6 +1564,30 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
     updateAllProjectSymbols();
 }
 
+// The breakpoints of an open file are those of its editor, which edits move
+void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
+    ScriptDebugger& debugger = project->getDebugger();
+    std::set<int> lines;
+    if (instance.luaSource.empty()) {
+        // the name the engine gives the chunk
+        instance.luaSource = FileUtils::pathToGenericUtf8(project->normalizeToLuaRelative(resolveFilepath(instance.filepath)));
+        for (int line : debugger.getBreakpoints(instance.luaSource)) {
+            lines.insert(line - 1);
+        }
+        instance.editor->SetBreakpointsEnabled(true);
+        instance.editor->SetBreakpoints(lines);
+        lines.clear();
+    }
+    for (int line : instance.editor->GetBreakpoints()) {
+        lines.insert(line + 1);
+    }
+    debugger.setBreakpoints(instance.luaSource, lines);
+
+    const std::vector<DebugFrame>& frames = debugger.getFrames();
+    const bool stoppedHere = !frames.empty() && frames[debugger.getSelectedFrame()].source == instance.luaSource;
+    instance.editor->SetExecutionLine(stoppedHere ? frames[debugger.getSelectedFrame()].line - 1 : -1);
+}
+
 void editor::CodeEditor::openScript(const std::string& filepath, int line, int column) {
     const std::string key = toRelativePath(filepath);
     if (ExternalEditor::isEnabled() && Util::isScriptFile(key)) {
@@ -1573,8 +1597,12 @@ void editor::CodeEditor::openScript(const std::string& filepath, int line, int c
         Backend::getApp().registerAlert("Script Editor", ExternalEditor::getStartError());
     }
 
+    openFileAt(filepath, line, column);
+}
+
+void editor::CodeEditor::openFileAt(const std::string& filepath, int line, int column) {
     openFile(filepath, true);
-    auto it = editors.find(key);
+    auto it = editors.find(toRelativePath(filepath));
     if (line > 0 && it != editors.end()) {
         it->second.editor->SetCursorPosition(line - 1, std::max(column - 1, 0));
         it->second.editor->RequestScrollToCursor();
@@ -1647,6 +1675,7 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
 
     EditorInstance instance = std::move(it->second);
     instance.filepath = newKey;
+    instance.luaSource.clear();
     instance.lastWriteTime = newWriteTime;
     editors.erase(it);
 
@@ -1662,6 +1691,8 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
     if (language != renamed.languageType) {
         renamed.languageType = language;
         renamed.editor->SetLanguage(language);
+        renamed.editor->SetBreakpointsEnabled(false);
+        renamed.editor->SetBreakpoints({});
         updateAllProjectSymbols();
     }
 
@@ -1773,6 +1804,13 @@ void editor::CodeEditor::show() {
             }
             showSettingsButton();
             ImGui::SetCursorPosY(statusRowY + ImGui::GetTextLineHeightWithSpacing());
+
+            if (instance.languageType == SyntaxLanguage::Lua) {
+                if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
+                    instance.editor->ToggleBreakpoint(line);
+                }
+                updateDebugger(instance);
+            }
 
             // Font size is em-based like VSCode, ImGui sizes by the line box
             ImGui::PushFont(App::getCodeFont(), AppSettings::getCodeEditorFontSize() * App::codeFontEmScale);

@@ -103,7 +103,7 @@ namespace doriax::editor {
         static std::string getEditorPluginAbiCheck();
         static const CMakeKit* chooseDefaultKit(const std::vector<CMakeKit>& kits);
 
-        bool configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo);
+        bool configureCMake(const fs::path& projectPath, const fs::path& buildPath, const std::string& configType, const std::string& cCompiler, const std::string& cxxCompiler, const std::string& generator, unsigned int parallelJobs, ScriptDebugInfo debugInfo, bool plugin);
 #ifdef _WIN32
         std::string getPdbName(const fs::path& buildPath) const;
 #endif
@@ -153,7 +153,7 @@ namespace doriax::editor {
         void clearSceneSource(uint32_t sceneId, const std::string& sceneName, const fs::path& projectInternalPath);
         bool hasSceneSource(uint32_t sceneId, const std::string& sceneName, const fs::path& projectInternalPath) const;
         void configure(const std::vector<SceneBuildInfo>& scenes, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<BundleSceneInfo>& bundles, const fs::path& projectPath, const fs::path& projectInternalPath, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard, Scaling scalingMode = Scaling::FITWIDTH, TextureStrategy textureStrategy = TextureStrategy::NONE, unsigned int canvasWidth = 1280, unsigned int canvasHeight = 720, bool vsyncEnabled = true, const WindowSettings& windowSettings = WindowSettings(), const LoadingSettings& loadingSettings = LoadingSettings());
-        void build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler = "", const std::string& cxxCompiler = "", const std::string& generator = "", unsigned int parallelJobs = 0, ScriptDebugInfo debugInfo = ScriptDebugInfo::SYMBOLS);
+        void build(const fs::path projectPath, const fs::path projectInternalPath, const fs::path buildPath, const std::string& cCompiler = "", const std::string& cxxCompiler = "", const std::string& generator = "", unsigned int parallelJobs = 0, ScriptDebugInfo debugInfo = ScriptDebugInfo::SYMBOLS, bool plugin = true);
         bool isBuildInProgress() const;
         void waitForBuildToComplete();
         bool didLastBuildSucceed() const;

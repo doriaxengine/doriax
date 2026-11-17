@@ -51,6 +51,7 @@
 #include "util/GraphicUtils.h"
 #include "util/CameraTextureLink.h"
 #include "util/ExternalEditor.h"
+#include "LuaDebugger.h"
 #include "util/ProjectUtils.h"
 #include "util/Util.h"
 #include "json.hpp"
@@ -5212,6 +5213,8 @@ void editor::Project::resetEngineConfigs(bool executeViewChanged) {
 }
 
 void editor::Project::resetConfigs() {
+    debugger.reset();
+
     // Clear existing scenes
     for (auto& sceneProject : scenes) {
         deleteSceneProject(&sceneProject);
@@ -10869,6 +10872,11 @@ void editor::Project::start(uint32_t sceneId) {
             return;
         }
     }
+    // both builds go through the same generator
+    if (debugger.getState() == ScriptDebugger::State::BUILDING) {
+        Out::warning("Cannot start: the project is being built to run");
+        return;
+    }
 
     doriax::FunctionSubscribeGlobal::getCrashHandler() = 
         [this, sceneId](const std::string& tag, const std::string& errorInfo) {
@@ -11142,6 +11150,68 @@ void editor::Project::stop(uint32_t sceneId) {
         });
     });
     finalizeStopThread.detach();
+}
+
+void editor::Project::runProject() {
+    if (debugger.isActive() || isAnyScenePlaying()) {
+        return;
+    }
+
+    const LocalBuildSettings build = AppSettings::getBuildSettings(getProjectPath() / "project.yaml");
+    const bool useDefaultKit = build.cCompiler.empty() && build.cxxCompiler.empty() && build.generator.empty();
+    CMakeKit kit;
+    kit.cCompiler = build.cCompiler;
+    kit.cxxCompiler = build.cxxCompiler;
+    kit.generator = build.generator;
+    const std::string missingTools = Generator::checkBuildTools(useDefaultKit, &kit);
+    if (!missingTools.empty()) {
+        editor::getEditorHost().registerAlert("Missing Build Tools",
+            "Running the project builds it, with build tools that were not found on your system:\n\n" + missingTools +
+            "\nPlease install the missing tools and try again.");
+        return;
+    }
+
+    if (AppSettings::getOutputClearOnPlay() && Out::getOutputWindow()) {
+        Out::getOutputWindow()->clear();
+    }
+    editor::getEditorHost().saveAllCodeEditors();
+
+    // open scenes run as they are in the editor, saved or not
+    for (const SceneProject& sceneProject : scenes) {
+        if (sceneProject.scene) {
+            writeSceneSource(&sceneProject);
+        }
+    }
+    if (!writeGeneratedSources()) {
+        return;
+    }
+
+    const fs::path buildPath = getProjectInternalPath() / "externalbuild";
+#ifdef _WIN32
+    const fs::path executable = buildPath / (libName + ".exe");
+#else
+    const fs::path executable = buildPath / libName;
+#endif
+    const std::string command = "\"" + executable.string() + "\" " + LuaDebugger::ARGUMENT;
+    debugger.start(command, getProjectPath(), [this, buildPath, kit, build]() {
+        buildStandaloneShaderCache();
+        generator.build(getProjectPath(), getProjectInternalPath(), buildPath, kit.cCompiler, kit.cxxCompiler, kit.generator, build.buildJobs, build.debugInfo, false);
+        generator.waitForBuildToComplete();
+        return generator.didLastBuildSucceed();
+    });
+}
+
+void editor::Project::stopProject() {
+    const bool building = debugger.getState() == ScriptDebugger::State::BUILDING;
+    debugger.stop();
+    if (building) {
+        // the future waits for the build to end, away from the UI
+        std::thread([cancelled = generator.cancelBuild()]() {}).detach();
+    }
+}
+
+editor::ScriptDebugger& editor::Project::getDebugger() {
+    return debugger;
 }
 
 void editor::Project::stopActivePlay() {

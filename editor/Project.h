@@ -11,6 +11,7 @@
 #include "render/preview/MaterialRender.h"
 #include "Conector.h"
 #include "Generator.h"
+#include "ScriptDebugger.h"
 #include "Configs.h"
 #include "util/EntityBundle.h"
 #include "util/ScriptParser.h"
@@ -324,6 +325,7 @@ namespace doriax::editor{
 
         Conector conector;
         Generator generator;
+        ScriptDebugger debugger;
 
         std::string name;
 
@@ -1035,6 +1037,11 @@ namespace doriax::editor{
         void stopActivePlay();
         void toggleCameraDetached(uint32_t sceneId);
         void waitForPlaySessionToFinish();
+
+        // Builds the project and runs it as a process of its own, with the Lua debugger
+        void runProject();
+        void stopProject();
+        ScriptDebugger& getDebugger();
 
         // A runtime scene loaded in place of the played one comes back as mainScene
         std::vector<Scene*> getRunningRuntimeLayers(uint32_t sceneId, Scene*& mainScene);
