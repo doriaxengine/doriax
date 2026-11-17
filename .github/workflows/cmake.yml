@@ -96,6 +96,12 @@ jobs:
           # Full history so git describe can resolve v0.6-N-gHASH like local builds.
           fetch-depth: 0
 
+      # The reference pages give the API descriptions of IDE hovers
+      - uses: actions/checkout@v6
+        with:
+          repository: doriaxengine/doriax-docs
+          path: doriax-docs
+
       - name: Print env
         shell: bash
         run: |
@@ -183,6 +189,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} \
             -G "${{ matrix.config.generators }}" \
             -DCMAKE_INSTALL_PREFIX:PATH=instdir \
+            -DDORIAX_DOCS_DIR:PATH=doriax-docs \
             -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
 
       - name: Build

@@ -384,7 +384,22 @@ set(API_SUGGESTIONS_HEADER "${GENERATED_DIR}/engine_api_suggestions.h")
 set(GENERATE_API_SCRIPT "${CMAKE_SOURCE_DIR}/generate_api_suggestions.py")
 # Lua stubs and documented headers, laid over engine-sdk
 set(ENGINE_OVERLAY_DIR "${CMAKE_BINARY_DIR}/engine-overlay")
-set(API_DOCS_FILE "${CMAKE_SOURCE_DIR}/editor/resources/docs/api-docs.json")
+# Reference descriptions for IDE hovers, from a doriax-docs checkout
+set(DORIAX_DOCS_DIR "${CMAKE_SOURCE_DIR}/../doriax-docs" CACHE PATH "doriax-docs checkout, for API descriptions in IDE hovers")
+set(API_DOCS_SCRIPT "${DORIAX_DOCS_DIR}/scripts/api-docs.py")
+set(API_DOCS_FILE "")
+if(EXISTS "${API_DOCS_SCRIPT}")
+    set(API_DOCS_FILE "${CMAKE_BINARY_DIR}/api-docs.json")
+    file(GLOB API_DOCS_PAGES CONFIGURE_DEPENDS "${DORIAX_DOCS_DIR}/docs/reference/classes/*.md")
+    add_custom_command(
+        OUTPUT ${API_DOCS_FILE}
+        COMMAND ${Python3_EXECUTABLE} ${API_DOCS_SCRIPT} ${API_DOCS_FILE}
+        DEPENDS ${API_DOCS_SCRIPT} ${API_DOCS_PAGES}
+        COMMENT "Extracting API descriptions from doriax-docs"
+    )
+else()
+    message(STATUS "doriax-docs not found, IDE hovers get no API descriptions")
+endif()
 
 file(GLOB BINDING_FILES CONFIGURE_DEPENDS "${BINDING_DIR}/*.cpp")
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS "${ENGINE_CORE_DIR}/*.h")
