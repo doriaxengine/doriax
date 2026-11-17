@@ -143,6 +143,13 @@ namespace doriax::editor{
 
         std::unordered_map<std::string, Texture> thumbnailTextures;
 
+        // Scroll under the pinned header, per scene and entity (NULL_ENTITY is the scene itself)
+        static constexpr Entity SCROLL_MULTI_SELECTION = UINT32_MAX;
+        std::unordered_map<uint64_t, float> scrollPositions;
+        uint64_t scrollKey = UINT64_MAX;
+        void beginScrollRegion(uint32_t sceneId, Entity entity);
+        void endScrollRegion();
+
         // Dirty material deferred-write state
         enum class ScenePropertyInputType {
             Checkbox,
@@ -414,6 +421,7 @@ namespace doriax::editor{
         void show();
         void stopTransientPreviews();
         void clearSceneState(uint32_t sceneId);
+        void resetProjectState();
         void flushDirtyMaterialsForScene(uint32_t sceneId);
         void setOpen(bool open);
         bool isOpen() const;

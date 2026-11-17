@@ -952,6 +952,44 @@ void editor::Properties::clearSceneState(uint32_t sceneId) {
         std::remove_if(dirtyMaterials.begin(), dirtyMaterials.end(),
             [sceneId](const DirtyMaterialEntry& entry){ return entry.sceneId == sceneId; }),
         dirtyMaterials.end());
+
+    for (auto it = scrollPositions.begin(); it != scrollPositions.end(); ) {
+        if (static_cast<uint32_t>(it->first >> 32) == sceneId) {
+            it = scrollPositions.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // A scene that takes this id must restore its own scroll
+    if (static_cast<uint32_t>(scrollKey >> 32) == sceneId) {
+        scrollKey = UINT64_MAX;
+    }
+}
+
+// Scene ids repeat across projects, so saved scrolls would match the wrong entities
+void editor::Properties::resetProjectState(){
+    scrollPositions.clear();
+    scrollKey = UINT64_MAX;
+}
+
+void editor::Properties::beginScrollRegion(uint32_t sceneId, Entity entity){
+    const uint64_t key = (static_cast<uint64_t>(sceneId) << 32) | entity;
+    if (key != scrollKey) {
+        auto it = scrollPositions.find(key);
+        const float scroll = (it != scrollPositions.end()) ? it->second : 0.0f;
+        // The child still measures the previous selection, so make room for the restored scroll
+        if (scroll > 0.0f) {
+            ImGui::SetNextWindowContentSize(ImVec2(0.0f, scroll + ImGui::GetContentRegionAvail().y));
+        }
+        ImGui::SetNextWindowScroll(ImVec2(-1.0f, scroll));
+        scrollKey = key;
+    }
+    ImGui::BeginChild("##properties_scroll", ImVec2(0.0f, 0.0f), ImGuiChildFlags_NavFlattened);
+}
+
+void editor::Properties::endScrollRegion(){
+    scrollPositions[scrollKey] = ImGui::GetScrollY();
+    ImGui::EndChild();
 }
 
 bool editor::Properties::isOpen() const{
@@ -14044,6 +14082,9 @@ void editor::Properties::show(){
         // Show the component add dialog
         componentAddDialog.show();
 
+        // Name and buttons stay pinned, components scroll below them
+        beginScrollRegion(sceneProject->id, (entities.size() == 1) ? entities[0] : SCROLL_MULTI_SELECTION);
+
         bool isBundle = !bundlePath.empty();
 
         // Root entity of a bundle is always local, not part of the bundle template
@@ -14234,6 +14275,8 @@ void editor::Properties::show(){
             }
         }
 
+        endScrollRegion();
+
     }else{
         ImGui::Text("Scene");
         ImGui::SameLine();
@@ -14255,6 +14298,8 @@ void editor::Properties::show(){
             }
         }
         ImGui::Separator();
+
+        beginScrollRegion(sceneProject->id, NULL_ENTITY);
 
         if (sceneProject->scene) {
             ImGuiTableFlags tableFlags = ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_Resizable | ImGuiTableFlags_SizingStretchSame;
@@ -14535,6 +14580,8 @@ void editor::Properties::show(){
                 drawDefaultShader(ShaderType::LINES, "default_lines_shader", "Lines");
             }
         }
+
+        endScrollRegion();
 
         thumbnailTextures.clear();
     }

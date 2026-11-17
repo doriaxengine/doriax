@@ -2810,6 +2810,7 @@ void editor::App::prepareForProjectSwitch() {
     graphEditorWindow->closeAll();
     outputWindow->clear();
     sceneWindow->resetProjectState();
+    propertiesWindow->resetProjectState();
     terrainEditWindow->resetProjectState();
     dockspaceNeedsRebuild = true;
 }
