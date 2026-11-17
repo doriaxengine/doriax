@@ -6623,12 +6623,15 @@ bool editor::Project::hasMissingSceneSources() const {
 // Scenes the editor never saved or played, like one created outside it.
 // All of them when a file may be newer than its source, as after a git pull
 void editor::Project::writeSceneSources(bool onlyMissing) {
-    for (const SceneProject& sceneProject : scenes) {
+    for (SceneProject& sceneProject : scenes) {
         if (onlyMissing && generator.hasSceneSource(sceneProject.id, sceneProject.name, getProjectInternalPath())) {
             continue;
         }
 
         if (sceneProject.scene) {
+            if (!onlyMissing) {
+                updateSceneCppScripts(&sceneProject);
+            }
             writeSceneSource(&sceneProject);
             continue;
         }
@@ -6637,6 +6640,9 @@ void editor::Project::writeSceneSources(bool onlyMissing) {
         try {
             probe.reset(createRuntimeCloneFromSource(&sceneProject));
             writeSceneSource(probe.get());
+            // what the generator reads of it, as the file is now
+            updateSceneCppScripts(probe.get());
+            sceneProject.cppScripts = probe->cppScripts;
         } catch (const std::exception& e) {
             Out::warning("Source of scene '%s' not generated: %s", sceneProject.name.c_str(), e.what());
         }
