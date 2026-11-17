@@ -2063,16 +2063,8 @@ bool editor::Exporter::copyCppScripts() try {
         return relPath;
     };
 
-    std::vector<SceneScriptSource> scripts;
-    for (const auto& sceneProject : project->getScenes()) {
-        scripts.insert(scripts.end(), sceneProject.cppScripts.begin(), sceneProject.cppScripts.end());
-    }
-    // logic graphs written as C++, which no scene lists
-    for (const SceneScriptSource& script : project->collectAllSceneCppScripts()) {
-        if (!script.logicPath.empty()) {
-            scripts.push_back(script);
-        }
-    }
+    // scenes, standalone bundles and logic graphs
+    std::vector<SceneScriptSource> scripts = project->collectAllSceneCppScripts();
 
     for (const auto& script : scripts) {
         // Copy source file
