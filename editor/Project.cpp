@@ -4187,18 +4187,15 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             }
         }
 
+        // lines and the sky have one variant, known before they are drawn
         if (signature.test(scene->getComponentId<LinesComponent>())) {
             const LinesComponent& ln = scene->getComponent<LinesComponent>(entity);
-            if (ln.loaded || ln.shaderRender) {
-                insertKeys(ShaderType::LINES, ln.shaderProperties, effectiveShaderId(ln.shader, ShaderType::LINES));
-            }
+            insertKeys(ShaderType::LINES, ShaderPool::getLinesProperties(false, true), effectiveShaderId(ln.shader, ShaderType::LINES));
         }
 
         if (signature.test(scene->getComponentId<SkyComponent>())) {
             const SkyComponent& sky = scene->getComponent<SkyComponent>(entity);
-            if (sky.loaded) {
-                insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.shader, ShaderType::SKYBOX));
-            }
+            insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.shader, ShaderType::SKYBOX));
         }
 
         // from the authored fields, as the cached variant lacks fog while the editor hides it
