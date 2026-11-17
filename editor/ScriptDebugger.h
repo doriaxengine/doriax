@@ -77,7 +77,7 @@ namespace doriax::editor {
     private:
         void send(const std::string& command, const std::string& extra = "");
         void sendBreakpoints(const std::string& file);
-        void onLine(const std::string& line);
+        void onLine(const std::string& line, unsigned int started);
         void onMessage(const std::string& text);
         void clearStop();
 

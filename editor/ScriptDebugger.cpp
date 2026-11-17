@@ -66,7 +66,7 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
         if (build() && !isStopRequested()) {
             state = State::RUNNING;
             Out::success("Scene started with the debugger");
-            runner.run(command, workingDir, [this](const std::string& line) { onLine(line); });
+            runner.run(command, workingDir, [this, started](const std::string& line) { onLine(line, started); });
             Out::info("The debugged scene ended");
         }
         getEditorHost().enqueueMainThreadTask([this, started]() {
@@ -223,13 +223,18 @@ void editor::ScriptDebugger::sendBreakpoints(const std::string& file) {
 }
 
 // On the thread that waits for the process
-void editor::ScriptDebugger::onLine(const std::string& line) {
+void editor::ScriptDebugger::onLine(const std::string& line, unsigned int started) {
     const size_t mark = line.find(LuaDebugger::MESSAGE_MARK);
     if (mark != 0) {
         logProjectLine(line.substr(0, mark));
     }
     if (mark != std::string::npos) {
-        getEditorHost().enqueueMainThreadTask([this, text = line.substr(mark + 1)]() { onMessage(text); });
+        getEditorHost().enqueueMainThreadTask([this, started, text = line.substr(mark + 1)]() {
+            // a message may wait in the queue past the end of its session
+            if (started == session) {
+                onMessage(text);
+            }
+        });
     }
 }
 
