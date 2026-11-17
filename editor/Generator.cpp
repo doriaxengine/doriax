@@ -1000,6 +1000,35 @@ static std::string getLuaPropertyType(const std::string& type) {
     return type;
 }
 
+// end of a Lua string or comment at i, else i
+static size_t getLuaTokenEnd(const std::string& text, size_t i) {
+    // [[ ]] or [==[ ]==], npos when at is no long bracket
+    const auto longBracketEnd = [&](size_t at) {
+        size_t bracket = at + 1;
+        while (bracket < text.size() && text[bracket] == '=') bracket++;
+        if (bracket >= text.size() || text[bracket] != '[') return std::string::npos;
+        const std::string close = "]" + std::string(bracket - at - 1, '=') + "]";
+        const size_t end = text.find(close, bracket);
+        return end == std::string::npos ? text.size() : end + close.size();
+    };
+    if (text.compare(i, 2, "--") == 0) {
+        const size_t end = text[i + 2] == '[' ? longBracketEnd(i + 2) : std::string::npos;
+        return end != std::string::npos ? end : std::min(text.find('\n', i), text.size());
+    }
+    if (text[i] == '"' || text[i] == '\'') {
+        size_t end = i + 1;
+        while (end < text.size() && text[end] != text[i] && text[end] != '\n') {
+            end += text[end] == '\\' ? 2 : 1;
+        }
+        return std::min(end + 1, text.size());
+    }
+    if (text[i] == '[') {
+        const size_t end = longBracketEnd(i);
+        return end != std::string::npos ? end : i;
+    }
+    return i;
+}
+
 // self of each Lua script, for lua-language-server
 static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& projectInternalPath) {
     std::vector<fs::path> scripts;
@@ -1023,7 +1052,18 @@ static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& project
     std::string stubs = "---@meta\n-- Properties of the Lua scripts in this project, written by Doriax Editor.\n";
     for (const fs::path& script : scripts) {
         std::ifstream in(script, std::ios::binary);
-        const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        const std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+        // without comments, strings kept for their values
+        std::string text;
+        for (size_t i = 0; i < source.size();) {
+            const size_t end = getLuaTokenEnd(source, i);
+            if (end == i) {
+                text += source[i++];
+            } else {
+                text += source.compare(i, 2, "--") == 0 ? std::string(" ") : source.substr(i, end - i);
+                i = end;
+            }
+        }
         std::smatch match, properties;
         if (!std::regex_search(text, properties, propertiesPattern) || !std::regex_search(text, match, returnPattern)) {
             continue;
@@ -1036,7 +1076,10 @@ static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& project
         int depth = 0;
         size_t entry = 0;
         for (size_t i = open; i < text.size(); i++) {
-            if (text[i] == '{' && ++depth == 2) {
+            const size_t end = getLuaTokenEnd(text, i);
+            if (end != i) {
+                i = end - 1;
+            } else if (text[i] == '{' && ++depth == 2) {
                 entry = i;
             } else if (text[i] == '}' && depth-- == 2) {
                 const std::string item = text.substr(entry, i - entry);
