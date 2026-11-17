@@ -11196,8 +11196,11 @@ void editor::Project::startDebug() {
     editor::getEditorHost().saveAllCodeEditors();
 
     // open scenes run as they are in the editor, saved or not
-    for (const SceneProject& sceneProject : scenes) {
+    for (SceneProject& sceneProject : scenes) {
         if (sceneProject.scene) {
+            updateAllScriptsProperties(sceneProject.id);
+            updateSceneCppScripts(&sceneProject);
+            updateSceneBundles(&sceneProject);
             writeSceneSource(&sceneProject);
         }
     }
