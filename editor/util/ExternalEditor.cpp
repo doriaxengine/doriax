@@ -127,9 +127,11 @@ namespace {
             }
             case editor::ScriptEditor::VISUAL_STUDIO: {
             #ifdef _WIN32
-                const std::string installPath = editor::CommandRunner::vsInstallationPath();
-                if (!installPath.empty()) {
-                    return firstExisting({fs::path(installPath) / "Common7" / "IDE" / "devenv.exe"});
+                // the default products of vswhere leave Build Tools out
+                const std::string vswhere = editor::CommandRunner::findVswherePath();
+                if (!vswhere.empty()) {
+                    const std::string devenv = editor::CommandRunner::runCaptureNoWindow("\"" + vswhere + "\" -latest -property productPath 2>nul");
+                    return firstExisting({editor::FileUtils::pathFromUtf8(devenv)});
                 }
             #endif
                 return "";
