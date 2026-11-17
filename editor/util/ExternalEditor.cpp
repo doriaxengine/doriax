@@ -62,8 +62,28 @@ namespace {
 
     std::string findJetBrains(const std::string& command, const std::string& app) {
     #ifdef _WIN32
-        (void)app;
-        return editor::ShellEnv::findExecutable(command + ".cmd");
+        // the launcher of the installer, then the script of Toolbox
+        std::string found = editor::ShellEnv::findExecutable(command + "64.exe");
+        if (found.empty()) {
+            found = editor::ShellEnv::findExecutable(command + ".cmd");
+        }
+        if (found.empty()) {
+            // the newest install, when PATH has none
+            const char* programFiles = std::getenv("ProgramFiles");
+            const char* localAppData = std::getenv("LOCALAPPDATA");
+            std::vector<fs::path> installs;
+            std::error_code ec;
+            for (const fs::path& root : {fs::path(programFiles ? programFiles : "") / "JetBrains", fs::path(localAppData ? localAppData : "") / "Programs"}) {
+                for (const fs::directory_entry& entry : fs::directory_iterator(root, ec)) {
+                    if (entry.path().filename().string().find(app) != std::string::npos) {
+                        installs.push_back(entry.path() / "bin" / (command + "64.exe"));
+                    }
+                }
+            }
+            std::sort(installs.rbegin(), installs.rend());
+            found = firstExisting(installs);
+        }
+        return found;
     #else
         std::string found = editor::ShellEnv::findExecutable(command);
         if (found.empty()) {
