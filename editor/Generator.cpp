@@ -1053,19 +1053,23 @@ static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& project
     for (const fs::path& script : scripts) {
         std::ifstream in(script, std::ios::binary);
         const std::string source((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        // without comments, strings kept for their values
+        // without comments, and code is the same with its strings blanked
         std::string text;
+        std::string code;
         for (size_t i = 0; i < source.size();) {
             const size_t end = getLuaTokenEnd(source, i);
             if (end == i) {
-                text += source[i++];
-            } else {
-                text += source.compare(i, 2, "--") == 0 ? std::string(" ") : source.substr(i, end - i);
-                i = end;
+                text += source[i];
+                code += source[i++];
+                continue;
             }
+            const bool comment = source.compare(i, 2, "--") == 0;
+            text += comment ? std::string(" ") : source.substr(i, end - i);
+            code += std::string(comment ? 1 : end - i, ' ');
+            i = end;
         }
         std::smatch match, properties;
-        if (!std::regex_search(text, properties, propertiesPattern) || !std::regex_search(text, match, returnPattern)) {
+        if (!std::regex_search(code, properties, propertiesPattern) || !std::regex_search(code, match, returnPattern)) {
             continue;
         }
         const std::string className = match[1];
@@ -1075,13 +1079,10 @@ static void writeLuaScriptStubs(const fs::path& luaPath, const fs::path& project
         std::string fields;
         int depth = 0;
         size_t entry = 0;
-        for (size_t i = open; i < text.size(); i++) {
-            const size_t end = getLuaTokenEnd(text, i);
-            if (end != i) {
-                i = end - 1;
-            } else if (text[i] == '{' && ++depth == 2) {
+        for (size_t i = open; i < code.size(); i++) {
+            if (code[i] == '{' && ++depth == 2) {
                 entry = i;
-            } else if (text[i] == '}' && depth-- == 2) {
+            } else if (code[i] == '}' && depth-- == 2) {
                 const std::string item = text.substr(entry, i - entry);
                 std::smatch name, type;
                 if (std::regex_search(item, name, namePattern)) {
