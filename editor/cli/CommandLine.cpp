@@ -884,7 +884,8 @@ int CommandLine::runIdeCommand(int argc, char** argv, const char* executableName
         if (argument == "-h" || argument == "--help") {
             std::cout << "Usage:\n  " << commandName << " ide --project <project-dir|project.yaml>\n\n"
                       << "Writes the CMake and IDE files of a project, as the editor does on save: CMakeLists.txt,\n"
-                      << "CMakeUserPresets.json, .vscode, .luarc.json and the engine API in .doriax.\n";
+                      << "CMakeUserPresets.json, .vscode, .luarc.json and the engine API in .doriax. Also compiles\n"
+                      << "the shaders its scenes use, which the project built from these files needs to run.\n";
             return 0;
         }
         if ((argument == "-p" || argument == "--project") && i + 1 < argc) {
@@ -913,7 +914,12 @@ int CommandLine::runIdeCommand(int argc, char** argv, const char* executableName
         return 1;
     }
     project.copyEngineApiToProject();
-    return project.writeGeneratedSources() ? 0 : 1;
+    if (!project.writeGeneratedSources()) {
+        return 1;
+    }
+    // the project built from these files only reads compiled shaders
+    project.buildStandaloneShaderCache();
+    return 0;
 }
 
 int CommandLine::runHelpCommand(int argc, char** argv, const char* executableName) {

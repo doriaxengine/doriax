@@ -588,9 +588,6 @@ namespace doriax::editor{
         // false when another editor holds the folder
         bool lockFolder(const std::filesystem::path& path, ProjectLock& lock) const;
 
-        // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
-        // and cannot compile, so a variant the editor never draws with is missing there.
-        void buildStandaloneShaderCache();
         // reloads what uses the shader, or any shader file when null
         void flagCustomShaderUsers(const std::string* shader);
 
@@ -800,6 +797,9 @@ namespace doriax::editor{
         // also before the first save, for an IDE opening the project
         void copyEngineApiToProject();
         bool writeGeneratedSources();
+        // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
+        // and cannot compile, so a variant the editor never draws with is missing there.
+        void buildStandaloneShaderCache();
         // a debugger may attach unless Debug Info is None
         void updateDebuggerAccess();
 

@@ -1182,7 +1182,22 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
         static const std::string ninjaEnv = editor::CommandRunner::msvcEnvPrefix(build.generator);
         msvcEnv = ninjaEnv;
     }
-    const std::string buildCommand = msvcEnv + cmake + " --preset doriax && " + cmake + " --build --preset doriax";
+    // The editor first, without a window: it writes the scenes as saved and
+    // compiles the shaders they use, which the project only reads
+    std::string prepare;
+    if (!editor::FileUtils::isEngineDirEphemeral()) {
+        fs::path editorPath = editor::FileUtils::getExecutablePath();
+#ifdef _WIN32
+        // a console waits for this one, and gets its output
+        std::error_code consoleEc;
+        const fs::path consoleEditor = editorPath.parent_path() / "doriax-editor-cmd.exe";
+        if (fs::is_regular_file(consoleEditor, consoleEc)) {
+            editorPath = consoleEditor;
+        }
+#endif
+        prepare = "\"" + editor::FileUtils::pathToUtf8(editorPath) + "\" ide --project . && ";
+    }
+    const std::string buildCommand = prepare + msvcEnv + cmake + " --preset doriax && " + cmake + " --build --preset doriax";
     const std::string buildTask = "Doriax: Build Project";
     OrderedJson task;
     task["label"] = buildTask;
