@@ -933,6 +933,7 @@ set(DORIAX_SRCS
     core/render/SystemRender.cpp
     core/render/TextureRender.cpp
     core/script/LuaBinding.cpp
+    core/script/LuaDebugger.cpp
     core/script/LuaFunctionBase.cpp
     core/script/LuaScript.cpp
     core/script/ScriptBase.cpp

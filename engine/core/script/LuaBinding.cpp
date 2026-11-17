@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "LuaBinding.h"
+#include "LuaDebugger.h"
 
 #include <set>
 #include <tuple>
@@ -131,6 +132,10 @@ void LuaBinding::createLuaState(){
     registerHelpersFunctions(luastate);
 
     collectLoadedModuleNames(luastate, baselineLuaModules);
+
+    #ifdef DORIAX_EDITOR
+    LuaDebugger::attach(luastate);
+    #endif
 }
 
 lua_State* LuaBinding::getLuaState(){
@@ -446,6 +451,10 @@ int LuaBinding::handleLuaError(lua_State* L) {
     }
     if (strstr(msg, "stack traceback:") != NULL)
         return 1;  /* a nested handler already added one */
+
+    #ifdef DORIAX_EDITOR
+    LuaDebugger::onError(L, msg);
+    #endif
 
     luaL_traceback(L, L, msg, 1);  /* append a standard traceback */
     return 1;  /* return the traceback */
