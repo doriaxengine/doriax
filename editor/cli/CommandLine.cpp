@@ -914,7 +914,8 @@ int CommandLine::runIdeCommand(int argc, char** argv, const char* executableName
         return 1;
     }
     project.copyEngineApiToProject();
-    if (!project.writeGeneratedSources()) {
+    // scene files may have changed outside the editor
+    if (!project.writeGeneratedSources(true)) {
         return 1;
     }
     // the project built from these files only reads compiled shaders

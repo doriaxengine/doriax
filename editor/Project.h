@@ -561,7 +561,7 @@ namespace doriax::editor{
         bool writeSceneToPath(uint32_t sceneId, const std::filesystem::path& path, bool stopTransientPreviews = true);
         void writeSceneSource(const SceneProject* sceneProject);
         bool hasMissingSceneSources() const;
-        void writeMissingSceneSources();
+        void writeSceneSources(bool onlyMissing);
         void configureGenerator();
         void saveModifiedChildScenes(uint32_t sceneId, std::function<void(bool)> callback = nullptr);
         bool hasSceneUnsavedChangesImpl(uint32_t sceneId, std::unordered_set<uint32_t>& visited) const;
@@ -796,7 +796,8 @@ namespace doriax::editor{
         void markGeneratedSourcesDirty();
         // also before the first save, for an IDE opening the project
         void copyEngineApiToProject();
-        bool writeGeneratedSources();
+        // allScenes: also the sources that a scene file may have outdated
+        bool writeGeneratedSources(bool allScenes = false);
         // The standalone build reads shaders from the editor cache (DORIAX_SHADER_PATH)
         // and cannot compile, so a variant the editor never draws with is missing there.
         void buildStandaloneShaderCache();

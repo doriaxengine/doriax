@@ -6617,10 +6617,11 @@ bool editor::Project::hasMissingSceneSources() const {
     });
 }
 
-// Scenes the editor never saved or played, like one created outside it
-void editor::Project::writeMissingSceneSources() {
+// Scenes the editor never saved or played, like one created outside it.
+// All of them when a file may be newer than its source, as after a git pull
+void editor::Project::writeSceneSources(bool onlyMissing) {
     for (const SceneProject& sceneProject : scenes) {
-        if (generator.hasSceneSource(sceneProject.id, sceneProject.name, getProjectInternalPath())) {
+        if (onlyMissing && generator.hasSceneSource(sceneProject.id, sceneProject.name, getProjectInternalPath())) {
             continue;
         }
 
@@ -6681,12 +6682,12 @@ void editor::Project::markGeneratedSourcesDirty() {
     generatedSourcesDirty.store(true);
 }
 
-bool editor::Project::writeGeneratedSources() {
+bool editor::Project::writeGeneratedSources(bool allScenes) {
     if (isAnyScenePlaying()) {
         return false;
     }
     try {
-        writeMissingSceneSources();
+        writeSceneSources(!allScenes);
         configureGenerator();
     } catch (const std::exception& e) {
         Out::error("Failed to update generated sources: %s", e.what());
@@ -11220,10 +11221,10 @@ void editor::Project::startDebug() {
             updateAllScriptsProperties(sceneProject.id);
             updateSceneCppScripts(&sceneProject);
             updateSceneBundles(&sceneProject);
-            writeSceneSource(&sceneProject);
         }
     }
-    if (!writeGeneratedSources()) {
+    // and the closed ones as their files are now
+    if (!writeGeneratedSources(true)) {
         return;
     }
 
