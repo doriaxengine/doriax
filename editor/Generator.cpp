@@ -1140,20 +1140,22 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
     const std::string buildTask = "Doriax: Build Project";
     OrderedJson task;
     task["label"] = buildTask;
-    task["type"] = "process";
 #ifdef _WIN32
-    task["command"] = "cmd.exe";
-    task["args"] = OrderedJson::array({"/d", "/c", buildCommand});
+    // VS Code passes it as is, and cmd /c drops the outer quotes
+    task["type"] = "shell";
+    task["command"] = "\"" + buildCommand + "\"";
+    task["options"] = {{"cwd", "${workspaceFolder}"}, {"shell", {{"executable", "cmd.exe"}}}};
 #else
+    task["type"] = "process";
     task["command"] = "/bin/sh";
     task["args"] = OrderedJson::array({"-c", buildCommand});
+    task["options"] = {{"cwd", "${workspaceFolder}"}};
 #endif
 #if defined(_WIN32) && !defined(__MINGW32__)
     task["problemMatcher"] = "$msCompile";
 #else
     task["problemMatcher"] = "$gcc";
 #endif
-    task["options"] = {{"cwd", "${workspaceFolder}"}};
     task["group"] = "build";
     writeVsCodeFile(vscodePath / "tasks.json", {{"version", "2.0.0"}, {"tasks", OrderedJson::array({task})}});
 
