@@ -1171,6 +1171,8 @@ void editor::AnimationWindow::seekPreview(Scene* scene, SceneProject* sceneProje
         scene->getSystem<ActionSystem>()->updateAnimationPreview(currentStep, clipEntity);
         remainingTime -= currentStep;
     }
+
+    sceneProject->needUpdateRender = true;
 }
 
 void editor::AnimationWindow::addAnimationToPreview(Scene* scene, Entity animEntity) {
