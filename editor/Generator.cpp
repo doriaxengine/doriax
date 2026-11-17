@@ -1141,10 +1141,10 @@ static void writeVsCodeFiles(const fs::path& projectPath, const std::string& int
     OrderedJson task;
     task["label"] = buildTask;
 #ifdef _WIN32
-    // VS Code passes it as is, and cmd /c drops the outer quotes
+    // VS Code passes it as is, and cmd /s drops the outer quotes
     task["type"] = "shell";
     task["command"] = "\"" + buildCommand + "\"";
-    task["options"] = {{"cwd", "${workspaceFolder}"}, {"shell", {{"executable", "cmd.exe"}}}};
+    task["options"] = {{"cwd", "${workspaceFolder}"}, {"shell", {{"executable", "cmd.exe"}, {"args", OrderedJson::array({"/d", "/s", "/c"})}}}};
 #else
     task["type"] = "process";
     task["command"] = "/bin/sh";
