@@ -146,35 +146,40 @@ namespace {
         return frames;
     }
 
-    // locals and upvalues of a frame, the innermost of a repeated name
+    // locals and upvalues of a frame, as the code at its line sees them
     json frameVariables(lua_State* L, int level) {
         json variables = json::array();
         lua_Debug ar;
         if (!lua_getstack(L, level, &ar)) {
             return variables;
         }
-        const auto add = [&](const char* name) {
-            json variable = describe(L, -1, name);
-            for (json& other : variables) {
-                if (other["name"] == name) {
-                    other = variable;
-                    return;
+        const auto find = [&](const char* name) -> json* {
+            for (json& variable : variables) {
+                if (variable["name"] == name) {
+                    return &variable;
                 }
             }
-            variables.push_back(variable);
+            return nullptr;
         };
         const char* name = nullptr;
         for (int i = 1; (name = lua_getlocal(L, &ar, i)); i++) {
             // "(temporary)" and the like are not variables
             if (*name != '(') {
-                add(name);
+                // a later local of the same name is the one in scope
+                json* shadowed = find(name);
+                if (shadowed) {
+                    *shadowed = describe(L, -1, name);
+                } else {
+                    variables.push_back(describe(L, -1, name));
+                }
             }
             lua_pop(L, 1);
         }
         lua_getinfo(L, "f", &ar);
         for (int i = 1; (name = lua_getupvalue(L, -1, i)); i++) {
-            if (*name && std::strcmp(name, "_ENV") != 0) {
-                add(name);
+            // and a local hides the upvalue of its name
+            if (*name && std::strcmp(name, "_ENV") != 0 && !find(name)) {
+                variables.push_back(describe(L, -1, name));
             }
             lua_pop(L, 1);
         }
