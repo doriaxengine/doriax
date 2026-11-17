@@ -1677,6 +1677,7 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
 
     EditorInstance instance = std::move(it->second);
     instance.filepath = newKey;
+    // the project moved its breakpoints to the new name
     instance.luaSource.clear();
     instance.lastWriteTime = newWriteTime;
     editors.erase(it);

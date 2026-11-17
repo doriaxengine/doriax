@@ -1369,6 +1369,9 @@ void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, 
         ProjectUtils::removeLogicScript(this, oldPath);
     }
 
+    // breakpoints go with the Lua files, open in an editor or not
+    debugger.renameBreakpoints(FileUtils::pathToGenericUtf8(normalizeToLuaRelative(oldPath)), FileUtils::pathToGenericUtf8(normalizeToLuaRelative(newPath)));
+
     for (auto& sceneProject : scenes) {
         if (!sceneProject.scene) {
             continue;

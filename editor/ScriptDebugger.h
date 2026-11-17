@@ -55,6 +55,8 @@ namespace doriax::editor {
         void toggleBreakpoint(const std::string& file, int line);
         void setBreakpoints(const std::string& file, const std::set<int>& lines);
         const std::set<int>& getBreakpoints(const std::string& file) const;
+        // of a renamed file, or of the files in a renamed folder
+        void renameBreakpoints(const std::string& from, const std::string& to);
 
         void resume();
         void stepOver();

@@ -142,6 +142,23 @@ const std::set<int>& editor::ScriptDebugger::getBreakpoints(const std::string& f
     return it != breakpoints.end() ? it->second : none;
 }
 
+void editor::ScriptDebugger::renameBreakpoints(const std::string& from, const std::string& to) {
+    if (from.empty() || from == to) {
+        return;
+    }
+    std::vector<std::string> files;
+    for (const auto& [file, lines] : breakpoints) {
+        if (file == from || file.rfind(from + "/", 0) == 0) {
+            files.push_back(file);
+        }
+    }
+    for (const std::string& file : files) {
+        const std::set<int> lines = getBreakpoints(file);
+        setBreakpoints(file, {});
+        setBreakpoints(to + file.substr(from.size()), lines);
+    }
+}
+
 void editor::ScriptDebugger::resume() {
     send("continue");
 }
