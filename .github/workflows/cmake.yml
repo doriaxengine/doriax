@@ -452,6 +452,28 @@ jobs:
           path: ./dist/*.zsync
           if-no-files-found: error
 
+      # After the uploads, so a failure here still leaves the artifacts
+      - name: Set up the MSVC environment
+        if: matrix.config.cc == 'cl' && github.event_name != 'release'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      # A new project has to configure and build with the preset the editor writes
+      - name: Check the IDE preset
+        if: github.event_name != 'release'
+        run: |
+          case "$RUNNER_OS" in
+            Windows) editor=instdir/bin/doriax-editor-cmd.exe ;;
+            macOS) app="$(find instdir -maxdepth 4 -name '*.app' -type d | head -1)"
+                   editor="$app/Contents/MacOS/$(basename "$app" .app)" ;;
+            *) editor=instdir/bin/doriax-editor ;;
+          esac
+          mkdir ide-check
+          echo "name: IdeCheck" > ide-check/project.yaml
+          "$editor" ide --project ide-check
+          cat ide-check/CMakeUserPresets.json
+          cmake --preset doriax -S ide-check
+          cmake --build ide-check/.doriax/externalbuild --config ${{env.BUILD_TYPE}}
+
   # Artifacts are only ever served as zips, so a published release is what gives
   # a direct download. MinGW is left off: MSVC is the build a release ships, and
   # while SIGN_WINDOWS is off neither of them is signed.

@@ -498,8 +498,6 @@ namespace doriax::editor{
 
         void pauseEngineScene(Scene* scene, bool pause) const;
 
-        void copyEngineApiToProject();
-
         void registerSceneManager();
         SceneResources collectPlaySceneResources(uint32_t sceneId);
         void registerBundleManager();
@@ -796,6 +794,7 @@ namespace doriax::editor{
         void updateGeneratedSources();
         void markGeneratedSourcesDirty();
         // also before the first save, for an IDE opening the project
+        void copyEngineApiToProject();
         bool writeGeneratedSources();
         // a debugger may attach unless Debug Info is None
         void updateDebuggerAccess();

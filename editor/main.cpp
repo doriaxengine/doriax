@@ -18,6 +18,9 @@ int main(int argc, char* argv[]) {
     if (argc >= 2 && std::strcmp(argv[1], "export") == 0) {
         return editor::CommandLine::runExportCommand(argc - 1, argv + 1, argv[0]);
     }
+    if (argc >= 2 && std::strcmp(argv[1], "ide") == 0) {
+        return editor::CommandLine::runIdeCommand(argc - 1, argv + 1, argv[0]);
+    }
     if (argc >= 2 && std::strcmp(argv[1], "shaders") == 0) {
         return editor::CommandLine::runShadersCommand(argc - 1, argv + 1, argv[0]);
     }

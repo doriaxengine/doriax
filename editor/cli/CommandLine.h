@@ -24,6 +24,9 @@ namespace doriax::editor {
         static int runLogicNodesCommand(int argc, char** argv, const char* executableName);
         static int runLogicCommand(int argc, char** argv, const char* executableName);
 
+        // Writes the CMake and IDE files of a project, without a window
+        static int runIdeCommand(int argc, char** argv, const char* executableName);
+
         // Prints the top level usage, or reports an unrecognized argument.
         static int runHelpCommand(int argc, char** argv, const char* executableName);
     };

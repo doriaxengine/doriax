@@ -271,6 +271,7 @@ static void printMainUsage(const std::string& commandName) {
         << "  " << commandName << "                          Open the editor.\n"
         << "  " << commandName << " --project <path>         Open the editor on a project.\n"
         << "  " << commandName << " export [options]         Export a project.\n"
+        << "  " << commandName << " ide --project <path>     Write the CMake and IDE files of a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
         << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"
         << "  " << commandName << " shader-nodes             Print the shader graph node types as JSON.\n"
@@ -868,6 +869,51 @@ int CommandLine::runLogicCommand(int argc, char** argv, const char* executableNa
     if (language == LogicLanguage::CPP)
         std::ofstream(std::filesystem::path(output).replace_extension(".h"), std::ios::binary | std::ios::trunc) << result.header;
     return written ? 0 : 1;
+}
+
+int CommandLine::runIdeCommand(int argc, char** argv, const char* executableName) {
+    attachHostConsoleIfNeeded();
+
+    // headless host, as for export
+    EditorHostOverrideGuard hostOverride(nullptr);
+
+    const std::string commandName = getCommandName(executableName);
+    std::string input;
+    for (int i = 1; i < argc; i++) {
+        const std::string argument = argv[i];
+        if (argument == "-h" || argument == "--help") {
+            std::cout << "Usage:\n  " << commandName << " ide --project <project-dir|project.yaml>\n\n"
+                      << "Writes the CMake and IDE files of a project, as the editor does on save: CMakeLists.txt,\n"
+                      << "CMakeUserPresets.json, .vscode, .luarc.json and the engine API in .doriax.\n";
+            return 0;
+        }
+        if ((argument == "-p" || argument == "--project") && i + 1 < argc) {
+            input = argv[++i];
+        } else {
+            std::cerr << commandName << " ide: unknown argument '" << argument << "'\n";
+            return 2;
+        }
+    }
+    if (input.empty()) {
+        std::cerr << commandName << " ide: no project given\n";
+        return 2;
+    }
+
+    Out::setOutputWindow(nullptr);
+    AppSettings::initialize();
+
+    Project project;
+    auto platform = std::make_unique<Platform>(&project);
+    EngineRuntimeGuard engineRuntime;
+    Engine::systemInit(argc, argv, platform.get());
+    engineRuntime.initialized = true;
+    Engine::pauseGameEvents(true);
+
+    if (!project.loadProject(normalizeProjectPath(input), false)) {
+        return 1;
+    }
+    project.copyEngineApiToProject();
+    return project.writeGeneratedSources() ? 0 : 1;
 }
 
 int CommandLine::runHelpCommand(int argc, char** argv, const char* executableName) {
