@@ -34,7 +34,7 @@ RE_BEGIN_CLASS = re.compile(
     r'\.beginClass\s*<\s*([^>]+?)\s*>\s*\(\s*"([^"]+)"\s*\)'
 )
 RE_DERIVE_CLASS = re.compile(
-    r'\.deriveClass\s*<\s*([^,>]+?)\s*,\s*([^>]+?)\s*>\s*\(\s*"([^"]+)"\s*\)'
+    r'\.deriveClass\s*<\s*([^,>]+?)\s*,\s*(.+?)\s*>\s*\(\s*"([^"]+)"\s*\)'
 )
 RE_END_CLASS = re.compile(r'\.endClass\(\)')
 
@@ -1147,9 +1147,8 @@ def _lua_params(params, names):
         declaration, _, default = param.partition('=')
         parts = declaration.strip().rsplit(' ', 1)
         cpp_type, name = (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
-        if 'lua_State' in cpp_type:
-            continue
-        if cpp_type == '...':
+        # the method reads its arguments from the Lua stack
+        if 'lua_State' in cpp_type or cpp_type == '...':
             result.append(('...', 'any', False))
             continue
         if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
@@ -1261,7 +1260,7 @@ def _lua_class(name, cls, members, doc, names, cpp_methods, callbacks, types):
     lines = _lua_comment(doc.get('description', ''))
     if doc.get('url'):
         lines.append(f'---[Doriax reference]({doc["url"]})')
-    base = names.get(cls.base, '') if cls.base else ''
+    base = names.get(_type_key(cls.base), '') if cls.base else ''
     lines.append(f'---@class {name}' + (f': {base}' if base else ''))
 
     for s in members:
@@ -1359,8 +1358,12 @@ def generate_lua_stubs(symbols, events, cpp_methods, docs, output_path):
         lines += _lua_event(name, signature, names)
     for name in sorted(classes):
         doc = docs.get(name, {})
-        lines += _lua_class(name, classes[name], members.get(name, []), doc, names, cpp_methods, callbacks, types)
-        lines += _lua_methods(name, members.get(name, []), doc, names, cpp_methods, types)
+        own = members.get(name, [])
+        # an event it derives from has add and call, with their types
+        if names.get(_type_key(classes[name].base)) in callbacks:
+            own = [s for s in own if s.name not in ('add', 'call')]
+        lines += _lua_class(name, classes[name], own, doc, names, cpp_methods, callbacks, types)
+        lines += _lua_methods(name, own, doc, names, cpp_methods, types)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     with open(output_path, 'w', encoding='utf-8') as f:
