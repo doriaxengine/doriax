@@ -529,10 +529,6 @@ const char* CustomTextEditor::GetLanguageName() const {
 }
 
 void CustomTextEditor::setLinesFromText(const std::string& text) {
-    if (breakpoints.empty()) {
-        splitLines(text, lines);
-        return;
-    }
     const std::vector<std::string> previous = std::move(lines);
     splitLines(text, lines);
     remapBreakpoints(previous);
@@ -1082,6 +1078,7 @@ void CustomTextEditor::Backspace() {
             int prevLineLen = static_cast<int>(lines[cursor.position.line - 1].size());
             lines[cursor.position.line - 1] += lines[cursor.position.line];
             lines.erase(lines.begin() + cursor.position.line);
+            moveBreakpoints(cursor.position.line - 1, -1);
             cursor.position.line--;
             cursor.position.column = prevLineLen;
             delStart = cursor.position;
@@ -1136,6 +1133,7 @@ void CustomTextEditor::Delete() {
                 delEnd = TextPosition(cursor.position.line + 1, 0);
                 lines[cursor.position.line] += lines[cursor.position.line + 1];
                 lines.erase(lines.begin() + cursor.position.line + 1);
+                moveBreakpoints(cursor.position.line, -1);
             } else {
                 didDelete = false;
             }
@@ -1400,6 +1398,9 @@ void CustomTextEditor::Cut() {
             int line = cursors[primaryCursor].position.line;
             if (lines.size() > 1) {
                 lines.erase(lines.begin() + line);
+                // the breakpoint of the line goes with it
+                breakpoints.erase(line);
+                moveBreakpoints(line, -1);
                 if (line >= static_cast<int>(lines.size())) line = static_cast<int>(lines.size()) - 1;
                 cursors[primaryCursor].position = TextPosition(line, 0);
             } else {
@@ -3750,6 +3751,8 @@ void CustomTextEditor::moveBreakpoints(int afterLine, int count) {
 // After the whole text is replaced, as an undo or a reload does: the lines
 // before the change keep their breakpoints, the ones after it move with it
 void CustomTextEditor::remapBreakpoints(const std::vector<std::string>& previous) {
+    if (breakpoints.empty()) return;
+
     const int oldCount = static_cast<int>(previous.size());
     const int newCount = static_cast<int>(lines.size());
     int same = 0;
@@ -4142,7 +4145,8 @@ void CustomTextEditor::revertDiffChange(const LineChange& change) {
     reverted.insert(reverted.end(), lines.begin() + change.modifiedEnd, lines.end());
 
     addUndoRecord();
-    lines = std::move(reverted);
+    lines.swap(reverted);
+    remapBreakpoints(reverted);
 
     // Carets below the change follow their text, those inside go to its first line
     const int shift = (change.originalEnd - change.originalStart) - (change.modifiedEnd - change.modifiedStart);
