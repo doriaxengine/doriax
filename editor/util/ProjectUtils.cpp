@@ -2400,10 +2400,11 @@ void editor::ProjectUtils::updateActionPreviewSnapshot(Entity entity, YAML::Node
     if (entity == NULL_ENTITY || !registry->isEntityCreated(entity)) return;
 
     // the current settings replace the snapshot, but the keys the preview itself changes keep their old values
-    auto update = [&](ComponentType type, YAML::Node encoded, std::initializer_list<const char*> runtimeKeys) {
+    auto update = [&](ComponentType type, auto encode, const auto& comp, std::initializer_list<const char*> runtimeKeys) {
         const std::string componentName = Catalog::getComponentName(type, true);
         const YAML::Node originalNode = components[componentName];
         if (!originalNode || originalNode.IsNull()) return;
+        YAML::Node encoded = encode(comp);
         for (const char* key : runtimeKeys) {
             if (originalNode[key]) {
                 encoded[key] = originalNode[key];
@@ -2413,32 +2414,32 @@ void editor::ProjectUtils::updateActionPreviewSnapshot(Entity entity, YAML::Node
     };
 
     if (auto* comp = registry->findComponent<ActionComponent>(entity)) {
-        update(ComponentType::ActionComponent, Stream::encodeActionComponent(*comp), {"state"});
+        update(ComponentType::ActionComponent, Stream::encodeActionComponent, *comp, {"state"});
     }
     if (auto* comp = registry->findComponent<KeyframeTracksComponent>(entity)) {
-        update(ComponentType::KeyframeTracksComponent, Stream::encodeKeyframeTracksComponent(*comp), {"index", "interpolation"});
+        update(ComponentType::KeyframeTracksComponent, Stream::encodeKeyframeTracksComponent, *comp, {"index", "interpolation"});
     }
     if (auto* comp = registry->findComponent<TimedActionComponent>(entity)) {
-        update(ComponentType::TimedActionComponent, Stream::encodeTimedActionComponent(*comp), {});
+        update(ComponentType::TimedActionComponent, Stream::encodeTimedActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<PositionActionComponent>(entity)) {
-        update(ComponentType::PositionActionComponent, Stream::encodePositionActionComponent(*comp), {});
+        update(ComponentType::PositionActionComponent, Stream::encodePositionActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<RotationActionComponent>(entity)) {
-        update(ComponentType::RotationActionComponent, Stream::encodeRotationActionComponent(*comp), {});
+        update(ComponentType::RotationActionComponent, Stream::encodeRotationActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<ScaleActionComponent>(entity)) {
-        update(ComponentType::ScaleActionComponent, Stream::encodeScaleActionComponent(*comp), {});
+        update(ComponentType::ScaleActionComponent, Stream::encodeScaleActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<ColorActionComponent>(entity)) {
-        update(ComponentType::ColorActionComponent, Stream::encodeColorActionComponent(*comp), {});
+        update(ComponentType::ColorActionComponent, Stream::encodeColorActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<AlphaActionComponent>(entity)) {
-        update(ComponentType::AlphaActionComponent, Stream::encodeAlphaActionComponent(*comp), {});
+        update(ComponentType::AlphaActionComponent, Stream::encodeAlphaActionComponent, *comp, {});
     }
     if (auto* comp = registry->findComponent<ParticlesComponent>(entity)) {
         // the runtime forces "emitter" on at start and off when a non-looping system runs out
-        update(ComponentType::ParticlesComponent, Stream::encodeParticlesComponent(*comp), {"emitter"});
+        update(ComponentType::ParticlesComponent, Stream::encodeParticlesComponent, *comp, {"emitter"});
     }
 }
 

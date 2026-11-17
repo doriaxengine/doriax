@@ -405,18 +405,18 @@ editor::AnimationWindow::PreviewEntityState editor::AnimationWindow::buildPrevie
         state.parent = transform->parent;
     }
 
-    YAML::Node components = Stream::encodeComponents(entity, scene, scene->getSignature(entity));
-    components.remove(Catalog::getComponentName(ComponentType::AnimationComponent, true));
+    Signature signature = scene->getSignature(entity);
+    signature.reset(scene->getComponentId<AnimationComponent>());
 
     // Preview playback reads authored key data but does not mutate it. Keeping
     // these components in the restore snapshot would overwrite keys authored
     // while a scrub preview is paused (Snapshot or right-click keying).
-    components.remove(Catalog::getComponentName(ComponentType::KeyframeTracksComponent, true));
-    components.remove(Catalog::getComponentName(ComponentType::TranslateTracksComponent, true));
-    components.remove(Catalog::getComponentName(ComponentType::RotateTracksComponent, true));
-    components.remove(Catalog::getComponentName(ComponentType::ScaleTracksComponent, true));
-    components.remove(Catalog::getComponentName(ComponentType::MorphTracksComponent, true));
-    state.components = components;
+    signature.reset(scene->getComponentId<KeyframeTracksComponent>());
+    signature.reset(scene->getComponentId<TranslateTracksComponent>());
+    signature.reset(scene->getComponentId<RotateTracksComponent>());
+    signature.reset(scene->getComponentId<ScaleTracksComponent>());
+    signature.reset(scene->getComponentId<MorphTracksComponent>());
+    state.components = Stream::encodeComponents(entity, scene, signature);
 
     return state;
 }
