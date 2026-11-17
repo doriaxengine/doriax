@@ -495,6 +495,8 @@ namespace doriax::editor{
         void removeBundleInstanceTracking(uint32_t sceneId, Entity rootEntity);
         void removeBundleInstanceTracking(SceneProject* sceneProject, Entity rootEntity);
 
+        std::vector<std::filesystem::path> collectLogicGraphs() const;
+        std::vector<std::string> collectLogicLuaScripts() const;
         std::vector<SceneScriptSource> collectLogicCppScripts() const;
         std::vector<BundleSceneInfo> collectAllBundles() const;
 

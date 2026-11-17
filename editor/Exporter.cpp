@@ -1788,15 +1788,18 @@ bool editor::Exporter::copyGenerated() try {
         // Remove the entry point (the exported build compiles the engine's own
         // platform main.cpp, which already defines main()). Generator brackets
         // it with markers because the block is preprocessor-conditional.
-        const std::string entryBegin = "// DORIAX_ENTRY_POINT_BEGIN\n";
-        const std::string entryEnd = "// DORIAX_ENTRY_POINT_END\n";
-        size_t pos = content.find(entryBegin);
-        if (pos != std::string::npos) {
-            size_t endPos = content.find(entryEnd, pos);
-            if (endPos != std::string::npos) {
-                endPos += entryEnd.size();
-                while (endPos < content.size() && content[endPos] == '\n') endPos++;
-                content.erase(pos, endPos - pos);
+        // The same for where logic graph scripts are, which ship in the Lua directory.
+        size_t pos = std::string::npos;
+        for (const char* block : {"// DORIAX_ENTRY_POINT", "    // DORIAX_LOGIC_SCRIPTS"}) {
+            const std::string blockEnd = std::string(block) + "_END\n";
+            pos = content.find(std::string(block) + "_BEGIN\n");
+            if (pos != std::string::npos) {
+                size_t endPos = content.find(blockEnd, pos);
+                if (endPos != std::string::npos) {
+                    endPos += blockEnd.size();
+                    while (endPos < content.size() && content[endPos] == '\n') endPos++;
+                    content.erase(pos, endPos - pos);
+                }
             }
         }
 

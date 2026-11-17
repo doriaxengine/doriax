@@ -5362,7 +5362,7 @@ std::vector<editor::SceneScriptSource> editor::Project::collectAllSceneCppScript
     return mergedScripts;
 }
 
-std::vector<editor::SceneScriptSource> editor::Project::collectLogicCppScripts() const {
+std::vector<fs::path> editor::Project::collectLogicGraphs() const {
     std::vector<fs::path> graphs;
     std::error_code ec;
     for (auto it = fs::recursive_directory_iterator(getLuaPath(), fs::directory_options::skip_permission_denied, ec);
@@ -5379,9 +5379,31 @@ std::vector<editor::SceneScriptSource> editor::Project::collectLogicCppScripts()
     }
     // the directory order is not the same everywhere
     std::sort(graphs.begin(), graphs.end());
+    return graphs;
+}
+
+// Builds the Lua of the logic graphs and names each as scene entries do
+std::vector<std::string> editor::Project::collectLogicLuaScripts() const {
+    std::vector<std::string> scripts;
+    std::error_code ec;
+    for (const fs::path& graph : collectLogicGraphs()) {
+        // a Lua script of that name is the one that runs
+        if (ProjectUtils::getLogicLanguage(this, graph) == LogicLanguage::CPP || fs::exists(fs::path(graph).replace_extension(".lua"), ec)) {
+            continue;
+        }
+        const fs::path script = ProjectUtils::buildLogicScript(this, graph);
+        if (!script.empty() && fs::exists(script, ec)) {
+            scripts.push_back(FileUtils::pathToGenericUtf8(normalizeToLuaRelative(graph).replace_extension(".lua")));
+        }
+    }
+    return scripts;
+}
+
+std::vector<editor::SceneScriptSource> editor::Project::collectLogicCppScripts() const {
+    std::error_code ec;
 
     std::vector<SceneScriptSource> scripts;
-    for (const fs::path& graph : graphs) {
+    for (const fs::path& graph : collectLogicGraphs()) {
         if (ProjectUtils::getLogicLanguage(this, graph) != LogicLanguage::CPP) {
             continue;
         }
@@ -6642,7 +6664,7 @@ void editor::Project::configureGenerator() {
 
     std::vector<SceneScriptSource> mergedCppScripts = collectAllSceneCppScripts();
     std::vector<BundleSceneInfo> bundleBuildInfos = collectAllBundles();
-    generator.configure(scenesToConfig, libName, mergedCppScripts, bundleBuildInfos, getProjectPath(), getProjectInternalPath(), getAssetsPath(), getLuaPath(), getScriptDirs(), getCxxStandard(), scalingMode, textureStrategy, canvasWidth, canvasHeight, vsyncEnabled, getWindowSettings(), loadingSettings);
+    generator.configure(scenesToConfig, libName, mergedCppScripts, bundleBuildInfos, getProjectPath(), getProjectInternalPath(), getAssetsPath(), getLuaPath(), getScriptDirs(), getCxxStandard(), scalingMode, textureStrategy, canvasWidth, canvasHeight, vsyncEnabled, getWindowSettings(), loadingSettings, collectLogicLuaScripts());
 }
 
 void editor::Project::updateGeneratedSources() {
@@ -10161,7 +10183,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
 
         std::vector<SceneScriptSource> mergedCppScripts = collectAllSceneCppScripts();
         std::vector<BundleSceneInfo> bundleBuildInfos = collectAllBundles();
-        generator.configure(scenesToGenerate, libName, mergedCppScripts, bundleBuildInfos, getProjectPath(), getProjectInternalPath(), getAssetsPath(), getLuaPath(), getScriptDirs(), getCxxStandard(), scalingMode, textureStrategy, canvasWidth, canvasHeight, vsyncEnabled, getWindowSettings(), loadingSettings);
+        generator.configure(scenesToGenerate, libName, mergedCppScripts, bundleBuildInfos, getProjectPath(), getProjectInternalPath(), getAssetsPath(), getLuaPath(), getScriptDirs(), getCxxStandard(), scalingMode, textureStrategy, canvasWidth, canvasHeight, vsyncEnabled, getWindowSettings(), loadingSettings, collectLogicLuaScripts());
         if (hasMissingSceneSources()) {
             generatedSourcesDirty.store(true);
         }

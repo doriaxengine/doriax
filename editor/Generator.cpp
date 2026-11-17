@@ -504,6 +504,8 @@ std::string editor::Generator::getPlatformCMakeConfig(bool vsyncEnabled, const W
     // teammate who clones elsewhere still finds the assets
     content += "    add_definitions(\"-DDORIAX_ASSET_PATH=\\\"" + toProjectRootCMakePath(projectPath, assetsPath) + "\\\"\")\n";
     content += "    add_definitions(\"-DDORIAX_LUA_PATH=\\\"" + toProjectRootCMakePath(projectPath, luaPath) + "\\\"\")\n";
+    // where main.cpp finds the Lua written from logic graphs
+    content += "    add_definitions(\"-DDORIAX_LOGIC_PATH=\\\"${INTERNAL_DIR}/generated/logic\\\"\")\n";
     content += "\n";
     content += "    # The compiled shader cache sits in this user's cache directory and is named\n";
     content += "    # after the engine version, so its path belongs to neither the project nor any\n";
@@ -1931,7 +1933,7 @@ bool editor::Generator::hasSceneSource(uint32_t sceneId, const std::string& scen
     return std::getline(file, header) && header == Factory::sceneSourceHeader;
 }
 
-void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& scenes, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<editor::BundleSceneInfo>& bundles, const fs::path& projectPath, const fs::path& projectInternalPath, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard, Scaling scalingMode, TextureStrategy textureStrategy, unsigned int canvasWidth, unsigned int canvasHeight, bool vsyncEnabled, const WindowSettings& windowSettings, const LoadingSettings& loadingSettings){
+void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& scenes, std::string libName, const std::vector<SceneScriptSource>& scriptFiles, const std::vector<editor::BundleSceneInfo>& bundles, const fs::path& projectPath, const fs::path& projectInternalPath, const fs::path& assetsPath, const fs::path& luaPath, const std::vector<fs::path>& scriptDirs, int cxxStandard, Scaling scalingMode, TextureStrategy textureStrategy, unsigned int canvasWidth, unsigned int canvasHeight, bool vsyncEnabled, const WindowSettings& windowSettings, const LoadingSettings& loadingSettings, const std::vector<std::string>& logicScripts){
     const fs::path generatedPath = getGeneratedPath(projectInternalPath);
     targetName = libName;
 
@@ -2109,6 +2111,24 @@ void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& sce
     }
 
     mainContent += "\n";
+
+    // The Lua of a logic graph is not in the Lua directory, where an export puts it
+    if (!logicScripts.empty()) {
+        std::string names;
+        for (const std::string& script : logicScripts) {
+            names += (names.empty() ? "\"" : ", \"") + script + "\"";
+        }
+        mainContent += "    // DORIAX_LOGIC_SCRIPTS_BEGIN\n";
+        mainContent += "#ifdef DORIAX_LOGIC_PATH\n";
+        mainContent += "    LuaBinding::setScriptPathResolver([](const std::string& path) {\n";
+        mainContent += "        for (const char* script : {" + names + "}) {\n";
+        mainContent += "            if (path == script) return std::string(DORIAX_LOGIC_PATH \"/\") + path;\n";
+        mainContent += "        }\n";
+        mainContent += "        return std::string();\n";
+        mainContent += "    });\n";
+        mainContent += "#endif\n";
+        mainContent += "    // DORIAX_LOGIC_SCRIPTS_END\n\n";
+    }
 
     // Register all stacks with SceneManager
     for (const auto& sceneData : scenes) {
