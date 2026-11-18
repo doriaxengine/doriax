@@ -5546,7 +5546,7 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
             model.animations.push_back(anim);
 
             // a clip is found by name, so only a unique one is mapped
-            const bool mapped = getModelAnimation(model, animation.name) == (int)i;
+            const bool mapped = findUniqueGLTFName(model.gltfModel->animations, animation.name) == (int)i;
 
             for (size_t j = 0; j < animation.channels.size(); j++) {
 
@@ -5590,8 +5590,9 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
                 else
                     actiontrack.target = entity;
                 animcomp.actions.push_back({0, duration, track});
-                if (mapped) {
-                    model.animationTracksMapping[{animation.name, channel.target_node, channel.target_path}] = track;
+                const std::string& nodeName = isValidGLTFIndex(channel.target_node, model.gltfModel->nodes) ? model.gltfModel->nodes[channel.target_node].name : std::string();
+                if (mapped && findUniqueGLTFName(model.gltfModel->nodes, nodeName) == channel.target_node) {
+                    model.animationTracksMapping[{animation.name, nodeName, channel.target_path}] = {track, false};
                 }
             }
 
@@ -5603,20 +5604,21 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
         }
     } // !skipEntities
 
-    // keyless tracks take their keys and length from the file
+    // pending tracks take their keys and length from the file
     if (skipEntities && !Engine::isAsyncThread()) {
+        // the first frame of a track is the one the import made
         std::unordered_map<Entity, ActionFrame*> frames;
         for (Entity anim : model.animations) {
             AnimationComponent* animcomp = scene->isEntityCreated(anim) ? scene->findComponent<AnimationComponent>(anim) : nullptr;
             for (size_t f = 0; animcomp && f < animcomp->actions.size(); f++) {
-                frames[animcomp->actions[f].action] = &animcomp->actions[f];
+                frames.emplace(animcomp->actions[f].action, &animcomp->actions[f]);
             }
         }
 
         size_t missing = 0;
-        for (const auto& [source, track] : model.animationTracksMapping) {
-            KeyframeTracksComponent* keyframe = scene->isEntityCreated(track) ? scene->findComponent<KeyframeTracksComponent>(track) : nullptr;
-            if (!keyframe || !keyframe->times.empty()) {
+        for (auto& [source, track] : model.animationTracksMapping) {
+            KeyframeTracksComponent* keyframe = scene->isEntityCreated(track.entity) ? scene->findComponent<KeyframeTracksComponent>(track.entity) : nullptr;
+            if (!keyframe || !track.pending) {
                 continue;
             }
             const auto& [animation, node, path] = source;
@@ -5625,11 +5627,12 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
                 missing++;
                 continue;
             }
-            auto frame = frames.find(track);
-            if (frame != frames.end()) {
+            auto frame = frames.find(track.entity);
+            if (frame != frames.end() && keyframe->times.empty()) {
                 frame->second->duration = keys.keyframe.times.back();
             }
-            setModelTrackKeys(track, keys);
+            setModelTrackKeys(track.entity, keys);
+            track.pending = false;
         }
         if (missing > 0) {
             Log::warn("%zu animation tracks are no longer in %s, choose the file again to update its clips", missing, filename.c_str());
@@ -5707,13 +5710,14 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
     return true;
 }
 
-int MeshSystem::getModelAnimation(const ModelComponent& model, const std::string& name){
-    if (!model.gltfModel || name.empty()) {
+template<typename T>
+int MeshSystem::findUniqueGLTFName(const std::vector<T>& values, const std::string& name){
+    if (name.empty()) {
         return -1;
     }
     int found = -1;
-    for (size_t i = 0; i < model.gltfModel->animations.size(); i++) {
-        if (model.gltfModel->animations[i].name == name) {
+    for (size_t i = 0; i < values.size(); i++) {
+        if (values[i].name == name) {
             if (found >= 0) {
                 return -1;
             }
@@ -5724,14 +5728,18 @@ int MeshSystem::getModelAnimation(const ModelComponent& model, const std::string
     return found;
 }
 
-bool MeshSystem::getModelTrackKeys(const ModelComponent& model, const std::string& animation, int node, const std::string& path, ModelTrackKeys& keys){
-    int animationIndex = getModelAnimation(model, animation);
-    if (animationIndex < 0) {
+bool MeshSystem::getModelTrackKeys(const ModelComponent& model, const std::string& animation, const std::string& node, const std::string& path, ModelTrackKeys& keys){
+    if (!model.gltfModel) {
+        return false;
+    }
+    int animationIndex = findUniqueGLTFName(model.gltfModel->animations, animation);
+    int nodeIndex = findUniqueGLTFName(model.gltfModel->nodes, node);
+    if (animationIndex < 0 || nodeIndex < 0) {
         return false;
     }
     const std::vector<tinygltf::AnimationChannel>& channels = model.gltfModel->animations[animationIndex].channels;
     for (size_t c = 0; c < channels.size(); c++) {
-        if (channels[c].target_node == node && channels[c].target_path == path) {
+        if (channels[c].target_node == nodeIndex && channels[c].target_path == path) {
             return getGLTFChannelKeys(model, animationIndex, (int)c, keys);
         }
     }
@@ -5910,20 +5918,24 @@ bool MeshSystem::getGLTFChannelKeys(const ModelComponent& model, int animationIn
 template<typename T>
 static void setTrackComponent(Scene* scene, Entity track, T& tracks){
     if (T* existing = scene->findComponent<T>(track)) {
-        *existing = std::move(tracks);
+        if (existing->values.empty()) {
+            *existing = std::move(tracks);
+        }
     } else {
         scene->addComponent<T>(track, std::move(tracks));
     }
 }
 
-// the track keeps its own settings, like loop and relative
+// fills what is still empty, a script may have set the rest
 void MeshSystem::setModelTrackKeys(Entity track, ModelTrackKeys& keys){
     if (!scene->findComponent<KeyframeTracksComponent>(track)) {
         scene->addComponent<KeyframeTracksComponent>(track);
     }
     KeyframeTracksComponent& keyframe = scene->getComponent<KeyframeTracksComponent>(track);
-    keyframe.times = std::move(keys.keyframe.times);
-    keyframe.easings = std::move(keys.keyframe.easings);
+    if (keyframe.times.empty()) {
+        keyframe.times = std::move(keys.keyframe.times);
+        keyframe.easings = std::move(keys.keyframe.easings);
+    }
 
     if (keys.path == "translation") {
         setTrackComponent(scene, track, keys.translate);

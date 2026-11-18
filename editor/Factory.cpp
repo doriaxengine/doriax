@@ -2229,11 +2229,9 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
         code << ind << "modelcomp.morphNameMapping[" << formatString(name) << "] = " << formatInt(index) << ";\n";
     }
     for (const auto& [source, track] : model.animationTracksMapping) {
-        if (scene == sourceRegistry && !sourceModelTracks->count(track)) {
-            continue;
-        }
         const auto& [animation, node, path] = source;
-        code << ind << "modelcomp.animationTracksMapping[{" << formatString(animation) << ", " << formatInt(node) << ", " << formatString(path) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
+        const bool pending = scene == sourceRegistry ? sourceModelTracks->count(track.entity) > 0 : track.pending;
+        code << ind << "modelcomp.animationTracksMapping[{" << formatString(animation) << ", " << formatString(node) << ", " << formatString(path) << "}] = {" << formatEntity(track.entity, entityVarNames) << ", " << formatBool(pending) << "};\n";
     }
 
     addComponentCode(code, ind, sceneName, entityName, entity, "ModelComponent", "modelcomp", assignExisting);
@@ -2522,7 +2520,7 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     std::string funcId = sceneToFileName(sceneId, name);
     const std::string ind = indentation(indentSpaces);
 
-    const std::unordered_set<Entity> modelTracks = Stream::getModelBackedTracks(scene);
+    std::unordered_set<Entity> modelTracks = Stream::getModelBackedTracks(scene);
     struct ModelTracksScope {
         ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks) {
             sourceRegistry = registry;
@@ -2548,6 +2546,11 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
         }
         std::string headerName = bundleToFileName(bi.bundlePath) + ".h";
         bundleHeaderIncludes.insert(headerName);
+    }
+
+    // a bundle member keeps its keys, overrides replace components
+    for (Entity member : bundleMemberEntities) {
+        modelTracks.erase(member);
     }
 
     // under an on-demand member: Play drops it too

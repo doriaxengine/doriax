@@ -2617,17 +2617,17 @@ void showChildrenOfHiddenEntities(EntityRegistry* registry, const std::vector<En
     }
 }
 
-// tracks encoded without keys, and the ones a file maps
+// tracks encoded without keys, and the ones a file marks pending
 thread_local const EntityRegistry* savingRegistry = nullptr;
 thread_local const std::unordered_set<Entity>* savingModelTracks = nullptr;
-thread_local const std::unordered_set<Entity>* savingMappedTracks = nullptr;
+thread_local const std::unordered_set<Entity>* savingPendingTracks = nullptr;
 
 const std::unordered_set<Entity>* getSavingModelTracks(const EntityRegistry* registry) {
     return registry == savingRegistry ? savingModelTracks : nullptr;
 }
 
-const std::unordered_set<Entity>* getSavingMappedTracks(const EntityRegistry* registry) {
-    return registry == savingRegistry ? savingMappedTracks : nullptr;
+const std::unordered_set<Entity>* getSavingPendingTracks(const EntityRegistry* registry) {
+    return registry == savingRegistry ? savingPendingTracks : nullptr;
 }
 
 } // namespace
@@ -2718,18 +2718,24 @@ YAML::Node editor::Stream::encodeSceneProject(const Project* project, const Scen
         root["imports"] = importsNode;
     }
 
-    const std::unordered_set<Entity> modelTracks = getModelBackedTracks(sceneProject->scene);
-    // Play's snapshot has no project and keeps the whole mapping
+    std::unordered_set<Entity> modelTracks = getModelBackedTracks(sceneProject->scene);
+    // a bundle member keeps its keys, in its file and overrides
+    if (project) {
+        for (auto it = modelTracks.begin(); it != modelTracks.end();) {
+            it = project->findEntityBundlePathFor(sceneProject->id, *it).empty() ? std::next(it) : modelTracks.erase(it);
+        }
+    }
+    // Play's snapshot has no project, it keeps the flags in memory
     struct ModelTracksScope {
         ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks, bool file) {
             savingRegistry = registry;
             savingModelTracks = tracks;
-            savingMappedTracks = file ? tracks : nullptr;
+            savingPendingTracks = file ? tracks : nullptr;
         }
         ~ModelTracksScope() {
             savingRegistry = nullptr;
             savingModelTracks = nullptr;
-            savingMappedTracks = nullptr;
+            savingPendingTracks = nullptr;
         }
     } modelTracksScope(sceneProject->scene, &modelTracks, project != nullptr);
 
@@ -3940,27 +3946,25 @@ std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegi
     for (size_t i = 0; i < models->size(); i++) {
         const ModelComponent& model = models->getComponentFromIndex(i);
 
-        // the length of a track on its clip follows the file too
+        // the length on a track's first frame follows the file too
         std::unordered_map<Entity, float> frameDurations;
         for (Entity anim : model.animations) {
             if (registry->isEntityCreated(anim) && registry->getSignature(anim).test(registry->getComponentId<AnimationComponent>())) {
                 for (const ActionFrame& frame : registry->getComponent<AnimationComponent>(anim).actions) {
-                    frameDurations[frame.action] = frame.duration;
+                    frameDurations.emplace(frame.action, frame.duration);
                 }
             }
         }
 
         for (const auto& [source, track] : model.animationTracksMapping) {
-            if (!registry->isEntityCreated(track) || !registry->getSignature(track).test(registry->getComponentId<KeyframeTracksComponent>())) {
+            if (!registry->isEntityCreated(track.entity) || !registry->getSignature(track.entity).test(registry->getComponentId<KeyframeTracksComponent>())) {
                 continue;
             }
-            const KeyframeTracksComponent& keyframe = registry->getComponent<KeyframeTracksComponent>(track);
+            const KeyframeTracksComponent& keyframe = registry->getComponent<KeyframeTracksComponent>(track.entity);
 
-            // not loaded yet, its keys come later
-            if (!model.gltfModel) {
-                if (keyframe.times.empty()) {
-                    modelTracks.insert(track);
-                }
+            // still waiting for the file, as it was saved
+            if (track.pending && keyframe.times.empty()) {
+                modelTracks.insert(track.entity);
                 continue;
             }
 
@@ -3969,14 +3973,14 @@ std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegi
             if (!MeshSystem::getModelTrackKeys(model, animation, node, path, keys)) {
                 continue;
             }
-            auto frame = frameDurations.find(track);
+            auto frame = frameDurations.find(track.entity);
             if ((frame == frameDurations.end() || frame->second == keys.keyframe.times.back()) &&
                     keyframe.times == keys.keyframe.times && keyframe.easings == keys.keyframe.easings &&
-                    hasTrackValues(registry, track, keys.translate, keys.path == "translation") &&
-                    hasTrackValues(registry, track, keys.rotate, keys.path == "rotation") &&
-                    hasTrackValues(registry, track, keys.scale, keys.path == "scale") &&
-                    hasTrackValues(registry, track, keys.morph, keys.path == "weights")) {
-                modelTracks.insert(track);
+                    hasTrackValues(registry, track.entity, keys.translate, keys.path == "translation") &&
+                    hasTrackValues(registry, track.entity, keys.rotate, keys.path == "rotation") &&
+                    hasTrackValues(registry, track.entity, keys.scale, keys.path == "scale") &&
+                    hasTrackValues(registry, track.entity, keys.morph, keys.path == "weights")) {
+                modelTracks.insert(track.entity);
             }
         }
     }
@@ -4150,7 +4154,7 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
 
     if (signature.test(registry->getComponentId<ModelComponent>())) {
         ModelComponent model = registry->getComponent<ModelComponent>(entity);
-        compNode[Catalog::getComponentName(ComponentType::ModelComponent, true)] = encodeModelComponent(model, false, getSavingMappedTracks(registry));
+        compNode[Catalog::getComponentName(ComponentType::ModelComponent, true)] = encodeModelComponent(model, false, getSavingPendingTracks(registry));
     }
 
     if (signature.test(registry->getComponentId<Body2DComponent>())) {
@@ -6095,7 +6099,7 @@ TerrainComponent editor::Stream::decodeTerrainComponent(const YAML::Node& node, 
     return terrain;
 }
 
-YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, bool onlyFile, const std::unordered_set<Entity>* tracks) {
+YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, bool onlyFile, const std::unordered_set<Entity>* pendingTracks) {
     YAML::Node node;
 
     if (!model.filename.empty()) {
@@ -6167,14 +6171,14 @@ YAML::Node editor::Stream::encodeModelComponent(const ModelComponent& model, boo
 
     YAML::Node tracksNode;
     for (const auto& [source, track] : model.animationTracksMapping) {
-        if (tracks && !tracks->count(track)) {
-            continue;
-        }
         YAML::Node n;
         n["animation"] = std::get<0>(source);
         n["node"] = std::get<1>(source);
         n["path"] = std::get<2>(source);
-        n["entity"] = static_cast<uint32_t>(track);
+        n["entity"] = static_cast<uint32_t>(track.entity);
+        if (pendingTracks ? pendingTracks->count(track.entity) > 0 : track.pending) {
+            n["pending"] = true;
+        }
         tracksNode.push_back(n);
     }
     if (tracksNode.size() > 0) {
@@ -6245,8 +6249,8 @@ ModelComponent editor::Stream::decodeModelComponent(const YAML::Node& node, cons
 
     if (node["animationTracksMapping"]) {
         for (const auto& trackNode : node["animationTracksMapping"]) {
-            std::tuple<std::string, int, std::string> source(trackNode["animation"].as<std::string>(), trackNode["node"].as<int>(), trackNode["path"].as<std::string>());
-            model.animationTracksMapping[source] = static_cast<Entity>(trackNode["entity"].as<uint32_t>());
+            std::tuple<std::string, std::string, std::string> source(trackNode["animation"].as<std::string>(), trackNode["node"].as<std::string>(), trackNode["path"].as<std::string>());
+            model.animationTracksMapping[source] = {static_cast<Entity>(trackNode["entity"].as<uint32_t>()), trackNode["pending"] && trackNode["pending"].as<bool>()};
         }
     }
 

@@ -352,8 +352,8 @@ namespace doriax::editor {
         static YAML::Node encodeWaterExclusionComponent(const WaterExclusionComponent& exclusion);
         static WaterExclusionComponent decodeWaterExclusionComponent(const YAML::Node& node, const WaterExclusionComponent* oldExclusion = nullptr);
 
-        // With tracks, the track mapping keeps only those
-        static YAML::Node encodeModelComponent(const ModelComponent& model, bool onlyFile = false, const std::unordered_set<Entity>* tracks = nullptr);
+        // With pendingTracks, those are the tracks marked pending
+        static YAML::Node encodeModelComponent(const ModelComponent& model, bool onlyFile = false, const std::unordered_set<Entity>* pendingTracks = nullptr);
         static ModelComponent decodeModelComponent(const YAML::Node& node, const ModelComponent* oldModel = nullptr);
 
         static YAML::Node encodeBundleComponent(const BundleComponent& bundle);

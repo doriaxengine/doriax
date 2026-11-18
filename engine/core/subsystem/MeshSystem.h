@@ -110,8 +110,9 @@ namespace doriax{
         static bool getFileSizeInBytes(size_t *filesize_out, std::string *err, const std::string &filepath, void *userdata);
         // An FBX is read from its imported .glb, with texture URIs still relative to the FBX
         static bool loadGLTFFile(tinygltf::TinyGLTF& loader, tinygltf::Model* model, std::string* err, std::string* warn, const std::string& filename);
-        // The GLTF animation with that name, -1 when none or repeated
-        static int getModelAnimation(const ModelComponent& model, const std::string& name);
+        // The GLTF clip or node of that name, -1 if none or repeated
+        template<typename T>
+        static int findUniqueGLTFName(const std::vector<T>& values, const std::string& name);
         static bool getGLTFChannelKeys(const ModelComponent& model, int animation, int channel, ModelTrackKeys& keys);
         static std::string getAsyncModelLoadScenePrefix(const Scene* scene);
         static std::string getAsyncModelLoadKey(const Scene* scene, const std::string& filename);
@@ -253,7 +254,7 @@ namespace doriax{
 
         bool loadGLTF(Entity entity, const std::string filename, bool asyncLoad=false, bool skipEntities=false, bool changeRootTransform=true);
         // False when the clip has no channel for that node and path
-        static bool getModelTrackKeys(const ModelComponent& model, const std::string& animation, int node, const std::string& path, ModelTrackKeys& keys);
+        static bool getModelTrackKeys(const ModelComponent& model, const std::string& animation, const std::string& node, const std::string& path, ModelTrackKeys& keys);
         void setModelTrackKeys(Entity track, ModelTrackKeys& keys);
         bool loadOBJ(Entity entity, const std::string filename, bool asyncLoad=false);
 

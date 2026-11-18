@@ -18,6 +18,12 @@ namespace doriax{
 
     struct ObjModelData;
 
+    // A model track, pending while it waits for keys from its file
+    struct ModelTrack{
+        Entity entity = NULL_ENTITY;
+        bool pending = false;
+    };
+
     struct ModelSkinBinding{
         Entity mesh = NULL_ENTITY;
         std::vector<Entity> joints;
@@ -48,8 +54,8 @@ namespace doriax{
         std::map<std::string, int> morphNameMapping;
 
         std::vector<Entity> animations;
-        // Tracks by GLTF clip name, node and path, filled on load
-        std::map<std::tuple<std::string, int, std::string>, Entity> animationTracksMapping;
+        // Tracks by GLTF clip, node name and path
+        std::map<std::tuple<std::string, std::string, std::string>, ModelTrack> animationTracksMapping;
 
         std::string filename;
 
