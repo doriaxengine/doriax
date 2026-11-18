@@ -14319,9 +14319,20 @@ void editor::Properties::show(){
         endScrollRegion();
 
     }else{
+        const char* sceneTypeIcon = ICON_FA_CUBES;
+        const char* sceneTypeHelp = "3D scene, click to change it to 2D. Entities and components stay as they are.";
+        if (sceneProject->sceneType == SceneType::SCENE_2D){
+            sceneTypeIcon = ICON_FA_CUBES_STACKED;
+            sceneTypeHelp = "2D scene, click to change it to 3D. Entities and components stay as they are, and without a camera it plays from the viewport.";
+        }else if (sceneProject->sceneType == SceneType::SCENE_UI){
+            sceneTypeIcon = ICON_FA_WINDOW_RESTORE;
+            sceneTypeHelp = "UI scene";
+        }
+        const float sceneTypeWidth = ImGui::CalcTextSize(sceneTypeIcon).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+
         ImGui::Text("Scene");
         ImGui::SameLine();
-        ImGui::SetNextItemWidth(-1);
+        ImGui::SetNextItemWidth(-(sceneTypeWidth + ImGui::GetStyle().ItemSpacing.x));
         static char nameBuffer[128];
         strncpy(nameBuffer, sceneProject->name.c_str(), sizeof(nameBuffer) - 1);
         nameBuffer[sizeof(nameBuffer) - 1] = '\0';
@@ -14338,6 +14349,21 @@ void editor::Properties::show(){
                 CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(new SceneNameCmd(project, sceneProject->id, nameBuffer));
             }
         }
+
+        ImGui::SameLine();
+        // UI scenes keep their type
+        ImGui::BeginDisabled(!isMainScene || sceneProject->sceneType == SceneType::SCENE_UI || sceneProject->playState != ScenePlayState::STOPPED);
+        if (ImGui::Button((std::string(sceneTypeIcon) + "##scene_type").c_str())){
+            SceneType type = (sceneProject->sceneType == SceneType::SCENE_3D) ? SceneType::SCENE_2D : SceneType::SCENE_3D;
+            CommandHandle::get(sceneProject->id)->addCommandNoMerge(new SceneTypeCmd(project, sceneProject->id, type));
+        }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && ImGui::BeginTooltip()){
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+            ImGui::TextUnformatted(sceneTypeHelp);
+            ImGui::PopTextWrapPos();
+            ImGui::EndTooltip();
+        }
         ImGui::Separator();
 
         beginScrollRegion(sceneProject->id, NULL_ENTITY);
@@ -14350,26 +14376,6 @@ void editor::Properties::show(){
             if (ImGui::BeginTable("scene_settings_table", 2, tableFlags)) {
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Background"));
                 ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
-
-                ImGui::TableNextRow();
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("Type");
-                ImGui::TableSetColumnIndex(1);
-                const char* sceneTypeNames[] = { "3D", "2D", "UI" };
-                const int sceneTypeIndex = static_cast<int>(sceneProject->sceneType);
-                // UI scenes keep their type
-                ImGui::BeginDisabled(!isMainScene || sceneProject->sceneType == SceneType::SCENE_UI || sceneProject->playState != ScenePlayState::STOPPED);
-                ImGui::SetNextItemWidth(5 * ImGui::GetFontSize());
-                if (ImGui::BeginCombo("##scene_type", sceneTypeNames[sceneTypeIndex])) {
-                    for (int i = 0; i < 2; i++) {
-                        if (ImGui::Selectable(sceneTypeNames[i], i == sceneTypeIndex) && i != sceneTypeIndex) {
-                            CommandHandle::get(sceneProject->id)->addCommandNoMerge(new SceneTypeCmd(project, sceneProject->id, static_cast<SceneType>(i)));
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-                ImGui::EndDisabled();
-                ImGui::SameLine(); helpMarker("Changes how the editor shows and edits the scene. Entities and components stay as they are, and a 3D scene without a camera plays from the viewport.");
 
                 drawScenePropertyRow<Vector4>(sceneProject, "background_color", "Background", ScenePropertyInputType::ColorRGBA);
                 drawScenePropertyRow<LightState>(sceneProject, "light_state", "Lights", ScenePropertyInputType::Combo, 5 * ImGui::GetFontSize());
