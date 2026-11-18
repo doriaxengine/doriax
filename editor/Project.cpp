@@ -11047,8 +11047,8 @@ void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
 }
 
 void editor::Project::start(uint32_t sceneId) {
-    // a scene type change lands first
-    if (isSceneTypeChanging()) {
+    // a scene type change or a save lands first
+    if (isSceneTypeChanging() || isAnySceneSaving()) {
         editor::getEditorHost().enqueueMainThreadTask([this, sceneId]() { start(sceneId); });
         return;
     }
@@ -11364,12 +11364,12 @@ void editor::Project::stop(uint32_t sceneId) {
 }
 
 void editor::Project::startDebug() {
-    if (debugger.isActive() || isAnyScenePlaying()) {
+    // a scene type change or a save lands first
+    if (isSceneTypeChanging() || isAnySceneSaving()) {
+        editor::getEditorHost().enqueueMainThreadTask([this]() { startDebug(); });
         return;
     }
-    // a scene type change lands first
-    if (isSceneTypeChanging()) {
-        editor::getEditorHost().enqueueMainThreadTask([this]() { startDebug(); });
+    if (debugger.isActive() || isAnyScenePlaying()) {
         return;
     }
 
