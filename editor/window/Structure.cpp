@@ -16,6 +16,7 @@
 #include "command/type/CreateEntityCmd.h"
 #include "command/type/EntityNameCmd.h"
 #include "command/type/SceneNameCmd.h"
+#include "command/type/SceneTypeCmd.h"
 #include "command/type/DeleteEntityCmd.h"
 #include "command/type/DuplicateEntityCmd.h"
 #include "command/type/AddComponentCmd.h"
@@ -1870,6 +1871,16 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
             if (node.isScene) {
                 ImGui::Separator();
                 showAddChildSceneMenu();
+
+                // UI scenes keep their type
+                SceneProject* sceneProject = project->getScene(node.id);
+                if (sceneProject && sceneProject->sceneType != SceneType::SCENE_UI) {
+                    bool is3D = sceneProject->sceneType == SceneType::SCENE_3D;
+                    if (ImGui::MenuItem(is3D ? ICON_FA_CUBES_STACKED "  Change to 2D scene" : ICON_FA_CUBES "  Change to 3D scene",
+                            nullptr, false, sceneProject->playState == ScenePlayState::STOPPED)) {
+                        CommandHandle::get(node.id)->addCommandNoMerge(new SceneTypeCmd(project, node.id, is3D ? SceneType::SCENE_2D : SceneType::SCENE_3D));
+                    }
+                }
             }
 
             if (!entityDeleted && !node.isScene) {
