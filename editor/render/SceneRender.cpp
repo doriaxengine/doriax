@@ -2009,6 +2009,10 @@ TextureRender& editor::SceneRender::getTexture(){
     return framebuffer.getRender().getColorTexture();
 }
 
+Framebuffer& editor::SceneRender::getFramebuffer(){
+    return framebuffer;
+}
+
 Camera* editor::SceneRender::getCamera(){
     return camera;
 }

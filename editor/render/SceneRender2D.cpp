@@ -48,6 +48,8 @@ editor::SceneRender2D::SceneRender2D(Scene* scene, unsigned int width, unsigned 
 editor::SceneRender2D::~SceneRender2D(){
     clearEntityOverlays();
 
+    delete lines;
+    delete selLines;
     delete gridLines;
     delete tileLines;
 }

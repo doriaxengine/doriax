@@ -238,6 +238,7 @@ namespace doriax::editor{
         void setChildSceneLayers(const std::vector<Scene*>& layers);
 
         TextureRender& getTexture();
+        Framebuffer& getFramebuffer();
         Camera* getCamera();
         bool setPreviewCamera(Entity entity);
         void clearPreviewCamera();

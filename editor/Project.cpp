@@ -49,6 +49,7 @@
 #include "util/FileDialogs.h"
 #include "util/SHA1.h"
 #include "util/GraphicUtils.h"
+#include "util/Angle.h"
 #include "util/CameraTextureLink.h"
 #include "util/ExternalEditor.h"
 #include "LuaDebugger.h"
@@ -2399,6 +2400,61 @@ Entity editor::Project::createDefaultCamera(SceneType type, Scene* scene) const 
     cameratransform.position = Vector3(0.0, 0.0, 1.0);
 
     return defaultCamera;
+}
+
+void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
+    editor::getEditorHost().enqueueMainThreadTask([this, sceneId, type]() {
+        SceneProject* sceneProject = getScene(sceneId);
+        if (!sceneProject || !sceneProject->sceneRender || sceneProject->sceneType == type){
+            return;
+        }
+
+        // the new viewport shows the same area
+        Camera* camera = sceneProject->sceneRender->getCamera();
+        Framebuffer& framebuffer = sceneProject->sceneRender->getFramebuffer();
+        float width = std::max(1.0f, (float)framebuffer.getWidth());
+        float height = std::max(1.0f, (float)framebuffer.getHeight());
+        Vector3 center;
+        float viewHeight;
+        if (sceneProject->sceneType == SceneType::SCENE_3D){
+            center = camera->getWorldTarget();
+            viewHeight = 2.0f * camera->getDistanceFromTarget() * std::tan(Angle::defaultToRad(camera->getYFov()) / 2.0f);
+        }else{
+            center = camera->getWorldPosition() + Vector3(camera->getRightClip(), camera->getTopClip(), 0.0f) / 2.0f;
+            center.z = 0.0f;
+            viewHeight = camera->getTopClip();
+        }
+
+        delete sceneProject->sceneRender;
+        if (sceneProject->defaultCamera != NULL_ENTITY){
+            sceneProject->scene->destroyEntity(sceneProject->defaultCamera);
+        }
+
+        sceneProject->sceneType = type;
+        sceneProject->sceneRender = createSceneRender(type, sceneProject->scene);
+        sceneProject->defaultCamera = createDefaultCamera(type, sceneProject->scene);
+
+        camera = sceneProject->sceneRender->getCamera();
+        if (type == SceneType::SCENE_3D){
+            float distance = viewHeight / 2.0f / std::tan(Angle::defaultToRad(camera->getYFov()) / 2.0f);
+            distance = std::clamp(distance, MIN_EDITOR_CAMERA_DISTANCE, MAX_EDITOR_CAMERA_DISTANCE);
+            camera->setPosition(center.x, center.y, center.z + distance);
+            camera->setTarget(center);
+        }else{
+            float zoom = viewHeight / height;
+            Vector3 position = camera->getPosition();
+            camera->slide(center.x - width * zoom / 2.0f - position.x);
+            camera->slideUp(center.y - height * zoom / 2.0f - position.y);
+            static_cast<SceneRender2D*>(sceneProject->sceneRender)->setZoom(zoom);
+        }
+
+        if (sceneId == getSelectedSceneId()){
+            sceneProject->sceneRender->activate();
+        }
+        editor::getEditorHost().resetLastActivatedScene();
+        markParentScenesNeedUpdate(sceneId);
+        sceneProject->needUpdateRender = true;
+    });
 }
 
 // A runtime clone has no SceneRender3D, so this stands in for the viewport camera

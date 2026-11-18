@@ -847,6 +847,8 @@ namespace doriax::editor{
         void saveLastSelectedScene(std::function<void(bool)> callback = nullptr);
 
         uint32_t createNewScene(std::string sceneName, SceneType type);
+        // applied before the next frame draws
+        void setSceneType(uint32_t sceneId, SceneType type);
         // False when the scene could not be read, which does not mean it is gone:
         // the file may be unreadable only in this checkout
         bool loadScene(fs::path filepath, bool opened, bool isNewScene = true, bool loadSceneData = true);

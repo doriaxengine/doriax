@@ -20,6 +20,7 @@
 #include "command/type/LinkMaterialCmd.h"
 #include "command/type/EntityNameCmd.h"
 #include "command/type/SceneNameCmd.h"
+#include "command/type/SceneTypeCmd.h"
 #include "command/type/MeshChangeCmd.h"
 #include "command/type/ModelLoadCmd.h"
 #include "command/type/SetMainCameraCmd.h"
@@ -14349,6 +14350,26 @@ void editor::Properties::show(){
             if (ImGui::BeginTable("scene_settings_table", 2, tableFlags)) {
                 ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Background"));
                 ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("Type");
+                ImGui::TableSetColumnIndex(1);
+                const char* sceneTypeNames[] = { "3D", "2D", "UI" };
+                const int sceneTypeIndex = static_cast<int>(sceneProject->sceneType);
+                // UI scenes keep their type
+                ImGui::BeginDisabled(!isMainScene || sceneProject->sceneType == SceneType::SCENE_UI || sceneProject->playState != ScenePlayState::STOPPED);
+                ImGui::SetNextItemWidth(5 * ImGui::GetFontSize());
+                if (ImGui::BeginCombo("##scene_type", sceneTypeNames[sceneTypeIndex])) {
+                    for (int i = 0; i < 2; i++) {
+                        if (ImGui::Selectable(sceneTypeNames[i], i == sceneTypeIndex) && i != sceneTypeIndex) {
+                            CommandHandle::get(sceneProject->id)->addCommandNoMerge(new SceneTypeCmd(project, sceneProject->id, static_cast<SceneType>(i)));
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                ImGui::EndDisabled();
+                ImGui::SameLine(); helpMarker("Changes how the editor shows and edits the scene. Entities and components stay as they are, and a 3D scene without a camera plays from the viewport.");
 
                 drawScenePropertyRow<Vector4>(sceneProject, "background_color", "Background", ScenePropertyInputType::ColorRGBA);
                 drawScenePropertyRow<LightState>(sceneProject, "light_state", "Lights", ScenePropertyInputType::Combo, 5 * ImGui::GetFontSize());
