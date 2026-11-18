@@ -5602,6 +5602,53 @@ void editor::Project::finalizeStart(SceneProject* mainSceneProject, std::vector<
     }
 }
 
+template<typename T>
+static void copyTrackValues(Scene* scene, Entity entity, T& values) {
+    if (const T* comp = scene->findComponent<T>(entity)) {
+        values = *comp;
+    }
+}
+
+template<typename T>
+static void restoreTrackValues(Scene* scene, Entity entity, T& values) {
+    if (T* comp = scene->findComponent<T>(entity)) {
+        *comp = std::move(values);
+    }
+}
+
+// the play snapshot leaves out the keys models give
+static std::unordered_map<Entity, ModelTrackKeys> copyTrackKeys(Scene* scene) {
+    std::unordered_map<Entity, ModelTrackKeys> keys;
+
+    auto tracks = scene->getComponentArray<KeyframeTracksComponent>();
+    for (size_t i = 0; i < tracks->size(); i++) {
+        const Entity entity = tracks->getEntity(i);
+        ModelTrackKeys& copy = keys[entity];
+        copy.keyframe = tracks->getComponentFromIndex(i);
+        copyTrackValues(scene, entity, copy.translate);
+        copyTrackValues(scene, entity, copy.rotate);
+        copyTrackValues(scene, entity, copy.scale);
+        copyTrackValues(scene, entity, copy.morph);
+    }
+
+    return keys;
+}
+
+static void restoreTrackKeys(Scene* scene, std::unordered_map<Entity, ModelTrackKeys>& keys) {
+    for (auto& [entity, copy] : keys) {
+        KeyframeTracksComponent* keyframe = scene->isEntityCreated(entity) ? scene->findComponent<KeyframeTracksComponent>(entity) : nullptr;
+        if (!keyframe) {
+            continue;
+        }
+        keyframe->times = std::move(copy.keyframe.times);
+        keyframe->easings = std::move(copy.keyframe.easings);
+        restoreTrackValues(scene, entity, copy.translate);
+        restoreTrackValues(scene, entity, copy.rotate);
+        restoreTrackValues(scene, entity, copy.scale);
+        restoreTrackValues(scene, entity, copy.morph);
+    }
+}
+
 // Authored, alive before Play, or foliage chunks that MeshSystem streams in while playing
 static std::set<Entity> getPlayKeptEntities(const editor::SceneProject* sceneProject) {
     Scene* scene = sceneProject->scene;
@@ -5726,6 +5773,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
                     insertAt++;
                 }
             }
+            restoreTrackKeys(sceneProject->scene, sceneProject->playStateKeys);
 
             // the cleanup below would destroy overlays a detached view made while playing
             if (sceneProject->sceneRender) {
@@ -5740,6 +5788,7 @@ void editor::Project::finalizeStop(SceneProject* mainSceneProject, std::vector<P
 
             // Clear the snapshot
             sceneProject->playStateSnapshot = YAML::Node();
+            sceneProject->playStateKeys.clear();
             sceneProject->playStateEntities.clear();
         }
         restorePlayBundleEntities(sceneProject);
@@ -10196,6 +10245,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
         registerBundleManager();
 
         YAML::Node playSnapshot = Stream::encodeSceneProject(nullptr, mainSceneProject);
+        std::unordered_map<Entity, ModelTrackKeys> playKeys = copyTrackKeys(mainSceneProject->scene);
 
         // Play reuses the edit-time Scene, so anything alive now is authored or engine
         // owned. Whatever appears later belongs to the play session.
@@ -10260,7 +10310,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
         // constructors observing a current GL context behave correctly,
         // and so that finalizeStart is invoked from the UI thread.
         editor::getEditorHost().enqueueMainThreadTask(
-            [this, session, sceneId, hasCppScripts, playSnapshot = std::move(playSnapshot), playEntities = std::move(playEntities)]() mutable {
+            [this, session, sceneId, hasCppScripts, playSnapshot = std::move(playSnapshot), playKeys = std::move(playKeys), playEntities = std::move(playEntities)]() mutable {
                 if (session->cancelled.load(std::memory_order_acquire)) {
                     session->startupThreadDone.store(true, std::memory_order_release);
                     return;
@@ -10278,6 +10328,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                 }
 
                 sceneProject->playStateSnapshot = std::move(playSnapshot);
+                sceneProject->playStateKeys = std::move(playKeys);
                 sceneProject->playStateEntities = std::move(playEntities);
 
                 std::vector<PlayRuntimeScene> runtimeScenesToInitialize;

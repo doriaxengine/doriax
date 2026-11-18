@@ -3979,12 +3979,6 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
     // the model's file gives these tracks their keys on load
     const std::unordered_set<Entity>* modelTracks = getSavingModelTracks(registry);
     const bool modelTrack = modelTracks && modelTracks->count(entity);
-    if (modelTrack) {
-        signature.reset(registry->getComponentId<TranslateTracksComponent>());
-        signature.reset(registry->getComponentId<RotateTracksComponent>());
-        signature.reset(registry->getComponentId<ScaleTracksComponent>());
-        signature.reset(registry->getComponentId<MorphTracksComponent>());
-    }
 
     if (signature.test(registry->getComponentId<Transform>())) {
         Transform transform = registry->getComponent<Transform>(entity);
@@ -4226,22 +4220,22 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
     }
 
     if (signature.test(registry->getComponentId<TranslateTracksComponent>())) {
-        TranslateTracksComponent tracks = registry->getComponent<TranslateTracksComponent>(entity);
+        TranslateTracksComponent tracks = modelTrack ? TranslateTracksComponent() : registry->getComponent<TranslateTracksComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::TranslateTracksComponent, true)] = encodeTranslateTracksComponent(tracks);
     }
 
     if (signature.test(registry->getComponentId<RotateTracksComponent>())) {
-        RotateTracksComponent tracks = registry->getComponent<RotateTracksComponent>(entity);
+        RotateTracksComponent tracks = modelTrack ? RotateTracksComponent() : registry->getComponent<RotateTracksComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::RotateTracksComponent, true)] = encodeRotateTracksComponent(tracks);
     }
 
     if (signature.test(registry->getComponentId<ScaleTracksComponent>())) {
-        ScaleTracksComponent tracks = registry->getComponent<ScaleTracksComponent>(entity);
+        ScaleTracksComponent tracks = modelTrack ? ScaleTracksComponent() : registry->getComponent<ScaleTracksComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::ScaleTracksComponent, true)] = encodeScaleTracksComponent(tracks);
     }
 
     if (signature.test(registry->getComponentId<MorphTracksComponent>())) {
-        MorphTracksComponent tracks = registry->getComponent<MorphTracksComponent>(entity);
+        MorphTracksComponent tracks = modelTrack ? MorphTracksComponent() : registry->getComponent<MorphTracksComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::MorphTracksComponent, true)] = encodeMorphTracksComponent(tracks);
     }
 

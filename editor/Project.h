@@ -115,6 +115,8 @@ namespace doriax::editor{
         SceneDisplaySettings displaySettings;
         ScenePlayState playState = ScenePlayState::STOPPED;
         YAML::Node playStateSnapshot;
+        // track keys, which the snapshot may leave out
+        std::unordered_map<Entity, ModelTrackKeys> playStateKeys;
         std::set<Entity> playStateEntities;
         // what Play's on-demand unload took, on the editor's scene
         std::map<std::filesystem::path, std::vector<EntityBundle::Instance>> playBundleInstances;
