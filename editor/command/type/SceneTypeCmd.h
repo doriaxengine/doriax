@@ -20,11 +20,15 @@ namespace doriax::editor{
 
         bool wasModified;
 
+        bool isStopped() const;
+
     public:
         SceneTypeCmd(Project* project, uint32_t sceneId, SceneType type);
 
         bool execute() override;
         void undo() override;
+        bool canUndo() const override;
+        bool canRedo() const override;
 
         bool mergeWith(Command* otherCommand) override;
     };

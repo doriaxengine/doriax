@@ -2408,6 +2408,11 @@ void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
         if (!sceneProject || !sceneProject->sceneRender || sceneProject->sceneType == type){
             return;
         }
+        // waits for Play or a save to end
+        if (sceneProject->playState != ScenePlayState::STOPPED){
+            setSceneType(sceneId, type);
+            return;
+        }
 
         // the new viewport shows the same area
         Camera* camera = sceneProject->sceneRender->getCamera();

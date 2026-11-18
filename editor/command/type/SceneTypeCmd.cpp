@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include "SceneTypeCmd.h"
+#include "Out.h"
 
 using namespace doriax;
 
@@ -37,6 +38,24 @@ void editor::SceneTypeCmd::undo(){
     project->setSceneType(sceneId, oldType);
 
     sceneProject->isModified = wasModified;
+}
+
+bool editor::SceneTypeCmd::isStopped() const{
+    SceneProject* sceneProject = project->getScene(sceneId);
+    if (sceneProject && sceneProject->playState == ScenePlayState::STOPPED){
+        return true;
+    }
+
+    Out::warning("Stop the scene to change its type");
+    return false;
+}
+
+bool editor::SceneTypeCmd::canUndo() const{
+    return isStopped();
+}
+
+bool editor::SceneTypeCmd::canRedo() const{
+    return isStopped();
 }
 
 bool editor::SceneTypeCmd::mergeWith(editor::Command* otherCommand){
