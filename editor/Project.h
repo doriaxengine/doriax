@@ -1037,6 +1037,7 @@ namespace doriax::editor{
         // main scene running on its game camera (not paused, detached or loading)
         bool isGameInputActive() const;
         bool isAnySceneSaving() const;
+        bool isAnySceneLoading() const;
         bool isSceneTypeChanging() const;
 
         void start(uint32_t sceneId);

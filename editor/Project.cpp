@@ -6854,8 +6854,8 @@ void editor::Project::updateDebuggerAccess() {
 }
 
 void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesystem::path& path, std::function<void(bool)> callback) {
-    // a scene type change lands first
-    if (isSceneTypeChanging()) {
+    // a scene type change lands first, and Play startup saves open scenes itself
+    if (isSceneTypeChanging() || isAnySceneLoading()) {
         editor::getEditorHost().enqueueMainThreadTask([this, sceneId, path, callback = std::move(callback)]() mutable {
             saveSceneToPathAsync(sceneId, path, std::move(callback));
         });
@@ -10141,6 +10141,16 @@ bool editor::Project::isGameInputActive() const{
 bool editor::Project::isAnySceneSaving() const{
     for (const auto& sceneProject : scenes) {
         if (sceneProject.playState == ScenePlayState::SAVING) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Play startup runs until a cancel is done too
+bool editor::Project::isAnySceneLoading() const{
+    for (const auto& sceneProject : scenes) {
+        if (sceneProject.playState == ScenePlayState::LOADING || sceneProject.playState == ScenePlayState::CANCELLING) {
             return true;
         }
     }
