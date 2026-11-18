@@ -1946,7 +1946,7 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
             if (propertyName == "allowedDOFs") {
                 // jolt needs one free axis
                 if (!valueFieldPresent(args, "int_value") || !args["int_value"].is_number_integer() ||
-                        args["int_value"].get<int>() < 1 || args["int_value"].get<int>() > Body3DAllowedDOF_All) {
+                        args["int_value"].get<int64_t>() < 1 || args["int_value"].get<int64_t>() > Body3DAllowedDOF_All) {
                     error = "allowedDOFs requires int_value from 1 to 63.";
                     return nullptr;
                 }
