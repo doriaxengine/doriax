@@ -14352,7 +14352,7 @@ void editor::Properties::show(){
 
         ImGui::SameLine();
         // UI scenes keep their type
-        ImGui::BeginDisabled(!isMainScene || sceneProject->sceneType == SceneType::SCENE_UI || sceneProject->playState != ScenePlayState::STOPPED);
+        ImGui::BeginDisabled(!isMainScene || sceneProject->sceneType == SceneType::SCENE_UI || project->isAnyScenePlaying());
         if (ImGui::Button((std::string(sceneTypeIcon) + "##scene_type").c_str())){
             SceneType type = (sceneProject->sceneType == SceneType::SCENE_3D) ? SceneType::SCENE_2D : SceneType::SCENE_3D;
             CommandHandle::get(sceneProject->id)->addCommandNoMerge(new SceneTypeCmd(project, sceneProject->id, type));

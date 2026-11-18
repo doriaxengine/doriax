@@ -20,7 +20,7 @@ namespace doriax::editor{
 
         bool wasModified;
 
-        bool isStopped() const;
+        bool canChangeType() const;
 
     public:
         SceneTypeCmd(Project* project, uint32_t sceneId, SceneType type);

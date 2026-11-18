@@ -40,22 +40,21 @@ void editor::SceneTypeCmd::undo(){
     sceneProject->isModified = wasModified;
 }
 
-bool editor::SceneTypeCmd::isStopped() const{
-    SceneProject* sceneProject = project->getScene(sceneId);
-    if (sceneProject && sceneProject->playState == ScenePlayState::STOPPED){
+bool editor::SceneTypeCmd::canChangeType() const{
+    if (sceneId == project->getSelectedSceneId() && !project->isAnyScenePlaying()){
         return true;
     }
 
-    Out::warning("Stop the scene to change its type");
+    Out::warning("A scene type changes only on the selected scene, with Play stopped");
     return false;
 }
 
 bool editor::SceneTypeCmd::canUndo() const{
-    return isStopped();
+    return canChangeType();
 }
 
 bool editor::SceneTypeCmd::canRedo() const{
-    return isStopped();
+    return canChangeType();
 }
 
 bool editor::SceneTypeCmd::mergeWith(editor::Command* otherCommand){

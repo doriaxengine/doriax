@@ -2409,7 +2409,7 @@ void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
             return;
         }
         // waits for Play or a save to end
-        if (sceneProject->playState != ScenePlayState::STOPPED){
+        if (isAnyScenePlaying()){
             setSceneType(sceneId, type);
             return;
         }

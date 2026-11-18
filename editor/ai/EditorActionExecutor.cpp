@@ -3620,7 +3620,7 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
         }
         if (sceneProject->sceneType == SceneType::SCENE_UI) return failResult("UI scenes keep their type.");
         if (sceneId != project->getSelectedSceneId()) return failResult("Select the scene first with select_scene.");
-        if (sceneProject->playState != ScenePlayState::STOPPED) return failResult(busyError(project, "changing the scene type"));
+        if (project->isAnyScenePlaying()) return failResult(busyError(project, "changing the scene type"));
         const SceneType type = (value == "3d") ? SceneType::SCENE_3D : SceneType::SCENE_2D;
         if (type == sceneProject->sceneType) return okResult("The scene already has this type.");
         cmd = new SceneTypeCmd(project, sceneId, type);

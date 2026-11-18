@@ -1877,7 +1877,7 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                 if (sceneProject && sceneProject->sceneType != SceneType::SCENE_UI) {
                     bool is3D = sceneProject->sceneType == SceneType::SCENE_3D;
                     if (ImGui::MenuItem(is3D ? ICON_FA_CUBES_STACKED "  Change to 2D scene" : ICON_FA_CUBES "  Change to 3D scene",
-                            nullptr, false, sceneProject->playState == ScenePlayState::STOPPED)) {
+                            nullptr, false, !project->isAnyScenePlaying())) {
                         CommandHandle::get(node.id)->addCommandNoMerge(new SceneTypeCmd(project, node.id, is3D ? SceneType::SCENE_2D : SceneType::SCENE_3D));
                     }
                 }
