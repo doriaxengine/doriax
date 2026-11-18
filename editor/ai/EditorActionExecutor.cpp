@@ -61,6 +61,7 @@
 #include "command/type/RemoveEntityFromBundleCmd.h"
 #include "command/type/RenameFileCmd.h"
 #include "command/type/SceneNameCmd.h"
+#include "command/type/SceneTypeCmd.h"
 #include "command/type/ScenePropertyCmd.h"
 #include "command/type/SetChildSceneStartActiveCmd.h"
 #include "command/type/SetMainCameraCmd.h"
@@ -1423,6 +1424,16 @@ Json propertyValueToJson(Project* project, const std::string& propertyName, cons
                 }
                 return Json{{"use_srgb", gradient.useSRGB}, {"stops", stops}};
             }
+            if (propertyName == "allowedDOFs") {
+                const uint8_t dofs = *static_cast<uint8_t*>(property.ref);
+                return Json{{"value", dofs},
+                            {"translationX", (dofs & Body3DAllowedDOF_TranslationX) != 0},
+                            {"translationY", (dofs & Body3DAllowedDOF_TranslationY) != 0},
+                            {"translationZ", (dofs & Body3DAllowedDOF_TranslationZ) != 0},
+                            {"rotationX", (dofs & Body3DAllowedDOF_RotationX) != 0},
+                            {"rotationY", (dofs & Body3DAllowedDOF_RotationY) != 0},
+                            {"rotationZ", (dofs & Body3DAllowedDOF_RotationZ) != 0}};
+            }
             return Json{{"unsupported", "custom"}};
     }
     return Json();
@@ -1931,6 +1942,15 @@ Command* buildPropertyCommand(Project* project, uint32_t sceneId, Entity entity,
         case PropertyType::Custom:
             if (propertyName == "bursts" || propertyName == "colorGradient") {
                 return buildParticleListCommand(project, sceneId, entity, component, propertyName, args, error, onChanged);
+            }
+            if (propertyName == "allowedDOFs") {
+                // jolt needs one free axis
+                if (!valueFieldPresent(args, "int_value") || !args["int_value"].is_number_integer() ||
+                        args["int_value"].get<int>() < 1 || args["int_value"].get<int>() > Body3DAllowedDOF_All) {
+                    error = "allowedDOFs requires int_value from 1 to 63.";
+                    return nullptr;
+                }
+                return new PropertyCmd<uint8_t>(project, sceneId, entity, component, propertyName, static_cast<uint8_t>(args["int_value"].get<int>()), onChanged);
             }
             error = "Property type " + propertyTypeName(property.type) + " is not supported by generic set_component_property.";
             return nullptr;
@@ -3593,6 +3613,17 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
         std::string error;
         if (!validateCustomShaderValue(property, arguments, error)) return failResult(error);
         cmd = new ScenePropertyCmd<std::string>(project, sceneId, property, arguments["string_value"].get<std::string>());
+    } else if (property == "type") {
+        const std::string value = lower(arguments.value("string_value", ""));
+        if (value != "2d" && value != "3d") {
+            return failResult("type requires string_value 2d or 3d.");
+        }
+        if (sceneProject->sceneType == SceneType::SCENE_UI) return failResult("UI scenes keep their type.");
+        if (sceneId != project->getSelectedSceneId()) return failResult("Select the scene first with select_scene.");
+        if (sceneProject->playState != ScenePlayState::STOPPED) return failResult(busyError(project, "changing the scene type"));
+        const SceneType type = (value == "3d") ? SceneType::SCENE_3D : SceneType::SCENE_2D;
+        if (type == sceneProject->sceneType) return okResult("The scene already has this type.");
+        cmd = new SceneTypeCmd(project, sceneId, type);
     } else {
         return failResult("Unsupported scene property: " + property);
     }
