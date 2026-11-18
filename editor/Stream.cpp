@@ -3937,16 +3937,15 @@ std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegi
             }
             const KeyframeTracksComponent& keyframe = registry->getComponent<KeyframeTracksComponent>(track);
 
-            // not loaded yet, its keys come later
-            if (!model.gltfModel) {
-                if (keyframe.times.empty()) {
-                    modelTracks.insert(track);
-                }
+            // no keys yet, the file gives them on load
+            if (keyframe.times.empty()) {
+                modelTracks.insert(track);
                 continue;
             }
 
             ModelTrackKeys keys;
-            if (MeshSystem::getModelTrackKeys(model, channel.first, channel.second, keys) &&
+            int animation = MeshSystem::getModelAnimation(model, channel.first);
+            if (animation >= 0 && MeshSystem::getModelTrackKeys(model, animation, channel.second, keys) &&
                     keyframe.times == keys.keyframe.times && keyframe.easings == keys.keyframe.easings &&
                     hasTrackValues(registry, track, keys.translate, keys.path == "translation") &&
                     hasTrackValues(registry, track, keys.rotate, keys.path == "rotation") &&
@@ -6220,7 +6219,7 @@ ModelComponent editor::Stream::decodeModelComponent(const YAML::Node& node, cons
 
     if (node["animationTracksMapping"]) {
         for (const auto& trackNode : node["animationTracksMapping"]) {
-            std::pair<int, int> channel(trackNode["animation"].as<int>(), trackNode["channel"].as<int>());
+            std::pair<std::string, int> channel(trackNode["animation"].as<std::string>(), trackNode["channel"].as<int>());
             model.animationTracksMapping[channel] = static_cast<Entity>(trackNode["entity"].as<uint32_t>());
         }
     }

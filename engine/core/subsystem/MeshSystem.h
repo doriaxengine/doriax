@@ -249,6 +249,8 @@ namespace doriax{
         std::vector<std::pair<MeshComponent*, int>> findMorphTargets(Entity entity, const ModelComponent& model, const std::string& name) const;
 
         bool loadGLTF(Entity entity, const std::string filename, bool asyncLoad=false, bool skipEntities=false, bool changeRootTransform=true);
+        // The first GLTF animation of that name, -1 when none
+        static int getModelAnimation(const ModelComponent& model, const std::string& name);
         // False when the model has no such channel or cannot read it
         static bool getModelTrackKeys(const ModelComponent& model, int animation, int channel, ModelTrackKeys& keys);
         void setModelTrackKeys(Entity track, ModelTrackKeys& keys);

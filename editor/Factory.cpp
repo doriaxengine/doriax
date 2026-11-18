@@ -2232,7 +2232,7 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
         if (scene == sourceRegistry && !sourceModelTracks->count(track)) {
             continue;
         }
-        code << ind << "modelcomp.animationTracksMapping[{" << formatInt(channel.first) << ", " << formatInt(channel.second) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
+        code << ind << "modelcomp.animationTracksMapping[{" << formatString(channel.first) << ", " << formatInt(channel.second) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
     }
 
     addComponentCode(code, ind, sceneName, entityName, entity, "ModelComponent", "modelcomp", assignExisting);
