@@ -2402,9 +2402,9 @@ Entity editor::Project::createDefaultCamera(SceneType type, Scene* scene) const 
     return defaultCamera;
 }
 
-void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
+void editor::Project::setSceneType(uint32_t sceneId, SceneType type, YAML::Node editorCamera){
     sceneTypeChanges++;
-    editor::getEditorHost().enqueueMainThreadTask([this, sceneId, type]() {
+    editor::getEditorHost().enqueueMainThreadTask([this, sceneId, type, editorCamera]() {
         sceneTypeChanges--;
         SceneProject* sceneProject = getScene(sceneId);
         if (!sceneProject || !sceneProject->sceneRender || sceneProject->sceneType == type){
@@ -2412,7 +2412,7 @@ void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
         }
         // waits for Play or a save to end
         if (isAnyScenePlaying()){
-            setSceneType(sceneId, type);
+            setSceneType(sceneId, type, editorCamera);
             return;
         }
 
@@ -2453,6 +2453,18 @@ void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
             camera->slide(center.x - width * zoom / 2.0f - position.x);
             camera->slideUp(center.y - height * zoom / 2.0f - position.y);
             static_cast<SceneRender2D*>(sceneProject->sceneRender)->setZoom(zoom);
+        }
+
+        // undo and redo bring back the view this type had
+        if (editorCamera.IsMap()){
+            float zoom = 0.0f;
+            float walkSpeedOffset = 0.0f;
+            Stream::decodeEditorCamera(camera, editorCamera, zoom, walkSpeedOffset);
+            if (type == SceneType::SCENE_3D){
+                static_cast<SceneRender3D*>(sceneProject->sceneRender)->setWalkSpeedOffset(walkSpeedOffset);
+            }else if (zoom > 0.0f){
+                static_cast<SceneRender2D*>(sceneProject->sceneRender)->setZoom(zoom);
+            }
         }
 
         if (sceneId == getSelectedSceneId()){

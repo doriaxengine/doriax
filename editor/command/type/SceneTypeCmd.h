@@ -18,9 +18,14 @@ namespace doriax::editor{
         SceneType oldType;
         SceneType newType;
 
+        // editor views, brought back by undo and redo
+        YAML::Node oldCamera;
+        YAML::Node newCamera;
+
         bool wasModified;
 
         bool canChangeType() const;
+        YAML::Node editorCamera() const;
 
     public:
         SceneTypeCmd(Project* project, uint32_t sceneId, SceneType type);

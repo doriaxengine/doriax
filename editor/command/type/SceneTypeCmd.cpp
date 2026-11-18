@@ -22,7 +22,8 @@ bool editor::SceneTypeCmd::execute(){
         return false;
     }
 
-    project->setSceneType(sceneId, newType);
+    oldCamera = editorCamera();
+    project->setSceneType(sceneId, newType, newCamera);
 
     sceneProject->isModified = true;
 
@@ -35,7 +36,8 @@ void editor::SceneTypeCmd::undo(){
         return;
     }
 
-    project->setSceneType(sceneId, oldType);
+    newCamera = editorCamera();
+    project->setSceneType(sceneId, oldType, oldCamera);
 
     sceneProject->isModified = wasModified;
 }
@@ -47,6 +49,13 @@ bool editor::SceneTypeCmd::canChangeType() const{
 
     Out::warning("A scene type changes only on the selected scene, with Play stopped");
     return false;
+}
+
+YAML::Node editor::SceneTypeCmd::editorCamera() const{
+    SceneProject* sceneProject = project->getScene(sceneId);
+    project->storeEditorCameraState(sceneProject);
+
+    return YAML::Clone(sceneProject->editorCameraState);
 }
 
 bool editor::SceneTypeCmd::canUndo() const{
