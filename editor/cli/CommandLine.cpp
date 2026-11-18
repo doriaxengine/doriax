@@ -512,10 +512,7 @@ static void attachHostConsoleIfNeeded() {
 int CommandLine::runExportCommand(int argc, char** argv, const char* executableName) {
     attachHostConsoleIfNeeded();
 
-    // Backend translation units define a static `App` instance that registers
-    // itself as the active EditorHost before main(). The export subcommand must
-    // override that and use the headless default host so project loading does
-    // not touch GUI-only windows like ResourcesWindow.
+    // headless host, so loading skips the editor windows
     EditorHostOverrideGuard hostOverride(nullptr);
 
     const std::string commandName = getCommandName(executableName);

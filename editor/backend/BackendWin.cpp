@@ -849,10 +849,10 @@ void processMessages(bool waitForMessage) {
 
 } // namespace
 
-editor::App editor::Backend::app;
 std::string editor::Backend::title;
 
 int editor::Backend::init(int argc, char* argv[]) {
+    App& app = getApp();
     setEditorHost(&app);
     app.initializeSettings();
 
@@ -996,6 +996,7 @@ int editor::Backend::init(int argc, char* argv[]) {
 }
 
 editor::App& editor::Backend::getApp() {
+    static App app;
     return app;
 }
 

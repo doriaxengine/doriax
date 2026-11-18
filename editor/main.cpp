@@ -14,6 +14,9 @@ int main(int argc, char* argv[]) {
     // so the build tools go back on PATH before anything can spawn a command.
     editor::ShellEnv::bootstrapPath();
 
+    // built in main, after the globals it reads
+    editor::Backend::getApp();
+
     // CLI subcommands run before the backend starts, so they never create a window.
     if (argc >= 2 && std::strcmp(argv[1], "export") == 0) {
         return editor::CommandLine::runExportCommand(argc - 1, argv + 1, argv[0]);

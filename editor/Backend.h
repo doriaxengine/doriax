@@ -11,7 +11,6 @@ namespace doriax::editor{
 
     class Backend{
         private:
-            static App app;
             static std::string title;
 
         public:
