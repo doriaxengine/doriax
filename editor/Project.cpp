@@ -6842,6 +6842,14 @@ void editor::Project::updateDebuggerAccess() {
 }
 
 void editor::Project::saveSceneToPathAsync(uint32_t sceneId, const std::filesystem::path& path, std::function<void(bool)> callback) {
+    // a scene type change lands first
+    if (isSceneTypeChanging()) {
+        editor::getEditorHost().enqueueMainThreadTask([this, sceneId, path, callback = std::move(callback)]() mutable {
+            saveSceneToPathAsync(sceneId, path, std::move(callback));
+        });
+        return;
+    }
+
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
         if (callback) callback(false);
@@ -11027,6 +11035,12 @@ void editor::Project::restorePlayBundleInstances(SceneProject* sceneProject) {
 }
 
 void editor::Project::start(uint32_t sceneId) {
+    // a scene type change lands first
+    if (isSceneTypeChanging()) {
+        editor::getEditorHost().enqueueMainThreadTask([this, sceneId]() { start(sceneId); });
+        return;
+    }
+
     SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject) {
         Out::error("Failed to find scene %u to start", sceneId);
@@ -11339,6 +11353,11 @@ void editor::Project::stop(uint32_t sceneId) {
 
 void editor::Project::startDebug() {
     if (debugger.isActive() || isAnyScenePlaying()) {
+        return;
+    }
+    // a scene type change lands first
+    if (isSceneTypeChanging()) {
+        editor::getEditorHost().enqueueMainThreadTask([this]() { startDebug(); });
         return;
     }
 
