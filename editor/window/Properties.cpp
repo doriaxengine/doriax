@@ -11156,6 +11156,46 @@ void editor::Properties::drawBody3DComponent(ComponentType cpType, SceneProject*
     endTable();
 
     if (body.type == BodyType::DYNAMIC) {
+        auto setAllowedDOFs = [&](uint8_t allow, uint8_t lock){
+            MultiPropertyCmd* multiCmd = new MultiPropertyCmd();
+            for (Entity entity : entities){
+                uint8_t dofs = (sceneProject->scene->getComponent<Body3DComponent>(entity).allowedDOFs | allow) & ~lock;
+                // jolt needs one free axis
+                if (dofs != 0){
+                    multiCmd->addPropertyCmd<uint8_t>(project, sceneProject->id, entity, cpType, "allowedDOFs", dofs);
+                }
+            }
+            multiCmd->setNoMerge();
+            CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
+        };
+
+        auto axisLockRow = [&](const char* label, uint8_t firstBit, const std::string& help){
+            const uint8_t bits = firstBit | (firstBit << 1) | (firstBit << 2);
+            if (propertyHeader(label, -1, (body.allowedDOFs & bits) != bits)){
+                setAllowedDOFs(bits, 0);
+            }
+            const char* axes[] = {"X", "Y", "Z"};
+            for (int i = 0; i < 3; i++){
+                const uint8_t bit = firstBit << i;
+                bool locked = (body.allowedDOFs & bit) == 0;
+                if (i > 0) ImGui::SameLine();
+                ImGui::BeginDisabled(body.allowedDOFs == bit);
+                if (ImGui::Checkbox((std::string(axes[i]) + "##lock_" + label).c_str(), &locked)){
+                    setAllowedDOFs(locked ? 0 : bit, locked ? bit : 0);
+                }
+                ImGui::EndDisabled();
+            }
+            if (!help.empty()){
+                ImGui::SameLine(); helpMarker(help);
+            }
+        };
+
+        ImGui::SeparatorText("Axis Lock");
+        beginTable(cpType, getLabelSize("Rotation"), "axis_lock");
+        axisLockRow("Position", Body3DAllowedDOF_TranslationX, "Locked axes are not moved by physics. Lock position Z and rotation X and Y to keep the body on the XY plane, for 2D gameplay.");
+        axisLockRow("Rotation", Body3DAllowedDOF_RotationX, "");
+        endTable();
+
         ImGui::SeparatorText("Buoyancy");
         beginTable(cpType, getLabelSize("Angular Drag"), "buoyancy");
         RowSettings buoyancySettings;

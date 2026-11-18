@@ -1128,6 +1128,9 @@ namespace {
         if (propertyName == "waterAngularDrag") {
             return {PropertyType::Float, UpdateFlags_None, (void*)&defaultBody3D.waterAngularDrag, (void*)&comp->waterAngularDrag};
         }
+        if (propertyName == "allowedDOFs") {
+            return {PropertyType::Custom, UpdateFlags_Body3D, (void*)&defaultBody3D.allowedDOFs, (void*)&comp->allowedDOFs};
+        }
         if (propertyName == "numShapes") {
             return {PropertyType::UInt, UpdateFlags_Body3D, (void*)&defaultBody3D.numShapes, (void*)&comp->numShapes};
         }
@@ -2712,6 +2715,7 @@ namespace {
         ps["buoyancy"] = {PropertyType::Float, UpdateFlags_None, (void*)&def.buoyancy, compRef ? (void*)&comp->buoyancy : nullptr};
         ps["waterDrag"] = {PropertyType::Float, UpdateFlags_None, (void*)&def.waterDrag, compRef ? (void*)&comp->waterDrag : nullptr};
         ps["waterAngularDrag"] = {PropertyType::Float, UpdateFlags_None, (void*)&def.waterAngularDrag, compRef ? (void*)&comp->waterAngularDrag : nullptr};
+        ps["allowedDOFs"] = {PropertyType::Custom, UpdateFlags_Body3D, (void*)&def.allowedDOFs, compRef ? (void*)&comp->allowedDOFs : nullptr};
         ps["numShapes"] = {PropertyType::UInt, UpdateFlags_Body3D, (void*)&def.numShapes, compRef ? (void*)&comp->numShapes : nullptr};
         ps["overrideMassProperties"] = {PropertyType::Bool, UpdateFlags_Body3D, (void*)&def.overrideMassProperties, compRef ? (void*)&comp->overrideMassProperties : nullptr};
         ps["solidBoxSize"] = {PropertyType::Vector3, UpdateFlags_Body3D, (void*)&def.solidBoxSize, compRef ? (void*)&comp->solidBoxSize : nullptr};
@@ -4948,6 +4952,10 @@ void editor::Catalog::copyPropertyValue(EntityRegistry* sourceRegistry, Entity s
             } else if (property.find("shaderUniforms") != std::string::npos) {
                 auto* source = Catalog::getPropertyRef<ShaderUniformValues>(sourceRegistry, sourceEntity, compType, property);
                 auto* target = Catalog::getPropertyRef<ShaderUniformValues>(targetRegistry, targetEntity, compType, property);
+                if (source && target) *target = *source;
+            } else if (compType == ComponentType::Body3DComponent && property == "allowedDOFs") {
+                auto* source = Catalog::getPropertyRef<uint8_t>(sourceRegistry, sourceEntity, compType, property);
+                auto* target = Catalog::getPropertyRef<uint8_t>(targetRegistry, targetEntity, compType, property);
                 if (source && target) *target = *source;
             }
             break;
