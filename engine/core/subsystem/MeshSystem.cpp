@@ -5934,6 +5934,8 @@ void MeshSystem::setModelTrackKeys(Entity track, ModelTrackKeys& keys){
     KeyframeTracksComponent& keyframe = scene->getComponent<KeyframeTracksComponent>(track);
     if (keyframe.times.empty()) {
         keyframe.times = std::move(keys.keyframe.times);
+    }
+    if (keyframe.easings.empty()) {
         keyframe.easings = std::move(keys.keyframe.easings);
     }
 

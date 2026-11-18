@@ -2718,26 +2718,30 @@ YAML::Node editor::Stream::encodeSceneProject(const Project* project, const Scen
         root["imports"] = importsNode;
     }
 
-    std::unordered_set<Entity> modelTracks = getModelBackedTracks(sceneProject->scene);
+    std::unordered_set<Entity> pendingTracks;
+    std::unordered_set<Entity> modelTracks = getModelBackedTracks(sceneProject->scene, &pendingTracks);
     // a bundle member keeps its keys, in its file and overrides
     if (project) {
         for (auto it = modelTracks.begin(); it != modelTracks.end();) {
             it = project->findEntityBundlePathFor(sceneProject->id, *it).empty() ? std::next(it) : modelTracks.erase(it);
         }
+        for (auto it = pendingTracks.begin(); it != pendingTracks.end();) {
+            it = project->findEntityBundlePathFor(sceneProject->id, *it).empty() ? std::next(it) : pendingTracks.erase(it);
+        }
     }
     // Play's snapshot has no project, it keeps the flags in memory
     struct ModelTracksScope {
-        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks, bool file) {
+        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks, const std::unordered_set<Entity>* pending) {
             savingRegistry = registry;
             savingModelTracks = tracks;
-            savingPendingTracks = file ? tracks : nullptr;
+            savingPendingTracks = pending;
         }
         ~ModelTracksScope() {
             savingRegistry = nullptr;
             savingModelTracks = nullptr;
             savingPendingTracks = nullptr;
         }
-    } modelTracksScope(sceneProject->scene, &modelTracks, project != nullptr);
+    } modelTracksScope(sceneProject->scene, &modelTracks, project ? &pendingTracks : nullptr);
 
     YAML::Node entitiesNode;
     for (Entity entity : sceneProject->entities) {
@@ -3939,12 +3943,28 @@ static bool hasTrackValues(const EntityRegistry* registry, Entity track, const T
     return used && tracks.values == keys.values && tracks.inTangents == keys.inTangents && tracks.outTangents == keys.outTangents;
 }
 
-std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegistry* registry) {
+template<typename T>
+static bool hasValues(const EntityRegistry* registry, Entity track) {
+    return registry->getSignature(track).test(registry->getComponentId<T>()) && !registry->getComponent<T>(track).values.empty();
+}
+
+static bool hasPathValues(const EntityRegistry* registry, Entity track, const std::string& path) {
+    if (path == "translation") return hasValues<TranslateTracksComponent>(registry, track);
+    if (path == "rotation") return hasValues<RotateTracksComponent>(registry, track);
+    if (path == "scale") return hasValues<ScaleTracksComponent>(registry, track);
+    if (path == "weights") return hasValues<MorphTracksComponent>(registry, track);
+    return false;
+}
+
+std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegistry* registry, std::unordered_set<Entity>* pendingTracks) {
     std::unordered_set<Entity> modelTracks;
 
     auto models = registry->getComponentArray<ModelComponent>();
     for (size_t i = 0; i < models->size(); i++) {
         const ModelComponent& model = models->getComponentFromIndex(i);
+
+        // the parsed file counts only while the model still uses it
+        const bool fileLoaded = !model.filename.empty() && model.loadedFilename == MeshSystem::getModelFilenameKey(model.filename);
 
         // the length on a track's first frame follows the file too
         std::unordered_map<Entity, float> frameDurations;
@@ -3962,15 +3982,23 @@ std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegi
             }
             const KeyframeTracksComponent& keyframe = registry->getComponent<KeyframeTracksComponent>(track.entity);
 
-            // still waiting for the file, as it was saved
-            if (track.pending && keyframe.times.empty()) {
-                modelTracks.insert(track.entity);
+            const auto& [animation, node, path] = source;
+
+            // still waiting for the file, keys set meanwhile are kept
+            if (track.pending) {
+                const bool hasTimes = !keyframe.times.empty();
+                const bool hasPath = hasPathValues(registry, track.entity, path);
+                if (!hasTimes && !hasPath) {
+                    modelTracks.insert(track.entity);
+                }
+                if (pendingTracks && (!hasTimes || !hasPath)) {
+                    pendingTracks->insert(track.entity);
+                }
                 continue;
             }
 
-            const auto& [animation, node, path] = source;
             ModelTrackKeys keys;
-            if (!MeshSystem::getModelTrackKeys(model, animation, node, path, keys)) {
+            if (!fileLoaded || !MeshSystem::getModelTrackKeys(model, animation, node, path, keys)) {
                 continue;
             }
             auto frame = frameDurations.find(track.entity);
@@ -3981,6 +4009,9 @@ std::unordered_set<Entity> editor::Stream::getModelBackedTracks(const EntityRegi
                     hasTrackValues(registry, track.entity, keys.scale, keys.path == "scale") &&
                     hasTrackValues(registry, track.entity, keys.morph, keys.path == "weights")) {
                 modelTracks.insert(track.entity);
+                if (pendingTracks) {
+                    pendingTracks->insert(track.entity);
+                }
             }
         }
     }

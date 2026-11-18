@@ -2292,9 +2292,10 @@ namespace {
             for (auto& [nodeIdx, nodeEntity] : comp->nodesIdMapping) {
                 ps["nodesIdMapping[" + std::to_string(nodeIdx) + "]"] = {PropertyType::Entity, UpdateFlags_None, (void*)&defEntity, (void*)&nodeEntity};
             }
+            // by position, names can hold any character
+            size_t trackIndex = 0;
             for (auto& [source, track] : comp->animationTracksMapping) {
-                std::string key = std::get<0>(source) + ", " + std::get<1>(source) + ", " + std::get<2>(source);
-                ps["animationTracksMapping[{" + key + "}]"] = {PropertyType::Entity, UpdateFlags_None, (void*)&defEntity, (void*)&track.entity};
+                ps["animationTracksMapping[" + std::to_string(trackIndex++) + "]"] = {PropertyType::Entity, UpdateFlags_None, (void*)&defEntity, (void*)&track.entity};
             }
         }
     }

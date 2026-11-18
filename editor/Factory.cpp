@@ -40,6 +40,7 @@ static T sanitizeFiniteNumber(T value) {
 // model tracks a scene source leaves without keys
 static thread_local const EntityRegistry* sourceRegistry = nullptr;
 static thread_local const std::unordered_set<Entity>* sourceModelTracks = nullptr;
+static thread_local const std::unordered_set<Entity>* sourcePendingTracks = nullptr;
 
 static bool isSourceModelTrack(const EntityRegistry* registry, Entity entity) {
     return registry == sourceRegistry && sourceModelTracks->count(entity);
@@ -2230,7 +2231,7 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
     }
     for (const auto& [source, track] : model.animationTracksMapping) {
         const auto& [animation, node, path] = source;
-        const bool pending = scene == sourceRegistry ? sourceModelTracks->count(track.entity) > 0 : track.pending;
+        const bool pending = scene == sourceRegistry ? sourcePendingTracks->count(track.entity) > 0 : track.pending;
         code << ind << "modelcomp.animationTracksMapping[{" << formatString(animation) << ", " << formatString(node) << ", " << formatString(path) << "}] = {" << formatEntity(track.entity, entityVarNames) << ", " << formatBool(pending) << "};\n";
     }
 
@@ -2520,17 +2521,20 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     std::string funcId = sceneToFileName(sceneId, name);
     const std::string ind = indentation(indentSpaces);
 
-    std::unordered_set<Entity> modelTracks = Stream::getModelBackedTracks(scene);
+    std::unordered_set<Entity> pendingTracks;
+    std::unordered_set<Entity> modelTracks = Stream::getModelBackedTracks(scene, &pendingTracks);
     struct ModelTracksScope {
-        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks) {
+        ModelTracksScope(const EntityRegistry* registry, const std::unordered_set<Entity>* tracks, const std::unordered_set<Entity>* pending) {
             sourceRegistry = registry;
             sourceModelTracks = tracks;
+            sourcePendingTracks = pending;
         }
         ~ModelTracksScope() {
             sourceRegistry = nullptr;
             sourceModelTracks = nullptr;
+            sourcePendingTracks = nullptr;
         }
-    } modelTracksScope(scene, &modelTracks);
+    } modelTracksScope(scene, &modelTracks, &pendingTracks);
 
     // Build lookup sets for bundle entities
     std::set<Entity> bundleRoots;
@@ -2551,6 +2555,7 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     // a bundle member keeps its keys, overrides replace components
     for (Entity member : bundleMemberEntities) {
         modelTracks.erase(member);
+        pendingTracks.erase(member);
     }
 
     // under an on-demand member: Play drops it too

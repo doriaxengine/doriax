@@ -184,8 +184,9 @@ namespace doriax::editor {
         // geometry in place would be undone on the next load.
         static bool isModelBackedMesh(const Entity entity, const EntityRegistry* registry, Signature signature);
 
-        // Model tracks keyed as in their file, saved without keys
-        static std::unordered_set<Entity> getModelBackedTracks(const EntityRegistry* registry);
+        // Model tracks saved without keys, and in pendingTracks also
+        // the ones still waiting for part of their keys
+        static std::unordered_set<Entity> getModelBackedTracks(const EntityRegistry* registry, std::unordered_set<Entity>* pendingTracks = nullptr);
 
         // True when a mesh's geometry is rebuilt on load from its sprite, tilemap, mesh
         // polygon or terrain component, so its buffers and bones must not be serialized.
