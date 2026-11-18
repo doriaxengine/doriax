@@ -2403,7 +2403,9 @@ Entity editor::Project::createDefaultCamera(SceneType type, Scene* scene) const 
 }
 
 void editor::Project::setSceneType(uint32_t sceneId, SceneType type){
+    sceneTypeChanges++;
     editor::getEditorHost().enqueueMainThreadTask([this, sceneId, type]() {
+        sceneTypeChanges--;
         SceneProject* sceneProject = getScene(sceneId);
         if (!sceneProject || !sceneProject->sceneRender || sceneProject->sceneType == type){
             return;
@@ -10123,6 +10125,10 @@ bool editor::Project::isAnySceneSaving() const{
         }
     }
     return false;
+}
+
+bool editor::Project::isSceneTypeChanging() const{
+    return sceneTypeChanges > 0;
 }
 
 void editor::Project::failPlayStartup(const std::shared_ptr<PlaySession>& session, uint32_t sceneId, const std::string& message,

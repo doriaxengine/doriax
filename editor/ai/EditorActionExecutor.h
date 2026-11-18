@@ -30,6 +30,8 @@ public:
     static void logFailure(const ActionResult& result, const std::string& source);
     // Changes can't run while a save thread reads the scene
     static bool isBlockedBySave(Project* project, const std::string& name);
+    // a scene save or type change finishes first
+    static bool mustWait(Project* project, const std::string& name);
 
 private:
     Project* project;

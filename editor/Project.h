@@ -380,6 +380,7 @@ namespace doriax::editor{
         std::atomic<bool> generatedSourcesDirty{false};
 
         std::vector<SceneProject> scenes;
+        int sceneTypeChanges = 0;  // queued by setSceneType
 
         // Scenes project.yaml lists that could not be loaded, the position they held
         // in that list and the view state kept for them. They never become a
@@ -1036,6 +1037,7 @@ namespace doriax::editor{
         // main scene running on its game camera (not paused, detached or loading)
         bool isGameInputActive() const;
         bool isAnySceneSaving() const;
+        bool isSceneTypeChanging() const;
 
         void start(uint32_t sceneId);
         void pause(uint32_t sceneId);

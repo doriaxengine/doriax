@@ -2444,6 +2444,10 @@ bool EditorActionExecutor::isBlockedBySave(Project* project, const std::string& 
     return project->isAnySceneSaving() && !EditorActionRegistry::isReadOnly(name);
 }
 
+bool EditorActionExecutor::mustWait(Project* project, const std::string& name) {
+    return isBlockedBySave(project, name) || project->isSceneTypeChanging();
+}
+
 ActionResult EditorActionExecutor::execute(const std::string& name,
                                            const Json& arguments,
                                            const std::atomic<bool>* cancel) {
