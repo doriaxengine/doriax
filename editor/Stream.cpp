@@ -2990,7 +2990,8 @@ void editor::Stream::decodeEditorCamera(Camera* camera, const YAML::Node& node, 
     Scene* scene = camera->getScene();
     CameraComponent& camComp = scene->getComponent<CameraComponent>(camEntity);
     Transform& camTransform = scene->getComponent<Transform>(camEntity);
-    if (node["type"]) camComp.type = stringToCameraType(node["type"].as<std::string>());
+    // saved while the scene had another type
+    if (node["type"] && stringToCameraType(node["type"].as<std::string>()) != camComp.type) return;
     camComp.target = decodeFiniteVector3(node["target"], camComp.target);
     camComp.up = decodeFiniteVector3(node["up"], camComp.up);
     camComp.yfov = decodePositiveFinite(node["yfov"], camComp.yfov);
