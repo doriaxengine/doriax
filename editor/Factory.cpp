@@ -2228,11 +2228,12 @@ std::string editor::Factory::createModelComponent(int indentSpaces, EntityRegist
     for (const auto& [name, index] : model.morphNameMapping) {
         code << ind << "modelcomp.morphNameMapping[" << formatString(name) << "] = " << formatInt(index) << ";\n";
     }
-    for (const auto& [channel, track] : model.animationTracksMapping) {
+    for (const auto& [source, track] : model.animationTracksMapping) {
         if (scene == sourceRegistry && !sourceModelTracks->count(track)) {
             continue;
         }
-        code << ind << "modelcomp.animationTracksMapping[{" << formatString(channel.first) << ", " << formatInt(channel.second) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
+        const auto& [animation, node, path] = source;
+        code << ind << "modelcomp.animationTracksMapping[{" << formatString(animation) << ", " << formatInt(node) << ", " << formatString(path) << "}] = " << formatEntity(track, entityVarNames) << ";\n";
     }
 
     addComponentCode(code, ind, sceneName, entityName, entity, "ModelComponent", "modelcomp", assignExisting);
@@ -2361,57 +2362,69 @@ std::string editor::Factory::createKeyframeTracksComponent(int indentSpaces, Ent
 }
 
 std::string editor::Factory::createTranslateTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<TranslateTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
+    if (!scene->findComponent<TranslateTracksComponent>(entity)) return "";
     TranslateTracksComponent& tt = scene->getComponent<TranslateTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "TranslateTracksComponent ttcomp;\n";
-    emitValueList(code, ind, "ttcomp.values", tt.values, formatVector3);
-    // Hermite tangents only exist on GLTF CUBICSPLINE clips
-    emitValueList(code, ind, "ttcomp.inTangents", tt.inTangents, formatVector3);
-    emitValueList(code, ind, "ttcomp.outTangents", tt.outTangents, formatVector3);
+    // a model track gets its values when the model loads
+    if (!isSourceModelTrack(scene, entity)) {
+        emitValueList(code, ind, "ttcomp.values", tt.values, formatVector3);
+        // Hermite tangents only exist on GLTF CUBICSPLINE clips
+        emitValueList(code, ind, "ttcomp.inTangents", tt.inTangents, formatVector3);
+        emitValueList(code, ind, "ttcomp.outTangents", tt.outTangents, formatVector3);
+    }
     addComponentCode(code, ind, sceneName, entityName, entity, "TranslateTracksComponent", "ttcomp", assignExisting);
     return code.str();
 }
 
 std::string editor::Factory::createRotateTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<RotateTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
+    if (!scene->findComponent<RotateTracksComponent>(entity)) return "";
     RotateTracksComponent& rt = scene->getComponent<RotateTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "RotateTracksComponent rtcomp;\n";
-    emitValueList(code, ind, "rtcomp.values", rt.values, formatQuaternion);
-    // Hermite tangents only exist on GLTF CUBICSPLINE clips
-    emitValueList(code, ind, "rtcomp.inTangents", rt.inTangents, formatQuaternion);
-    emitValueList(code, ind, "rtcomp.outTangents", rt.outTangents, formatQuaternion);
+    // a model track gets its values when the model loads
+    if (!isSourceModelTrack(scene, entity)) {
+        emitValueList(code, ind, "rtcomp.values", rt.values, formatQuaternion);
+        // Hermite tangents only exist on GLTF CUBICSPLINE clips
+        emitValueList(code, ind, "rtcomp.inTangents", rt.inTangents, formatQuaternion);
+        emitValueList(code, ind, "rtcomp.outTangents", rt.outTangents, formatQuaternion);
+    }
     addComponentCode(code, ind, sceneName, entityName, entity, "RotateTracksComponent", "rtcomp", assignExisting);
     return code.str();
 }
 
 std::string editor::Factory::createScaleTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<ScaleTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
+    if (!scene->findComponent<ScaleTracksComponent>(entity)) return "";
     ScaleTracksComponent& st = scene->getComponent<ScaleTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "ScaleTracksComponent stcomp;\n";
-    emitValueList(code, ind, "stcomp.values", st.values, formatVector3);
-    // Hermite tangents only exist on GLTF CUBICSPLINE clips
-    emitValueList(code, ind, "stcomp.inTangents", st.inTangents, formatVector3);
-    emitValueList(code, ind, "stcomp.outTangents", st.outTangents, formatVector3);
+    // a model track gets its values when the model loads
+    if (!isSourceModelTrack(scene, entity)) {
+        emitValueList(code, ind, "stcomp.values", st.values, formatVector3);
+        // Hermite tangents only exist on GLTF CUBICSPLINE clips
+        emitValueList(code, ind, "stcomp.inTangents", st.inTangents, formatVector3);
+        emitValueList(code, ind, "stcomp.outTangents", st.outTangents, formatVector3);
+    }
     addComponentCode(code, ind, sceneName, entityName, entity, "ScaleTracksComponent", "stcomp", assignExisting);
     return code.str();
 }
 
 std::string editor::Factory::createMorphTracksComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
-    if (!scene->findComponent<MorphTracksComponent>(entity) || isSourceModelTrack(scene, entity)) return "";
+    if (!scene->findComponent<MorphTracksComponent>(entity)) return "";
     MorphTracksComponent& mt = scene->getComponent<MorphTracksComponent>(entity);
     std::ostringstream code;
     const std::string ind = indentation(indentSpaces);
     code << ind << "MorphTracksComponent mtcomp;\n";
-    emitFloatLists(code, ind, "mtcomp.values", mt.values, formatFloat);
-    // Hermite tangents only exist on GLTF CUBICSPLINE clips
-    emitFloatLists(code, ind, "mtcomp.inTangents", mt.inTangents, formatFloat);
-    emitFloatLists(code, ind, "mtcomp.outTangents", mt.outTangents, formatFloat);
+    // a model track gets its values when the model loads
+    if (!isSourceModelTrack(scene, entity)) {
+        emitFloatLists(code, ind, "mtcomp.values", mt.values, formatFloat);
+        // Hermite tangents only exist on GLTF CUBICSPLINE clips
+        emitFloatLists(code, ind, "mtcomp.inTangents", mt.inTangents, formatFloat);
+        emitFloatLists(code, ind, "mtcomp.outTangents", mt.outTangents, formatFloat);
+    }
     addComponentCode(code, ind, sceneName, entityName, entity, "MorphTracksComponent", "mtcomp", assignExisting);
     return code.str();
 }

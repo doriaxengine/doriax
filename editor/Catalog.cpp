@@ -2289,8 +2289,8 @@ namespace {
             for (auto& [nodeIdx, nodeEntity] : comp->nodesIdMapping) {
                 ps["nodesIdMapping[" + std::to_string(nodeIdx) + "]"] = {PropertyType::Entity, UpdateFlags_None, (void*)&defEntity, (void*)&nodeEntity};
             }
-            for (auto& [channel, track] : comp->animationTracksMapping) {
-                std::string key = channel.first + ", " + std::to_string(channel.second);
+            for (auto& [source, track] : comp->animationTracksMapping) {
+                std::string key = std::get<0>(source) + ", " + std::to_string(std::get<1>(source)) + ", " + std::get<2>(source);
                 ps["animationTracksMapping[{" + key + "}]"] = {PropertyType::Entity, UpdateFlags_None, (void*)&defEntity, (void*)&track};
             }
         }

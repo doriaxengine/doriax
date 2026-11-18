@@ -4563,20 +4563,6 @@ static void fillMorphSlots(Submesh& submesh, AttributeType first, int slots){
     }
 }
 
-// GLTF animations without a name take their index
-static std::string getGLTFAnimationName(const tinygltf::Model& gltf, size_t index){
-    const std::string& name = gltf.animations[index].name;
-    return name.empty() ? "Animation " + std::to_string(index) : name;
-}
-
-// a track holding values of another path is another channel
-static bool hasOtherTrackPath(Scene* scene, Entity track, const std::string& path){
-    return (path != "translation" && scene->findComponent<TranslateTracksComponent>(track)) ||
-           (path != "rotation" && scene->findComponent<RotateTracksComponent>(track)) ||
-           (path != "scale" && scene->findComponent<ScaleTracksComponent>(track)) ||
-           (path != "weights" && scene->findComponent<MorphTracksComponent>(track));
-}
-
 bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncLoad, bool skipEntities, bool changeRootTransform){
     const std::string poolKey = getModelFilenameKey(filename);
 
@@ -5554,20 +5540,20 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
 
             AnimationComponent& animcomp = scene->getComponent<AnimationComponent>(anim);
 
-            std::string animName = getGLTFAnimationName(*model.gltfModel, i);
+            std::string animName = animation.name.empty() ? "Animation " + std::to_string(i) : animation.name;
             scene->setEntityName(anim, animName);
 
             model.animations.push_back(anim);
 
-            // clips are found by name, so a repeated one keeps its keys
-            const bool mapped = getModelAnimation(model, animName) == (int)i;
+            // a clip is found by name, so only a unique one is mapped
+            const bool mapped = getModelAnimation(model, animation.name) == (int)i;
 
             for (size_t j = 0; j < animation.channels.size(); j++) {
 
                 const tinygltf::AnimationChannel &channel = animation.channels[j];
 
                 ModelTrackKeys keys;
-                if (!getModelTrackKeys(model, (int)i, (int)j, keys)) {
+                if (!getGLTFChannelKeys(model, (int)i, (int)j, keys)) {
                     continue;
                 }
 
@@ -5605,7 +5591,7 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
                     actiontrack.target = entity;
                 animcomp.actions.push_back({0, duration, track});
                 if (mapped) {
-                    model.animationTracksMapping[{animName, (int)j}] = track;
+                    model.animationTracksMapping[{animation.name, channel.target_node, channel.target_path}] = track;
                 }
             }
 
@@ -5617,21 +5603,33 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
         }
     } // !skipEntities
 
-    // tracks saved without keys take them from the named clip
+    // keyless tracks take their keys and length from the file
     if (skipEntities && !Engine::isAsyncThread()) {
+        std::unordered_map<Entity, ActionFrame*> frames;
+        for (Entity anim : model.animations) {
+            AnimationComponent* animcomp = scene->isEntityCreated(anim) ? scene->findComponent<AnimationComponent>(anim) : nullptr;
+            for (size_t f = 0; animcomp && f < animcomp->actions.size(); f++) {
+                frames[animcomp->actions[f].action] = &animcomp->actions[f];
+            }
+        }
+
         size_t missing = 0;
-        for (const auto& [channel, track] : model.animationTracksMapping) {
+        for (const auto& [source, track] : model.animationTracksMapping) {
             KeyframeTracksComponent* keyframe = scene->isEntityCreated(track) ? scene->findComponent<KeyframeTracksComponent>(track) : nullptr;
             if (!keyframe || !keyframe->times.empty()) {
                 continue;
             }
+            const auto& [animation, node, path] = source;
             ModelTrackKeys keys;
-            int animation = getModelAnimation(model, channel.first);
-            if (animation >= 0 && getModelTrackKeys(model, animation, channel.second, keys) && !hasOtherTrackPath(scene, track, keys.path)) {
-                setModelTrackKeys(track, keys);
-            } else {
+            if (!getModelTrackKeys(model, animation, node, path, keys)) {
                 missing++;
+                continue;
             }
+            auto frame = frames.find(track);
+            if (frame != frames.end()) {
+                frame->second->duration = keys.keyframe.times.back();
+            }
+            setModelTrackKeys(track, keys);
         }
         if (missing > 0) {
             Log::warn("%zu animation tracks are no longer in %s, choose the file again to update its clips", missing, filename.c_str());
@@ -5710,19 +5708,40 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
 }
 
 int MeshSystem::getModelAnimation(const ModelComponent& model, const std::string& name){
-    if (!model.gltfModel) {
+    if (!model.gltfModel || name.empty()) {
         return -1;
     }
+    int found = -1;
     for (size_t i = 0; i < model.gltfModel->animations.size(); i++) {
-        if (getGLTFAnimationName(*model.gltfModel, i) == name) {
-            return (int)i;
+        if (model.gltfModel->animations[i].name == name) {
+            if (found >= 0) {
+                return -1;
+            }
+            found = (int)i;
         }
     }
 
-    return -1;
+    return found;
 }
 
-bool MeshSystem::getModelTrackKeys(const ModelComponent& model, int animationIndex, int channelIndex, ModelTrackKeys& keys){
+bool MeshSystem::getModelTrackKeys(const ModelComponent& model, const std::string& animation, int node, const std::string& path, ModelTrackKeys& keys){
+    int animationIndex = getModelAnimation(model, animation);
+    if (animationIndex < 0) {
+        return false;
+    }
+    const std::vector<tinygltf::AnimationChannel>& channels = model.gltfModel->animations[animationIndex].channels;
+    for (size_t c = 0; c < channels.size(); c++) {
+        if (channels[c].target_node == node && channels[c].target_path == path) {
+            return getGLTFChannelKeys(model, animationIndex, (int)c, keys);
+        }
+    }
+
+    return false;
+}
+
+bool MeshSystem::getGLTFChannelKeys(const ModelComponent& model, int animationIndex, int channelIndex, ModelTrackKeys& keys){
+    keys = ModelTrackKeys();
+
     if (!model.gltfModel || !isValidGLTFIndex(animationIndex, model.gltfModel->animations)) {
         return false;
     }

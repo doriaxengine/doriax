@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <tuple>
 
 namespace tinygltf {class Model;}
 
@@ -47,8 +48,8 @@ namespace doriax{
         std::map<std::string, int> morphNameMapping;
 
         std::vector<Entity> animations;
-        // Tracks by GLTF clip name and channel, keyed on load if empty
-        std::map<std::pair<std::string, int>, Entity> animationTracksMapping;
+        // Tracks by GLTF clip name, node and path, filled on load
+        std::map<std::tuple<std::string, int, std::string>, Entity> animationTracksMapping;
 
         std::string filename;
 
