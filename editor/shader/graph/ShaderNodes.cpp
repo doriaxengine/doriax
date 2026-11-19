@@ -442,6 +442,13 @@ vec3 graphHSVToRGB(vec3 c){
         out("depth", "Depth", "float"), "sceneDepth({uv})", {"mesh", "postprocess"});
     scene("scene/normal", "Scene Normal", "World normal of what is drawn, needs SSR on.", out("normal", "Normal", "vec3"), "sceneNormal({uv})", {"postprocess"});
     scene("scene/occlusion", "Scene Occlusion", "SSAO, 1 without it.", out("occlusion", "Occlusion", "float"), "sceneOcclusion({uv})", {"postprocess"});
+    ShaderNodeType& sceneBlur = add("scene/blur", "Scene Blur", "Scene",
+        "What is drawn behind, averaged over a disc of Radius pixels of a 1080-line view, linear. More Samples is smoother and slower.",
+        {in("uv", "UV", "vec2", "@screenUV"), in("radius", "Radius", "float", 4.0f), in("samples", "Samples", "float", 16.0f)},
+        {out("color", "Color", "vec4")}, {"sceneBlur({uv}, {radius}, int({samples}))"});
+    sceneBlur.include = "effects/scene_blur.glsl";
+    sceneBlur.stage = ShaderNodeStage::FRAGMENT;
+    sceneBlur.shaderTypes = {"mesh", "postprocess"};
 
     // ---- parameters and constants
 
@@ -753,6 +760,27 @@ vec3 graphHSVToRGB(vec3 c){
         {}, {out("out", "Out", "float")}, {"coverageDitherThreshold(@pixel)"});
     dither.stage = ShaderNodeStage::FRAGMENT;
     dither.shaderTypes = {"mesh"};
+
+    // post-process effects: the pass color, or what feeds Color, in and out
+    auto postEffect = [&](const std::string& id, const std::string& name, const std::string& description,
+                          std::vector<NodePin> inputs, const std::string& code, const std::string& include) {
+        inputs.insert(inputs.begin(), in("in", "Color", "color", "%color"));
+        ShaderNodeType& node = add(id, name, "Effect", description, inputs, {out("color", "Color", "vec4")}, {code});
+        node.include = include;
+        node.stage = ShaderNodeStage::FRAGMENT;
+        node.shaderTypes = {"postprocess"};
+    };
+    postEffect("effect/vignette", "Vignette", "Darkens or tints the image toward its corners.",
+        {in("intensity", "Intensity", "float", 0.4f), in("radius", "Radius", "float", 0.5f), in("softness", "Softness", "float", 0.5f),
+         in("roundness", "Roundness", "float", 0.0f), in("tint", "Tint", "color", std::vector<float>{0.0f, 0.0f, 0.0f, 1.0f})},
+        "vignette(@screenUV, {in}, {intensity}, {radius}, {softness}, {roundness}, {tint}.rgb)", "effects/vignette.glsl");
+    postEffect("effect/filmGrain", "Film Grain", "Moving grain, fainter in the bright parts.",
+        {in("amount", "Amount", "float", 0.08f), in("size", "Size", "float", 1.5f), in("speed", "Speed", "float", 24.0f),
+         in("highlights", "Highlights", "float", 0.5f)},
+        "filmGrain(@pixel, {in}, {amount}, {size}, {speed}, {highlights})", "effects/film_grain.glsl");
+    postEffect("effect/scanlines", "Scanlines", "Dark lines across the image, as on an old screen.",
+        {in("lines", "Lines", "float", 240.0f), in("intensity", "Intensity", "float", 0.35f), in("scroll", "Scroll", "float", 0.0f)},
+        "scanlines(@screenUV, {in}, {lines}, {intensity}, {scroll})", "effects/scanlines.glsl");
 
     functions["intersectionFoam"] = {{"valueNoise"}, R"(// 1 in a band where a surface meets what is behind it, the edge broken by moving noise
 float graphIntersectionFoam(float gap, vec2 position, float time, float width, float scale, float speed, float breakup){
