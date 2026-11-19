@@ -6497,6 +6497,30 @@ bool RenderSystem::ensurePostProcessFramebuffers(unsigned int width, unsigned in
     return postProcessFramebuffer[0].isCreated() && postProcessFramebuffer[1].isCreated();
 }
 
+bool RenderSystem::preparePostProcess(unsigned int width, unsigned int height, bool& bloom, bool& toneMapping){
+    const bool wantsBloom = scene->isBloomEnabled();
+    const bool wantsToneMapping = needsToneMapping();
+    if (wantsBloom){
+        loadBloom();
+    }
+    if (wantsToneMapping){
+        loadToneMapping();
+    }
+
+    const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
+    const bool bloomReady = wantsBloom && bloomLoaded;
+    const bool toneMappingReady = wantsToneMapping && toneMappingLoaded;
+    bloom = false;
+    toneMapping = false;
+    if (!(runsPasses || bloomReady || toneMappingReady) || !ensurePostProcessFramebuffers(width, height))
+        return false;
+
+    // a view too small to halve has no bloom levels
+    bloom = bloomReady && ensureBloomFramebuffers(width, height);
+    toneMapping = toneMappingReady;
+    return runsPasses || bloom || toneMapping;
+}
+
 void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom, bool toneMapping){
     // depth of this frame; the G-buffer normal only exists while SSR is on
     TextureRender* depthTexture = currentSceneDepthTexture ? currentSceneDepthTexture : &emptyBlack;
@@ -10576,20 +10600,12 @@ void RenderSystem::updateSwapchainRedirect(){
             loadSSR();
             redirect = ssrLoaded && ensureSSRFramebuffers(w, h) && ensureGBufferFramebuffer(w, h);
         }
-        const bool wantsBloom = scene->isBloomEnabled();
-        const bool wantsToneMapping = needsToneMapping();
         if (!redirect && wantsPostProcess(*camera)){
             loadPostProcess();
             loadBlit();
-            if (wantsBloom){
-                loadBloom();
-            }
-            if (wantsToneMapping){
-                loadToneMapping();
-            }
-            const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
-            const bool stagesReady = (wantsBloom && bloomLoaded) || (wantsToneMapping && toneMappingLoaded);
-            redirect = (runsPasses || stagesReady) && blitLoaded && ensurePostProcessFramebuffers(w, h);
+            bool bloom = false;
+            bool toneMapping = false;
+            redirect = preparePostProcess(w, h, bloom, toneMapping) && blitLoaded;
         }
 
         bool copiesScene = !sceneColorReaders.empty();
@@ -11873,34 +11889,20 @@ void RenderSystem::draw(){
         bool useBloom = false;
         bool useToneMapping = false;
         FramebufferRender* postDestination = nullptr;
-        const bool wantsBloom = scene->isBloomEnabled();
-        const bool wantsToneMapping = needsToneMapping();
-        if (isMainCamera && !wantsBloom && bloomLevels > 0){
+        if (isMainCamera && !scene->isBloomEnabled() && bloomLevels > 0){
             destroyBloomFramebuffers();
         }
         if (isMainCamera && wantsPostProcess(camera)
                 && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
             loadPostProcess();
-            if (wantsBloom){
-                loadBloom();
-            }
-            if (wantsToneMapping){
-                loadToneMapping();
-            }
 
             // only a swapchain destination ends the chain with a blit
             bool needsBlit = !(Engine::getFramebuffer() || camera.renderToTexture || useFixedRes);
             if (needsBlit){
                 loadBlit();
             }
-
-            const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
-            const bool bloomReady = wantsBloom && bloomLoaded;
-            useToneMapping = wantsToneMapping && toneMappingLoaded;
-            if ((runsPasses || bloomReady || useToneMapping) && (!needsBlit || blitLoaded)
-                    && ensurePostProcessFramebuffers(targetWidth, targetHeight)){
-                useBloom = bloomReady && ensureBloomFramebuffers(targetWidth, targetHeight);
-                usePostProcess = runsPasses || useBloom || useToneMapping;
+            if (!needsBlit || blitLoaded){
+                usePostProcess = preparePostProcess(targetWidth, targetHeight, useBloom, useToneMapping);
             }
         }
 

@@ -965,6 +965,8 @@ namespace doriax{
 		void updatePostProcessUniforms();
 		void destroyPostProcess();
 		bool ensurePostProcessFramebuffers(unsigned int width, unsigned int height);
+		// loads the engine stages and the buffers for this size; false when nothing would run
+		bool preparePostProcess(unsigned int width, unsigned int height, bool& bloom, bool& toneMapping);
 		// runs bloom, tone mapping and the chain from ping-pong buffer 0 into destination (swapchain when null)
 		void renderPostProcess(FramebufferRender* destination, bool bloom, bool toneMapping);
 
