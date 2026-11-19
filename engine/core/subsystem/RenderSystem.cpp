@@ -10578,8 +10578,10 @@ bool RenderSystem::isFixedResolutionActive() const{
 }
 
 void RenderSystem::updateFixedResolution(){
-    // main scene only: layer scenes keep rendering at native resolution on top
-    bool active = !disableFixedResolution && scene->isFixedResolutionEnabled() && Engine::getMainScene() == scene && Engine::isViewLoaded();
+    // main scene only: layer scenes keep rendering at native resolution on top, a camera texture keeps its size
+    CameraComponent* camera = scene->findComponent<CameraComponent>(scene->getRenderCamera());
+    bool active = !disableFixedResolution && scene->isFixedResolutionEnabled() && Engine::getMainScene() == scene &&
+        camera && !camera->renderToTexture && Engine::isViewLoaded();
     // the draw takes the target as it is now, so a later change waits for the next update
     if (active){
         loadBlit();
@@ -10596,7 +10598,7 @@ void RenderSystem::updateFixedResolution(){
     if (active != fixedResolutionActive){
         fixedResolutionActive = active;
         // the flip is baked in the MVP matrices
-        if (CameraComponent* camera = scene->findComponent<CameraComponent>(scene->getRenderCamera())){
+        if (camera){
             camera->needUpdate = true;
         }
     }
