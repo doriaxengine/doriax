@@ -251,6 +251,10 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_underwaterParams";
     }else if (type == UniformBlockType::PROBE_FILTER_FS_PARAMS){
         ustr = "u_fs_probeFilterParams";
+    }else if (type == UniformBlockType::BLOOM_DOWNSAMPLE_FS_PARAMS){
+        ustr = "u_fs_bloomDownParams";
+    }else if (type == UniformBlockType::BLOOM_UPSAMPLE_FS_PARAMS){
+        ustr = "u_fs_bloomUpParams";
     }
 
     if (ustr.empty()){
@@ -388,6 +392,8 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_probeSourceTexture";
     }else if (type == TextureShaderType::WATERWAKE){
         texstr = "u_waterWakeTexture";
+    }else if (type == TextureShaderType::BLOOMTEXTURE){
+        texstr = "u_bloomTexture";
     }
 
     if (texstr.empty()){

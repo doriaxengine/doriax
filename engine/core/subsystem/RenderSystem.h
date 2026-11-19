@@ -38,6 +38,8 @@
 
 // local reflection probes the SSR composite rebuilds per view (composite.frag)
 #define SSR_PROBE_SLOTS 4
+// half-size levels of the bloom chain at most; the smallest stays about 8 pixels high
+#define BLOOM_MAX_LEVELS 8
 
 namespace doriax{
 	// mirrored by the u_fs_lighting block of mesh.frag and water.frag
@@ -159,6 +161,15 @@ namespace doriax{
 	typedef struct fs_blit_t {
 		Vector4 params; // x = flip source Y on sample (GL swapchain destination), yzw unused
 	} fs_blit_t;
+
+	typedef struct fs_bloom_down_t {
+		Vector4 params;    // xy = source texel size, z = 1 on the first level
+		Vector4 threshold; // x = threshold, y = knee width
+	} fs_bloom_down_t;
+
+	typedef struct fs_bloom_up_t {
+		Vector4 params; // xy = texel size of the smaller level, z = spread or intensity, w = 1 to add the glow over the scene
+	} fs_bloom_up_t;
 
 	typedef struct vs_water_t {
 		Matrix4 modelMatrix;
@@ -716,6 +727,23 @@ namespace doriax{
 		CameraRender postProcessPassRender;    // drives the offscreen post passes
 		std::vector<PostProcessRuntime> postProcessPasses;
 
+		// Bloom: bright parts blurred down half-size levels and back up, at the head of the post chain
+		bool bloomLoaded;
+		int bloomLevels;
+		unsigned int bloomWidth;               // size of the scene color it reads
+		unsigned int bloomHeight;
+		Framebuffer bloomDownFramebuffer[BLOOM_MAX_LEVELS];
+		Framebuffer bloomUpFramebuffer[BLOOM_MAX_LEVELS]; // the last level has none
+		CameraRender bloomPassRender;
+		ObjectRender bloomDownRender;
+		ObjectRender bloomUpRender;
+		std::shared_ptr<ShaderRender> bloomDownShader;
+		std::shared_ptr<ShaderRender> bloomUpShader;
+		fs_bloom_down_t fs_bloom_down;
+		fs_bloom_up_t fs_bloom_up;
+		int bloomDownSlotParams;
+		int bloomUpSlotParams;
+
 		static void changeLoaded(void* data);
 		static void changeDestroy(void* data);
 		// water can share its entity with a mesh, so it has its own callbacks
@@ -924,8 +952,16 @@ namespace doriax{
 		void updatePostProcessUniforms();
 		void destroyPostProcess();
 		bool ensurePostProcessFramebuffers(unsigned int width, unsigned int height);
-		// runs the chain from ping-pong buffer 0 into destination (swapchain when null)
-		void renderPostProcess(FramebufferRender* destination);
+		// runs bloom and the chain from ping-pong buffer 0 into destination (swapchain when null)
+		void renderPostProcess(FramebufferRender* destination, bool bloom);
+
+		// bloom
+		void loadBloom();
+		void destroyBloom();
+		bool ensureBloomFramebuffers(unsigned int width, unsigned int height);
+		void destroyBloomFramebuffers();
+		// source with its glow added, into destination
+		void renderBloom(TextureRender* source, FramebufferRender* destination);
 
 		bool drawUI(UIComponent& ui, Transform& transform, PipelineType pipType);
 		void destroyUI(Entity entity, UIComponent& ui);

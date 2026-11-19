@@ -371,6 +371,31 @@ namespace doriax::editor{
                     return scene->getSSRDebugMode();
                 }
             }
+            else if (propertyName == "bloom_enabled") {
+                if constexpr (std::is_same_v<T, bool>) {
+                    return scene->isBloomEnabled();
+                }
+            }
+            else if (propertyName == "bloom_threshold") {
+                if constexpr (std::is_same_v<T, float>) {
+                    return scene->getBloomThreshold();
+                }
+            }
+            else if (propertyName == "bloom_knee") {
+                if constexpr (std::is_same_v<T, float>) {
+                    return scene->getBloomKnee();
+                }
+            }
+            else if (propertyName == "bloom_intensity") {
+                if constexpr (std::is_same_v<T, float>) {
+                    return scene->getBloomIntensity();
+                }
+            }
+            else if (propertyName == "bloom_radius") {
+                if constexpr (std::is_same_v<T, float>) {
+                    return scene->getBloomRadius();
+                }
+            }
             else if (propertyName == "fixed_resolution_enabled") {
                 if constexpr (std::is_same_v<T, bool>) {
                     return scene->isFixedResolutionEnabled();
@@ -539,6 +564,21 @@ namespace doriax::editor{
             }
             else if (propertyName == "ssr_debug_mode") {
                 if constexpr (std::is_same_v<T, int>) return d.ssrDebugMode;
+            }
+            else if (propertyName == "bloom_enabled") {
+                if constexpr (std::is_same_v<T, bool>) return d.bloomEnabled;
+            }
+            else if (propertyName == "bloom_threshold") {
+                if constexpr (std::is_same_v<T, float>) return d.bloomThreshold;
+            }
+            else if (propertyName == "bloom_knee") {
+                if constexpr (std::is_same_v<T, float>) return d.bloomKnee;
+            }
+            else if (propertyName == "bloom_intensity") {
+                if constexpr (std::is_same_v<T, float>) return d.bloomIntensity;
+            }
+            else if (propertyName == "bloom_radius") {
+                if constexpr (std::is_same_v<T, float>) return d.bloomRadius;
             }
             else if (propertyName == "fixed_resolution_enabled") {
                 if constexpr (std::is_same_v<T, bool>) return d.fixedResolutionEnabled;
@@ -713,6 +753,31 @@ namespace doriax::editor{
             else if (propertyName == "ssr_debug_mode") {
                 if constexpr (std::is_same_v<T, int>) {
                     scene->setSSRDebugMode(value);
+                }
+            }
+            else if (propertyName == "bloom_enabled") {
+                if constexpr (std::is_same_v<T, bool>) {
+                    scene->setBloomEnabled(value);
+                }
+            }
+            else if (propertyName == "bloom_threshold") {
+                if constexpr (std::is_same_v<T, float>) {
+                    scene->setBloomThreshold(value);
+                }
+            }
+            else if (propertyName == "bloom_knee") {
+                if constexpr (std::is_same_v<T, float>) {
+                    scene->setBloomKnee(value);
+                }
+            }
+            else if (propertyName == "bloom_intensity") {
+                if constexpr (std::is_same_v<T, float>) {
+                    scene->setBloomIntensity(value);
+                }
+            }
+            else if (propertyName == "bloom_radius") {
+                if constexpr (std::is_same_v<T, float>) {
+                    scene->setBloomRadius(value);
                 }
             }
             else if (propertyName == "fixed_resolution_enabled") {

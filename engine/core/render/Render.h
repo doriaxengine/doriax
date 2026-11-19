@@ -57,7 +57,9 @@ namespace doriax{
         POSTPROCESS, // fullscreen user post-process pass
         WATER,      // water surface displaced by Gerstner waves
         UNDERWATER, // fullscreen fade of the scene seen from inside a water
-        PROBE_FILTER // reflection probe capture prefiltered into roughness mip levels
+        PROBE_FILTER, // reflection probe capture prefiltered into roughness mip levels
+        BLOOM_DOWNSAMPLE, // bright parts of the scene color, one half-size level down the bloom chain
+        BLOOM_UPSAMPLE    // one bloom level spread over the next larger, or the glow over the scene
     };
 
     enum class AttributeType{
@@ -149,7 +151,9 @@ namespace doriax{
         WATER_VS_PARAMS,
         WATER_FS_PARAMS,
         UNDERWATER_FS_PARAMS,
-        PROBE_FILTER_FS_PARAMS
+        PROBE_FILTER_FS_PARAMS,
+        BLOOM_DOWNSAMPLE_FS_PARAMS,
+        BLOOM_UPSAMPLE_FS_PARAMS
     };
 
     enum class StorageBufferType{
@@ -191,7 +195,8 @@ namespace doriax{
         WATERREFRACTION,     // copy of the scene drawn before the water
         WATEREXCLUSION,      // hull maps of the volumes keeping the water out
         PROBESOURCE,         // reflection probe capture read by the prefilter
-        WATERWAKE            // foam and waves left by moving water exclusions
+        WATERWAKE,           // foam and waves left by moving water exclusions
+        BLOOMTEXTURE         // the bloom level a level spreads over, or the scene under the glow
     };
 
     enum class TextureType {

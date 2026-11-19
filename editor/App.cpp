@@ -3061,7 +3061,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v74: depth reads the surface normal, unlit hooks match.
     // v75: vertex color in hook surfaces, flat normals fixed.
     // v76: morphed hook normals, flat normals without lights.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v76";
+    // v77: bloom passes.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v77";
 }
 
 void editor::App::pushTabNotificationStyle(){

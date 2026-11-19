@@ -120,6 +120,14 @@ bool ShaderPool::parseShaderTypeToken(const std::string& typeToken, ShaderType& 
         shaderType = ShaderType::PROBE_FILTER;
         return true;
     }
+    if (typeToken == "bloomdown") {
+        shaderType = ShaderType::BLOOM_DOWNSAMPLE;
+        return true;
+    }
+    if (typeToken == "bloomup") {
+        shaderType = ShaderType::BLOOM_UPSAMPLE;
+        return true;
+    }
 
     return false;
 }
@@ -433,6 +441,8 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
         case ShaderType::WATER:  return lowerCase ? "water"  : "Water";
         case ShaderType::UNDERWATER: return lowerCase ? "underwater" : "Underwater";
         case ShaderType::PROBE_FILTER: return lowerCase ? "probefilter" : "Probe Filter";
+        case ShaderType::BLOOM_DOWNSAMPLE: return lowerCase ? "bloomdown" : "Bloom Downsample";
+        case ShaderType::BLOOM_UPSAMPLE: return lowerCase ? "bloomup" : "Bloom Upsample";
         default:                 return lowerCase ? "unknown": "Unknown";
     }
 }

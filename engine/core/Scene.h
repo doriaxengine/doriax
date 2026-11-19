@@ -200,6 +200,21 @@ namespace doriax{
         void setSSRDebugMode(int mode);
         int getSSRDebugMode() const;
 
+        void setBloomEnabled(bool bloomEnabled);
+        bool isBloomEnabled() const;
+
+        void setBloomThreshold(float threshold);
+        float getBloomThreshold() const;
+
+        void setBloomKnee(float knee);
+        float getBloomKnee() const;
+
+        void setBloomIntensity(float intensity);
+        float getBloomIntensity() const;
+
+        void setBloomRadius(float radius);
+        float getBloomRadius() const;
+
         void setFixedResolutionEnabled(bool fixedResolutionEnabled);
         bool isFixedResolutionEnabled() const;
 

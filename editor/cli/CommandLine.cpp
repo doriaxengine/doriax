@@ -182,6 +182,8 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
     if (token == "water")                       { out = ShaderType::WATER;  return true; }
     if (token == "underwater")                  { out = ShaderType::UNDERWATER; return true; }
     if (token == "probefilter")                 { out = ShaderType::PROBE_FILTER; return true; }
+    if (token == "bloomdown")                   { out = ShaderType::BLOOM_DOWNSAMPLE; return true; }
+    if (token == "bloomup")                     { out = ShaderType::BLOOM_UPSAMPLE; return true; }
     return false;
 }
 

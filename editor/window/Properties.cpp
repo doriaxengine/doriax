@@ -14590,6 +14590,29 @@ void editor::Properties::show(){
             // Ordered fullscreen passes run after the scene color (and SSR) pass; each one
             // is a shader file whose parameters become rows here.
             if (sceneProject->sceneType != SceneType::SCENE_UI) {
+                ImGui::SeparatorText("Bloom");
+
+                if (ImGui::BeginTable("scene_bloom_settings_table", 2, tableFlags)) {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Threshold"));
+                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                    drawScenePropertyRow<bool>(sceneProject, "bloom_enabled", "Enabled", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
+                        "A glow around the bright parts of the image, added before the post-process passes.");
+
+                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "bloom_enabled")) {
+                        drawScenePropertyRow<float>(sceneProject, "bloom_threshold", "Threshold", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f,
+                            "Brightness where the glow starts, linear: 1 is white.");
+                        drawScenePropertyRow<float>(sceneProject, "bloom_knee", "Knee", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f,
+                            "Soft start below the threshold, as a share of it. 0 cuts hard.");
+                        drawScenePropertyRow<float>(sceneProject, "bloom_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 4.0f,
+                            "Strength of the glow.");
+                        drawScenePropertyRow<float>(sceneProject, "bloom_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f,
+                            "0 keeps the glow close to the bright parts, 1 spreads it wide.");
+                    }
+
+                    ImGui::EndTable();
+                }
+
                 ImGui::SeparatorText("Post-processing");
                 drawScenePostProcess(sceneProject);
             }

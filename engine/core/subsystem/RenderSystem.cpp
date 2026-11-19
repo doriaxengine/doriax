@@ -499,6 +499,13 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     postProcessNeedsDepth = false;
     postProcessNeedsGBuffer = false;
 
+    bloomLoaded = false;
+    bloomLevels = 0;
+    bloomWidth = 0;
+    bloomHeight = 0;
+    bloomDownSlotParams = -1;
+    bloomUpSlotParams = -1;
+
     shadowAtlasSlotResolution = 0;
     shadowAtlasCols = 0;
     shadowAtlasRows = 0;
@@ -589,6 +596,7 @@ void RenderSystem::destroy(){
     destroyBlit();
     destroyProbeFilter();
     destroyPostProcess();
+    destroyBloom();
     for (InstanceView& view : instanceViews){
         view.buffer.getRender()->destroyBuffer();
         view.data.clear();
@@ -6465,7 +6473,7 @@ bool RenderSystem::ensurePostProcessFramebuffers(unsigned int width, unsigned in
     return postProcessFramebuffer[0].isCreated() && postProcessFramebuffer[1].isCreated();
 }
 
-void RenderSystem::renderPostProcess(FramebufferRender* destination){
+void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom){
     // depth is the SSR G-buffer or the chain's own pre-pass; the G-buffer
     // normal/roughness only exists while SSR is on
     TextureRender* depthTexture = &emptyBlack;
@@ -6486,11 +6494,24 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
     TextureRender* input = &postProcessFramebuffer[0].getRender().getColorTexture();
     int pingPong = 1;
 
+    // bloom alone runs while the user passes are still loading
+    const int passCount = postProcessLoaded ? (int)postProcessPasses.size() : 0;
+
+    if (bloom){
+        if (passCount == 0 && destination){
+            renderBloom(input, destination);
+            return;
+        }
+        renderBloom(input, &postProcessFramebuffer[pingPong].getRender());
+        input = &postProcessFramebuffer[pingPong].getRender().getColorTexture();
+        pingPong = 1 - pingPong;
+    }
+
     updatePostProcessUniforms();
 
-    for (int i = 0; i < (int)postProcessPasses.size(); i++){
+    for (int i = 0; i < passCount; i++){
         PostProcessRuntime& pass = postProcessPasses[i];
-        bool writeDestination = destination && (i + 1 == (int)postProcessPasses.size());
+        bool writeDestination = destination && (i + 1 == passCount);
 
         if (writeDestination){
             postProcessPassRender.startRenderPass(destination);
@@ -6523,6 +6544,160 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination){
         const Rect viewport = Engine::getViewRect();
         renderBlit(input, nullptr, &viewport);
     }
+}
+
+void RenderSystem::loadBloom(){
+    if (bloomLoaded)
+        return;
+
+    // the shaders may still be building (async in the editor)
+    bloomDownShader = ShaderPool::get(ShaderType::BLOOM_DOWNSAMPLE, 0);
+    bloomUpShader = ShaderPool::get(ShaderType::BLOOM_UPSAMPLE, 0);
+    if (!bloomDownShader || !bloomDownShader->isCreated() || !bloomUpShader || !bloomUpShader->isCreated())
+        return;
+
+    bloomDownRender.beginLoad(PrimitiveType::TRIANGLES);
+    bloomDownRender.setShader(bloomDownShader.get());
+    bloomDownSlotParams = bloomDownShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::BLOOM_DOWNSAMPLE_FS_PARAMS);
+    if (!bloomDownRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+        return;
+
+    bloomUpRender.beginLoad(PrimitiveType::TRIANGLES);
+    bloomUpRender.setShader(bloomUpShader.get());
+    bloomUpSlotParams = bloomUpShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::BLOOM_UPSAMPLE_FS_PARAMS);
+    if (!bloomUpRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+        return;
+
+    bloomLoaded = true;
+}
+
+void RenderSystem::destroyBloom(){
+    if (bloomLoaded){
+        bloomDownRender.destroy();
+        bloomUpRender.destroy();
+    }
+    if (bloomDownShader){
+        bloomDownShader.reset();
+        ShaderPool::remove(ShaderType::BLOOM_DOWNSAMPLE, 0);
+    }
+    if (bloomUpShader){
+        bloomUpShader.reset();
+        ShaderPool::remove(ShaderType::BLOOM_UPSAMPLE, 0);
+    }
+
+    destroyBloomFramebuffers();
+
+    bloomDownSlotParams = -1;
+    bloomUpSlotParams = -1;
+    bloomLoaded = false;
+}
+
+bool RenderSystem::ensureBloomFramebuffers(unsigned int width, unsigned int height){
+    if (width < 4 || height < 4)
+        return false;
+
+    if (bloomLevels > 0 && bloomWidth == width && bloomHeight == height)
+        return true;
+
+    destroyBloomFramebuffers();
+
+    // halving down to a level about 8 pixels high keeps the glow the same share of any view
+    int levels = 1;
+    const unsigned int shortSide = std::min(width, height);
+    while (levels < BLOOM_MAX_LEVELS && (shortSide >> (levels + 1)) >= 8)
+        levels++;
+
+    auto createLevel = [](Framebuffer& framebuffer, unsigned int levelWidth, unsigned int levelHeight){
+        framebuffer.setWidth(levelWidth);
+        framebuffer.setHeight(levelHeight);
+        framebuffer.setMinFilter(TextureFilter::LINEAR);
+        framebuffer.setMagFilter(TextureFilter::LINEAR);
+        framebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
+        framebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
+        framebuffer.create();
+        return framebuffer.isCreated();
+    };
+
+    for (int i = 0; i < levels; i++){
+        const unsigned int levelWidth = std::max(1u, width >> (i + 1));
+        const unsigned int levelHeight = std::max(1u, height >> (i + 1));
+        // the way back up has no target at the smallest level
+        if (!createLevel(bloomDownFramebuffer[i], levelWidth, levelHeight) ||
+                (i + 1 < levels && !createLevel(bloomUpFramebuffer[i], levelWidth, levelHeight))){
+            destroyBloomFramebuffers();
+            return false;
+        }
+    }
+
+    bloomLevels = levels;
+    bloomWidth = width;
+    bloomHeight = height;
+
+    return true;
+}
+
+void RenderSystem::destroyBloomFramebuffers(){
+    for (int i = 0; i < BLOOM_MAX_LEVELS; i++){
+        bloomDownFramebuffer[i].destroy();
+        bloomUpFramebuffer[i].destroy();
+    }
+    bloomLevels = 0;
+    bloomWidth = 0;
+    bloomHeight = 0;
+}
+
+void RenderSystem::renderBloom(TextureRender* source, FramebufferRender* destination){
+    const float threshold = std::max(scene->getBloomThreshold(), 0.0f);
+    const float knee = threshold * std::clamp(scene->getBloomKnee(), 0.0f, 1.0f);
+    ShaderData& downData = bloomDownShader.get()->shaderData;
+    ShaderData& upData = bloomUpShader.get()->shaderData;
+    const std::pair<int, int> downSource = downData.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE);
+    const std::pair<int, int> upSource = upData.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE);
+    const std::pair<int, int> upBase = upData.getTextureIndex(TextureShaderType::BLOOMTEXTURE);
+
+    // down the chain, each level half the size of the one before
+    TextureRender* input = source;
+    Vector2 texel(1.0f / (float)bloomWidth, 1.0f / (float)bloomHeight);
+    for (int i = 0; i < bloomLevels; i++){
+        fs_bloom_down.params = Vector4(texel.x, texel.y, i == 0 ? 1.0f : 0.0f, 0.0f);
+        fs_bloom_down.threshold = Vector4(threshold, knee, 0.0f, 0.0f);
+        bloomPassRender.startRenderPass(&bloomDownFramebuffer[i].getRender());
+        if (bloomDownRender.beginDraw(PIP_RTT)){
+            bloomDownRender.addTexture(downSource, ShaderStageType::FRAGMENT, input);
+            bloomDownRender.applyUniformBlock(bloomDownSlotParams, sizeof(fs_bloom_down_t), &fs_bloom_down);
+            bloomDownRender.draw(0, 3, 1);
+        }
+        bloomPassRender.endRenderPass();
+        input = &bloomDownFramebuffer[i].getRender().getColorTexture();
+        texel = Vector2(1.0f / (float)bloomDownFramebuffer[i].getWidth(), 1.0f / (float)bloomDownFramebuffer[i].getHeight());
+    }
+
+    // back up, each level spreading the smaller one over its own
+    const float spread = std::clamp(scene->getBloomRadius(), 0.0f, 1.0f);
+    for (int i = bloomLevels - 2; i >= 0; i--){
+        fs_bloom_up.params = Vector4(texel.x, texel.y, spread, 0.0f);
+        bloomPassRender.startRenderPass(&bloomUpFramebuffer[i].getRender());
+        if (bloomUpRender.beginDraw(PIP_RTT)){
+            bloomUpRender.addTexture(upSource, ShaderStageType::FRAGMENT, input);
+            bloomUpRender.addTexture(upBase, ShaderStageType::FRAGMENT, &bloomDownFramebuffer[i].getRender().getColorTexture());
+            bloomUpRender.applyUniformBlock(bloomUpSlotParams, sizeof(fs_bloom_up_t), &fs_bloom_up);
+            bloomUpRender.draw(0, 3, 1);
+        }
+        bloomPassRender.endRenderPass();
+        input = &bloomUpFramebuffer[i].getRender().getColorTexture();
+        texel = Vector2(1.0f / (float)bloomUpFramebuffer[i].getWidth(), 1.0f / (float)bloomUpFramebuffer[i].getHeight());
+    }
+
+    // the glow over the scene
+    fs_bloom_up.params = Vector4(texel.x, texel.y, std::max(scene->getBloomIntensity(), 0.0f), 1.0f);
+    bloomPassRender.startRenderPass(destination);
+    if (bloomUpRender.beginDraw(PIP_RTT)){
+        bloomUpRender.addTexture(upSource, ShaderStageType::FRAGMENT, input);
+        bloomUpRender.addTexture(upBase, ShaderStageType::FRAGMENT, source);
+        bloomUpRender.applyUniformBlock(bloomUpSlotParams, sizeof(fs_bloom_up_t), &fs_bloom_up);
+        bloomUpRender.draw(0, 3, 1);
+    }
+    bloomPassRender.endRenderPass();
 }
 
 void RenderSystem::presentFramebufferToSwapchain(Framebuffer* source){
@@ -10314,11 +10489,15 @@ void RenderSystem::updateSwapchainRedirect(){
             loadSSR();
             redirect = ssrLoaded && ensureSSRFramebuffers(w, h) && ensureGBufferFramebuffer(w, h);
         }
-        if (!redirect && !scene->getPostProcessPasses().empty()){
+        if (!redirect && (scene->isBloomEnabled() || !scene->getPostProcessPasses().empty())){
             loadPostProcess();
             loadBlit();
-            redirect = postProcessLoaded && blitLoaded && !postProcessPasses.empty()
-                    && ensurePostProcessFramebuffers(w, h);
+            if (scene->isBloomEnabled()){
+                loadBloom();
+            }
+            const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
+            const bool bloomReady = scene->isBloomEnabled() && bloomLoaded;
+            redirect = (runsPasses || bloomReady) && blitLoaded && ensurePostProcessFramebuffers(w, h);
         }
 
         bool copiesScene = !sceneColorReaders.empty();
@@ -11589,11 +11768,19 @@ void RenderSystem::draw(){
         // follows the same destination-capture rule. Main scene only: its last pass
         // writes every pixel, so a layer scene would erase the scene below it.
         bool usePostProcess = false;
+        bool useBloom = false;
         FramebufferRender* postDestination = nullptr;
-        if (isMainCamera && !scene->getPostProcessPasses().empty()
+        const bool wantsBloom = scene->isBloomEnabled();
+        if (isMainCamera && !wantsBloom && bloomLevels > 0){
+            destroyBloomFramebuffers();
+        }
+        if (isMainCamera && (wantsBloom || !scene->getPostProcessPasses().empty())
                 && (Engine::getMainScene() == scene || camera.renderToTexture)
                 && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
             loadPostProcess();
+            if (wantsBloom){
+                loadBloom();
+            }
 
             // only a swapchain destination ends the chain with a blit
             bool needsBlit = !(Engine::getFramebuffer() || camera.renderToTexture || useFixedRes);
@@ -11608,12 +11795,15 @@ void RenderSystem::draw(){
                 ph = fixedResHeight;
             }
 
-            if (postProcessLoaded && !postProcessPasses.empty() && (!needsBlit || blitLoaded)
+            const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
+            const bool bloomReady = wantsBloom && bloomLoaded;
+            if ((runsPasses || bloomReady) && (!needsBlit || blitLoaded)
                     && ensurePostProcessFramebuffers(pw, ph)){
-                usePostProcess = true;
+                useBloom = bloomReady && ensureBloomFramebuffers(pw, ph);
+                usePostProcess = runsPasses || useBloom;
 
                 // a pass sampling depth needs the pre-pass when neither SSR nor SSAO ran
-                if (postProcessNeedsDepth && !useSSR && !scene->isSSAOEnabled()
+                if (runsPasses && postProcessNeedsDepth && !useSSR && !scene->isSSAOEnabled()
                         && ensureDepthPrePassFramebuffer(pw, ph)){
                     renderDepthPrePass(camera);
                 }
@@ -12206,7 +12396,7 @@ void RenderSystem::draw(){
 
         // buffer 0 now holds the scene color (or the SSR composite)
         if (usePostProcess){
-            renderPostProcess(postDestination);
+            renderPostProcess(postDestination, useBloom);
         }
 
         // Fixed game resolution: upscale the offscreen scene color to the view

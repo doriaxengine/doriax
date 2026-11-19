@@ -94,6 +94,13 @@ namespace doriax{
         float ssrBlur = 0.0f;          // glossy blur amount [0..1] (0 = sharp/mirror)
         int ssrDebugMode = 0;          // 0=off,1=reflection,2=normal,3=roughness,4=metallic,5=albedo,6=IBL specular
 
+        // glow around the bright parts of the image, run ahead of the post-process chain
+        bool bloomEnabled = false;
+        float bloomThreshold = 0.8f;   // linear brightness where the glow starts, 1 is white
+        float bloomKnee = 0.5f;        // soft start below the threshold, as a share of it
+        float bloomIntensity = 1.0f;   // strength of the glow added over the image
+        float bloomRadius = 0.7f;      // 0 keeps the glow tight, 1 spreads it wide
+
         // Initial physics gravity. The live value is owned by PhysicsSystem (it must be pushed
         // to the Box2D/Jolt worlds on change); this is the default it initializes from.
         Vector2 gravity2D = Vector2(0.0f, -9.81f);

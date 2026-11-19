@@ -2913,6 +2913,11 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     out << ind2 << "scene->setSSRMaxSteps(" << scene->getSSRMaxSteps() << ");\n";
     out << ind2 << "scene->setSSRIntensity(" << formatFloat(scene->getSSRIntensity()) << ");\n";
     out << ind2 << "scene->setSSRBlur(" << formatFloat(scene->getSSRBlur()) << ");\n";
+    out << ind2 << "scene->setBloomEnabled(" << formatBool(scene->isBloomEnabled()) << ");\n";
+    out << ind2 << "scene->setBloomThreshold(" << formatFloat(scene->getBloomThreshold()) << ");\n";
+    out << ind2 << "scene->setBloomKnee(" << formatFloat(scene->getBloomKnee()) << ");\n";
+    out << ind2 << "scene->setBloomIntensity(" << formatFloat(scene->getBloomIntensity()) << ");\n";
+    out << ind2 << "scene->setBloomRadius(" << formatFloat(scene->getBloomRadius()) << ");\n";
     out << ind2 << "scene->setFixedResolutionSize(" << formatUInt(scene->getFixedResolutionWidth()) << ", " << formatUInt(scene->getFixedResolutionHeight()) << ");\n";
     out << ind2 << "scene->setFixedResolutionFilter(" << formatTextureFilter(scene->getFixedResolutionFilter()) << ");\n";
     out << ind2 << "scene->setFixedResolutionEnabled(" << formatBool(scene->isFixedResolutionEnabled()) << ");\n";

@@ -3034,6 +3034,11 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["ssrMaxSteps"] = scene->getSSRMaxSteps();
     sceneNode["ssrIntensity"] = scene->getSSRIntensity();
     sceneNode["ssrBlur"] = scene->getSSRBlur();
+    sceneNode["bloomEnabled"] = scene->isBloomEnabled();
+    sceneNode["bloomThreshold"] = scene->getBloomThreshold();
+    sceneNode["bloomKnee"] = scene->getBloomKnee();
+    sceneNode["bloomIntensity"] = scene->getBloomIntensity();
+    sceneNode["bloomRadius"] = scene->getBloomRadius();
     sceneNode["gravity2D"] = encodeVector2(scene->getGravity2D());
     sceneNode["gravity3D"] = encodeVector3(scene->getGravity3D());
     if (!scene->getShaderParameterDefaults().empty())
@@ -3160,6 +3165,21 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
     }
     if (node["ssrBlur"]) {
         scene->setSSRBlur(node["ssrBlur"].as<float>());
+    }
+    if (node["bloomEnabled"]) {
+        scene->setBloomEnabled(node["bloomEnabled"].as<bool>());
+    }
+    if (node["bloomThreshold"]) {
+        scene->setBloomThreshold(node["bloomThreshold"].as<float>());
+    }
+    if (node["bloomKnee"]) {
+        scene->setBloomKnee(node["bloomKnee"].as<float>());
+    }
+    if (node["bloomIntensity"]) {
+        scene->setBloomIntensity(node["bloomIntensity"].as<float>());
+    }
+    if (node["bloomRadius"]) {
+        scene->setBloomRadius(node["bloomRadius"].as<float>());
     }
 
     // absent key restores the engine default so decoding into a reused scene (play restore) is exact

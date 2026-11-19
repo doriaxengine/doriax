@@ -486,6 +486,46 @@ int Scene::getSSRDebugMode() const{
     return settings.ssrDebugMode;
 }
 
+void Scene::setBloomEnabled(bool bloomEnabled){
+    settings.bloomEnabled = bloomEnabled;
+}
+
+bool Scene::isBloomEnabled() const{
+    return settings.bloomEnabled;
+}
+
+void Scene::setBloomThreshold(float threshold){
+    settings.bloomThreshold = threshold;
+}
+
+float Scene::getBloomThreshold() const{
+    return settings.bloomThreshold;
+}
+
+void Scene::setBloomKnee(float knee){
+    settings.bloomKnee = knee;
+}
+
+float Scene::getBloomKnee() const{
+    return settings.bloomKnee;
+}
+
+void Scene::setBloomIntensity(float intensity){
+    settings.bloomIntensity = intensity;
+}
+
+float Scene::getBloomIntensity() const{
+    return settings.bloomIntensity;
+}
+
+void Scene::setBloomRadius(float radius){
+    settings.bloomRadius = radius;
+}
+
+float Scene::getBloomRadius() const{
+    return settings.bloomRadius;
+}
+
 void Scene::setFixedResolutionEnabled(bool fixedResolutionEnabled){
     if (settings.fixedResolutionEnabled != fixedResolutionEnabled){
         settings.fixedResolutionEnabled = fixedResolutionEnabled;
