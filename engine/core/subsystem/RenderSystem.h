@@ -696,7 +696,7 @@ namespace doriax{
 		// fixedResFramebuffer and a fullscreen blit pass upscales it to the
 		// real destination (view rect).
 		bool blitLoaded;
-		bool fixedResolutionActive;        // decided by update for its frame
+		bool fixedResolutionActive;        // decided by update for its frame, with its target ready
 		unsigned int fixedResWidth;
 		unsigned int fixedResHeight;
 		Framebuffer fixedResFramebuffer;   // offscreen scene color at the fixed size
@@ -767,6 +767,8 @@ namespace doriax{
 		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
+		// decides fixed resolution for the frame and prepares its target
+		void updateFixedResolution();
 		void updateSwapchainRedirect();
 		void updateMVP(size_t index, Transform& transform, CameraComponent& camera, Transform& cameraTransform);
 

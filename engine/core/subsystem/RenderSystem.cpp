@@ -1327,8 +1327,8 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
     float vpH = Engine::getViewRect().getHeight();
     if (isFixedResolutionActive() && !camera.renderToTexture){
         // the main color pass renders into the fixed-resolution target
-        vpW = (float)scene->getFixedResolutionWidth();
-        vpH = (float)scene->getFixedResolutionHeight();
+        vpW = (float)fixedResWidth;
+        vpH = (float)fixedResHeight;
     }
     fs_lighting.viewportInfo = Vector4(
         (vpW > 0.0f) ? 1.0f / vpW : 0.0f,
@@ -4260,7 +4260,7 @@ void RenderSystem::updateMeshLodErrors(MeshComponent& mesh){
 void RenderSystem::updateMainLodView(CameraComponent& camera, Transform& cameraTransform){
     float viewHeight = Engine::getViewRect().getHeight();
     if (isFixedResolutionActive())
-        viewHeight = (float)scene->getFixedResolutionHeight();
+        viewHeight = (float)fixedResHeight;
     viewHeight = std::max(viewHeight, 1.0f);
 
     LodView view;
@@ -5625,8 +5625,8 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     if (isFixedResolutionActive() && !camera.renderToTexture){
         // the main color pass renders into the fixed-resolution target, so the
         // AO buffer must match it (meshes convert gl_FragCoord with these sizes)
-        w = scene->getFixedResolutionWidth();
-        h = scene->getFixedResolutionHeight();
+        w = fixedResWidth;
+        h = fixedResHeight;
     }
     if (!ensureSSAOFramebuffers(w, h))
         return;
@@ -7360,7 +7360,7 @@ float RenderSystem::getPointsViewportHeight(const CameraComponent& camera) const
     }
     if (isFixedResolutionActive()){
         // the main color pass renders into the fixed-resolution target
-        return (float)scene->getFixedResolutionHeight();
+        return (float)fixedResHeight;
     }
     if (Framebuffer* engineFb = Engine::getFramebuffer()){
         if (engineFb->isCreated()){
@@ -10577,6 +10577,31 @@ bool RenderSystem::isFixedResolutionActive() const{
     return fixedResolutionActive;
 }
 
+void RenderSystem::updateFixedResolution(){
+    // main scene only: layer scenes keep rendering at native resolution on top
+    bool active = !disableFixedResolution && scene->isFixedResolutionEnabled() && Engine::getMainScene() == scene && Engine::isViewLoaded();
+    // the draw takes the target as it is now, so a later change waits for the next update
+    if (active){
+        loadBlit();
+        active = blitLoaded && ensureFixedResFramebuffer(scene->getFixedResolutionWidth(),
+            scene->getFixedResolutionHeight(), scene->getFixedResolutionFilter());
+    }
+    // the blit pipeline is kept, it is cheap and may be turned on again
+    if (!active && fixedResFramebuffer.isCreated()){
+        fixedResFramebuffer.destroy();
+        fixedResWidth = 0;
+        fixedResHeight = 0;
+    }
+
+    if (active != fixedResolutionActive){
+        fixedResolutionActive = active;
+        // the flip is baked in the MVP matrices
+        if (CameraComponent* camera = scene->findComponent<CameraComponent>(scene->getRenderCamera())){
+            camera->needUpdate = true;
+        }
+    }
+}
+
 void RenderSystem::updateSwapchainRedirect(){
     // SSR, the post-process chain and the scene copy of a water or a mesh need the scene in an offscreen
     // color buffer. Without a framebuffer destination (exported builds) the color pass is redirected
@@ -10772,9 +10797,8 @@ void RenderSystem::update(double dt){
         return;
     }
 
-    // once a frame, as the MVPs bake its flip; main scene only, layer scenes stay native on top
-    fixedResolutionActive = !disableFixedResolution && scene->isFixedResolutionEnabled() &&
-        scene->getFixedResolutionWidth() > 0 && scene->getFixedResolutionHeight() > 0 && Engine::getMainScene() == scene;
+    // once a frame, as the MVPs bake its flip
+    updateFixedResolution();
 
     spriteUpdates++;
 
@@ -11569,14 +11593,6 @@ void RenderSystem::draw(){
     updateInstanceBuffers();
     updateSkinBuffers();
 
-    // free the fixed-resolution target when the setting is turned off (the blit
-    // pipeline itself is kept; it is cheap and may be re-enabled)
-    if (!isFixedResolutionActive() && fixedResFramebuffer.isCreated()){
-        fixedResFramebuffer.destroy();
-        fixedResWidth = 0;
-        fixedResHeight = 0;
-    }
-
     // shadow maps are fitted to the main camera, so effect functions see it there too
     if (CameraComponent* effectCamera = scene->findComponent<CameraComponent>(mainCameraEntity)){
         if (Transform* effectTransform = scene->findComponent<Transform>(mainCameraEntity)){
@@ -11864,14 +11880,7 @@ void RenderSystem::draw(){
         // Fixed game resolution (main scene main camera only): the color pass is
         // redirected into fixedResFramebuffer at the scene's fixed size, and
         // renderFixedResolutionBlit() upscales it to the view rect afterwards.
-        bool useFixedRes = false;
-        if (isMainCamera && !camera.renderToTexture && isFixedResolutionActive()){
-            loadBlit();
-            if (blitLoaded && ensureFixedResFramebuffer(scene->getFixedResolutionWidth(),
-                    scene->getFixedResolutionHeight(), scene->getFixedResolutionFilter())){
-                useFixedRes = true;
-            }
-        }
+        const bool useFixedRes = isMainCamera && !camera.renderToTexture && isFixedResolutionActive();
 
         // the size the color pass draws at, which the screen-space passes take
         unsigned int targetWidth = (unsigned int)Engine::getViewRect().getWidth();
