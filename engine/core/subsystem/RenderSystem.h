@@ -352,7 +352,7 @@ namespace doriax{
 		bool hasFog;
 		bool hasIBL;
 		bool hasReflectionProbes;
-		// a water or mesh samples the scene depth
+		// a water, a mesh or a post-process pass samples the scene depth
 		bool hasWaterDepth;
 		// meshes whose shader files sample the opaque scene
 		std::set<Entity> sceneColorReaders;
@@ -949,6 +949,8 @@ namespace doriax{
 		void loadBlit();
 		void destroyBlit();
 		bool ensureFixedResFramebuffer(unsigned int width, unsigned int height, TextureFilter filter);
+		// cleared to the background; the engine framebuffer keeps the scene in its view rect
+		void startFullscreenPass(CameraRender& passRender, FramebufferRender* target);
 		// draws source over destination (the swapchain when null), in viewport or the whole target
 		void renderBlit(TextureRender* source, FramebufferRender* destination, const Rect* viewport);
 		// the fullscreen blit draw alone, in the pass already started

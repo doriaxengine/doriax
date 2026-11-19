@@ -6048,13 +6048,17 @@ bool RenderSystem::ensureSSRFramebuffers(unsigned int width, unsigned int height
     if (!ensureSceneColorFramebuffer(width, height))
         return false;
 
-    if (ssrFramebuffer.isCreated() && ssrBlurFramebuffer.isCreated() && ssrWidth == width && ssrHeight == height)
+    // float with HDR, so bright reflections reach the tone curve
+    const ColorFormat format = getSceneColorFormat();
+    if (ssrFramebuffer.isCreated() && ssrBlurFramebuffer.isCreated() && ssrWidth == width && ssrHeight == height &&
+            ssrFramebuffer.getColorFormat() == format)
         return true;
 
     ssrFramebuffer.destroy();
     ssrBlurFramebuffer.destroy();
 
     // reflection color + mask
+    ssrFramebuffer.setColorAttachments(1, &format);
     ssrFramebuffer.setWidth(width);
     ssrFramebuffer.setHeight(height);
     ssrFramebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -6064,6 +6068,7 @@ bool RenderSystem::ensureSSRFramebuffers(unsigned int width, unsigned int height
     ssrFramebuffer.create();
 
     // glossy-blurred reflection (sampled by the composite when blur > 0)
+    ssrBlurFramebuffer.setColorAttachments(1, &format);
     ssrBlurFramebuffer.setWidth(width);
     ssrBlurFramebuffer.setHeight(height);
     ssrBlurFramebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -6167,7 +6172,7 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
     ssrPassRender.setClearColor(scene->getBackgroundColor());
     PipelineType compositePip;
     if (destination){
-        ssrPassRender.startRenderPass(destination);
+        startFullscreenPass(ssrPassRender, destination);
         compositePip = PIP_RTT;
     }else{
         ssrPassRender.startRenderPass();
@@ -6258,6 +6263,14 @@ bool RenderSystem::ensureFixedResFramebuffer(unsigned int width, unsigned int he
     fixedResHeight = height;
 
     return fixedResFramebuffer.isCreated();
+}
+
+void RenderSystem::startFullscreenPass(CameraRender& passRender, FramebufferRender* target){
+    passRender.setClearColor(scene->getBackgroundColor());
+    passRender.startRenderPass(target);
+    if (Engine::getFramebuffer() && target == &Engine::getFramebuffer()->getRender()){
+        passRender.applyViewport(Engine::getViewRect());
+    }
 }
 
 void RenderSystem::renderBlit(TextureRender* source, FramebufferRender* destination, const Rect* viewport){
@@ -6395,7 +6408,7 @@ void RenderSystem::loadPostProcess(){
         if (!loadShaderTextures(pass.textures, sd, pass.render))
             return;
         // the chain never targets the swapchain directly, renderPostProcess blits for that
-        if (!pass.render.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+        if (!pass.render.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
             return;
 
         pass.slotSceneColor = sd.getTextureIndexByName("u_sceneColorTexture");
@@ -6487,19 +6500,11 @@ bool RenderSystem::ensurePostProcessFramebuffers(unsigned int width, unsigned in
 }
 
 void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom, bool toneMapping){
-    // depth is the SSR G-buffer or the chain's own pre-pass; the G-buffer
-    // normal/roughness only exists while SSR is on
-    TextureRender* depthTexture = &emptyBlack;
+    // depth of this frame; the G-buffer normal only exists while SSR is on
+    TextureRender* depthTexture = currentSceneDepthTexture ? currentSceneDepthTexture : &emptyBlack;
     TextureRender* gbufferTexture = &emptyBlack;
     if (postProcessNeedsGBuffer && gbufferFramebuffer.isCreated()){
         gbufferTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(1);
-    }
-    if (postProcessNeedsDepth){
-        if (gbufferFramebuffer.isCreated()){
-            depthTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(0);
-        }else if (ssaoDepthFramebuffer.isCreated()){
-            depthTexture = &ssaoDepthFramebuffer.getRender().getColorTexture();
-        }
     }
     TextureRender* ssaoTexture = currentSSAOTexture ? currentSSAOTexture : &emptyWhite;
 
@@ -6540,8 +6545,8 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom,
         PostProcessRuntime& pass = postProcessPasses[i];
         FramebufferRender* target = nextTarget();
 
-        postProcessPassRender.startRenderPass(target);
-        if (pass.render.beginDraw(PIP_RTT)){
+        startFullscreenPass(postProcessPassRender, target);
+        if (pass.render.beginDraw(PIP_RTT_NOBLEND)){
             if (ShaderTextures::isFramebufferOutdated(pass.textures))
                 loadShaderTextures(pass.textures, pass.shader.get()->shaderData, pass.render);
             pass.render.addTexture(pass.slotSceneColor, ShaderStageType::FRAGMENT, input);
@@ -6578,13 +6583,13 @@ void RenderSystem::loadBloom(){
     bloomDownRender.beginLoad(PrimitiveType::TRIANGLES);
     bloomDownRender.setShader(bloomDownShader.get());
     bloomDownSlotParams = bloomDownShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::BLOOM_DOWNSAMPLE_FS_PARAMS);
-    if (!bloomDownRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!bloomDownRender.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     bloomUpRender.beginLoad(PrimitiveType::TRIANGLES);
     bloomUpRender.setShader(bloomUpShader.get());
     bloomUpSlotParams = bloomUpShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::BLOOM_UPSAMPLE_FS_PARAMS);
-    if (!bloomUpRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!bloomUpRender.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     bloomLoaded = true;
@@ -6682,8 +6687,8 @@ void RenderSystem::renderBloom(TextureRender* source, FramebufferRender* destina
     for (int i = 0; i < bloomLevels; i++){
         fs_bloom_down.params = Vector4(texel.x, texel.y, i == 0 ? 1.0f : 0.0f, 0.0f);
         fs_bloom_down.threshold = Vector4(threshold, knee, 0.0f, 0.0f);
-        bloomPassRender.startRenderPass(&bloomDownFramebuffer[i].getRender());
-        if (bloomDownRender.beginDraw(PIP_RTT)){
+        startFullscreenPass(bloomPassRender, &bloomDownFramebuffer[i].getRender());
+        if (bloomDownRender.beginDraw(PIP_RTT_NOBLEND)){
             bloomDownRender.addTexture(downSource, ShaderStageType::FRAGMENT, input);
             bloomDownRender.applyUniformBlock(bloomDownSlotParams, sizeof(fs_bloom_down_t), &fs_bloom_down);
             bloomDownRender.draw(0, 3, 1);
@@ -6697,8 +6702,8 @@ void RenderSystem::renderBloom(TextureRender* source, FramebufferRender* destina
     const float spread = std::clamp(scene->getBloomRadius(), 0.0f, 1.0f);
     for (int i = bloomLevels - 2; i >= 0; i--){
         fs_bloom_up.params = Vector4(texel.x, texel.y, spread, 0.0f);
-        bloomPassRender.startRenderPass(&bloomUpFramebuffer[i].getRender());
-        if (bloomUpRender.beginDraw(PIP_RTT)){
+        startFullscreenPass(bloomPassRender, &bloomUpFramebuffer[i].getRender());
+        if (bloomUpRender.beginDraw(PIP_RTT_NOBLEND)){
             bloomUpRender.addTexture(upSource, ShaderStageType::FRAGMENT, input);
             bloomUpRender.addTexture(upBase, ShaderStageType::FRAGMENT, &bloomDownFramebuffer[i].getRender().getColorTexture());
             bloomUpRender.applyUniformBlock(bloomUpSlotParams, sizeof(fs_bloom_up_t), &fs_bloom_up);
@@ -6711,8 +6716,8 @@ void RenderSystem::renderBloom(TextureRender* source, FramebufferRender* destina
 
     // the glow over the scene
     fs_bloom_up.params = Vector4(texel.x, texel.y, std::max(scene->getBloomIntensity(), 0.0f), 1.0f);
-    bloomPassRender.startRenderPass(destination);
-    if (bloomUpRender.beginDraw(PIP_RTT)){
+    startFullscreenPass(bloomPassRender, destination);
+    if (bloomUpRender.beginDraw(PIP_RTT_NOBLEND)){
         bloomUpRender.addTexture(upSource, ShaderStageType::FRAGMENT, input);
         bloomUpRender.addTexture(upBase, ShaderStageType::FRAGMENT, source);
         bloomUpRender.applyUniformBlock(bloomUpSlotParams, sizeof(fs_bloom_up_t), &fs_bloom_up);
@@ -6745,7 +6750,7 @@ void RenderSystem::loadToneMapping(){
     toneMappingRender.beginLoad(PrimitiveType::TRIANGLES);
     toneMappingRender.setShader(toneMappingShader.get());
     toneMappingSlotParams = toneMappingShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::TONEMAP_FS_PARAMS);
-    if (!toneMappingRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!toneMappingRender.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     toneMappingLoaded = true;
@@ -6767,8 +6772,8 @@ void RenderSystem::destroyToneMapping(){
 void RenderSystem::renderToneMapping(TextureRender* source, FramebufferRender* destination){
     fs_tone_mapping.params = Vector4(std::max(scene->getExposure(), 0.0f), (float)scene->getToneMapping(), 0.0f, 0.0f);
 
-    postProcessPassRender.startRenderPass(destination);
-    if (toneMappingRender.beginDraw(PIP_RTT)){
+    startFullscreenPass(postProcessPassRender, destination);
+    if (toneMappingRender.beginDraw(PIP_RTT_NOBLEND)){
         ShaderData& sd = toneMappingShader.get()->shaderData;
         toneMappingRender.addTexture(sd.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE), ShaderStageType::FRAGMENT, source);
         toneMappingRender.applyUniformBlock(toneMappingSlotParams, sizeof(fs_tone_mapping_t), &fs_tone_mapping);
@@ -10997,7 +11002,7 @@ void RenderSystem::update(double dt){
         }
         updateWater(entity, water, *transform, pipelines, dt);
     }
-    newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty();
+    newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty() || postProcessNeedsDepth;
 
     if (hasWaterDepth != newHasWaterDepth){
         hasWaterDepth = newHasWaterDepth;
@@ -11828,19 +11833,22 @@ void RenderSystem::draw(){
             }
         }
 
+        // the size the color pass draws at, which the screen-space passes take
+        unsigned int targetWidth = (unsigned int)Engine::getViewRect().getWidth();
+        unsigned int targetHeight = (unsigned int)Engine::getViewRect().getHeight();
+        if (useFixedRes){
+            targetWidth = fixedResWidth;
+            targetHeight = fixedResHeight;
+        }else if (camera.renderToTexture){
+            targetWidth = camera.framebuffer->getWidth();
+            targetHeight = camera.framebuffer->getHeight();
+        }
+
         bool useSSR = false;
         FramebufferRender* ssrDestination = nullptr;
         if (isMainCamera && scene->isSSREnabled() && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
             loadSSR();
-            unsigned int sw = (unsigned int)Engine::getViewRect().getWidth();
-            unsigned int sh = (unsigned int)Engine::getViewRect().getHeight();
-            if (useFixedRes){
-                // effects run at the fixed resolution: SSR composites into the
-                // fixed-res target, which the blit then upscales
-                sw = fixedResWidth;
-                sh = fixedResHeight;
-            }
-            if (ssrLoaded && ensureSSRFramebuffers(sw, sh) && ensureGBufferFramebuffer(sw, sh)){
+            if (ssrLoaded && ensureSSRFramebuffers(targetWidth, targetHeight) && ensureGBufferFramebuffer(targetWidth, targetHeight)){
                 renderGBufferPass(camera);
                 useSSR = true;
             }
@@ -11875,27 +11883,18 @@ void RenderSystem::draw(){
                 loadBlit();
             }
 
-            unsigned int pw = useSSR ? ssrWidth : (unsigned int)Engine::getViewRect().getWidth();
-            unsigned int ph = useSSR ? ssrHeight : (unsigned int)Engine::getViewRect().getHeight();
-            if (useFixedRes){
-                pw = fixedResWidth;
-                ph = fixedResHeight;
-            }
-
             const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
             const bool bloomReady = wantsBloom && bloomLoaded;
             useToneMapping = wantsToneMapping && toneMappingLoaded;
             if ((runsPasses || bloomReady || useToneMapping) && (!needsBlit || blitLoaded)
-                    && ensurePostProcessFramebuffers(pw, ph)){
-                useBloom = bloomReady && ensureBloomFramebuffers(pw, ph);
+                    && ensurePostProcessFramebuffers(targetWidth, targetHeight)){
+                useBloom = bloomReady && ensureBloomFramebuffers(targetWidth, targetHeight);
                 usePostProcess = runsPasses || useBloom || useToneMapping;
-
-                // a pass sampling depth needs the pre-pass when neither SSR nor SSAO ran
-                if (runsPasses && postProcessNeedsDepth && !useSSR && !scene->isSSAOEnabled()
-                        && ensureDepthPrePassFramebuffer(pw, ph)){
-                    renderDepthPrePass(camera);
-                }
             }
+        }else if (isMainCamera && postProcessNeedsDepth){
+            // nothing samples the depth while the chain is off, it reloads when it runs again
+            postProcessNeedsDepth = false;
+            postProcessNeedReload = true;
         }
 
         // Screen-space AO is produced once for the main camera before its color pass.
@@ -11908,24 +11907,13 @@ void RenderSystem::draw(){
             renderSSAO(camera, sharedDepth);
         }
 
-        // water depth from the SSR G-buffer, a pre-pass already drawn or its own pre-pass
+        // scene depth from the SSR G-buffer, a pre-pass already drawn or its own pre-pass
         if (isMainCamera && hasWaterDepth){
             if (useSSR){
                 currentSceneDepthTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(0);
             }else{
-                if (!depthPrePassRendered){
-                    unsigned int dw = (unsigned int)Engine::getViewRect().getWidth();
-                    unsigned int dh = (unsigned int)Engine::getViewRect().getHeight();
-                    if (useFixedRes){
-                        dw = fixedResWidth;
-                        dh = fixedResHeight;
-                    }else if (camera.renderToTexture){
-                        dw = camera.framebuffer->getWidth();
-                        dh = camera.framebuffer->getHeight();
-                    }
-                    if (ensureDepthPrePassFramebuffer(dw, dh)){
-                        renderDepthPrePass(camera);
-                    }
+                if (!depthPrePassRendered && ensureDepthPrePassFramebuffer(targetWidth, targetHeight)){
+                    renderDepthPrePass(camera);
                 }
                 if (depthPrePassRendered){
                     currentSceneDepthTexture = &ssaoDepthFramebuffer.getRender().getColorTexture();
