@@ -4329,14 +4329,10 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         keys.insert(ShaderPool::getShaderKey(ShaderType::COMPOSITE, 0));
     }
 
-    if (scene->isBloomEnabled()) {
-        keys.insert(ShaderPool::getShaderKey(ShaderType::BLOOM_DOWNSAMPLE, 0));
-        keys.insert(ShaderPool::getShaderKey(ShaderType::BLOOM_UPSAMPLE, 0));
-    }
-
-    if (scene->isHDREnabled() || scene->getExposure() != 1.0f || scene->getToneMapping() != ToneMapping::NONE) {
-        keys.insert(ShaderPool::getShaderKey(ShaderType::TONEMAP, 0));
-    }
+    // scripts can turn bloom and tone mapping on at any time
+    keys.insert(ShaderPool::getShaderKey(ShaderType::BLOOM_DOWNSAMPLE, 0));
+    keys.insert(ShaderPool::getShaderKey(ShaderType::BLOOM_UPSAMPLE, 0));
+    keys.insert(ShaderPool::getShaderKey(ShaderType::TONEMAP, 0));
 
     // disabled passes ship too: the generated scene carries the whole chain
     for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
