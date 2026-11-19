@@ -689,13 +689,14 @@ namespace doriax{
 		std::pair<int, int> compositeOcclusionSlot;               // u_occlusionGBufferTexture binding
 		TextureRender* ssrProbeTextures[SSR_PROBE_SLOTS]; // probes the G-buffer pass gave a slot
 		int ssrProbeCount;
-		bool swapchainRedirect;            // exported builds: the last pass targets the swapchain
+		Framebuffer* swapchainRedirect;    // exported builds: where update sent the frame, presented to the swapchain at the end
 
 		// Fixed game resolution: when enabled on the Engine main scene (Scene
 		// fixedResolution settings), the main camera renders into
 		// fixedResFramebuffer and a fullscreen blit pass upscales it to the
 		// real destination (view rect).
 		bool blitLoaded;
+		bool fixedResolutionActive;        // decided by update for its frame
 		unsigned int fixedResWidth;
 		unsigned int fixedResHeight;
 		Framebuffer fixedResFramebuffer;   // offscreen scene color at the fixed size

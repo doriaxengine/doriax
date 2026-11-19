@@ -480,9 +480,10 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     }
     compositeOcclusionSlot = std::pair<int, int>(-1, -1);
     ssrProbeCount = 0;
-    swapchainRedirect = false;
+    swapchainRedirect = nullptr;
 
     blitLoaded = false;
+    fixedResolutionActive = false;
     fixedResWidth = 0;
     fixedResHeight = 0;
     blitSlotParams = -1;
@@ -10573,12 +10574,7 @@ bool RenderSystem::isRenderingFlipped(const CameraComponent& camera) const{
 }
 
 bool RenderSystem::isFixedResolutionActive() const{
-    // main scene only: layer scenes keep rendering at native resolution on top
-    return !disableFixedResolution
-        && scene->isFixedResolutionEnabled()
-        && scene->getFixedResolutionWidth() > 0
-        && scene->getFixedResolutionHeight() > 0
-        && Engine::getMainScene() == scene;
+    return fixedResolutionActive;
 }
 
 void RenderSystem::updateSwapchainRedirect(){
@@ -10586,7 +10582,7 @@ void RenderSystem::updateSwapchainRedirect(){
     // color buffer. Without a framebuffer destination (exported builds) the color pass is redirected
     // into it and the last pass targets the swapchain. Main scene only: a layer scene
     // composites over the scene below, and its own pass would clear it.
-    bool redirect = false;
+    Framebuffer* redirect = nullptr;
 
     // a camera drawing into a texture never reaches the swapchain
     const CameraComponent* camera = scene->findComponent<CameraComponent>(scene->getRenderCamera());
@@ -10599,14 +10595,17 @@ void RenderSystem::updateSwapchainRedirect(){
         // redirect only starts once everything it needs exists
         if (scene->isSSREnabled()){
             loadSSR();
-            redirect = ssrLoaded && ensureSSRFramebuffers(w, h) && ensureGBufferFramebuffer(w, h);
+            if (ssrLoaded && ensureSSRFramebuffers(w, h) && ensureGBufferFramebuffer(w, h)){
+                redirect = &sceneColorFramebuffer;
+            }
         }
         if (!redirect && wantsPostProcess(*camera)){
             loadPostProcess();
-            loadBlit();
             bool bloom = false;
             bool toneMapping = false;
-            redirect = preparePostProcess(w, h, bloom, toneMapping) && blitLoaded;
+            if (preparePostProcess(w, h, bloom, toneMapping)){
+                redirect = &postProcessFramebuffer[0];
+            }
         }
 
         bool copiesScene = !sceneColorReaders.empty();
@@ -10615,17 +10614,24 @@ void RenderSystem::updateSwapchainRedirect(){
             const WaterComponent& water = waters->getComponentFromIndex(i);
             copiesScene = copiesScene || water.refraction || water.underwater;
         }
-        if (!redirect && copiesScene){
+        if (!redirect && copiesScene && ensureSceneColorFramebuffer(w, h)){
+            redirect = &sceneColorFramebuffer;
+        }
+
+        // the draw can always present it with a blit, also when its effect is off by then
+        if (redirect){
             loadBlit();
-            redirect = blitLoaded && ensureSceneColorFramebuffer(w, h);
+            if (!blitLoaded){
+                redirect = nullptr;
+            }
         }
     }
 
-    if (redirect != swapchainRedirect){
-        swapchainRedirect = redirect;
+    if ((redirect != nullptr) != (swapchainRedirect != nullptr)){
         // the flip is baked in the MVP matrices
         scene->getComponent<CameraComponent>(scene->getRenderCamera()).needUpdate = true;
     }
+    swapchainRedirect = redirect;
 }
 
 void RenderSystem::updateMVP(size_t index, Transform& transform, CameraComponent& camera, Transform& cameraTransform){
@@ -10765,6 +10771,10 @@ void RenderSystem::update(double dt){
     if (paused) {
         return;
     }
+
+    // once a frame, as the MVPs bake its flip; main scene only, layer scenes stay native on top
+    fixedResolutionActive = !disableFixedResolution && scene->isFixedResolutionEnabled() &&
+        scene->getFixedResolutionWidth() > 0 && scene->getFixedResolutionHeight() > 0 && Engine::getMainScene() == scene;
 
     spriteUpdates++;
 
@@ -11955,9 +11965,9 @@ void RenderSystem::draw(){
         WaterComponent* underwater = (isMainCamera && !disableUnderwater) ? findUnderwater(cameraTransform.worldPosition) : NULL;
         currentUnderwater = (underwater && loadUnderwater(*underwater)) ? underwater : NULL;
 
-        // the swapchain redirect of a water copying the scene, when no other effect took it
+        // the buffer update redirected the frame into, also when its effect was turned off since
         const bool useSceneTarget = isMainCamera && swapchainRedirect && !useSSR && !usePostProcess
-                && !camera.renderToTexture && sceneColorFramebuffer.isCreated();
+                && !camera.renderToTexture && swapchainRedirect->isCreated();
 
         // whether this camera's color pass targets an offscreen framebuffer
         // (selects PIP_RTT pipelines and flipped rendering on GL)
@@ -12051,9 +12061,9 @@ void RenderSystem::draw(){
                 camera.render.startRenderPass(&Engine::getFramebuffer()->getRender());
             }else if (useSceneTarget){
                 // presented by a blit once the pass is done
-                colorPassViewport = Rect(0, 0, (float)sceneColorFramebuffer.getWidth(), (float)sceneColorFramebuffer.getHeight());
-                colorTarget = &sceneColorFramebuffer;
-                camera.render.startRenderPass(&sceneColorFramebuffer.getRender());
+                colorPassViewport = Rect(0, 0, (float)swapchainRedirect->getWidth(), (float)swapchainRedirect->getHeight());
+                colorTarget = swapchainRedirect;
+                camera.render.startRenderPass(&swapchainRedirect->getRender());
             }else{
                 camera.render.startRenderPass();
             }
@@ -12477,7 +12487,7 @@ void RenderSystem::draw(){
 
         if (useSceneTarget){
             const Rect viewport = Engine::getViewRect();
-            renderBlit(&sceneColorFramebuffer.getRender().getColorTexture(), nullptr, &viewport);
+            renderBlit(&swapchainRedirect->getRender().getColorTexture(), nullptr, &viewport);
         }
 
         // buffer 0 now holds the scene color (or the SSR composite)
