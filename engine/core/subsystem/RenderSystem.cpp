@@ -6730,6 +6730,11 @@ bool RenderSystem::isHDRActive() const{
     return scene->isHDREnabled() && FramebufferRender::isColorFormatSupported(ColorFormat::RGBA16F);
 }
 
+bool RenderSystem::wantsPostProcess(const CameraComponent& camera) const{
+    return (scene->isBloomEnabled() || needsToneMapping() || !scene->getPostProcessPasses().empty()) &&
+        (Engine::getMainScene() == scene || camera.renderToTexture);
+}
+
 bool RenderSystem::needsToneMapping() const{
     return isHDRActive() || scene->getExposure() != 1.0f || scene->getToneMapping() != ToneMapping::NONE;
 }
@@ -10560,7 +10565,9 @@ void RenderSystem::updateSwapchainRedirect(){
     // composites over the scene below, and its own pass would clear it.
     bool redirect = false;
 
-    if (!Engine::getFramebuffer() && !isFixedResolutionActive()
+    // a camera drawing into a texture never reaches the swapchain
+    const CameraComponent* camera = scene->findComponent<CameraComponent>(scene->getRenderCamera());
+    if (!Engine::getFramebuffer() && !isFixedResolutionActive() && camera && !camera->renderToTexture
             && Engine::getMainScene() == scene && Engine::isViewLoaded()){
         unsigned int w = (unsigned int)Engine::getViewRect().getWidth();
         unsigned int h = (unsigned int)Engine::getViewRect().getHeight();
@@ -10573,7 +10580,7 @@ void RenderSystem::updateSwapchainRedirect(){
         }
         const bool wantsBloom = scene->isBloomEnabled();
         const bool wantsToneMapping = needsToneMapping();
-        if (!redirect && (wantsBloom || wantsToneMapping || !scene->getPostProcessPasses().empty())){
+        if (!redirect && wantsPostProcess(*camera)){
             loadPostProcess();
             loadBlit();
             if (wantsBloom){
@@ -11866,8 +11873,7 @@ void RenderSystem::draw(){
         if (isMainCamera && !wantsBloom && bloomLevels > 0){
             destroyBloomFramebuffers();
         }
-        if (isMainCamera && (wantsBloom || wantsToneMapping || !scene->getPostProcessPasses().empty())
-                && (Engine::getMainScene() == scene || camera.renderToTexture)
+        if (isMainCamera && wantsPostProcess(camera)
                 && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
             loadPostProcess();
             if (wantsBloom){

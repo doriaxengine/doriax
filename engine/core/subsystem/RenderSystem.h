@@ -976,6 +976,9 @@ namespace doriax{
 		// source with its glow added, into destination
 		void renderBloom(TextureRender* source, FramebufferRender* destination);
 
+		// the camera runs bloom, tone mapping or the user passes over its image
+		bool wantsPostProcess(const CameraComponent& camera) const;
+
 		// HDR and tone mapping
 		bool isHDRActive() const;
 		bool needsToneMapping() const;
