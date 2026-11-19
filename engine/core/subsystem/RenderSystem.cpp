@@ -6434,7 +6434,8 @@ void RenderSystem::loadPostProcess(){
 
 // rewrites the pass values from the scene chain, keeping the compiled shaders
 void RenderSystem::updatePostProcessUniforms(){
-    if (!postProcessNeedUpdateUniforms || !postProcessLoaded)
+    // a pending reload rewrites them all, and the scene indices may have moved
+    if (!postProcessNeedUpdateUniforms || !postProcessLoaded || postProcessNeedReload)
         return;
 
     const std::vector<PostProcessPass>& passes = scene->getPostProcessPasses();
@@ -11026,9 +11027,10 @@ void RenderSystem::update(double dt){
     // the passes load first, so the meshes know whether to build depth shaders for them
     if (wantsPostProcess(mainCamera)){
         loadPostProcess();
-    }else if (postProcessNeedsDepth){
+    }else{
+        // rebuilt by the update that wants it again, so a draw never runs a stale chain
+        postProcessLoaded = false;
         postProcessNeedsDepth = false;
-        postProcessNeedReload = true;
     }
     newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty() || postProcessNeedsDepth;
 
@@ -11892,10 +11894,9 @@ void RenderSystem::draw(){
         if (isMainCamera && !scene->isBloomEnabled() && bloomLevels > 0){
             destroyBloomFramebuffers();
         }
+        // the passes as update loaded them, before the meshes picked their depth shaders
         if (isMainCamera && wantsPostProcess(camera)
                 && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
-            loadPostProcess();
-
             // only a swapchain destination ends the chain with a blit
             bool needsBlit = !(Engine::getFramebuffer() || camera.renderToTexture || useFixedRes);
             if (needsBlit){
