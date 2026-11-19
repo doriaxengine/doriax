@@ -11009,6 +11009,13 @@ void RenderSystem::update(double dt){
         }
         updateWater(entity, water, *transform, pipelines, dt);
     }
+    // the passes load first, so the meshes know whether to build depth shaders for them
+    if (wantsPostProcess(mainCamera)){
+        loadPostProcess();
+    }else if (postProcessNeedsDepth){
+        postProcessNeedsDepth = false;
+        postProcessNeedReload = true;
+    }
     newHasWaterDepth = newHasWaterDepth || !sceneDepthReaders.empty() || postProcessNeedsDepth;
 
     if (hasWaterDepth != newHasWaterDepth){
@@ -11897,10 +11904,6 @@ void RenderSystem::draw(){
                 useBloom = bloomReady && ensureBloomFramebuffers(targetWidth, targetHeight);
                 usePostProcess = runsPasses || useBloom || useToneMapping;
             }
-        }else if (isMainCamera && postProcessNeedsDepth){
-            // nothing samples the depth while the chain is off, it reloads when it runs again
-            postProcessNeedsDepth = false;
-            postProcessNeedReload = true;
         }
 
         // Screen-space AO is produced once for the main camera before its color pass.
