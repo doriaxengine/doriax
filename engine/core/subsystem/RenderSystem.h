@@ -951,7 +951,7 @@ namespace doriax{
 		bool ensureFixedResFramebuffer(unsigned int width, unsigned int height, TextureFilter filter);
 		// cleared to the background; the engine framebuffer keeps the scene in its view rect
 		void startFullscreenPass(CameraRender& passRender, FramebufferRender* target);
-		// draws source over destination (the swapchain when null), in viewport or the whole target
+		// copies source into destination (the swapchain when null), in viewport or the whole target
 		void renderBlit(TextureRender* source, FramebufferRender* destination, const Rect* viewport);
 		// the fullscreen blit draw alone, in the pass already started
 		void drawBlit(TextureRender* source, PipelineType pipeline, bool flipY);

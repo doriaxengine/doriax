@@ -6209,13 +6209,11 @@ void RenderSystem::loadBlit(){
     if (!blitShader || !blitShader->isCreated())
         return;
 
-    // the blit targets either an offscreen framebuffer (PIP_RTT) or the swapchain
-    // (PIP_DEFAULT, exported builds); PIP_RTT_NODEPTH copies into a camera pass in progress
-    // and PIP_RTT_NOBLEND into the scene copy
+    // copies replace their target, offscreen or the swapchain; PIP_RTT_NODEPTH draws into a camera pass in progress
     blitRender.beginLoad(PrimitiveType::TRIANGLES);
     blitRender.setShader(blitShader.get());
     blitSlotParams = blitShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::BLIT_FS_PARAMS);
-    if (!blitRender.endLoad(PIP_RTT | PIP_DEFAULT | PIP_RTT_NODEPTH | PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!blitRender.endLoad(PIP_RTT_NOBLEND | PIP_DEFAULT_NOBLEND | PIP_RTT_NODEPTH, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     blitLoaded = true;
@@ -6289,7 +6287,7 @@ void RenderSystem::renderBlit(TextureRender* source, FramebufferRender* destinat
     }
 
     // the source was rendered flipped (PIP_RTT) but the GL swapchain is not
-    drawBlit(source, destination ? PIP_RTT : PIP_DEFAULT, !destination && Engine::isOpenGL());
+    drawBlit(source, destination ? PIP_RTT_NOBLEND : PIP_DEFAULT_NOBLEND, !destination && Engine::isOpenGL());
     blitPassRender.endRenderPass();
 }
 

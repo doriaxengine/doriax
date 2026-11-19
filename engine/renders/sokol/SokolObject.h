@@ -55,6 +55,7 @@ namespace doriax{
         sg_pipeline rtt_invert_pip;
         sg_pipeline gbuffer_pip;
         sg_pipeline nodepth_pip;
+        sg_pipeline noblend_pip;
         sg_pipeline rtt_nodepth_pip;
         sg_pipeline rtt_noblend_pip;
         sg_pipeline rtt_coloronly_pip;

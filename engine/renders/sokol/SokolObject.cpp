@@ -151,6 +151,7 @@ SokolObject::SokolObject(){
     rtt_invert_pip.id = SG_INVALID_ID;
     gbuffer_pip.id = SG_INVALID_ID;
     nodepth_pip.id = SG_INVALID_ID;
+    noblend_pip.id = SG_INVALID_ID;
     rtt_nodepth_pip.id = SG_INVALID_ID;
     rtt_noblend_pip.id = SG_INVALID_ID;
     rtt_coloronly_pip.id = SG_INVALID_ID;
@@ -173,6 +174,7 @@ SokolObject::SokolObject(const SokolObject& rhs) {
     rtt_invert_pip = rhs.rtt_invert_pip;
     gbuffer_pip = rhs.gbuffer_pip;
     nodepth_pip = rhs.nodepth_pip;
+    noblend_pip = rhs.noblend_pip;
     rtt_nodepth_pip = rhs.rtt_nodepth_pip;
     rtt_noblend_pip = rhs.rtt_noblend_pip;
     rtt_coloronly_pip = rhs.rtt_coloronly_pip;
@@ -194,6 +196,7 @@ SokolObject& SokolObject::operator=(const SokolObject& rhs) {
     rtt_invert_pip = rhs.rtt_invert_pip;
     gbuffer_pip = rhs.gbuffer_pip;
     nodepth_pip = rhs.nodepth_pip;
+    noblend_pip = rhs.noblend_pip;
     rtt_nodepth_pip = rhs.rtt_nodepth_pip;
     rtt_noblend_pip = rhs.rtt_noblend_pip;
     rtt_coloronly_pip = rhs.rtt_coloronly_pip;
@@ -532,7 +535,7 @@ bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t 
         }
     }
 
-    if (pipelines & ((int)PipelineType::PIP_DEFAULT | (int)PipelineType::PIP_DEFAULT_NODEPTH)) {
+    if (pipelines & ((int)PipelineType::PIP_DEFAULT | (int)PipelineType::PIP_DEFAULT_NODEPTH | (int)PipelineType::PIP_DEFAULT_NOBLEND)) {
         sg_pipeline_desc pip_default_desc = pipeline_desc;
 
         // also without culling: double-sided materials read gl_FrontFacing
@@ -552,6 +555,18 @@ bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t 
 
             pip = makePipeline(pip_default_desc);
             if (pip.id == SG_INVALID_ID){
+                return false;
+            }
+        }
+
+        if (pipelines & (int)PipelineType::PIP_DEFAULT_NOBLEND){
+            sg_pipeline_desc pip_noblend_desc = pip_default_desc;
+            pip_noblend_desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
+            pip_noblend_desc.depth.write_enabled = enableDepthWrite;
+            pip_noblend_desc.colors[0].blend.enabled = false;
+
+            noblend_pip = makePipeline(pip_noblend_desc);
+            if (noblend_pip.id == SG_INVALID_ID){
                 return false;
             }
         }
@@ -662,6 +677,7 @@ sg_pipeline SokolObject::getPipeline(PipelineType pipType) const{
         case PipelineType::PIP_RTT: return rtt_pip;
         case PipelineType::PIP_RTT_INVERT: return rtt_invert_pip;
         case PipelineType::PIP_DEFAULT_NODEPTH: return nodepth_pip;
+        case PipelineType::PIP_DEFAULT_NOBLEND: return noblend_pip;
         case PipelineType::PIP_RTT_NODEPTH: return rtt_nodepth_pip;
         case PipelineType::PIP_RTT_NOBLEND: return rtt_noblend_pip;
         case PipelineType::PIP_RTT_COLORONLY: return rtt_coloronly_pip;
@@ -684,7 +700,7 @@ bool SokolObject::sharesPipeline(const SokolObject& other, PipelineType pipType)
 
 void SokolObject::getStateKey(std::vector<uint32_t>& key) const{
     for (const sg_pipeline& pipeline : {pip, depth_pip, shadow_depth_pip, rtt_pip, rtt_invert_pip, gbuffer_pip,
-            nodepth_pip, rtt_nodepth_pip, rtt_noblend_pip, rtt_coloronly_pip, zprepass_pip, zprepass_rtt_pip}){
+            nodepth_pip, noblend_pip, rtt_nodepth_pip, rtt_noblend_pip, rtt_coloronly_pip, zprepass_pip, zprepass_rtt_pip}){
         key.push_back(pipeline.id);
     }
     for (const sg_view& view : bind.views){
@@ -766,6 +782,7 @@ void SokolObject::destroy(){
         destroyPipeline(rtt_invert_pip);
         destroyPipeline(gbuffer_pip);
         destroyPipeline(nodepth_pip);
+        destroyPipeline(noblend_pip);
         destroyPipeline(rtt_nodepth_pip);
         destroyPipeline(rtt_noblend_pip);
         destroyPipeline(rtt_coloronly_pip);
@@ -780,6 +797,7 @@ void SokolObject::destroy(){
     rtt_invert_pip.id = SG_INVALID_ID;
     gbuffer_pip.id = SG_INVALID_ID;
     nodepth_pip.id = SG_INVALID_ID;
+    noblend_pip.id = SG_INVALID_ID;
     rtt_nodepth_pip.id = SG_INVALID_ID;
     rtt_noblend_pip.id = SG_INVALID_ID;
     rtt_coloronly_pip.id = SG_INVALID_ID;

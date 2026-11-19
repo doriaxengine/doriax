@@ -263,7 +263,8 @@ namespace doriax{
         PIP_ZPREPASS    = 1 << 8, // depth only, into the swapchain color pass ahead of its opaque draws
         PIP_ZPREPASS_RTT = 1 << 9, // same into an offscreen color pass
         PIP_RTT_NOBLEND = 1 << 10, // offscreen, replaces the color without blending
-        PIP_RTT_COLORONLY = 1 << 11 // same into a pass with no depth attachment
+        PIP_RTT_COLORONLY = 1 << 11, // same into a pass with no depth attachment
+        PIP_DEFAULT_NOBLEND = 1 << 12 // swapchain, replaces the color without blending
     };
 
     //-------Start shader definition--------
