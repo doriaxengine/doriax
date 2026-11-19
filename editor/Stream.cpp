@@ -1033,6 +1033,22 @@ static std::string shadowQualityToString(ShadowQuality quality) {
     return "low";
 }
 
+static std::string toneMappingToString(ToneMapping toneMapping) {
+    switch (toneMapping) {
+        case ToneMapping::REINHARD: return "reinhard";
+        case ToneMapping::ACES: return "aces";
+        case ToneMapping::AGX: return "agx";
+        default: return "none";
+    }
+}
+
+static ToneMapping stringToToneMapping(const std::string& str) {
+    if (str == "reinhard") return ToneMapping::REINHARD;
+    if (str == "aces") return ToneMapping::ACES;
+    if (str == "agx") return ToneMapping::AGX;
+    return ToneMapping::NONE;
+}
+
 static ShadowQuality stringToShadowQuality(const std::string& str) {
     if (str == "none") return ShadowQuality::NONE;
     if (str == "medium") return ShadowQuality::MEDIUM;
@@ -3039,6 +3055,9 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["bloomKnee"] = scene->getBloomKnee();
     sceneNode["bloomIntensity"] = scene->getBloomIntensity();
     sceneNode["bloomRadius"] = scene->getBloomRadius();
+    sceneNode["hdrEnabled"] = scene->isHDREnabled();
+    sceneNode["exposure"] = scene->getExposure();
+    sceneNode["toneMapping"] = toneMappingToString(scene->getToneMapping());
     sceneNode["gravity2D"] = encodeVector2(scene->getGravity2D());
     sceneNode["gravity3D"] = encodeVector3(scene->getGravity3D());
     if (!scene->getShaderParameterDefaults().empty())
@@ -3180,6 +3199,15 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
     }
     if (node["bloomRadius"]) {
         scene->setBloomRadius(node["bloomRadius"].as<float>());
+    }
+    if (node["hdrEnabled"]) {
+        scene->setHDREnabled(node["hdrEnabled"].as<bool>());
+    }
+    if (node["exposure"]) {
+        scene->setExposure(node["exposure"].as<float>());
+    }
+    if (node["toneMapping"]) {
+        scene->setToneMapping(stringToToneMapping(node["toneMapping"].as<std::string>()));
     }
 
     // absent key restores the engine default so decoding into a reused scene (play restore) is exact

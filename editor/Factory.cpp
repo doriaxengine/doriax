@@ -351,6 +351,15 @@ std::string editor::Factory::formatLightState(LightState state) {
     }
 }
 
+std::string editor::Factory::formatToneMapping(ToneMapping toneMapping) {
+    switch (toneMapping) {
+        case ToneMapping::REINHARD: return "ToneMapping::REINHARD";
+        case ToneMapping::ACES: return "ToneMapping::ACES";
+        case ToneMapping::AGX: return "ToneMapping::AGX";
+        default: return "ToneMapping::NONE";
+    }
+}
+
 std::string editor::Factory::formatShadowQuality(ShadowQuality quality) {
     switch (quality) {
         case ShadowQuality::NONE: return "ShadowQuality::NONE";
@@ -2918,6 +2927,9 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     out << ind2 << "scene->setBloomKnee(" << formatFloat(scene->getBloomKnee()) << ");\n";
     out << ind2 << "scene->setBloomIntensity(" << formatFloat(scene->getBloomIntensity()) << ");\n";
     out << ind2 << "scene->setBloomRadius(" << formatFloat(scene->getBloomRadius()) << ");\n";
+    out << ind2 << "scene->setHDREnabled(" << formatBool(scene->isHDREnabled()) << ");\n";
+    out << ind2 << "scene->setExposure(" << formatFloat(scene->getExposure()) << ");\n";
+    out << ind2 << "scene->setToneMapping(" << formatToneMapping(scene->getToneMapping()) << ");\n";
     out << ind2 << "scene->setFixedResolutionSize(" << formatUInt(scene->getFixedResolutionWidth()) << ", " << formatUInt(scene->getFixedResolutionHeight()) << ");\n";
     out << ind2 << "scene->setFixedResolutionFilter(" << formatTextureFilter(scene->getFixedResolutionFilter()) << ");\n";
     out << ind2 << "scene->setFixedResolutionEnabled(" << formatBool(scene->isFixedResolutionEnabled()) << ");\n";

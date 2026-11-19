@@ -4334,6 +4334,10 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         keys.insert(ShaderPool::getShaderKey(ShaderType::BLOOM_UPSAMPLE, 0));
     }
 
+    if (scene->isHDREnabled() || scene->getExposure() != 1.0f || scene->getToneMapping() != ToneMapping::NONE) {
+        keys.insert(ShaderPool::getShaderKey(ShaderType::TONEMAP, 0));
+    }
+
     // disabled passes ship too: the generated scene carries the whole chain
     for (const PostProcessPass& pass : scene->getPostProcessPasses()) {
         insertKeys(ShaderType::POSTPROCESS, 0, ShaderPool::registerCustomShader(pass.shader));

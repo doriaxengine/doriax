@@ -41,6 +41,7 @@ namespace doriax{
 
             // configure multiple color attachments; formats may be null (defaults to RGBA)
             void setColorAttachments(int count, const ColorFormat* formats = nullptr);
+            ColorFormat getColorFormat() const;
             int getNumColorAttachments() const;
 
             void setWidth(unsigned int width);

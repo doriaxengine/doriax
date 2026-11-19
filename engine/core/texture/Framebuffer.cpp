@@ -58,7 +58,7 @@ Framebuffer& Framebuffer::operator=(const Framebuffer& rhs){
 }
 
 void Framebuffer::create(){
-    if (numColorAttachments > 1){
+    if (numColorAttachments > 1 || colorFormats[0] != ColorFormat::RGBA){
         render.createFramebufferMRT(width, height, minFilter, magFilter, wrapU, wrapV, numColorAttachments, colorFormats);
     }else{
         render.createFramebuffer(TextureType::TEXTURE_2D, width, height, minFilter, magFilter, wrapU, wrapV, false);
@@ -77,6 +77,10 @@ void Framebuffer::setColorAttachments(int count, const ColorFormat* formats){
 
 int Framebuffer::getNumColorAttachments() const{
     return this->numColorAttachments;
+}
+
+ColorFormat Framebuffer::getColorFormat() const{
+    return this->colorFormats[0];
 }
 
 void Framebuffer::destroy(){

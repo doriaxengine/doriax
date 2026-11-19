@@ -507,6 +507,14 @@ void SokolTexture::createTextureView(const char* label){
     }
 }
 
+sg_pixel_format SokolTexture::getRenderTargetFormat(ColorFormat format){
+    switch (format){
+        case ColorFormat::RED: return SG_PIXELFORMAT_R8;
+        case ColorFormat::RGBA16F: return SG_PIXELFORMAT_RGBA16F;
+        default: return SG_PIXELFORMAT_RGBA8;
+    }
+}
+
 bool SokolTexture::createFramebufferTexture(
             TextureType type, bool depth, bool shadowMap, int width, int height,
             TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV,
@@ -544,7 +552,7 @@ bool SokolTexture::createFramebufferTexture(
         img_desc.pixel_format = SG_PIXELFORMAT_DEPTH;
         img_desc.label = "framebuffer-depth-image";
     } else {
-        img_desc.pixel_format = (colorFormat == ColorFormat::RED) ? SG_PIXELFORMAT_R8 : SG_PIXELFORMAT_RGBA8;
+        img_desc.pixel_format = getRenderTargetFormat(colorFormat);
         img_desc.label = "framebuffer-color-image";
     }
 

@@ -26,6 +26,7 @@ namespace doriax{
         TextureRender depthTexture;
 
         int numColorAttachments;
+        ColorFormat colorFormat; // of the first color attachment
 
         void initializeAttachments(size_t faces);
 
@@ -43,6 +44,9 @@ namespace doriax{
         bool isCreated();
 
         int getNumColorAttachments() const;
+        ColorFormat getColorFormat() const;
+        // can be drawn into, blended and filtered
+        static bool isColorFormatSupported(ColorFormat format);
 
         TextureRender& getColorTexture();
         TextureRender& getColorTexture(int index);

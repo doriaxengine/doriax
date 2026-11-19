@@ -60,6 +60,14 @@ int FramebufferRender::getNumColorAttachments() const{
     return backend.getNumColorAttachments();
 }
 
+ColorFormat FramebufferRender::getColorFormat() const{
+    return backend.getColorFormat();
+}
+
+bool FramebufferRender::isColorFormatSupported(ColorFormat format){
+    return SokolFramebuffer::isColorFormatSupported(format);
+}
+
 TextureRender& FramebufferRender::getDepthTexture(){
     return backend.getDepthTexture();
 }

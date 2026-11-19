@@ -526,6 +526,30 @@ float Scene::getBloomRadius() const{
     return settings.bloomRadius;
 }
 
+void Scene::setHDREnabled(bool hdrEnabled){
+    settings.hdrEnabled = hdrEnabled;
+}
+
+bool Scene::isHDREnabled() const{
+    return settings.hdrEnabled;
+}
+
+void Scene::setExposure(float exposure){
+    settings.exposure = exposure;
+}
+
+float Scene::getExposure() const{
+    return settings.exposure;
+}
+
+void Scene::setToneMapping(ToneMapping toneMapping){
+    settings.toneMapping = toneMapping;
+}
+
+ToneMapping Scene::getToneMapping() const{
+    return settings.toneMapping;
+}
+
 void Scene::setFixedResolutionEnabled(bool fixedResolutionEnabled){
     if (settings.fixedResolutionEnabled != fixedResolutionEnabled){
         settings.fixedResolutionEnabled = fixedResolutionEnabled;

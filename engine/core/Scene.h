@@ -21,7 +21,7 @@ namespace doriax{
 
     class Camera;
 
-    // LightState and ShadowQuality live in SceneSettings.h (they are scene-setting types).
+    // LightState, ShadowQuality and ToneMapping live in SceneSettings.h (they are scene-setting types).
 
     enum class UIEventState {
         NOT_SET,
@@ -214,6 +214,15 @@ namespace doriax{
 
         void setBloomRadius(float radius);
         float getBloomRadius() const;
+
+        void setHDREnabled(bool hdrEnabled);
+        bool isHDREnabled() const;
+
+        void setExposure(float exposure);
+        float getExposure() const;
+
+        void setToneMapping(ToneMapping toneMapping);
+        ToneMapping getToneMapping() const;
 
         void setFixedResolutionEnabled(bool fixedResolutionEnabled);
         bool isFixedResolutionEnabled() const;

@@ -27,6 +27,8 @@ namespace doriax{
         bool isCreated();
 
         int getNumColorAttachments() const;
+        ColorFormat getColorFormat() const;
+        static bool isColorFormatSupported(ColorFormat format);
 
         TextureRender& getColorTexture();
         TextureRender& getColorAttachmentTexture(int index);

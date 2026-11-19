@@ -1225,6 +1225,9 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     }else if (shaderType == ShaderType::BLOOM_UPSAMPLE){
         args.vert_file = "fullscreen.vert";
         args.frag_file = "bloom_up.frag";
+    }else if (shaderType == ShaderType::TONEMAP){
+        args.vert_file = "fullscreen.vert";
+        args.frag_file = "tonemap.frag";
     }else{
         return false;
     }

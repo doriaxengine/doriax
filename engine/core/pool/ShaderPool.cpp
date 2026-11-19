@@ -128,6 +128,10 @@ bool ShaderPool::parseShaderTypeToken(const std::string& typeToken, ShaderType& 
         shaderType = ShaderType::BLOOM_UPSAMPLE;
         return true;
     }
+    if (typeToken == "tonemap") {
+        shaderType = ShaderType::TONEMAP;
+        return true;
+    }
 
     return false;
 }
@@ -443,6 +447,7 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
         case ShaderType::PROBE_FILTER: return lowerCase ? "probefilter" : "Probe Filter";
         case ShaderType::BLOOM_DOWNSAMPLE: return lowerCase ? "bloomdown" : "Bloom Downsample";
         case ShaderType::BLOOM_UPSAMPLE: return lowerCase ? "bloomup" : "Bloom Upsample";
+        case ShaderType::TONEMAP: return lowerCase ? "tonemap" : "Tone Mapping";
         default:                 return lowerCase ? "unknown": "Unknown";
     }
 }

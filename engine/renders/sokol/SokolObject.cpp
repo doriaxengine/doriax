@@ -11,6 +11,7 @@
 #include "Engine.h"
 #include "SokolResourceCache.h"
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 using namespace doriax;
@@ -22,6 +23,7 @@ namespace {
     sg_pipeline appliedPipeline = {};
     sg_bindings appliedBindings = {};
     bool bindingsApplied = false;
+    ColorFormat passColorFormat = ColorFormat::RGBA;
 
     bool isReady(sg_buffer buffer){
         return buffer.id == SG_INVALID_ID || sg_query_buffer_state(buffer) == SG_RESOURCESTATE_VALID;
@@ -50,6 +52,12 @@ namespace {
         // never destroyed: objects can release their pipelines at exit
         static auto* shared = new SokolResourceCache<PipelineKey, sg_pipeline>();
         return *shared;
+    }
+
+    // RGBA16F twins of shared pipelines, by the id of the pipeline they copy
+    std::unordered_map<uint32_t, sg_pipeline>& getFloatPipelines(){
+        static auto* twins = new std::unordered_map<uint32_t, sg_pipeline>();
+        return *twins;
     }
 
     // a sokol update that changes the descriptor has to update the key below
@@ -99,16 +107,40 @@ namespace {
     void destroyPipeline(sg_pipeline pipeline){
         if (pipeline.id == SG_INVALID_ID || !getSharedPipelines().release(pipeline))
             return;
+        auto twin = getFloatPipelines().find(pipeline.id);
+        if (twin != getFloatPipelines().end()){
+            const sg_pipeline floatPipeline = twin->second;
+            getFloatPipelines().erase(twin);
+            destroyPipeline(floatPipeline);
+        }
         if (Engine::isAsyncThread()){
             SokolCmdQueue::add_command_destroy_pipeline(pipeline);
         }else{
             sg_destroy_pipeline(pipeline);
         }
     }
+
+    // the same pipeline drawing into a float color target, made on its first use there
+    sg_pipeline getFloatPipeline(sg_pipeline pipeline){
+        auto twin = getFloatPipelines().find(pipeline.id);
+        if (twin != getFloatPipelines().end())
+            return twin->second;
+
+        sg_pipeline_desc desc = sg_query_pipeline_desc(pipeline);
+        desc.colors[0].pixel_format = SG_PIXELFORMAT_RGBA16F;
+        const sg_pipeline floatPipeline = makePipeline(desc);
+        getFloatPipelines()[pipeline.id] = floatPipeline;
+        return floatPipeline;
+    }
 }
 
 void SokolObject::clearSharedPipelines(){
     getSharedPipelines().clear();
+    getFloatPipelines().clear();
+}
+
+void SokolObject::setPassColorFormat(ColorFormat format){
+    passColorFormat = format;
 }
 
 SokolObject::SokolObject(){
@@ -679,6 +711,9 @@ void SokolObject::resetAppliedState(){
 
 bool SokolObject::beginDraw(PipelineType pipType){
     sg_pipeline selectedPipeline = getPipeline(pipType);
+    if (passColorFormat == ColorFormat::RGBA16F && sg_query_pipeline_state(selectedPipeline) == SG_RESOURCESTATE_VALID){
+        selectedPipeline = getFloatPipeline(selectedPipeline);
+    }
 
     if (selectedPipeline.id != SG_INVALID_ID && selectedPipeline.id == appliedPipeline.id){
         return true;

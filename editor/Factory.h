@@ -73,6 +73,7 @@ namespace doriax::editor{
         static std::string formatActionState(ActionState state);
         static std::string formatLightState(LightState state);
         static std::string formatShadowQuality(ShadowQuality quality);
+        static std::string formatToneMapping(ToneMapping toneMapping);
         static std::string formatSoundState(SoundState state);
         static std::string formatSoundAttenuation(SoundAttenuation attenuation);
         static std::string formatUIEventState(UIEventState state);

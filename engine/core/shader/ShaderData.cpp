@@ -255,6 +255,8 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_fs_bloomDownParams";
     }else if (type == UniformBlockType::BLOOM_UPSAMPLE_FS_PARAMS){
         ustr = "u_fs_bloomUpParams";
+    }else if (type == UniformBlockType::TONEMAP_FS_PARAMS){
+        ustr = "u_fs_toneMappingParams";
     }
 
     if (ustr.empty()){

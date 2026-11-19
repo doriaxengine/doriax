@@ -1045,7 +1045,7 @@ void ExportWindow::drawAddShaderDialog() {
             ShaderType::SSR, ShaderType::SSR_BLUR, ShaderType::COMPOSITE,
             ShaderType::SHADOW2D, ShaderType::BLIT, ShaderType::POSTPROCESS,
             ShaderType::WATER, ShaderType::UNDERWATER, ShaderType::PROBE_FILTER,
-            ShaderType::BLOOM_DOWNSAMPLE, ShaderType::BLOOM_UPSAMPLE
+            ShaderType::BLOOM_DOWNSAMPLE, ShaderType::BLOOM_UPSAMPLE, ShaderType::TONEMAP
         };
         constexpr int typeCount = (int)(sizeof(typeValues) / sizeof(typeValues[0]));
         std::vector<std::string> typeNameStrs;

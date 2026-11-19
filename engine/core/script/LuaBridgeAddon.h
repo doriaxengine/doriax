@@ -114,6 +114,7 @@ namespace luabridge
     template<> struct Stack<LightType> : EnumWrapper<LightType>{};
     template<> struct Stack<Occluder2DShape> : EnumWrapper<Occluder2DShape>{};
     template<> struct Stack<ShadowQuality> : EnumWrapper<ShadowQuality>{};
+    template<> struct Stack<ToneMapping> : EnumWrapper<ToneMapping>{};
     template<> struct Stack<SoundState> : EnumWrapper<SoundState>{};
     template<> struct Stack<SoundAttenuation> : EnumWrapper<SoundAttenuation>{};
 

@@ -171,6 +171,10 @@ namespace doriax{
 		Vector4 params; // xy = texel size of the smaller level, z = spread or intensity, w = 1 to add the glow over the scene
 	} fs_bloom_up_t;
 
+	typedef struct fs_tone_mapping_t {
+		Vector4 params; // x = exposure, y = ToneMapping curve
+	} fs_tone_mapping_t;
+
 	typedef struct vs_water_t {
 		Matrix4 modelMatrix;
 		Matrix4 viewProjectionMatrix; // render matrix, Y-flipped for offscreen GL passes
@@ -744,6 +748,13 @@ namespace doriax{
 		int bloomDownSlotParams;
 		int bloomUpSlotParams;
 
+		// exposure and the tone curve, between bloom and the user passes
+		bool toneMappingLoaded;
+		ObjectRender toneMappingRender;
+		std::shared_ptr<ShaderRender> toneMappingShader;
+		fs_tone_mapping_t fs_tone_mapping;
+		int toneMappingSlotParams;
+
 		static void changeLoaded(void* data);
 		static void changeDestroy(void* data);
 		// water can share its entity with a mesh, so it has its own callbacks
@@ -952,8 +963,8 @@ namespace doriax{
 		void updatePostProcessUniforms();
 		void destroyPostProcess();
 		bool ensurePostProcessFramebuffers(unsigned int width, unsigned int height);
-		// runs bloom and the chain from ping-pong buffer 0 into destination (swapchain when null)
-		void renderPostProcess(FramebufferRender* destination, bool bloom);
+		// runs bloom, tone mapping and the chain from ping-pong buffer 0 into destination (swapchain when null)
+		void renderPostProcess(FramebufferRender* destination, bool bloom, bool toneMapping);
 
 		// bloom
 		void loadBloom();
@@ -962,6 +973,15 @@ namespace doriax{
 		void destroyBloomFramebuffers();
 		// source with its glow added, into destination
 		void renderBloom(TextureRender* source, FramebufferRender* destination);
+
+		// HDR and tone mapping
+		bool isHDRActive() const;
+		bool needsToneMapping() const;
+		// of the main camera targets the chain reads: float with HDR
+		ColorFormat getSceneColorFormat() const;
+		void loadToneMapping();
+		void destroyToneMapping();
+		void renderToneMapping(TextureRender* source, FramebufferRender* destination);
 
 		bool drawUI(UIComponent& ui, Transform& transform, PipelineType pipType);
 		void destroyUI(Entity entity, UIComponent& ui);

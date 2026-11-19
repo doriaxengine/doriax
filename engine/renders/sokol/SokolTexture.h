@@ -30,6 +30,8 @@ namespace doriax{
         static void cleanupMipmapTexture(void* data);
 
     public:
+        static sg_pixel_format getRenderTargetFormat(ColorFormat format);
+
         SokolTexture();
         SokolTexture(const SokolTexture& rhs);
         SokolTexture& operator=(const SokolTexture& rhs);

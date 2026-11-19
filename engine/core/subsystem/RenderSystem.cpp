@@ -506,6 +506,9 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     bloomDownSlotParams = -1;
     bloomUpSlotParams = -1;
 
+    toneMappingLoaded = false;
+    toneMappingSlotParams = -1;
+
     shadowAtlasSlotResolution = 0;
     shadowAtlasCols = 0;
     shadowAtlasRows = 0;
@@ -597,6 +600,7 @@ void RenderSystem::destroy(){
     destroyProbeFilter();
     destroyPostProcess();
     destroyBloom();
+    destroyToneMapping();
     for (InstanceView& view : instanceViews){
         view.buffer.getRender()->destroyBuffer();
         view.data.clear();
@@ -6019,10 +6023,13 @@ bool RenderSystem::ensureSceneColorFramebuffer(unsigned int width, unsigned int 
     if (width == 0 || height == 0)
         return false;
 
-    if (sceneColorFramebuffer.isCreated() && sceneColorFramebuffer.getWidth() == width && sceneColorFramebuffer.getHeight() == height)
+    const ColorFormat format = getSceneColorFormat();
+    if (sceneColorFramebuffer.isCreated() && sceneColorFramebuffer.getWidth() == width && sceneColorFramebuffer.getHeight() == height &&
+            sceneColorFramebuffer.getColorFormat() == format)
         return true;
 
     sceneColorFramebuffer.destroy();
+    sceneColorFramebuffer.setColorAttachments(1, &format);
 
     // offscreen opaque scene color (sampled bilinearly by ssr.frag); has a depth
     // attachment so the redirected main color pass can depth-test normally.
@@ -6299,10 +6306,13 @@ bool RenderSystem::ensureSceneCopyFramebuffer(unsigned int width, unsigned int h
     if (width == 0 || height == 0)
         return false;
 
-    if (sceneCopyFramebuffer.isCreated() && sceneCopyFramebuffer.getWidth() == width && sceneCopyFramebuffer.getHeight() == height)
+    const ColorFormat format = getSceneColorFormat();
+    if (sceneCopyFramebuffer.isCreated() && sceneCopyFramebuffer.getWidth() == width && sceneCopyFramebuffer.getHeight() == height &&
+            sceneCopyFramebuffer.getColorFormat() == format)
         return true;
 
     sceneCopyFramebuffer.destroy();
+    sceneCopyFramebuffer.setColorAttachments(1, &format);
     sceneCopyFramebuffer.setWidth(width);
     sceneCopyFramebuffer.setHeight(height);
     sceneCopyFramebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -6452,12 +6462,15 @@ bool RenderSystem::ensurePostProcessFramebuffers(unsigned int width, unsigned in
     if (width == 0 || height == 0)
         return false;
 
-    if (postProcessFramebuffer[0].isCreated() && postProcessWidth == width && postProcessHeight == height)
+    const ColorFormat format = getSceneColorFormat();
+    if (postProcessFramebuffer[0].isCreated() && postProcessWidth == width && postProcessHeight == height &&
+            postProcessFramebuffer[0].getColorFormat() == format)
         return true;
 
     // the chain ping-pongs between the two; its last pass writes the real destination
     for (int i = 0; i < 2; i++){
         postProcessFramebuffer[i].destroy();
+        postProcessFramebuffer[i].setColorAttachments(1, &format);
         postProcessFramebuffer[i].setWidth(width);
         postProcessFramebuffer[i].setHeight(height);
         postProcessFramebuffer[i].setMinFilter(TextureFilter::LINEAR);
@@ -6473,7 +6486,7 @@ bool RenderSystem::ensurePostProcessFramebuffers(unsigned int width, unsigned in
     return postProcessFramebuffer[0].isCreated() && postProcessFramebuffer[1].isCreated();
 }
 
-void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom){
+void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom, bool toneMapping){
     // depth is the SSR G-buffer or the chain's own pre-pass; the G-buffer
     // normal/roughness only exists while SSR is on
     TextureRender* depthTexture = &emptyBlack;
@@ -6494,31 +6507,40 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom)
     TextureRender* input = &postProcessFramebuffer[0].getRender().getColorTexture();
     int pingPong = 1;
 
-    // bloom alone runs while the user passes are still loading
+    // the engine stages run alone while the user passes are still loading
     const int passCount = postProcessLoaded ? (int)postProcessPasses.size() : 0;
+    int stagesLeft = (bloom ? 1 : 0) + (toneMapping ? 1 : 0) + passCount;
+
+    // the last stage writes the destination, the others the next buffer
+    auto nextTarget = [&](){
+        return (destination && --stagesLeft == 0) ? destination : &postProcessFramebuffer[pingPong].getRender();
+    };
+    auto advance = [&](FramebufferRender* target){
+        if (target != destination){
+            input = &target->getColorTexture();
+            pingPong = 1 - pingPong;
+        }
+    };
 
     if (bloom){
-        if (passCount == 0 && destination){
-            renderBloom(input, destination);
-            return;
-        }
-        renderBloom(input, &postProcessFramebuffer[pingPong].getRender());
-        input = &postProcessFramebuffer[pingPong].getRender().getColorTexture();
-        pingPong = 1 - pingPong;
+        FramebufferRender* target = nextTarget();
+        renderBloom(input, target);
+        advance(target);
+    }
+
+    if (toneMapping){
+        FramebufferRender* target = nextTarget();
+        renderToneMapping(input, target);
+        advance(target);
     }
 
     updatePostProcessUniforms();
 
     for (int i = 0; i < passCount; i++){
         PostProcessRuntime& pass = postProcessPasses[i];
-        bool writeDestination = destination && (i + 1 == passCount);
+        FramebufferRender* target = nextTarget();
 
-        if (writeDestination){
-            postProcessPassRender.startRenderPass(destination);
-        }else{
-            postProcessPassRender.startRenderPass(&postProcessFramebuffer[pingPong].getRender());
-        }
-
+        postProcessPassRender.startRenderPass(target);
         if (pass.render.beginDraw(PIP_RTT)){
             if (ShaderTextures::isFramebufferOutdated(pass.textures))
                 loadShaderTextures(pass.textures, pass.shader.get()->shaderData, pass.render);
@@ -6533,10 +6555,7 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom)
         }
         postProcessPassRender.endRenderPass();
 
-        if (!writeDestination){
-            input = &postProcessFramebuffer[pingPong].getRender().getColorTexture();
-            pingPong = 1 - pingPong;
-        }
+        advance(target);
     }
 
     // the swapchain is written by the blit pass, which handles the GL orientation flip
@@ -6596,7 +6615,8 @@ bool RenderSystem::ensureBloomFramebuffers(unsigned int width, unsigned int heig
     if (width < 4 || height < 4)
         return false;
 
-    if (bloomLevels > 0 && bloomWidth == width && bloomHeight == height)
+    const ColorFormat format = getSceneColorFormat();
+    if (bloomLevels > 0 && bloomWidth == width && bloomHeight == height && bloomDownFramebuffer[0].getColorFormat() == format)
         return true;
 
     destroyBloomFramebuffers();
@@ -6607,7 +6627,8 @@ bool RenderSystem::ensureBloomFramebuffers(unsigned int width, unsigned int heig
     while (levels < BLOOM_MAX_LEVELS && (shortSide >> (levels + 1)) >= 8)
         levels++;
 
-    auto createLevel = [](Framebuffer& framebuffer, unsigned int levelWidth, unsigned int levelHeight){
+    auto createLevel = [&format](Framebuffer& framebuffer, unsigned int levelWidth, unsigned int levelHeight){
+        framebuffer.setColorAttachments(1, &format);
         framebuffer.setWidth(levelWidth);
         framebuffer.setHeight(levelHeight);
         framebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -6698,6 +6719,62 @@ void RenderSystem::renderBloom(TextureRender* source, FramebufferRender* destina
         bloomUpRender.draw(0, 3, 1);
     }
     bloomPassRender.endRenderPass();
+}
+
+bool RenderSystem::isHDRActive() const{
+    return scene->isHDREnabled() && FramebufferRender::isColorFormatSupported(ColorFormat::RGBA16F);
+}
+
+bool RenderSystem::needsToneMapping() const{
+    return isHDRActive() || scene->getExposure() != 1.0f || scene->getToneMapping() != ToneMapping::NONE;
+}
+
+ColorFormat RenderSystem::getSceneColorFormat() const{
+    return isHDRActive() ? ColorFormat::RGBA16F : ColorFormat::RGBA;
+}
+
+void RenderSystem::loadToneMapping(){
+    if (toneMappingLoaded)
+        return;
+
+    // the shader may still be building (async in the editor)
+    toneMappingShader = ShaderPool::get(ShaderType::TONEMAP, 0);
+    if (!toneMappingShader || !toneMappingShader->isCreated())
+        return;
+
+    toneMappingRender.beginLoad(PrimitiveType::TRIANGLES);
+    toneMappingRender.setShader(toneMappingShader.get());
+    toneMappingSlotParams = toneMappingShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::TONEMAP_FS_PARAMS);
+    if (!toneMappingRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+        return;
+
+    toneMappingLoaded = true;
+}
+
+void RenderSystem::destroyToneMapping(){
+    if (toneMappingLoaded){
+        toneMappingRender.destroy();
+    }
+    if (toneMappingShader){
+        toneMappingShader.reset();
+        ShaderPool::remove(ShaderType::TONEMAP, 0);
+    }
+
+    toneMappingSlotParams = -1;
+    toneMappingLoaded = false;
+}
+
+void RenderSystem::renderToneMapping(TextureRender* source, FramebufferRender* destination){
+    fs_tone_mapping.params = Vector4(std::max(scene->getExposure(), 0.0f), (float)scene->getToneMapping(), 0.0f, 0.0f);
+
+    postProcessPassRender.startRenderPass(destination);
+    if (toneMappingRender.beginDraw(PIP_RTT)){
+        ShaderData& sd = toneMappingShader.get()->shaderData;
+        toneMappingRender.addTexture(sd.getTextureIndex(TextureShaderType::SCENECOLORTEXTURE), ShaderStageType::FRAGMENT, source);
+        toneMappingRender.applyUniformBlock(toneMappingSlotParams, sizeof(fs_tone_mapping_t), &fs_tone_mapping);
+        toneMappingRender.draw(0, 3, 1);
+    }
+    postProcessPassRender.endRenderPass();
 }
 
 void RenderSystem::presentFramebufferToSwapchain(Framebuffer* source){
@@ -10489,15 +10566,20 @@ void RenderSystem::updateSwapchainRedirect(){
             loadSSR();
             redirect = ssrLoaded && ensureSSRFramebuffers(w, h) && ensureGBufferFramebuffer(w, h);
         }
-        if (!redirect && (scene->isBloomEnabled() || !scene->getPostProcessPasses().empty())){
+        const bool wantsBloom = scene->isBloomEnabled();
+        const bool wantsToneMapping = needsToneMapping();
+        if (!redirect && (wantsBloom || wantsToneMapping || !scene->getPostProcessPasses().empty())){
             loadPostProcess();
             loadBlit();
-            if (scene->isBloomEnabled()){
+            if (wantsBloom){
                 loadBloom();
             }
+            if (wantsToneMapping){
+                loadToneMapping();
+            }
             const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
-            const bool bloomReady = scene->isBloomEnabled() && bloomLoaded;
-            redirect = (runsPasses || bloomReady) && blitLoaded && ensurePostProcessFramebuffers(w, h);
+            const bool stagesReady = (wantsBloom && bloomLoaded) || (wantsToneMapping && toneMappingLoaded);
+            redirect = (runsPasses || stagesReady) && blitLoaded && ensurePostProcessFramebuffers(w, h);
         }
 
         bool copiesScene = !sceneColorReaders.empty();
@@ -11769,17 +11851,22 @@ void RenderSystem::draw(){
         // writes every pixel, so a layer scene would erase the scene below it.
         bool usePostProcess = false;
         bool useBloom = false;
+        bool useToneMapping = false;
         FramebufferRender* postDestination = nullptr;
         const bool wantsBloom = scene->isBloomEnabled();
+        const bool wantsToneMapping = needsToneMapping();
         if (isMainCamera && !wantsBloom && bloomLevels > 0){
             destroyBloomFramebuffers();
         }
-        if (isMainCamera && (wantsBloom || !scene->getPostProcessPasses().empty())
+        if (isMainCamera && (wantsBloom || wantsToneMapping || !scene->getPostProcessPasses().empty())
                 && (Engine::getMainScene() == scene || camera.renderToTexture)
                 && (Engine::getFramebuffer() || camera.renderToTexture || useFixedRes || swapchainRedirect)){
             loadPostProcess();
             if (wantsBloom){
                 loadBloom();
+            }
+            if (wantsToneMapping){
+                loadToneMapping();
             }
 
             // only a swapchain destination ends the chain with a blit
@@ -11797,10 +11884,11 @@ void RenderSystem::draw(){
 
             const bool runsPasses = postProcessLoaded && !postProcessPasses.empty();
             const bool bloomReady = wantsBloom && bloomLoaded;
-            if ((runsPasses || bloomReady) && (!needsBlit || blitLoaded)
+            useToneMapping = wantsToneMapping && toneMappingLoaded;
+            if ((runsPasses || bloomReady || useToneMapping) && (!needsBlit || blitLoaded)
                     && ensurePostProcessFramebuffers(pw, ph)){
                 useBloom = bloomReady && ensureBloomFramebuffers(pw, ph);
-                usePostProcess = runsPasses || useBloom;
+                usePostProcess = runsPasses || useBloom || useToneMapping;
 
                 // a pass sampling depth needs the pre-pass when neither SSR nor SSAO ran
                 if (runsPasses && postProcessNeedsDepth && !useSSR && !scene->isSSAOEnabled()
@@ -12396,7 +12484,7 @@ void RenderSystem::draw(){
 
         // buffer 0 now holds the scene color (or the SSR composite)
         if (usePostProcess){
-            renderPostProcess(postDestination, useBloom);
+            renderPostProcess(postDestination, useBloom, useToneMapping);
         }
 
         // Fixed game resolution: upscale the offscreen scene color to the view

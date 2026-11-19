@@ -184,6 +184,7 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
     if (token == "probefilter")                 { out = ShaderType::PROBE_FILTER; return true; }
     if (token == "bloomdown")                   { out = ShaderType::BLOOM_DOWNSAMPLE; return true; }
     if (token == "bloomup")                     { out = ShaderType::BLOOM_UPSAMPLE; return true; }
+    if (token == "tonemap")                     { out = ShaderType::TONEMAP; return true; }
     return false;
 }
 

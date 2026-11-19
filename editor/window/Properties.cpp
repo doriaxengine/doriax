@@ -636,6 +636,14 @@ void editor::Properties::drawScenePropertyRow(SceneProject* sceneProject, const 
                     value = static_cast<ShadowQuality>(currentItem);
                 }
             }
+            if constexpr (std::is_same_v<T, ToneMapping>) {
+                const char* curveNames[] = { "None", "Reinhard", "ACES", "AgX" };
+                int currentItem = static_cast<int>(value);
+                changed = ImGui::Combo(("##" + propertyName).c_str(), &currentItem, curveNames, IM_ARRAYSIZE(curveNames));
+                if (changed) {
+                    value = static_cast<ToneMapping>(currentItem);
+                }
+            }
             if constexpr (std::is_same_v<T, TextureFilter>) {
                 const char* filterNames[] = { "Nearest", "Linear" };
                 int currentItem = (value == TextureFilter::LINEAR) ? 1 : 0;
@@ -14610,6 +14618,22 @@ void editor::Properties::show(){
                         drawScenePropertyRow<float>(sceneProject, "bloom_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 1.0f,
                             "0 keeps the glow close to the bright parts, 1 spreads it wide.");
                     }
+
+                    ImGui::EndTable();
+                }
+
+                ImGui::SeparatorText("Tone Mapping");
+
+                if (ImGui::BeginTable("scene_tone_mapping_table", 2, tableFlags)) {
+                    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Exposure"));
+                    ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+
+                    drawScenePropertyRow<bool>(sceneProject, "hdr_enabled", "HDR", ScenePropertyInputType::Checkbox, -1.0f, 0.0f, 1.0f,
+                        "Keeps what is brighter than white until the curve, where devices can draw into float targets.");
+                    drawScenePropertyRow<float>(sceneProject, "exposure", "Exposure", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 4.0f,
+                        "Multiplies the scene brightness before the curve.");
+                    drawScenePropertyRow<ToneMapping>(sceneProject, "tone_mapping", "Curve", ScenePropertyInputType::Combo, 7 * ImGui::GetFontSize(), 0.0f, 1.0f,
+                        "How brightness maps to the screen. None clips at white.");
 
                     ImGui::EndTable();
                 }

@@ -3062,7 +3062,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v75: vertex color in hook surfaces, flat normals fixed.
     // v76: morphed hook normals, flat normals without lights.
     // v77: bloom passes.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v77";
+    // v78: tone mapping.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v78";
 }
 
 void editor::App::pushTabNotificationStyle(){
