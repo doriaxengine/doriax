@@ -207,7 +207,7 @@ Install [MSYS2](https://www.msys2.org/) and update it with `pacman -Syu` (reopen
 ```bash
 pacman -S --needed git mingw-w64-ucrt-x86_64-toolchain \
   mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja \
-  mingw-w64-ucrt-x86_64-python
+  mingw-w64-ucrt-x86_64-make mingw-w64-ucrt-x86_64-python
 
 cmake -S . -B build-ucrt64 -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
