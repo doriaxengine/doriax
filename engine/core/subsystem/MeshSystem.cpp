@@ -5125,6 +5125,12 @@ bool MeshSystem::loadGLTF(Entity entity, const std::string filename, bool asyncL
                     mat->emissiveFactor[0],
                     mat->emissiveFactor[1],
                     mat->emissiveFactor[2]);
+                // brighter than 1 through KHR_materials_emissive_strength
+                auto emissiveStrength = mat->extensions.find("KHR_materials_emissive_strength");
+                if (emissiveStrength != mat->extensions.end() && emissiveStrength->second.Has("emissiveStrength") &&
+                        emissiveStrength->second.Get("emissiveStrength").IsNumber()) {
+                    mesh.submeshes[i].material.emissiveFactor *= (float)emissiveStrength->second.Get("emissiveStrength").GetNumberAsDouble();
+                }
                 // leaf backlighting is authored as a glTF extra, there is no core material slot for it
                 if (mat->extras.IsObject() && mat->extras.Has("doriax_foliage_transmission")) {
                     const auto& value = mat->extras.Get("doriax_foliage_transmission");

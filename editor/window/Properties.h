@@ -41,6 +41,7 @@ namespace doriax::editor{
         Vector4,
         Quat,
         Color3L,
+        Color3LHDR, // may go above 1
         Color4L,
         Int,
         UInt,
