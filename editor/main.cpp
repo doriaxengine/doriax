@@ -4,12 +4,13 @@
 #include "Backend.h"
 #include "cli/CommandLine.h"
 #include "util/ShellEnv.h"
+#include "thread/ThreadPoolManager.h"
 
 #include <cstring>
 
 using namespace doriax;
 
-int main(int argc, char* argv[]) {
+static int run(int argc, char* argv[]) {
     // A desktop launcher starts the editor without the user's shell environment,
     // so the build tools go back on PATH before anything can spawn a command.
     editor::ShellEnv::bootstrapPath();
@@ -50,4 +51,13 @@ int main(int argc, char* argv[]) {
     }
 
     return editor::Backend::init(argc, argv);
+}
+
+int main(int argc, char* argv[]) {
+    int result = run(argc, argv);
+
+    // joined here, Windows kills the workers before static destructors
+    ThreadPoolManager::shutdown();
+
+    return result;
 }
