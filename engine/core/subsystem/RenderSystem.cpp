@@ -428,6 +428,81 @@ namespace {
             }
         }
     }
+
+    // Vulkan's line rasterizer fills the convex hull of segments that leave the frustum, so the
+    // editor grid (which reaches twice the far clip) painted solid wedges over the scene instead
+    // of lines. Clipping the segments to the frustum keeps every emitted vertex inside the
+    // volume, which is the only case the rasterizer handles correctly. Segments that are already
+    // inside are copied untouched, so short lines such as gizmos cost one test.
+    void clipLinesToFrustum(const std::vector<LineData>& lines, size_t count, const Matrix4& mvp,
+                            std::vector<LineData>& clipped){
+        clipped.clear();
+        if (count == 0)
+            return;
+
+        // Rows of the model-view-projection matrix, in the same column-major order the vertex
+        // shader multiplies them, give the six frustum planes as x +- w, y +- w and z +- w.
+        const Vector4 row0 = mvp.row(0);
+        const Vector4 row1 = mvp.row(1);
+        const Vector4 row2 = mvp.row(2);
+        const Vector4 row3 = mvp.row(3);
+        const Vector4 planes[6] = {
+            row3 + row0, row3 - row0,
+            row3 + row1, row3 - row1,
+            row3 + row2, row3 - row2
+        };
+
+        clipped.reserve(count);
+
+        for (size_t i = 0; i < count; i++){
+            const LineData& line = lines[i];
+            const Vector4 pointA = Vector4(line.pointA, 1.0f);
+            const Vector4 pointB = Vector4(line.pointB, 1.0f);
+
+            if (pointA.isNaN() || pointB.isNaN())
+                continue;
+
+            // Parameter range of the original segment that survives every plane
+            float t0 = 0.0f;
+            float t1 = 1.0f;
+            bool outside = false;
+
+            for (int p = 0; p < 6; p++){
+                // The planes are rows of the matrix, so dotting them with the object space point
+                // gives the clip space coordinate the plane compares against zero
+                const float da = planes[p].dotProduct(pointA);
+                const float db = planes[p].dotProduct(pointB);
+
+                if (da < 0.0f && db < 0.0f){
+                    outside = true;
+                    break;
+                }
+                if (da < 0.0f)
+                    t0 = std::max(t0, da / (da - db));
+                else if (db < 0.0f)
+                    t1 = std::min(t1, da / (da - db));
+            }
+
+            if (outside || t0 > t1)
+                continue;
+
+            if (t0 <= 0.0f && t1 >= 1.0f){
+                clipped.push_back(line);
+                continue;
+            }
+
+            LineData result = line;
+            if (t0 > 0.0f){
+                result.pointA = line.pointA.lerp(line.pointB, t0);
+                result.colorA = line.colorA.lerp(line.colorB, t0);
+            }
+            if (t1 < 1.0f){
+                result.pointB = line.pointA.lerp(line.pointB, t1);
+                result.colorB = line.colorA.lerp(line.colorB, t1);
+            }
+            clipped.push_back(result);
+        }
+    }
 }
 
 uint32_t RenderSystem::pixelsWhite[64];
@@ -7480,8 +7555,31 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
     flushSpriteBatch();
     if (lines.loaded && lines.lines.size() > 0){
         size_t linesSize = (lines.lines.size() < lines.maxLines)? lines.lines.size() : lines.maxLines;
+        size_t drawSize = linesSize;
 
-        if (lines.needUpdateBuffer){
+        if (Engine::getGraphicBackend() == GraphicBackend::VULKAN){
+            // The line rasterizer fills the hull of segments that leave the frustum, so what is
+            // uploaded is a copy clipped to the frustum. Clipping depends on the camera, hence
+            // the model-view-projection it was built with is kept to know when to rebuild it.
+            if (lines.needUpdateBuffer || !lines.clippedBuffer ||
+                !(lines.clippedMVP == transform.modelViewProjectionMatrix)){
+                clipLinesToFrustum(lines.lines, linesSize, transform.modelViewProjectionMatrix, lines.clippedLines);
+                lines.clippedMVP = transform.modelViewProjectionMatrix;
+                lines.clippedBuffer = true;
+
+                if (lines.clippedLines.size() > 0){
+                    lines.buffer.setData((unsigned char*)(lines.clippedLines.data()), sizeof(LineData)*lines.clippedLines.size());
+                    lines.buffer.getRender()->updateBuffer(lines.buffer.getSize(), lines.buffer.getData());
+                }
+            }
+            lines.needUpdateBuffer = false;
+            drawSize = lines.clippedLines.size();
+
+            // everything was clipped away, so there is nothing to draw and the buffer still
+            // holds the previous frame's lines
+            if (drawSize == 0)
+                return true;
+        }else if (lines.needUpdateBuffer){
             // setData here because component can change order and lose reference
             lines.buffer.setData((unsigned char*)(&lines.lines[0]), sizeof(LineData)*linesSize);
             lines.buffer.getRender()->updateBuffer(lines.buffer.getSize(), lines.buffer.getData());
@@ -7500,7 +7598,7 @@ bool RenderSystem::drawLines(LinesComponent& lines, Transform& transform, Transf
         }
         render.applyUniformBlock(lines.slotVSParams, sizeof(float) * 16, &transform.modelViewProjectionMatrix);
         applyParameters(render, lines, scene, ShaderType::LINES, transform.modelMatrix, effectView, passResolution);
-        render.draw(0, linesSize * 2, 1);
+        render.draw(0, drawSize * 2, 1);
     }
 
     return true;

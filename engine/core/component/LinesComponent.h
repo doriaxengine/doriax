@@ -57,6 +57,12 @@ namespace doriax{
 
         bool needUpdateBuffer = false;
         bool needReload = false;
+
+        // Vulkan only: the lines clipped to the frustum that were last uploaded, and the
+        // model-view-projection they were clipped with so a camera move rebuilds them
+        std::vector<LineData> clippedLines;
+        Matrix4 clippedMVP;
+        bool clippedBuffer = false;
     };
     
 }
