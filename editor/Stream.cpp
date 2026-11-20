@@ -1013,6 +1013,12 @@ FogType editor::Stream::stringToFogType(const std::string& str) {
     return FogType::LINEAR;
 }
 
+// Scenes saved on Windows before v0.8.5 used '\' in script paths
+static std::string genericScriptPath(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    return path;
+}
+
 // scene keys of the default shaders' uniform values
 static const std::pair<ShaderType, const char*> defaultShaderUniformKeys[] = {
     {ShaderType::MESH, "defaultMeshShaderUniforms"},
@@ -2838,10 +2844,10 @@ void editor::Stream::decodeSceneProject(SceneProject* sceneProject, const YAML::
             SceneScriptSource script;
 
             if (scriptNode["path"]) {
-                script.path = fs::path(scriptNode["path"].as<std::string>());
+                script.path = fs::path(genericScriptPath(scriptNode["path"].as<std::string>()));
             }
             if (scriptNode["headerPath"]) {
-                script.headerPath = fs::path(scriptNode["headerPath"].as<std::string>());
+                script.headerPath = fs::path(genericScriptPath(scriptNode["headerPath"].as<std::string>()));
             }
             if (scriptNode["className"]) {
                 script.className = scriptNode["className"].as<std::string>();
@@ -2867,7 +2873,7 @@ void editor::Stream::decodeSceneProject(SceneProject* sceneProject, const YAML::
     } else if (node["cppScriptPaths"]) {
         for (const auto& pathNode : node["cppScriptPaths"]) {
             SceneScriptSource script;
-            script.path = fs::path(pathNode.as<std::string>());
+            script.path = fs::path(genericScriptPath(pathNode.as<std::string>()));
             sceneProject->cppScripts.push_back(script);
         }
     }
@@ -6771,10 +6777,10 @@ ScriptComponent editor::Stream::decodeScriptComponent(const YAML::Node& node, co
         }
 
         if (scriptNode["path"])
-            entry.path = scriptNode["path"].as<std::string>();
+            entry.path = genericScriptPath(scriptNode["path"].as<std::string>());
 
         if (scriptNode["headerPath"])
-            entry.headerPath = scriptNode["headerPath"].as<std::string>();
+            entry.headerPath = genericScriptPath(scriptNode["headerPath"].as<std::string>());
 
         if (scriptNode["className"])
             entry.className = scriptNode["className"].as<std::string>();
