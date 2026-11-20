@@ -861,6 +861,7 @@ namespace doriax{
 		void flushSpriteBatch();
 		void prepareSpriteBatchBuffers();
 		void settleSprite(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform);
+		void updateMeshBounds(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform, bool instanced);
 		void unsettleSprite(Entity entity);
 		void unsettleSprites();
 		int settledIndex(Entity entity) const{
@@ -1166,6 +1167,10 @@ namespace doriax{
 
 		void updateFramebuffer(CameraComponent& camera);
 		void updateTransform(Transform& transform, Entity entity);
+		// world matrices only, needUpdate stays set for the next update
+		void updateTransforms();
+		// mesh world boxes from the current transforms, flags stay set for the next update
+		void updateWorldBounds();
 		void updateCamera(CameraComponent& camera, Transform& transform);
 		void updateMirrors(Entity mainCameraEntity);
 		Entity createMirrorCamera(Entity mirrorEntity);

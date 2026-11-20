@@ -2050,6 +2050,14 @@ void editor::Generator::configure(const std::vector<editor::SceneBuildInfo>& sce
             mainContent += "    }\n";
         }
         mainContent += "\n";
+        // all first: an init() can read an entity of another scene in the stack
+        for (const auto sceneId : sceneData.involvedScenes) {
+            std::string sceneName = sceneIdToName[sceneId];
+            mainContent += "    if (" + sceneName + "_needsInit) {\n";
+            mainContent += "        " + sceneName + "->prepareScripts();\n";
+            mainContent += "    }\n";
+        }
+        mainContent += "\n";
         for (const auto sceneId : sceneData.involvedScenes) {
             std::string sceneName = sceneIdToName[sceneId];
             mainContent += "    if (" + sceneName + "_needsInit) {\n";

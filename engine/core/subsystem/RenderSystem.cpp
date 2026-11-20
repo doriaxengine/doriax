@@ -20,6 +20,7 @@
 #include "math/AABB.h"
 #include "pool/TextureDataPool.h"
 #include "subsystem/PhysicsSystem.h"
+#include "subsystem/MeshSystem.h"
 #include <memory>
 #include <algorithm>
 #include <array>
@@ -9188,6 +9189,121 @@ void RenderSystem::updateTransform(Transform& transform, Entity entity){
     }
 }
 
+void RenderSystem::updateTransforms(){
+    auto transforms = scene->getComponentArray<Transform>();
+
+    for (int i = 0; i < transforms->size(); i++){
+        Transform& transform = transforms->getComponentFromIndex(i);
+
+        bool visibleInHierarchy = transform.visible;
+        if (transform.parent != NULL_ENTITY){
+            Transform* transformParent = scene->findComponent<Transform>(transform.parent);
+            if (transformParent){
+                if (transformParent->needUpdate){
+                    transform.needUpdate = true;
+                }
+
+                visibleInHierarchy = transform.visible && transformParent->visibleInHierarchy;
+            }
+        }
+        // a write only on change keeps the cache line clean
+        if (transform.visibleInHierarchy != visibleInHierarchy){
+            transform.visibleInHierarchy = visibleInHierarchy;
+        }
+
+        if (transform.needUpdate){
+            updateTransform(transform, transforms->getEntity(i));
+        }
+    }
+}
+
+// vertex offsets reach past the bounds by their longest offset
+static float meshOffsetReach(const MeshComponent& mesh){
+    if (mesh.vertexOffsetMax <= 0.0f)
+        return 0.0f;
+    // the loaded shader file, the scene default included
+    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+        if (mesh.submeshes[s].customShaderId != 0)
+            return mesh.vertexOffsetMax;
+    }
+    return 0.0f;
+}
+
+void RenderSystem::updateMeshBounds(Entity entity, Signature signature, MeshComponent& mesh, const Transform& transform, bool instanced){
+    // Bones cancel out this mesh's model matrix, so the shader draws at
+    // modelMatrix * bonesMatrix[b] * vertex and modelMatrix * aabb mis-sizes the box
+    // once posed. Each bone bounds only its own share: the whole aabb per bone works
+    // too, but unions body-sized boxes over the skeleton. Local space so the editor
+    // draws the same box.
+    mesh.skinnedAABB.setNull();
+    // the palette only moves submeshes drawn with skinning
+    SkinComponent* skin = findComponent<SkinComponent>(scene, entity, signature);
+    bool skinned = false;
+    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+        skinned = skinned || mesh.submeshes[s].hasSkinning;
+    }
+    if (!instanced && skin && skinned){
+        const size_t boneBounds = std::min(skin->bonesAABB.size(), skin->bonesMatrix.size());
+        for (size_t b = 0; b < boneBounds; b++){
+            if (!skin->bonesAABB[b].isNull()){
+                mesh.skinnedAABB.merge(skin->bonesMatrix[b] * skin->bonesAABB[b]);
+            }
+        }
+
+        if (mesh.skinnedAABB.isNull()){ // no per-bone bounds to pose
+            const Matrix4 identityMatrix;
+            for (size_t b = 0; b < skin->bonesMatrix.size(); b++){
+                const Matrix4& bone = skin->bonesMatrix[b];
+                if (bone != identityMatrix){
+                    mesh.skinnedAABB.merge(bone * mesh.aabb);
+                }
+            }
+        }
+    }
+    // a vertex offset moves geometry up to offsetReach past its bounds
+    auto worldBounds = [&](const AABB& box){
+        AABB world = transform.modelMatrix * box;
+        const float offset = meshOffsetReach(mesh);
+        if (offset > 0.0f && box.isFinite() && box != AABB::ZERO){
+            const Vector3 reach(offset, offset, offset);
+            world.setExtents(world.getMinimum() - reach, world.getMaximum() + reach);
+        }
+        return world;
+    };
+    mesh.worldAABB = worldBounds(mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB);
+
+    // Tilemap chunk bounds are refreshed with the mesh AABB: rebuilding a
+    // tilemap recalculates that AABB, and MeshSystem updates before this
+    // system, so new chunks are always current before draw().
+    if (signature.test(scene->getComponentId<TilemapComponent>())){
+        TilemapComponent& tilemap = scene->getComponent<TilemapComponent>(entity);
+        for (TilemapChunk& chunk : tilemap.chunks){
+            chunk.worldAABB = worldBounds(chunk.aabb);
+        }
+    }
+}
+
+void RenderSystem::updateWorldBounds(){
+    auto meshes = scene->getComponentArray<MeshComponent>();
+    for (int i = 0; i < meshes->size(); i++){
+        MeshComponent& mesh = meshes->getComponentFromIndex(i);
+        Entity entity = meshes->getEntity(i);
+        Signature signature = scene->getSignature(entity);
+        Transform* transform = findComponent<Transform>(scene, entity, signature);
+        // a settled sprite keeps its box with its copied vertices
+        if (!transform || isSpriteSettled(entity) || !(mesh.needUpdateAABB || transform->needUpdate))
+            continue;
+        // geometry still to be built or loaded, as a sprite sized by its texture: stays null
+        if (mesh.aabb == AABB::ZERO && !MeshSystem::hasGeometry(mesh))
+            continue;
+        // instances are boxed by the update, with the camera fade culling and billboards follow
+        if (signature.test(scene->getComponentId<InstancedMeshComponent>()))
+            continue;
+
+        updateMeshBounds(entity, signature, mesh, *transform, false);
+    }
+}
+
 void RenderSystem::updateCamera(CameraComponent& camera, Transform& transform){
     //Update ProjectionMatrix
     if (camera.type == CameraType::CAMERA_UI){
@@ -10813,32 +10929,10 @@ void RenderSystem::update(double dt){
         needReloadMeshes();
     }
 
+    updateTransforms();
+
     auto transforms = scene->getComponentArray<Transform>();
     auto cameras = scene->getComponentArray<CameraComponent>();
-
-    for (int i = 0; i < transforms->size(); i++){
-        Transform& transform = transforms->getComponentFromIndex(i);
-
-        bool visibleInHierarchy = transform.visible;
-        if (transform.parent != NULL_ENTITY){
-            Transform* transformParent = scene->findComponent<Transform>(transform.parent);
-            if (transformParent){
-                if (transformParent->needUpdate){
-                    transform.needUpdate = true;
-                }
-
-                visibleInHierarchy = transform.visible && transformParent->visibleInHierarchy;
-            }
-        }
-        // a write only on change keeps the cache line clean
-        if (transform.visibleInHierarchy != visibleInHierarchy){
-            transform.visibleInHierarchy = visibleInHierarchy;
-        }
-
-        if (transform.needUpdate){
-            updateTransform(transform, transforms->getEntity(i));
-        }
-    }
 
     auto models = scene->getComponentArray<ModelComponent>();
     for (int i = 0; i < models->size(); i++) {
@@ -11123,17 +11217,7 @@ void RenderSystem::update(double dt){
 
             TerrainComponent* terrain = findComponent<TerrainComponent>(scene, entity, signature);
 
-            // vertex offsets reach past the bounds by their longest offset, read only when used
-            auto offsetReach = [&](){
-                if (mesh.vertexOffsetMax <= 0.0f)
-                    return 0.0f;
-                // the loaded shader file, the scene default included
-                for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
-                    if (mesh.submeshes[s].customShaderId != 0)
-                        return mesh.vertexOffsetMax;
-                }
-                return 0.0f;
-            };
+            auto offsetReach = [&](){ return meshOffsetReach(mesh); };
 
             InstancedMeshComponent* instmesh = findComponent<InstancedMeshComponent>(scene, entity, signature);
             if (instmesh){
@@ -11307,59 +11391,8 @@ void RenderSystem::update(double dt){
                 loadMesh(entity, mesh, pipelines, instmesh, terrain);
             }
             if (mesh.needUpdateAABB || transform.needUpdate){
-                // Bones cancel out this mesh's model matrix, so the shader draws at
-                // modelMatrix * bonesMatrix[b] * vertex and modelMatrix * aabb mis-sizes the box
-                // once posed. Each bone bounds only its own share: the whole aabb per bone works
-                // too, but unions body-sized boxes over the skeleton. Local space so the editor
-                // draws the same box.
-                mesh.skinnedAABB.setNull();
-                // the palette only moves submeshes drawn with skinning
-                SkinComponent* skin = findComponent<SkinComponent>(scene, entity, signature);
-                bool skinned = false;
-                for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
-                    skinned = skinned || mesh.submeshes[s].hasSkinning;
-                }
-                if (!instmesh && skin && skinned){
-                    const size_t boneBounds = std::min(skin->bonesAABB.size(), skin->bonesMatrix.size());
-                    for (size_t b = 0; b < boneBounds; b++){
-                        if (!skin->bonesAABB[b].isNull()){
-                            mesh.skinnedAABB.merge(skin->bonesMatrix[b] * skin->bonesAABB[b]);
-                        }
-                    }
-
-                    if (mesh.skinnedAABB.isNull()){ // no per-bone bounds to pose
-                        const Matrix4 identityMatrix;
-                        for (size_t b = 0; b < skin->bonesMatrix.size(); b++){
-                            const Matrix4& bone = skin->bonesMatrix[b];
-                            if (bone != identityMatrix){
-                                mesh.skinnedAABB.merge(bone * mesh.aabb);
-                            }
-                        }
-                    }
-                }
-                // a vertex offset moves geometry up to offsetReach past its bounds
-                auto worldBounds = [&](const AABB& box){
-                    AABB world = transform.modelMatrix * box;
-                    const float offset = offsetReach();
-                    if (offset > 0.0f && box.isFinite() && box != AABB::ZERO){
-                        const Vector3 reach(offset, offset, offset);
-                        world.setExtents(world.getMinimum() - reach, world.getMaximum() + reach);
-                    }
-                    return world;
-                };
-                mesh.worldAABB = worldBounds(mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB);
-
+                updateMeshBounds(entity, signature, mesh, transform, instmesh != nullptr);
                 mesh.needUpdateAABB = false;
-
-                // Tilemap chunk bounds are refreshed with the mesh AABB: rebuilding a
-                // tilemap recalculates that AABB, and MeshSystem updates before this
-                // system, so new chunks are always current before draw().
-                if (signature.test(scene->getComponentId<TilemapComponent>())){
-                    TilemapComponent& tilemap = scene->getComponent<TilemapComponent>(entity);
-                    for (TilemapChunk& chunk : tilemap.chunks){
-                        chunk.worldAABB = worldBounds(chunk.aabb);
-                    }
-                }
             }
 
             settleSprite(entity, signature, mesh, transform);

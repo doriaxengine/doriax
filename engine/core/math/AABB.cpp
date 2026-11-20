@@ -484,9 +484,9 @@ void AABB::scale(const Vector3& s) {
 }
 
 Vector3 AABB::getCenter(void) const {
-    //TODO: Put error
-    //Can't get center of a null or infinite AAB
-    assert( mBoxType == BOXTYPE_FINITE );
+    // a null or infinite box has no center; scripts can reach this, so no abort
+    if (mBoxType != BOXTYPE_FINITE)
+        return Vector3(0, 0, 0);
 
     return Vector3(
             (mMaximum.x + mMinimum.x) * 0.5f,

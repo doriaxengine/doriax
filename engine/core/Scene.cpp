@@ -1003,6 +1003,12 @@ void Scene::load(){
     }
 }
 
+void Scene::prepareScripts(){
+    getSystem<MeshSystem>()->prepareSpriteBounds();
+    getSystem<RenderSystem>()->updateTransforms();
+    getSystem<RenderSystem>()->updateWorldBounds();
+}
+
 void Scene::destroy(){
     for (auto const& pair : systems){
         pair.second->destroy();

@@ -295,6 +295,10 @@ namespace doriax{
         void cancelAsyncModelLoad(Entity entity, const std::string& filename);
 
         bool createOrUpdateSprite(SpriteComponent& sprite, MeshComponent& mesh);
+        // sprite bounds ahead of the first update, so scripts read them in init()
+        void prepareSpriteBounds();
+        // vertex data on the CPU, so not still waiting to be built or loaded
+        static bool hasGeometry(const MeshComponent& mesh);
         bool createOrUpdateTerrain(TerrainComponent& terrain, MeshComponent& mesh, Transform& transform);
         bool createOrUpdateMeshPolygon(MeshPolygonComponent& polygon, MeshComponent& mesh);
         bool createOrUpdateTilemap(TilemapComponent& tilemap, MeshComponent& mesh);

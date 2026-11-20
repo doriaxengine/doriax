@@ -439,6 +439,39 @@ std::vector<std::pair<MeshComponent*, int>> MeshSystem::findMorphTargets(Entity 
     return targets;
 }
 
+// the quad spans (-pivot) to (size - pivot) in local space
+static Vector2 getSpritePivot(PivotPreset preset, float width, float height, bool uiCamera){
+    Vector2 pivotPos = Vector2(0, 0);
+
+    if (preset == PivotPreset::BOTTOM_RIGHT){
+        pivotPos.x = width;
+    }else if (preset == PivotPreset::TOP_RIGHT){
+        pivotPos.x = width;
+        pivotPos.y = height;
+    }else if (preset == PivotPreset::TOP_LEFT){
+        pivotPos.y = height;
+    }else if (preset == PivotPreset::TOP_CENTER){
+        pivotPos.x = width / 2.0;
+        pivotPos.y = height;
+    }else if (preset == PivotPreset::BOTTOM_CENTER){
+        pivotPos.x = width / 2.0;
+    }else if (preset == PivotPreset::RIGHT_CENTER){
+        pivotPos.x = width;
+        pivotPos.y = height / 2.0;
+    }else if (preset == PivotPreset::LEFT_CENTER){
+        pivotPos.y = height / 2.0;
+    }else if (preset == PivotPreset::CENTER){
+        pivotPos.x = width / 2.0;
+        pivotPos.y = height / 2.0;
+    }
+
+    if (uiCamera){
+        pivotPos.y = height - pivotPos.y;
+    }
+
+    return pivotPos;
+}
+
 bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, CameraComponent& camera){
     // Check texture loading state BEFORE clearing the buffer to avoid leaving
     // the mesh with an empty vertex buffer when the texture is still loading.
@@ -495,33 +528,7 @@ bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, Came
         sprite.height = texHeight;
     }
 
-    Vector2 pivotPos = Vector2(0, 0);
-
-    if (sprite.pivotPreset == PivotPreset::BOTTOM_RIGHT){
-        pivotPos.x = sprite.width;
-    }else if (sprite.pivotPreset == PivotPreset::TOP_RIGHT){
-        pivotPos.x = sprite.width;
-        pivotPos.y = sprite.height;
-    }else if (sprite.pivotPreset == PivotPreset::TOP_LEFT){
-        pivotPos.y = sprite.height;
-    }else if (sprite.pivotPreset == PivotPreset::TOP_CENTER){
-        pivotPos.x = sprite.width / 2.0;
-        pivotPos.y = sprite.height;
-    }else if (sprite.pivotPreset == PivotPreset::BOTTOM_CENTER){
-        pivotPos.x = sprite.width / 2.0;
-    }else if (sprite.pivotPreset == PivotPreset::RIGHT_CENTER){
-        pivotPos.x = sprite.width;
-        pivotPos.y = sprite.height / 2.0;
-    }else if (sprite.pivotPreset == PivotPreset::LEFT_CENTER){
-        pivotPos.y = sprite.height / 2.0;
-    }else if (sprite.pivotPreset == PivotPreset::CENTER){
-        pivotPos.x = sprite.width / 2.0;
-        pivotPos.y = sprite.height / 2.0;
-    }
-
-    if (camera.type == CameraType::CAMERA_UI){
-        pivotPos.y = sprite.height - pivotPos.y;
-    }
+    Vector2 pivotPos = getSpritePivot(sprite.pivotPreset, sprite.width, sprite.height, camera.type == CameraType::CAMERA_UI);
 
     mesh.buffer.addVector3(attVertex, Vector3(-pivotPos.x, -pivotPos.y, 0));
     mesh.buffer.addVector3(attVertex, Vector3(sprite.width-pivotPos.x, -pivotPos.y, 0));
@@ -6589,6 +6596,50 @@ bool MeshSystem::createOrUpdateModel(Entity entity, ModelComponent& model){
     }
 
     return true;
+}
+
+bool MeshSystem::hasGeometry(const MeshComponent& mesh){
+    if (mesh.buffer.getSize() > 0)
+        return true;
+    for (unsigned int i = 0; i < mesh.numExternalBuffers; i++){
+        if (mesh.eBuffers[i].getSize() > 0)
+            return true;
+    }
+    return false;
+}
+
+void MeshSystem::prepareSpriteBounds(){
+    // no camera yet: Scene::load() adds a UI one
+    Entity cameraEntity = scene->getCamera();
+    CameraComponent* camera = (cameraEntity != NULL_ENTITY) ? scene->findComponent<CameraComponent>(cameraEntity) : nullptr;
+    const bool uiCamera = !camera || camera->type == CameraType::CAMERA_UI;
+
+    auto sprites = scene->getComponentArray<SpriteComponent>();
+    for (int i = 0; i < sprites->size(); i++){
+        const SpriteComponent& sprite = sprites->getComponentFromIndex(i);
+        if (!sprite.needUpdateSprite)
+            continue;
+
+        // a built sprite keeps the box of the geometry it still draws until the rebuild
+        MeshComponent* mesh = scene->findComponent<MeshComponent>(sprites->getEntity(i));
+        if (!mesh || hasGeometry(*mesh))
+            continue;
+
+        // the box only: geometry stays dirty, so the update builds it with the camera init() leaves
+        float width = sprite.width;
+        float height = sprite.height;
+        if (width == 0 && height == 0){
+            const Texture& texture = mesh->submeshes[0].material.baseColorTexture;
+            width = texture.getWidth();
+            height = texture.getHeight();
+            if (width == 0 || height == 0)
+                continue; // the size comes with the texture
+        }
+        Vector2 pivot = getSpritePivot(sprite.pivotPreset, width, height, uiCamera);
+        mesh->verticesAABB = AABB(Vector3(-pivot.x, -pivot.y, 0), Vector3(width - pivot.x, height - pivot.y, 0));
+        mesh->aabb = mesh->verticesAABB;
+        mesh->needUpdateAABB = true;
+    }
 }
 
 void MeshSystem::load(){

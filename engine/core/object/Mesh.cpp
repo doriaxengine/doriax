@@ -368,6 +368,9 @@ AABB Mesh::getVerticesAABB() const{
 AABB Mesh::getWorldAABB() const{
     AABB aabb;
     for (MeshComponent* mesh : findMeshes()){
+        // geometry still to be built or loaded has no box: null, so a script can wait
+        if (mesh->aabb == AABB::ZERO && !MeshSystem::hasGeometry(*mesh))
+            continue;
         aabb.merge(mesh->worldAABB);
     }
 

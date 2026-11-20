@@ -93,6 +93,9 @@ namespace doriax{
         virtual ~Scene();
 
         void load();
+        // world transforms and bounds a script reads in init(), before the first update;
+        // the generated stack start calls it for its new scenes, editor Play starts from updated ones
+        void prepareScripts();
         void destroy();
         void draw();
         void update(double dt);
