@@ -327,6 +327,7 @@ namespace {
             add("textureColor", "vec4"); add("tint", "vec4"); add("pixel", "vec2");
         } else if (shaderType == "sky") {
             add("direction", "vec3"); add("textureColor", "vec4"); add("tint", "vec4"); add("pixel", "vec2");
+            add("sunDirection", "vec3"); add("sunColor", "vec3");
         } else if (shaderType == "water" && hook == "getUnderwaterColor") {
             add("screenUV", "vec2", "context.uv"); add("sceneColor", "vec4"); add("pathLength", "float"); add("pixel", "vec2");
         } else if (shaderType == "water") {
