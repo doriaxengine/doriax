@@ -8,7 +8,9 @@ uniform textureCube u_skyTexture;
 uniform sampler u_sky_smp;
 
 uniform u_fs_skyParams {
-    vec4 color; //sRGB
+    vec4 color;        // sRGB
+    vec4 sunDirection; // toward the strongest directional light, in the sky's space
+    vec4 sunColor;     // its color times intensity, linear; black without one
 } skyParams;
 
 #include "includes/parameters_fs.glsl"
@@ -21,6 +23,8 @@ uniform u_fs_skyParams {
         vec3 direction;       // of the cube map, in the sky's space
         vec4 textureColor;    // the cube map sample
         vec4 tint;            // the sky color
+        vec3 sunDirection;    // toward the strongest directional light, in the sky's space
+        vec3 sunColor;        // its color times intensity; black without one
         vec2 pixel;
     };
 
@@ -36,6 +40,8 @@ void main(){
         context.direction = uv;
         context.textureColor = sRGBToLinear(texture(samplerCube(u_skyTexture, u_sky_smp), uv));
         context.tint = sRGBToLinear(skyParams.color);
+        context.sunDirection = skyParams.sunDirection.xyz;
+        context.sunColor = skyParams.sunColor.rgb;
         context.pixel = gl_FragCoord.xy;
         frag_color = linearTosRGB(getColor(context, context.tint * context.textureColor));
     #else

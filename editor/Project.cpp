@@ -4187,6 +4187,8 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         }
     }
 
+    // a sky drawn by a shader file is filtered into its lighting as the probes are
+    bool capturedSky = false;
     for (Entity entity : shaderEntities) {
         Signature signature = scene->getSignature(entity);
 
@@ -4290,7 +4292,9 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<SkyComponent>())) {
             const SkyComponent& sky = scene->getComponent<SkyComponent>(entity);
-            insertKeys(ShaderType::SKYBOX, 0, effectiveShaderId(sky.shader, ShaderType::SKYBOX));
+            const uint16_t skyShaderId = effectiveShaderId(sky.shader, ShaderType::SKYBOX);
+            insertKeys(ShaderType::SKYBOX, 0, skyShaderId);
+            capturedSky = capturedSky || skyShaderId != 0;
         }
 
         // from the authored fields, as the cached variant lacks fog while the editor hides it
@@ -4319,7 +4323,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         keys.insert(ShaderPool::getShaderKey(ShaderType::SSAO_BLUR, 0));
     }
 
-    if (hasReflectionProbes) {
+    if (hasReflectionProbes || capturedSky) {
         keys.insert(ShaderPool::getShaderKey(ShaderType::PROBE_FILTER, 0));
     }
 

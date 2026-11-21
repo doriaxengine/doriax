@@ -425,6 +425,8 @@ vec3 graphHSVToRGB(vec3 c){
     input("input/texture", "Built-in Texture", "The texture sample and the tint the engine multiplies, linear.",
         {out("color", "Texture Color", "vec4"), out("tint", "Tint", "vec4")}, {"@textureColor", "@tint"}, {"ui", "points", "lines", "sky"});
     input("input/skyDirection", "Sky Direction", "The cube map direction, in the sky's own space.", {out("direction", "Direction", "vec3")}, {"@direction"}, {"sky"});
+    input("input/skySun", "Sky Sun", "The strongest directional light: the direction toward it, in the sky's own space, and its color times intensity, black without one.",
+        {out("direction", "Direction", "vec3"), out("color", "Color", "vec3")}, {"@sunDirection", "@sunColor"}, {"sky"});
     input("input/underwater", "Underwater", "The scene before the fade, and the water the view crosses.",
         {out("sceneColor", "Scene Color", "vec4"), out("pathLength", "Path Length", "float")}, {"@sceneColor", "@pathLength"}, {"water"});
 

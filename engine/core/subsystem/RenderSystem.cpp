@@ -42,6 +42,9 @@ namespace {
     constexpr uint32_t SPRITE_SETTLE_HOLD = 4;
     constexpr uint32_t SPRITE_SETTLE_WAIT = 30;
     constexpr uint32_t SPRITE_SETTLE_WAIT_MAX = 960;
+    // a shader sky's capture size, and how often a sky that keeps changing is captured again
+    constexpr int SKY_CAPTURE_SIZE = 256;
+    constexpr float SKY_CAPTURE_INTERVAL = 0.1f;
 
     // the sprite batches move vertices on the CPU with w = 1; a projective model matrix keeps its w on the GPU
     bool hasAffineModel(const Transform& transform){
@@ -276,16 +279,23 @@ namespace {
         applyParameters(render, block, view, resolution);
     }
 
+    // both stages of a single-shader component, when its values changed
+    template<typename T>
+    void writeComponentParameters(T& component, const Scene* scene, ShaderType type){
+        if (!component.needUpdateShaderUniforms)
+            return;
+
+        const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(type, component.shader);
+        component.paramsVS.writeObject(component.shaderUniforms, inherited);
+        component.paramsFS.writeObject(component.shaderUniforms, inherited);
+        component.needUpdateShaderUniforms = false;
+    }
+
     // both stages of a single-shader component, rewritten first when its values changed
     template<typename T>
     void applyParameters(ObjectRender& render, T& component, const Scene* scene, ShaderType type, const Matrix4& modelMatrix,
                          const ShaderEffectView& view, const Vector2& resolution){
-        if (component.needUpdateShaderUniforms){
-            const ShaderUniformValues* inherited = scene->getInheritedShaderUniforms(type, component.shader);
-            component.paramsVS.writeObject(component.shaderUniforms, inherited);
-            component.paramsFS.writeObject(component.shaderUniforms, inherited);
-            component.needUpdateShaderUniforms = false;
-        }
+        writeComponentParameters(component, scene, type);
         component.paramsVS.writeVertexContext(view, modelMatrix, 0.0f);
         applyParameters(render, component.paramsVS, view, resolution);
         applyParameters(render, component.paramsFS, view, resolution);
@@ -491,6 +501,7 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
 
     probeFilterLoaded = false;
     probeSourceSize = 0;
+    skyCaptureElapsed = 0.0f;
     probeFilterSlotParams = -1;
 
     postProcessLoaded = false;
@@ -600,6 +611,7 @@ void RenderSystem::destroy(){
     destroySSR();
     destroyBlit();
     destroyProbeFilter();
+    destroySkyCapture();
     destroyPostProcess();
     destroyBloom();
     destroyToneMapping();
@@ -1315,9 +1327,7 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
     if (hasIBL){
         auto skys = scene->getComponentArray<SkyComponent>();
         if (skys->size() > 0){
-            SkyComponent& sky = skys->getComponentFromIndex(0);
-            Vector3 linColor = Color::sRGBToLinear(Vector3(sky.color.x, sky.color.y, sky.color.z));
-            fs_lighting.envColor = Vector4(linColor.x, linColor.y, linColor.z, Angle::defaultToRad(sky.rotation));
+            fs_lighting.envColor = getSkyEnvironment(skys->getComponentFromIndex(0));
         }
     }
 
@@ -1507,9 +1517,133 @@ void RenderSystem::releaseSkyEnvironment(SkyComponent& sky){
     sky.envMapsLoaded = false;
 }
 
+bool RenderSystem::isSkyCaptured(const SkyComponent& sky) const{
+    return !(sky.shader.empty() ? scene->getDefaultCustomShader(ShaderType::SKYBOX) : sky.shader).empty();
+}
+
+// a capture has the tint the shader drew
+Vector4 RenderSystem::getSkyEnvironment(const SkyComponent& sky) const{
+    const Vector3 tint = isSkyCaptured(sky) ? Vector3(1.0f, 1.0f, 1.0f) : Color::sRGBToLinear(Vector3(sky.color.x, sky.color.y, sky.color.z));
+    return Vector4(tint.x, tint.y, tint.z, Angle::defaultToRad(sky.rotation));
+}
+
+// the sky's color, and the strongest directional light as its sun
+void RenderSystem::updateSkyParams(const SkyComponent& sky){
+    fs_sky.color = sky.color;
+    fs_sky.sunDirection = Vector4(0.0f, 1.0f, 0.0f, 0.0f);
+    fs_sky.sunColor = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+
+    // the sky's own space, as its directions are
+    const Quaternion worldToSky(0, -sky.rotation, 0);
+    float strongest = 0.0f;
+    auto lights = scene->getComponentArray<LightComponent>();
+    for (int i = 0; i < lights->size(); i++){
+        const LightComponent& light = lights->getComponentFromIndex(i);
+        if (light.type != LightType::DIRECTIONAL || light.intensity <= strongest)
+            continue;
+
+        strongest = light.intensity;
+        const Vector3 toSun = worldToSky * (-light.worldDirection.normalized());
+        fs_sky.sunDirection = Vector4(toSun.x, toSun.y, toSun.z, 1.0f);
+        fs_sky.sunColor = Vector4(light.color.x * light.intensity, light.color.y * light.intensity, light.color.z * light.intensity, 0.0f);
+    }
+}
+
+// Draws the sky into a cube in its own space, as mesh lighting turns it with sky.rotation,
+// and filters it into the lighting maps. It runs again when what the shader reads changes.
+void RenderSystem::captureSky(SkyComponent& sky){
+    if (!sky.loaded || !isSkyCaptured(sky))
+        return;
+
+    Transform captureTransform;
+    CameraComponent captureCamera;
+    // a camera makes its own framebuffer, which a capture never uses
+    const std::unique_ptr<Framebuffer> unusedFramebuffer(captureCamera.framebuffer);
+    setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), 0, 0.1f, 10.0f);
+    // no camera owns a capture, so view parameters read their declared defaults
+    setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+    const Vector2 resolution((float)SKY_CAPTURE_SIZE, (float)SKY_CAPTURE_SIZE);
+
+    // what the shader reads, as the capture would write it
+    writeComponentParameters(sky, scene, ShaderType::SKYBOX);
+    sky.paramsFS.writeFrame(effectView, resolution);
+    std::vector<uint8_t> inputs(sizeof(fs_sky_t) + sky.paramsFS.data.size());
+    std::memcpy(inputs.data(), &fs_sky, sizeof(fs_sky_t));
+    if (!sky.paramsFS.data.empty())
+        std::memcpy(inputs.data() + sizeof(fs_sky_t), sky.paramsFS.data.data(), sky.paramsFS.data.size());
+
+    // a sky that keeps changing is captured again every SKY_CAPTURE_INTERVAL at most
+    const bool changed = inputs != skyCaptureInputs;
+    if (!sky.needUpdateEnvironment && (!changed || skyCaptureElapsed < SKY_CAPTURE_INTERVAL))
+        return;
+
+    if (!skyCaptureFramebuffer.isCreated() && !skyCaptureFramebuffer.createFramebuffer(TextureType::TEXTURE_CUBE,
+            SKY_CAPTURE_SIZE, SKY_CAPTURE_SIZE, TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, false))
+        return;
+
+    const Matrix4 viewProjection = sky.skyViewProjectionMatrix;
+    capturingReflectionProbe = true;
+    passResolution = resolution;
+    skyCapturePass.setClearColor(Vector4(0.0f, 0.0f, 0.0f, 1.0f));
+    for (int face = 0; face < 6; face++){
+        setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), face, 0.1f, 10.0f);
+        setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+        sky.skyViewProjectionMatrix = getSkyViewProjection(captureCamera, 0.0f);
+        skyCapturePass.startRenderPass(&skyCaptureFramebuffer, (size_t)face);
+        drawSky(sky, PIP_RTT_INVERT);
+        skyCapturePass.endRenderPass();
+    }
+    capturingReflectionProbe = false;
+    sky.skyViewProjectionMatrix = viewProjection;
+
+    // a texture still loading left the faces undrawn
+    if (sky.needUpdateTexture)
+        return;
+
+    if (!skyCaptureIrradiance)
+        skyCaptureIrradiance = std::make_shared<TextureRender>();
+    if (!skyCapturePrefiltered)
+        skyCapturePrefiltered = std::make_shared<TextureRender>();
+    if (!filterEnvironment(skyCaptureFramebuffer.getColorTexture(), SKY_CAPTURE_SIZE, *skyCapturePrefiltered, skyCaptureIrradiance.get()))
+        return;
+
+    skyCaptureInputs = std::move(inputs);
+    skyCaptureElapsed = 0.0f;
+    sky.needUpdateEnvironment = false;
+    if (sky.irradianceMap != skyCaptureIrradiance){
+        releaseSkyEnvironment(sky);
+        sky.irradianceMap = skyCaptureIrradiance;
+        sky.prefilteredMap = skyCapturePrefiltered;
+        sky.envMapsLoaded = true;
+        needReloadMeshes();
+    }
+}
+
+void RenderSystem::destroySkyCapture(){
+    skyCaptureFramebuffer.destroyFramebuffer();
+    if (skyCaptureIrradiance)
+        skyCaptureIrradiance->destroyTexture();
+    if (skyCapturePrefiltered)
+        skyCapturePrefiltered->destroyTexture();
+    skyCaptureIrradiance.reset();
+    skyCapturePrefiltered.reset();
+    skyCaptureInputs.clear();
+}
+
 // generates (or regenerates) the IBL environment maps from the sky texture,
 // must run while the texture pixels are still on CPU (before the sky GPU upload)
 void RenderSystem::updateSkyEnvironment(SkyComponent& sky){
+    // a shader file's sky is captured in the draw
+    if (isSkyCaptured(sky))
+        return;
+
+    // the maps of a shader file the sky no longer has give way to the texture's
+    if (skyCaptureFramebuffer.isCreated()){
+        releaseSkyEnvironment(sky);
+        destroySkyCapture();
+        sky.needUpdateEnvironment = true;
+    }
+
     if (!sky.needUpdateEnvironment)
         return;
 
@@ -1869,39 +2003,12 @@ void RenderSystem::renderReflectionProbeCapture(){
         runtime.ready = false;
     }
 
-    static const Vector3 directions[6] = {
-        Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 1, 0),
-        Vector3(0, -1, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)
-    };
-    static const Vector3 ups[6] = {
-        Vector3(0, -1, 0), Vector3(0, -1, 0), Vector3(0, 0, 1),
-        Vector3(0, 0, -1), Vector3(0, -1, 0), Vector3(0, -1, 0)
-    };
-
     int face = runtime.nextFace;
     Vector3 capturePosition = runtime.capturePosition;
 
     Transform captureTransform;
-    captureTransform.position = capturePosition;
-    captureTransform.worldPosition = capturePosition;
-    captureTransform.worldScale = Vector3(1.0f, 1.0f, 1.0f);
-    captureTransform.parent = NULL_ENTITY;
-
     CameraComponent captureCamera;
-    captureCamera.type = CameraType::CAMERA_PERSPECTIVE;
-    captureCamera.renderToTexture = true;
-    // cube faces flip on the opposite backends from 2D RTT (see
-    // isRenderingFlipped), so the matching winding is PIP_RTT_INVERT
-    captureCamera.invertCulling = true;
-    captureCamera.autoResize = false;
-    captureCamera.useTarget = true;
-    captureCamera.target = capturePosition + directions[face];
-    captureCamera.up = ups[face];
-    captureCamera.yfov = 1.57079632679f;
-    captureCamera.aspect = 1.0f;
-    captureCamera.nearClip = std::max(probe->nearClip, 0.001f);
-    captureCamera.farClip = std::max(probe->farClip, captureCamera.nearClip + 0.001f);
-    updateCamera(captureCamera, captureTransform);
+    setCaptureCamera(captureCamera, captureTransform, capturePosition, face, probe->nearClip, probe->farClip);
 
     const fs_lighting_t mainLighting = fs_lighting;
     fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 1.0f);
@@ -1965,6 +2072,37 @@ void RenderSystem::renderReflectionProbeCapture(){
     }
 }
 
+void RenderSystem::setCaptureCamera(CameraComponent& camera, Transform& transform, const Vector3& position, int face, float nearClip, float farClip){
+    static const Vector3 directions[6] = {
+        Vector3(1, 0, 0), Vector3(-1, 0, 0), Vector3(0, 1, 0),
+        Vector3(0, -1, 0), Vector3(0, 0, 1), Vector3(0, 0, -1)
+    };
+    static const Vector3 ups[6] = {
+        Vector3(0, -1, 0), Vector3(0, -1, 0), Vector3(0, 0, 1),
+        Vector3(0, 0, -1), Vector3(0, -1, 0), Vector3(0, -1, 0)
+    };
+
+    transform.position = position;
+    transform.worldPosition = position;
+    transform.worldScale = Vector3(1.0f, 1.0f, 1.0f);
+    transform.parent = NULL_ENTITY;
+
+    camera.type = CameraType::CAMERA_PERSPECTIVE;
+    camera.renderToTexture = true;
+    // cube faces flip on the opposite backends from 2D RTT (see
+    // isRenderingFlipped), so the matching winding is PIP_RTT_INVERT
+    camera.invertCulling = true;
+    camera.autoResize = false;
+    camera.useTarget = true;
+    camera.target = position + directions[face];
+    camera.up = ups[face];
+    camera.yfov = 1.57079632679f;
+    camera.aspect = 1.0f;
+    camera.nearClip = std::max(nearClip, 0.001f);
+    camera.farClip = std::max(farClip, camera.nearClip + 0.001f);
+    updateCamera(camera, transform);
+}
+
 void RenderSystem::loadProbeFilter(){
     if (probeFilterLoaded)
         return;
@@ -2000,8 +2138,6 @@ void RenderSystem::destroyProbeFilter(){
     probeFilterLoaded = false;
 }
 
-// Prefilters the finished captures like IBLEnvironment does the sky: a box mip chain of
-// the capture, then one GGX roughness per level sampled from it.
 void RenderSystem::filterReflectionProbes(){
     for (auto& entry : reflectionProbeRuntimes){
         ReflectionProbeRuntime& runtime = *entry.second;
@@ -2012,70 +2148,90 @@ void RenderSystem::filterReflectionProbes(){
         if (!probeFilterLoaded)
             return;
 
-        const int size = IBLEnvironment::SPECULAR_BASE_SIZE;
-        const int levels = IBLEnvironment::SPECULAR_MIPS;
-        const int captureSize = (int)runtime.resolution;
-        // like IBLEnvironment, the chain starts no larger than the prefiltered map
-        const int sourceSize = std::min(captureSize, size);
-        int sourceLevels = 1;
-        while ((sourceSize >> sourceLevels) > 0)
-            sourceLevels++;
-        auto createMap = [](TextureRender& map, int mapSize, int mapLevels){
-            return map.createFramebufferTexture(TextureType::TEXTURE_CUBE, false, false, mapSize, mapSize,
-                    TextureFilter::LINEAR_MIPMAP_LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE,
-                    ColorFormat::RGBA, mapLevels);
-        };
-        if (!probeSourceMap.isCreated() || probeSourceSize != sourceSize){
-            probeSourceMap.destroyTexture();
-            probeReduceMap.destroyTexture();
-            if (!createMap(probeSourceMap, sourceSize, sourceLevels) || !createMap(probeReduceMap, sourceSize, sourceLevels))
-                continue;
-            probeSourceSize = sourceSize;
-        }
-        if (!runtime.filteredMap.isCreated() && !createMap(runtime.filteredMap, size, levels))
-            continue;
-
-        ShaderData& sd = probeFilterShader.get()->shaderData;
-        auto filterPass = [&](TextureRender& target, TextureRender& source, int level, int face){
-            probeFilterPassRender.startRenderPass(&target, (size_t)face, level);
-            if (probeFilterRender.beginDraw(PIP_RTT_COLORONLY)){
-                probeFilterRender.addTexture(sd.getTextureIndex(TextureShaderType::PROBESOURCE), ShaderStageType::FRAGMENT, &source);
-                probeFilterRender.applyUniformBlock(probeFilterSlotParams, sizeof(fs_probe_filter_t), &fs_probe_filter);
-                probeFilterRender.draw(0, 3, 1);
-            }
-            probeFilterPassRender.endRenderPass();
-        };
-
-        auto downsampleLevel = [&](TextureRender& target, TextureRender& source, int level, int sourceLevel, int sourceBaseSize){
-            const int levelSize = sourceSize >> level;
-            const int sourceLevelSize = sourceBaseSize >> sourceLevel;
-            const float taps = (float)std::min(16, (sourceLevelSize + levelSize - 1) / levelSize);
-            for (int face = 0; face < 6; face++){
-                fs_probe_filter.params = Vector4(0.0f, (float)face, taps, 1.0f);
-                fs_probe_filter.source = Vector4((float)levelSize, (float)sourceBaseSize, 1.0f, (float)sourceLevel);
-                filterPass(target, source, level, face);
-            }
-        };
-
-        // each level is a 2x2 box of the one above, reduced into probeReduceMap and
-        // copied back, as a pass can't sample the texture it renders to
-        downsampleLevel(probeSourceMap, runtime.captureFramebuffer.getColorTexture(), 0, 0, captureSize);
-        for (int level = 1; level < sourceLevels; level++){
-            downsampleLevel(probeReduceMap, probeSourceMap, level, level - 1, sourceSize);
-            downsampleLevel(probeSourceMap, probeReduceMap, level, level, sourceSize);
-        }
-
-        for (int level = 0; level < levels; level++){
-            const float roughness = (float)level / (float)(levels - 1);
-            for (int face = 0; face < 6; face++){
-                fs_probe_filter.params = Vector4(roughness, (float)face, 64.0f, 0.0f);
-                fs_probe_filter.source = Vector4((float)(size >> level), (float)sourceSize, (float)sourceLevels, 0.0f);
-                filterPass(runtime.filteredMap, probeSourceMap, level, face);
-            }
-        }
-
-        runtime.needFilter = false;
+        if (filterEnvironment(runtime.captureFramebuffer.getColorTexture(), (int)runtime.resolution, runtime.filteredMap, nullptr))
+            runtime.needFilter = false;
     }
+}
+
+// Prefilters a capture like IBLEnvironment does a sky texture: a box mip chain of it,
+// then one GGX roughness per level sampled from it, and the irradiance from the same chain.
+bool RenderSystem::filterEnvironment(TextureRender& capture, int captureSize, TextureRender& prefiltered, TextureRender* irradiance){
+    loadProbeFilter();
+    if (!probeFilterLoaded)
+        return false;
+
+    const int size = IBLEnvironment::SPECULAR_BASE_SIZE;
+    const int levels = IBLEnvironment::SPECULAR_MIPS;
+    // like IBLEnvironment, the chain starts no larger than the prefiltered map
+    const int sourceSize = std::min(captureSize, size);
+    int sourceLevels = 1;
+    while ((sourceSize >> sourceLevels) > 0)
+        sourceLevels++;
+    auto createMap = [](TextureRender& map, int mapSize, int mapLevels){
+        return map.createFramebufferTexture(TextureType::TEXTURE_CUBE, false, false, mapSize, mapSize,
+                mapLevels > 1 ? TextureFilter::LINEAR_MIPMAP_LINEAR : TextureFilter::LINEAR, TextureFilter::LINEAR,
+                TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, ColorFormat::RGBA, mapLevels);
+    };
+    if (!probeSourceMap.isCreated() || probeSourceSize != sourceSize){
+        probeSourceMap.destroyTexture();
+        probeReduceMap.destroyTexture();
+        if (!createMap(probeSourceMap, sourceSize, sourceLevels) || !createMap(probeReduceMap, sourceSize, sourceLevels))
+            return false;
+        probeSourceSize = sourceSize;
+    }
+    if (!prefiltered.isCreated() && !createMap(prefiltered, size, levels))
+        return false;
+    if (irradiance && !irradiance->isCreated() && !createMap(*irradiance, IBLEnvironment::IRRADIANCE_SIZE, 1))
+        return false;
+
+    ShaderData& sd = probeFilterShader.get()->shaderData;
+    auto filterPass = [&](TextureRender& target, TextureRender& source, int level, int face){
+        probeFilterPassRender.startRenderPass(&target, (size_t)face, level);
+        if (probeFilterRender.beginDraw(PIP_RTT_COLORONLY)){
+            probeFilterRender.addTexture(sd.getTextureIndex(TextureShaderType::PROBESOURCE), ShaderStageType::FRAGMENT, &source);
+            probeFilterRender.applyUniformBlock(probeFilterSlotParams, sizeof(fs_probe_filter_t), &fs_probe_filter);
+            probeFilterRender.draw(0, 3, 1);
+        }
+        probeFilterPassRender.endRenderPass();
+    };
+
+    auto downsampleLevel = [&](TextureRender& target, TextureRender& source, int level, int sourceLevel, int sourceBaseSize){
+        const int levelSize = sourceSize >> level;
+        const int sourceLevelSize = sourceBaseSize >> sourceLevel;
+        const float taps = (float)std::min(16, (sourceLevelSize + levelSize - 1) / levelSize);
+        for (int face = 0; face < 6; face++){
+            fs_probe_filter.params = Vector4(0.0f, (float)face, taps, 1.0f);
+            fs_probe_filter.source = Vector4((float)levelSize, (float)sourceBaseSize, 1.0f, (float)sourceLevel);
+            filterPass(target, source, level, face);
+        }
+    };
+
+    // each level is a 2x2 box of the one above, reduced into probeReduceMap and
+    // copied back, as a pass can't sample the texture it renders to
+    downsampleLevel(probeSourceMap, capture, 0, 0, captureSize);
+    for (int level = 1; level < sourceLevels; level++){
+        downsampleLevel(probeReduceMap, probeSourceMap, level, level - 1, sourceSize);
+        downsampleLevel(probeSourceMap, probeReduceMap, level, level, sourceSize);
+    }
+
+    for (int level = 0; level < levels; level++){
+        const float roughness = (float)level / (float)(levels - 1);
+        for (int face = 0; face < 6; face++){
+            fs_probe_filter.params = Vector4(roughness, (float)face, 64.0f, 0.0f);
+            fs_probe_filter.source = Vector4((float)(size >> level), (float)sourceSize, (float)sourceLevels, 0.0f);
+            filterPass(prefiltered, probeSourceMap, level, face);
+        }
+    }
+
+    if (irradiance){
+        for (int face = 0; face < 6; face++){
+            fs_probe_filter.params = Vector4(0.0f, (float)face, 128.0f, 2.0f);
+            fs_probe_filter.source = Vector4((float)IBLEnvironment::IRRADIANCE_SIZE, (float)sourceSize, (float)sourceLevels, 0.0f);
+            filterPass(*irradiance, probeSourceMap, 0, face);
+        }
+    }
+
+    return true;
 }
 
 void RenderSystem::initShadowAtlasRects(){
@@ -6165,8 +6321,7 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
             SkyComponent& sky = skys->getComponentFromIndex(0);
             if (sky.prefilteredMap){
                 prefilteredTexture = sky.prefilteredMap.get();
-                Vector3 linColor = Color::sRGBToLinear(Vector3(sky.color.x, sky.color.y, sky.color.z));
-                fs_composite.envColor = Vector4(linColor.x, linColor.y, linColor.z, Angle::defaultToRad(sky.rotation));
+                fs_composite.envColor = getSkyEnvironment(sky);
             }
         }
     }
@@ -7638,12 +7793,17 @@ bool RenderSystem::loadSky(Entity entity, SkyComponent& sky, uint16_t pipelines)
         }
     }
 
-    if (!render->endLoad(pipelines, true, true, CullingMode::BACK, WindingOrder::CCW)){
+    // a shader file's sky also draws into its capture
+    const uint16_t skyPipelines = isSkyCaptured(sky) ? (uint16_t)(pipelines | PIP_RTT_INVERT) : pipelines;
+    if (!render->endLoad(skyPipelines, true, true, CullingMode::BACK, WindingOrder::CCW)){
         return false;
     }
 
     sky.needReload = false;
     sky.loadCalled = true;
+    if (isSkyCaptured(sky)){
+        sky.needUpdateEnvironment = true;
+    }
     SystemRender::addQueueCommand(&changeLoaded, new check_load_t{scene, entity});
 
     return true;
@@ -7672,7 +7832,7 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
             return false;
         }
         render.applyUniformBlock(sky.slotVSParams, sizeof(float) * 16, &sky.skyViewProjectionMatrix);
-        render.applyUniformBlock(sky.slotFSParams, sizeof(float) * 4, &sky.color);
+        render.applyUniformBlock(sky.slotFSParams, sizeof(fs_sky_t), &fs_sky);
         applyParameters(render, sky, scene, ShaderType::SKYBOX, Matrix4(), effectView, passResolution);
         render.draw(0, 36, 1);
     }
@@ -7696,6 +7856,7 @@ void RenderSystem::destroySky(Entity entity, SkyComponent& sky){
 
         //Release IBL environment maps (pooled maps are kept for reuse)
         releaseSkyEnvironment(sky);
+        destroySkyCapture();
         sky.needUpdateEnvironment = true;
     }
 
@@ -8448,7 +8609,12 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     auto skys = scene->getComponentArray<SkyComponent>();
     if (skys->size() > 0){
         SkyComponent& sky = skys->getComponentFromIndex(0);
-        if (sky.loaded){
+        if (isSkyCaptured(sky)){
+            // as the shader draws it
+            if (skyCaptureFramebuffer.isCreated()){
+                skyTexture = &skyCaptureFramebuffer.getColorTexture();
+            }
+        }else if (sky.loaded){
             TextureRender* texture = sky.texture.getRender(&emptyCubeWhite);
             if (texture && texture->isCreated()){
                 skyTexture = texture;
@@ -8458,8 +8624,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
             irradiance = sky.irradianceMap.get();
             iblAmbient = true;
         }
-        Vector3 linColor = Color::sRGBToLinear(Vector3(sky.color.x, sky.color.y, sky.color.z));
-        envColor = Vector4(linColor.x, linColor.y, linColor.z, Angle::defaultToRad(sky.rotation));
+        envColor = getSkyEnvironment(sky);
     }else{
         // no sky, reflects the background color
         Vector4 background = scene->getBackgroundColor();
@@ -9005,7 +9170,8 @@ void RenderSystem::drawUnderwater(WaterComponent& water, CameraComponent& camera
         if (hasIBL && skys->size() > 0 && skys->getComponentFromIndex(0).irradianceMap){
             SkyComponent& sky = skys->getComponentFromIndex(0);
             irradiance = sky.irradianceMap.get();
-            skyColor = Color::sRGBToLinear(Vector3(sky.color.x, sky.color.y, sky.color.z));
+            const Vector4 environment = getSkyEnvironment(sky);
+            skyColor = Vector3(environment.x, environment.y, environment.z);
             light = Vector3(0.0f, 0.0f, 0.0f);
         }else{
             light = scene->getGlobalIlluminationColorLinear() * scene->getGlobalIlluminationIntensity();
@@ -9576,6 +9742,11 @@ void RenderSystem::updateMirrors(Entity mainCameraEntity){
 }
 
 void RenderSystem::updateSkyViewProjection(SkyComponent& sky, CameraComponent& camera){
+    sky.skyViewProjectionMatrix = getSkyViewProjection(camera, sky.rotation);
+    sky.needUpdateSky = false;
+}
+
+Matrix4 RenderSystem::getSkyViewProjection(const CameraComponent& camera, float rotation) const{
     Matrix4 skyViewMatrix = camera.viewMatrix;
 
     skyViewMatrix.set(3,0,0);
@@ -9586,16 +9757,16 @@ void RenderSystem::updateSkyViewProjection(SkyComponent& sky, CameraComponent& c
     skyViewMatrix.set(1,3,0);
     skyViewMatrix.set(0,3,0);
 
-    Matrix4 rotationMatrix = Quaternion(0, sky.rotation, 0).getRotationMatrix();
+    Matrix4 rotationMatrix = Quaternion(0, rotation, 0).getRotationMatrix();
 
-    sky.skyViewProjectionMatrix = camera.projectionMatrix * skyViewMatrix * rotationMatrix;
+    Matrix4 viewProjection = camera.projectionMatrix * skyViewMatrix * rotationMatrix;
 
     if (isRenderingFlipped(camera)){
         static const Matrix4 flipYMatrix = Matrix4::scaleMatrix(Vector3(1, -1, 1));
-        sky.skyViewProjectionMatrix = flipYMatrix * sky.skyViewProjectionMatrix;
+        viewProjection = flipYMatrix * viewProjection;
     }
 
-    sky.needUpdateSky = false;
+    return viewProjection;
 }
 
 void RenderSystem::updatePoints(PointsComponent& points, Transform& transform, CameraComponent& camera, Transform& camTransform){
@@ -11102,6 +11273,7 @@ void RenderSystem::update(double dt){
 
     auto skys = scene->getComponentArray<SkyComponent>();
     bool newHasIBL = false;
+    skyCaptureElapsed += (float)dt;
     if (skys->size() > 0){
         SkyComponent& sky = skys->getComponentFromIndex(0);
         Entity entity = skys->getEntity(0);
@@ -11849,6 +12021,14 @@ void RenderSystem::draw(){
 
             shadow2DAtlasPassRender.endRenderPass();
         }
+    }
+
+    // the sky every pass draws this frame, and its lighting when it changed
+    auto skys = scene->getComponentArray<SkyComponent>();
+    if (skys->size() > 0){
+        SkyComponent& sky = skys->getComponentFromIndex(0);
+        updateSkyParams(sky);
+        captureSky(sky);
     }
 
     // Runtime-captured probes share a strict budget: one cubemap face total per

@@ -3063,7 +3063,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v76: morphed hook normals, flat normals without lights.
     // v77: bloom passes.
     // v78: tone mapping.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v78";
+    // v79: sky sun, irradiance filter.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v79";
 }
 
 void editor::App::pushTabNotificationStyle(){

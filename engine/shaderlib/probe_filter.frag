@@ -2,7 +2,8 @@
 
 // Reflection probe prefilter, one face of one mip level per pass. Downsampling builds a box
 // mip chain of the capture; the GGX mode importance samples that chain into one roughness per
-// level (level / ENV_GGX_LODS), with N = V = R like IBLEnvironment does for the sky.
+// level (level / ENV_GGX_LODS), with N = V = R like IBLEnvironment does for the sky, and the
+// irradiance mode averages it over the cosine-weighted hemisphere.
 
 in vec2 v_texcoord;
 out vec4 frag_color;
@@ -11,7 +12,7 @@ uniform textureCube u_probeSourceTexture;
 uniform sampler u_probeSource_smp;
 
 uniform u_fs_probeFilterParams {
-    vec4 params; // x = roughness, y = cube face, z = samples (taps per side when downsampling), w = 1 to downsample
+    vec4 params; // x = roughness, y = cube face, z = samples (taps per side when downsampling), w = 1 to downsample, 2 for irradiance
     vec4 source; // x = destination level size, y = source base size, z = source mip count, w = source level when downsampling
 } filterParams;
 
@@ -98,11 +99,42 @@ vec3 filterGGX(int face, float roughness){
     return color / max(weight, 0.0001);
 }
 
+// the cosine-weighted average around the texel's direction, as IBLEnvironment's irradiance over PI
+vec3 filterIrradiance(int face){
+    vec3 n = normalize(faceDirection(face, v_texcoord));
+    vec3 up = abs(n.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent = normalize(cross(up, n));
+    vec3 bitangent = cross(n, tangent);
+
+    int count = int(filterParams.params.z + 0.5);
+    float sourceSize = filterParams.source.y;
+    float texelSolidAngle = 4.0 * PI / (6.0 * sourceSize * sourceSize);
+    float maxLod = filterParams.source.z - 1.0;
+
+    vec3 color = vec3(0.0);
+    for (int i = 0; i < MAX_SAMPLES; i++){
+        if (i >= count) break;
+        vec2 xi = vec2(float(i) / float(count), radicalInverse(uint(i)));
+        float phi = 2.0 * PI * xi.x;
+        float cosTheta = sqrt(1.0 - xi.y);
+        float sinTheta = sqrt(xi.y);
+        vec3 l = tangent * (cos(phi) * sinTheta) + bitangent * (sin(phi) * sinTheta) + n * cosTheta;
+        // the source mip follows the sample's solid angle, with the pdf cos / PI
+        float sampleSolidAngle = PI / (float(count) * max(cosTheta, 0.0001));
+        float lod = clamp(0.5 * log2(sampleSolidAngle / texelSolidAngle) + 1.0, 0.0, maxLod);
+        color += sampleSource(l, lod);
+    }
+    return color / float(max(count, 1));
+}
+
 void main(){
     int face = int(filterParams.params.y + 0.5);
+    int mode = int(filterParams.params.w + 0.5);
     vec3 color;
-    if (filterParams.params.w > 0.5){
+    if (mode == 1){
         color = downsample(face);
+    }else if (mode == 2){
+        color = filterIrradiance(face);
     }else if (filterParams.params.x <= 0.0){
         // mirror level: a copy from the source level of the same size
         color = sampleSource(faceDirection(face, v_texcoord), max(0.0, log2(filterParams.source.y / filterParams.source.x)));

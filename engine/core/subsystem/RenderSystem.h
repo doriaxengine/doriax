@@ -78,9 +78,15 @@ namespace doriax{
 	} fs_reflection_probe_t;
 
 	typedef struct fs_probe_filter_t {
-		Vector4 params; // x = roughness, y = cube face, z = samples (taps per side when downsampling), w = 1 to downsample
+		Vector4 params; // x = roughness, y = cube face, z = samples (taps per side when downsampling), w = 1 to downsample, 2 for irradiance
 		Vector4 source; // x = destination level size, y = source base size, z = source mip count
 	} fs_probe_filter_t;
+
+	typedef struct fs_sky_t {
+		Vector4 color;        // sRGB
+		Vector4 sunDirection; // toward the strongest directional light, in the sky's space; w = 1 with one
+		Vector4 sunColor;     // its color times intensity, linear
+	} fs_sky_t;
 
 	typedef struct vs_shadow2d_t {
 		Vector4 lightPos_range; // xy = light world pos, w = range
@@ -413,6 +419,15 @@ namespace doriax{
 		std::shared_ptr<ShaderRender> probeFilterShader;
 		fs_probe_filter_t fs_probe_filter;
 		int probeFilterSlotParams;
+
+		// a sky drawn by a shader file lights the scene from a capture of itself, filtered as the probes are
+		FramebufferRender skyCaptureFramebuffer;
+		CameraRender skyCapturePass;
+		std::shared_ptr<TextureRender> skyCaptureIrradiance;
+		std::shared_ptr<TextureRender> skyCapturePrefiltered;
+		std::vector<uint8_t> skyCaptureInputs; // what the sky shader read for the last capture
+		float skyCaptureElapsed;
+		fs_sky_t fs_sky;
 
 		// Each mirror's reflection camera. Kept here so the authored component stays copiable.
 		std::unordered_map<Entity, Entity> mirrorCameras;
@@ -792,11 +807,22 @@ namespace doriax{
 		bool loadAndProcessFog();
 		void releaseSkyEnvironment(SkyComponent& sky);
 		void updateSkyEnvironment(SkyComponent& sky);
+		// drawn by a shader file, so its lighting comes from a capture
+		bool isSkyCaptured(const SkyComponent& sky) const;
+		// the tint and rotation, in radians, the sky's lighting maps take
+		Vector4 getSkyEnvironment(const SkyComponent& sky) const;
+		void updateSkyParams(const SkyComponent& sky);
+		void captureSky(SkyComponent& sky);
+		void destroySkyCapture();
 		void updateReflectionProbes(double dt);
 		void renderReflectionProbeCapture();
 		void loadProbeFilter();
 		void destroyProbeFilter();
 		void filterReflectionProbes();
+		// prefilters a captured cube into the GGX levels, and the irradiance map when given
+		bool filterEnvironment(TextureRender& capture, int captureSize, TextureRender& prefiltered, TextureRender* irradiance);
+		// the cube face camera of a capture at position
+		void setCaptureCamera(CameraComponent& camera, Transform& transform, const Vector3& position, int face, float nearClip, float farClip);
 		void releaseReflectionProbeMaps(ReflectionProbeRuntime& runtime);
 		void destroyReflectionProbe(Entity entity, ReflectionProbeComponent& probe);
 		bool selectReflectionProbe(const Vector3& worldPosition, fs_reflection_probe_t& params, TextureRender*& texture);
@@ -1026,6 +1052,7 @@ namespace doriax{
 		void destroyCamera(CameraComponent& camera, bool entityDestroyed);
 		
 		void updateSkyViewProjection(SkyComponent& sky, CameraComponent& camera);
+		Matrix4 getSkyViewProjection(const CameraComponent& camera, float rotation) const;
 		void updateLightFromScene(LightComponent& light, Transform& transform, CameraComponent& camera, Transform& cameraTransform);
 		void updatePoints(PointsComponent& points, Transform& transform, CameraComponent& camera, Transform& camTransform);
 		void updateTerrain(TerrainComponent& terrain, Transform& transform, CameraComponent& camera, Transform& cameraTransform, int viewIndex);
