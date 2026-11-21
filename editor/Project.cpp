@@ -4207,9 +4207,9 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
                     uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
                     // Saving/exporting can happen before RenderSystem has reloaded
-                    // meshes after a probe was added. Derive the required IBL
+                    // meshes after a probe or an IBL sky was added. Derive the required IBL
                     // variant here so the exported shader set is still complete.
-                    if (hasReflectionProbes && mesh.receiveLights && mesh.receiveIBL) {
+                    if ((hasReflectionProbes || authoredShading.ibl) && mesh.receiveLights && mesh.receiveIBL) {
                         meshProperties &= ~(1u << 0); // no longer MATERIAL_UNLIT
                         meshProperties |= (1u << 6);  // HAS_NORMALS
                         meshProperties |= (1u << 19); // USE_IBL
@@ -4227,6 +4227,14 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                         }
                     }
                     insertKeys(ShaderType::MESH, meshProperties, customShaderId);
+                    // and the one a reload takes from the scene as it is now, as after a sky change
+                    if (!isTerrain && (mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0)) {
+                        const bool skinned = signature.test(scene->getComponentId<SkinComponent>());
+                        const RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, skinned);
+                        const RenderSystem::SubmeshShading shading = renderSystem->getSubmeshShading(entity, mesh, s, attributes, authoredShading,
+                            scene->findComponent<InstancedMeshComponent>(entity), nullptr);
+                        insertKeys(ShaderType::MESH, shading.properties, shading.shaderFileId);
+                    }
                     // The runtime only computes depthShaderProperties while
                     // shadows or SSAO are active, so the
                     // stored value can be a stale 0 for scenes whose shadow lights

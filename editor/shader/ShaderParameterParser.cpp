@@ -190,6 +190,10 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
     scanContextReads(code, "Surface", out.surfaceReads);
+    for (size_t at = code.find('.'); at != std::string::npos; at = code.find('.', at + 1)){
+        size_t i = at + 1;
+        out.memberReads.insert(readIdentifier(code, i));
+    }
     for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
         if (callsFunction(code, input))
             out.sceneReads.insert(input);

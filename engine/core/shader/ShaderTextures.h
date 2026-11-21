@@ -59,15 +59,6 @@ namespace doriax{
             return true;
         }
 
-        static bool hasFramebuffer(const ShaderTextureValues& textures){
-            for (const auto& entry : textures){
-                if (entry.second.isFramebuffer())
-                    return true;
-            }
-
-            return false;
-        }
-
         static bool isFramebufferOutdated(const ShaderTextureValues& textures){
             for (const auto& entry : textures){
                 if (entry.second.isFramebufferOutdated())

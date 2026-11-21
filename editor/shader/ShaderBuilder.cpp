@@ -574,8 +574,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
             declared.flags |= ShaderFlag_VertexColor;
     }
-    // a sky's lighting is captured again for the sun only when it reads it
-    if (passType == ShaderType::SKYBOX && useFragmentHooks && (fragmentReads.count("sunDirection") || fragmentReads.count("sunColor")))
+    // a sky's lighting is captured again for the sun only when it reads it, as (context).sunColor too
+    const std::set<std::string>& members = fragmentHooks.memberReads;
+    if (passType == ShaderType::SKYBOX && useFragmentHooks && (members.count("sunDirection") || members.count("sunColor")))
         declared.flags |= ShaderFlag_SkySun;
 
     // the model matrix of the types whose own blocks lack it

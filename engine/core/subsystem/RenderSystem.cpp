@@ -284,6 +284,18 @@ namespace {
         return FramebufferRender::isColorFormatSupported(ColorFormat::RGBA16F) ? ColorFormat::RGBA16F : ColorFormat::RGBA;
     }
 
+    // a framebuffer the shader samples, which changes with no value changing
+    bool samplesFramebuffer(const ShaderTextureValues& textures, ShaderData& shaderData){
+        for (const ShaderTextureInfo& parameter : shaderData.textureParameters){
+            if (shaderData.getTextureParameterIndex(parameter).first == -1)
+                continue;
+            const Texture* texture = ShaderTextures::find(textures, parameter.name);
+            if (texture && texture->isFramebuffer())
+                return true;
+        }
+        return false;
+    }
+
     // both stages of a single-shader component, when its values changed
     template<typename T>
     void writeComponentParameters(T& component, const Scene* scene, ShaderType type){
@@ -1577,14 +1589,17 @@ void RenderSystem::captureSky(SkyComponent& sky){
         read.sunDirection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
         read.sunColor = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
-    std::vector<uint8_t> inputs(sizeof(fs_sky_t) + sky.paramsFS.data.size());
+    // the background shows where the sky is transparent
+    const Vector4 background = scene->getBackgroundColor();
+    std::vector<uint8_t> inputs(sizeof(fs_sky_t) + sizeof(Vector4) + sky.paramsFS.data.size());
     std::memcpy(inputs.data(), &read, sizeof(fs_sky_t));
+    std::memcpy(inputs.data() + sizeof(fs_sky_t), &background, sizeof(Vector4));
     if (!sky.paramsFS.data.empty())
-        std::memcpy(inputs.data() + sizeof(fs_sky_t), sky.paramsFS.data.data(), sky.paramsFS.data.size());
+        std::memcpy(inputs.data() + sizeof(fs_sky_t) + sizeof(Vector4), sky.paramsFS.data.data(), sky.paramsFS.data.size());
 
     // a framebuffer it samples changes without a value changing; a sky that keeps changing
     // is captured again every SKY_CAPTURE_INTERVAL at most
-    const bool live = sky.texture.isFramebuffer() || ShaderTextures::hasFramebuffer(sky.shaderTextures);
+    const bool live = sky.texture.isFramebuffer() || samplesFramebuffer(sky.shaderTextures, sky.shaderRender->shaderData);
     const bool changed = live || inputs != skyCaptureInputs;
     if (!sky.needUpdateEnvironment && (!changed || skyCaptureElapsed < SKY_CAPTURE_INTERVAL))
         return;
@@ -1597,7 +1612,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
     const Matrix4 viewProjection = sky.skyViewProjectionMatrix;
     capturingReflectionProbe = true;
     passResolution = resolution;
-    skyCapturePass.setClearColor(Vector4(0.0f, 0.0f, 0.0f, 1.0f));
+    skyCapturePass.setClearColor(background);
     for (int face = 0; face < 6; face++){
         setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), face, 0.1f, 10.0f);
         setEffectView(NULL_ENTITY, captureCamera, captureTransform);
@@ -2023,7 +2038,7 @@ void RenderSystem::renderReflectionProbeCapture(){
     if (!runtime.captureFramebuffer.isCreated() || runtime.resolution != resolution){
         runtime.captureFramebuffer.destroyFramebuffer();
         if (!runtime.captureFramebuffer.createFramebuffer(TextureType::TEXTURE_CUBE, (int)resolution, (int)resolution,
-                TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, false)){
+                TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, false, environmentFormat())){
             return;
         }
         runtime.resolution = resolution;

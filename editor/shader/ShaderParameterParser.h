@@ -52,6 +52,8 @@ namespace doriax::editor {
         bool light = false;
         // fields they read of their context
         std::set<std::string> contextReads;
+        // every field read of anything, for when a context reaches it other ways
+        std::set<std::string> memberReads;
         // and of a surface, or set: getSurface both reads and writes it
         std::set<std::string> surfaceReads;
         // sceneColor, sceneDepth, sceneNormal, sceneOcclusion
