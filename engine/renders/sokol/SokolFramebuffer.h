@@ -35,7 +35,7 @@ namespace doriax{
         SokolFramebuffer(const SokolFramebuffer& rhs);
         SokolFramebuffer& operator=(const SokolFramebuffer& rhs);
 
-        bool createFramebuffer(TextureType textureType, int width, int height, TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV, bool shadowMap);
+        bool createFramebuffer(TextureType textureType, int width, int height, TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV, bool shadowMap, ColorFormat format = ColorFormat::RGBA);
         bool createDepthOnlyFramebuffer(int width, int height, TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV, bool shadowMap);
         // Multi render target variant (2D only). formats[i] selects the pixel format
         // for color attachment i; pass numColor==1 for the regular single-target case.

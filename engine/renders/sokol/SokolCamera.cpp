@@ -76,6 +76,7 @@ void SokolCamera::startRenderPass(TextureRender* texture, size_t face, int mip){
     pass.swapchain.invalid = (textureView.id == SG_INVALID_ID);
     pass.attachments = {};
     pass.attachments.colors[0] = textureView;
+    SokolObject::setPassColorFormat(texture->backend.getColorFormat());
     sg_begin_pass(pass);
 }
 

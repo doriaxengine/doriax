@@ -67,14 +67,16 @@ SokolTexture::SokolTexture(){
     image.id = SG_INVALID_ID;
     sampler.id = SG_INVALID_ID;
     view.id = SG_INVALID_ID;
+    colorFormat = ColorFormat::RGBA;
 }
 
-SokolTexture::SokolTexture(const SokolTexture& rhs): image(rhs.image), sampler(rhs.sampler), view(rhs.view) {}
+SokolTexture::SokolTexture(const SokolTexture& rhs): image(rhs.image), sampler(rhs.sampler), view(rhs.view), colorFormat(rhs.colorFormat) {}
 
 SokolTexture& SokolTexture::operator=(const SokolTexture& rhs){
     image = rhs.image;
     sampler = rhs.sampler;
     view = rhs.view;
+    colorFormat = rhs.colorFormat;
     return *this;
 }
 
@@ -554,6 +556,7 @@ bool SokolTexture::createFramebufferTexture(
     } else {
         img_desc.pixel_format = getRenderTargetFormat(colorFormat);
         img_desc.label = "framebuffer-color-image";
+        this->colorFormat = colorFormat;
     }
 
     if (Engine::isAsyncThread()){
@@ -598,6 +601,7 @@ void SokolTexture::destroyTexture(){
     image.id = SG_INVALID_ID;
     sampler.id = SG_INVALID_ID;
     view.id = SG_INVALID_ID;
+    colorFormat = ColorFormat::RGBA;
 }
 
 uint32_t SokolTexture::getGLHandler() const{
@@ -653,6 +657,10 @@ uint32_t SokolTexture::getViewId() const{
 bool SokolTexture::isViewValid(uint32_t viewId){
     if (viewId == SG_INVALID_ID || !sg_isvalid()) return false;
     return sg_query_view_state({viewId}) == SG_RESOURCESTATE_VALID;
+}
+
+ColorFormat SokolTexture::getColorFormat() const{
+    return colorFormat;
 }
 
 bool SokolTexture::isCreated(){

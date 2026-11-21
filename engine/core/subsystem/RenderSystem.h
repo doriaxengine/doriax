@@ -813,6 +813,8 @@ namespace doriax{
 		Vector4 getSkyEnvironment(const SkyComponent& sky) const;
 		void updateSkyParams(const SkyComponent& sky);
 		void captureSky(SkyComponent& sky);
+		// the sky's lighting maps, black until it has them
+		void addSkyEnvironment(ObjectRender& render, ShaderData& shaderData);
 		void destroySkyCapture();
 		void updateReflectionProbes(double dt);
 		void renderReflectionProbeCapture();
@@ -820,7 +822,7 @@ namespace doriax{
 		void destroyProbeFilter();
 		void filterReflectionProbes();
 		// prefilters a captured cube into the GGX levels, and the irradiance map when given
-		bool filterEnvironment(TextureRender& capture, int captureSize, TextureRender& prefiltered, TextureRender* irradiance);
+		bool filterEnvironment(TextureRender& capture, int captureSize, ColorFormat format, TextureRender& prefiltered, TextureRender* irradiance);
 		// the cube face camera of a capture at position
 		void setCaptureCamera(CameraComponent& camera, Transform& transform, const Vector3& position, int face, float nearClip, float farClip);
 		void releaseReflectionProbeMaps(ReflectionProbeRuntime& runtime);

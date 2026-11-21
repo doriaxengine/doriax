@@ -15,6 +15,7 @@ namespace doriax{
         sg_image image;
         sg_sampler sampler;
         sg_view view;
+        ColorFormat colorFormat; // of a render target
 
         sg_image_type getTextureType(TextureType textureType);
         sg_filter getFilter(TextureFilter textureFilter);
@@ -70,6 +71,7 @@ namespace doriax{
         static bool isViewValid(uint32_t viewId);
 
         bool isCreated();
+        ColorFormat getColorFormat() const;
 
         sg_image get();
         sg_sampler getSampler();

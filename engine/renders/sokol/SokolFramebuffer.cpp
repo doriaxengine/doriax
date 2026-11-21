@@ -47,7 +47,7 @@ SokolFramebuffer& SokolFramebuffer::operator=(const SokolFramebuffer& rhs){
     return *this;
 }
 
-bool SokolFramebuffer::createFramebuffer(TextureType textureType, int width, int height, TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV, bool shadowMap){
+bool SokolFramebuffer::createFramebuffer(TextureType textureType, int width, int height, TextureFilter minFilter, TextureFilter magFilter, TextureWrap wrapU, TextureWrap wrapV, bool shadowMap, ColorFormat format){
     if ((textureType != TextureType::TEXTURE_2D) && (textureType != TextureType::TEXTURE_CUBE)){
         Log::error("Framebuffer texture type must be 2D or CUBE");
         return false;
@@ -56,9 +56,9 @@ bool SokolFramebuffer::createFramebuffer(TextureType textureType, int width, int
     destroyFramebuffer();
 
     numColorAttachments = 1;
-    colorFormat = ColorFormat::RGBA;
+    colorFormat = format;
 
-    bool colorCreated = colorTexture[0].createFramebufferTexture(textureType, false, shadowMap, width, height, minFilter, magFilter, wrapU, wrapV);
+    bool colorCreated = colorTexture[0].createFramebufferTexture(textureType, false, shadowMap, width, height, minFilter, magFilter, wrapU, wrapV, format);
     bool depthCreated = depthTexture.createFramebufferTexture(TextureType::TEXTURE_2D, true, shadowMap, width, height, minFilter, magFilter, wrapU, wrapV);
 
     if (!colorCreated || !depthCreated) {

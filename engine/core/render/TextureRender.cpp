@@ -102,6 +102,10 @@ bool TextureRender::isCreated(){
     return backend.isCreated();
 }
 
+ColorFormat TextureRender::getColorFormat(){
+    return backend.getColorFormat();
+}
+
 void TextureRender::setTransparent(bool transparent){
     this->transparent = transparent;
 }

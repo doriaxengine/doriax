@@ -279,6 +279,11 @@ namespace {
         applyParameters(render, block, view, resolution);
     }
 
+    // of the lighting maps, float where it renders so a sky brighter than white lights as bright
+    ColorFormat environmentFormat(){
+        return FramebufferRender::isColorFormatSupported(ColorFormat::RGBA16F) ? ColorFormat::RGBA16F : ColorFormat::RGBA;
+    }
+
     // both stages of a single-shader component, when its values changed
     template<typename T>
     void writeComponentParameters(T& component, const Scene* scene, ShaderType type){
@@ -1564,21 +1569,29 @@ void RenderSystem::captureSky(SkyComponent& sky){
     setEffectView(NULL_ENTITY, captureCamera, captureTransform);
     const Vector2 resolution((float)SKY_CAPTURE_SIZE, (float)SKY_CAPTURE_SIZE);
 
-    // what the shader reads, as the capture would write it
+    // what the shader reads, as the capture would write it; the sun only when it reads it
     writeComponentParameters(sky, scene, ShaderType::SKYBOX);
     sky.paramsFS.writeFrame(effectView, resolution);
+    fs_sky_t read = fs_sky;
+    if (!(sky.shaderRender->shaderData.flags & ShaderFlag_SkySun)){
+        read.sunDirection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        read.sunColor = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
     std::vector<uint8_t> inputs(sizeof(fs_sky_t) + sky.paramsFS.data.size());
-    std::memcpy(inputs.data(), &fs_sky, sizeof(fs_sky_t));
+    std::memcpy(inputs.data(), &read, sizeof(fs_sky_t));
     if (!sky.paramsFS.data.empty())
         std::memcpy(inputs.data() + sizeof(fs_sky_t), sky.paramsFS.data.data(), sky.paramsFS.data.size());
 
-    // a sky that keeps changing is captured again every SKY_CAPTURE_INTERVAL at most
-    const bool changed = inputs != skyCaptureInputs;
+    // a framebuffer it samples changes without a value changing; a sky that keeps changing
+    // is captured again every SKY_CAPTURE_INTERVAL at most
+    const bool live = sky.texture.isFramebuffer() || ShaderTextures::hasFramebuffer(sky.shaderTextures);
+    const bool changed = live || inputs != skyCaptureInputs;
     if (!sky.needUpdateEnvironment && (!changed || skyCaptureElapsed < SKY_CAPTURE_INTERVAL))
         return;
 
+    const ColorFormat format = environmentFormat();
     if (!skyCaptureFramebuffer.isCreated() && !skyCaptureFramebuffer.createFramebuffer(TextureType::TEXTURE_CUBE,
-            SKY_CAPTURE_SIZE, SKY_CAPTURE_SIZE, TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, false))
+            SKY_CAPTURE_SIZE, SKY_CAPTURE_SIZE, TextureFilter::LINEAR, TextureFilter::LINEAR, TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, false, format))
         return;
 
     const Matrix4 viewProjection = sky.skyViewProjectionMatrix;
@@ -1604,19 +1617,34 @@ void RenderSystem::captureSky(SkyComponent& sky){
         skyCaptureIrradiance = std::make_shared<TextureRender>();
     if (!skyCapturePrefiltered)
         skyCapturePrefiltered = std::make_shared<TextureRender>();
-    if (!filterEnvironment(skyCaptureFramebuffer.getColorTexture(), SKY_CAPTURE_SIZE, *skyCapturePrefiltered, skyCaptureIrradiance.get()))
+    if (!filterEnvironment(skyCaptureFramebuffer.getColorTexture(), SKY_CAPTURE_SIZE, format, *skyCapturePrefiltered, skyCaptureIrradiance.get()))
         return;
 
     skyCaptureInputs = std::move(inputs);
     skyCaptureElapsed = 0.0f;
     sky.needUpdateEnvironment = false;
+    // the meshes drew with the IBL variant all along and bind the maps on each draw
     if (sky.irradianceMap != skyCaptureIrradiance){
         releaseSkyEnvironment(sky);
         sky.irradianceMap = skyCaptureIrradiance;
         sky.prefilteredMap = skyCapturePrefiltered;
         sky.envMapsLoaded = true;
-        needReloadMeshes();
     }
+}
+
+void RenderSystem::addSkyEnvironment(ObjectRender& render, ShaderData& shaderData){
+    TextureRender* irradiance = &emptyCubeBlack;
+    TextureRender* prefiltered = &emptyCubeBlack;
+    auto skys = scene->getComponentArray<SkyComponent>();
+    if (skys->size() > 0){
+        SkyComponent& sky = skys->getComponentFromIndex(0);
+        if (sky.irradianceMap && sky.prefilteredMap){
+            irradiance = sky.irradianceMap.get();
+            prefiltered = sky.prefilteredMap.get();
+        }
+    }
+    render.addTexture(shaderData.getTextureIndex(TextureShaderType::IRRADIANCEMAP), ShaderStageType::FRAGMENT, irradiance);
+    render.addTexture(shaderData.getTextureIndex(TextureShaderType::PREFILTEREDMAP), ShaderStageType::FRAGMENT, prefiltered);
 }
 
 void RenderSystem::destroySkyCapture(){
@@ -2148,14 +2176,14 @@ void RenderSystem::filterReflectionProbes(){
         if (!probeFilterLoaded)
             return;
 
-        if (filterEnvironment(runtime.captureFramebuffer.getColorTexture(), (int)runtime.resolution, runtime.filteredMap, nullptr))
+        if (filterEnvironment(runtime.captureFramebuffer.getColorTexture(), (int)runtime.resolution, environmentFormat(), runtime.filteredMap, nullptr))
             runtime.needFilter = false;
     }
 }
 
 // Prefilters a capture like IBLEnvironment does a sky texture: a box mip chain of it,
 // then one GGX roughness per level sampled from it, and the irradiance from the same chain.
-bool RenderSystem::filterEnvironment(TextureRender& capture, int captureSize, TextureRender& prefiltered, TextureRender* irradiance){
+bool RenderSystem::filterEnvironment(TextureRender& capture, int captureSize, ColorFormat format, TextureRender& prefiltered, TextureRender* irradiance){
     loadProbeFilter();
     if (!probeFilterLoaded)
         return false;
@@ -2167,21 +2195,25 @@ bool RenderSystem::filterEnvironment(TextureRender& capture, int captureSize, Te
     int sourceLevels = 1;
     while ((sourceSize >> sourceLevels) > 0)
         sourceLevels++;
-    auto createMap = [](TextureRender& map, int mapSize, int mapLevels){
+    // in the capture's format, kept when it already is
+    auto createMap = [format](TextureRender& map, int mapSize, int mapLevels){
+        if (map.isCreated() && map.getColorFormat() == format)
+            return true;
+        map.destroyTexture();
         return map.createFramebufferTexture(TextureType::TEXTURE_CUBE, false, false, mapSize, mapSize,
                 mapLevels > 1 ? TextureFilter::LINEAR_MIPMAP_LINEAR : TextureFilter::LINEAR, TextureFilter::LINEAR,
-                TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, ColorFormat::RGBA, mapLevels);
+                TextureWrap::CLAMP_TO_EDGE, TextureWrap::CLAMP_TO_EDGE, format, mapLevels);
     };
-    if (!probeSourceMap.isCreated() || probeSourceSize != sourceSize){
+    if (!probeSourceMap.isCreated() || probeSourceSize != sourceSize || probeSourceMap.getColorFormat() != format){
         probeSourceMap.destroyTexture();
         probeReduceMap.destroyTexture();
         if (!createMap(probeSourceMap, sourceSize, sourceLevels) || !createMap(probeReduceMap, sourceSize, sourceLevels))
             return false;
         probeSourceSize = sourceSize;
     }
-    if (!prefiltered.isCreated() && !createMap(prefiltered, size, levels))
+    if (!createMap(prefiltered, size, levels))
         return false;
-    if (irradiance && !irradiance->isCreated() && !createMap(*irradiance, IBLEnvironment::IRRADIANCE_SIZE, 1))
+    if (irradiance && !createMap(*irradiance, IBLEnvironment::IRRADIANCE_SIZE, 1))
         return false;
 
     ShaderData& sd = probeFilterShader.get()->shaderData;
@@ -3303,11 +3335,11 @@ RenderSystem::SceneShading RenderSystem::getAuthoredSceneShading() const{
     // the project draws the fog the editor can hide
     shading.fog = scene->getComponentArray<FogComponent>()->size() > 0;
 
-    // as updateSkyEnvironment, which makes the maps of a cube sky
+    // as updateSkyEnvironment, which makes the maps of a cube sky, and captureSky those of a shader sky
     auto skys = scene->getComponentArray<SkyComponent>();
     if (skys->size() > 0){
-        const Texture& sky = skys->getComponentFromIndex(0).texture;
-        shading.ibl = !sky.empty() && sky.getNumFaces() == 6;
+        const SkyComponent& sky = skys->getComponentFromIndex(0);
+        shading.ibl = isSkyCaptured(sky) || (!sky.texture.empty() && sky.texture.getNumFaces() == 6);
     }
     shading.reflectionProbes = scene->getComponentArray<ReflectionProbeComponent>()->size() > 0;
 
@@ -3796,18 +3828,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         loadShadow2DTexture(shaderData, mesh.submeshes[i].render, sh.shadows2d);
 
         if (sh.ibl){
-            auto skyArray = scene->getComponentArray<SkyComponent>();
-            TextureRender* irradiance = &emptyCubeBlack;
-            TextureRender* prefiltered = &emptyCubeBlack;
-            if (skyArray->size() > 0){
-                SkyComponent& sky = skyArray->getComponentFromIndex(0);
-                if (sky.irradianceMap && sky.prefilteredMap){
-                    irradiance = sky.irradianceMap.get();
-                    prefiltered = sky.prefilteredMap.get();
-                }
-            }
-            render.addTexture(shaderData.getTextureIndex(TextureShaderType::IRRADIANCEMAP), ShaderStageType::FRAGMENT, irradiance);
-            render.addTexture(shaderData.getTextureIndex(TextureShaderType::PREFILTEREDMAP), ShaderStageType::FRAGMENT, prefiltered);
+            addSkyEnvironment(render, shaderData);
             render.addTexture(shaderData.getTextureIndex(TextureShaderType::REFLECTIONPROBE), ShaderStageType::FRAGMENT, &emptyCubeBlack);
         }
 
@@ -5390,6 +5411,7 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 Vector3 probeSamplePosition = meshProbeSamplePosition(mesh, transform);
                 selectReflectionProbe(probeSamplePosition, fs_reflection_probe, probeTexture);
                 ShaderData& probeShaderData = mesh.submeshes[i].shader.get()->shaderData;
+                addSkyEnvironment(render, probeShaderData);
                 render.addTexture(probeShaderData.getTextureIndex(TextureShaderType::REFLECTIONPROBE), ShaderStageType::FRAGMENT, probeTexture);
                 if (mesh.submeshes[i].slotFSReflectionProbe != -1){
                     render.applyUniformBlock(mesh.submeshes[i].slotFSReflectionProbe, sizeof(fs_reflection_probe_t), &fs_reflection_probe);
@@ -11303,7 +11325,8 @@ void RenderSystem::update(double dt){
             loadSky(entity, sky, pipelines);
         }
 
-        newHasIBL = sky.envMapsLoaded;
+        // a shader sky has its maps from its first capture, black until then
+        newHasIBL = sky.envMapsLoaded || isSkyCaptured(sky);
     }
 
     if (hasIBL != newHasIBL){

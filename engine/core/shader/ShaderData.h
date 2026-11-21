@@ -123,7 +123,8 @@ namespace doriax {
         ShaderFlag_SceneDepth = 1 << 3,      // samples the depth of the scene drawn before it
         ShaderFlag_ObjectSpace = 1 << 4,     // reads the local position, the object's position or scale, or the normal
         ShaderFlag_VertexUV = 1 << 5,        // a hook reads uv1 as the mesh stores it
-        ShaderFlag_VertexColor = 1 << 6      // reads the vertex color
+        ShaderFlag_VertexColor = 1 << 6,     // reads the vertex color
+        ShaderFlag_SkySun = 1 << 7           // a sky that reads the sun
     };
 
     struct ShaderBinSource{

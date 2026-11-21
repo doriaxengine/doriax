@@ -3064,7 +3064,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v77: bloom passes.
     // v78: tone mapping.
     // v79: sky sun, irradiance filter.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v79";
+    // v80: sky shaders flag the sun they read.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v80";
 }
 
 void editor::App::pushTabNotificationStyle(){
