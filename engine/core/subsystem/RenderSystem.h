@@ -1144,7 +1144,7 @@ namespace doriax{
 		static SubmeshAttributes getSubmeshAttributes(const MeshComponent& mesh, int submeshIndex, bool skinned);
 		// the variants loadMesh takes, the editor collects them for exports
 		SubmeshShading getSubmeshShading(Entity entity, const MeshComponent& mesh, int submeshIndex, const SubmeshAttributes& attributes, const SceneShading& shading, const InstancedMeshComponent* instmesh, const TerrainComponent* terrain) const;
-		static bool checkPBRTextures(const Material& material, bool receiveLights, const SceneShading& shading);
+		static bool checkPBRTextures(const Material& material, const MeshComponent& mesh, const SceneShading& shading);
 		static uint32_t getUIShaderProperties(bool hasTexture, bool isText);
 		static uint32_t getPointsShaderProperties(const PointsComponent& points);
 

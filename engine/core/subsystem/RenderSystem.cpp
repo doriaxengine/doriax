@@ -2487,11 +2487,14 @@ bool RenderSystem::checkPBRFrabebufferUpdate(Material& material){
         material.emissiveTexture.isFramebufferOutdated() );
 }
 
-bool RenderSystem::checkPBRTextures(const Material& material, bool receiveLights, const SceneShading& shading){
+bool RenderSystem::checkPBRTextures(const Material& material, const MeshComponent& mesh, const SceneShading& shading){
     bool hasBaseColor = !material.baseColorTexture.empty();
 
+    // lit by lights, or by the environment alone, as getSubmeshShading decides
+    const bool receiveLights = mesh.receiveLights;
+    const bool lit = (shading.lights || ((shading.ibl || shading.reflectionProbes) && mesh.receiveIBL)) && receiveLights;
     bool hasOtherPBRTextures = false;
-    if (shading.lights && receiveLights) {
+    if (lit) {
         hasOtherPBRTextures = !material.metallicRoughnessTexture.empty() ||
                               !material.normalTexture.empty() ||
                               !material.occlusionTexture.empty() ||
@@ -2505,73 +2508,25 @@ bool RenderSystem::checkPBRTextures(const Material& material, bool receiveLights
 }
 
 bool RenderSystem::loadPBRTextures(Material& material, ShaderData& shaderData, ObjectRender& render, bool receiveLights){
-    TextureRender* textureRender = NULL;
-    std::pair<int, int> slotTex(-1, -1);
-
-    textureRender = material.baseColorTexture.getRender(&emptyWhite);
-    slotTex = shaderData.getTextureIndex(TextureShaderType::BASECOLOR);
-    if (textureRender){
-        if (!textureRender->isCreated()){
+    // the textures the variant declares, as lights, the environment or 2D lights make it read them
+    auto bind = [&](Texture& texture, TextureShaderType type, TextureRender* fallback){
+        const std::pair<int, int> slot = shaderData.getTextureIndex(type);
+        if (slot.first == -1)
+            return true;
+        TextureRender* textureRender = texture.getRender(fallback);
+        if (textureRender && !textureRender->isCreated())
             return false;
-        }
-        render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-    }else{
-        render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-    }
+        render.addTexture(slot, ShaderStageType::FRAGMENT, textureRender ? textureRender : fallback);
+        return true;
+    };
 
-    if (hasLights && receiveLights){
-        textureRender = material.metallicRoughnessTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::METALLICROUGHNESS);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-
-        textureRender = material.occlusionTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::OCCULSION);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-
-        // A missing emissive texture must default to white (glTF: emissive =
-        // emissiveFactor * emissiveTexture, absent texture = 1,1,1,1). The shader
-        // unconditionally multiplies emissiveFactor by this sample for UV meshes, so a
-        // black fallback would silently zero out emissiveFactor when no texture is set.
-        textureRender = material.emissiveTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::EMISSIVE);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-    }
-
-    // normal map is sampled by both the 3D lit path and the 2D light path (which
-    // otherwise keeps the unlit shader); addTexture no-ops when the compiled
-    // variant has no u_normalTexture slot
-    if ((hasLights || hasLights2D) && receiveLights){
-        textureRender = material.normalTexture.getRender(&emptyNormal);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::NORMAL);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyNormal);
-        }
+    // a missing emissive texture is white, as glTF multiplies emissiveFactor by it
+    if (!bind(material.baseColorTexture, TextureShaderType::BASECOLOR, &emptyWhite) ||
+            !bind(material.metallicRoughnessTexture, TextureShaderType::METALLICROUGHNESS, &emptyWhite) ||
+            !bind(material.occlusionTexture, TextureShaderType::OCCULSION, &emptyWhite) ||
+            !bind(material.emissiveTexture, TextureShaderType::EMISSIVE, &emptyWhite) ||
+            !bind(material.normalTexture, TextureShaderType::NORMAL, &emptyNormal)){
+        return false;
     }
 
     if (hasLights && receiveLights){
@@ -3446,7 +3401,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     const Material& material = submesh.material;
     SubmeshShading sh;
 
-    bool hasPBRTextures = checkPBRTextures(material, mesh.receiveLights, shading);
+    bool hasPBRTextures = checkPBRTextures(material, mesh, shading);
 
     sh.mirror = (scene->findComponent<MirrorComponent>(entity) != NULL);
 
@@ -11568,7 +11523,7 @@ void RenderSystem::update(double dt){
                     if (mesh.submeshes[s].gbufferShader){
                         mesh.submeshes[s].needUpdateGBufferTexture = true;
                     }
-                    if (checkPBRTextures(mesh.submeshes[s].material, mesh.receiveLights, getSceneShading())){
+                    if (checkPBRTextures(mesh.submeshes[s].material, mesh, getSceneShading())){
                         if (!(mesh.submeshes[s].shaderProperties & (1 << 1)) && !(mesh.submeshes[s].shaderProperties & (1 << 2))){ // not 'Uv1' and not 'Uv2'
                             mesh.needReload = true;
                         }
