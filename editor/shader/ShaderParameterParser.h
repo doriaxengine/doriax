@@ -52,8 +52,7 @@ namespace doriax::editor {
         bool light = false;
         // fields they read of their context
         std::set<std::string> contextReads;
-        // every name the code mentions, but a parameter's own fields and #pragma lines, and whether
-        // it pastes tokens: a macro reaches a context field by one or the other
+        // the names it mentions, but its own params fields, and token pasting: how a macro reaches a context field
         std::set<std::string> mentions;
         bool tokenPasting = false;
         // and of a surface, or set: getSurface both reads and writes it

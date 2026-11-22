@@ -163,38 +163,34 @@ void scanMemberReads(const std::string& code, const std::string& name, std::set<
     }
 }
 
-// the names outside #pragma lines, but the fields read of params
+// the names outside #pragma lines; a field of params counts once the code gives that name to something else
 void scanMentions(const std::string& code, std::set<std::string>& mentions){
-    for (size_t lineStart = 0; lineStart < code.size();){
-        size_t lineEnd = code.find('\n', lineStart);
-        if (lineEnd == std::string::npos)
-            lineEnd = code.size();
-        size_t i = lineStart;
-        const bool pragma = nextChar(code, i) == '#' && code.compare(i + 1, 6, "pragma") == 0;
-        for (i = lineStart; !pragma && i < lineEnd;){
-            if (!isIdentifierChar(code[i])){
+    std::set<std::string> paramFields;
+    bool paramsRenamed = false;
+    std::istringstream stream(code);
+    std::string line;
+    while (std::getline(stream, line)){
+        size_t i = 0;
+        if (nextChar(line, i) == '#' && line.compare(i + 1, 6, "pragma") == 0)
+            continue;
+        while (i < line.size()){
+            if (!isIdentifierChar(line[i])){
                 i++;
                 continue;
             }
-            const size_t start = i;
-            while (i < lineEnd && isIdentifierChar(code[i]))
+            const std::string name = readIdentifier(line, i);
+            if (name != "params"){
+                mentions.insert(name);
+            }else if (nextChar(line, i) == '.'){
                 i++;
-            size_t before = start;
-            while (before > lineStart && std::isspace((unsigned char)code[before - 1]))
-                before--;
-            bool paramField = false;
-            if (before > lineStart && code[before - 1] == '.'){
-                size_t end = before - 1;
-                while (end > lineStart && std::isspace((unsigned char)code[end - 1]))
-                    end--;
-                paramField = end >= lineStart + 6 && code.compare(end - 6, 6, "params") == 0 &&
-                    (end - 6 == lineStart || !isIdentifierChar(code[end - 7]));
+                paramFields.insert(readIdentifier(line, i));
+            }else{
+                paramsRenamed = true;
             }
-            if (!paramField)
-                mentions.insert(code.substr(start, i - start));
         }
-        lineStart = lineEnd + 1;
     }
+    if (paramsRenamed)
+        mentions.insert(paramFields.begin(), paramFields.end());
 }
 
 // the fields read of a context, by whatever name it is given

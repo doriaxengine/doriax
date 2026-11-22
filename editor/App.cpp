@@ -3068,7 +3068,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v81: the sun flag from any expression reading it.
     // v82: the sun flag through macros, not from parameters.
     // v83: the sun flag for a context named params.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v83";
+    // v84: and for a macro argument named params; a normal map needs UVs.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v84";
 }
 
 void editor::App::pushTabNotificationStyle(){
