@@ -163,6 +163,40 @@ void scanMemberReads(const std::string& code, const std::string& name, std::set<
     }
 }
 
+// the names outside #pragma lines, but the fields read of params
+void scanMentions(const std::string& code, std::set<std::string>& mentions){
+    for (size_t lineStart = 0; lineStart < code.size();){
+        size_t lineEnd = code.find('\n', lineStart);
+        if (lineEnd == std::string::npos)
+            lineEnd = code.size();
+        size_t i = lineStart;
+        const bool pragma = nextChar(code, i) == '#' && code.compare(i + 1, 6, "pragma") == 0;
+        for (i = lineStart; !pragma && i < lineEnd;){
+            if (!isIdentifierChar(code[i])){
+                i++;
+                continue;
+            }
+            const size_t start = i;
+            while (i < lineEnd && isIdentifierChar(code[i]))
+                i++;
+            size_t before = start;
+            while (before > lineStart && std::isspace((unsigned char)code[before - 1]))
+                before--;
+            bool paramField = false;
+            if (before > lineStart && code[before - 1] == '.'){
+                size_t end = before - 1;
+                while (end > lineStart && std::isspace((unsigned char)code[end - 1]))
+                    end--;
+                paramField = end >= lineStart + 6 && code.compare(end - 6, 6, "params") == 0 &&
+                    (end - 6 == lineStart || !isIdentifierChar(code[end - 7]));
+            }
+            if (!paramField)
+                mentions.insert(code.substr(start, i - start));
+        }
+        lineStart = lineEnd + 1;
+    }
+}
+
 // the fields read of a context, by whatever name it is given
 void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
     std::set<std::string> names;
@@ -190,10 +224,8 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     scanContextReads(code, "VertexContext", out.contextReads);
     scanContextReads(code, "FragmentContext", out.contextReads);
     scanContextReads(code, "Surface", out.surfaceReads);
-    for (size_t at = code.find('.'); at != std::string::npos; at = code.find('.', at + 1)){
-        size_t i = at + 1;
-        out.memberReads.insert(readIdentifier(code, i));
-    }
+    scanMentions(code, out.mentions);
+    out.tokenPasting = out.tokenPasting || code.find("##") != std::string::npos;
     for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
         if (callsFunction(code, input))
             out.sceneReads.insert(input);

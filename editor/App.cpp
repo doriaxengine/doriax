@@ -3066,7 +3066,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v79: sky sun, irradiance filter.
     // v80: sky shaders flag the sun they read.
     // v81: the sun flag from any expression reading it.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v81";
+    // v82: the sun flag through macros, not from parameters.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v82";
 }
 
 void editor::App::pushTabNotificationStyle(){
