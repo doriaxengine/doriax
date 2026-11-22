@@ -69,7 +69,7 @@ constexpr int getDoriaxKey(int32_t key, int32_t scanCode) {
 
     if (key == AKEYCODE_ESCAPE)
         return D_KEY_ESCAPE;
-    if (key == AKEYCODE_ENTER)
+    if (key == AKEYCODE_ENTER || key == AKEYCODE_DPAD_CENTER)
         return D_KEY_ENTER;
     if (key == AKEYCODE_TAB)
         return D_KEY_TAB;
@@ -210,6 +210,7 @@ static_assert(getDoriaxKey(AKEYCODE_0, 0) == D_KEY_0, "Android digit key mapping
 static_assert(getDoriaxKey(AKEYCODE_9, 0) == D_KEY_9, "Android digit key range is broken");
 static_assert(getDoriaxKey(AKEYCODE_A, 0) == D_KEY_A, "Android letter key mapping is broken");
 static_assert(getDoriaxKey(AKEYCODE_Z, 0) == D_KEY_Z, "Android letter key range is broken");
+static_assert(getDoriaxKey(AKEYCODE_DPAD_CENTER, 0) == D_KEY_ENTER, "Android DPAD center mapping is broken");
 static_assert(getDoriaxKey(AKEYCODE_F1, 0) == D_KEY_F1, "Android function key mapping is broken");
 static_assert(getDoriaxKey(AKEYCODE_F12, 0) == D_KEY_F12, "Android function key range is broken");
 static_assert(getDoriaxKey(ANDROID_KEYCODE_F13, 0) == D_KEY_F13, "Android F13 key mapping is broken");
