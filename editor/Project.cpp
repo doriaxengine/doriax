@@ -4225,52 +4225,20 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<MeshComponent>())) {
             const MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-            // a reload keeps the mesh unloaded until its new shaders have built
-            if (mesh.loaded || mesh.submeshes[0].shader) {
-                bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
-                for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
-                    if (!mesh.loaded && !mesh.submeshes[s].shader) {
-                        continue;
-                    }
-                    // as in RenderSystem::loadMesh
-                    const std::string& ownShader = mesh.submeshes[s].material.shader;
-                    const std::string materialShader = isTerrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
-                    const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
-                    // the variant it draws with now, kept while a cube sky still loads
-                    insertKeys(ShaderType::MESH, mesh.submeshes[s].shaderProperties, customShaderId);
-                    // and the ones a reload takes from the scene as it is now, as after a sky change
-                    if (isTerrain || mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0) {
-                        insertAuthoredMeshKeys(entity, mesh, s, signature);
-                    }
-                    // The runtime only computes depthShaderProperties while
-                    // shadows or SSAO are active, so the
-                    // stored value can be a stale 0 for scenes whose shadow lights
-                    // arrive at runtime (scripts spawning them). Derive the props
-                    // from the same submesh flags RenderSystem::loadMesh uses, and
-                    // keep the stored key too (identical when it was computed).
-                    bool isInstanced = signature.test(scene->getComponentId<InstancedMeshComponent>());
-                    // From the components, not the stored word, for the same reason.
-                    bool instancedFade = isInstanced && scene->getComponent<InstancedMeshComponent>(entity).distanceFade;
-                    const Material& material = mesh.submeshes[s].material;
-                    bool depthAlphaMask = RenderSystem::usesAlphaMask(material, mesh.submeshes[s].textureShadow);
-                    bool depthTexture = depthAlphaMask && mesh.submeshes[s].hasTexCoord1 && !material.baseColorTexture.empty();
-                    uint32_t depthProperties = ShaderPool::getDepthMeshProperties(
-                        depthTexture, mesh.submeshes[s].hasSkinning,
-                        mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
-                        mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1,
-                        !materialShader.empty() && mesh.submeshes[s].hasNormal, !materialShader.empty() && mesh.submeshes[s].hasVertexColor3,
-                        !materialShader.empty() && mesh.submeshes[s].hasVertexColor4, !materialShader.empty() && mesh.submeshes[s].hasTexCoord2,
-                        !materialShader.empty() && mesh.submeshes[s].hasNormal && mesh.submeshes[s].hasTangent);
-                    insertKeys(ShaderType::DEPTH, depthProperties, customShaderId);
-                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customShaderId);
-                    if (mesh.submeshes[s].gbufferShader) {
-                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customShaderId);
+            const bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
+            for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
+                const Submesh& submesh = mesh.submeshes[s];
+                // the variants it draws with now: a reload keeps them until the new ones have built, and a cube sky loads
+                if (mesh.loaded || submesh.shader) {
+                    const uint16_t customShaderId = isTerrain ? 0 : effectiveShaderId(submesh.material.shader, ShaderType::MESH);
+                    insertKeys(ShaderType::MESH, submesh.shaderProperties, customShaderId);
+                    insertKeys(ShaderType::DEPTH, submesh.depthShaderProperties, customShaderId);
+                    if (submesh.gbufferShader) {
+                        insertKeys(ShaderType::GBUFFER, submesh.gbufferShaderProperties, customShaderId);
                     }
                 }
-            } else if (signature.test(scene->getComponentId<TerrainComponent>()) || mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0) {
-                // the ones loadMesh would take, before anything drew
-                for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
+                // and the ones loadMesh takes from the scene as it is: before anything drew, or after a sky or light change
+                if (isTerrain || mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0) {
                     insertAuthoredMeshKeys(entity, mesh, s, signature);
                 }
             }
