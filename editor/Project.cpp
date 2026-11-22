@@ -4194,14 +4194,13 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     RenderSystem::SceneShading loadingShading = authoredShading;
     loadingShading.ibl = false;
 
-    // the variants loadMesh takes from the scene as authored; a terrain's grid has positions and normals
+    // the variants loadMesh takes from the scene as authored
     auto insertAuthoredMeshKeys = [&](Entity entity, const MeshComponent& mesh, unsigned int s, Signature signature) {
         const TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
-        RenderSystem::SubmeshAttributes attributes;
+        RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, signature.test(scene->getComponentId<SkinComponent>()));
+        // a terrain's grid, built as it first draws, has positions and normals
         if (terrain) {
             attributes.normal = true;
-        } else {
-            attributes = RenderSystem::getSubmeshAttributes(mesh, s, signature.test(scene->getComponentId<SkinComponent>()));
         }
         const InstancedMeshComponent* instmesh = terrain ? nullptr : scene->findComponent<InstancedMeshComponent>(entity);
         auto insertFor = [&](const RenderSystem::SceneShading& sceneShading) {
@@ -4238,29 +4237,7 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
                     const std::string materialShader = isTerrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
                     const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
                     // the variant it draws with now, kept while a cube sky still loads
-                    uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
-                    insertKeys(ShaderType::MESH, meshProperties, customShaderId);
-                    // Saving/exporting can happen before RenderSystem has reloaded
-                    // meshes after a probe or an IBL sky was added. Derive the required IBL
-                    // variant here so the exported shader set is still complete.
-                    if ((hasReflectionProbes || authoredShading.ibl) && mesh.receiveLights && mesh.receiveIBL) {
-                        meshProperties &= ~(1u << 0); // no longer MATERIAL_UNLIT
-                        meshProperties |= (1u << 6);  // HAS_NORMALS
-                        meshProperties |= (1u << 19); // USE_IBL
-                        // the unlit->lit transition also pulls in the submesh's
-                        // normal-map/tangent attributes and SSAO, mirroring
-                        // RenderSystem::loadMesh
-                        if (mesh.submeshes[s].hasNormalMap) {
-                            meshProperties |= (1u << 7); // HAS_NORMAL_MAP
-                        }
-                        if (mesh.submeshes[s].hasTangent) {
-                            meshProperties |= (1u << 8); // HAS_TANGENTS
-                        }
-                        if (scene->isSSAOEnabled()) {
-                            meshProperties |= (1u << 21); // USE_SSAO
-                        }
-                    }
-                    insertKeys(ShaderType::MESH, meshProperties, customShaderId);
+                    insertKeys(ShaderType::MESH, mesh.submeshes[s].shaderProperties, customShaderId);
                     // and the ones a reload takes from the scene as it is now, as after a sky change
                     if (isTerrain || mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0) {
                         insertAuthoredMeshKeys(entity, mesh, s, signature);
