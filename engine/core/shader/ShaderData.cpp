@@ -408,8 +408,19 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
 
 bool ShaderData::samplesTexture(const std::string& name){
     for (const ShaderTextureInfo& parameter : textureParameters){
-        if (parameter.name == name)
-            return getTextureParameterIndex(parameter).first != -1;
+        if (parameter.name != name)
+            continue;
+        // a declared texture no sampler pairs with is left out of the shader
+        const std::string textureName = parameter.getTextureName();
+        for (const ShaderStage& stage : stages){
+            if (stage.type != parameter.stage)
+                continue;
+            for (const ShaderTextureSamplerPair& pair : stage.textureSamplerPairs){
+                if (pair.textureName == textureName)
+                    return true;
+            }
+        }
+        return false;
     }
     return false;
 }
