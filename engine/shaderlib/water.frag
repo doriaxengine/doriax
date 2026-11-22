@@ -613,7 +613,7 @@ void main(){
 
     #ifdef HAS_FOG
         // the scene seen through was fogged when it was drawn, the water fogs only its own share
-        color = getFogColor(color) - getFogColor(vec3(0.0)) * (1.0 - coverage);
+        color = getFogColor(color, v_position) - getFogColor(vec3(0.0), v_position) * (1.0 - coverage);
     #endif
 
     // after the derivatives, which a discarded neighbor would spoil

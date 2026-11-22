@@ -492,6 +492,7 @@ namespace {
         makeFastProperty<FogComponent, float, &FogComponent::density>("density", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<FogComponent, float, &FogComponent::linearStart>("linearStart", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<FogComponent, float, &FogComponent::linearEnd>("linearEnd", PropertyType::Float, UpdateFlags_None),
+        makeFastProperty<FogComponent, float, &FogComponent::skyBlend>("skyBlend", PropertyType::Float, UpdateFlags_None),
     };
 
     static const FastPropertyDescriptor kMirrorProperties[] = {

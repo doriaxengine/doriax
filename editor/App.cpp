@@ -3070,7 +3070,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v83: the sun flag for a context named params.
     // v84: and for a macro argument named params; a normal map needs UVs.
     // v85: skies know when they are captured, and can read the capture back.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v85";
+    // v86: fog takes the sky's color.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v86";
 }
 
 void editor::App::pushTabNotificationStyle(){

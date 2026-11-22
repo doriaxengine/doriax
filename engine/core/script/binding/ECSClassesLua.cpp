@@ -952,6 +952,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("density", &FogComponent::density, &FogComponent::density)
         .addProperty("linearStart", &FogComponent::linearStart, &FogComponent::linearStart)
         .addProperty("linearEnd", &FogComponent::linearEnd, &FogComponent::linearEnd)
+        .addProperty("skyBlend", &FogComponent::skyBlend, &FogComponent::skyBlend)
         .endClass();
 
     luabridge::getGlobalNamespace(L)

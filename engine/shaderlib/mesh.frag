@@ -1,6 +1,6 @@
 #version 450
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS) || defined(HAS_FOG)
     in vec3 v_position;
 #endif
 
@@ -427,7 +427,7 @@ void main() {
             baseColor.rgb += surface.emissive;
         #endif
         #ifdef HAS_FOG
-            baseColor.rgb = getFogColor(baseColor.rgb);
+            baseColor.rgb = getFogColor(baseColor.rgb, v_position);
         #endif
         #ifdef USE_FRAGMENT_HOOKS
             baseColor = getFinalColor(context, baseColor);
@@ -651,7 +651,7 @@ void main() {
         #endif
 
         #ifdef HAS_FOG
-            color.rgb = getFogColor(color.rgb);
+            color.rgb = getFogColor(color.rgb, v_position);
         #endif
 
         #ifdef USE_FRAGMENT_HOOKS

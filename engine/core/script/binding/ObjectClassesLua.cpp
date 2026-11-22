@@ -198,6 +198,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("linearStart", &Fog::getLinearStart, &Fog::setLinearStart)
         .addProperty("linearEnd", &Fog::getLinearEnd, &Fog::setLinearEnd)
         .addFunction("setLinearStartEnd", &Fog::setLinearStartEnd)
+        .addProperty("skyBlend", &Fog::getSkyBlend, &Fog::setSkyBlend)
         .addFunction("getFogComponent", &Fog::getComponent<FogComponent>)
         .endClass();
 

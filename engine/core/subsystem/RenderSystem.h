@@ -98,6 +98,8 @@ namespace doriax{
 	typedef struct fs_fog_t {
 		Vector4 color_type;
 		Vector4 density_start_end;
+		Vector4 eye_skyBlend;   // the eye of the pass, and how much the fog takes the sky's color
+		Vector4 skyEnvironment; // the sky's tint and rotation, as its lighting maps are read
 	} fs_fog_t;
 
 	// all shadows of the frame, point lights last

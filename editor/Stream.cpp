@@ -6498,6 +6498,7 @@ YAML::Node editor::Stream::encodeFogComponent(const FogComponent& fog) {
     node["density"] = fog.density;
     node["linearStart"] = fog.linearStart;
     node["linearEnd"] = fog.linearEnd;
+    node["skyBlend"] = fog.skyBlend;
 
     return node;
 }
@@ -6514,6 +6515,7 @@ FogComponent editor::Stream::decodeFogComponent(const YAML::Node& node, const Fo
     if (node["density"]) fog.density = node["density"].as<float>();
     if (node["linearStart"]) fog.linearStart = node["linearStart"].as<float>();
     if (node["linearEnd"]) fog.linearEnd = node["linearEnd"].as<float>();
+    if (node["skyBlend"]) fog.skyBlend = node["skyBlend"].as<float>();
 
     return fog;
 }

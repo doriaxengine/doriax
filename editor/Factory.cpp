@@ -1479,6 +1479,7 @@ std::string editor::Factory::createFogComponent(int indentSpaces, EntityRegistry
     code << ind << "fog.density = " << formatFloat(fog.density) << ";\n";
     code << ind << "fog.linearStart = " << formatFloat(fog.linearStart) << ";\n";
     code << ind << "fog.linearEnd = " << formatFloat(fog.linearEnd) << ";\n";
+    code << ind << "fog.skyBlend = " << formatFloat(fog.skyBlend) << ";\n";
     addComponentCode(code, ind, sceneName, entityName, entity, "FogComponent", "fog", assignExisting);
     return code.str();
 }
