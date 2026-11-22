@@ -57,7 +57,7 @@ namespace doriax::editor {
         bool tokenPasting = false;
         // and of a surface, or set: getSurface both reads and writes it
         std::set<std::string> surfaceReads;
-        // sceneColor, sceneDepth, sceneNormal, sceneOcclusion
+        // sceneColor, sceneDepth, sceneNormal, sceneOcclusion, and skyCapture
         std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;

@@ -222,7 +222,7 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     scanContextReads(code, "Surface", out.surfaceReads);
     scanMentions(code, out.mentions);
     out.tokenPasting = out.tokenPasting || code.find("##") != std::string::npos;
-    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
+    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion", "skyCapture"}){
         if (callsFunction(code, input))
             out.sceneReads.insert(input);
     }

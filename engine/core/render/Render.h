@@ -198,7 +198,8 @@ namespace doriax{
         WATEREXCLUSION,      // hull maps of the volumes keeping the water out
         PROBESOURCE,         // reflection probe capture read by the prefilter
         WATERWAKE,           // foam and waves left by moving water exclusions
-        BLOOMTEXTURE         // the bloom level a level spreads over, or the scene under the glow
+        BLOOMTEXTURE,        // the bloom level a level spreads over, or the scene under the glow
+        SKYCAPTURE           // a shader sky's last capture, which its hooks read back
     };
 
     enum class TextureType {

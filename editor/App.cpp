@@ -3069,7 +3069,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v82: the sun flag through macros, not from parameters.
     // v83: the sun flag for a context named params.
     // v84: and for a macro argument named params; a normal map needs UVs.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v84";
+    // v85: skies know when they are captured, and can read the capture back.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v85";
 }
 
 void editor::App::pushTabNotificationStyle(){

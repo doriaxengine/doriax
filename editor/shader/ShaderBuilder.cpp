@@ -545,6 +545,9 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"HOOK_SCENE_NORMAL", "1"});
     if (postProcess && fragmentHooks.sceneReads.count("sceneOcclusion"))
         args.defines.push_back({"HOOK_SCENE_OCCLUSION", "1"});
+    // a sky reading its own capture back
+    if (passType == ShaderType::SKYBOX && useFragmentHooks && fragmentHooks.sceneReads.count("skyCapture"))
+        args.defines.push_back({"HOOK_SKY_CAPTURE", "1"});
     if (sceneColor)
         declared.flags |= ShaderFlag_SceneColor;
     if (sceneDepth && colorPass)

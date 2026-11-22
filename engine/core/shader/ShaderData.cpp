@@ -394,6 +394,8 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_probeSourceTexture";
     }else if (type == TextureShaderType::WATERWAKE){
         texstr = "u_waterWakeTexture";
+    }else if (type == TextureShaderType::SKYCAPTURE){
+        texstr = "u_skyCaptureTexture";
     }else if (type == TextureShaderType::BLOOMTEXTURE){
         texstr = "u_bloomTexture";
     }

@@ -87,6 +87,7 @@ namespace doriax{
 		Vector4 color;        // sRGB
 		Vector4 sunDirection; // toward the strongest directional light, in the sky's space; w = 1 with one
 		Vector4 sunColor;     // its color times intensity, linear
+		Vector4 capture;      // x = 1 while the sky draws into its capture
 	} fs_sky_t;
 
 	typedef struct vs_shadow2d_t {

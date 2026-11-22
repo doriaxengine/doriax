@@ -1609,6 +1609,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
     const Matrix4 viewProjection = sky.skyViewProjectionMatrix;
     capturingReflectionProbe = true;
     passResolution = resolution;
+    fs_sky.capture.x = 1.0f;
     skyCapturePass.setClearColor(background);
     for (int face = 0; face < 6; face++){
         setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), face, 0.1f, 10.0f);
@@ -1619,6 +1620,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
         skyCapturePass.endRenderPass();
     }
     capturingReflectionProbe = false;
+    fs_sky.capture.x = 0.0f;
     sky.skyViewProjectionMatrix = viewProjection;
 
     // a texture still loading left the faces undrawn
@@ -7815,6 +7817,9 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
         }
 
         ObjectRender& render = sky.render;
+        // its hooks read the last capture back, but never the one being drawn
+        TextureRender* capture = (fs_sky.capture.x == 0.0f && skyCaptureFramebuffer.isCreated()) ? &skyCaptureFramebuffer.getColorTexture() : &emptyCubeBlack;
+        render.addTexture(sky.shaderRender->shaderData.getTextureIndex(TextureShaderType::SKYCAPTURE), ShaderStageType::FRAGMENT, capture);
 
         if (!render.beginDraw(pipType)){
             sky.needReload = true;
