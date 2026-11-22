@@ -174,6 +174,8 @@ namespace doriax {
         std::pair<int, int> getTextureIndexByName(const std::string& name);
         // view and sampler slots of a declared texture
         std::pair<int, int> getTextureParameterIndex(const ShaderTextureInfo& texture);
+        // a texture parameter of that name the shader samples
+        bool samplesTexture(const std::string& name);
 
         // block members, to build its byte blob by name
         const std::vector<ShaderUniform>* getUniformBlockMembers(const std::string& name, unsigned int& sizeBytes);

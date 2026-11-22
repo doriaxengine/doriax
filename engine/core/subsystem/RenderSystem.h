@@ -31,6 +31,7 @@
 #include "Engine.h"
 #include <map>
 #include <array>
+#include <initializer_list>
 #include <memory>
 #include <queue>
 #include <string>
@@ -779,7 +780,7 @@ namespace doriax{
 
 		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
 		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
-		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures);
+		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures, std::initializer_list<ShaderRender*> shaders);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		// decides fixed resolution for the frame and prepares its target

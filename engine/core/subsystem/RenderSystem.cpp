@@ -286,11 +286,8 @@ namespace {
 
     // a framebuffer the shader samples, which changes with no value changing
     bool samplesFramebuffer(const ShaderTextureValues& textures, ShaderData& shaderData){
-        for (const ShaderTextureInfo& parameter : shaderData.textureParameters){
-            if (shaderData.getTextureParameterIndex(parameter).first == -1)
-                continue;
-            const Texture* texture = ShaderTextures::find(textures, parameter.name);
-            if (texture && texture->isFramebuffer())
+        for (const auto& texture : textures){
+            if (texture.second.isFramebuffer() && shaderData.samplesTexture(texture.first))
                 return true;
         }
         return false;
@@ -8571,7 +8568,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
-    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures))
+    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures, {water.shaderRender.get(), water.underwaterShader.get()}))
         return false;
 
     ObjectRender& render = water.render;
@@ -10811,8 +10808,9 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Mesh
         return false;
 
     for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
-        const Material& material = mesh.submeshes[i].material;
-        if (samplesCameraTarget(camera, material.shaderTextures) ||
+        const Submesh& submesh = mesh.submeshes[i];
+        const Material& material = submesh.material;
+        if (samplesCameraTarget(camera, material.shaderTextures, {submesh.shader.get(), submesh.depthShader.get(), submesh.gbufferShader.get()}) ||
             material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
             material.metallicRoughnessTexture.getFramebuffer() == camera.framebuffer ||
             material.normalTexture.getFramebuffer() == camera.framebuffer ||
@@ -10829,9 +10827,21 @@ bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Text
     return camera.renderToTexture && texture.getFramebuffer() == camera.framebuffer;
 }
 
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures){
+// on a parameter one of the shaders samples; any texture counts before one is built
+bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures, std::initializer_list<ShaderRender*> shaders){
     for (const auto& texture : textures){
-        if (samplesCameraTarget(camera, texture.second))
+        if (!samplesCameraTarget(camera, texture.second))
+            continue;
+
+        bool built = false;
+        for (ShaderRender* shader : shaders){
+            if (!shader)
+                continue;
+            built = true;
+            if (shader->shaderData.samplesTexture(texture.first))
+                return true;
+        }
+        if (!built)
             return true;
     }
 
@@ -12378,7 +12388,7 @@ void RenderSystem::draw(){
         if (skys->size() > 0){
             SkyComponent& sky = skys->getComponentFromIndex(0);
             Entity entity = skys->getEntity(0);
-            if (sky.visible && !samplesCameraTarget(camera, sky.shaderTextures)){
+            if (sky.visible && !samplesCameraTarget(camera, sky.shaderTextures, {sky.shaderRender.get()})){
                 if (hasMultipleCameras || hasReflectionProbes){
                     updateSkyViewProjection(sky, camera);
                 }
@@ -12588,7 +12598,7 @@ void RenderSystem::draw(){
                 if (signature.test(scene->getComponentId<TextComponent>())){
                     isText = true;
                 }
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture) && !samplesCameraTarget(camera, ui.shaderTextures))
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture) && !samplesCameraTarget(camera, ui.shaderTextures, {ui.shaderRender.get()}))
                     drawUI(ui, transform, colorPip);
 
             }else if (signature.test(scene->getComponentId<PointsComponent>())){
@@ -12598,7 +12608,7 @@ void RenderSystem::draw(){
                 // shared across all cameras and sokol only allows one sg_update_buffer per
                 // buffer per frame (VALIDATE_UPDATEBUF_ONCE). Every camera reuses the main
                 // camera's ordering computed in update().
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture) && !samplesCameraTarget(camera, points.shaderTextures)){
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture) && !samplesCameraTarget(camera, points.shaderTextures, {points.shaderRender.get()})){
                     if (!points.transparent){
                         drawPoints(points, transform, camera, cameraTransform, colorPip);
                     }else{
@@ -12618,7 +12628,7 @@ void RenderSystem::draw(){
             }else if (signature.test(scene->getComponentId<LinesComponent>())){
                 LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
 
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, lines.shaderTextures))
+                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, lines.shaderTextures, {lines.shaderRender.get()}))
                     drawLines(lines, transform, cameraTransform, colorPip);
 
             }

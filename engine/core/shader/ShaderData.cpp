@@ -406,6 +406,14 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
     return getTextureIndexByName(texstr);
 }
 
+bool ShaderData::samplesTexture(const std::string& name){
+    for (const ShaderTextureInfo& parameter : textureParameters){
+        if (parameter.name == name)
+            return getTextureParameterIndex(parameter).first != -1;
+    }
+    return false;
+}
+
 std::pair<int, int> ShaderData::getTextureParameterIndex(const ShaderTextureInfo& texture){
     const std::string textureName = texture.getTextureName();
     const std::string samplerName = texture.getSamplerName();
