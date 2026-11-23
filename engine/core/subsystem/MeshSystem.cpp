@@ -705,10 +705,10 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
             preReserveTiles--;
         }
         TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
-        if (rectData.submeshId < 0 || (unsigned int)rectData.submeshId >= mesh.numSubmeshes){
-            continue;
-        }
-        Texture& texture = mesh.submeshes[rectData.submeshId].material.baseColorTexture;
+        // a rect without a submesh of its own uses submesh 0 (as below), so it waits for that texture too:
+        // built before its size is known, its pixel rect would not be normalized
+        const int submeshId = (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
+        Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
         Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
         Texture* tileTexture = !texture.empty() ? &texture : (!mainTexture.empty() ? &mainTexture : nullptr);
         if (tileTexture && tileTexture->getWidth() == 0){
