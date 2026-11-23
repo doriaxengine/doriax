@@ -136,31 +136,14 @@ bool inMacro(const std::string& code, size_t at){
     return nextChar(code, i) == '#' && code.compare(i + 1, 6, "define") == 0;
 }
 
-// after a type, where a name is declared and not called
-bool followsType(const std::string& code, size_t at){
-    size_t end = at;
-    while (end > 0 && std::isspace((unsigned char)code[end - 1]))
-        end--;
-    size_t start = end;
-    while (start > 0 && isIdentifierChar(code[start - 1]))
-        start--;
-    return start < end && code.compare(start, end - start, "return") != 0;
-}
-
-// a call of an engine function, or a macro naming it; not when the code declares its own of that name
+// a call of an engine function, or a macro naming it
 bool callsFunction(const std::string& code, const std::string& name){
-    bool called = false;
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        if (!isWordAt(code, at, name.size()))
-            continue;
         size_t i = at + name.size();
-        const bool call = nextChar(code, i) == '(';
-        const bool macro = inMacro(code, at);
-        if (call && !macro && followsType(code, at))
-            return false;
-        called = called || call || macro;
+        if (isWordAt(code, at, name.size()) && (nextChar(code, i) == '(' || inMacro(code, at)))
+            return true;
     }
-    return called;
+    return false;
 }
 
 // a hook definition takes its context type
@@ -187,7 +170,7 @@ void scanMemberReads(const std::string& code, const std::string& name, std::set<
     }
 }
 
-// the names outside #pragma lines; a field of params counts once the code gives that name to something else
+// the names outside #pragma lines; params fields once that name is given to something else, Engine only whole or in a macro
 void scanMentions(const std::string& code, std::set<std::string>& mentions){
     std::set<std::string> paramFields;
     bool paramsRenamed = false;
@@ -195,21 +178,24 @@ void scanMentions(const std::string& code, std::set<std::string>& mentions){
     std::string line;
     while (std::getline(stream, line)){
         size_t i = 0;
-        if (nextChar(line, i) == '#' && line.compare(i + 1, 6, "pragma") == 0)
+        const bool directive = nextChar(line, i) == '#';
+        if (directive && line.compare(i + 1, 6, "pragma") == 0)
             continue;
+        const bool macro = directive && line.compare(i + 1, 6, "define") == 0;
         while (i < line.size()){
             if (!isIdentifierChar(line[i])){
                 i++;
                 continue;
             }
             const std::string name = readIdentifier(line, i);
-            if (name != "params"){
-                mentions.insert(name);
-            }else if (nextChar(line, i) == '.'){
+            const bool whole = nextChar(line, i) != '.';
+            if (name == "params" && whole){
+                paramsRenamed = true;
+            }else if (name == "params"){
                 i++;
                 paramFields.insert(readIdentifier(line, i));
-            }else{
-                paramsRenamed = true;
+            }else if (name != "Engine" || whole || macro){
+                mentions.insert(name);
             }
         }
     }
@@ -231,7 +217,10 @@ void scanContextReads(const std::string& code, const std::string& contextType, s
 }
 
 void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
-    const std::string code = stripComments(source);
+    std::string code = stripComments(source);
+    // a macro on several lines reads as one
+    for (size_t at = code.find("\\\n"); at != std::string::npos; at = code.find("\\\n", at))
+        code.erase(at, 2);
     out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
     out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
     out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
@@ -251,11 +240,15 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
             out.sceneReads.insert(input);
     }
 
+    // a macro can be handed Engine and its field apart
     std::set<std::string> engine;
     scanMemberReads(code, "Engine", engine);
-    out.engineTime = out.engineTime || engine.count("time");
-    out.engineResolution = out.engineResolution || engine.count("resolution");
-    out.enginePass = out.enginePass || engine.count("pass");
+    auto readsEngine = [&](const char* field){
+        return engine.count(field) > 0 || (out.mentions.count("Engine") > 0 && out.mentions.count(field) > 0);
+    };
+    out.engineTime = out.engineTime || readsEngine("time");
+    out.engineResolution = out.engineResolution || readsEngine("resolution");
+    out.enginePass = out.enginePass || readsEngine("pass");
 }
 
 // ints are packed as floats in the block
