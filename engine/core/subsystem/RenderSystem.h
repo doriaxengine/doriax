@@ -87,7 +87,6 @@ namespace doriax{
 		Vector4 color;        // sRGB
 		Vector4 sunDirection; // toward the strongest directional light, in the sky's space; w = 1 with one
 		Vector4 sunColor;     // its color times intensity, linear
-		Vector4 capture;      // x = 1 while the sky draws into its capture
 	} fs_sky_t;
 
 	typedef struct vs_shadow2d_t {
@@ -98,8 +97,9 @@ namespace doriax{
 	typedef struct fs_fog_t {
 		Vector4 color_type;
 		Vector4 density_start_end;
-		Vector4 eye_skyBlend;   // the eye of the pass, and how much the fog takes the sky's color
-		Vector4 skyEnvironment; // the sky's tint and rotation, as its lighting maps are read
+		Vector4 eye;              // of the pass; w = 1 for a perspective one
+		Vector4 forward_skyBlend; // where the pass looks, and how much the fog takes the sky's color
+		Vector4 skyEnvironment;   // the sky's tint and rotation, as its lighting maps are read
 	} fs_fog_t;
 
 	// all shadows of the frame, point lights last
@@ -360,6 +360,7 @@ namespace doriax{
 		// every light is directional: meshes load the 'Dlo' shader variant
 		bool onlyDirectionalLights;
 		bool hasFog;
+		bool hasFogSky;
 		bool hasIBL;
 		bool hasReflectionProbes;
 		// a water, a mesh or a post-process pass samples the scene depth
@@ -809,6 +810,7 @@ namespace doriax{
 		bool loadOccluder2DPass(unsigned int vertexCapacity);
 		void destroyOccluder2DPass();
 		bool loadAndProcessFog();
+		void updateFogSky();
 		void releaseSkyEnvironment(SkyComponent& sky);
 		void updateSkyEnvironment(SkyComponent& sky);
 		// drawn by a shader file, so its lighting comes from a capture
@@ -819,6 +821,7 @@ namespace doriax{
 		void captureSky(SkyComponent& sky);
 		// the sky's lighting maps, black until it has them
 		void addSkyEnvironment(ObjectRender& render, ShaderData& shaderData);
+		void addFogSky(ObjectRender& render, Submesh& submesh);
 		void destroySkyCapture();
 		void updateReflectionProbes(double dt);
 		void renderReflectionProbeCapture();
@@ -1078,6 +1081,7 @@ namespace doriax{
 			bool shadows = false;
 			bool onlyDirectionalLights = false;
 			bool fog = false;
+			bool fogSky = false;
 			bool ibl = false;
 			bool reflectionProbes = false;
 			bool waterDepth = false;

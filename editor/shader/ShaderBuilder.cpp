@@ -940,7 +940,7 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 2))  defs.push_back({"HAS_UV_SET2", "1"});               // 'Uv2'
     if (prop & (1 << 3))  defs.push_back({"USE_PUNCTUAL", "1"});              // 'Puc'
     if (prop & (1 << 4))  defs.push_back({"USE_SHADOWS", "1"});               // 'Shw'
-    // bit 5 reserved (was USE_SHADOWS_PCF; the PCF filter is uniform-driven now)
+    if (prop & (1 << 5))  defs.push_back({"USE_FOG_SKY", "1"});               // 'Fsk'
     if (prop & (1 << 6))  defs.push_back({"HAS_NORMALS", "1"});               // 'Nor'
     if (prop & (1 << 7))  defs.push_back({"HAS_NORMAL_MAP", "1"});            // 'Nmp'
     if (prop & (1 << 8))  defs.push_back({"HAS_TANGENTS", "1"});              // 'Tan'

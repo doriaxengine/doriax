@@ -1,6 +1,6 @@
 #version 450
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS) || defined(HAS_FOG)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS) || defined(USE_FOG_SKY)
     in vec3 v_position;
 #endif
 
@@ -266,6 +266,14 @@ const float M_PI = 3.141592653589793;
     #include "includes/terrain_fs.glsl"
 #endif
 #ifdef HAS_FOG
+    #ifdef USE_FOG_SKY
+        // the fog takes the sky's color from the map the lighting reads
+        #ifndef USE_IBL
+            uniform textureCube u_GGXEnvTexture;
+            uniform sampler u_GGXEnv_smp;
+        #endif
+        #define FOG_SKY(direction, lod) textureLod(samplerCube(u_GGXEnvTexture, u_GGXEnv_smp), direction, lod).rgb
+    #endif
     #include "includes/fog.glsl"
 #endif
 #ifdef USE_FRAGMENT_HOOKS
@@ -427,7 +435,7 @@ void main() {
             baseColor.rgb += surface.emissive;
         #endif
         #ifdef HAS_FOG
-            baseColor.rgb = getFogColor(baseColor.rgb, v_position);
+            baseColor.rgb = getFogColor(baseColor.rgb);
         #endif
         #ifdef USE_FRAGMENT_HOOKS
             baseColor = getFinalColor(context, baseColor);
@@ -651,7 +659,7 @@ void main() {
         #endif
 
         #ifdef HAS_FOG
-            color.rgb = getFogColor(color.rgb, v_position);
+            color.rgb = getFogColor(color.rgb);
         #endif
 
         #ifdef USE_FRAGMENT_HOOKS

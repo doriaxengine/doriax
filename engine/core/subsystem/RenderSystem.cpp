@@ -579,6 +579,7 @@ void RenderSystem::load(){
     hasShadows = false;
     onlyDirectionalLights = false;
     hasFog = false;
+    hasFogSky = false;
     hasIBL = false;
     hasReflectionProbes = false;
     hasWaterDepth = false;
@@ -1513,22 +1514,32 @@ bool RenderSystem::loadAndProcessFog(){
 
         fs_fog.color_type = Vector4(fog->color.x, fog->color.y, fog->color.z, fogTypeI);
         fs_fog.density_start_end = Vector4(fog->density, 0.0, fog->linearStart, fog->linearEnd);
+    }
 
-        // the sky's color needs its lighting maps
-        float skyBlend = 0.0f;
-        fs_fog.skyEnvironment = Vector4(1.0f, 1.0f, 1.0f, 0.0f);
-        auto skys = scene->getComponentArray<SkyComponent>();
-        if (skys->size() > 0){
-            const SkyComponent& sky = skys->getComponentFromIndex(0);
-            if (sky.irradianceMap && sky.prefilteredMap){
-                skyBlend = std::clamp(fog->skyBlend, 0.0f, 1.0f);
-                fs_fog.skyEnvironment = getSkyEnvironment(sky);
-            }
-        }
-        fs_fog.eye_skyBlend.w = skyBlend;
+    // taking the sky's color is a mesh shader variant
+    const bool fogSky = fog && fog->skyBlend > 0.0f;
+    if (hasFogSky != fogSky){
+        hasFogSky = fogSky;
+        needReloadMeshes();
     }
 
     return hasFog;
+}
+
+// how much the fog takes of the sky this frame draws: none until it has its lighting maps
+void RenderSystem::updateFogSky(){
+    fs_fog.forward_skyBlend.w = 0.0f;
+    fs_fog.skyEnvironment = Vector4(1.0f, 1.0f, 1.0f, 0.0f);
+
+    auto skys = scene->getComponentArray<SkyComponent>();
+    if (!hasFogSky || skys->size() == 0)
+        return;
+
+    const SkyComponent& sky = skys->getComponentFromIndex(0);
+    if (sky.irradianceMap && sky.prefilteredMap){
+        fs_fog.forward_skyBlend.w = std::min(scene->findComponentFromIndex<FogComponent>(0)->skyBlend, 1.0f);
+        fs_fog.skyEnvironment = getSkyEnvironment(sky);
+    }
 }
 
 // pooled maps stay alive in TexturePool for reuse; only unpooled ones are destroyed
@@ -1589,6 +1600,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
     setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), 0, 0.1f, 10.0f);
     // no camera owns a capture, so view parameters read their declared defaults
     setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+    effectView.pass = ShaderPass::SKY_CAPTURE;
     const Vector2 resolution((float)SKY_CAPTURE_SIZE, (float)SKY_CAPTURE_SIZE);
 
     // what the shader reads, as the capture would write it; the sun only when it reads it
@@ -1622,18 +1634,17 @@ void RenderSystem::captureSky(SkyComponent& sky){
     const Matrix4 viewProjection = sky.skyViewProjectionMatrix;
     capturingReflectionProbe = true;
     passResolution = resolution;
-    fs_sky.capture.x = 1.0f;
     skyCapturePass.setClearColor(background);
     for (int face = 0; face < 6; face++){
         setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), face, 0.1f, 10.0f);
         setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+        effectView.pass = ShaderPass::SKY_CAPTURE;
         sky.skyViewProjectionMatrix = getSkyViewProjection(captureCamera, 0.0f);
         skyCapturePass.startRenderPass(&skyCaptureFramebuffer, (size_t)face);
         drawSky(sky, PIP_RTT_INVERT);
         skyCapturePass.endRenderPass();
     }
     capturingReflectionProbe = false;
-    fs_sky.capture.x = 0.0f;
     sky.skyViewProjectionMatrix = viewProjection;
 
     // a texture still loading left the faces undrawn
@@ -1657,6 +1668,12 @@ void RenderSystem::captureSky(SkyComponent& sky){
         sky.prefilteredMap = skyCapturePrefiltered;
         sky.envMapsLoaded = true;
     }
+}
+
+// the sky a fog takes its color from: the maps the lighting reads, which a capture replaces
+void RenderSystem::addFogSky(ObjectRender& render, Submesh& submesh){
+    if (hasFogSky)
+        addSkyEnvironment(render, submesh.shader->shaderData);
 }
 
 void RenderSystem::addSkyEnvironment(ObjectRender& render, ShaderData& shaderData){
@@ -3295,6 +3312,7 @@ RenderSystem::SceneShading RenderSystem::getSceneShading() const{
     shading.shadows = hasShadows;
     shading.onlyDirectionalLights = onlyDirectionalLights;
     shading.fog = hasFog;
+    shading.fogSky = hasFogSky;
     shading.ibl = hasIBL;
     shading.reflectionProbes = hasReflectionProbes;
     shading.waterDepth = hasWaterDepth;
@@ -3315,7 +3333,9 @@ RenderSystem::SceneShading RenderSystem::getAuthoredSceneShading() const{
     shading.onlyDirectionalLights = shading.lights && allLightsDirectional(scene);
 
     // the project draws the fog the editor can hide
-    shading.fog = scene->getComponentArray<FogComponent>()->size() > 0;
+    auto fogs = scene->getComponentArray<FogComponent>();
+    shading.fog = fogs->size() > 0;
+    shading.fogSky = shading.fog && fogs->getComponentFromIndex(0).skyBlend > 0.0f;
 
     // as updateSkyEnvironment, which makes the maps of a cube sky, and captureSky those of a shader sky
     auto skys = scene->getComponentArray<SkyComponent>();
@@ -3501,6 +3521,10 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
                     (terrain)?true:false, (instmesh)?true:false, sh.ibl, sh.mirror, sh.ssao, sh.light2d, sh.shadows2d,
                     sh.alphaMask, sh.alphaOpaque, sh.instanceFade, sh.terrainSurface, sh.hookUV1 && !sh.hasTexture1, sh.hookNormals && !sh.hasNormal,
                     sh.hookUV2 && !sh.hasTexture2);
+    // 'Fsk': the fog takes the sky's color
+    if (shading.fogSky){
+        sh.properties |= 1u << 5;
+    }
     // 'Dlo': without the point/spot paths
     if (sh.punctual && shading.onlyDirectionalLights){
         sh.properties |= 1u << 28;
@@ -3812,7 +3836,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (sh.ibl){
             addSkyEnvironment(render, shaderData);
             render.addTexture(shaderData.getTextureIndex(TextureShaderType::REFLECTIONPROBE), ShaderStageType::FRAGMENT, &emptyCubeBlack);
-        }else if (shading.fog){
+        }else if (shading.fogSky){
             // the fog reads the sky's prefiltered map
             addSkyEnvironment(render, shaderData);
         }
@@ -4754,7 +4778,7 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
 // unlit quads with vertex colors, nothing else per object
 bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
-    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
+    constexpr uint32_t allowed = required | (1u << 1) | (1u << 5) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
 
     // shader properties first, they rule out lit meshes
     const Submesh& submesh = mesh.submeshes[0];
@@ -4904,7 +4928,6 @@ void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
 void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh){
     Submesh& submesh = mesh.submeshes[0];
     if (hasFog){
-        addSkyEnvironment(render, submesh.shader->shaderData);
         render.applyUniformBlock(submesh.slotFSFog, sizeof(fs_fog_t), &fs_fog);
     }
 
@@ -4952,6 +4975,7 @@ bool RenderSystem::drawSpriteBatch(){
 
     writeParameters(mesh, scene);
     applySpriteBatchUniforms(render, mesh);
+    addFogSky(render, mesh.submeshes[0]);
 
     render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset);
     render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset);
@@ -5273,6 +5297,8 @@ void RenderSystem::flushSpriteSegment(){
             }
             previous = &render;
             previousCutoff = cutoff;
+            // textures are each sprite's own, whatever pipeline it shares
+            addFogSky(render, mesh.submeshes[0]);
 
             render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset + run.vertexStart);
             render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset + run.indexStart * sizeof(uint16_t));
@@ -5405,9 +5431,8 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             if (hasFog){
-                // the fog reads the sky's maps as the lighting does, which a capture can replace
                 if (!mesh.submeshes[i].hasIBL)
-                    addSkyEnvironment(render, mesh.submeshes[i].shader->shaderData);
+                    addFogSky(render, mesh.submeshes[i]);
                 render.applyUniformBlock(mesh.submeshes[i].slotFSFog, sizeof(fs_fog_t), &fs_fog);
             }
 
@@ -7838,7 +7863,8 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
 
         ObjectRender& render = sky.render;
         // its hooks read the last capture back, but never the one being drawn
-        TextureRender* capture = (fs_sky.capture.x == 0.0f && skyCaptureFramebuffer.isCreated()) ? &skyCaptureFramebuffer.getColorTexture() : &emptyCubeBlack;
+        const bool readable = effectView.pass != ShaderPass::SKY_CAPTURE && skyCaptureFramebuffer.isCreated();
+        TextureRender* capture = readable ? &skyCaptureFramebuffer.getColorTexture() : &emptyCubeBlack;
         render.addTexture(sky.shaderRender->shaderData.getTextureIndex(TextureShaderType::SKYCAPTURE), ShaderStageType::FRAGMENT, capture);
 
         if (!render.beginDraw(pipType)){
@@ -8720,7 +8746,6 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     render.applyUniformBlock(water.slotFSParams, sizeof(fs_water_t), &fsParams);
     render.applyUniformBlock(water.slotFSLighting, sizeof(fs_lighting_t), &fs_lighting);
     if (water.slotFSFog != -1){
-        addSkyEnvironment(render, shaderData);
         render.applyUniformBlock(water.slotFSFog, sizeof(fs_fog_t), &fs_fog);
     }
     render.applyUniformBlock(water.slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
@@ -10189,11 +10214,13 @@ void RenderSystem::getLoadCount(size_t& loaded, size_t& total) const{
 
 void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& camera, const Transform& cameraTransform){
     effectView.eye = cameraTransform.worldPosition;
-    // the fog looks toward the sky from the same eye
-    fs_fog.eye_skyBlend = Vector4(effectView.eye.x, effectView.eye.y, effectView.eye.z, fs_fog.eye_skyBlend.w);
     // worldDirection is the camera's backward axis
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+    effectView.pass = ShaderPass::COLOR;
+    // the fog looks toward the sky as the pass does
+    fs_fog.eye = Vector4(effectView.eye.x, effectView.eye.y, effectView.eye.z, effectView.perspective ? 1.0f : 0.0f);
+    fs_fog.forward_skyBlend = Vector4(effectView.forward.x, effectView.forward.y, effectView.forward.z, fs_fog.forward_skyBlend.w);
     effectView.viewMatrix = camera.viewMatrix;
     effectView.depthProjection = Vector4(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3],
                                          camera.projectionMatrix[3][2], camera.projectionMatrix[3][3]);
@@ -12061,6 +12088,7 @@ void RenderSystem::draw(){
         updateSkyParams(sky);
         captureSky(sky);
     }
+    updateFogSky();
 
     // Runtime-captured probes share a strict budget: one cubemap face total per
     // frame. Static probes without an authored cubemap capture once; dynamic

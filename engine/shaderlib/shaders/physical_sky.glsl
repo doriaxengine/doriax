@@ -2,7 +2,7 @@
 #pragma shader sky
 
 #pragma stage fragment
-#pragma param float intensity = 2 [0, 16] "Brightness for the light's intensity, which also lights the scene"
+#pragma param float intensity = 1.5 [0, 16] "Brightness for the light's intensity, which also lights the scene"
 #pragma param vec3 airColor = 0.36, 0.6, 1 color "What the air scatters: the blue of the day, and the red it leaves at sunset"
 #pragma param float airDensity = 1 [0, 10] "Amount of air; more is deeper blue and redder sunsets"
 #pragma param float haze = 1 [0, 50] "Dust and water in the air: a paler sky and a glow around the sun"
@@ -18,9 +18,12 @@ vec4 getColor(FragmentContext context, vec4 color){
     Atmosphere air = earthAtmosphere(sRGBToLinear(params.airColor), params.airDensity, params.haze, params.hazeGlow,
         params.ozone, sRGBToLinear(params.groundColor));
     vec3 light = context.sunColor * params.intensity;
-    // the air is marched only into the capture that lights the scene; the view reads it back and adds the sun
-    if (context.capturing)
-        return vec4(physicalSky(air, context.direction, context.sunDirection, params.altitude, params.samples) * light, 1.0) * context.tint;
     vec3 sun = physicalSun(air, context.direction, context.sunDirection, params.sunSize, params.altitude);
+    // the air is marched only into the capture that lights the scene; the view reads it back and adds the sun
+    if (Engine.pass == PASS_SKY_CAPTURE)
+        return vec4(physicalSky(air, context.direction, context.sunDirection, params.altitude, params.samples) * light, 1.0) * context.tint;
+    // a transparent sky is captured over the background, so the view marches its own
+    if (context.tint.a < 1.0)
+        return vec4((physicalSky(air, context.direction, context.sunDirection, params.altitude, params.samples) + sun) * light, 1.0) * context.tint;
     return skyCapture(context.direction) + vec4(sun * light, 0.0) * context.tint;
 }

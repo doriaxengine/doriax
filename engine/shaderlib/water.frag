@@ -122,6 +122,8 @@ float clampedDot(vec3 x, vec3 y){
     #include "includes/shadows.glsl"
 #endif
 #ifdef HAS_FOG
+    // the fog takes the sky's color from the sky the water reflects
+    #define FOG_SKY(direction, lod) texture(samplerCube(u_skyTexture, u_sky_smp), direction).rgb
     #include "includes/fog.glsl"
 #endif
 
@@ -613,7 +615,7 @@ void main(){
 
     #ifdef HAS_FOG
         // the scene seen through was fogged when it was drawn, the water fogs only its own share
-        color = getFogColor(color, v_position) - getFogColor(vec3(0.0), v_position) * (1.0 - coverage);
+        color = getFogColor(color) - getFogColor(vec3(0.0)) * (1.0 - coverage);
     #endif
 
     // after the derivatives, which a discarded neighbor would spoil

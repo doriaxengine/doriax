@@ -56,13 +56,17 @@ float atmosphereOzoneDepth(float r, float mu){
 
 // the sunlight reaching radius r from zenith cosine mu, through the air and past the planet
 vec3 atmosphereTransmittance(Atmosphere air, float r, float mu){
-    float lowest = mu < 0.0 ? r * sqrt(1.0 - mu * mu) : r;
-    if (lowest < ATMOSPHERE_GROUND - 1.0)
-        return vec3(0.0);
+    float shadow = 1.0;
+    if (mu < 0.0){
+        // the planet's shadow on a ray that dips toward it, its edge as wide as the sun's disc from there
+        float edge = max(-r * mu * ATMOSPHERE_SUN_RADIUS, 0.001);
+        shadow = smoothstep(-edge, edge, r * sqrt(1.0 - mu * mu) - ATMOSPHERE_GROUND);
+        if (shadow <= 0.0)
+            return vec3(0.0);
+    }
     vec3 depth = air.rayleigh * atmosphereDepth(r, mu, ATMOSPHERE_RAYLEIGH_HEIGHT) +
         air.mieExtinction * atmosphereDepth(r, mu, ATMOSPHERE_MIE_HEIGHT) + air.ozone * atmosphereOzoneDepth(r, mu);
-    // the planet's shadow, soft as the sun's disc
-    return exp(-depth) * smoothstep(-1.0, 1.0, lowest - ATMOSPHERE_GROUND);
+    return exp(-depth) * shadow;
 }
 
 float atmosphereMiePhase(float nu, float g){

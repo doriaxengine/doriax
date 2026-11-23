@@ -481,7 +481,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 2:  return shortName ? "Uv2" : "UV2";
             case 3:  return shortName ? "Puc" : "Punctual";
             case 4:  return shortName ? "Shw" : "Shadow";
-            // case 5 reserved (was 'Pcf'; the PCF filter is uniform-driven now)
+            case 5:  return shortName ? "Fsk" : "Fog Sky";
             case 6:  return shortName ? "Nor" : "Normals";
             case 7:  return shortName ? "Nmp" : "Normal Map";
             case 8:  return shortName ? "Tan" : "Tangents";
@@ -648,7 +648,7 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     // optional features, in the order they are given up
     std::vector<int> optionalBits;
     if (shaderType == ShaderType::MESH){
-        optionalBits = {28, 21, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
+        optionalBits = {28, 21, 5, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fsk Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
     }else if (shaderType == ShaderType::DEPTH){
         optionalBits = {9, 7, 0}; // Uv1 Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){

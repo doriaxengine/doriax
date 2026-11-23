@@ -756,7 +756,7 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     if (!engineStruct.empty())
         structs << "struct ShaderParams_Engine {" << engineStruct << " };\nShaderParams_Engine Engine;\n";
     if (annotations.enginePass)
-        structs << "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n";
+        structs << "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n#define PASS_SKY_CAPTURE 4\n";
 
     // the object parameters, then each collection, as globals the load fills
     bool hasObject = false;

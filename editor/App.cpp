@@ -3071,7 +3071,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v84: and for a macro argument named params; a normal map needs UVs.
     // v85: skies know when they are captured, and can read the capture back.
     // v86: fog takes the sky's color.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v86";
+    // v87: as a variant of its own; skies are told of their capture by Engine.pass.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v87";
 }
 
 void editor::App::pushTabNotificationStyle(){

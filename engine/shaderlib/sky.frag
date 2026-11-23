@@ -11,7 +11,6 @@ uniform u_fs_skyParams {
     vec4 color;        // sRGB
     vec4 sunDirection; // toward the strongest directional light, in the sky's space
     vec4 sunColor;     // its color times intensity, linear; black without one
-    vec4 capture;      // x = 1 while the sky draws into its capture
 } skyParams;
 
 #include "includes/parameters_fs.glsl"
@@ -27,14 +26,13 @@ uniform u_fs_skyParams {
         vec3 sunDirection;    // toward the strongest directional light, in the sky's space
         vec3 sunColor;        // its color times intensity; black without one
         vec2 pixel;
-        bool capturing;       // drawn into the cube that lights the scene
     };
 
     #ifdef HOOK_SKY_CAPTURE
         uniform textureCube u_skyCaptureTexture;
         uniform sampler u_skyCapture_smp;
 
-        // the sky as last captured, linear; black while it is captured
+        // the sky as last captured, over the background where it is transparent, linear; black in PASS_SKY_CAPTURE
         vec4 skyCapture(vec3 direction){
             return sRGBToLinear(textureLod(samplerCube(u_skyCaptureTexture, u_skyCapture_smp), direction, 0.0));
         }
@@ -55,7 +53,6 @@ void main(){
         context.sunDirection = skyParams.sunDirection.xyz;
         context.sunColor = skyParams.sunColor.rgb;
         context.pixel = gl_FragCoord.xy;
-        context.capturing = skyParams.capture.x > 0.5;
         frag_color = linearTosRGB(getColor(context, context.tint * context.textureColor));
     #else
         frag_color = skyParams.color * texture(samplerCube(u_skyTexture, u_sky_smp), uv);
