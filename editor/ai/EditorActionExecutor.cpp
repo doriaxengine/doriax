@@ -7542,6 +7542,7 @@ ActionResult EditorActionExecutor::setProjectSettings(const Json& arguments) {
     WebProjectSettings& web = project->getWebProjectSettings();
     if (arguments.contains("web_resize_canvas")) web.resizeCanvasToWindow = arguments["web_resize_canvas"].get<bool>();
     if (arguments.contains("web_hide_emscripten_ui")) web.hideEmscriptenUI = arguments["web_hide_emscripten_ui"].get<bool>();
+    if (arguments.contains("web_max_pixel_ratio")) web.maxPixelRatio = arguments["web_max_pixel_ratio"].get<float>();
 
     if (!project->saveProjectFile()) {
         return failResult("Failed to save the project settings.");
@@ -7554,7 +7555,7 @@ ActionResult EditorActionExecutor::setProjectSettings(const Json& arguments) {
         {"window", {{"width", project->getWindowWidth()}, {"height", project->getWindowHeight()}}},
         {"vsync", project->isVSyncEnabled()},
         {"loading", loadingSettingsJson(project->getLoadingSettings())},
-        {"web", {{"resize_canvas", web.resizeCanvasToWindow}, {"hide_emscripten_ui", web.hideEmscriptenUI}}}});
+        {"web", {{"resize_canvas", web.resizeCanvasToWindow}, {"hide_emscripten_ui", web.hideEmscriptenUI}, {"max_pixel_ratio", web.maxPixelRatio}}}});
 }
 
 ActionResult EditorActionExecutor::createProject(const Json& arguments) {

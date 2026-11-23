@@ -861,6 +861,7 @@ void ProjectSettingsWindow::open(Project* project) {
     snprintf(m_webHeadIncludeBuffer, sizeof(m_webHeadIncludeBuffer), "%s", web.headInclude.c_str());
     m_webResizeCanvasToWindow = web.resizeCanvasToWindow;
     m_webHideEmscriptenUI = web.hideEmscriptenUI;
+    m_webMaxPixelRatio = web.maxPixelRatio;
     m_webPortalIndex = findWebPortalIndex(web.portal);
     snprintf(m_webPortalGameIdBuffer, sizeof(m_webPortalGameIdBuffer), "%s", web.portalGameId.c_str());
 
@@ -1418,6 +1419,15 @@ void ProjectSettingsWindow::drawWebSettings() {
     ImGui::Checkbox("##WebHideEmscriptenUI", &m_webHideEmscriptenUI);
     endSettingsRow("Hide the standard logo, status, controls and output console. Runtime scripts remain active. Custom HTML elements are not removed.");
 
+    const WebProjectSettings defaults;
+    if (beginSettingsRow("Max Pixel Ratio", m_webMaxPixelRatio != defaults.maxPixelRatio)) {
+        m_webMaxPixelRatio = defaults.maxPixelRatio;
+    }
+    ImGui::SetNextItemWidth(-helpMarkerWidth());
+    UIUtils::inputFloat("##WebMaxPixelRatio", &m_webMaxPixelRatio, 0.25f, 1.0f, "%.2f");
+    m_webMaxPixelRatio = std::isfinite(m_webMaxPixelRatio) ? std::max(m_webMaxPixelRatio, 1.0f) : defaults.maxPixelRatio;
+    endSettingsRow("Most pixels drawn per CSS pixel on phones and HiDPI screens. Higher is sharper and costs more GPU time. 1 ignores the screen density.");
+
     drawComboSetting("Game Portal", "##WebPortal", webPortalNames, webPortalCount, m_webPortalIndex, findWebPortalIndex(WebPortalType::NONE),
         "Loads this portal's SDK for the WebPortal class: ads and gameplay events. Each portal needs its own export.");
 
@@ -1756,6 +1766,7 @@ bool ProjectSettingsWindow::applySettings() {
     applyTextBuffer(web.headInclude, m_webHeadIncludeBuffer);
     web.resizeCanvasToWindow = m_webResizeCanvasToWindow;
     web.hideEmscriptenUI = m_webHideEmscriptenUI;
+    web.maxPixelRatio = m_webMaxPixelRatio;
     web.portal = webPortalValues[std::clamp(m_webPortalIndex, 0, webPortalCount - 1)];
     applyTextBuffer(web.portalGameId, m_webPortalGameIdBuffer);
 

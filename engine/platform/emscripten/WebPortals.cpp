@@ -9,28 +9,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "Engine.h"
 #include "service/WebPortal.h"
 #include "subsystem/AudioSystem.h"
 
 using namespace doriax;
 
 namespace {
-    // The game stays paused while one of its ads plays or the portal asks for it
-    bool pausedForAd = false;
-    bool pausedByPortal = false;
-
-    void setPaused(bool& reason, bool paused){
-        const bool wasPaused = pausedForAd || pausedByPortal;
-        reason = paused;
-        const bool isPaused = pausedForAd || pausedByPortal;
-        if (isPaused && !wasPaused){
-            Engine::systemPause();
-        }else if (wasPaused && !isPaused){
-            Engine::systemResume();
-        }
-    }
-
     // Logic shared by the portals. Calls wait for the SDK; ads and saves report any failure.
     class ScriptPortal: public WebPortalBackend{
     public:
@@ -493,13 +477,13 @@ extern "C" {
 
     EMSCRIPTEN_KEEPALIVE
     void webportal_ad_started_callback(int type) {
-        setPaused(pausedForAd, true);
+        DoriaxWeb::setPaused(DoriaxWeb::PauseReason::AD, true);
         WebPortal::systemAdStarted(static_cast<WebPortalAdType>(type));
     }
 
     EMSCRIPTEN_KEEPALIVE
     void webportal_ad_finished_callback(int type) {
-        setPaused(pausedForAd, false);
+        DoriaxWeb::setPaused(DoriaxWeb::PauseReason::AD, false);
         WebPortal::systemAdFinished(static_cast<WebPortalAdType>(type));
     }
 
@@ -507,7 +491,7 @@ extern "C" {
     EMSCRIPTEN_KEEPALIVE
     void webportal_ad_error_callback(int type, const char* code, const char* message, int started) {
         if (started){
-            setPaused(pausedForAd, false);
+            DoriaxWeb::setPaused(DoriaxWeb::PauseReason::AD, false);
         }
         WebPortal::systemAdError(static_cast<WebPortalAdType>(type), code, message);
     }
@@ -515,7 +499,7 @@ extern "C" {
     // pauses the portal asks for itself, like its startup ad or splash screen
     EMSCRIPTEN_KEEPALIVE
     void webportal_pause_callback(int paused) {
-        setPaused(pausedByPortal, paused != 0);
+        DoriaxWeb::setPaused(DoriaxWeb::PauseReason::PORTAL, paused != 0);
     }
 
     EMSCRIPTEN_KEEPALIVE
