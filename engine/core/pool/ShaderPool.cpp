@@ -834,8 +834,8 @@ ShaderKey ShaderPool::getStorageKey(ShaderKey key) {
 }
 
 uint32_t ShaderPool::getValidPropertyMask(ShaderType shaderType) {
-    // Derived from the property-name table so a retired bit (e.g. MESH bit 5, the
-    // old 'Pcf') is excluded automatically: it has no short name ("?").
+    // Derived from the property-name table so a retired bit is excluded
+    // automatically: it has no short name ("?").
     uint32_t mask = 0;
     int propCount = getShaderPropertyCount(shaderType);
     for (int i = 0; i < propCount; i++) {
@@ -852,6 +852,10 @@ ShaderKey ShaderPool::normalizeKey(ShaderKey key) {
     // Ult with L2d used to take Tan without Nmp
     if (type == ShaderType::MESH && (properties & 1u) && (properties & (1u << 22)) && !(properties & (1u << 7))){
         properties &= ~(1u << 8);
+    }
+    // Fsk takes Fog and no Ibl; older keys had Pcf on its bit
+    if (type == ShaderType::MESH && (!(properties & (1u << 12)) || (properties & (1u << 19)))){
+        properties &= ~(1u << 5);
     }
     return getShaderKey(type, properties, customId);
 }
@@ -870,8 +874,7 @@ uint32_t ShaderPool::getMeshProperties(
     prop |= uv2              ? (1 <<  2) : 0;
     prop |= punctual         ? (1 <<  3) : 0;
     prop |= shadows          ? (1 <<  4) : 0;
-    // bit 5 was USE_SHADOWS_PCF; the PCF filter is uniform-driven now (Scene
-    // shadowQuality). Kept reserved so the other bit positions stay stable.
+    // bits 5 (Fsk) and 28 (Dlo) are added by RenderSystem::getSubmeshShading
     prop |= normals          ? (1 <<  6) : 0;
     prop |= normalMap        ? (1 <<  7) : 0;
     prop |= tangents         ? (1 <<  8) : 0;

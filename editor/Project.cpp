@@ -4333,6 +4333,17 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             }
         }
     }
+
+    // a script can turn the sky blend on or off, so its meshes ship with 'Fsk' and without
+    if (authoredShading.fog) {
+        const std::set<ShaderKey> sceneKeys = keys;
+        for (ShaderKey key : sceneKeys) {
+            const bool fogSky = key & (1u << 5);
+            if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && (fogSky || skys->size() > 0)) {
+                keys.insert(ShaderPool::normalizeKey(key ^ (1u << 5)));
+            }
+        }
+    }
 }
 
 void editor::Project::buildStandaloneShaderCache() {
@@ -6614,10 +6625,9 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     calculateMaxValues(sceneProject->scene, maxValues);
     sceneProject->maxValues = maxValues;
 
-    std::set<ShaderKey> shaderKeys;
+    // Over the existing keys, so those from components not yet rendered by RenderSystem are preserved.
+    std::set<ShaderKey> shaderKeys = sceneProject->shaderKeys;
     collectSceneShaderKeys(sceneProject, shaderKeys);
-    // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
-    shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
     // Except those of deleted shader files, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
         const std::string shaderFile = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));

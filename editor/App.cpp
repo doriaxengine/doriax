@@ -3073,7 +3073,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v86: fog takes the sky's color.
     // v87: as a variant of its own; skies are told of their capture by Engine.pass.
     // v88: meshes the sky lights take its color in the fog without the variant.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v88";
+    // v89: as unlit files do.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v89";
 }
 
 void editor::App::pushTabNotificationStyle(){

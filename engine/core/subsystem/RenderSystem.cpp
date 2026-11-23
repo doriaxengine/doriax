@@ -1518,9 +1518,9 @@ bool RenderSystem::loadAndProcessFog(){
         fs_fog.density_start_end = Vector4(fog->density, 0.0, fog->linearStart, fog->linearEnd);
     }
 
-    // taking the sky's color is a variant of the meshes the sky does not light, kept once taken: an export has the ones it saved
+    // taking the sky's color is a variant of the meshes the sky does not light, kept once taken
     fogSkyBlend = fog ? std::clamp(fog->skyBlend, 0.0f, 1.0f) : 0.0f;
-    if (!hasFogSky && fogSkyBlend > 0.0f){
+    if (!hasFogSky && fogSkyBlend > 0.0f && scene->getComponentArray<SkyComponent>()->size() > 0){
         hasFogSky = true;
         needReloadMeshes();
     }
@@ -3337,13 +3337,13 @@ RenderSystem::SceneShading RenderSystem::getAuthoredSceneShading() const{
     // the project draws the fog the editor can hide
     auto fogs = scene->getComponentArray<FogComponent>();
     shading.fog = fogs->size() > 0;
-    shading.fogSky = shading.fog && fogs->getComponentFromIndex(0).skyBlend > 0.0f;
 
     // as updateSkyEnvironment, which makes the maps of a cube sky, and captureSky those of a shader sky
     auto skys = scene->getComponentArray<SkyComponent>();
     if (skys->size() > 0){
         const SkyComponent& sky = skys->getComponentFromIndex(0);
         shading.ibl = isSkyCaptured(sky) || (!sky.texture.empty() && sky.texture.getNumFaces() == 6);
+        shading.fogSky = shading.fog && fogs->getComponentFromIndex(0).skyBlend > 0.0f;
     }
     shading.reflectionProbes = scene->getComponentArray<ReflectionProbeComponent>()->size() > 0;
 

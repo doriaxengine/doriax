@@ -330,6 +330,15 @@ void clearCustomSourceCache() {
     sourceFiles.clear();
 }
 
+// false when it was not there
+bool removeDefine(shadercompiler::args_t& args, const char* name) {
+    const size_t count = args.defines.size();
+    args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
+        return define.def == name;
+    }), args.defines.end());
+    return args.defines.size() < count;
+}
+
 // parameter headers, hook defines and flags; throws on a bad annotation
 void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
                            editor::ShaderDeclarations& declared) {
@@ -442,12 +451,16 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if ((vertexHooks.unlit || fragmentHooks.unlit) && passType == ShaderType::MESH) {
         const bool light2D = defined("USE_LIGHT2D");
         const bool normals = defined("HAS_NORMALS");
+        // the sky's color in the fog comes with the lighting, or as its own variant
+        const bool fogSky = defined("HAS_FOG") && defined("USE_IBL");
         args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
             static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_SSAO", "DIRECTIONAL_LIGHTS_ONLY"};
             static const std::set<std::string> surface = {"HAS_NORMALS", "HAS_TANGENTS", "HAS_NORMAL_MAP"};
             return lighting.count(define.def) || (!light2D && surface.count(define.def));
         }), args.defines.end());
         args.defines.push_back({"MATERIAL_UNLIT", "1"});
+        if (fogSky)
+            args.defines.push_back({"USE_FOG_SKY", "1"});
         // the hooks keep the normals the lit key gave
         if (normals && !light2D && !defined("HAS_HOOK_NORMALS"))
             args.defines.push_back({"HAS_HOOK_NORMALS", "1"});
@@ -1333,7 +1346,7 @@ std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lan
     return "";
 }
 
-ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use){
+ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use, bool fogSky){
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
     }
@@ -1367,6 +1380,8 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
         Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), e.what());
         throw;
     }
+    if (!fogSky)
+        removeDefine(args, "USE_FOG_SKY");
 
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
@@ -1435,6 +1450,12 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty()) {
+        // the sky's color is left out of the fog where its map does not fit
+        if (removeDefine(args, "USE_FOG_SKY")) {
+            const ShaderData plainFog = buildShaderInternal(shaderKey, project, trackProgress, use, false);
+            Out::warning("Shader %s has no sky color in its fog: %s", getShaderDisplayName(shaderKey).c_str(), blockError.c_str());
+            return plainFog;
+        }
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
         }
@@ -1717,7 +1738,7 @@ ShaderData& editor::ShaderBuilder::getShaderData(ShaderKey shaderKey) {
     return shaderDataCache[shaderKey]; 
 }
 
-ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend) {
+ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend, bool fogSky) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -1731,6 +1752,8 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
 
     ShaderDeclarations declarations;
     setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED);
+    if (!fogSky)
+        removeDefine(args, "USE_FOG_SKY");
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
@@ -1756,8 +1779,14 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     shaderData.flags = declarations.flags;
 
     const std::string blockError = getShaderDataError(shaderData);
-    if (!blockError.empty())
+    if (!blockError.empty()) {
+        if (removeDefine(args, "USE_FOG_SKY")) {
+            const ShaderData plainFog = buildShaderForExport(shaderKey, project, backend, false);
+            Out::warning("Shader %s has no sky color in its fog: %s", getShaderDisplayName(shaderKey).c_str(), blockError.c_str());
+            return plainFog;
+        }
         throw std::runtime_error(blockError);
+    }
 
     Out::build(
         "Shader %s (%s) generated successfully",
