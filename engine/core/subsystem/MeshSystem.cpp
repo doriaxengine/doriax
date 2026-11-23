@@ -681,6 +681,13 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
     // Calling load() unconditionally would instead re-read every already-uploaded
     // (and released) tile texture from disk on each rebuild, spinning an endless
     // load loop.
+    // A rect added without a texture path uses submesh 0, the texture set by
+    // Mesh::setTexture (a path or TextureData). Only addRect with a path creates
+    // submeshes, so without one the count stayed 0 and every tile was skipped.
+    if (mesh.numSubmeshes == 0 && tilemap.numTilesRect > 0){
+        mesh.numSubmeshes = 1;
+    }
+
     // before the first load, see RenderSystem::loadMesh
     for (int s = 0; s < mesh.numSubmeshes; s++){
         mesh.submeshes[s].material.baseColorTexture.setAlphaBorderAuto(true);
