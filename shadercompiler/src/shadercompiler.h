@@ -329,6 +329,7 @@ namespace shadercompiler{
 
     // What a function uses
     struct function_t{
+        std::string file;             // where it is defined
         std::set<std::string> calls;  // named with their parameter types, as in "sceneColor(vf2;"
         std::set<std::string> fields; // "Struct.field"
     };

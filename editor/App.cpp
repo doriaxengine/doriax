@@ -3075,7 +3075,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v88: meshes the sky lights take its color in the fog without the variant.
     // v89: as unlit files do.
     // v90: what hooks use is read from the parsed shader.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v90";
+    // v91: the pass constants in every shader file.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v91";
 }
 
 void editor::App::pushTabNotificationStyle(){

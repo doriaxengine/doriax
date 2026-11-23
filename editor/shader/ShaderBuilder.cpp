@@ -212,10 +212,12 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         }
         appendSignaturePart(signatureInput, "entry:" + shader, source);
     }
+    // the values of Engine.pass, there for any #ifdef
+    const std::string passes = "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n#define PASS_SKY_CAPTURE 4\n";
     // texture names are defines, kept to the file
-    snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
+    snapshot->projectBuffers["shader_hooks_vs.glsl"] = passes + "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
         shader + "\"\n#include \"shader_textures_end_vs.glsl\"\n";
-    snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
+    snapshot->projectBuffers["shader_hooks_fs.glsl"] = passes + "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
         shader + "\"\n#include \"shader_textures_end_fs.glsl\"\n";
 
     // watched even when absent, as a file made there would come first
@@ -405,10 +407,6 @@ bool fixHookUsage(const std::string& log, const std::map<std::string, shadercomp
     const std::string error = log.substr(start + 7, log.find('\n', start) - start - 7);
     auto names = [&](const std::string& name) { return error.find(" '" + name + "' : ") != std::string::npos; };
 
-    // Engine.pass brings the PASS_ constants, so only where it is read
-    if (!usage.engine.empty() && (names("pass") || error.find(" 'PASS_") != std::string::npos) && usage.engine.insert("pass").second)
-        return true;
-
     // a name of the engine the file has for its own, but its functions are not defined again
     if (error[0] == '/' && error.find("already has a body") == std::string::npos) {
         const size_t count = usage.functions.size() + usage.engine.size();
@@ -456,21 +454,17 @@ bool readHookUsage(const shadercompiler::args_t& args, bool meshPass, editor::Sh
             for (const std::string& call : functions[function].calls)
                 reach(call, reached);
         };
-        // the hooks main() runs, with the globals
+        // what main() runs of the project's files, with the globals; a macro can rename a hook
         std::set<std::string> drawn, hooked;
         reach("main(", drawn);
         reach("", hooked);
-        for (const editor::ShaderHook& hook : editor::ShaderParameterParser::getHooks()) {
-            for (const std::string& function : drawn) {
-                if (getFunctionName(function) == hook.name)
-                    reach(function, hooked);
-            }
+        for (const std::string& function : drawn) {
+            if (functions[function].file[0] == '/')
+                reach(function, hooked);
         }
 
         const HookUsage declared = usage;
         usage = HookUsage();
-        if (declared.engine.count("pass"))
-            usage.engine.insert("pass");
         auto addFields = [](const shadercompiler::function_t& function, const std::string& type, std::set<std::string>& fields) {
             for (const std::string& field : function.fields) {
                 if (field.compare(0, type.size() + 1, type + ".") == 0)
@@ -1413,7 +1407,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use, bool fogSky) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -1426,6 +1420,9 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     const bool meshPass = shaderType == ShaderType::MESH || shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER;
     if (args.lang == shadercompiler::LANG_GLSL && meshPass)
         args.defines.push_back({"SKINNING_TEXTURE", "1"});
+
+    if (!fogSky)
+        removeDefine(args, "USE_FOG_SKY");
 
     // the built-in shaders declare no parameters
     args.fileBuffers["shader_params_vs.glsl"] = "// no parameters\n";
@@ -1457,6 +1454,9 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     HookUsage vertexUsage, fragmentUsage;
     auto setupFile = [&](shadercompiler::args_t& build, ShaderDeclarations& declared) {
         setupShaderParameters(build, shader, shaderType, vertexHooks, fragmentHooks, vertexUsage, fragmentUsage, declared);
+        // the one an unlit file takes too
+        if (!fogSky)
+            removeDefine(build, "USE_FOG_SKY");
 
         // compiled with its stages as conditions
         for (const auto& [key, content] : sources->projectBuffers)
@@ -1464,7 +1464,7 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     };
 
     // parsed first with all the engine has, to learn what the hooks use of it
-    vertexUsage.engine = fragmentUsage.engine = {"time", "resolution"};
+    vertexUsage.engine = fragmentUsage.engine = {"time", "resolution", "pass"};
     fragmentUsage.functions = {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion", "skyCapture"};
     shadercompiler::args_t probe;
     do {
@@ -1515,7 +1515,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     ShaderDeclarations declarations;
     try {
-        setupBuildArgs(args, shaderKey, project, declarations, use);
+        setupBuildArgs(args, shaderKey, project, declarations, use, fogSky);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1523,8 +1523,6 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
         Out::error("Shader %s failed: %s", getShaderDisplayName(shaderKey).c_str(), e.what());
         throw;
     }
-    if (!fogSky)
-        removeDefine(args, "USE_FOG_SKY");
 
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
@@ -1894,9 +1892,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     applyShaderBackend(args, backend);
 
     ShaderDeclarations declarations;
-    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED);
-    if (!fogSky)
-        removeDefine(args, "USE_FOG_SKY");
+    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED, fogSky);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");

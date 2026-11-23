@@ -80,10 +80,10 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key, and for a shader file the exact
         // graph of files it includes. Throws on failure.
         // declarations takes what the shader file declares, for ShaderData
-        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations,
-                            ShaderSourceUse use = ShaderSourceUse::EDITOR);
-
         // fogSky false leaves the sky's color out of the fog
+        void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations,
+                            ShaderSourceUse use = ShaderSourceUse::EDITOR, bool fogSky = true);
+
         ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR, bool fogSky = true);
         std::string getShaderDisplayName(ShaderKey key);
 

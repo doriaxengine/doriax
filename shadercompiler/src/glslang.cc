@@ -484,7 +484,8 @@ public:
     virtual bool visitAggregate(glslang::TVisit visit, glslang::TIntermAggregate* node) override {
         if (node->getOp() == glslang::EOpFunction) {
             current = (visit == glslang::EvPreVisit) ? node->getName().c_str() : "";
-            functions[current];
+            if (visit == glslang::EvPreVisit)
+                functions[current].file = node->getLoc().getFilenameStr();
         } else if (node->getOp() == glslang::EOpFunctionCall && visit == glslang::EvPreVisit) {
             functions[current].calls.insert(node->getName().c_str());
         }
