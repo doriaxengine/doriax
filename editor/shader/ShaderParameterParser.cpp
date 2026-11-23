@@ -129,14 +129,38 @@ std::string readIdentifier(const std::string& code, size_t& i){
     return code.substr(start, i - start);
 }
 
-// a call anywhere in the code
+// on a #define line
+bool inMacro(const std::string& code, size_t at){
+    size_t i = code.rfind('\n', at);
+    i = i == std::string::npos ? 0 : i + 1;
+    return nextChar(code, i) == '#' && code.compare(i + 1, 6, "define") == 0;
+}
+
+// after a type, where a name is declared and not called
+bool followsType(const std::string& code, size_t at){
+    size_t end = at;
+    while (end > 0 && std::isspace((unsigned char)code[end - 1]))
+        end--;
+    size_t start = end;
+    while (start > 0 && isIdentifierChar(code[start - 1]))
+        start--;
+    return start < end && code.compare(start, end - start, "return") != 0;
+}
+
+// a call of an engine function, or a macro naming it; not when the code declares its own of that name
 bool callsFunction(const std::string& code, const std::string& name){
+    bool called = false;
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
+        if (!isWordAt(code, at, name.size()))
+            continue;
         size_t i = at + name.size();
-        if (isWordAt(code, at, name.size()) && nextChar(code, i) == '(')
-            return true;
+        const bool call = nextChar(code, i) == '(';
+        const bool macro = inMacro(code, at);
+        if (call && !macro && followsType(code, at))
+            return false;
+        called = called || call || macro;
     }
-    return false;
+    return called;
 }
 
 // a hook definition takes its context type
@@ -350,7 +374,10 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
 
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
     scanCode(source, out);
+    parsePragmas(source, sourceName, out);
+}
 
+void editor::ShaderParameterParser::parsePragmas(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
     std::set<std::string> stages;
     std::istringstream stream(source);
     std::string line;
@@ -553,6 +580,8 @@ void editor::ShaderParameterParser::parse(const std::string& source, const std::
 void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
                                               ShaderStageType stage, ShaderEffectAnnotations& out){
     std::set<std::string> visited;
+    // scanned as one: a macro of one file can change what another reads
+    std::string code;
     std::function<void(const std::string&)> visit = [&](const std::string& key){
         if (!visited.insert(key).second)
             return;
@@ -561,11 +590,13 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
             return;
         const std::string staged = getStageSource(*source, stage);
         // shader files are keyed with a leading '/'
-        parse(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
+        parsePragmas(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
+        code += staged + "\n";
         for (const std::string& include : Util::getShaderIncludeKeys(staged))
             visit(include);
     };
     visit(rootKey);
+    scanCode(code, out);
 }
 
 std::string editor::ShaderParameterParser::getStageSource(const std::string& source, ShaderStageType stage){

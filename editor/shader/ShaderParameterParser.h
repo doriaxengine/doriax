@@ -57,7 +57,7 @@ namespace doriax::editor {
         bool tokenPasting = false;
         // and of a surface, or set: getSurface both reads and writes it
         std::set<std::string> surfaceReads;
-        // sceneColor, sceneDepth, sceneNormal, sceneOcclusion, and skyCapture
+        // the engine functions it calls: sceneColor, sceneDepth, sceneNormal, sceneOcclusion, skyCapture
         std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
@@ -115,6 +115,10 @@ namespace doriax::editor {
         static std::string generateTextureNames(ShaderStageType stage, const std::vector<ShaderTextureInfo>& textures, bool define);
         // a name with two types, a collection in two scopes; given both stages, as one value feeds them
         static void checkDeclarations(const std::vector<ShaderParameterDeclaration>& declarations, std::vector<std::string>& errors);
+
+    private:
+        // the "#pragma" lines of one file
+        static void parsePragmas(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out);
     };
 
 }
