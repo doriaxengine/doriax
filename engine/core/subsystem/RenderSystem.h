@@ -31,7 +31,6 @@
 #include "Engine.h"
 #include <map>
 #include <array>
-#include <initializer_list>
 #include <memory>
 #include <queue>
 #include <string>
@@ -675,6 +674,8 @@ namespace doriax{
 		Vector4 currentSceneCopyRect;
 		// the water holding the main camera, which fades the scene copy
 		WaterComponent* currentUnderwater;
+		// the framebuffer a texture can show that the color pass draws into, or null
+		const Framebuffer* currentTarget;
 
 		// size of the target being drawn, read as Engine.resolution
 		Vector2 passResolution;
@@ -783,9 +784,10 @@ namespace doriax{
 		static void changeWaterLoaded(void* data);
 		static void changeWaterDestroy(void* data);
 
-		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
-		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
-		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures, std::initializer_list<ShaderRender*> shaders);
+		// with its color shader, or the depth one
+		static bool samplesTarget(const Framebuffer* target, const Submesh& submesh, bool depth = false);
+		static bool samplesTarget(const Framebuffer* target, const Texture& texture);
+		static bool samplesTarget(const Framebuffer* target, const ShaderTextureValues& textures, ShaderRender* shader);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		// decides fixed resolution for the frame and prepares its target

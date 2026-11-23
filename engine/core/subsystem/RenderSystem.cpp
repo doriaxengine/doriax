@@ -488,6 +488,7 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     resumePassRender.setLoadActionLoad();
     resumePassRender.setDepthLoadActionLoad();
     currentUnderwater = NULL;
+    currentTarget = NULL;
     hasWaterDepth = false;
     onlyDirectionalLights = false;
     animationTime = 0.0;
@@ -4786,7 +4787,7 @@ bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh);
+        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh) && !samplesTarget(currentTarget, submesh);
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -5411,6 +5412,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             if (mesh.submeshes[i].needUpdateTexture)
                 continue;
 
+            if (samplesTarget(currentTarget, mesh.submeshes[i]))
+                continue;
+
             if (!render.beginDraw(pipType)){
                 mesh.needReload = true;
                 return false;
@@ -5584,6 +5588,11 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             }
 
             if (mesh.submeshes[i].needUpdateDepthTexture)
+                continue;
+
+            // the prepass draws into the color target, and only what the color pass draws
+            if ((pipelineType == PIP_ZPREPASS || pipelineType == PIP_ZPREPASS_RTT) &&
+                    (samplesTarget(currentTarget, mesh.submeshes[i]) || samplesTarget(currentTarget, mesh.submeshes[i], true)))
                 continue;
 
             if (!depthRender.beginDraw(pipelineType)){
@@ -8620,7 +8629,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
-    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures, {water.shaderRender.get()}))
+    if (!isInsideCamera(camera, water.worldAABB))
         return false;
 
     ObjectRender& render = water.render;
@@ -10857,47 +10866,35 @@ bool RenderSystem::usesAlphaMask(const Material& material, bool textureShadow){
         (material.alphaMode == MaterialAlphaMode::AUTO && textureShadow);
 }
 
-// a texture cannot be sampled in the pass that renders into it; objects showing a
-// camera's framebuffer must be skipped when drawing that same camera
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh){
-    if (!camera.renderToTexture)
+// a texture cannot be sampled in the pass that renders into it; what shows the
+// framebuffer a pass draws into must be skipped
+bool RenderSystem::samplesTarget(const Framebuffer* target, const Submesh& submesh, bool depth){
+    if (!target)
         return false;
 
-    for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
-        const Submesh& submesh = mesh.submeshes[i];
-        const Material& material = submesh.material;
-        if (samplesCameraTarget(camera, material.shaderTextures, {submesh.shader.get(), submesh.depthShader.get(), submesh.gbufferShader.get()}) ||
-            material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
-            material.metallicRoughnessTexture.getFramebuffer() == camera.framebuffer ||
-            material.normalTexture.getFramebuffer() == camera.framebuffer ||
-            material.occlusionTexture.getFramebuffer() == camera.framebuffer ||
-            material.emissiveTexture.getFramebuffer() == camera.framebuffer){
-            return true;
-        }
-    }
+    const Material& material = submesh.material;
+    ShaderRender* shader = depth ? submesh.depthShader.get() : submesh.shader.get();
+    // only the maps the shader has
+    auto samples = [&](const Texture& texture, TextureShaderType type){
+        return samplesTarget(target, texture) && shader && shader->shaderData.getTextureIndex(type).first != -1;
+    };
 
-    return false;
+    return samplesTarget(target, material.shaderTextures, shader) ||
+        samples(material.baseColorTexture, depth ? TextureShaderType::DEPTHTEXTURE : TextureShaderType::BASECOLOR) ||
+        samples(material.metallicRoughnessTexture, TextureShaderType::METALLICROUGHNESS) ||
+        samples(material.normalTexture, TextureShaderType::NORMAL) ||
+        samples(material.occlusionTexture, TextureShaderType::OCCULSION) ||
+        samples(material.emissiveTexture, TextureShaderType::EMISSIVE);
 }
 
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Texture& texture){
-    return camera.renderToTexture && texture.getFramebuffer() == camera.framebuffer;
+bool RenderSystem::samplesTarget(const Framebuffer* target, const Texture& texture){
+    return target && texture.getFramebuffer() == target;
 }
 
-// on a parameter one of the shaders samples; any texture counts before one is built
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures, std::initializer_list<ShaderRender*> shaders){
+// on a parameter the shader samples; any texture counts before it is built
+bool RenderSystem::samplesTarget(const Framebuffer* target, const ShaderTextureValues& textures, ShaderRender* shader){
     for (const auto& texture : textures){
-        if (!samplesCameraTarget(camera, texture.second))
-            continue;
-
-        bool built = false;
-        for (ShaderRender* shader : shaders){
-            if (!shader)
-                continue;
-            built = true;
-            if (shader->shaderData.samplesTexture(texture.first))
-                return true;
-        }
-        if (!built)
+        if (samplesTarget(target, texture.second) && (!shader || shader->shaderData.samplesTexture(texture.first)))
             return true;
     }
 
@@ -12225,6 +12222,12 @@ void RenderSystem::draw(){
             }
         }
 
+        // SSR, post-process and fixed resolution draw into buffers of their own
+        currentTarget = NULL;
+        if (!useSSR && !usePostProcess && !useFixedRes){
+            currentTarget = camera.renderToTexture ? camera.framebuffer : Engine::getFramebuffer();
+        }
+
         // the waters this pass draws: transparencies across them go before them, the rest after
         std::vector<WaterRenderData> passWaters;
         std::vector<TransparentRenderData> afterWaterRenders; // in submission order
@@ -12236,7 +12239,8 @@ void RenderSystem::draw(){
             Transform* waterTransform = scene->findComponent<Transform>(waterEntity);
             // a water cannot sample its own reflection while rendering it
             if (!water.loaded || water.needReload || !waterTransform || !waterTransform->visibleInHierarchy ||
-                    getMirrorCamera(waterEntity) == cameraEntity || !isInsideCamera(camera, water.worldAABB))
+                    getMirrorCamera(waterEntity) == cameraEntity || !isInsideCamera(camera, water.worldAABB) ||
+                    samplesTarget(currentTarget, water.normalTexture) || samplesTarget(currentTarget, water.shaderTextures, water.shaderRender.get()))
                 continue;
 
             const Vector3& eye = cameraTransform.worldPosition;
@@ -12247,9 +12251,9 @@ void RenderSystem::draw(){
 
         // the water the main camera is inside of, even with its surface out of view
         WaterComponent* underwater = (isMainCamera && !disableUnderwater) ? findUnderwater(cameraTransform.worldPosition) : NULL;
-        // not through a fade that samples what the camera draws into
+        // not through a fade that samples what the pass draws into
         const bool fades = underwater && loadUnderwater(*underwater) &&
-            !samplesCameraTarget(camera, underwater->shaderTextures, {underwater->underwaterShader.get()});
+            !samplesTarget(currentTarget, underwater->shaderTextures, underwater->underwaterShader.get());
         currentUnderwater = fades ? underwater : NULL;
 
         // the buffer update redirected the frame into, also when its effect was turned off since
@@ -12398,7 +12402,7 @@ void RenderSystem::draw(){
                 }
 
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-                if (!transform.visibleInHierarchy || samplesCameraTarget(camera, mesh)){
+                if (!transform.visibleInHierarchy){
                     continue;
                 }
 
@@ -12448,7 +12452,7 @@ void RenderSystem::draw(){
         if (skys->size() > 0){
             SkyComponent& sky = skys->getComponentFromIndex(0);
             Entity entity = skys->getEntity(0);
-            if (sky.visible && !samplesCameraTarget(camera, sky.shaderTextures, {sky.shaderRender.get()})){
+            if (sky.visible && !samplesTarget(currentTarget, sky.shaderTextures, sky.shaderRender.get())){
                 if (hasMultipleCameras || hasReflectionProbes){
                     updateSkyViewProjection(sky, camera);
                 }
@@ -12616,7 +12620,7 @@ void RenderSystem::draw(){
             if (signature.test(scene->getComponentId<MeshComponent>())){
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
 
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, mesh)){
+                if (transform.visibleInHierarchy){
 
                     // Per-camera transparent-instance sorting is intentionally NOT done
                     // here: the instance buffer is shared across all cameras and sokol
@@ -12658,7 +12662,7 @@ void RenderSystem::draw(){
                 if (signature.test(scene->getComponentId<TextComponent>())){
                     isText = true;
                 }
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture) && !samplesCameraTarget(camera, ui.shaderTextures, {ui.shaderRender.get()}))
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, ui.texture) && !samplesTarget(currentTarget, ui.shaderTextures, ui.shaderRender.get()))
                     drawUI(ui, transform, colorPip);
 
             }else if (signature.test(scene->getComponentId<PointsComponent>())){
@@ -12668,7 +12672,7 @@ void RenderSystem::draw(){
                 // shared across all cameras and sokol only allows one sg_update_buffer per
                 // buffer per frame (VALIDATE_UPDATEBUF_ONCE). Every camera reuses the main
                 // camera's ordering computed in update().
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture) && !samplesCameraTarget(camera, points.shaderTextures, {points.shaderRender.get()})){
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, points.texture) && !samplesTarget(currentTarget, points.shaderTextures, points.shaderRender.get())){
                     if (!points.transparent){
                         drawPoints(points, transform, camera, cameraTransform, colorPip);
                     }else{
@@ -12688,7 +12692,7 @@ void RenderSystem::draw(){
             }else if (signature.test(scene->getComponentId<LinesComponent>())){
                 LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
 
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, lines.shaderTextures, {lines.shaderRender.get()}))
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, lines.shaderTextures, lines.shaderRender.get()))
                     drawLines(lines, transform, cameraTransform, colorPip);
 
             }
@@ -12791,6 +12795,7 @@ void RenderSystem::draw(){
 
     }
     fs_lighting = mainLighting;
+    currentTarget = NULL;
 
     // waves move after drawing, so Water::getHeight in the next update matches the next draw
     advanceWaters();
