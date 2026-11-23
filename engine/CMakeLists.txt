@@ -14,6 +14,7 @@ set(DORIAX_WEB_PORTALS none crazygames poki gamedistribution yandex youtube)
 set(DORIAX_WEB_PORTAL none CACHE STRING "Game portal SDK of web builds")
 set_property(CACHE DORIAX_WEB_PORTAL PROPERTY STRINGS ${DORIAX_WEB_PORTALS})
 set(DORIAX_WEB_PORTAL_GAME_ID "" CACHE STRING "Game ID for web portals that need one, like GameDistribution")
+set(DORIAX_WEB_MAX_PIXEL_RATIO 2 CACHE STRING "Most framebuffer pixels per CSS pixel of web builds")
 
 # =============================================================
 # STANDALONE PROJECT SETUP
@@ -212,10 +213,13 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         endif()
         if(NOT DORIAX_WEB_PORTAL STREQUAL "none")
             string(TOUPPER "${DORIAX_WEB_PORTAL}" WEB_PORTAL_NAME)
-            # only WebPortals.cpp reads them, so switching portals rebuilds that file alone
-            set_property(SOURCE ${DORIAX_ROOT}/platform/emscripten/WebPortals.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+            # only these files read them, so switching portals rebuilds no other
+            set_property(SOURCE ${DORIAX_ROOT}/platform/emscripten/WebPortals.cpp ${DORIAX_ROOT}/platform/emscripten/DoriaxWeb.cpp
+                APPEND PROPERTY COMPILE_DEFINITIONS
                 "DORIAX_WEB_PORTAL_${WEB_PORTAL_NAME}" "DORIAX_WEB_PORTAL_GAME_ID=\"${DORIAX_WEB_PORTAL_GAME_ID}\"")
         endif()
+        set_property(SOURCE ${DORIAX_ROOT}/platform/emscripten/DoriaxWeb.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+            "DORIAX_WEB_MAX_PIXEL_RATIO=${DORIAX_WEB_MAX_PIXEL_RATIO}")
 
         set(CMAKE_EXECUTABLE_SUFFIX ".html")
 

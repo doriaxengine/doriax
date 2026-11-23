@@ -17,6 +17,8 @@ bool AudioSystem::inited = false;
 float AudioSystem::globalVolume = 1.0;
 bool AudioSystem::muted = false;
 
+std::vector<unsigned int> AudioSystem::systemPausedVoices;
+
 AudioSystem::AudioSystem(Scene* scene): SubSystem(scene){
     signature.set(scene->getComponentId<SoundComponent>());
 
@@ -213,6 +215,31 @@ void AudioSystem::resumeAll(){
     if (inited) {
         getSoloud().setPauseAll(false);
     }
+}
+
+void AudioSystem::systemPause(){
+    if (!inited) {
+        return;
+    }
+
+    SoLoud::Soloud& soloud = getSoloud();
+    soloud.lockAudioMutex_internal();
+    for (unsigned int i = 0; i < soloud.mHighestVoice; i++) {
+        if (soloud.mVoice[i] && !(soloud.mVoice[i]->mFlags & SoLoud::AudioSourceInstance::PAUSED)) {
+            systemPausedVoices.push_back(soloud.getHandleFromVoice_internal(i));
+            soloud.setVoicePause_internal(i, true);
+        }
+    }
+    soloud.unlockAudioMutex_internal();
+}
+
+void AudioSystem::systemResume(){
+    if (inited) {
+        for (unsigned int handle : systemPausedVoices) {
+            getSoloud().setPause(handle, false);
+        }
+    }
+    systemPausedVoices.clear();
 }
 
 void AudioSystem::checkActive(){

@@ -30,6 +30,8 @@ bool DoriaxWeb::enabledIDB;
 int DoriaxWeb::screenWidth;
 int DoriaxWeb::screenHeight;
 
+double DoriaxWeb::pixelRatio = 1.0;
+
 double DoriaxWeb::mousePosX;
 double DoriaxWeb::mousePosY;
 
@@ -37,10 +39,16 @@ int DoriaxWeb::sampleCount = 0;
 
 bool DoriaxWeb::quitRequested = false;
 
+unsigned int DoriaxWeb::pauseReasons = 0;
+
 DoriaxWeb::GamepadState DoriaxWeb::gamepads[DORIAX_WEB_MAX_GAMEPADS];
 
 #ifndef DORIAX_STORAGE_ID
 #define DORIAX_STORAGE_ID "Doriax"
+#endif
+
+#ifndef DORIAX_WEB_MAX_PIXEL_RATIO
+#define DORIAX_WEB_MAX_PIXEL_RATIO 2.0
 #endif
 
 // miniaudio only resumes its AudioContext on click or touchend
@@ -167,6 +175,10 @@ int DoriaxWeb::init(int argc, char **argv){
     ret = emscripten_set_touchcancel_callback(canvas.c_str(), 0, true, touch_callback);
     ret = emscripten_set_webglcontextlost_callback(canvas.c_str(), 0, true, webgl_context_callback);
     ret = emscripten_set_webglcontextrestored_callback(canvas.c_str(), 0, true, webgl_context_callback);
+    // YouTube Playables pauses the game itself and forbids the Page Visibility API
+#ifndef DORIAX_WEB_PORTAL_YOUTUBE
+    ret = emscripten_set_visibilitychange_callback(0, true, visibility_callback);
+#endif
 
     // necessary if canvas size is relative by window
     //ret = emscripten_set_resize_callback(EMSCRIPTEN_EVENT_TARGET_WINDOW, 0, 1, resize_callback);
@@ -212,7 +224,7 @@ int DoriaxWeb::init(int argc, char **argv){
     DoriaxWeb::screenWidth = sWidth;
     DoriaxWeb::screenHeight = sHeight;
     doriax::Engine::systemViewLoaded();
-    changeCanvasSize(sWidth, sHeight);
+    setFramebufferSize(sWidth, sHeight);
 
     emscripten_request_animation_frame_loop(renderLoop, 0);
 
@@ -235,14 +247,77 @@ void DoriaxWeb::unregisterCallbacks(){
     emscripten_set_touchcancel_callback(canvas.c_str(), 0, true, NULL);
     emscripten_set_webglcontextlost_callback(canvas.c_str(), 0, true, NULL);
     emscripten_set_webglcontextrestored_callback(canvas.c_str(), 0, true, NULL);
+#ifndef DORIAX_WEB_PORTAL_YOUTUBE
+    emscripten_set_visibilitychange_callback(0, true, NULL);
+#endif
+}
+
+void DoriaxWeb::setPaused(PauseReason reason, bool paused){
+    const unsigned int flag = 1u << static_cast<unsigned int>(reason);
+    const unsigned int previous = pauseReasons;
+    pauseReasons = paused ? (previous | flag) : (previous & ~flag);
+
+    if (pauseReasons != 0 && previous == 0){
+        doriax::Engine::systemPause();
+    }else if (pauseReasons == 0 && previous != 0){
+        doriax::Engine::systemResume();
+    }
 }
 
 void DoriaxWeb::changeCanvasSize(int width, int height){
+    emscripten_set_element_css_size(canvas.c_str(), width, height);
+}
+
+// without the border, which shows no framebuffer
+bool DoriaxWeb::getCanvasCssSize(double& width, double& height){
+    if (emscripten_get_element_css_size(canvas.c_str(), &width, &height) != EMSCRIPTEN_RESULT_SUCCESS)
+        return false;
+
+    width -= EM_ASM_INT({
+        var element = document.querySelector(UTF8ToString($0));
+        return element.offsetWidth - element.clientWidth;
+    }, canvas.c_str());
+    height -= EM_ASM_INT({
+        var element = document.querySelector(UTF8ToString($0));
+        return element.offsetHeight - element.clientHeight;
+    }, canvas.c_str());
+
+    return true;
+}
+
+void DoriaxWeb::setFramebufferSize(int width, int height){
     emscripten_set_canvas_element_size(canvas.c_str(), width, height);
 
     DoriaxWeb::screenWidth = width;
     DoriaxWeb::screenHeight = height;
     doriax::Engine::systemViewChanged();
+}
+
+// Engine applies the project's Scaling mode to the size the canvas has on the page
+void DoriaxWeb::updateFramebufferSize(){
+    double cssWidth = 0, cssHeight = 0;
+    if (!getCanvasCssSize(cssWidth, cssHeight))
+        return;
+
+    // a page wider than a phone's screen is shown zoomed out, over fewer device pixels
+    const double deviceRatio = EM_ASM_DOUBLE({
+        var zoom = window.visualViewport ? window.visualViewport.scale : 1;
+        return window.devicePixelRatio * Math.min(zoom, 1);
+    });
+    pixelRatio = fmin(deviceRatio, DORIAX_WEB_MAX_PIXEL_RATIO);
+
+    const int width = (int)round(cssWidth * pixelRatio);
+    const int height = (int)round(cssHeight * pixelRatio);
+    if (width <= 0 || height <= 0 || (width == screenWidth && height == screenHeight))
+        return;
+
+    setFramebufferSize(width, height);
+
+    // a canvas with no CSS size takes the framebuffer's, and would grow every frame
+    double newWidth = 0, newHeight = 0;
+    getCanvasCssSize(newWidth, newHeight);
+    if (fabs(newWidth - cssWidth) > 2.0 || fabs(newHeight - cssHeight) > 2.0)
+        changeCanvasSize((int)round(cssWidth), (int)round(cssHeight));
 }
 
 bool DoriaxWeb::isFullscreen(){
@@ -255,7 +330,7 @@ bool DoriaxWeb::isFullscreen(){
 void DoriaxWeb::requestFullscreen(){
     EmscriptenFullscreenStrategy strategy;
     strategy.scaleMode = EMSCRIPTEN_FULLSCREEN_SCALE_STRETCH;
-    strategy.canvasResolutionScaleMode = EMSCRIPTEN_FULLSCREEN_CANVAS_SCALE_STDDEF;
+    strategy.canvasResolutionScaleMode = EMSCRIPTEN_FULLSCREEN_CANVAS_SCALE_NONE; // renderLoop sizes it
     strategy.filteringMode = EMSCRIPTEN_FULLSCREEN_FILTERING_DEFAULT;
     strategy.canvasResizedCallback = canvas_resize;
     strategy.canvasResizedCallbackUserData = NULL;
@@ -434,17 +509,7 @@ EM_BOOL DoriaxWeb::renderLoop(double time, void* userdata){
 
     pollGamepads();
 
-    // CSS size is the input coordinate space as well as the visible surface.
-    // Update the framebuffer before drawing; Engine applies the project's
-    // Scaling mode (including intentional stretching) to this actual size.
-    double cssWidth = 0, cssHeight = 0;
-    if (emscripten_get_element_css_size(canvas.c_str(), &cssWidth, &cssHeight) == EMSCRIPTEN_RESULT_SUCCESS) {
-        const int width = (int)round(cssWidth);
-        const int height = (int)round(cssHeight);
-        if (width > 0 && height > 0 && (width != screenWidth || height != screenHeight)) {
-            changeCanvasSize(width, height);
-        }
-    }
+    updateFramebufferSize();
 
     doriax::Engine::systemDraw();
 
@@ -577,16 +642,18 @@ EM_BOOL DoriaxWeb::mouse_callback(int eventType, const EmscriptenMouseEvent *e, 
     bool mouseLocked = pointerLockStatus.isActive;
 
     if (!mouseLocked){
-        if (e->targetX < 0) return 0;
-        if (e->targetY < 0) return 0;
-        if (e->targetX > width) return 0;
-        if (e->targetY > height) return 0;
+        const double x = e->targetX * pixelRatio;
+        const double y = e->targetY * pixelRatio;
+        if (x < 0) return 0;
+        if (y < 0) return 0;
+        if (x > width) return 0;
+        if (y > height) return 0;
 
-        mousePosX = e->targetX;
-        mousePosY = e->targetY;
+        mousePosX = x;
+        mousePosY = y;
     }else{
-        mousePosX += e->movementX;
-        mousePosY += e->movementY;
+        mousePosX += e->movementX * pixelRatio;
+        mousePosY += e->movementY * pixelRatio;
     }
 
     int modifiers = 0;
@@ -643,21 +710,21 @@ EM_BOOL DoriaxWeb::touch_callback(int emsc_type, const EmscriptenTouchEvent* ems
             for (int i = 0; i < emsc_event->numTouches; i++) {
                 const EmscriptenTouchPoint* src = &emsc_event->touches[i];
                 if (!src->isChanged) continue;
-                doriax::Engine::systemTouchStart((int)src->identifier, src->targetX, src->targetY);
+                doriax::Engine::systemTouchStart((int)src->identifier, src->targetX * pixelRatio, src->targetY * pixelRatio);
             }
             break;
         case EMSCRIPTEN_EVENT_TOUCHMOVE:
             for (int i = 0; i < emsc_event->numTouches; i++) {
                 const EmscriptenTouchPoint* src = &emsc_event->touches[i];
                 if (!src->isChanged) continue;
-                doriax::Engine::systemTouchMove((int)src->identifier, src->targetX, src->targetY);
+                doriax::Engine::systemTouchMove((int)src->identifier, src->targetX * pixelRatio, src->targetY * pixelRatio);
             }
             break;
         case EMSCRIPTEN_EVENT_TOUCHEND:
             for (int i = 0; i < emsc_event->numTouches; i++) {
                 const EmscriptenTouchPoint* src = &emsc_event->touches[i];
                 if (!src->isChanged) continue;
-                doriax::Engine::systemTouchEnd((int)src->identifier, src->targetX, src->targetY);
+                doriax::Engine::systemTouchEnd((int)src->identifier, src->targetX * pixelRatio, src->targetY * pixelRatio);
             }
             break;
         case EMSCRIPTEN_EVENT_TOUCHCANCEL: {
@@ -690,10 +757,20 @@ EM_BOOL DoriaxWeb::touch_callback(int emsc_type, const EmscriptenTouchEvent* ems
 
 EM_BOOL DoriaxWeb::webgl_context_callback(int emsc_type, const void* reserved, void* user_data) {
     switch (emsc_type) {
-        case EMSCRIPTEN_EVENT_WEBGLCONTEXTLOST:     doriax::Engine::systemPause(); break;
-        case EMSCRIPTEN_EVENT_WEBGLCONTEXTRESTORED: doriax::Engine::systemResume(); break;
+        case EMSCRIPTEN_EVENT_WEBGLCONTEXTLOST:     setPaused(PauseReason::CONTEXT_LOST, true); break;
+        case EMSCRIPTEN_EVENT_WEBGLCONTEXTRESTORED: setPaused(PauseReason::CONTEXT_LOST, false); break;
         default:                                    break;
     }
+
+    return 0;
+}
+
+EM_BOOL DoriaxWeb::visibility_callback(int eventType, const EmscriptenVisibilityChangeEvent *e, void *userData) {
+    setPaused(PauseReason::HIDDEN, e->hidden);
+
+    // no frame may come before the page closes
+    if (e->hidden && syncWaitTime > 0)
+        syncFileSystemNow();
 
     return 0;
 }

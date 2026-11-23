@@ -1252,7 +1252,8 @@ const std::vector<ToolDefinition>& cachedTools() {
                 {"loading_timeout", numberSchema("Seconds without load progress before a load stops waiting")},
                 {"async_loading", boolSchema("Load files on worker threads while the loading scene is shown")},
                 {"web_resize_canvas", boolSchema("Web export: the canvas fills the browser window")},
-                {"web_hide_emscripten_ui", boolSchema("Web export: hide the Emscripten logo, status and console around the canvas")}
+                {"web_hide_emscripten_ui", boolSchema("Web export: hide the Emscripten logo, status and console around the canvas")},
+                {"web_max_pixel_ratio", numberSchema("Web export: most pixels drawn per CSS pixel on phones and HiDPI screens, 1 or more. Lower costs less GPU time")}
             }),
             false
         },
@@ -2029,6 +2030,9 @@ ValidationResult EditorActionRegistry::validate(const std::string& name, const J
             if (arguments.contains(key) && (!arguments[key].is_number() || arguments[key].get<double>() < 0.0)) {
                 return fail(std::string("set_project_settings ") + key + " must be a non-negative number.");
             }
+        }
+        if (arguments.contains("web_max_pixel_ratio") && (!arguments["web_max_pixel_ratio"].is_number() || arguments["web_max_pixel_ratio"].get<double>() < 1.0)) {
+            return fail("set_project_settings web_max_pixel_ratio must be a number of at least 1.");
         }
         for (const char* key : {"vsync", "async_loading", "web_resize_canvas", "web_hide_emscripten_ui"}) {
             if (arguments.contains(key) && !arguments[key].is_boolean()) {

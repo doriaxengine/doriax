@@ -30,6 +30,7 @@
 #include <fstream>
 #include <future>
 #include <map>
+#include <sstream>
 #include <vector>
 
 using namespace doriax;
@@ -2472,6 +2473,9 @@ bool editor::Exporter::copyEngine() {
         projectSettings += indent + std::string("set(DORIAX_STOREKIT ") + (project->getIOSProjectSettings().storeKitEnabled ? "ON" : "OFF") + ")";
         projectSettings += indent + "set(DORIAX_WEB_PORTAL " + Stream::webPortalTypeToString(project->getWebProjectSettings().portal) + ")";
         projectSettings += indent + "set(DORIAX_WEB_PORTAL_GAME_ID \"" + escapeCMakeCString(project->getWebProjectSettings().portalGameId) + "\")";
+        std::ostringstream maxPixelRatio;
+        maxPixelRatio << project->getWebProjectSettings().maxPixelRatio;
+        projectSettings += indent + "set(DORIAX_WEB_MAX_PIXEL_RATIO " + maxPixelRatio.str() + ")";
         cmakeContent.replace(projectSettingsPos, projectSettingsMarker.size(), projectSettings);
     } else {
         Out::warning("Exported CMakeLists.txt is missing the project settings marker; using platform defaults");

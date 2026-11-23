@@ -8,6 +8,8 @@
 
 #include "component/SoundComponent.h"
 
+#include <vector>
+
 namespace SoLoud{
 	class Soloud;
 }
@@ -16,6 +18,8 @@ namespace doriax{
 
 	class DORIAX_API AudioSystem : public SubSystem {
 
+		friend class Engine;
+
     private:
 		static bool inited;
 
@@ -23,6 +27,13 @@ namespace doriax{
 
 		static float globalVolume;
 		static bool muted;
+
+		// voices to resume, the game's own pauses are kept
+		static std::vector<unsigned int> systemPausedVoices;
+
+		// Called by Engine
+		static void systemPause();
+		static void systemResume();
 
 		Vector3 cameraLastPosition;
 		bool outputRequested = false;
