@@ -5,6 +5,8 @@
 #define shadercompiler_h
 
 #include <string>
+#include <map>
+#include <set>
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
@@ -324,6 +326,15 @@ namespace shadercompiler{
     args_t initialize_args();
 
     bool load_input(std::vector<input_t>& inputs, const args_t& args);
+
+    // What a function uses
+    struct function_t{
+        std::set<std::string> calls;  // named with their parameter types, as in "sceneColor(vf2;"
+        std::set<std::string> fields; // "Struct.field"
+    };
+
+    // The functions of a source, its globals under ""; false when it does not parse
+    bool parse_functions(std::map<std::string, function_t>& functions, std::string& log, const input_t& input, const args_t& args);
 
     bool compile_to_spirv(std::vector<spirv_t>& spirvvec, const std::vector<input_t>& inputs, const args_t& args);
 

@@ -129,23 +129,6 @@ std::string readIdentifier(const std::string& code, size_t& i){
     return code.substr(start, i - start);
 }
 
-// on a #define line
-bool inMacro(const std::string& code, size_t at){
-    size_t i = code.rfind('\n', at);
-    i = i == std::string::npos ? 0 : i + 1;
-    return nextChar(code, i) == '#' && code.compare(i + 1, 6, "define") == 0;
-}
-
-// a call of an engine function, or a macro naming it
-bool callsFunction(const std::string& code, const std::string& name){
-    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        size_t i = at + name.size();
-        if (isWordAt(code, at, name.size()) && (nextChar(code, i) == '(' || inMacro(code, at)))
-            return true;
-    }
-    return false;
-}
-
 // a hook definition takes its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
@@ -153,67 +136,13 @@ bool definesHook(const std::string& code, const std::string& name, const std::st
         if (!isWordAt(code, at, name.size()) || nextChar(code, i) != '(')
             continue;
         i++;
-        if (readIdentifier(code, i) == contextType)
+        std::string type = readIdentifier(code, i);
+        while (type == "const" || type == "in" || type == "inout")
+            type = readIdentifier(code, i);
+        if (type == contextType)
             return true;
     }
     return false;
-}
-
-// the members read of a variable
-void scanMemberReads(const std::string& code, const std::string& name, std::set<std::string>& reads){
-    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        size_t i = at + name.size();
-        if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
-            continue;
-        i++;
-        reads.insert(readIdentifier(code, i));
-    }
-}
-
-// the names outside #pragma lines; params fields once that name is given to something else, Engine only whole or in a macro
-void scanMentions(const std::string& code, std::set<std::string>& mentions){
-    std::set<std::string> paramFields;
-    bool paramsRenamed = false;
-    std::istringstream stream(code);
-    std::string line;
-    while (std::getline(stream, line)){
-        size_t i = 0;
-        const bool directive = nextChar(line, i) == '#';
-        if (directive && line.compare(i + 1, 6, "pragma") == 0)
-            continue;
-        const bool macro = directive && line.compare(i + 1, 6, "define") == 0;
-        while (i < line.size()){
-            if (!isIdentifierChar(line[i])){
-                i++;
-                continue;
-            }
-            const std::string name = readIdentifier(line, i);
-            const bool whole = nextChar(line, i) != '.';
-            if (name == "params" && whole){
-                paramsRenamed = true;
-            }else if (name == "params"){
-                i++;
-                paramFields.insert(readIdentifier(line, i));
-            }else if (name != "Engine" || whole || macro){
-                mentions.insert(name);
-            }
-        }
-    }
-    if (paramsRenamed)
-        mentions.insert(paramFields.begin(), paramFields.end());
-}
-
-// the fields read of a context, by whatever name it is given
-void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
-    std::set<std::string> names;
-    for (size_t at = code.find(contextType); at != std::string::npos; at = code.find(contextType, at + contextType.size())){
-        size_t i = at + contextType.size();
-        if (isWordAt(code, at, contextType.size()))
-            names.insert(readIdentifier(code, i));
-    }
-    names.erase("");
-    for (const std::string& name : names)
-        scanMemberReads(code, name, reads);
 }
 
 void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
@@ -221,34 +150,8 @@ void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
     // a macro on several lines reads as one
     for (size_t at = code.find("\\\n"); at != std::string::npos; at = code.find("\\\n", at))
         code.erase(at, 2);
-    out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
-    out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
-    out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
-    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
-    out.varyingsHook = out.varyingsHook || definesHook(code, "getVaryings", "VertexContext");
-    out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
-    out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
-    out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
-    out.light = out.light || definesHook(code, "getLight", "FragmentContext");
-    scanContextReads(code, "VertexContext", out.contextReads);
-    scanContextReads(code, "FragmentContext", out.contextReads);
-    scanContextReads(code, "Surface", out.surfaceReads);
-    scanMentions(code, out.mentions);
-    out.tokenPasting = out.tokenPasting || code.find("##") != std::string::npos;
-    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion", "skyCapture"}){
-        if (callsFunction(code, input))
-            out.sceneReads.insert(input);
-    }
-
-    // a macro can be handed Engine and its field apart
-    std::set<std::string> engine;
-    scanMemberReads(code, "Engine", engine);
-    auto readsEngine = [&](const char* field){
-        return engine.count(field) > 0 || (out.mentions.count("Engine") > 0 && out.mentions.count(field) > 0);
-    };
-    out.engineTime = out.engineTime || readsEngine("time");
-    out.engineResolution = out.engineResolution || readsEngine("resolution");
-    out.enginePass = out.enginePass || readsEngine("pass");
+    for (const editor::ShaderHook& hook : editor::ShaderParameterParser::getHooks())
+        out.*hook.defined = out.*hook.defined || definesHook(code, hook.name, hook.context);
 }
 
 // ints are packed as floats in the block
@@ -365,12 +268,24 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
     }
 }
 
-void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
-    scanCode(source, out);
-    parsePragmas(source, sourceName, out);
+const std::vector<editor::ShaderHook>& editor::ShaderParameterParser::getHooks(){
+    static const std::vector<ShaderHook> hooks = {
+        {"getVertexOffset", "VertexContext", &ShaderEffectAnnotations::vertexOffset},
+        {"getVaryings", "VertexContext", &ShaderEffectAnnotations::varyingsHook},
+        {"getClipPosition", "VertexContext", &ShaderEffectAnnotations::clipPosition},
+        {"getCoverage", "FragmentContext", &ShaderEffectAnnotations::coverage},
+        {"getSurface", "FragmentContext", &ShaderEffectAnnotations::surface},
+        {"getColor", "FragmentContext", &ShaderEffectAnnotations::color},
+        {"getDepthOffset", "FragmentContext", &ShaderEffectAnnotations::depthOffset},
+        {"getUnderwaterColor", "UnderwaterContext", &ShaderEffectAnnotations::underwaterColor},
+        {"getLight", "FragmentContext", &ShaderEffectAnnotations::light}
+    };
+    return hooks;
 }
 
-void editor::ShaderParameterParser::parsePragmas(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
+void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
+    scanCode(source, out);
+
     std::set<std::string> stages;
     std::istringstream stream(source);
     std::string line;
@@ -573,8 +488,6 @@ void editor::ShaderParameterParser::parsePragmas(const std::string& source, cons
 void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
                                               ShaderStageType stage, ShaderEffectAnnotations& out){
     std::set<std::string> visited;
-    // scanned as one: a macro of one file can change what another reads
-    std::string code;
     std::function<void(const std::string&)> visit = [&](const std::string& key){
         if (!visited.insert(key).second)
             return;
@@ -583,13 +496,11 @@ void editor::ShaderParameterParser::parseTree(const std::string& rootKey, const 
             return;
         const std::string staged = getStageSource(*source, stage);
         // shader files are keyed with a leading '/'
-        parsePragmas(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
-        code += staged + "\n";
+        parse(staged, (!key.empty() && key[0] == '/') ? key.substr(1) : key, out);
         for (const std::string& include : Util::getShaderIncludeKeys(staged))
             visit(include);
     };
     visit(rootKey);
-    scanCode(code, out);
 }
 
 std::string editor::ShaderParameterParser::getStageSource(const std::string& source, ShaderStageType stage){
