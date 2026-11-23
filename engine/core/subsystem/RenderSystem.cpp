@@ -580,6 +580,7 @@ void RenderSystem::load(){
     onlyDirectionalLights = false;
     hasFog = false;
     hasFogSky = false;
+    fogSkyBlend = 0.0f;
     hasIBL = false;
     hasReflectionProbes = false;
     hasWaterDepth = false;
@@ -1516,10 +1517,10 @@ bool RenderSystem::loadAndProcessFog(){
         fs_fog.density_start_end = Vector4(fog->density, 0.0, fog->linearStart, fog->linearEnd);
     }
 
-    // taking the sky's color is a mesh shader variant
-    const bool fogSky = fog && fog->skyBlend > 0.0f;
-    if (hasFogSky != fogSky){
-        hasFogSky = fogSky;
+    // taking the sky's color is a variant of the meshes the sky does not light, kept once taken: an export has the ones it saved
+    fogSkyBlend = fog ? std::clamp(fog->skyBlend, 0.0f, 1.0f) : 0.0f;
+    if (!hasFogSky && fogSkyBlend > 0.0f){
+        hasFogSky = true;
         needReloadMeshes();
     }
 
@@ -1532,12 +1533,12 @@ void RenderSystem::updateFogSky(){
     fs_fog.skyEnvironment = Vector4(1.0f, 1.0f, 1.0f, 0.0f);
 
     auto skys = scene->getComponentArray<SkyComponent>();
-    if (!hasFogSky || skys->size() == 0)
+    if (skys->size() == 0)
         return;
 
     const SkyComponent& sky = skys->getComponentFromIndex(0);
     if (sky.irradianceMap && sky.prefilteredMap){
-        fs_fog.forward_skyBlend.w = std::min(scene->findComponentFromIndex<FogComponent>(0)->skyBlend, 1.0f);
+        fs_fog.forward_skyBlend.w = fogSkyBlend;
         fs_fog.skyEnvironment = getSkyEnvironment(sky);
     }
 }
@@ -3521,8 +3522,8 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
                     (terrain)?true:false, (instmesh)?true:false, sh.ibl, sh.mirror, sh.ssao, sh.light2d, sh.shadows2d,
                     sh.alphaMask, sh.alphaOpaque, sh.instanceFade, sh.terrainSurface, sh.hookUV1 && !sh.hasTexture1, sh.hookNormals && !sh.hasNormal,
                     sh.hookUV2 && !sh.hasTexture2);
-    // 'Fsk': the fog takes the sky's color
-    if (shading.fogSky){
+    // 'Fsk': the fog takes the sky's color, from a map the sky's own lighting would bring
+    if (shading.fog && shading.fogSky && !sh.ibl){
         sh.properties |= 1u << 5;
     }
     // 'Dlo': without the point/spot paths

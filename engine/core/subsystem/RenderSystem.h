@@ -361,6 +361,7 @@ namespace doriax{
 		bool onlyDirectionalLights;
 		bool hasFog;
 		bool hasFogSky;
+		float fogSkyBlend;
 		bool hasIBL;
 		bool hasReflectionProbes;
 		// a water, a mesh or a post-process pass samples the scene depth
