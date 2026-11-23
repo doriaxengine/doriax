@@ -179,6 +179,9 @@ void System::platformLog(const int type, const char *fmt, va_list args){
 
     vprintf(fmt, args);
     printf("\n");
+    // stdout is fully buffered when redirected to a file or pipe (and a window
+    // app has no console), so lines written before a crash or a kill were lost
+    fflush(stdout);
 }
 
 bool System::getBoolForKey(const char *key, bool defaultValue){
