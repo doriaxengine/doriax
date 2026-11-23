@@ -8593,7 +8593,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
-    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures, {water.shaderRender.get(), water.underwaterShader.get()}))
+    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures, {water.shaderRender.get()}))
         return false;
 
     ObjectRender& render = water.render;
@@ -12218,7 +12218,10 @@ void RenderSystem::draw(){
 
         // the water the main camera is inside of, even with its surface out of view
         WaterComponent* underwater = (isMainCamera && !disableUnderwater) ? findUnderwater(cameraTransform.worldPosition) : NULL;
-        currentUnderwater = (underwater && loadUnderwater(*underwater)) ? underwater : NULL;
+        // not through a fade that samples what the camera draws into
+        const bool fades = underwater && loadUnderwater(*underwater) &&
+            !samplesCameraTarget(camera, underwater->shaderTextures, {underwater->underwaterShader.get()});
+        currentUnderwater = fades ? underwater : NULL;
 
         // the buffer update redirected the frame into, also when its effect was turned off since
         const bool useSceneTarget = isMainCamera && swapchainRedirect && !useSSR && !usePostProcess
