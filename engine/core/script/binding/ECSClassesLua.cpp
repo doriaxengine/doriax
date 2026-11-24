@@ -1441,6 +1441,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("gravityFactor", &Character3DComponent::gravityFactor, &Character3DComponent::gravityFactor)
         .addProperty("airControl", &Character3DComponent::airControl, &Character3DComponent::airControl)
         .addProperty("innerBody", &Character3DComponent::innerBody, &Character3DComponent::innerBody)
+        .addProperty("kinematic", &Character3DComponent::kinematic, &Character3DComponent::kinematic)
         .addProperty("moveVelocity", &Character3DComponent::moveVelocity, &Character3DComponent::moveVelocity)
         .addProperty("needReloadCharacter", &Character3DComponent::needReloadCharacter, &Character3DComponent::needReloadCharacter)
         .endClass();

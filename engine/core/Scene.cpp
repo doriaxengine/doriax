@@ -31,12 +31,13 @@ Scene::Scene(EntityPool defaultPool) : EntityRegistry(defaultPool) {
 
 void Scene::init(){
     registerSystem<ActionSystem>();
+    // moves entities too, before the render system resolves them
+    registerSystem<NetworkSystem>();
     registerSystem<MeshSystem>();
     registerSystem<UISystem>();
     registerSystem<RenderSystem>();
     registerSystem<PhysicsSystem>();
     registerSystem<AudioSystem>();
-    registerSystem<NetworkSystem>();
 
     camera = NULL_ENTITY;
     defaultCamera = NULL_ENTITY;

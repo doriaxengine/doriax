@@ -9,6 +9,13 @@
 #include "manager/BundleManager.h"
 #include "manager/SceneManager.h"
 #include "network/Network.h"
+#ifdef DORIAX_PHYSICS_2D
+#include "object/physics/Body2D.h"
+#endif
+#ifdef DORIAX_PHYSICS_3D
+#include "object/physics/Body3D.h"
+#include "component/Character3DComponent.h"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -151,6 +158,45 @@ void NetworkSystem::writeState(Packet& packet, unsigned int id, const State& sta
     }
 }
 
+void NetworkSystem::setFollowing(Replica& replica, bool following){
+    if (replica.following == following){
+        return;
+    }
+    replica.following = following;
+
+    // the server simulates, a copy is moved by its states
+    BodyType type = following ? BodyType::KINEMATIC : BodyType::DYNAMIC;
+#ifdef DORIAX_PHYSICS_2D
+    Body2DComponent* body2D = scene->findComponent<Body2DComponent>(replica.entity);
+    if (body2D && (following ? body2D->type == BodyType::DYNAMIC : replica.dynamic)){
+        Body2D body(scene, replica.entity);
+        body.setType(type);
+        if (b2Body_IsValid(body2D->body)){
+            body.setLinearVelocity(Vector2::ZERO);
+            body.setAngularVelocity(0);
+        }
+        replica.dynamic = following;
+    }
+#endif
+#ifdef DORIAX_PHYSICS_3D
+    Body3DComponent* body3D = scene->findComponent<Body3DComponent>(replica.entity);
+    if (body3D && (following ? body3D->type == BodyType::DYNAMIC : replica.dynamic)){
+        Body3D body(scene, replica.entity);
+        body.setType(type);
+        if (!body3D->body.IsInvalid()){
+            body.setLinearVelocity(Vector3::ZERO);
+            body.setAngularVelocity(Vector3::ZERO);
+        }
+        replica.dynamic = following;
+    }
+
+    Character3DComponent* character = scene->findComponent<Character3DComponent>(replica.entity);
+    if (character){
+        character->kinematic = following;
+    }
+#endif
+}
+
 void NetworkSystem::registerAdded(){
     for (Entity entity : added){
         NetworkComponent* component = scene->findComponent<NetworkComponent>(entity);
@@ -175,6 +221,8 @@ void NetworkSystem::registerReplica(Entity entity, NetworkComponent& component, 
     replica.bundle = bundle;
     replica.sent = readState(entity);
     ids[entity] = component.networkId;
+
+    setFollowing(replica, joined);
 }
 
 void NetworkSystem::removeSpawned(){
@@ -183,6 +231,8 @@ void NetworkSystem::removeSpawned(){
         entry.second.states.clear();
         if (entry.second.bundle != 0){
             spawned.push_back(entry.second.entity);
+        }else{
+            setFollowing(entry.second, false);
         }
     }
 
@@ -300,6 +350,9 @@ void NetworkSystem::updateClient(){
     if (connected && !joined){
         session->send(NetworkSession::SERVER, createMessage(JOIN), NetworkDelivery::RELIABLE);
         joined = true;
+        for (auto& entry : replicas){
+            setFollowing(entry.second, true);
+        }
     }else if (!connected && joined){
         joined = false;
         hasOffset = false;
@@ -534,16 +587,11 @@ void NetworkSystem::draw(){
 void NetworkSystem::update(double dt){
     registerAdded();
 
-    if (!isServer()){
-        updateClient();
-    }
-}
-
-void NetworkSystem::fixedUpdate(double dt){
-    registerAdded();
-
+    // the server sends what it is about to draw
     if (isServer()){
         updateServer(dt);
+    }else{
+        updateClient();
     }
 }
 

@@ -36,6 +36,9 @@ namespace doriax{
             bool moving = false;
             // on a client: the states it moves between
             std::deque<State> states;
+            bool following = false;
+            // a dynamic body is kinematic while it follows the server
+            bool dynamic = false;
         };
 
         NetworkSession* session;
@@ -77,6 +80,7 @@ namespace doriax{
         void applyState(Entity entity, const NetworkComponent& component, const State& state);
         void writeState(Packet& packet, unsigned int id, const State& state, const NetworkComponent& component) const;
 
+        void setFollowing(Replica& replica, bool following);
         void registerAdded();
         void registerReplica(Entity entity, NetworkComponent& component, uint32_t bundle);
         void removeSpawned();
@@ -122,7 +126,6 @@ namespace doriax{
         void destroy() override;
         void draw() override;
         void update(double dt) override;
-        void fixedUpdate(double dt) override;
 
         void onComponentAdded(Entity entity, ComponentId componentId) override;
         void onComponentRemoved(Entity entity, ComponentId componentId) override;

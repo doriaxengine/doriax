@@ -78,6 +78,10 @@ namespace doriax{
         // 1 steers in the air as on the ground, 0 keeps the momentum
         float getAirControl() const;
         void setAirControl(float airControl);
+
+        // a kinematic character only follows its Transform
+        bool isKinematic() const;
+        void setKinematic(bool kinematic);
     };
 }
 
