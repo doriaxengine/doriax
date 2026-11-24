@@ -111,10 +111,10 @@ namespace doriax{
         void setInterpolationDelay(float interpolationDelay);
         float getInterpolationDelay() const;
 
-        // On the server, creates the bundle here and on every client of this scene
+        // on the server, creates the bundle here and on every client of this scene
         Entity spawn(const std::string& bundle, int owner);
-        // Called by BundleManager before the scripts of a new instance start
-        void bundleCreated(Entity root, uint32_t bundle);
+        // called by BundleManager before the scripts of a new instance start
+        void bundleCreated(Entity root, uint32_t bundle, bool created);
 
         int getOwner(Entity entity) const;
 

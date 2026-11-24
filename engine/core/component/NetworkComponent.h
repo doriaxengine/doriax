@@ -7,7 +7,7 @@
 namespace doriax{
 
     struct NetworkComponent {
-        // the same on every peer: saved with the scene, or given by the server at spawn
+        // the same on every peer: the entity in its scene, or the server's for a spawn
         unsigned int networkId = 0;
         // the peer it belongs to, the server by default
         int owner = 1;

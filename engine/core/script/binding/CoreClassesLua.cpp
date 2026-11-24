@@ -189,7 +189,7 @@ namespace {
 
         int invalid = 0;
         bool sent = false;
-        // a Lua error skips destructors, so the packet is gone before one is raised
+        // a Lua error skips destructors, raised after the packet is gone
         {
             Packet values;
             for (int i = 3; i <= lua_gettop(L) && invalid == 0; i++){

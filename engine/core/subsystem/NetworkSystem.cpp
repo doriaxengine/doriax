@@ -16,7 +16,7 @@
 using namespace doriax;
 
 namespace {
-    // smaller ids belong to the entities saved with a scene
+    // smaller ids are the entities saved with a scene
     const unsigned int firstSpawnId = 0x1000000;
     const size_t maxStates = 32;
     // an unreliable message has to fit in one UDP packet
@@ -155,7 +155,8 @@ void NetworkSystem::registerAdded(){
     for (Entity entity : added){
         NetworkComponent* component = scene->findComponent<NetworkComponent>(entity);
         // a spawned bundle was registered by bundleCreated
-        if (component && component->networkId != 0 && !ids.count(entity)){
+        if (component && !ids.count(entity)){
+            component->networkId = entity;
             registerReplica(entity, *component, 0);
         }
     }
@@ -485,9 +486,13 @@ Entity NetworkSystem::spawn(const std::string& bundle, int owner){
     return root;
 }
 
-void NetworkSystem::bundleCreated(Entity root, uint32_t bundle){
-    // not a bundle inside the spawned one
+void NetworkSystem::bundleCreated(Entity root, uint32_t bundle, bool created){
+    // not spawned, or a bundle inside the spawned one
     if (!spawning || bundle != spawnBundle){
+        // a root made now has another id on each peer, it stays local
+        if (created){
+            added.erase(std::remove(added.begin(), added.end(), root), added.end());
+        }
         return;
     }
 
