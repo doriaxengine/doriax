@@ -757,6 +757,7 @@ include_directories(core/ecs)
 include_directories(core/io)
 include_directories(core/manager)
 include_directories(core/math)
+include_directories(core/network)
 include_directories(core/object)
 include_directories(core/object/sound)
 include_directories(core/object/ui)
@@ -888,6 +889,10 @@ set(DORIAX_SRCS
     core/math/Vector2.cpp
     core/math/Vector3.cpp
     core/math/Vector4.cpp
+    core/network/LoopbackTransport.cpp
+    core/network/Network.cpp
+    core/network/NetworkSession.cpp
+    core/network/Packet.cpp
     core/object/Bone.cpp
     core/object/Camera.cpp
     core/object/EntityHandle.cpp
@@ -978,6 +983,18 @@ set(DORIAX_SRCS
     core/util/XMLUtils.cpp
 )
 
+# A browser has no UDP, and its WebSocket is the page's own
+if(EMSCRIPTEN)
+    list(APPEND DORIAX_SRCS
+        core/network/WebSocketTransportWeb.cpp
+    )
+else()
+    list(APPEND DORIAX_SRCS
+        core/network/ENetTransport.cpp
+        core/network/WebSocketTransport.cpp
+    )
+endif()
+
 if(DORIAX_PHYSICS_2D)
     list(APPEND DORIAX_SRCS
         core/object/physics/Body2D.cpp
@@ -1029,6 +1046,13 @@ target_link_libraries(doriax PRIVATE Threads::Threads)
 
 if(EMSCRIPTEN AND EMSCRIPTEN_THREAD_SUPPORT)
 	target_compile_options(doriax PRIVATE -pthread)
+endif()
+
+# Sockets of core/network
+if(EMSCRIPTEN)
+    target_link_libraries(doriax PUBLIC websocket.js)
+elseif(WIN32)
+    target_link_libraries(doriax PUBLIC ws2_32 winmm)
 endif()
 
 target_link_libraries(

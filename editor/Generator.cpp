@@ -951,7 +951,7 @@ std::string editor::Generator::buildCleanupSceneScriptsSource(const std::vector<
 static const char* engineApiIncludeDirs[] = {
     "", "libs/sokol", "libs/box2d/include", "libs/joltphysics", "renders",
     "core", "core/action", "core/action/keyframe", "core/buffer", "core/component", "core/ecs",
-    "core/io", "core/manager", "core/math", "core/object", "core/object/sound", "core/object/ui",
+    "core/io", "core/manager", "core/math", "core/network", "core/object", "core/object/sound", "core/object/ui",
     "core/object/environment", "core/object/physics", "core/pool", "core/registry", "core/render",
     "core/script", "core/service", "core/shader", "core/subsystem", "core/texture", "core/util"
 };

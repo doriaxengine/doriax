@@ -18,6 +18,7 @@
 #include "AdMob.h"
 #include "InAppPurchase.h"
 #include "WebPortal.h"
+#include "network/Network.h"
 #ifdef DORIAX_PHYSICS_2D
 #include "Body2D.h"
 #include "Contact2D.h"
@@ -37,6 +38,175 @@
 #include "subsystem/UISystem.h"
 
 using namespace doriax;
+
+#ifndef DISABLE_LUA_BINDINGS
+namespace {
+    const int maxRpcValues = 64;
+
+    bool pushRpcValue(lua_State* L, Packet& packet){
+        PacketValue type = packet.peekValue();
+
+        if (type == PacketValue::NIL){
+            packet.readNil();
+            lua_pushnil(L);
+        }else if (type == PacketValue::BOOL_TRUE || type == PacketValue::BOOL_FALSE){
+            bool value = false;
+            packet.readValue(value);
+            lua_pushboolean(L, value);
+        }else if (type == PacketValue::INT){
+            long long value = 0;
+            packet.readValue(value);
+            lua_pushinteger(L, (lua_Integer)value);
+        }else if (type == PacketValue::FLOAT || type == PacketValue::DOUBLE){
+            double value = 0;
+            packet.readValue(value);
+            lua_pushnumber(L, value);
+        }else if (type == PacketValue::STRING){
+            std::string value;
+            packet.readValue(value);
+            lua_pushlstring(L, value.data(), value.size());
+        }else if (type == PacketValue::VECTOR2){
+            Vector2 value;
+            return packet.readValue(value) && luabridge::push(L, value);
+        }else if (type == PacketValue::VECTOR3){
+            Vector3 value;
+            return packet.readValue(value) && luabridge::push(L, value);
+        }else if (type == PacketValue::VECTOR4){
+            Vector4 value;
+            return packet.readValue(value) && luabridge::push(L, value);
+        }else if (type == PacketValue::QUATERNION){
+            Quaternion value;
+            return packet.readValue(value) && luabridge::push(L, value);
+        }else{
+            return false;
+        }
+
+        if (!packet.isValid()){
+            lua_pop(L, 1);
+            return false;
+        }
+
+        return true;
+    }
+
+    // a Lua function called with the sender and the RPC values
+    class LuaRpc : public LuaFunctionBase {
+    public:
+        LuaRpc(lua_State* vm): LuaFunctionBase(vm){ }
+
+        void operator()(int sender, Packet& packet){
+            if (!can_call(maxRpcValues + 1))
+                return;
+
+            push_function(m_vm, m_func);
+            lua_pushinteger(m_vm, sender);
+
+            int values = 0;
+            while (packet.peekValue() != PacketValue::NONE){
+                if (values == maxRpcValues || !pushRpcValue(m_vm, packet)){
+                    lua_pop(m_vm, values + 2);
+                    Log::error("Network: wrong values in an RPC from peer %i", sender);
+                    return;
+                }
+                values++;
+            }
+
+            call(values + 1);
+        }
+    };
+
+    // method(self, sender, values...)
+    int callLuaRpcMethod(lua_State* L){
+        lua_pushvalue(L, lua_upvalueindex(1));
+        lua_insert(L, 1);
+        lua_pushvalue(L, lua_upvalueindex(2));
+        lua_insert(L, 2);
+        lua_call(L, lua_gettop(L) - 1, 0);
+
+        return 0;
+    }
+
+    // registerRpc(name, function) or registerRpc(name, script, methodName)
+    int registerLuaRpc(lua_State* L){
+        std::string name = luaL_checkstring(L, 1);
+        std::string tag;
+
+        if (lua_istable(L, 2)){
+            const char* method = luaL_checkstring(L, 3);
+            if (lua_getfield(L, 2, method) != LUA_TFUNCTION)
+                return luaL_error(L, "Network.registerRpc: method '%s' not found on script", method);
+            lua_pushvalue(L, 2);
+            lua_pushcclosure(L, callLuaRpcMethod, 2);
+            // the tag of RegisterEvent, so the RPC goes away with the script
+            tag = "Rpc_" + std::to_string(reinterpret_cast<std::uintptr_t>(lua_topointer(L, 2))) + "_" + name;
+        }else{
+            luaL_checktype(L, 2, LUA_TFUNCTION);
+            lua_pushvalue(L, 2);
+        }
+
+        Network::registerRawRpc(name, LuaRpc(L), tag);
+
+        return 0;
+    }
+
+    int sendLuaRpc(lua_State* L, NetworkDelivery delivery){
+        int target = (int)luaL_checkinteger(L, 1);
+        std::string name = luaL_checkstring(L, 2);
+
+        Packet values;
+        for (int i = 3; i <= lua_gettop(L); i++){
+            int type = lua_type(L, i);
+            if (type == LUA_TNIL){
+                values.writeNil();
+            }else if (type == LUA_TBOOLEAN){
+                values.writeValue(lua_toboolean(L, i) != 0);
+            }else if (type == LUA_TNUMBER && lua_isinteger(L, i)){
+                values.writeValue((long long)lua_tointeger(L, i));
+            }else if (type == LUA_TNUMBER){
+                values.writeValue((double)lua_tonumber(L, i));
+            }else if (type == LUA_TSTRING){
+                size_t size = 0;
+                const char* text = lua_tolstring(L, i, &size);
+                values.writeValue(std::string(text, size));
+            }else if (luabridge::isInstance<Vector2>(L, i)){
+                values.writeValue(*luabridge::get<Vector2>(L, i));
+            }else if (luabridge::isInstance<Vector3>(L, i)){
+                values.writeValue(*luabridge::get<Vector3>(L, i));
+            }else if (luabridge::isInstance<Vector4>(L, i)){
+                values.writeValue(*luabridge::get<Vector4>(L, i));
+            }else if (luabridge::isInstance<Quaternion>(L, i)){
+                values.writeValue(*luabridge::get<Quaternion>(L, i));
+            }else{
+                return luaL_argerror(L, i, "an RPC sends nil, booleans, numbers, strings, vectors and quaternions");
+            }
+        }
+
+        lua_pushboolean(L, Network::sendRpc(target, name, values, delivery));
+
+        return 1;
+    }
+
+    int sendReliableLuaRpc(lua_State* L){
+        return sendLuaRpc(L, NetworkDelivery::RELIABLE);
+    }
+
+    int sendUnreliableLuaRpc(lua_State* L){
+        return sendLuaRpc(L, NetworkDelivery::UNRELIABLE);
+    }
+
+    int getLuaPeers(lua_State* L){
+        std::vector<int> peers = Network::getPeers();
+
+        lua_createtable(L, (int)peers.size(), 0);
+        for (size_t i = 0; i < peers.size(); i++){
+            lua_pushinteger(L, peers[i]);
+            lua_rawseti(L, -2, (lua_Integer)i + 1);
+        }
+
+        return 1;
+    }
+}
+#endif
 
 void LuaBinding::registerCoreClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS
@@ -266,6 +436,14 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addVariable("CHARGE_FULL_PRICE", SubscriptionReplacementMode::CHARGE_FULL_PRICE)
         .addVariable("DEFERRED", SubscriptionReplacementMode::DEFERRED)
         .addVariable("KEEP_EXISTING", SubscriptionReplacementMode::KEEP_EXISTING)
+        .endNamespace();
+
+    luabridge::getGlobalNamespace(L)
+        .beginNamespace("NetworkState")
+        .addVariable("OFFLINE", NetworkState::OFFLINE)
+        .addVariable("CONNECTING", NetworkState::CONNECTING)
+        .addVariable("CONNECTED", NetworkState::CONNECTED)
+        .addVariable("HOSTING", NetworkState::HOSTING)
         .endNamespace();
 
     luabridge::getGlobalNamespace(L)
@@ -1480,6 +1658,41 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addStaticProperty("onDataLoaded", [] () { return &WebPortal::onDataLoaded; }, [] (lua_State* L) { WebPortal::onDataLoaded = L; })
         .addStaticProperty("onDataLoadFailed", [] () { return &WebPortal::onDataLoadFailed; }, [] (lua_State* L) { WebPortal::onDataLoadFailed = L; })
         .addStaticProperty("onDataSaveFailed", [] () { return &WebPortal::onDataSaveFailed; }, [] (lua_State* L) { WebPortal::onDataSaveFailed = L; })
+        .endClass();
+
+    luabridge::getGlobalNamespace(L)
+        .beginClass<Network>("Network")
+        .addStaticProperty("ALL", [] () -> int { return Network::ALL; })
+        .addStaticProperty("SERVER", [] () -> int { return Network::SERVER; })
+        .addStaticFunction("host",
+            [] (int port) { return Network::host((uint16_t)port); },
+            [] (int port, int maxPeers) { return Network::host((uint16_t)port, maxPeers); })
+        .addStaticFunction("hostOffline", &Network::hostOffline)
+        .addStaticFunction("connect",
+            [] (const std::string& address) { return Network::connect(address); },
+            [] (const std::string& address, int port) { return Network::connect(address, (uint16_t)port); })
+        .addStaticFunction("close", &Network::close)
+        .addStaticFunction("disconnect", &Network::disconnect)
+        .addStaticProperty("state", &Network::getState)
+        .addStaticFunction("isServer", &Network::isServer)
+        .addStaticFunction("isConnected", &Network::isConnected)
+        .addStaticProperty("id", &Network::getId)
+        .addStaticFunction("getPeers", &getLuaPeers)
+        .addStaticFunction("getPing",
+            [] () { return Network::getPing(); },
+            [] (int peer) { return Network::getPing(peer); })
+        .addStaticFunction("setVersion", &Network::setVersion)
+        .addStaticFunction("setSimulation", &Network::setSimulation)
+        .addStaticFunction("registerRpc", &registerLuaRpc)
+        .addStaticFunction("unregisterRpc", &Network::unregisterRpc)
+        .addStaticFunction("rpc", &sendReliableLuaRpc)
+        .addStaticFunction("rpcUnreliable", &sendUnreliableLuaRpc)
+
+        .addStaticProperty("onPeerConnected", [] () { return &Network::onPeerConnected; }, [] (lua_State* L) { Network::onPeerConnected = L; })
+        .addStaticProperty("onPeerDisconnected", [] () { return &Network::onPeerDisconnected; }, [] (lua_State* L) { Network::onPeerDisconnected = L; })
+        .addStaticProperty("onConnected", [] () { return &Network::onConnected; }, [] (lua_State* L) { Network::onConnected = L; })
+        .addStaticProperty("onConnectionFailed", [] () { return &Network::onConnectionFailed; }, [] (lua_State* L) { Network::onConnectionFailed = L; })
+        .addStaticProperty("onDisconnected", [] () { return &Network::onDisconnected; }, [] (lua_State* L) { Network::onDisconnected = L; })
         .endClass();
 
 #endif //DISABLE_LUA_BINDINGS
