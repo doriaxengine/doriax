@@ -715,6 +715,12 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
     mesh.submeshes[0].primitiveType = PrimitiveType::TRIANGLES;
     mesh.submeshes[0].hasTextureRect = true;
 
+    // Like sprites (createSprite): a UI camera projects y-down, which reverses the
+    // tiles' winding, so with culling on every tile is dropped as a back face.
+    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+        mesh.submeshes[s].faceCulling = false;
+    }
+
     mesh.buffer.clear();
     mesh.buffer.addAttribute(AttributeType::POSITION, 3);
     mesh.buffer.addAttribute(AttributeType::TEXCOORD1, 2);
