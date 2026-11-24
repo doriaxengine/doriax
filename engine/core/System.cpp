@@ -16,8 +16,8 @@ System* System::systemInstance = nullptr;
 
 System& System::instance(){
     if (!systemInstance) {
-        // Need to be printf here, Log class uses instance()
-        printf("System instance not set. Engine must call System::setSystemInstance() during initialization.\n");
+        // Log class uses instance(); stderr is unbuffered, so abort() keeps the message
+        fprintf(stderr, "System instance not set. Engine must call System::setSystemInstance() during initialization.\n");
         abort();
     }
 
@@ -179,8 +179,7 @@ void System::platformLog(const int type, const char *fmt, va_list args){
 
     vprintf(fmt, args);
     printf("\n");
-    // stdout is fully buffered when redirected to a file or pipe (and a window
-    // app has no console), so lines written before a crash or a kill were lost
+    // stdout is fully buffered in a file or pipe; flush so a crash keeps the last lines
     fflush(stdout);
 }
 
