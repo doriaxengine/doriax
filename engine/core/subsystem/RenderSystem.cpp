@@ -3552,7 +3552,8 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
         gbufferHasBaseColorTex, attributes.normal, attributes.skinning,
         attributes.morphTarget, attributes.morphNormal, attributes.morphTangent,
         (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, sh.terrainSurface && attributes.normal,
-        gbufferHasOcclusionTex, gbufferOcclusionUV2, sh.hookUV1, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents);
+        gbufferHasOcclusionTex, gbufferOcclusionUV2, sh.hookUV1, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents,
+        (gbufferHasBaseColorTex || gbufferHasMRTex || gbufferHasOcclusionTex) && submesh.hasTextureRect && !terrain);
 
     return sh;
 }
@@ -4076,6 +4077,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
             gbufferShaderData.getUniformBlockMembers("u_vs_gbufferParams", mesh.submeshes[i].sizeVSGBufferParams);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
+            mesh.submeshes[i].slotVSGBufferSprite = gbufferShaderData.getUniformBlockIndex(UniformBlockType::SPRITE_VS_PARAMS);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
             mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
@@ -6025,6 +6027,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         const bool unlit = drawsUnlit(mesh.submeshes[i]);
         mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 1.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
+        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferSprite, sizeof(float) * 4, &mesh.submeshes[i].textureRect);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -7143,6 +7146,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSGBufferParams = -1;
         submesh.sizeVSGBufferParams = 0;
         submesh.slotFSGBufferMaterial = -1;
+        submesh.slotVSGBufferSprite = -1;
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;

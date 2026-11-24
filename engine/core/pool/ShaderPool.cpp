@@ -456,7 +456,7 @@ int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
     switch (shaderType) {
         case ShaderType::MESH:   return 32;
         case ShaderType::DEPTH:  return 16;
-        case ShaderType::GBUFFER: return 17;
+        case ShaderType::GBUFFER: return 18;
         case ShaderType::UI:     return 4;
         case ShaderType::POINTS: return 4;
         case ShaderType::LINES:  return 2;
@@ -547,6 +547,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 14: return shortName ? "Vc4" : "Vertex Color 4";
             case 15: return shortName ? "Uv2" : "UV2";
             case 16: return shortName ? "Tan" : "Tangents";
+            case 17: return shortName ? "Txr" : "Texture Rect";
         }
     } else if (shaderType == ShaderType::UI) {
         switch (bit) {
@@ -653,7 +654,7 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     }else if (shaderType == ShaderType::DEPTH){
         optionalBits = {15, 9, 7, 0}; // Txr Uv1 Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){
-        optionalBits = {12, 10, 8, 0}; // Uv1 Occ Mrt Bct
+        optionalBits = {17, 12, 10, 8, 0}; // Txr Uv1 Occ Mrt Bct
     }
 
     std::vector<uint32_t> present;
@@ -930,7 +931,7 @@ uint32_t ShaderPool::getDepthMeshProperties(bool texture, bool skinning, bool mo
 }
 
 uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR, bool occlusionTexture, bool occlusionUV2,
-        bool uv1, bool vertexColorVec3, bool vertexColorVec4, bool uv2, bool tangents){
+        bool uv1, bool vertexColorVec3, bool vertexColorVec4, bool uv2, bool tangents, bool textureRect){
     uint32_t prop = 0;
 
     prop |= baseColorTexture        ? (1 <<  0) : 0;
@@ -950,6 +951,7 @@ uint32_t ShaderPool::getGBufferMeshProperties(bool baseColorTexture, bool normal
     prop |= vertexColorVec4         ? (1 << 14) : 0;
     prop |= uv2                     ? (1 << 15) : 0;
     prop |= tangents                ? (1 << 16) : 0;
+    prop |= textureRect             ? (1 << 17) : 0;
 
     return prop;
 }

@@ -115,6 +115,7 @@ namespace doriax{
         int slotVSGBufferParams = -1;
         unsigned int sizeVSGBufferParams = 0;
         int slotFSGBufferMaterial = -1;
+        int slotVSGBufferSprite = -1;
         int slotVSGBufferSkinning = -1;
         int slotVSGBufferMorphTarget = -1;
         int slotVSGBufferTerrain = -1;

@@ -1,4 +1,5 @@
 #version 450
+#include "includes/gbuffer_maps.glsl"
 
 // G-buffer geometry pass (fragment), MRT output:
 //   color[0] = packed view depth (identical to depth.frag, so SSAO/SSR depth is unchanged)
@@ -28,21 +29,24 @@ uniform u_fs_gbufferMaterial {
     vec4 emissiveFactor; // for a surface hook, w = 1 when unlit
 } gbufferMaterial;
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
+#if defined(USE_BASECOLOR_MAP) || defined(USE_METALLICROUGHNESS_MAP)
     in vec2 v_uv1;
 #endif
-#if defined(HAS_BASECOLOR_TEXTURE)
+#if defined(USE_BASECOLOR_MAP)
     uniform texture2D u_baseColorTexture;
     uniform sampler u_baseColor_smp;
 #endif
-#if defined(HAS_METALLICROUGHNESS_TEXTURE)
+#if defined(USE_METALLICROUGHNESS_MAP)
     uniform texture2D u_metallicRoughnessTexture;
     uniform sampler u_metallicRoughness_smp;
 #endif
-#ifdef HAS_OCCLUSION_TEXTURE
+#ifdef USE_OCCLUSION_MAP
     in vec2 v_uvOcclusion;
     uniform texture2D u_occlusionTexture;
     uniform sampler u_occlusion_smp;
+#endif
+#ifdef HOOK_FRAGMENT_UV1
+    in vec2 v_hookUV;
 #endif
 #ifdef HOOK_FRAGMENT_NORMAL
     in vec3 v_hookNormal;
@@ -76,7 +80,7 @@ uniform u_fs_gbufferMaterial {
     FragmentContext getGBufferContext(){
         FragmentContext context = getFragmentContext(v_worldPosition);
         #ifdef HOOK_FRAGMENT_UV1
-            context.uv1 = v_uv1;
+            context.uv1 = v_hookUV;
         #endif
         #ifdef HOOK_FRAGMENT_NORMAL
             context.normal = normalize(gl_FrontFacing ? v_hookNormal : -v_hookNormal);
@@ -110,7 +114,7 @@ void main() {
         applyCoverage(context);
     #endif
     vec4 baseColor = gbufferMaterial.baseColorFactor;
-    #if defined(HAS_BASECOLOR_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
+    #ifdef USE_BASECOLOR_MAP
         vec4 texColor = texture(sampler2D(u_baseColorTexture, u_baseColor_smp), v_uv1);
         baseColor *= sRGBToLinear(texColor);
     #endif
@@ -122,7 +126,7 @@ void main() {
 
     float roughness = gbufferMaterial.params.x;
     float metallic  = gbufferMaterial.params.y;
-    #if defined(HAS_METALLICROUGHNESS_TEXTURE) && !defined(SURFACE_REPLACES_METALLICROUGHNESS_MAP)
+    #ifdef USE_METALLICROUGHNESS_MAP
         // glTF convention: green = roughness, blue = metallic
         vec4 mr = texture(sampler2D(u_metallicRoughnessTexture, u_metallicRoughness_smp), v_uv1);
         roughness *= mr.g;
@@ -142,7 +146,7 @@ void main() {
     if (!gl_FrontFacing) n = -n;
 
     float occlusion = 1.0;
-    #if defined(HAS_OCCLUSION_TEXTURE) && !defined(SURFACE_REPLACES_OCCLUSION_MAP)
+    #ifdef USE_OCCLUSION_MAP
         occlusion = texture(sampler2D(u_occlusionTexture, u_occlusion_smp), v_uvOcclusion).r;
     #endif
 

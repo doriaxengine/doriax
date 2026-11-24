@@ -3076,7 +3076,7 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v89: as unlit files do.
     // v90: what hooks use is read from the parsed shader.
     // v91: the pass constants in every shader file.
-    // v92: depth samples the sprite frame and instance texture rects.
+    // v92: depth and G-buffer sample the sprite frame and instance texture rects.
     return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v92";
 }
 

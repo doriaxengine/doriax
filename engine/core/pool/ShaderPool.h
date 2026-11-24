@@ -123,7 +123,7 @@ namespace doriax{
         static uint32_t getDepthMeshProperties(bool texture, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool alphaMask = false, bool instanceFade = false,
                         bool uv1 = false, bool normals = false, bool vertexColorVec3 = false, bool vertexColorVec4 = false, bool uv2 = false, bool tangents = false, bool textureRect = false);
         static uint32_t getGBufferMeshProperties(bool baseColorTexture, bool normals, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent, bool terrain, bool instanced, bool metallicRoughnessTexture, bool terrainPBR = false, bool occlusionTexture = false, bool occlusionUV2 = false,
-                        bool uv1 = false, bool vertexColorVec3 = false, bool vertexColorVec4 = false, bool uv2 = false, bool tangents = false);
+                        bool uv1 = false, bool vertexColorVec3 = false, bool vertexColorVec4 = false, bool uv2 = false, bool tangents = false, bool textureRect = false);
         static uint32_t getUIProperties(bool texture, bool fontAtlasTexture, bool vertexColorVec3, bool vertexColorVec4);
         static uint32_t getPointsProperties(bool texture, bool vertexColorVec3, bool vertexColorVec4, bool textureRect);
         static uint32_t getLinesProperties(bool vertexColorVec3, bool vertexColorVec4);
