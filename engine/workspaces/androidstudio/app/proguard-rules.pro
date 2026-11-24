@@ -17,3 +17,6 @@
 #}
 
 -keep class org.doriaxengine.doriax.* {*;}
+
+# WorkManager, used by Google Mobile Ads, creates its database by reflection
+-keep class * extends androidx.room.RoomDatabase { <init>(); }
