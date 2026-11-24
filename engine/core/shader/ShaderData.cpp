@@ -394,6 +394,8 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_probeSourceTexture";
     }else if (type == TextureShaderType::WATERWAKE){
         texstr = "u_waterWakeTexture";
+    }else if (type == TextureShaderType::SKYCAPTURE){
+        texstr = "u_skyCaptureTexture";
     }else if (type == TextureShaderType::BLOOMTEXTURE){
         texstr = "u_bloomTexture";
     }
@@ -404,6 +406,24 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
     }
 
     return getTextureIndexByName(texstr);
+}
+
+bool ShaderData::samplesTexture(const std::string& name){
+    // in any stage declaring it: a texture no sampler pairs with is left out of the shader
+    for (const ShaderTextureInfo& parameter : textureParameters){
+        if (parameter.name != name)
+            continue;
+        const std::string textureName = parameter.getTextureName();
+        for (const ShaderStage& stage : stages){
+            if (stage.type != parameter.stage)
+                continue;
+            for (const ShaderTextureSamplerPair& pair : stage.textureSamplerPairs){
+                if (pair.textureName == textureName)
+                    return true;
+            }
+        }
+    }
+    return false;
 }
 
 std::pair<int, int> ShaderData::getTextureParameterIndex(const ShaderTextureInfo& texture){

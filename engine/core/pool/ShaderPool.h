@@ -66,8 +66,8 @@ namespace doriax{
         static ShaderKey getStorageKey(ShaderKey key);
 
         // Bitmask of the property positions that currently map to a real variant for
-        // this shader type (derived from getShaderPropertyName, so retired/reserved
-        // bits like MESH bit 5 are excluded). Used to normalize keys.
+        // this shader type (derived from getShaderPropertyName, so retired bits are
+        // excluded). Used to normalize keys.
         static uint32_t getValidPropertyMask(ShaderType shaderType);
 
         // Strips property bits that no longer map to a variant (retired features,

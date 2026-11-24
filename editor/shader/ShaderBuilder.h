@@ -80,10 +80,11 @@ namespace doriax::editor {
         // Sets entry-point files + defines for the key, and for a shader file the exact
         // graph of files it includes. Throws on failure.
         // declarations takes what the shader file declares, for ShaderData
+        // fogSky false leaves the sky's color out of the fog
         void setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations,
-                            ShaderSourceUse use = ShaderSourceUse::EDITOR);
+                            ShaderSourceUse use = ShaderSourceUse::EDITOR, bool fogSky = true);
 
-        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR);
+        ShaderData buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use = ShaderSourceUse::EDITOR, bool fogSky = true);
         std::string getShaderDisplayName(ShaderKey key);
 
         // live for a build with pin numbers as parameters
@@ -103,7 +104,7 @@ namespace doriax::editor {
         ShaderBuildResult buildShader(ShaderKey shaderKey, Project* project);
         // annotations of a shader file, with its includes
         static ShaderEffectAnnotations getShaderAnnotations(Project* project, const std::string& shader);
-        ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend);
+        ShaderData buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend, bool fogSky = true);
 
         // Replaces HLSL sources with the bytecode D3D11 would compile at every game start.
         // Windows only: elsewhere, or without d3dcompiler_47.dll, the sources stay.

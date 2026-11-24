@@ -141,6 +141,8 @@ public:
 
 extern const TBuiltInResource DefaultTBuiltInResource;
 
+static const int default_version = 100; // 110 for desktop
+
 static void output_error(const char* str, const char* header, std::string* sink = nullptr){
     if (str && str[0]){
         fprintf(stderr, "%s\n", header);
@@ -180,6 +182,46 @@ static EShLanguage get_stage(stage_type_t stage_type){
         fprintf(stderr, "Not a valid stage input type");
         return EShLangVertex;
     }
+}
+
+// Defines of every shader of a target
+static std::string get_preamble(const args_t& args){
+    std::string def("#extension GL_GOOGLE_include_directive : require\n");
+
+    // To be used in layout(location = SEMANTIC) for HLSL
+    for (int i = 0; i < VERTEX_ATTRIB_COUNT; i++) {
+        def += std::string("#define " + std::string(k_attrib_names[i]) + " " + std::to_string(i) + "\n");
+    }
+
+    // For more HLSL compatibility
+    for (int i = 0; i < 8; i++) {
+        def += std::string("#define SV_Target" + std::to_string(i) + " " + std::to_string(i) + "\n");
+    }
+
+    if (args.lang == LANG_GLSL && args.version == 100) {
+        def += std::string("#define flat\n");
+    }
+
+    if (args.lang == LANG_GLSL){
+        def += std::string("#define IS_GLSL\n");
+        if (args.es){
+            def += std::string("#define IS_GLES\n");
+        }
+    }else if (args.lang == LANG_HLSL){
+        def += std::string("#define IS_HLSL\n");
+    }else if (args.lang == LANG_MSL){
+        def += std::string("#define IS_MSL\n");
+    }else if (args.lang == LANG_SPIRV){
+        def += std::string("#define IS_VULKAN\n");
+    }
+
+    return def;
+}
+
+static void set_environment(glslang::TShader* shader, EShLanguage stage){
+    shader->setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, default_version);
+    shader->setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
+    shader->setEnvTarget(glslang::EshTargetSpv, glslang::EShTargetSpv_1_0);
 }
 
 static void add_defines(glslang::TShader* shader, const args_t& args, std::string& def){
@@ -430,6 +472,65 @@ const TBuiltInResource DefaultTBuiltInResource = {
         /* .generalConstantMatrixVectorIndexing = */ 1,
     }};
 
+class FunctionTraverser : public glslang::TIntermTraverser {
+private:
+    std::map<std::string, function_t>& functions;
+    std::string current;
+
+public:
+    FunctionTraverser(std::map<std::string, function_t>& functions_)
+        : glslang::TIntermTraverser(true, false, true), functions(functions_) {}
+
+    virtual bool visitAggregate(glslang::TVisit visit, glslang::TIntermAggregate* node) override {
+        if (node->getOp() == glslang::EOpFunction) {
+            current = (visit == glslang::EvPreVisit) ? node->getName().c_str() : "";
+            if (visit == glslang::EvPreVisit)
+                functions[current].file = node->getLoc().getFilenameStr();
+        } else if (node->getOp() == glslang::EOpFunctionCall && visit == glslang::EvPreVisit) {
+            functions[current].calls.insert(node->getName().c_str());
+        }
+        return true;
+    }
+
+    virtual bool visitBinary(glslang::TVisit visit, glslang::TIntermBinary* node) override {
+        if (node->getOp() == glslang::EOpIndexDirectStruct && visit == glslang::EvPreVisit) {
+            const glslang::TType& type = node->getLeft()->getType();
+            const int field = node->getRight()->getAsConstantUnion()->getConstArray()[0].getIConst();
+            functions[current].fields.insert(std::string(type.getTypeName().c_str()) + "." + (*type.getStruct())[field].type->getFieldName().c_str());
+        }
+        return true;
+    }
+};
+
+bool shadercompiler::parse_functions(std::map<std::string, function_t>& functions, std::string& log, const input_t& input, const args_t& args){
+    // Kept for the whole run: glslang takes longer to build its tables than to read a shader
+    static const bool initialized = glslang::InitializeProcess();
+    if (!initialized)
+        return false;
+
+    const EShLanguage stage = get_stage(input.stage_type);
+    const char* source = input.source.c_str();
+    const int sourceLen = (int) input.source.length();
+    const char* sourceName = input.filename.c_str();
+    std::string def = get_preamble(args);
+
+    glslang::TShader shader(stage);
+    shader.setStringsWithLengthsAndNames(&source, &sourceLen, &sourceName, 1);
+    set_environment(&shader, stage);
+    shader.setAutoMapLocations(true);
+    shader.setAutoMapBindings(true);
+    add_defines(&shader, args, def);
+
+    BufferIncluder includer(args.fileBuffers);
+    const bool parsed = shader.parse(&DefaultTBuiltInResource, default_version, false, EShMsgDefault, includer);
+    log = shader.getInfoLog();
+
+    FunctionTraverser traverser(functions);
+    if (TIntermNode* root = shader.getIntermediate()->getTreeRoot())
+        root->traverse(&traverser);
+    return parsed;
+}
+
 bool shadercompiler::compile_to_spirv(std::vector<spirv_t>& spirvvec, const std::vector<input_t>& inputs, const args_t& args){
     glslang::InitializeProcess();
 
@@ -447,39 +548,9 @@ bool shadercompiler::compile_to_spirv(std::vector<spirv_t>& spirvvec, const std:
     glslang::TProgram* program = new glslang::TProgram;
 
     EShMessages messages = EShMsgDefault;
-    int default_version = 100; // 110 for desktop
-
-    // To be used in layout(location = SEMANTIC) for HLSL
-    std::string semantics_def;
-    for (int i = 0; i < VERTEX_ATTRIB_COUNT; i++) {
-        semantics_def += std::string("#define " + std::string(k_attrib_names[i]) + " " + std::to_string(i) + "\n");
-    }
-
-    // For more HLSL compatibility
-    for (int i = 0; i < 8; i++) {
-        semantics_def += std::string("#define SV_Target" + std::to_string(i) + " " + std::to_string(i) + "\n");
-    }
 
     for (int i = 0; i < inputs.size(); i++){
-        std::string def("#extension GL_GOOGLE_include_directive : require\n");
-        def += semantics_def;
-
-        if (args.lang == LANG_GLSL && args.version == 100) {
-            def += std::string("#define flat\n");
-        }
-
-        if (args.lang == LANG_GLSL){
-            def += std::string("#define IS_GLSL\n");
-            if (args.es){
-                def += std::string("#define IS_GLES\n");
-            }
-        }else if (args.lang == LANG_HLSL){
-            def += std::string("#define IS_HLSL\n");
-        }else if (args.lang == LANG_MSL){
-            def += std::string("#define IS_MSL\n");
-        }else if (args.lang == LANG_SPIRV){
-            def += std::string("#define IS_VULKAN\n");
-        }
+        std::string def = get_preamble(args);
 
         EShLanguage stage = get_stage(inputs[i].stage_type);
 
@@ -490,9 +561,7 @@ bool shadercompiler::compile_to_spirv(std::vector<spirv_t>& spirvvec, const std:
         const char* sourcesNames[1] = { inputs[i].filename.c_str() };
 
         shader->setStringsWithLengthsAndNames(sources, sourcesLen, sourcesNames, 1);
-        shader->setEnvInput(glslang::EShSourceGlsl, stage, glslang::EShClientVulkan, default_version);
-        shader->setEnvClient(glslang::EShClientVulkan, glslang::EShTargetVulkan_1_0);
-        shader->setEnvTarget(glslang::EshTargetSpv, glslang::EShTargetSpv_1_0);
+        set_environment(shader, stage);
 
         shader->setAutoMapLocations(true);
         shader->setAutoMapBindings(true);

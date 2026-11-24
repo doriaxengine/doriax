@@ -286,11 +286,8 @@ namespace {
 
     // a framebuffer the shader samples, which changes with no value changing
     bool samplesFramebuffer(const ShaderTextureValues& textures, ShaderData& shaderData){
-        for (const ShaderTextureInfo& parameter : shaderData.textureParameters){
-            if (shaderData.getTextureParameterIndex(parameter).first == -1)
-                continue;
-            const Texture* texture = ShaderTextures::find(textures, parameter.name);
-            if (texture && texture->isFramebuffer())
+        for (const auto& texture : textures){
+            if (texture.second.isFramebuffer() && shaderData.samplesTexture(texture.first))
                 return true;
         }
         return false;
@@ -491,6 +488,7 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
     resumePassRender.setLoadActionLoad();
     resumePassRender.setDepthLoadActionLoad();
     currentUnderwater = NULL;
+    currentTarget = NULL;
     hasWaterDepth = false;
     onlyDirectionalLights = false;
     animationTime = 0.0;
@@ -582,6 +580,8 @@ void RenderSystem::load(){
     hasShadows = false;
     onlyDirectionalLights = false;
     hasFog = false;
+    hasFogSky = false;
+    fogSkyBlend = 0.0f;
     hasIBL = false;
     hasReflectionProbes = false;
     hasWaterDepth = false;
@@ -1518,7 +1518,30 @@ bool RenderSystem::loadAndProcessFog(){
         fs_fog.density_start_end = Vector4(fog->density, 0.0, fog->linearStart, fog->linearEnd);
     }
 
+    // taking the sky's color is a variant of the meshes the sky does not light, kept once taken
+    fogSkyBlend = fog ? std::clamp(fog->skyBlend, 0.0f, 1.0f) : 0.0f;
+    if (!hasFogSky && fogSkyBlend > 0.0f && scene->getComponentArray<SkyComponent>()->size() > 0){
+        hasFogSky = true;
+        needReloadMeshes();
+    }
+
     return hasFog;
+}
+
+// how much the fog takes of the sky this frame draws: none until it has its lighting maps
+void RenderSystem::updateFogSky(){
+    fs_fog.forward_skyBlend.w = 0.0f;
+    fs_fog.skyEnvironment = Vector4(1.0f, 1.0f, 1.0f, 0.0f);
+
+    auto skys = scene->getComponentArray<SkyComponent>();
+    if (skys->size() == 0)
+        return;
+
+    const SkyComponent& sky = skys->getComponentFromIndex(0);
+    if (sky.irradianceMap && sky.prefilteredMap){
+        fs_fog.forward_skyBlend.w = fogSkyBlend;
+        fs_fog.skyEnvironment = getSkyEnvironment(sky);
+    }
 }
 
 // pooled maps stay alive in TexturePool for reuse; only unpooled ones are destroyed
@@ -1579,6 +1602,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
     setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), 0, 0.1f, 10.0f);
     // no camera owns a capture, so view parameters read their declared defaults
     setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+    effectView.pass = ShaderPass::SKY_CAPTURE;
     const Vector2 resolution((float)SKY_CAPTURE_SIZE, (float)SKY_CAPTURE_SIZE);
 
     // what the shader reads, as the capture would write it; the sun only when it reads it
@@ -1616,6 +1640,7 @@ void RenderSystem::captureSky(SkyComponent& sky){
     for (int face = 0; face < 6; face++){
         setCaptureCamera(captureCamera, captureTransform, Vector3(0.0f, 0.0f, 0.0f), face, 0.1f, 10.0f);
         setEffectView(NULL_ENTITY, captureCamera, captureTransform);
+        effectView.pass = ShaderPass::SKY_CAPTURE;
         sky.skyViewProjectionMatrix = getSkyViewProjection(captureCamera, 0.0f);
         skyCapturePass.startRenderPass(&skyCaptureFramebuffer, (size_t)face);
         drawSky(sky, PIP_RTT_INVERT);
@@ -1645,6 +1670,12 @@ void RenderSystem::captureSky(SkyComponent& sky){
         sky.prefilteredMap = skyCapturePrefiltered;
         sky.envMapsLoaded = true;
     }
+}
+
+// the sky a fog takes its color from: the maps the lighting reads, which a capture replaces
+void RenderSystem::addFogSky(ObjectRender& render, Submesh& submesh){
+    if (hasFogSky)
+        addSkyEnvironment(render, submesh.shader->shaderData);
 }
 
 void RenderSystem::addSkyEnvironment(ObjectRender& render, ShaderData& shaderData){
@@ -2487,11 +2518,14 @@ bool RenderSystem::checkPBRFrabebufferUpdate(Material& material){
         material.emissiveTexture.isFramebufferOutdated() );
 }
 
-bool RenderSystem::checkPBRTextures(const Material& material, bool receiveLights, const SceneShading& shading){
+bool RenderSystem::checkPBRTextures(const Material& material, const MeshComponent& mesh, const SceneShading& shading){
     bool hasBaseColor = !material.baseColorTexture.empty();
 
+    // lit by lights, or by the environment alone, as getSubmeshShading decides
+    const bool receiveLights = mesh.receiveLights;
+    const bool lit = (shading.lights || ((shading.ibl || shading.reflectionProbes) && mesh.receiveIBL)) && receiveLights;
     bool hasOtherPBRTextures = false;
-    if (shading.lights && receiveLights) {
+    if (lit) {
         hasOtherPBRTextures = !material.metallicRoughnessTexture.empty() ||
                               !material.normalTexture.empty() ||
                               !material.occlusionTexture.empty() ||
@@ -2505,73 +2539,25 @@ bool RenderSystem::checkPBRTextures(const Material& material, bool receiveLights
 }
 
 bool RenderSystem::loadPBRTextures(Material& material, ShaderData& shaderData, ObjectRender& render, bool receiveLights){
-    TextureRender* textureRender = NULL;
-    std::pair<int, int> slotTex(-1, -1);
-
-    textureRender = material.baseColorTexture.getRender(&emptyWhite);
-    slotTex = shaderData.getTextureIndex(TextureShaderType::BASECOLOR);
-    if (textureRender){
-        if (!textureRender->isCreated()){
+    // the textures the variant declares, as lights, the environment or 2D lights make it read them
+    auto bind = [&](Texture& texture, TextureShaderType type, TextureRender* fallback){
+        const std::pair<int, int> slot = shaderData.getTextureIndex(type);
+        if (slot.first == -1)
+            return true;
+        TextureRender* textureRender = texture.getRender(fallback);
+        if (textureRender && !textureRender->isCreated())
             return false;
-        }
-        render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-    }else{
-        render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-    }
+        render.addTexture(slot, ShaderStageType::FRAGMENT, textureRender ? textureRender : fallback);
+        return true;
+    };
 
-    if (hasLights && receiveLights){
-        textureRender = material.metallicRoughnessTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::METALLICROUGHNESS);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-
-        textureRender = material.occlusionTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::OCCULSION);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-
-        // A missing emissive texture must default to white (glTF: emissive =
-        // emissiveFactor * emissiveTexture, absent texture = 1,1,1,1). The shader
-        // unconditionally multiplies emissiveFactor by this sample for UV meshes, so a
-        // black fallback would silently zero out emissiveFactor when no texture is set.
-        textureRender = material.emissiveTexture.getRender(&emptyWhite);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::EMISSIVE);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyWhite);
-        }
-    }
-
-    // normal map is sampled by both the 3D lit path and the 2D light path (which
-    // otherwise keeps the unlit shader); addTexture no-ops when the compiled
-    // variant has no u_normalTexture slot
-    if ((hasLights || hasLights2D) && receiveLights){
-        textureRender = material.normalTexture.getRender(&emptyNormal);
-        slotTex = shaderData.getTextureIndex(TextureShaderType::NORMAL);
-        if (textureRender){
-            if (!textureRender->isCreated()){
-                return false;
-            }
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, textureRender);
-        }else{
-            render.addTexture(slotTex, ShaderStageType::FRAGMENT, &emptyNormal);
-        }
+    // a missing emissive texture is white, as glTF multiplies emissiveFactor by it
+    if (!bind(material.baseColorTexture, TextureShaderType::BASECOLOR, &emptyWhite) ||
+            !bind(material.metallicRoughnessTexture, TextureShaderType::METALLICROUGHNESS, &emptyWhite) ||
+            !bind(material.occlusionTexture, TextureShaderType::OCCULSION, &emptyWhite) ||
+            !bind(material.emissiveTexture, TextureShaderType::EMISSIVE, &emptyWhite) ||
+            !bind(material.normalTexture, TextureShaderType::NORMAL, &emptyNormal)){
+        return false;
     }
 
     if (hasLights && receiveLights){
@@ -3328,6 +3314,7 @@ RenderSystem::SceneShading RenderSystem::getSceneShading() const{
     shading.shadows = hasShadows;
     shading.onlyDirectionalLights = onlyDirectionalLights;
     shading.fog = hasFog;
+    shading.fogSky = hasFogSky;
     shading.ibl = hasIBL;
     shading.reflectionProbes = hasReflectionProbes;
     shading.waterDepth = hasWaterDepth;
@@ -3348,13 +3335,15 @@ RenderSystem::SceneShading RenderSystem::getAuthoredSceneShading() const{
     shading.onlyDirectionalLights = shading.lights && allLightsDirectional(scene);
 
     // the project draws the fog the editor can hide
-    shading.fog = scene->getComponentArray<FogComponent>()->size() > 0;
+    auto fogs = scene->getComponentArray<FogComponent>();
+    shading.fog = fogs->size() > 0;
 
     // as updateSkyEnvironment, which makes the maps of a cube sky, and captureSky those of a shader sky
     auto skys = scene->getComponentArray<SkyComponent>();
     if (skys->size() > 0){
         const SkyComponent& sky = skys->getComponentFromIndex(0);
         shading.ibl = isSkyCaptured(sky) || (!sky.texture.empty() && sky.texture.getNumFaces() == 6);
+        shading.fogSky = shading.fog && fogs->getComponentFromIndex(0).skyBlend > 0.0f;
     }
     shading.reflectionProbes = scene->getComponentArray<ReflectionProbeComponent>()->size() > 0;
 
@@ -3446,7 +3435,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     const Material& material = submesh.material;
     SubmeshShading sh;
 
-    bool hasPBRTextures = checkPBRTextures(material, mesh.receiveLights, shading);
+    bool hasPBRTextures = checkPBRTextures(material, mesh, shading);
 
     sh.mirror = (scene->findComponent<MirrorComponent>(entity) != NULL);
 
@@ -3534,6 +3523,10 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
                     (terrain)?true:false, (instmesh)?true:false, sh.ibl, sh.mirror, sh.ssao, sh.light2d, sh.shadows2d,
                     sh.alphaMask, sh.alphaOpaque, sh.instanceFade, sh.terrainSurface, sh.hookUV1 && !sh.hasTexture1, sh.hookNormals && !sh.hasNormal,
                     sh.hookUV2 && !sh.hasTexture2);
+    // 'Fsk': the fog takes the sky's color, from a map the sky's own lighting would bring
+    if (shading.fog && shading.fogSky && !sh.ibl){
+        sh.properties |= 1u << 5;
+    }
     // 'Dlo': without the point/spot paths
     if (sh.punctual && shading.onlyDirectionalLights){
         sh.properties |= 1u << 28;
@@ -3845,6 +3838,9 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         if (sh.ibl){
             addSkyEnvironment(render, shaderData);
             render.addTexture(shaderData.getTextureIndex(TextureShaderType::REFLECTIONPROBE), ShaderStageType::FRAGMENT, &emptyCubeBlack);
+        }else if (shading.fogSky){
+            // the fog reads the sky's prefiltered map
+            addSkyEnvironment(render, shaderData);
         }
 
         if (terrain){
@@ -4784,14 +4780,14 @@ void RenderSystem::updateTerrainNodesBuffer(TerrainComponent& terrain, int viewI
 // unlit quads with vertex colors, nothing else per object
 bool RenderSystem::canBatchSprite(const MeshComponent& mesh) const{
     constexpr uint32_t required = (1u << 0) | (1u << 10);
-    constexpr uint32_t allowed = required | (1u << 1) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
+    constexpr uint32_t allowed = required | (1u << 1) | (1u << 5) | (1u << 11) | (1u << 12) | (1u << 24) | (1u << 25) | (1u << 29) | (1u << 30);
 
     // shader properties first, they rule out lit meshes
     const Submesh& submesh = mesh.submeshes[0];
     return (submesh.shaderProperties & required) == required && !(submesh.shaderProperties & ~allowed) &&
         mesh.loaded && !mesh.needReload && mesh.numSubmeshes == 1 && mesh.numExternalBuffers == 0 &&
         mesh.buffer.getCount() <= 4 && mesh.buffer.getData() && mesh.indices.getData() &&
-        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh);
+        !submesh.needUpdateTexture && !submesh.lodData && batchesShader(submesh) && !samplesTarget(currentTarget, submesh);
 }
 
 // false when the mesh needs its own draw; culled sprites count as batched
@@ -4934,7 +4930,7 @@ void RenderSystem::appendSpriteGeometry(const SpriteBatchItem& item){
 void RenderSystem::applySpriteBatchUniforms(ObjectRender& render, MeshComponent& mesh){
     Submesh& submesh = mesh.submeshes[0];
     if (hasFog){
-        render.applyUniformBlock(submesh.slotFSFog, sizeof(float) * 8, &fs_fog);
+        render.applyUniformBlock(submesh.slotFSFog, sizeof(fs_fog_t), &fs_fog);
     }
 
     if (submesh.hasTextureRect){
@@ -4981,6 +4977,7 @@ bool RenderSystem::drawSpriteBatch(){
 
     writeParameters(mesh, scene);
     applySpriteBatchUniforms(render, mesh);
+    addFogSky(render, mesh.submeshes[0]);
 
     render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset);
     render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset);
@@ -5302,6 +5299,8 @@ void RenderSystem::flushSpriteSegment(){
             }
             previous = &render;
             previousCutoff = cutoff;
+            // textures are each sprite's own, whatever pipeline it shares
+            addFogSky(render, mesh.submeshes[0]);
 
             render.replaceVertexBuffer(mesh.buffer.getRender(), &spriteBatch.vertexBuffer, vertexOffset + run.vertexStart);
             render.setIndexBuffer(&spriteBatch.indexBuffer, indexOffset + run.indexStart * sizeof(uint16_t));
@@ -5413,6 +5412,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             if (mesh.submeshes[i].needUpdateTexture)
                 continue;
 
+            if (samplesTarget(currentTarget, mesh.submeshes[i]))
+                continue;
+
             if (!render.beginDraw(pipType)){
                 mesh.needReload = true;
                 return false;
@@ -5434,7 +5436,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
             }
 
             if (hasFog){
-                render.applyUniformBlock(mesh.submeshes[i].slotFSFog, sizeof(float) * 8, &fs_fog);
+                if (!mesh.submeshes[i].hasIBL)
+                    addFogSky(render, mesh.submeshes[i]);
+                render.applyUniformBlock(mesh.submeshes[i].slotFSFog, sizeof(fs_fog_t), &fs_fog);
             }
 
             if (mesh.submeshes[i].slotFSMirror != -1){
@@ -5584,6 +5588,11 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             }
 
             if (mesh.submeshes[i].needUpdateDepthTexture)
+                continue;
+
+            // the prepass draws into the color target, and only what the color pass draws
+            if ((pipelineType == PIP_ZPREPASS || pipelineType == PIP_ZPREPASS_RTT) &&
+                    (samplesTarget(currentTarget, mesh.submeshes[i]) || samplesTarget(currentTarget, mesh.submeshes[i], true)))
                 continue;
 
             if (!depthRender.beginDraw(pipelineType)){
@@ -7863,6 +7872,10 @@ bool RenderSystem::drawSky(SkyComponent& sky, PipelineType pipType){
         }
 
         ObjectRender& render = sky.render;
+        // its hooks read the last capture back, but never the one being drawn
+        const bool readable = effectView.pass != ShaderPass::SKY_CAPTURE && skyCaptureFramebuffer.isCreated();
+        TextureRender* capture = readable ? &skyCaptureFramebuffer.getColorTexture() : &emptyCubeBlack;
+        render.addTexture(sky.shaderRender->shaderData.getTextureIndex(TextureShaderType::SKYCAPTURE), ShaderStageType::FRAGMENT, capture);
 
         if (!render.beginDraw(pipType)){
             sky.needReload = true;
@@ -8616,7 +8629,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     if (!water.loaded || water.needReload || water.indexCount == 0)
         return false;
 
-    if (!isInsideCamera(camera, water.worldAABB) || samplesCameraTarget(camera, water.shaderTextures))
+    if (!isInsideCamera(camera, water.worldAABB))
         return false;
 
     ObjectRender& render = water.render;
@@ -8743,7 +8756,7 @@ bool RenderSystem::drawWater(Entity entity, WaterComponent& water, Transform& tr
     render.applyUniformBlock(water.slotFSParams, sizeof(fs_water_t), &fsParams);
     render.applyUniformBlock(water.slotFSLighting, sizeof(fs_lighting_t), &fs_lighting);
     if (water.slotFSFog != -1){
-        render.applyUniformBlock(water.slotFSFog, sizeof(float) * 8, &fs_fog);
+        render.applyUniformBlock(water.slotFSFog, sizeof(fs_fog_t), &fs_fog);
     }
     render.applyUniformBlock(water.slotFSShadows, sizeof(fs_shadows_t), &fs_shadows);
     writeParameters(water, scene);
@@ -10214,6 +10227,10 @@ void RenderSystem::setEffectView(Entity cameraEntity, const CameraComponent& cam
     // worldDirection is the camera's backward axis
     effectView.forward = -camera.worldDirection;
     effectView.perspective = camera.type == CameraType::CAMERA_PERSPECTIVE;
+    effectView.pass = ShaderPass::COLOR;
+    // the fog looks toward the sky as the pass does
+    fs_fog.eye = Vector4(effectView.eye.x, effectView.eye.y, effectView.eye.z, effectView.perspective ? 1.0f : 0.0f);
+    fs_fog.forward_skyBlend = Vector4(effectView.forward.x, effectView.forward.y, effectView.forward.z, fs_fog.forward_skyBlend.w);
     effectView.viewMatrix = camera.viewMatrix;
     effectView.depthProjection = Vector4(camera.projectionMatrix[2][2], camera.projectionMatrix[2][3],
                                          camera.projectionMatrix[3][2], camera.projectionMatrix[3][3]);
@@ -10849,34 +10866,35 @@ bool RenderSystem::usesAlphaMask(const Material& material, bool textureShadow){
         (material.alphaMode == MaterialAlphaMode::AUTO && textureShadow);
 }
 
-// a texture cannot be sampled in the pass that renders into it; objects showing a
-// camera's framebuffer must be skipped when drawing that same camera
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh){
-    if (!camera.renderToTexture)
+// a texture cannot be sampled in the pass that renders into it; what shows the
+// framebuffer a pass draws into must be skipped
+bool RenderSystem::samplesTarget(const Framebuffer* target, const Submesh& submesh, bool depth){
+    if (!target)
         return false;
 
-    for (unsigned int i = 0; i < mesh.numSubmeshes; i++){
-        const Material& material = mesh.submeshes[i].material;
-        if (samplesCameraTarget(camera, material.shaderTextures) ||
-            material.baseColorTexture.getFramebuffer() == camera.framebuffer ||
-            material.metallicRoughnessTexture.getFramebuffer() == camera.framebuffer ||
-            material.normalTexture.getFramebuffer() == camera.framebuffer ||
-            material.occlusionTexture.getFramebuffer() == camera.framebuffer ||
-            material.emissiveTexture.getFramebuffer() == camera.framebuffer){
-            return true;
-        }
-    }
+    const Material& material = submesh.material;
+    ShaderRender* shader = depth ? submesh.depthShader.get() : submesh.shader.get();
+    // only the maps the shader has
+    auto samples = [&](const Texture& texture, TextureShaderType type){
+        return samplesTarget(target, texture) && shader && shader->shaderData.getTextureIndex(type).first != -1;
+    };
 
-    return false;
+    return samplesTarget(target, material.shaderTextures, shader) ||
+        samples(material.baseColorTexture, depth ? TextureShaderType::DEPTHTEXTURE : TextureShaderType::BASECOLOR) ||
+        samples(material.metallicRoughnessTexture, TextureShaderType::METALLICROUGHNESS) ||
+        samples(material.normalTexture, TextureShaderType::NORMAL) ||
+        samples(material.occlusionTexture, TextureShaderType::OCCULSION) ||
+        samples(material.emissiveTexture, TextureShaderType::EMISSIVE);
 }
 
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const Texture& texture){
-    return camera.renderToTexture && texture.getFramebuffer() == camera.framebuffer;
+bool RenderSystem::samplesTarget(const Framebuffer* target, const Texture& texture){
+    return target && texture.getFramebuffer() == target;
 }
 
-bool RenderSystem::samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures){
+// on a parameter the shader samples; any texture counts before it is built
+bool RenderSystem::samplesTarget(const Framebuffer* target, const ShaderTextureValues& textures, ShaderRender* shader){
     for (const auto& texture : textures){
-        if (samplesCameraTarget(camera, texture.second))
+        if (samplesTarget(target, texture.second) && (!shader || shader->shaderData.samplesTexture(texture.first)))
             return true;
     }
 
@@ -11568,7 +11586,7 @@ void RenderSystem::update(double dt){
                     if (mesh.submeshes[s].gbufferShader){
                         mesh.submeshes[s].needUpdateGBufferTexture = true;
                     }
-                    if (checkPBRTextures(mesh.submeshes[s].material, mesh.receiveLights, getSceneShading())){
+                    if (checkPBRTextures(mesh.submeshes[s].material, mesh, getSceneShading())){
                         if (!(mesh.submeshes[s].shaderProperties & (1 << 1)) && !(mesh.submeshes[s].shaderProperties & (1 << 2))){ // not 'Uv1' and not 'Uv2'
                             mesh.needReload = true;
                         }
@@ -12068,6 +12086,7 @@ void RenderSystem::draw(){
         updateSkyParams(sky);
         captureSky(sky);
     }
+    updateFogSky();
 
     // Runtime-captured probes share a strict budget: one cubemap face total per
     // frame. Static probes without an authored cubemap capture once; dynamic
@@ -12203,6 +12222,12 @@ void RenderSystem::draw(){
             }
         }
 
+        // SSR, post-process and fixed resolution draw into buffers of their own
+        currentTarget = NULL;
+        if (!useSSR && !usePostProcess && !useFixedRes){
+            currentTarget = camera.renderToTexture ? camera.framebuffer : Engine::getFramebuffer();
+        }
+
         // the waters this pass draws: transparencies across them go before them, the rest after
         std::vector<WaterRenderData> passWaters;
         std::vector<TransparentRenderData> afterWaterRenders; // in submission order
@@ -12214,7 +12239,8 @@ void RenderSystem::draw(){
             Transform* waterTransform = scene->findComponent<Transform>(waterEntity);
             // a water cannot sample its own reflection while rendering it
             if (!water.loaded || water.needReload || !waterTransform || !waterTransform->visibleInHierarchy ||
-                    getMirrorCamera(waterEntity) == cameraEntity || !isInsideCamera(camera, water.worldAABB))
+                    getMirrorCamera(waterEntity) == cameraEntity || !isInsideCamera(camera, water.worldAABB) ||
+                    samplesTarget(currentTarget, water.normalTexture) || samplesTarget(currentTarget, water.shaderTextures, water.shaderRender.get()))
                 continue;
 
             const Vector3& eye = cameraTransform.worldPosition;
@@ -12225,7 +12251,10 @@ void RenderSystem::draw(){
 
         // the water the main camera is inside of, even with its surface out of view
         WaterComponent* underwater = (isMainCamera && !disableUnderwater) ? findUnderwater(cameraTransform.worldPosition) : NULL;
-        currentUnderwater = (underwater && loadUnderwater(*underwater)) ? underwater : NULL;
+        // not through a fade that samples what the pass draws into
+        const bool fades = underwater && loadUnderwater(*underwater) &&
+            !samplesTarget(currentTarget, underwater->shaderTextures, underwater->underwaterShader.get());
+        currentUnderwater = fades ? underwater : NULL;
 
         // the buffer update redirected the frame into, also when its effect was turned off since
         const bool useSceneTarget = isMainCamera && swapchainRedirect && !useSSR && !usePostProcess
@@ -12373,7 +12402,7 @@ void RenderSystem::draw(){
                 }
 
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-                if (!transform.visibleInHierarchy || samplesCameraTarget(camera, mesh)){
+                if (!transform.visibleInHierarchy){
                     continue;
                 }
 
@@ -12423,7 +12452,7 @@ void RenderSystem::draw(){
         if (skys->size() > 0){
             SkyComponent& sky = skys->getComponentFromIndex(0);
             Entity entity = skys->getEntity(0);
-            if (sky.visible && !samplesCameraTarget(camera, sky.shaderTextures)){
+            if (sky.visible && !samplesTarget(currentTarget, sky.shaderTextures, sky.shaderRender.get())){
                 if (hasMultipleCameras || hasReflectionProbes){
                     updateSkyViewProjection(sky, camera);
                 }
@@ -12591,7 +12620,7 @@ void RenderSystem::draw(){
             if (signature.test(scene->getComponentId<MeshComponent>())){
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
 
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, mesh)){
+                if (transform.visibleInHierarchy){
 
                     // Per-camera transparent-instance sorting is intentionally NOT done
                     // here: the instance buffer is shared across all cameras and sokol
@@ -12633,7 +12662,7 @@ void RenderSystem::draw(){
                 if (signature.test(scene->getComponentId<TextComponent>())){
                     isText = true;
                 }
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, ui.texture) && !samplesCameraTarget(camera, ui.shaderTextures))
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, ui.texture) && !samplesTarget(currentTarget, ui.shaderTextures, ui.shaderRender.get()))
                     drawUI(ui, transform, colorPip);
 
             }else if (signature.test(scene->getComponentId<PointsComponent>())){
@@ -12643,7 +12672,7 @@ void RenderSystem::draw(){
                 // shared across all cameras and sokol only allows one sg_update_buffer per
                 // buffer per frame (VALIDATE_UPDATEBUF_ONCE). Every camera reuses the main
                 // camera's ordering computed in update().
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, points.texture) && !samplesCameraTarget(camera, points.shaderTextures)){
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, points.texture) && !samplesTarget(currentTarget, points.shaderTextures, points.shaderRender.get())){
                     if (!points.transparent){
                         drawPoints(points, transform, camera, cameraTransform, colorPip);
                     }else{
@@ -12663,7 +12692,7 @@ void RenderSystem::draw(){
             }else if (signature.test(scene->getComponentId<LinesComponent>())){
                 LinesComponent& lines = scene->getComponent<LinesComponent>(entity);
 
-                if (transform.visibleInHierarchy && !samplesCameraTarget(camera, lines.shaderTextures))
+                if (transform.visibleInHierarchy && !samplesTarget(currentTarget, lines.shaderTextures, lines.shaderRender.get()))
                     drawLines(lines, transform, cameraTransform, colorPip);
 
             }
@@ -12766,6 +12795,7 @@ void RenderSystem::draw(){
 
     }
     fs_lighting = mainLighting;
+    currentTarget = NULL;
 
     // waves move after drawing, so Water::getHeight in the next update matches the next draw
     advanceWaters();

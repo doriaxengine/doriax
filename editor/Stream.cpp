@@ -2046,6 +2046,7 @@ YAML::Node editor::Stream::encodeProject(Project* project) {
         if (!web.headInclude.empty()) webNode["headInclude"] = web.headInclude;
         if (web.resizeCanvasToWindow != defaultWeb.resizeCanvasToWindow) webNode["resizeCanvasToWindow"] = web.resizeCanvasToWindow;
         if (web.hideEmscriptenUI != defaultWeb.hideEmscriptenUI) webNode["hideEmscriptenUI"] = web.hideEmscriptenUI;
+        if (web.maxPixelRatio != defaultWeb.maxPixelRatio) webNode["maxPixelRatio"] = web.maxPixelRatio;
         if (web.portal != defaultWeb.portal) webNode["portal"] = webPortalTypeToString(web.portal);
         if (!web.portalGameId.empty()) webNode["portalGameId"] = web.portalGameId;
         if (webNode.size() != 0) root["web"] = webNode;
@@ -2389,6 +2390,7 @@ void editor::Stream::decodeProject(Project* project, const YAML::Node& node, con
         if (webNode["headInclude"]) web.headInclude = webNode["headInclude"].as<std::string>();
         if (webNode["resizeCanvasToWindow"].IsDefined()) web.resizeCanvasToWindow = webNode["resizeCanvasToWindow"].as<bool>();
         if (webNode["hideEmscriptenUI"].IsDefined()) web.hideEmscriptenUI = webNode["hideEmscriptenUI"].as<bool>();
+        if (webNode["maxPixelRatio"]) web.maxPixelRatio = std::max(1.0f, webNode["maxPixelRatio"].as<float>());
         if (webNode["portal"]) web.portal = stringToWebPortalType(webNode["portal"].as<std::string>());
         if (webNode["portalGameId"]) web.portalGameId = webNode["portalGameId"].as<std::string>();
     }
@@ -6498,6 +6500,7 @@ YAML::Node editor::Stream::encodeFogComponent(const FogComponent& fog) {
     node["density"] = fog.density;
     node["linearStart"] = fog.linearStart;
     node["linearEnd"] = fog.linearEnd;
+    node["skyBlend"] = fog.skyBlend;
 
     return node;
 }
@@ -6514,6 +6517,7 @@ FogComponent editor::Stream::decodeFogComponent(const YAML::Node& node, const Fo
     if (node["density"]) fog.density = node["density"].as<float>();
     if (node["linearStart"]) fog.linearStart = node["linearStart"].as<float>();
     if (node["linearEnd"]) fog.linearEnd = node["linearEnd"].as<float>();
+    if (node["skyBlend"]) fog.skyBlend = node["skyBlend"].as<float>();
 
     return fog;
 }

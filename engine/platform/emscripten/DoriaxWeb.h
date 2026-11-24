@@ -26,8 +26,12 @@ private:
     static int syncWaitTime;
     static bool enabledIDB;
 
+    // framebuffer size
     static int screenWidth;
     static int screenHeight;
+
+    // framebuffer pixels per CSS pixel, the unit of input events
+    static double pixelRatio;
 
     static double mousePosX;
     static double mousePosY;
@@ -35,6 +39,8 @@ private:
     static int sampleCount;
 
     static bool quitRequested;
+
+    static unsigned int pauseReasons;
 
     static GamepadState gamepads[DORIAX_WEB_MAX_GAMEPADS];
 
@@ -46,8 +52,13 @@ private:
 
     static EM_BOOL canvas_resize(int eventType, const void *reserved, void *userData);
     static EM_BOOL webgl_context_callback(int emsc_type, const void* reserved, void* user_data);
+    static EM_BOOL visibility_callback(int eventType, const EmscriptenVisibilityChangeEvent *e, void *userData);
 
     static EM_BOOL renderLoop(double time, void* userdata);
+
+    static bool getCanvasCssSize(double& width, double& height);
+    static void setFramebufferSize(int width, int height);
+    static void updateFramebufferSize();
 
     static void unregisterCallbacks();
     static void syncFileSystemNow();
@@ -63,12 +74,23 @@ private:
 
 public:
 
+    enum class PauseReason{
+        AD,
+        PORTAL,
+        HIDDEN,
+        CONTEXT_LOST
+    };
+
     DoriaxWeb();
 
     static void setEnabledIDB(bool enabledIDB);
 
     static int init(int argc, char **argv);
+    // CSS size of the canvas, which the framebuffer follows
     static void changeCanvasSize(int width, int height);
+
+    // The game resumes when no reason is left
+    static void setPaused(PauseReason reason, bool paused);
 
     virtual int getScreenWidth() override;
     virtual int getScreenHeight() override;

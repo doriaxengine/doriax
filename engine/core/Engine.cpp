@@ -1323,13 +1323,14 @@ void Engine::systemShutdown(){
 }
 
 void Engine::systemPause(){
-    AudioSystem::pauseAll();
+    // first, so audio the game pauses here stays paused after the resume
     Engine::onPause.call();
+    AudioSystem::systemPause();
     paused = true;
 }
 
 void Engine::systemResume(){
-    AudioSystem::resumeAll();
+    AudioSystem::systemResume();
     Engine::onResume.call();
     paused = false;
 }

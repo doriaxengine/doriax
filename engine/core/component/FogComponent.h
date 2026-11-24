@@ -20,6 +20,7 @@ namespace doriax{
 		float density = 0.01f; // for exponential fog
 		float linearStart = 10;
 		float linearEnd = 60;
+		float skyBlend = 0.0f; // 0 to 1: how much the fog takes the color of the sky behind each point
     };
     
 }

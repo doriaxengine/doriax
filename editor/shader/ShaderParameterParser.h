@@ -40,7 +40,7 @@ namespace doriax::editor {
         std::vector<ShaderParameterDeclaration> parameters;
         // "#pragma shader mesh"
         std::string shaderType;
-        // hooks the code defines
+        // hooks the code defines, in inactive branches too
         bool vertexOffset = false;
         bool coverage = false;
         bool surface = false;
@@ -50,14 +50,6 @@ namespace doriax::editor {
         bool depthOffset = false;
         bool underwaterColor = false;
         bool light = false;
-        // fields they read of their context
-        std::set<std::string> contextReads;
-        // every field read of anything, for when a context reaches it other ways
-        std::set<std::string> memberReads;
-        // and of a surface, or set: getSurface both reads and writes it
-        std::set<std::string> surfaceReads;
-        // sceneColor, sceneDepth, sceneNormal, sceneOcclusion
-        std::set<std::string> sceneReads;
         // "#pragma coverage_shadows apply|keep"
         bool hasCoverageShadows = false;
         bool coverageShadows = false;
@@ -67,11 +59,17 @@ namespace doriax::editor {
         std::vector<std::pair<std::string, std::string>> varyings;
         // "#pragma surface_replaces baseColor alpha"
         std::set<std::string> surfaceReplaces;
-        // the code reads Engine.time or Engine.resolution
+        // the Engine fields the code reads, set by the builder
         bool engineTime = false;
         bool engineResolution = false;
         bool enginePass = false;
         std::vector<std::string> errors;
+    };
+
+    struct ShaderHook {
+        const char* name;
+        const char* context; // the type of its first parameter
+        bool ShaderEffectAnnotations::* defined;
     };
 
     // engine values a stage's hooks read
@@ -91,6 +89,8 @@ namespace doriax::editor {
         // a source and its includes, as one stage reads them
         static void parseTree(const std::string& rootKey, const std::function<const std::string*(const std::string&)>& lookup,
                               ShaderStageType stage, ShaderEffectAnnotations& out);
+        // every hook function
+        static const std::vector<ShaderHook>& getHooks();
 
         // the other stage's section blanked
         static std::string getStageSource(const std::string& source, ShaderStageType stage);

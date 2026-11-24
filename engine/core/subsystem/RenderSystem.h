@@ -96,6 +96,9 @@ namespace doriax{
 	typedef struct fs_fog_t {
 		Vector4 color_type;
 		Vector4 density_start_end;
+		Vector4 eye;              // of the pass; w = 1 for a perspective one
+		Vector4 forward_skyBlend; // where the pass looks, and how much the fog takes the sky's color
+		Vector4 skyEnvironment;   // the sky's tint and rotation, as its lighting maps are read
 	} fs_fog_t;
 
 	// all shadows of the frame, point lights last
@@ -356,6 +359,8 @@ namespace doriax{
 		// every light is directional: meshes load the 'Dlo' shader variant
 		bool onlyDirectionalLights;
 		bool hasFog;
+		bool hasFogSky;
+		float fogSkyBlend;
 		bool hasIBL;
 		bool hasReflectionProbes;
 		// a water, a mesh or a post-process pass samples the scene depth
@@ -669,6 +674,8 @@ namespace doriax{
 		Vector4 currentSceneCopyRect;
 		// the water holding the main camera, which fades the scene copy
 		WaterComponent* currentUnderwater;
+		// the framebuffer a texture can show that the color pass draws into, or null
+		const Framebuffer* currentTarget;
 
 		// size of the target being drawn, read as Engine.resolution
 		Vector2 passResolution;
@@ -777,9 +784,10 @@ namespace doriax{
 		static void changeWaterLoaded(void* data);
 		static void changeWaterDestroy(void* data);
 
-		static bool samplesCameraTarget(const CameraComponent& camera, const MeshComponent& mesh);
-		static bool samplesCameraTarget(const CameraComponent& camera, const Texture& texture);
-		static bool samplesCameraTarget(const CameraComponent& camera, const ShaderTextureValues& textures);
+		// with its color shader, or the depth one
+		static bool samplesTarget(const Framebuffer* target, const Submesh& submesh, bool depth = false);
+		static bool samplesTarget(const Framebuffer* target, const Texture& texture);
+		static bool samplesTarget(const Framebuffer* target, const ShaderTextureValues& textures, ShaderRender* shader);
 		bool isRenderingFlipped(const CameraComponent& camera) const;
 		bool isFixedResolutionActive() const;
 		// decides fixed resolution for the frame and prepares its target
@@ -805,6 +813,7 @@ namespace doriax{
 		bool loadOccluder2DPass(unsigned int vertexCapacity);
 		void destroyOccluder2DPass();
 		bool loadAndProcessFog();
+		void updateFogSky();
 		void releaseSkyEnvironment(SkyComponent& sky);
 		void updateSkyEnvironment(SkyComponent& sky);
 		// drawn by a shader file, so its lighting comes from a capture
@@ -815,6 +824,7 @@ namespace doriax{
 		void captureSky(SkyComponent& sky);
 		// the sky's lighting maps, black until it has them
 		void addSkyEnvironment(ObjectRender& render, ShaderData& shaderData);
+		void addFogSky(ObjectRender& render, Submesh& submesh);
 		void destroySkyCapture();
 		void updateReflectionProbes(double dt);
 		void renderReflectionProbeCapture();
@@ -1074,6 +1084,7 @@ namespace doriax{
 			bool shadows = false;
 			bool onlyDirectionalLights = false;
 			bool fog = false;
+			bool fogSky = false;
 			bool ibl = false;
 			bool reflectionProbes = false;
 			bool waterDepth = false;
@@ -1144,7 +1155,7 @@ namespace doriax{
 		static SubmeshAttributes getSubmeshAttributes(const MeshComponent& mesh, int submeshIndex, bool skinned);
 		// the variants loadMesh takes, the editor collects them for exports
 		SubmeshShading getSubmeshShading(Entity entity, const MeshComponent& mesh, int submeshIndex, const SubmeshAttributes& attributes, const SceneShading& shading, const InstancedMeshComponent* instmesh, const TerrainComponent* terrain) const;
-		static bool checkPBRTextures(const Material& material, bool receiveLights, const SceneShading& shading);
+		static bool checkPBRTextures(const Material& material, const MeshComponent& mesh, const SceneShading& shading);
 		static uint32_t getUIShaderProperties(bool hasTexture, bool isText);
 		static uint32_t getPointsShaderProperties(const PointsComponent& points);
 

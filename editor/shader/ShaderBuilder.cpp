@@ -212,10 +212,12 @@ std::shared_ptr<const CustomSourceSnapshot> resolveCustomSources(editor::Project
         }
         appendSignaturePart(signatureInput, "entry:" + shader, source);
     }
+    // the values of Engine.pass, there for any #ifdef
+    const std::string passes = "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n#define PASS_SKY_CAPTURE 4\n";
     // texture names are defines, kept to the file
-    snapshot->projectBuffers["shader_hooks_vs.glsl"] = "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
+    snapshot->projectBuffers["shader_hooks_vs.glsl"] = passes + "#define SHADER_STAGE_VERTEX\n#include \"shader_textures_vs.glsl\"\n#include \"/" +
         shader + "\"\n#include \"shader_textures_end_vs.glsl\"\n";
-    snapshot->projectBuffers["shader_hooks_fs.glsl"] = "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
+    snapshot->projectBuffers["shader_hooks_fs.glsl"] = passes + "#define SHADER_STAGE_FRAGMENT\n#include \"shader_textures_fs.glsl\"\n#include \"/" +
         shader + "\"\n#include \"shader_textures_end_fs.glsl\"\n";
 
     // watched even when absent, as a file made there would come first
@@ -330,34 +332,45 @@ void clearCustomSourceCache() {
     sourceFiles.clear();
 }
 
-// parameter headers, hook defines and flags; throws on a bad annotation
-void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
-                           editor::ShaderDeclarations& declared) {
+// false when it was not there
+bool removeDefine(shadercompiler::args_t& args, const char* name) {
+    const size_t count = args.defines.size();
+    args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
+        return define.def == name;
+    }), args.defines.end());
+    return args.defines.size() < count;
+}
+
+// what the hooks of a stage use of the engine
+struct HookUsage {
+    std::set<std::string> context;   // fields of VertexContext or FragmentContext
+    std::set<std::string> surface;   // fields of Surface, read or set
+    std::set<std::string> engine;    // fields of Engine
+    std::set<std::string> functions; // sceneColor, sceneDepth, sceneNormal, sceneOcclusion, skyCapture
+};
+
+const std::string* findBuffer(const shadercompiler::args_t& args, const std::string& key) {
+    auto it = args.fileBuffers.find(key);
+    return it != args.fileBuffers.end() ? &it->second : nullptr;
+}
+
+// the annotations and hooks of a shader file; throws when it is not one of the type
+void readShaderFile(const shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
+                    editor::ShaderEffectAnnotations& vertexHooks, editor::ShaderEffectAnnotations& fragmentHooks) {
     const std::string shaderType = editor::ShaderParameterParser::getShaderFileType(passType);
     const bool meshPass = shaderType == "mesh";
     // UI, points and lines move vertices and color pixels
     const bool primitive = passType == ShaderType::UI || passType == ShaderType::POINTS || passType == ShaderType::LINES;
-    auto defined = [&](const char* name) {
-        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
-    };
+    auto file = [&](const std::string& key) { return findBuffer(args, key); };
 
-    auto file = [&](const std::string& key) -> const std::string* {
-        auto it = args.fileBuffers.find(key);
-        return it != args.fileBuffers.end() ? &it->second : nullptr;
-    };
+    editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::VERTEX, vertexHooks);
+    editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::FRAGMENT, fragmentHooks);
+    const std::string& type = vertexHooks.shaderType.empty() ? fragmentHooks.shaderType : vertexHooks.shaderType;
+    if (type.empty())
+        throw std::runtime_error(shaderAsset + " has no \"#pragma shader " + shaderType + "\" line");
+    if (type != shaderType)
+        throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
 
-    // only the hooks the file defines are compiled in
-    editor::ShaderEffectAnnotations vertexHooks;
-    editor::ShaderEffectAnnotations fragmentHooks;
-    if (!shaderAsset.empty()) {
-        editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::VERTEX, vertexHooks);
-        editor::ShaderParameterParser::parseTree("/" + shaderAsset, file, ShaderStageType::FRAGMENT, fragmentHooks);
-        const std::string& type = vertexHooks.shaderType.empty() ? fragmentHooks.shaderType : vertexHooks.shaderType;
-        if (type.empty())
-            throw std::runtime_error(shaderAsset + " has no \"#pragma shader " + shaderType + "\" line");
-        if (type != shaderType)
-            throw std::runtime_error(shaderAsset + " is a " + type + " shader, not a " + shaderType + " one");
-    }
     // the hooks each type runs
     const struct { const char* name; bool defined; bool runs; } hooks[] = {
         {"getVertexOffset", vertexHooks.vertexOffset, meshPass || primitive},
@@ -376,8 +389,117 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
             throw std::runtime_error(shaderAsset + " defines " + hook.name + "(), which " + shaderType + " shaders do not have");
         anyHook = anyHook || hook.defined;
     }
-    if (!shaderAsset.empty() && !anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
+    if (!anyHook && vertexHooks.errors.empty() && fragmentHooks.errors.empty())
         throw std::runtime_error(shaderAsset + " defines no hook function");
+}
+
+std::string getFunctionName(const std::string& function) {
+    return function.substr(0, function.find('('));
+}
+
+// true when the build can be tried again without what its first error names
+bool fixHookUsage(const std::string& log, const std::map<std::string, shadercompiler::function_t>& functions, bool meshPass,
+                  editor::ShaderEffectAnnotations& hooks, HookUsage& usage) {
+    // "ERROR: /shaders/wave.glsl:3: 'name' : message", without the slash in the engine's files
+    const size_t start = log.find("ERROR: ");
+    if (start == std::string::npos)
+        return false;
+    const std::string error = log.substr(start + 7, log.find('\n', start) - start - 7);
+    auto names = [&](const std::string& name) { return error.find(" '" + name + "' : ") != std::string::npos; };
+
+    // a name of the engine the file has for its own, but its functions are not defined again
+    if (error[0] == '/' && error.find("already has a body") == std::string::npos) {
+        const size_t count = usage.functions.size() + usage.engine.size();
+        if (names("Engine"))
+            usage.engine.clear();
+        for (const char* function : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion", "skyCapture"}) {
+            if (names(function))
+                usage.functions.erase(function);
+        }
+        return usage.functions.size() + usage.engine.size() < count;
+    }
+
+    // a hook this pass leaves out, as under IN_COLOR_PASS; one that is there fails for its parameters
+    for (const editor::ShaderHook& hook : editor::ShaderParameterParser::getHooks()) {
+        if (meshPass && hooks.*hook.defined && names(hook.name)) {
+            hooks.*hook.defined = std::any_of(functions.begin(), functions.end(), [&](const auto& function) { return getFunctionName(function.first) == hook.name; });
+            return !(hooks.*hook.defined);
+        }
+    }
+    return false;
+}
+
+// what the hooks of a build use; false when it has to be built again
+bool readHookUsage(const shadercompiler::args_t& args, bool meshPass, editor::ShaderEffectAnnotations& vertexHooks, editor::ShaderEffectAnnotations& fragmentHooks,
+                   HookUsage& vertexUsage, HookUsage& fragmentUsage) {
+    bool read = true;
+    std::vector<shadercompiler::input_t> inputs;
+    shadercompiler::load_input(inputs, args);
+    for (const shadercompiler::input_t& input : inputs) {
+        const bool vertexStage = input.stage_type == shadercompiler::STAGE_VERTEX;
+        HookUsage& usage = vertexStage ? vertexUsage : fragmentUsage;
+
+        std::string log;
+        std::map<std::string, shadercompiler::function_t> functions;
+        if (!shadercompiler::parse_functions(functions, log, input, args)) {
+            if (fixHookUsage(log, functions, meshPass, vertexStage ? vertexHooks : fragmentHooks, usage))
+                read = false;
+            continue;
+        }
+
+        // what a function calls, and what that calls
+        std::function<void(const std::string&, std::set<std::string>&)> reach = [&](const std::string& function, std::set<std::string>& reached) {
+            if (!reached.insert(function).second)
+                return;
+            for (const std::string& call : functions[function].calls)
+                reach(call, reached);
+        };
+        // what main() runs of the project's files, with the globals; a macro can rename a hook
+        std::set<std::string> drawn, hooked;
+        reach("main(", drawn);
+        reach("", hooked);
+        for (const std::string& function : drawn) {
+            if (functions[function].file[0] == '/')
+                reach(function, hooked);
+        }
+
+        const HookUsage declared = usage;
+        usage = HookUsage();
+        auto addFields = [](const shadercompiler::function_t& function, const std::string& type, std::set<std::string>& fields) {
+            for (const std::string& field : function.fields) {
+                if (field.compare(0, type.size() + 1, type + ".") == 0)
+                    fields.insert(field.substr(type.size() + 1));
+            }
+        };
+        for (const std::string& name : hooked) {
+            addFields(functions[name], "VertexContext", usage.context);
+            addFields(functions[name], "FragmentContext", usage.context);
+            addFields(functions[name], "Surface", usage.surface);
+        }
+        // any code needs what it names; a mesh has neutral functions where no hook calls them
+        for (const auto& [name, function] : functions) {
+            if (getFunctionName(name) != "loadShaderParameters")
+                addFields(function, "ShaderParams_Engine", usage.engine);
+            if (meshPass && !hooked.count(name))
+                continue;
+            for (const std::string& call : function.calls) {
+                if (declared.functions.count(getFunctionName(call)))
+                    usage.functions.insert(getFunctionName(call));
+            }
+        }
+    }
+    return read;
+}
+
+// parameter headers, hook defines and flags of what the hooks use; throws on a bad annotation
+void setupShaderParameters(shadercompiler::args_t& args, const std::string& shaderAsset, ShaderType passType,
+                           const editor::ShaderEffectAnnotations& vertexHooks, const editor::ShaderEffectAnnotations& fragmentHooks,
+                           const HookUsage& vertexUsage, const HookUsage& fragmentUsage, editor::ShaderDeclarations& declared) {
+    const bool meshPass = passType == ShaderType::MESH || passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER;
+    const bool primitive = passType == ShaderType::UI || passType == ShaderType::POINTS || passType == ShaderType::LINES;
+    auto defined = [&](const char* name) {
+        return std::any_of(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) { return define.def == name; });
+    };
 
     const bool useVertexOffset = vertexHooks.vertexOffset;
     const bool useClipPosition = vertexHooks.clipPosition;
@@ -422,7 +544,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         args.defines.push_back({"USE_LIGHT", "1"});
     if (useFragmentHooks)
         args.defines.push_back({"USE_FRAGMENT_HOOKS", "1"});
-    if (!shaderAsset.empty() && meshPass)
+    if (meshPass)
         args.defines.push_back({passType == ShaderType::DEPTH ? "IN_DEPTH_PASS" : passType == ShaderType::GBUFFER ? "IN_GBUFFER_PASS" : "IN_COLOR_PASS", "1"});
 
     // the material maps a surface hook makes unnecessary
@@ -442,12 +564,16 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     if ((vertexHooks.unlit || fragmentHooks.unlit) && passType == ShaderType::MESH) {
         const bool light2D = defined("USE_LIGHT2D");
         const bool normals = defined("HAS_NORMALS");
+        // the sky's color in the fog comes with the lighting, or as its own variant
+        const bool fogSky = defined("HAS_FOG") && defined("USE_IBL");
         args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
             static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_SSAO", "DIRECTIONAL_LIGHTS_ONLY"};
             static const std::set<std::string> surface = {"HAS_NORMALS", "HAS_TANGENTS", "HAS_NORMAL_MAP"};
             return lighting.count(define.def) || (!light2D && surface.count(define.def));
         }), args.defines.end());
         args.defines.push_back({"MATERIAL_UNLIT", "1"});
+        if (fogSky)
+            args.defines.push_back({"USE_FOG_SKY", "1"});
         // the hooks keep the normals the lit key gave
         if (normals && !light2D && !defined("HAS_HOOK_NORMALS"))
             args.defines.push_back({"HAS_HOOK_NORMALS", "1"});
@@ -455,7 +581,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     }
 
     // tangents need the normal, and UVs without mesh tangents
-    std::set<std::string> fragmentReads = fragmentHooks.contextReads;
+    std::set<std::string> fragmentReads = fragmentUsage.context;
     const bool tangentFrame = meshPass && useFragmentHooks && (fragmentReads.count("tangent") || fragmentReads.count("bitangent"));
     if (tangentFrame) {
         fragmentReads.insert("normal");
@@ -463,7 +589,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
             fragmentReads.insert("uv1");
     }
     // depth and G-buffer take the surface normal from the context
-    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface && fragmentHooks.surfaceReads.count("normal"))
+    if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface && fragmentUsage.surface.count("normal"))
         fragmentReads.insert("normal");
     // and tints the surface with the vertex color
     if ((passType == ShaderType::DEPTH || passType == ShaderType::GBUFFER) && useSurface)
@@ -479,7 +605,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         {"worldPosition", "POSITION", primitive}
     };
     for (const auto& input : inputs) {
-        const bool vertex = useVertexHooks && vertexHooks.contextReads.count(input.field);
+        const bool vertex = useVertexHooks && vertexUsage.context.count(input.field);
         const bool fragment = useFragmentHooks && fragmentReads.count(input.field);
         if (input.available && (vertex || fragment))
             args.defines.push_back({std::string("HOOK_") + input.name, "1"});
@@ -497,13 +623,20 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     auto lookup = [&](const std::string& key) -> const std::string* {
         if ((key == "shader_hooks_vs.glsl" && !useVertexHooks) || (key == "shader_hooks_fs.glsl" && !useFragmentHooks))
             return nullptr;
-        return file(key);
+        return findBuffer(args, key);
     };
 
     editor::ShaderEffectAnnotations vertexAnnotations;
     editor::ShaderEffectAnnotations fragmentAnnotations;
     editor::ShaderParameterParser::parseTree(args.vert_file, lookup, ShaderStageType::VERTEX, vertexAnnotations);
     editor::ShaderParameterParser::parseTree(args.frag_file, lookup, ShaderStageType::FRAGMENT, fragmentAnnotations);
+    auto setEngine = [](editor::ShaderEffectAnnotations& annotations, const HookUsage& usage) {
+        annotations.engineTime = usage.engine.count("time");
+        annotations.engineResolution = usage.engine.count("resolution");
+        annotations.enginePass = usage.engine.count("pass");
+    };
+    setEngine(vertexAnnotations, vertexUsage);
+    setEngine(fragmentAnnotations, fragmentUsage);
 
     std::vector<std::string> errors = vertexAnnotations.errors;
     errors.insert(errors.end(), fragmentAnnotations.errors.begin(), fragmentAnnotations.errors.end());
@@ -534,37 +667,40 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
     // scene inputs, neutral in passes drawn before the scene
     const bool postProcess = useColor && passType == ShaderType::POSTPROCESS;
     const bool colorPass = useFragmentHooks && passType == ShaderType::MESH;
-    const bool sceneColor = colorPass && fragmentHooks.sceneReads.count("sceneColor");
-    const bool sceneDepth = (postProcess || colorPass) && fragmentHooks.sceneReads.count("sceneDepth");
-    const bool sceneNormal = postProcess && fragmentHooks.sceneReads.count("sceneNormal");
+    const bool sceneColor = colorPass && fragmentUsage.functions.count("sceneColor");
+    const bool sceneDepth = (postProcess || colorPass) && fragmentUsage.functions.count("sceneDepth");
+    const bool sceneNormal = postProcess && fragmentUsage.functions.count("sceneNormal");
     if (sceneColor)
         args.defines.push_back({"HOOK_SCENE_COLOR", "1"});
     if (sceneDepth)
         args.defines.push_back({"HOOK_SCENE_DEPTH", "1"});
     if (sceneNormal)
         args.defines.push_back({"HOOK_SCENE_NORMAL", "1"});
-    if (postProcess && fragmentHooks.sceneReads.count("sceneOcclusion"))
+    if (postProcess && fragmentUsage.functions.count("sceneOcclusion"))
         args.defines.push_back({"HOOK_SCENE_OCCLUSION", "1"});
+    // a sky reading its own capture back
+    if (passType == ShaderType::SKYBOX && useFragmentHooks && fragmentUsage.functions.count("skyCapture"))
+        args.defines.push_back({"HOOK_SKY_CAPTURE", "1"});
     if (sceneColor)
         declared.flags |= ShaderFlag_SceneColor;
     if (sceneDepth && colorPass)
         declared.flags |= ShaderFlag_SceneDepth;
     // where the camera sees the fragment
-    const bool screenUV = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("screenUV");
+    const bool screenUV = meshPass && useFragmentHooks && fragmentUsage.context.count("screenUV");
     if (screenUV)
         args.defines.push_back({"HOOK_FRAGMENT_SCREEN", "1"});
-    const bool depthRange = meshPass && useFragmentHooks && (fragmentHooks.contextReads.count("nearPlane") || fragmentHooks.contextReads.count("farPlane"));
+    const bool depthRange = meshPass && useFragmentHooks && (fragmentUsage.context.count("nearPlane") || fragmentUsage.context.count("farPlane"));
     if (depthRange)
         args.defines.push_back({"HOOK_FRAGMENT_DEPTH_RANGE", "1"});
-    const bool viewMatrix = meshPass && useFragmentHooks && fragmentHooks.contextReads.count("worldToView");
+    const bool viewMatrix = meshPass && useFragmentHooks && fragmentUsage.context.count("worldToView");
     if (viewMatrix)
         args.defines.push_back({"HOOK_FRAGMENT_VIEW", "1"});
     // the object's matrix, which the vertex stage has
-    if (meshPass && useVertexHooks && (vertexHooks.contextReads.count("objectPosition") || vertexHooks.contextReads.count("objectScale")))
+    if (meshPass && useVertexHooks && (vertexUsage.context.count("objectPosition") || vertexUsage.context.count("objectScale")))
         args.defines.push_back({"HOOK_OBJECT", "1"});
     // what sprite batching changes for the hooks
     if (passType == ShaderType::MESH) {
-        const std::set<std::string>& vertexReads = vertexHooks.contextReads;
+        const std::set<std::string>& vertexReads = vertexUsage.context;
         const bool normal = (useVertexHooks && vertexReads.count("normal")) || (useFragmentHooks && fragmentReads.count("normal"));
         if (normal || (useVertexHooks && (vertexReads.count("localPosition") || vertexReads.count("objectPosition") || vertexReads.count("objectScale"))))
             declared.flags |= ShaderFlag_ObjectSpace;
@@ -574,9 +710,8 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         if ((useVertexHooks && vertexReads.count("color")) || (useFragmentHooks && fragmentReads.count("color")))
             declared.flags |= ShaderFlag_VertexColor;
     }
-    // a sky's lighting is captured again for the sun only when it reads it, as (context).sunColor too
-    const std::set<std::string>& members = fragmentHooks.memberReads;
-    if (passType == ShaderType::SKYBOX && useFragmentHooks && (members.count("sunDirection") || members.count("sunColor")))
+    // a sky's lighting is captured again for the sun only when it reads it
+    if (passType == ShaderType::SKYBOX && useFragmentHooks && (fragmentReads.count("sunDirection") || fragmentReads.count("sunColor")))
         declared.flags |= ShaderFlag_SkySun;
 
     // the model matrix of the types whose own blocks lack it
@@ -937,7 +1072,7 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 2))  defs.push_back({"HAS_UV_SET2", "1"});               // 'Uv2'
     if (prop & (1 << 3))  defs.push_back({"USE_PUNCTUAL", "1"});              // 'Puc'
     if (prop & (1 << 4))  defs.push_back({"USE_SHADOWS", "1"});               // 'Shw'
-    // bit 5 reserved (was USE_SHADOWS_PCF; the PCF filter is uniform-driven now)
+    if (prop & (1 << 5))  defs.push_back({"USE_FOG_SKY", "1"});               // 'Fsk'
     if (prop & (1 << 6))  defs.push_back({"HAS_NORMALS", "1"});               // 'Nor'
     if (prop & (1 << 7))  defs.push_back({"HAS_NORMAL_MAP", "1"});            // 'Nmp'
     if (prop & (1 << 8))  defs.push_back({"HAS_TANGENTS", "1"});              // 'Tan'
@@ -1272,7 +1407,7 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     return true;
 }
 
-void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use) {
+void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderKey shaderKey, Project* project, ShaderDeclarations& declarations, ShaderSourceUse use, bool fogSky) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -1285,6 +1420,9 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     const bool meshPass = shaderType == ShaderType::MESH || shaderType == ShaderType::DEPTH || shaderType == ShaderType::GBUFFER;
     if (args.lang == shadercompiler::LANG_GLSL && meshPass)
         args.defines.push_back({"SKINNING_TEXTURE", "1"});
+
+    if (!fogSky)
+        removeDefine(args, "USE_FOG_SKY");
 
     // the built-in shaders declare no parameters
     args.fileBuffers["shader_params_vs.glsl"] = "// no parameters\n";
@@ -1310,11 +1448,32 @@ void editor::ShaderBuilder::setupBuildArgs(shadercompiler::args_t& args, ShaderK
     for (const auto& [key, content] : sources->projectBuffers)
         args.fileBuffers[key] = content;
 
-    setupShaderParameters(args, shader, shaderType, declarations);
+    ShaderEffectAnnotations vertexHooks, fragmentHooks;
+    readShaderFile(args, shader, shaderType, vertexHooks, fragmentHooks);
 
-    // compiled with its stages as conditions
-    for (const auto& [key, content] : sources->projectBuffers)
-        args.fileBuffers[key] = ShaderParameterParser::getStageConditions(content);
+    HookUsage vertexUsage, fragmentUsage;
+    auto setupFile = [&](shadercompiler::args_t& build, ShaderDeclarations& declared) {
+        setupShaderParameters(build, shader, shaderType, vertexHooks, fragmentHooks, vertexUsage, fragmentUsage, declared);
+        // the one an unlit file takes too
+        if (!fogSky)
+            removeDefine(build, "USE_FOG_SKY");
+
+        // compiled with its stages as conditions
+        for (const auto& [key, content] : sources->projectBuffers)
+            build.fileBuffers[key] = ShaderParameterParser::getStageConditions(content);
+    };
+
+    // parsed first with all the engine has, to learn what the hooks use of it
+    vertexUsage.engine = fragmentUsage.engine = {"time", "resolution", "pass"};
+    fragmentUsage.functions = {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion", "skyCapture"};
+    shadercompiler::args_t probe;
+    do {
+        probe = args;
+        ShaderDeclarations probed;
+        setupFile(probe, probed);
+    } while (!readHookUsage(probe, meshPass, vertexHooks, fragmentHooks, vertexUsage, fragmentUsage));
+
+    setupFile(args, declarations);
 }
 
 std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lang, int version, bool es, shadercompiler::platform_t platform) {
@@ -1330,7 +1489,7 @@ std::string editor::ShaderBuilder::getLangSuffix(shadercompiler::lang_type_t lan
     return "";
 }
 
-ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use){
+ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Project* project, bool trackProgress, ShaderSourceUse use, bool fogSky){
     if (shutdownRequested) {
         throw std::runtime_error("Shutdown requested");
     }
@@ -1356,7 +1515,7 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     ShaderDeclarations declarations;
     try {
-        setupBuildArgs(args, shaderKey, project, declarations, use);
+        setupBuildArgs(args, shaderKey, project, declarations, use, fogSky);
     } catch (const std::exception& e) {
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
@@ -1432,6 +1591,12 @@ ShaderData editor::ShaderBuilder::buildShaderInternal(ShaderKey shaderKey, Proje
 
     const std::string blockError = getShaderDataError(shaderData);
     if (!blockError.empty()) {
+        // the sky's color is left out of the fog where its map does not fit
+        if (removeDefine(args, "USE_FOG_SKY")) {
+            const ShaderData plainFog = buildShaderInternal(shaderKey, project, trackProgress, use, false);
+            Out::warning("Shader %s has no sky color in its fog: %s", getShaderDisplayName(shaderKey).c_str(), blockError.c_str());
+            return plainFog;
+        }
         if (trackProgress) {
             ResourceProgress::failBuild(shaderKey);
         }
@@ -1714,7 +1879,7 @@ ShaderData& editor::ShaderBuilder::getShaderData(ShaderKey shaderKey) {
     return shaderDataCache[shaderKey]; 
 }
 
-ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend) {
+ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Project* project, ShaderBackend backend, bool fogSky) {
     ShaderType shaderType = ShaderPool::getShaderTypeFromKey(shaderKey);
     uint32_t properties = ShaderPool::getPropertiesFromKey(shaderKey);
     uint16_t customId = ShaderPool::getCustomIdFromKey(shaderKey);
@@ -1727,7 +1892,7 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     applyShaderBackend(args, backend);
 
     ShaderDeclarations declarations;
-    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED);
+    setupBuildArgs(args, shaderKey, project, declarations, ShaderSourceUse::SAVED, fogSky);
 
     if (!shadercompiler::load_input(inputs, args)) {
         throw std::runtime_error("Error loading shader input");
@@ -1753,8 +1918,14 @@ ShaderData editor::ShaderBuilder::buildShaderForExport(ShaderKey shaderKey, Proj
     shaderData.flags = declarations.flags;
 
     const std::string blockError = getShaderDataError(shaderData);
-    if (!blockError.empty())
+    if (!blockError.empty()) {
+        if (removeDefine(args, "USE_FOG_SKY")) {
+            const ShaderData plainFog = buildShaderForExport(shaderKey, project, backend, false);
+            Out::warning("Shader %s has no sky color in its fog: %s", getShaderDisplayName(shaderKey).c_str(), blockError.c_str());
+            return plainFog;
+        }
         throw std::runtime_error(blockError);
+    }
 
     Out::build(
         "Shader %s (%s) generated successfully",

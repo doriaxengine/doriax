@@ -41,6 +41,11 @@ float Fog::getLinearEnd() const{
     return fog.linearEnd;
 }
 
+float Fog::getSkyBlend() const{
+    FogComponent& fog = getComponent<FogComponent>();
+    return fog.skyBlend;
+}
+
 void Fog::setType(FogType type){
     FogComponent& fog = getComponent<FogComponent>();
     fog.type = type;
@@ -74,4 +79,9 @@ void Fog::setLinearStartEnd(float start, float end){
     FogComponent& fog = getComponent<FogComponent>();
     fog.linearStart = start;
     fog.linearEnd = end;
+}
+
+void Fog::setSkyBlend(float skyBlend){
+    FogComponent& fog = getComponent<FogComponent>();
+    fog.skyBlend = skyBlend;
 }

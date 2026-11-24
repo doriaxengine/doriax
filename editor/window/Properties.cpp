@@ -8599,9 +8599,14 @@ void editor::Properties::drawFogComponent(ComponentType cpType, SceneProject* sc
     settingsDensity.stepSize = 0.001f;
     settingsDensity.format = "%.4f";
 
+    RowSettings settingsSkyBlend = settingsFloat;
+    settingsSkyBlend.stepSize = 0.01f;
+    settingsSkyBlend.help = "How much the fog takes the color of the sky behind it, so far things fade into the sky. Needs a sky with a cube map or a shader file.";
+
     beginTable(cpType, getLabelSize("Linear Start"));
     propertyRow(RowPropertyType::Enum, cpType, "type", "Type", sceneProject, entities, settingsFogType);
     propertyRow(RowPropertyType::Color3L, cpType, "color", "Color", sceneProject, entities);
+    propertyRow(RowPropertyType::Float_0_1, cpType, "skyBlend", "Sky Blend", sceneProject, entities, settingsSkyBlend);
     if (fog.type == FogType::LINEAR) {
         propertyRow(RowPropertyType::Float, cpType, "linearStart", "Linear Start", sceneProject, entities, settingsFloat);
         propertyRow(RowPropertyType::Float, cpType, "linearEnd", "Linear End", sceneProject, entities, settingsFloat);

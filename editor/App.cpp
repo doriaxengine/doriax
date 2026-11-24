@@ -3066,7 +3066,17 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v79: sky sun, irradiance filter.
     // v80: sky shaders flag the sun they read.
     // v81: the sun flag from any expression reading it.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v81";
+    // v82: the sun flag through macros, not from parameters.
+    // v83: the sun flag for a context named params.
+    // v84: and for a macro argument named params; a normal map needs UVs.
+    // v85: skies know when they are captured, and can read the capture back.
+    // v86: fog takes the sky's color.
+    // v87: as a variant of its own; skies are told of their capture by Engine.pass.
+    // v88: meshes the sky lights take its color in the fog without the variant.
+    // v89: as unlit files do.
+    // v90: what hooks use is read from the parsed shader.
+    // v91: the pass constants in every shader file.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v91";
 }
 
 void editor::App::pushTabNotificationStyle(){

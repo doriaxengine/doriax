@@ -225,6 +225,8 @@ namespace doriax::editor{
         std::string headInclude;
         bool resizeCanvasToWindow = true;
         bool hideEmscriptenUI = false;
+        // Most framebuffer pixels per CSS pixel, 1 or more
+        float maxPixelRatio = 2.0f;
         // Its SDK is loaded for the WebPortal class
         WebPortalType portal = WebPortalType::NONE;
         // For portals that identify the game, like GameDistribution

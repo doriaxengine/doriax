@@ -21,6 +21,7 @@ namespace doriax{
         float getDensity() const;
         float getLinearStart() const;
         float getLinearEnd() const;
+        float getSkyBlend() const;
 
         void setType(FogType type);
         void setColor(Vector3 color);
@@ -29,6 +30,7 @@ namespace doriax{
         void setLinearStart(float start);
         void setLinearEnd(float end);
         void setLinearStartEnd(float start, float end);
+        void setSkyBlend(float skyBlend);
     };
 }
 

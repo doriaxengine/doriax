@@ -28,6 +28,16 @@ uniform u_fs_skyParams {
         vec2 pixel;
     };
 
+    #ifdef HOOK_SKY_CAPTURE
+        uniform textureCube u_skyCaptureTexture;
+        uniform sampler u_skyCapture_smp;
+
+        // the sky as last captured, over the background where it is transparent, linear; black in PASS_SKY_CAPTURE
+        vec4 skyCapture(vec3 direction){
+            return sRGBToLinear(textureLod(samplerCube(u_skyCaptureTexture, u_skyCapture_smp), direction, 0.0));
+        }
+    #endif
+
     // the shader file's fragment stage
     #include "shader_hooks_fs.glsl"
 #endif

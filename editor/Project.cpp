@@ -4187,6 +4187,37 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
         }
     }
 
+    // a cube sky's maps come once its texture has loaded, and meshes draw without them until then
+    auto skys = scene->getComponentArray<SkyComponent>();
+    const bool cubeSkyLoads = authoredShading.ibl && skys->size() > 0 &&
+        effectiveShaderId(skys->getComponentFromIndex(0).shader, ShaderType::SKYBOX) == 0;
+    RenderSystem::SceneShading loadingShading = authoredShading;
+    loadingShading.ibl = false;
+
+    // the variants loadMesh takes from the scene as authored
+    auto insertAuthoredMeshKeys = [&](Entity entity, const MeshComponent& mesh, unsigned int s, Signature signature) {
+        const TerrainComponent* terrain = scene->findComponent<TerrainComponent>(entity);
+        RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, signature.test(scene->getComponentId<SkinComponent>()));
+        // a terrain's grid, built as it first draws, has positions and normals
+        if (terrain) {
+            attributes.normal = true;
+        }
+        const InstancedMeshComponent* instmesh = terrain ? nullptr : scene->findComponent<InstancedMeshComponent>(entity);
+        auto insertFor = [&](const RenderSystem::SceneShading& sceneShading) {
+            const RenderSystem::SubmeshShading shading = renderSystem->getSubmeshShading(entity, mesh, s, attributes, sceneShading, instmesh, terrain);
+            insertKeys(ShaderType::MESH, shading.properties, shading.shaderFileId);
+            // whether it casts shadows or not
+            insertKeys(ShaderType::DEPTH, shading.depthProperties, shading.shaderFileId);
+            if (shading.gbuffer) {
+                insertKeys(ShaderType::GBUFFER, shading.gbufferProperties, shading.shaderFileId);
+            }
+        };
+        insertFor(authoredShading);
+        if (cubeSkyLoads) {
+            insertFor(loadingShading);
+        }
+    };
+
     // a sky drawn by a shader file is filtered into its lighting as the probes are
     bool capturedSky = false;
     for (Entity entity : shaderEntities) {
@@ -4194,86 +4225,21 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
 
         if (signature.test(scene->getComponentId<MeshComponent>())) {
             const MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
-            // a reload keeps the mesh unloaded until its new shaders have built
-            if (mesh.loaded || mesh.submeshes[0].shader) {
-                bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
-                for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
-                    if (!mesh.loaded && !mesh.submeshes[s].shader) {
-                        continue;
-                    }
-                    // as in RenderSystem::loadMesh
-                    const std::string& ownShader = mesh.submeshes[s].material.shader;
-                    const std::string materialShader = isTerrain ? std::string() : (ownShader.empty() ? scene->getDefaultCustomShader(ShaderType::MESH) : ownShader);
-                    const uint16_t customShaderId = ShaderPool::registerCustomShader(materialShader);
-                    uint32_t meshProperties = mesh.submeshes[s].shaderProperties;
-                    // Saving/exporting can happen before RenderSystem has reloaded
-                    // meshes after a probe or an IBL sky was added. Derive the required IBL
-                    // variant here so the exported shader set is still complete.
-                    if ((hasReflectionProbes || authoredShading.ibl) && mesh.receiveLights && mesh.receiveIBL) {
-                        meshProperties &= ~(1u << 0); // no longer MATERIAL_UNLIT
-                        meshProperties |= (1u << 6);  // HAS_NORMALS
-                        meshProperties |= (1u << 19); // USE_IBL
-                        // the unlit->lit transition also pulls in the submesh's
-                        // normal-map/tangent attributes and SSAO, mirroring
-                        // RenderSystem::loadMesh
-                        if (mesh.submeshes[s].hasNormalMap) {
-                            meshProperties |= (1u << 7); // HAS_NORMAL_MAP
-                        }
-                        if (mesh.submeshes[s].hasTangent) {
-                            meshProperties |= (1u << 8); // HAS_TANGENTS
-                        }
-                        if (scene->isSSAOEnabled()) {
-                            meshProperties |= (1u << 21); // USE_SSAO
-                        }
-                    }
-                    insertKeys(ShaderType::MESH, meshProperties, customShaderId);
-                    // and the one a reload takes from the scene as it is now, as after a sky change
-                    if (!isTerrain && (mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0)) {
-                        const bool skinned = signature.test(scene->getComponentId<SkinComponent>());
-                        const RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, skinned);
-                        const RenderSystem::SubmeshShading shading = renderSystem->getSubmeshShading(entity, mesh, s, attributes, authoredShading,
-                            scene->findComponent<InstancedMeshComponent>(entity), nullptr);
-                        insertKeys(ShaderType::MESH, shading.properties, shading.shaderFileId);
-                    }
-                    // The runtime only computes depthShaderProperties while
-                    // shadows or SSAO are active, so the
-                    // stored value can be a stale 0 for scenes whose shadow lights
-                    // arrive at runtime (scripts spawning them). Derive the props
-                    // from the same submesh flags RenderSystem::loadMesh uses, and
-                    // keep the stored key too (identical when it was computed).
-                    bool isInstanced = signature.test(scene->getComponentId<InstancedMeshComponent>());
-                    // From the components, not the stored word, for the same reason.
-                    bool instancedFade = isInstanced && scene->getComponent<InstancedMeshComponent>(entity).distanceFade;
-                    const Material& material = mesh.submeshes[s].material;
-                    bool depthAlphaMask = RenderSystem::usesAlphaMask(material, mesh.submeshes[s].textureShadow);
-                    bool depthTexture = depthAlphaMask && mesh.submeshes[s].hasTexCoord1 && !material.baseColorTexture.empty();
-                    uint32_t depthProperties = ShaderPool::getDepthMeshProperties(
-                        depthTexture, mesh.submeshes[s].hasSkinning,
-                        mesh.submeshes[s].hasMorphTarget, mesh.submeshes[s].hasMorphNormal,
-                        mesh.submeshes[s].hasMorphTangent, isTerrain, isInstanced, depthAlphaMask,
-                        instancedFade, !materialShader.empty() && mesh.submeshes[s].hasTexCoord1,
-                        !materialShader.empty() && mesh.submeshes[s].hasNormal, !materialShader.empty() && mesh.submeshes[s].hasVertexColor3,
-                        !materialShader.empty() && mesh.submeshes[s].hasVertexColor4, !materialShader.empty() && mesh.submeshes[s].hasTexCoord2,
-                        !materialShader.empty() && mesh.submeshes[s].hasNormal && mesh.submeshes[s].hasTangent);
-                    insertKeys(ShaderType::DEPTH, depthProperties, customShaderId);
-                    insertKeys(ShaderType::DEPTH, mesh.submeshes[s].depthShaderProperties, customShaderId);
-                    if (mesh.submeshes[s].gbufferShader) {
-                        insertKeys(ShaderType::GBUFFER, mesh.submeshes[s].gbufferShaderProperties, customShaderId);
+            const bool isTerrain = signature.test(scene->getComponentId<TerrainComponent>());
+            for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
+                const Submesh& submesh = mesh.submeshes[s];
+                // the variants it draws with now: a reload keeps them until the new ones have built, and a cube sky loads
+                if (mesh.loaded || submesh.shader) {
+                    const uint16_t customShaderId = isTerrain ? 0 : effectiveShaderId(submesh.material.shader, ShaderType::MESH);
+                    insertKeys(ShaderType::MESH, submesh.shaderProperties, customShaderId);
+                    insertKeys(ShaderType::DEPTH, submesh.depthShaderProperties, customShaderId);
+                    if (submesh.gbufferShader) {
+                        insertKeys(ShaderType::GBUFFER, submesh.gbufferShaderProperties, customShaderId);
                     }
                 }
-            } else if (!signature.test(scene->getComponentId<TerrainComponent>()) && (mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0)) {
-                // the ones loadMesh would take; a terrain builds its geometry as it draws
-                const bool skinned = signature.test(scene->getComponentId<SkinComponent>());
-                const InstancedMeshComponent* instmesh = scene->findComponent<InstancedMeshComponent>(entity);
-                for (unsigned int s = 0; s < mesh.numSubmeshes; ++s) {
-                    const RenderSystem::SubmeshAttributes attributes = RenderSystem::getSubmeshAttributes(mesh, s, skinned);
-                    const RenderSystem::SubmeshShading shading = renderSystem->getSubmeshShading(entity, mesh, s, attributes, authoredShading, instmesh, nullptr);
-                    insertKeys(ShaderType::MESH, shading.properties, shading.shaderFileId);
-                    // as above, whether it casts shadows or not
-                    insertKeys(ShaderType::DEPTH, shading.depthProperties, shading.shaderFileId);
-                    if (shading.gbuffer) {
-                        insertKeys(ShaderType::GBUFFER, shading.gbufferProperties, shading.shaderFileId);
-                    }
+                // and the ones loadMesh takes from the scene as it is: before anything drew, or after a sky or light change
+                if (isTerrain || mesh.buffer.getSize() > 0 || mesh.numExternalBuffers > 0) {
+                    insertAuthoredMeshKeys(entity, mesh, s, signature);
                 }
             }
         }
@@ -4364,6 +4330,17 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
             if (lights2d->getComponentFromIndex(i).shadows) {
                 keys.insert(ShaderPool::getShaderKey(ShaderType::SHADOW2D, 0));
                 break;
+            }
+        }
+    }
+
+    // a script can turn the sky blend on or off, so its meshes ship with 'Fsk' and without
+    if (authoredShading.fog) {
+        const std::set<ShaderKey> sceneKeys = keys;
+        for (ShaderKey key : sceneKeys) {
+            const bool fogSky = key & (1u << 5);
+            if (ShaderPool::getShaderTypeFromKey(key) == ShaderType::MESH && (fogSky || skys->size() > 0)) {
+                keys.insert(ShaderPool::normalizeKey(key ^ (1u << 5)));
             }
         }
     }
@@ -6648,10 +6625,9 @@ bool editor::Project::saveSceneFile(SceneProject* sceneProject, const std::files
     calculateMaxValues(sceneProject->scene, maxValues);
     sceneProject->maxValues = maxValues;
 
-    std::set<ShaderKey> shaderKeys;
+    // Over the existing keys, so those from components not yet rendered by RenderSystem are preserved.
+    std::set<ShaderKey> shaderKeys = sceneProject->shaderKeys;
     collectSceneShaderKeys(sceneProject, shaderKeys);
-    // Merge with existing keys so those from components not yet rendered by RenderSystem are preserved.
-    shaderKeys.insert(sceneProject->shaderKeys.begin(), sceneProject->shaderKeys.end());
     // Except those of deleted shader files, which exports could not build
     for (auto it = shaderKeys.begin(); it != shaderKeys.end();) {
         const std::string shaderFile = ShaderPool::getCustomShaderName(ShaderPool::getCustomIdFromKey(*it));

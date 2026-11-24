@@ -129,16 +129,6 @@ std::string readIdentifier(const std::string& code, size_t& i){
     return code.substr(start, i - start);
 }
 
-// a call anywhere in the code
-bool callsFunction(const std::string& code, const std::string& name){
-    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        size_t i = at + name.size();
-        if (isWordAt(code, at, name.size()) && nextChar(code, i) == '(')
-            return true;
-    }
-    return false;
-}
-
 // a hook definition takes its context type
 bool definesHook(const std::string& code, const std::string& name, const std::string& contextType){
     for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
@@ -146,64 +136,22 @@ bool definesHook(const std::string& code, const std::string& name, const std::st
         if (!isWordAt(code, at, name.size()) || nextChar(code, i) != '(')
             continue;
         i++;
-        if (readIdentifier(code, i) == contextType)
+        std::string type = readIdentifier(code, i);
+        while (type == "const" || type == "in" || type == "inout")
+            type = readIdentifier(code, i);
+        if (type == contextType)
             return true;
     }
     return false;
 }
 
-// the members read of a variable
-void scanMemberReads(const std::string& code, const std::string& name, std::set<std::string>& reads){
-    for (size_t at = code.find(name); at != std::string::npos; at = code.find(name, at + name.size())){
-        size_t i = at + name.size();
-        if (!isWordAt(code, at, name.size()) || (at > 0 && code[at - 1] == '.') || nextChar(code, i) != '.')
-            continue;
-        i++;
-        reads.insert(readIdentifier(code, i));
-    }
-}
-
-// the fields read of a context, by whatever name it is given
-void scanContextReads(const std::string& code, const std::string& contextType, std::set<std::string>& reads){
-    std::set<std::string> names;
-    for (size_t at = code.find(contextType); at != std::string::npos; at = code.find(contextType, at + contextType.size())){
-        size_t i = at + contextType.size();
-        if (isWordAt(code, at, contextType.size()))
-            names.insert(readIdentifier(code, i));
-    }
-    names.erase("");
-    for (const std::string& name : names)
-        scanMemberReads(code, name, reads);
-}
-
 void scanCode(const std::string& source, editor::ShaderEffectAnnotations& out){
-    const std::string code = stripComments(source);
-    out.vertexOffset = out.vertexOffset || definesHook(code, "getVertexOffset", "VertexContext");
-    out.coverage = out.coverage || definesHook(code, "getCoverage", "FragmentContext");
-    out.surface = out.surface || definesHook(code, "getSurface", "FragmentContext");
-    out.color = out.color || definesHook(code, "getColor", "FragmentContext");
-    out.varyingsHook = out.varyingsHook || definesHook(code, "getVaryings", "VertexContext");
-    out.clipPosition = out.clipPosition || definesHook(code, "getClipPosition", "VertexContext");
-    out.depthOffset = out.depthOffset || definesHook(code, "getDepthOffset", "FragmentContext");
-    out.underwaterColor = out.underwaterColor || definesHook(code, "getUnderwaterColor", "UnderwaterContext");
-    out.light = out.light || definesHook(code, "getLight", "FragmentContext");
-    scanContextReads(code, "VertexContext", out.contextReads);
-    scanContextReads(code, "FragmentContext", out.contextReads);
-    scanContextReads(code, "Surface", out.surfaceReads);
-    for (size_t at = code.find('.'); at != std::string::npos; at = code.find('.', at + 1)){
-        size_t i = at + 1;
-        out.memberReads.insert(readIdentifier(code, i));
-    }
-    for (const char* input : {"sceneColor", "sceneDepth", "sceneNormal", "sceneOcclusion"}){
-        if (callsFunction(code, input))
-            out.sceneReads.insert(input);
-    }
-
-    std::set<std::string> engine;
-    scanMemberReads(code, "Engine", engine);
-    out.engineTime = out.engineTime || engine.count("time");
-    out.engineResolution = out.engineResolution || engine.count("resolution");
-    out.enginePass = out.enginePass || engine.count("pass");
+    std::string code = stripComments(source);
+    // a macro on several lines reads as one
+    for (size_t at = code.find("\\\n"); at != std::string::npos; at = code.find("\\\n", at))
+        code.erase(at, 2);
+    for (const editor::ShaderHook& hook : editor::ShaderParameterParser::getHooks())
+        out.*hook.defined = out.*hook.defined || definesHook(code, hook.name, hook.context);
 }
 
 // ints are packed as floats in the block
@@ -318,6 +266,21 @@ std::string editor::ShaderParameterParser::getMemberName(const ShaderParameterDe
         case ShaderParameterScope::VIEW:  return "v_" + declaration.collection + "_" + declaration.name;
         default:                          return "p_" + declaration.name;
     }
+}
+
+const std::vector<editor::ShaderHook>& editor::ShaderParameterParser::getHooks(){
+    static const std::vector<ShaderHook> hooks = {
+        {"getVertexOffset", "VertexContext", &ShaderEffectAnnotations::vertexOffset},
+        {"getVaryings", "VertexContext", &ShaderEffectAnnotations::varyingsHook},
+        {"getClipPosition", "VertexContext", &ShaderEffectAnnotations::clipPosition},
+        {"getCoverage", "FragmentContext", &ShaderEffectAnnotations::coverage},
+        {"getSurface", "FragmentContext", &ShaderEffectAnnotations::surface},
+        {"getColor", "FragmentContext", &ShaderEffectAnnotations::color},
+        {"getDepthOffset", "FragmentContext", &ShaderEffectAnnotations::depthOffset},
+        {"getUnderwaterColor", "UnderwaterContext", &ShaderEffectAnnotations::underwaterColor},
+        {"getLight", "FragmentContext", &ShaderEffectAnnotations::light}
+    };
+    return hooks;
 }
 
 void editor::ShaderParameterParser::parse(const std::string& source, const std::string& sourceName, ShaderEffectAnnotations& out){
@@ -696,8 +659,6 @@ std::string editor::ShaderParameterParser::generateHeader(ShaderStageType stage,
     std::ostringstream structs;
     if (!engineStruct.empty())
         structs << "struct ShaderParams_Engine {" << engineStruct << " };\nShaderParams_Engine Engine;\n";
-    if (annotations.enginePass)
-        structs << "#define PASS_COLOR 0\n#define PASS_DEPTH 1\n#define PASS_SHADOW 2\n#define PASS_GBUFFER 3\n";
 
     // the object parameters, then each collection, as globals the load fills
     bool hasObject = false;

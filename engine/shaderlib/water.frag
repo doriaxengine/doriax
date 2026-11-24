@@ -122,6 +122,8 @@ float clampedDot(vec3 x, vec3 y){
     #include "includes/shadows.glsl"
 #endif
 #ifdef HAS_FOG
+    // the fog takes the sky's color from the sky the water reflects
+    #define FOG_SKY(direction, lod) texture(samplerCube(u_skyTexture, u_sky_smp), direction).rgb
     #include "includes/fog.glsl"
 #endif
 

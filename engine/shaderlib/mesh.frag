@@ -1,6 +1,6 @@
 #version 450
 
-#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS)
+#if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS) || defined(USE_FOG_SKY)
     in vec3 v_position;
 #endif
 
@@ -266,6 +266,14 @@ const float M_PI = 3.141592653589793;
     #include "includes/terrain_fs.glsl"
 #endif
 #ifdef HAS_FOG
+    // the fog takes the sky's color from the map its lighting reads, which the other meshes bring as a variant
+    #if defined(USE_FOG_SKY) && !defined(USE_IBL)
+        uniform textureCube u_GGXEnvTexture;
+        uniform sampler u_GGXEnv_smp;
+    #endif
+    #if defined(USE_FOG_SKY) || defined(USE_IBL)
+        #define FOG_SKY(direction, lod) textureLod(samplerCube(u_GGXEnvTexture, u_GGXEnv_smp), direction, lod).rgb
+    #endif
     #include "includes/fog.glsl"
 #endif
 #ifdef USE_FRAGMENT_HOOKS

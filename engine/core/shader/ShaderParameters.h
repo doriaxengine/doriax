@@ -59,7 +59,8 @@ namespace doriax{
         COLOR,
         DEPTH,
         SHADOW,
-        GBUFFER
+        GBUFFER,
+        SKY_CAPTURE
     };
 
     // the camera a pass draws for, as effect functions see it
