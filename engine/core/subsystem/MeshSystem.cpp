@@ -681,6 +681,13 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
     // Calling load() unconditionally would instead re-read every already-uploaded
     // (and released) tile texture from disk on each rebuild, spinning an endless
     // load loop.
+    // A rect added without a texture path uses submesh 0, the texture set by
+    // Mesh::setTexture (a path or TextureData). Only addRect with a path creates
+    // submeshes, so without one the count stayed 0 and every tile was skipped.
+    if (mesh.numSubmeshes == 0 && tilemap.numTilesRect > 0){
+        mesh.numSubmeshes = 1;
+    }
+
     // before the first load, see RenderSystem::loadMesh
     for (int s = 0; s < mesh.numSubmeshes; s++){
         mesh.submeshes[s].material.baseColorTexture.setAlphaBorderAuto(true);
@@ -698,10 +705,10 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
             preReserveTiles--;
         }
         TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
-        if (rectData.submeshId < 0 || (unsigned int)rectData.submeshId >= mesh.numSubmeshes){
-            continue;
-        }
-        Texture& texture = mesh.submeshes[rectData.submeshId].material.baseColorTexture;
+        // a rect without a submesh of its own uses submesh 0 (as below), so it waits for that texture too:
+        // built before its size is known, its pixel rect would not be normalized
+        const int submeshId = (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
+        Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
         Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
         Texture* tileTexture = !texture.empty() ? &texture : (!mainTexture.empty() ? &mainTexture : nullptr);
         if (tileTexture && tileTexture->getWidth() == 0){
