@@ -4207,6 +4207,11 @@ YAML::Node editor::Stream::encodeComponents(const Entity entity, const EntityReg
         compNode[Catalog::getComponentName(ComponentType::MirrorComponent, true)] = encodeMirrorComponent(mirror);
     }
 
+    if (signature.test(registry->getComponentId<NetworkComponent>())) {
+        NetworkComponent network = registry->getComponent<NetworkComponent>(entity);
+        compNode[Catalog::getComponentName(ComponentType::NetworkComponent, true)] = encodeNetworkComponent(network);
+    }
+
     if (signature.test(registry->getComponentId<ReflectionProbeComponent>())) {
         ReflectionProbeComponent probe = registry->getComponent<ReflectionProbeComponent>(entity);
         compNode[Catalog::getComponentName(ComponentType::ReflectionProbeComponent, true)] = encodeReflectionProbeComponent(probe);
@@ -4681,6 +4686,17 @@ void editor::Stream::decodeComponents(Entity entity, Entity parent, EntityRegist
             uint64_t flags = Catalog::getChangedUpdateFlags(ComponentType::MirrorComponent, existing, &mirror);
             registry->getComponent<MirrorComponent>(entity) = mirror;
             Catalog::updateEntity(registry, entity, flags);
+        }
+    }
+
+    compName = Catalog::getComponentName(ComponentType::NetworkComponent, true);
+    if (compNode[compName]) {
+        NetworkComponent* existing = registry->findComponent<NetworkComponent>(entity);
+        NetworkComponent network = decodeNetworkComponent(compNode[compName], existing);
+        if (!signature.test(registry->getComponentId<NetworkComponent>())){
+            registry->addComponent<NetworkComponent>(entity, network);
+        }else{
+            registry->getComponent<NetworkComponent>(entity) = network;
         }
     }
 
@@ -6540,6 +6556,30 @@ MirrorComponent editor::Stream::decodeMirrorComponent(const YAML::Node& node, co
     if (node["normal"]) mirror.normal = decodeVector3(node["normal"]);
 
     return mirror;
+}
+
+YAML::Node editor::Stream::encodeNetworkComponent(const NetworkComponent& network) {
+    YAML::Node node;
+
+    node["syncPosition"] = network.syncPosition;
+    node["syncRotation"] = network.syncRotation;
+    node["syncScale"] = network.syncScale;
+
+    return node;
+}
+
+NetworkComponent editor::Stream::decodeNetworkComponent(const YAML::Node& node, const NetworkComponent* oldNetwork) {
+    NetworkComponent network;
+
+    if (oldNetwork) {
+        network = *oldNetwork;
+    }
+
+    if (node["syncPosition"]) network.syncPosition = node["syncPosition"].as<bool>();
+    if (node["syncRotation"]) network.syncRotation = node["syncRotation"].as<bool>();
+    if (node["syncScale"]) network.syncScale = node["syncScale"].as<bool>();
+
+    return network;
 }
 
 YAML::Node editor::Stream::encodeReflectionProbeComponent(const ReflectionProbeComponent& probe) {

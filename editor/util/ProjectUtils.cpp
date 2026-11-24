@@ -1335,6 +1335,13 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
                 registry->addComponent<MirrorComponent>(entity, Stream::decodeMirrorComponent(componentNode));
             }
             break;
+        case ComponentType::NetworkComponent:
+            if (!componentNode.IsDefined() || componentNode.IsNull()){
+                registry->addComponent<NetworkComponent>(entity, {});
+            }else{
+                registry->addComponent<NetworkComponent>(entity, Stream::decodeNetworkComponent(componentNode));
+            }
+            break;
         case ComponentType::ReflectionProbeComponent:
             if (!componentNode.IsDefined() || componentNode.IsNull()){
                 registry->addComponent<ReflectionProbeComponent>(entity, {});
@@ -1812,6 +1819,12 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
                 oldComponent = Stream::encodeMirrorComponent(registry->getComponent<MirrorComponent>(entity));
             }
             registry->removeComponent<MirrorComponent>(entity);
+            break;
+        case ComponentType::NetworkComponent:
+            if (encodeComponent){
+                oldComponent = Stream::encodeNetworkComponent(registry->getComponent<NetworkComponent>(entity));
+            }
+            registry->removeComponent<NetworkComponent>(entity);
             break;
         case ComponentType::ReflectionProbeComponent:
             if (encodeComponent){
