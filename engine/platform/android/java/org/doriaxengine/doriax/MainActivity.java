@@ -37,11 +37,11 @@ public class MainActivity extends GameActivity {
 	private Object billingWrapper;
 	private final List<ActivityListener> activityListeners = new ArrayList<>();
 	private InputConnection textInput;
-	private volatile boolean textInputActive;
 	// Held keys, and whether the text input got their press
 	private final Map<Long, Boolean> typedKeys = new HashMap<>();
 
 	private native void onBackPressedNative();
+	private native void onTextShownNative(String text, int session);
 
 	private void hideSystemUI() {
 		// This will put the game behind any cutouts and waterfalls on devices which have
@@ -98,12 +98,6 @@ public class MainActivity extends GameActivity {
 		// GameTextInput's listener takes every key, so dispatchKeyEvent gives it the ones it types
 		textInput = mSurfaceView.onCreateInputConnection(new EditorInfo());
 		mSurfaceView.setOnKeyListener(null);
-		// A show queued before the hide focuses it late
-		mSurfaceView.setOnFocusChangeListener((view, hasFocus) -> {
-			if (hasFocus && !textInputActive) {
-				view.post(this::releaseTextInputFocus);
-			}
-		});
 	}
 
 	private static boolean isTextKey(KeyEvent event) {
@@ -118,7 +112,7 @@ public class MainActivity extends GameActivity {
 
 		Boolean typed;
 		if (down && event.getRepeatCount() == 0) {
-			typed = textInputActive && mSurfaceView.isFocused() && isTextKey(event);
+			typed = mSurfaceView.isFocused() && isTextKey(event);
 			typedKeys.put(key, typed);
 		} else {
 			typed = down ? typedKeys.get(key) : typedKeys.remove(key);
@@ -131,7 +125,7 @@ public class MainActivity extends GameActivity {
 		if (!typed) {
 			return super.dispatchKeyEvent(event);
 		}
-		if (down && textInputActive) {
+		if (down && mSurfaceView.isFocused()) {
 			textInput.sendKeyEvent(event);
 		}
 		return true;
@@ -145,23 +139,29 @@ public class MainActivity extends GameActivity {
 		}
 	}
 
-	// Called from native threads
-	public void setTextInputActive(boolean active) {
-		if (textInputActive == active) {
-			return;
-		}
-		textInputActive = active;
-		if (!active) {
-			runOnUiThread(this::releaseTextInputFocus);
-		}
+	// Called from native threads, like hideTextInput
+	public void showTextInput(String text, int session) {
+		runOnUiThread(() -> {
+			if (mDestroyed) {
+				return;
+			}
+			onTextShownNative(text, session);
+			textInput.setState(new State(text, text.length(), text.length(), -1, -1));
+			textInput.setSoftKeyboardActive(true, 0);
+		});
+	}
+
+	public void hideTextInput() {
+		runOnUiThread(() -> {
+			textInput.setSoftKeyboardActive(false, 0);
+			if (mSurfaceView.isFocused()) {
+				releaseTextInputFocus();
+			}
+		});
 	}
 
 	// The surface view would keep the focus, and the keyboard the keys
 	private void releaseTextInputFocus() {
-		// Shown again meanwhile
-		if (textInputActive) {
-			return;
-		}
 		View content = (View) mSurfaceView.getParent();
 		if (VERSION.SDK_INT >= VERSION_CODES.O) {
 			content.setDefaultFocusHighlightEnabled(false);

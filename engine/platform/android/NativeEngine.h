@@ -9,6 +9,7 @@
 #include <jni.h>
 #include <android/asset_manager.h>
 #include <game-activity/GameActivity.h>
+#include <functional>
 #include <string>
 
 struct NativeEngineSavedState {
@@ -40,7 +41,8 @@ struct JniData{
 
     jmethodID removeKeyRef;
 
-    jmethodID setTextInputActiveRef;
+    jmethodID showTextInputRef;
+    jmethodID hideTextInputRef;
 };
 
 class NativeEngine {
@@ -80,8 +82,6 @@ private:
 
     bool mIsFirstFrame;
 
-    GameTextInputState mGameTextInputState;
-
     int mSystemBarOffset;
 
     bool initDisplay();
@@ -107,12 +107,14 @@ private:
 
     void updateSystemBarOffset();
 
-    void handleText(const std::wstring& inputText);
+    void handleText(const std::wstring& oldText, const std::wstring& newText, int session);
     void releaseBack();
-    void handleQueuedInput();
+    void handleBack();
+    void handleKey(GameActivityKeyEvent* keyEvent);
+    void handleMotion(GameActivityMotionEvent* motionEvent);
     void handleGameActivityInput();
 
-    void setTextInputActive(bool active);
+    void callActivity(const std::function<void(JNIEnv*, jobject)>& call);
 
 public:
     // create an engine

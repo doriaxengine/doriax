@@ -12,9 +12,11 @@
 #include <android/window.h>
 #include <linux/input-event-codes.h>
 #include <swappy/swappyGL.h>
+#include <algorithm>
 #include <cstring>
 #include <deque>
 #include <mutex>
+#include <set>
 #include <assert.h>
 #include <math.h>
 
@@ -293,11 +295,6 @@ std::wstring fromModifiedUtf8(const char* text, int32_t length) {
 
 } // namespace
 
-static bool all_motion_filter(const GameActivityMotionEvent* event) {
-  // Process all motion events
-  return true;
-}
-
 // Unused keys go back to the system, so volume and media keys keep working.
 // Back goes to MainActivity's back callback, except IME backspaces sent as Back.
 static bool is_game_key(const GameActivityKeyEvent* event) {
@@ -310,31 +307,49 @@ static bool is_game_key(const GameActivityKeyEvent* event) {
          getDoriaxGamepadButton(event->keyCode) >= 0;
 }
 
-// Typed text and Back don't come in the key buffer, so they keep the number of keys before them
+enum class QueuedInputType { KEY, MOTION, TEXT, BACK };
+
+// The order of everything the UI thread gets. Keys and motions stay in the buffers of android_app
 struct QueuedInput {
-    uint64_t keys;
-    bool back;
-    std::wstring text;
+    QueuedInputType type;
+    std::wstring oldText;
+    std::wstring newText;
+    int session = 0;
 };
 
 static std::mutex queuedInputMutex;
 static std::deque<QueuedInput> queuedInput;
-static uint64_t keysQueued = 0; // UI thread
-static uint64_t keysHandled = 0;
+
+// On the UI thread, the text that the next typing changes
+static std::wstring typedText;
+static int typedSession = 0;
+
+// On the game thread, the text given to the last keyboard shown
+static std::wstring shownText;
+static int shownSession = 0;
+static bool keyboardShown = false;
+
+static void queue_input(const QueuedInput& input) {
+    std::lock_guard<std::mutex> lock(queuedInputMutex);
+    queuedInput.push_back(input);
+}
+
+static bool motion_filter(const GameActivityMotionEvent* event) {
+  queue_input({QueuedInputType::MOTION});
+  return true;
+}
 
 static bool key_filter(const GameActivityKeyEvent* event) {
   if (!is_game_key(event))
     return false;
-  keysQueued++;
+  queue_input({QueuedInputType::KEY});
   return true;
 }
 
-// On the UI thread, like the keys
-static void queueText(void* context, const GameTextInputState* state) {
+static void queue_text(void* context, const GameTextInputState* state) {
     std::wstring text = fromModifiedUtf8(state->text_UTF8, state->text_length);
-
-    std::lock_guard<std::mutex> lock(queuedInputMutex);
-    queuedInput.push_back({keysQueued, false, text});
+    queue_input({QueuedInputType::TEXT, typedText, text, typedSession});
+    typedText = text;
 }
 
 static void _handle_cmd_proxy(struct android_app *app, int32_t cmd) {
@@ -373,16 +388,21 @@ static NativeEngine *_singleton = NULL;
 // workaround for internal bug b/149866792
 static NativeEngineSavedState appState = {false};
 
-static std::wstring textInputBuffer;
-
 static bool backEscapeDown = false;
-// the press of Enter went to a field
-static bool enterTyped = false;
+// Enter keys whose press went to a field, by device and key
+static std::set<std::pair<int32_t, int32_t>> typedEnters;
 
 extern "C" JNIEXPORT void JNICALL
 Java_org_doriaxengine_doriax_MainActivity_onBackPressedNative(JNIEnv* env, jobject obj) {
-    std::lock_guard<std::mutex> lock(queuedInputMutex);
-    queuedInput.push_back({keysQueued, true, L""});
+    queue_input({QueuedInputType::BACK});
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_org_doriaxengine_doriax_MainActivity_onTextShownNative(JNIEnv* env, jobject obj, jstring text, jint session) {
+    const char* chars = env->GetStringUTFChars(text, nullptr);
+    typedText = fromModifiedUtf8(chars, (int32_t)strlen(chars));
+    typedSession = session;
+    env->ReleaseStringUTFChars(text, chars);
 }
 
 
@@ -406,10 +426,10 @@ NativeEngine::NativeEngine(struct android_app *app) {
     mExternalDataPath = mApp->activity->externalDataPath;
 
     queuedInput.clear();
-    keysQueued = keysHandled = 0;
-    backEscapeDown = enterTyped = false;
+    typedEnters.clear();
+    backEscapeDown = false;
 
-    app->motionEventFilter = all_motion_filter;
+    app->motionEventFilter = motion_filter;
     app->keyEventFilter = key_filter;
 
     // Flags to control how the IME behaves.
@@ -495,44 +515,38 @@ int NativeEngine::getScreenDensity(){
     return mScreenDensity;
 }
 
-// The keyboard can be hidden from any thread
-void NativeEngine::setTextInputActive(bool active){
+// The keyboard can be shown and hidden from any thread
+void NativeEngine::callActivity(const std::function<void(JNIEnv*, jobject)>& call){
     JavaVM* vm = mApp->activity->vm;
     JNIEnv* env = nullptr;
     const bool attach = vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK;
     if (attach && vm->AttachCurrentThread(&env, nullptr) != JNI_OK)
         return;
 
-    env->CallVoidMethod(mJniData.gameActivityObjRef, mJniData.setTextInputActiveRef, (jboolean)active);
+    call(env, mJniData.gameActivityObjRef);
 
     if (attach)
         vm->DetachCurrentThread();
 }
 
 void NativeEngine::showSoftInput(std::wstring text){
-    setTextInputActive(true);
+    shownText = text;
+    shownSession++;
+    keyboardShown = true;
 
-    textInputBuffer = text;
-
-    std::string strInputBuffer = toModifiedUtf8(textInputBuffer);
-    // Selections count UTF-16 units, like Java strings
-    int32_t cursor = 0;
-    for (wchar_t c : textInputBuffer) cursor += (c >= 0x10000) ? 2 : 1;
-
-    mGameTextInputState.text_UTF8 = strInputBuffer.data();
-    mGameTextInputState.text_length = strInputBuffer.length();
-    mGameTextInputState.selection.start = cursor;
-    mGameTextInputState.selection.end = cursor;
-    mGameTextInputState.composingRegion.start = -1;
-    mGameTextInputState.composingRegion.end = -1;
-
-    GameActivity_setTextInputState(mApp->activity, &mGameTextInputState);
-    GameActivity_showSoftInput(NativeEngine::getInstance()->getActivity(), 0);
+    callActivity([&](JNIEnv* env, jobject activity){
+        jstring jtext = env->NewStringUTF(toModifiedUtf8(shownText).c_str());
+        env->CallVoidMethod(activity, mJniData.showTextInputRef, jtext, shownSession);
+        env->DeleteLocalRef(jtext);
+    });
 }
 
 void NativeEngine::hideSoftInput(){
-    GameActivity_hideSoftInput(NativeEngine::getInstance()->getActivity(), 0);
-    setTextInputActive(false);
+    keyboardShown = false;
+
+    callActivity([&](JNIEnv* env, jobject activity){
+        env->CallVoidMethod(activity, mJniData.hideTextInputRef);
+    });
 }
 
 std::string NativeEngine::getInternalDataPath(){
@@ -626,7 +640,8 @@ void NativeEngine::setupJNI(){
 
     mJniData.removeKeyRef = env->GetMethodID(mJniData.userSettingsClsRef, "removeKey", "(Ljava/lang/String;)V");
 
-    mJniData.setTextInputActiveRef = env->GetMethodID(mJniData.gameActivityClsRef, "setTextInputActive", "(Z)V");
+    mJniData.showTextInputRef = env->GetMethodID(mJniData.gameActivityClsRef, "showTextInput", "(Ljava/lang/String;I)V");
+    mJniData.hideTextInputRef = env->GetMethodID(mJniData.gameActivityClsRef, "hideTextInput", "()V");
 
     setupServicesJNI(env, mJniData.gameActivityObjRef, mJniData.gameActivityClsRef);
 }
@@ -964,24 +979,24 @@ void NativeEngine::handleGamepadMotion(GameActivityMotionEvent* motionEvent){
     forwardHat(pad.hatY, hatY, D_GAMEPAD_BUTTON_DPAD_UP, D_GAMEPAD_BUTTON_DPAD_DOWN);
 }
 
-void NativeEngine::handleText(const std::wstring& inputText){
-    while (textInputBuffer.length() > inputText.length()){
-        textInputBuffer.pop_back();
-        doriax::Engine::systemCharInput('\b');
+void NativeEngine::handleText(const std::wstring& oldText, const std::wstring& newText, int session){
+    size_t same = 0;
+    while (same < oldText.length() && same < newText.length() && oldText[same] == newText[same]){
+        same++;
     }
 
-    int pos = 0;
-    while (textInputBuffer[pos] == inputText[pos] and pos < textInputBuffer.length()){
-        pos++;
-    }
-
-    for (int i = pos; i < textInputBuffer.length(); i++){
+    for (size_t i = same; i < oldText.length(); i++){
         doriax::Engine::systemCharInput('\b');
     }
-    for (int i = pos; i < inputText.length(); i++){
-        doriax::Engine::systemCharInput(inputText[i]);
+    for (size_t i = same; i < newText.length(); i++){
+        doriax::Engine::systemCharInput(newText[i]);
     }
-    textInputBuffer = inputText;
+
+    // typed before a newer keyboard started, so it lacks this
+    if (keyboardShown && session != shownSession) {
+        const size_t removed = std::min(oldText.length() - same, shownText.length());
+        showSoftInput(shownText.substr(0, shownText.length() - removed) + newText.substr(same));
+    }
 }
 
 // Back plays as an Escape press, released on the next frame
@@ -992,141 +1007,151 @@ void NativeEngine::releaseBack(){
     }
 }
 
-// What came before the next key
-void NativeEngine::handleQueuedInput(){
-    while (true) {
-        QueuedInput input;
-        {
-            std::lock_guard<std::mutex> lock(queuedInputMutex);
-            if (queuedInput.empty() || queuedInput.front().keys > keysHandled)
-                return;
-            input = queuedInput.front();
-            queuedInput.pop_front();
-        }
+void NativeEngine::handleBack(){
+    releaseBack();
+    doriax::Engine::systemCharInput('\x1b');
+    doriax::Engine::systemKeyDown(D_KEY_ESCAPE, false, doriax::Input::getModifiers());
+    backEscapeDown = true;
+}
 
-        if (input.back) {
-            releaseBack();
+void NativeEngine::handleKey(GameActivityKeyEvent* keyEvent){
+    if ((keyEvent->source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) {
+        int gamepadButton = getDoriaxGamepadButton(keyEvent->keyCode);
+        if (gamepadButton >= 0) {
+            int slot = getGamepadSlot(keyEvent->deviceId);
+            if (slot >= 0) {
+                if (keyEvent->action == AKEY_EVENT_ACTION_DOWN && keyEvent->repeatCount == 0) {
+                    doriax::Engine::systemGamepadButtonDown(slot, gamepadButton);
+                } else if (keyEvent->action == AKEY_EVENT_ACTION_UP) {
+                    doriax::Engine::systemGamepadButtonUp(slot, gamepadButton);
+                }
+            }
+            return;
+        }
+    }
+
+    // metaState works with capslock, numlock and others
+    int keyCode = getDoriaxKey(keyEvent->keyCode, keyEvent->scanCode);
+    int modifiers = getDoriaxModifiers(keyEvent->metaState);
+    bool repeat = (keyEvent->repeatCount > 0)?true:false;
+
+    // a field takes the whole press, so onSubmit can't also press a button it focuses
+    if (keyCode == D_KEY_ENTER) {
+        const std::pair<int32_t, int32_t> enter(keyEvent->deviceId, keyEvent->keyCode);
+        if (keyEvent->action == AKEY_EVENT_ACTION_DOWN && !repeat) {
+            typedEnters.erase(enter);
+            if (doriax::Engine::isTypingInUI())
+                typedEnters.insert(enter);
+            doriax::Engine::systemCharInput('\r');
+        }
+        if (typedEnters.count(enter)) {
+            if (keyEvent->action == AKEY_EVENT_ACTION_UP)
+                typedEnters.erase(enter);
+            return;
+        }
+    }
+
+    if (keyEvent->action == AKEY_EVENT_ACTION_DOWN) {
+        if (keyEvent->keyCode == AKEYCODE_TAB)
+            doriax::Engine::systemCharInput('\t');
+        if (keyEvent->keyCode == AKEYCODE_DEL)
+            doriax::Engine::systemCharInput('\b');
+        if (keyEvent->keyCode == AKEYCODE_ESCAPE)
             doriax::Engine::systemCharInput('\x1b');
-            doriax::Engine::systemKeyDown(D_KEY_ESCAPE, false, doriax::Input::getModifiers());
-            backEscapeDown = true;
+        // some IMEs deliver the soft-keyboard backspace as BACK instead of DEL.
+        // Only take it when the event really came from the software keyboard,
+        // otherwise the system back button/gesture would erase a character.
+        if (keyEvent->keyCode == AKEYCODE_BACK && (keyEvent->flags & AKEY_EVENT_FLAG_SOFT_KEYBOARD))
+            doriax::Engine::systemCharInput('\b');
+
+        // don't spam listeners with D_KEY_UNKNOWN
+        if (keyCode != D_KEY_UNKNOWN)
+            doriax::Engine::systemKeyDown(keyCode, repeat, modifiers);
+    } else if (keyEvent->action == AKEY_EVENT_ACTION_UP) {
+        if (keyCode != D_KEY_UNKNOWN)
+            doriax::Engine::systemKeyUp(keyCode, repeat, modifiers);
+    }
+}
+
+void NativeEngine::handleMotion(GameActivityMotionEvent* motionEvent){
+    if ((motionEvent->source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK) {
+        handleGamepadMotion(motionEvent);
+        return;
+    }
+
+    if (motionEvent->pointerCount > 0) {
+        int action = motionEvent->action;
+        int actionMasked = action & AMOTION_EVENT_ACTION_MASK;
+
+        // MOVE has no pointer index. Every finger's position is in the array;
+        // updating only index 0 freezes the other finger on its button.
+        if (actionMasked == AMOTION_EVENT_ACTION_MOVE) {
+            for (int p = 0; p < (int)motionEvent->pointerCount; ++p) {
+                int motionPointerId = motionEvent->pointers[p].id;
+                float motionX = GameActivityPointerAxes_getX(&motionEvent->pointers[p]);
+                float motionY = GameActivityPointerAxes_getY(&motionEvent->pointers[p]);
+                doriax::Engine::systemTouchMove(motionPointerId, motionX, motionY);
+            }
+        } else if (actionMasked == AMOTION_EVENT_ACTION_CANCEL) {
+            doriax::Engine::systemTouchCancel();
         } else {
-            handleText(input.text);
+            int ptrIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+            if (ptrIndex >= 0 && ptrIndex < (int)motionEvent->pointerCount) {
+                int motionPointerId = motionEvent->pointers[ptrIndex].id;
+                float motionX = GameActivityPointerAxes_getX(&motionEvent->pointers[ptrIndex]);
+                float motionY = GameActivityPointerAxes_getY(&motionEvent->pointers[ptrIndex]);
+
+                if (actionMasked == AMOTION_EVENT_ACTION_DOWN || actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN) {
+                    doriax::Engine::systemTouchStart(motionPointerId, motionX, motionY);
+                } else if (actionMasked == AMOTION_EVENT_ACTION_UP || actionMasked == AMOTION_EVENT_ACTION_POINTER_UP) {
+                    doriax::Engine::systemTouchEnd(motionPointerId, motionX, motionY);
+                }
+            }
         }
     }
 }
 
 void NativeEngine::handleGameActivityInput(){
     releaseBack();
-    handleQueuedInput();
 
     android_input_buffer* inputBuffer = android_app_swap_input_buffers(mApp);
+    const uint64_t keys = inputBuffer ? inputBuffer->keyEventsCount : 0;
+    const uint64_t motions = inputBuffer ? inputBuffer->motionEventsCount : 0;
+    uint64_t key = 0;
+    uint64_t motion = 0;
 
-    if (inputBuffer == nullptr) return;
-
-    if (inputBuffer->keyEventsCount != 0) {
-        for (uint64_t i = 0; i < inputBuffer->keyEventsCount; ++i) {
-            GameActivityKeyEvent* keyEvent = &inputBuffer->keyEvents[i];
-
-            handleQueuedInput();
-            keysHandled++;
-
-            if ((keyEvent->source & AINPUT_SOURCE_GAMEPAD) == AINPUT_SOURCE_GAMEPAD) {
-                int gamepadButton = getDoriaxGamepadButton(keyEvent->keyCode);
-                if (gamepadButton >= 0) {
-                    int slot = getGamepadSlot(keyEvent->deviceId);
-                    if (slot >= 0) {
-                        if (keyEvent->action == AKEY_EVENT_ACTION_DOWN && keyEvent->repeatCount == 0) {
-                            doriax::Engine::systemGamepadButtonDown(slot, gamepadButton);
-                        } else if (keyEvent->action == AKEY_EVENT_ACTION_UP) {
-                            doriax::Engine::systemGamepadButtonUp(slot, gamepadButton);
-                        }
-                    }
-                    continue;
-                }
-            }
-
-            // metaState works with capslock, numlock and others
-            int keyCode = getDoriaxKey(keyEvent->keyCode, keyEvent->scanCode);
-            int modifiers = getDoriaxModifiers(keyEvent->metaState);
-            bool repeat = (keyEvent->repeatCount > 0)?true:false;
-
-            // a field takes the whole press, so onSubmit can't also press a button it focuses
-            if (keyCode == D_KEY_ENTER) {
-                if (keyEvent->action == AKEY_EVENT_ACTION_DOWN && !repeat) {
-                    enterTyped = doriax::Engine::isTypingInUI();
-                    doriax::Engine::systemCharInput('\r');
-                }
-                if (enterTyped)
-                    continue;
-            }
-
-            if (keyEvent->action == AKEY_EVENT_ACTION_DOWN) {
-                if (keyEvent->keyCode == AKEYCODE_TAB)
-                    doriax::Engine::systemCharInput('\t');
-                if (keyEvent->keyCode == AKEYCODE_DEL)
-                    doriax::Engine::systemCharInput('\b');
-                if (keyEvent->keyCode == AKEYCODE_ESCAPE)
-                    doriax::Engine::systemCharInput('\x1b');
-                // some IMEs deliver the soft-keyboard backspace as BACK instead of DEL.
-                // Only take it when the event really came from the software keyboard,
-                // otherwise the system back button/gesture would erase a character.
-                if (keyEvent->keyCode == AKEYCODE_BACK && (keyEvent->flags & AKEY_EVENT_FLAG_SOFT_KEYBOARD))
-                    doriax::Engine::systemCharInput('\b');
-
-                // don't spam listeners with D_KEY_UNKNOWN
-                if (keyCode != D_KEY_UNKNOWN)
-                    doriax::Engine::systemKeyDown(keyCode, repeat, modifiers);
-            } else if (keyEvent->action == AKEY_EVENT_ACTION_UP) {
-                if (keyCode != D_KEY_UNKNOWN)
-                    doriax::Engine::systemKeyUp(keyCode, repeat, modifiers);
-            }
-
+    while (true) {
+        QueuedInput input;
+        {
+            std::lock_guard<std::mutex> lock(queuedInputMutex);
+            if (queuedInput.empty())
+                break;
+            // the rest comes with the next buffer
+            const QueuedInputType type = queuedInput.front().type;
+            if ((type == QueuedInputType::KEY && key == keys) || (type == QueuedInputType::MOTION && motion == motions))
+                break;
+            input = std::move(queuedInput.front());
+            queuedInput.pop_front();
         }
-        android_app_clear_key_events(inputBuffer);
-        handleQueuedInput();
+
+        switch (input.type) {
+            case QueuedInputType::KEY:
+                handleKey(&inputBuffer->keyEvents[key++]);
+                break;
+            case QueuedInputType::MOTION:
+                handleMotion(&inputBuffer->motionEvents[motion++]);
+                break;
+            case QueuedInputType::TEXT:
+                handleText(input.oldText, input.newText, input.session);
+                break;
+            case QueuedInputType::BACK:
+                handleBack();
+                break;
+        }
     }
 
-    if (inputBuffer->motionEventsCount != 0) {
-        for (uint64_t i = 0; i < inputBuffer->motionEventsCount; ++i) {
-            GameActivityMotionEvent* motionEvent = &inputBuffer->motionEvents[i];
-
-            if ((motionEvent->source & AINPUT_SOURCE_JOYSTICK) == AINPUT_SOURCE_JOYSTICK) {
-                handleGamepadMotion(motionEvent);
-                continue;
-            }
-
-            if (motionEvent->pointerCount > 0) {
-                int action = motionEvent->action;
-                int actionMasked = action & AMOTION_EVENT_ACTION_MASK;
-
-                // MOVE has no pointer index. Every finger's position is in the array;
-                // updating only index 0 freezes the other finger on its button.
-                if (actionMasked == AMOTION_EVENT_ACTION_MOVE) {
-                    for (int p = 0; p < (int)motionEvent->pointerCount; ++p) {
-                        int motionPointerId = motionEvent->pointers[p].id;
-                        float motionX = GameActivityPointerAxes_getX(&motionEvent->pointers[p]);
-                        float motionY = GameActivityPointerAxes_getY(&motionEvent->pointers[p]);
-                        doriax::Engine::systemTouchMove(motionPointerId, motionX, motionY);
-                    }
-                } else if (actionMasked == AMOTION_EVENT_ACTION_CANCEL) {
-                    doriax::Engine::systemTouchCancel();
-                } else {
-                    int ptrIndex = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
-                    if (ptrIndex >= 0 && ptrIndex < (int)motionEvent->pointerCount) {
-                        int motionPointerId = motionEvent->pointers[ptrIndex].id;
-                        float motionX = GameActivityPointerAxes_getX(&motionEvent->pointers[ptrIndex]);
-                        float motionY = GameActivityPointerAxes_getY(&motionEvent->pointers[ptrIndex]);
-
-                        if (actionMasked == AMOTION_EVENT_ACTION_DOWN || actionMasked == AMOTION_EVENT_ACTION_POINTER_DOWN) {
-                            doriax::Engine::systemTouchStart(motionPointerId, motionX, motionY);
-                        } else if (actionMasked == AMOTION_EVENT_ACTION_UP || actionMasked == AMOTION_EVENT_ACTION_POINTER_UP) {
-                            doriax::Engine::systemTouchEnd(motionPointerId, motionX, motionY);
-                        }
-                    }
-                }
-            }
-
-        }
+    if (inputBuffer) {
+        android_app_clear_key_events(inputBuffer);
         android_app_clear_motion_events(inputBuffer);
     }
 }
@@ -1178,7 +1203,7 @@ void NativeEngine::handleCommand(int32_t cmd) {
             break;
         case APP_CMD_START:
             // GameActivity creates it after the constructor can run
-            GameTextInput_setEventCallback(GameActivity_getTextInput(mApp->activity), queueText, nullptr);
+            GameTextInput_setEventCallback(GameActivity_getTextInput(mApp->activity), queue_text, nullptr);
             mIsVisible = true;
             break;
         case APP_CMD_WINDOW_RESIZED:
