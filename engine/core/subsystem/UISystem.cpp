@@ -1283,6 +1283,7 @@ bool UISystem::handleTextEditCharInput(TextEditComponent& textedit, TextComponen
 
     if (codepoint == '\x1b'){
         ui.focused = false;
+        hideVirtualKeyboard();
         ui.onLostFocus.call();
         textedit.needUpdateTextEdit = true;
         return true;
@@ -2760,12 +2761,21 @@ void UISystem::changeFocus(Entity entity, bool focused){
     }
 }
 
+// a field being typed in, in any scene, keeps it
+void UISystem::hideVirtualKeyboard(){
+    if (!Engine::isTypingInUI())
+        System::instance().hideVirtualKeyboard();
+}
+
 void UISystem::setFocus(Entity entity){
     unsigned int request = ++focusRequest;
 
     // keys and gamepads come back from a TextEdit to the button they left
     if (!scene->findComponent<TextEditComponent>(entity)){
         navigationFocus = isLiveUIEntity(entity) ? entity : NULL_ENTITY;
+        // before the callbacks, which can show it again
+        if (isTextEditTyping() && !Engine::isTypingInUI(scene))
+            System::instance().hideVirtualKeyboard();
     }
 
     std::vector<Entity> focusedEntities;
@@ -3119,7 +3129,7 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y, unsigned int req
             }
         }
     }else{
-        System::instance().hideVirtualKeyboard();
+        hideVirtualKeyboard();
     }
 
     if (signature.test(scene->getComponentId<ScrollbarComponent>())){
@@ -3219,7 +3229,7 @@ void UISystem::pointerDownOnUI(Entity entity, float x, float y, unsigned int req
     if (request != focusRequest){
         if (!ui->focused && textEditSelecting == entity){
             textEditSelecting = NULL_ENTITY;
-            System::instance().hideVirtualKeyboard();
+            hideVirtualKeyboard();
         }
         return;
     }
@@ -3315,7 +3325,7 @@ bool UISystem::eventOnPointerDown(float x, float y){
         }
     }else{
         lastUIFromPointer = NULL_ENTITY;
-        System::instance().hideVirtualKeyboard();
+        hideVirtualKeyboard();
     }
 
     if (PanelComponent* panel = scene->findComponent<PanelComponent>(lastPanelFromPointer)){

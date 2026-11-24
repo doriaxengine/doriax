@@ -1606,9 +1606,9 @@ static NavigationDirection getDpadNavigation(int button){
 }
 
 // a text edit being typed in, in any scene, keeps the arrows and the submit keys
-bool Engine::isTypingInUI(){
+bool Engine::isTypingInUI(Scene* except){
     for (Scene* scene : getScenesSnapshot()){
-        if (canSendUIEvents(scene) && scene->getSystem<UISystem>()->isTextEditTyping())
+        if (scene != except && canSendUIEvents(scene) && scene->getSystem<UISystem>()->isTextEditTyping())
             return true;
     }
     return false;

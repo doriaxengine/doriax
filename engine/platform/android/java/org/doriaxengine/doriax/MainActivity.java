@@ -4,17 +4,23 @@ import android.app.Activity;
 import android.os.Build.VERSION;
 import android.os.Build.VERSION_CODES;
 import android.os.Bundle;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager.LayoutParams;
+import android.view.inputmethod.EditorInfo;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 
 import com.google.androidgamesdk.GameActivity;
+import com.google.androidgamesdk.gametextinput.InputConnection;
+import com.google.androidgamesdk.gametextinput.State;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 // A minimal extension of GameActivity. For this sample, it is only used to invoke
 // a workaround for loading the runtime shared library on old Android versions
@@ -30,6 +36,10 @@ public class MainActivity extends GameActivity {
 	private Object adMobWrapper;
 	private Object billingWrapper;
 	private final List<ActivityListener> activityListeners = new ArrayList<>();
+	private InputConnection textInput;
+	private volatile boolean textInputActive;
+	// Held keys, and whether the text input got their press
+	private final Map<Long, Boolean> typedKeys = new HashMap<>();
 
 	private native void onBackPressedNative();
 
@@ -84,6 +94,81 @@ public class MainActivity extends GameActivity {
 		});
 
 		super.onCreate(savedInstanceState);
+
+		// GameTextInput's listener takes every key, so dispatchKeyEvent gives it the ones it types
+		textInput = mSurfaceView.onCreateInputConnection(new EditorInfo());
+		mSurfaceView.setOnKeyListener(null);
+		// A show queued before the hide focuses it late
+		mSurfaceView.setOnFocusChangeListener((view, hasFocus) -> {
+			if (hasFocus && !textInputActive) {
+				view.post(this::releaseTextInputFocus);
+			}
+		});
+	}
+
+	private static boolean isTextKey(KeyEvent event) {
+		return event.getKeyCode() == KeyEvent.KEYCODE_DEL || event.getUnicodeChar() != 0;
+	}
+
+	// A key stays with the text input or the game, whichever got its press, until it is released
+	@Override
+	public boolean dispatchKeyEvent(KeyEvent event) {
+		long key = ((long) event.getDeviceId() << 32) | event.getKeyCode();
+		boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
+
+		Boolean typed;
+		if (down && event.getRepeatCount() == 0) {
+			typed = textInputActive && mSurfaceView.isFocused() && isTextKey(event);
+			typedKeys.put(key, typed);
+		} else {
+			typed = down ? typedKeys.get(key) : typedKeys.remove(key);
+			if (typed == null) {
+				// The on-screen keyboard took the press
+				typed = isTextKey(event);
+			}
+		}
+
+		if (!typed) {
+			return super.dispatchKeyEvent(event);
+		}
+		if (down && textInputActive) {
+			textInput.sendKeyEvent(event);
+		}
+		return true;
+	}
+
+	// The on-screen keyboard can end its session after the native side is gone
+	@Override
+	public void stateChanged(State newState, boolean dismissed) {
+		if (!mDestroyed) {
+			super.stateChanged(newState, dismissed);
+		}
+	}
+
+	// Called from native threads
+	public void setTextInputActive(boolean active) {
+		if (textInputActive == active) {
+			return;
+		}
+		textInputActive = active;
+		if (!active) {
+			runOnUiThread(this::releaseTextInputFocus);
+		}
+	}
+
+	// The surface view would keep the focus, and the keyboard the keys
+	private void releaseTextInputFocus() {
+		// Shown again meanwhile
+		if (textInputActive) {
+			return;
+		}
+		View content = (View) mSurfaceView.getParent();
+		if (VERSION.SDK_INT >= VERSION_CODES.O) {
+			content.setDefaultFocusHighlightEnabled(false);
+		}
+		content.setFocusableInTouchMode(true);
+		content.requestFocus();
+		mSurfaceView.setFocusable(false);
 	}
 
 	@Override

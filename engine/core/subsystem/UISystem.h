@@ -117,6 +117,7 @@ namespace doriax{
 
         void setNavigating(bool navigating);
         void changeFocus(Entity entity, bool focused);
+        void hideVirtualKeyboard();
         Rect getImageClipRect(Entity image, const ImageComponent& img);
         Rect getButtonVisibleRect(Entity entity);
         std::vector<std::pair<Entity, Vector2>> getNavigationTargets();

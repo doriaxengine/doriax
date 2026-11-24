@@ -320,7 +320,6 @@ namespace doriax {
         static void endCompositeFramebuffer();
         static void runFrame(bool draw);
 
-        static bool isTypingInUI();
         static Scene* getNavigationScene();
         static bool navigateUI(NavigationDirection direction);
         static bool holdNavigation(NavigationDirection direction);
@@ -391,6 +390,7 @@ namespace doriax {
         static bool isIgnoreEventsHandledByUI();
 
         static bool isUIEventReceived();
+        static bool isTypingInUI(Scene* except = nullptr);
         
         static void setUpdateTimeMS(unsigned int updateTimeMS);
         static void setUpdateTime(float updateTime);

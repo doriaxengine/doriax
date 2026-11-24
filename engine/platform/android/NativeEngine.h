@@ -39,6 +39,8 @@ struct JniData{
     jmethodID setStringForKeyRef;
 
     jmethodID removeKeyRef;
+
+    jmethodID setTextInputActiveRef;
 };
 
 class NativeEngine {
@@ -105,7 +107,12 @@ private:
 
     void updateSystemBarOffset();
 
+    void handleText(const std::wstring& inputText);
+    void releaseBack();
+    void handleQueuedInput();
     void handleGameActivityInput();
+
+    void setTextInputActive(bool active);
 
 public:
     // create an engine
