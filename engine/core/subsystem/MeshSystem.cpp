@@ -484,6 +484,30 @@ static void disableFaceCulling(MeshComponent& mesh){
     }
 }
 
+// a rect without a submesh of its own uses the first one
+static unsigned int getTileSubmesh(const TileRectData& rectData, const MeshComponent& mesh){
+    return (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
+}
+
+// the texture of the first submesh when its own is empty
+static Texture* getTileTexture(unsigned int submeshId, MeshComponent& mesh){
+    Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
+    Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
+    return !texture.empty() ? &texture : (!mainTexture.empty() ? &mainTexture : nullptr);
+}
+
+// changes with the texture sizes, which pixel rects are normalized by
+static uint64_t getTexturesKey(const MeshComponent& mesh){
+    uint64_t key = mesh.numSubmeshes;
+    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+        const Texture& texture = mesh.submeshes[s].material.baseColorTexture;
+        for (uint64_t value : {(uint64_t)texture.empty(), (uint64_t)texture.getWidth(), (uint64_t)texture.getHeight()}){
+            key = (key ^ value) * 1099511628211ull;
+        }
+    }
+    return key;
+}
+
 bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, CameraComponent& camera){
     // Check texture loading state BEFORE clearing the buffer to avoid leaving
     // the mesh with an empty vertex buffer when the texture is still loading.
@@ -693,13 +717,6 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
     // Calling load() unconditionally would instead re-read every already-uploaded
     // (and released) tile texture from disk on each rebuild, spinning an endless
     // load loop.
-    // A rect added without a texture path uses submesh 0, the texture set by
-    // Mesh::setTexture (a path or TextureData). Only addRect with a path creates
-    // submeshes, so without one the count stayed 0 and every tile was skipped.
-    if (mesh.numSubmeshes == 0 && tilemap.numTilesRect > 0){
-        mesh.numSubmeshes = 1;
-    }
-
     // before the first load, see RenderSystem::loadMesh
     for (int s = 0; s < mesh.numSubmeshes; s++){
         mesh.submeshes[s].material.baseColorTexture.setAlphaBorderAuto(true);
@@ -716,13 +733,7 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
         if (preReserveTiles > 0){
             preReserveTiles--;
         }
-        TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
-        // a rect without a submesh of its own uses submesh 0 (as below), so it waits for that texture too:
-        // built before its size is known, its pixel rect would not be normalized
-        const int submeshId = (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
-        Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
-        Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
-        Texture* tileTexture = !texture.empty() ? &texture : (!mainTexture.empty() ? &mainTexture : nullptr);
+        Texture* tileTexture = getTileTexture(getTileSubmesh(tilemap.tilesRect[tilemap.tiles[i].rectId], mesh), mesh);
         if (tileTexture && tileTexture->getWidth() == 0){
             TextureLoadResult texResult = tileTexture->load();
             if (texResult.state == ResourceLoadState::Loading){
@@ -802,12 +813,10 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
             tilemap.height = static_cast<unsigned int>(tilemap.tiles[i].position.y + tilemap.tiles[i].height);
 
         TileRectData& rectData = tilemap.tilesRect[tilemap.tiles[i].rectId];
-        int submeshId = (rectData.submeshId >= 0 && (unsigned int)rectData.submeshId < mesh.numSubmeshes) ? rectData.submeshId : 0;
+        const unsigned int submeshId = getTileSubmesh(rectData, mesh);
         Rect tileRect = rectData.rect;
 
-        Texture& texture = mesh.submeshes[submeshId].material.baseColorTexture;
-        Texture& mainTexture = mesh.submeshes[0].material.baseColorTexture;
-        Texture* tileTexture = !texture.empty() ? &texture : (!mainTexture.empty() ? &mainTexture : nullptr);
+        Texture* tileTexture = getTileTexture(submeshId, mesh);
 
         unsigned int texWidth = 0;
         unsigned int texHeight = 0;
@@ -868,7 +877,7 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
         const unsigned int vertexBase = (numTiles - 1) * 4;
         const float tileX = tilemap.tiles[i].position.x;
         const float tileY = tilemap.tiles[i].position.y;
-        acceptedTiles.push_back({vertexBase, (unsigned int)submeshId, 0,
+        acceptedTiles.push_back({vertexBase, submeshId, 0,
             AABB(Vector3(tileX, tileY, 0), Vector3(tileX + tilemap.tiles[i].width, tileY + tilemap.tiles[i].height, 0))});
 
     }
@@ -916,6 +925,7 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
         }
     }
     tilemap.renderedTiles = numTiles;
+    tilemap.texturesKey = getTexturesKey(mesh);
 
     return true;
 }
@@ -6556,6 +6566,15 @@ bool MeshSystem::createOrUpdateMeshPolygon(MeshPolygonComponent& polygon, MeshCo
 }
 
 bool MeshSystem::createOrUpdateTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
+    // Mesh::setTexture does not count the submesh it sets
+    if (mesh.numSubmeshes == 0 && !mesh.submeshes[0].material.baseColorTexture.empty()){
+        mesh.numSubmeshes = 1;
+    }
+
+    if (tilemap.texturesKey != getTexturesKey(mesh)){
+        tilemap.needUpdateTilemap = true;
+    }
+
     if (tilemap.needUpdateTilemap){
         if (tilemap.automaticFlipY){
             CameraComponent& camera =  scene->getComponent<CameraComponent>(scene->getCamera());

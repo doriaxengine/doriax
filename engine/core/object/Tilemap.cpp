@@ -79,12 +79,12 @@ void Tilemap::addRect(int id, const std::string& name, const std::string& textur
         return;
     }
 
-    if (!mesh.submeshes.validIndex(static_cast<int>(mesh.numSubmeshes))){
-        Log::error("Cannot add submesh for rect id %i, max submeshes is %i", id, mesh.submeshes.size());
-        return;
-    }
-
     if (!texture.empty()) {
+        // Mesh::setTexture does not count the submesh it sets
+        if (mesh.numSubmeshes == 0 && !mesh.submeshes[0].material.baseColorTexture.empty()){
+            mesh.numSubmeshes = 1;
+        }
+
         bool textureFound = false;
         for (int s = 0; s < mesh.numSubmeshes; s++){
             if (texture == mesh.submeshes[s].material.baseColorTexture.getPath()) {
@@ -95,6 +95,11 @@ void Tilemap::addRect(int id, const std::string& name, const std::string& textur
         }
 
         if (!textureFound) {
+            if (!mesh.submeshes.validIndex(static_cast<int>(mesh.numSubmeshes))){
+                Log::error("Cannot add submesh for rect id %i, max submeshes is %i", id, mesh.submeshes.size());
+                return;
+            }
+
             submeshId = mesh.numSubmeshes;
             mesh.submeshes[submeshId].material.baseColorTexture.setPath(texture);
             mesh.submeshes[submeshId].material.baseColorTexture.setMinFilter(texFilter);

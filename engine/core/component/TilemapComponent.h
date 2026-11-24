@@ -72,6 +72,9 @@ namespace doriax{
         std::vector<TilemapChunk> chunks;
         std::vector<unsigned int> chunkStart;
 
+        // of the textures the tiles were built with
+        uint64_t texturesKey = 0;
+
         bool needUpdateTilemap = true;
     };
 
