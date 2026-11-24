@@ -49,7 +49,6 @@
 #include "component/TerrainComponent.h"
 #include "component/WaterComponent.h"
 #include "component/WaterExclusionComponent.h"
-#include "component/NetworkComponent.h"
 #include "component/MirrorComponent.h"
 #include "component/ReflectionProbeComponent.h"
 #include "component/ImageComponent.h"
@@ -1197,15 +1196,6 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("wakeWaves", &WaterExclusionComponent::wakeWaves, &WaterExclusionComponent::wakeWaves)
         .addProperty("aabb", &WaterExclusionComponent::aabb)
         .addProperty("worldAABB", &WaterExclusionComponent::worldAABB)
-        .endClass();
-
-    luabridge::getGlobalNamespace(L)
-        .beginClass<NetworkComponent>("NetworkComponent")
-        .addProperty("networkId", &NetworkComponent::networkId)
-        .addProperty("owner", &NetworkComponent::owner)
-        .addProperty("syncPosition", &NetworkComponent::syncPosition, &NetworkComponent::syncPosition)
-        .addProperty("syncRotation", &NetworkComponent::syncRotation, &NetworkComponent::syncRotation)
-        .addProperty("syncScale", &NetworkComponent::syncScale, &NetworkComponent::syncScale)
         .endClass();
 
     luabridge::getGlobalNamespace(L)
