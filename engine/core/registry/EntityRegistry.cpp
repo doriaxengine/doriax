@@ -66,6 +66,7 @@ EntityRegistry::EntityRegistry() {
     registerComponent<WaterComponent>();
     registerComponent<WaterExclusionComponent>();
     registerComponent<SkinComponent>();
+    registerComponent<NetworkComponent>();
 }
 
 EntityRegistry::EntityRegistry(EntityPool defaultPool) : EntityRegistry() {

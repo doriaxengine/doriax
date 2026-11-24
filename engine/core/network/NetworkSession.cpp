@@ -30,7 +30,8 @@ namespace {
         REJECT,
         RPC,
         PING,
-        PONG
+        PONG,
+        REPLICATION
     };
 
     enum RejectReason : uint8_t {
@@ -38,12 +39,6 @@ namespace {
         REJECT_VERSION,
         REJECT_FULL
     };
-
-    double getTime(){
-        static const auto start = std::chrono::steady_clock::now();
-
-        return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
-    }
 
     float getRandom(){
         static std::mt19937 generator{std::random_device{}()};
@@ -60,6 +55,12 @@ namespace {
 
         return hash;
     }
+}
+
+double NetworkSession::getTime(){
+    static const auto start = std::chrono::steady_clock::now();
+
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
 NetworkSession::NetworkSession(){
@@ -236,6 +237,10 @@ void NetworkSession::handleMessage(const Peer& peer, Packet& packet){
 
     if (type == RPC){
         callRpc(peer.id, packet);
+    }else if (type == REPLICATION){
+        if (onReplication){
+            onReplication(peer.id, packet);
+        }
     }else if (type == PING){
         Packet pong;
         pong.writeUInt8(PONG);
@@ -523,6 +528,20 @@ bool NetworkSession::rpc(int target, const std::string& name, const Packet& valu
         Log::error("Network: peer %i is not connected", target);
         return false;
     }
+    sendTo(*peer, packet, delivery);
+
+    return true;
+}
+
+bool NetworkSession::send(int target, const Packet& data, NetworkDelivery delivery){
+    Peer* peer = findPeer(target);
+    if (!peer){
+        return false;
+    }
+
+    Packet packet;
+    packet.writeUInt8(REPLICATION);
+    packet.writeBytes(data.getData(), data.getSize());
     sendTo(*peer, packet, delivery);
 
     return true;

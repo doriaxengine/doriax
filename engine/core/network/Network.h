@@ -7,6 +7,7 @@
 #include "Export.h"
 #include "Log.h"
 #include "NetworkSession.h"
+#include "ecs/Entity.h"
 #include "util/FunctionSubscribe.h"
 #include <tuple>
 #include <utility>
@@ -17,10 +18,13 @@
 
 namespace doriax {
 
+    class Scene;
+
     // Multiplayer by RPCs: a server, which is peer 1, and clients that only reach it
     class DORIAX_API Network {
 
         friend class Engine;
+        friend class NetworkSystem;
 
     private:
         static NetworkSession& getSession();
@@ -111,6 +115,12 @@ namespace doriax {
             return sendRpc(target, name, values, NetworkDelivery::UNRELIABLE);
         }
         static bool sendRpc(int target, const std::string& name, const Packet& values, NetworkDelivery delivery);
+
+        // on the server, creates the bundle here and on the clients
+        static Entity spawn(const std::string& bundle, Scene* scene, int owner = SERVER);
+        // the peer in the entity's NetworkComponent, 0 without one
+        static int getOwner(Scene* scene, Entity entity);
+        static bool isOwner(Scene* scene, Entity entity);
 
         // on the server
         static FunctionSubscribe<void(int)> onPeerConnected;

@@ -964,6 +964,7 @@ set(DORIAX_SRCS
     core/shader/ShaderUniforms.cpp
     core/subsystem/ActionSystem.cpp
     core/subsystem/AudioSystem.cpp
+    core/subsystem/NetworkSystem.cpp
     core/subsystem/MeshSystem.cpp
     core/subsystem/PhysicsSystem.cpp
     core/subsystem/RenderSystem.cpp

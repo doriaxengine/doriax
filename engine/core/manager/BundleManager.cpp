@@ -5,6 +5,7 @@
 #include "Scene.h"
 #include "EntityHandle.h"
 #include "component/BundleComponent.h"
+#include "subsystem/NetworkSystem.h"
 #include "Log.h"
 #include "LuaBinding.h"
 
@@ -215,6 +216,9 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
     }
 
     getInstances().push_back(std::move(instance));
+
+    // before init(), which may ask for the owner
+    scene->getSystem<NetworkSystem>()->bundleCreated(root, id);
 
     // tracked first, init() can destroy it
     scriptStarter(scene);

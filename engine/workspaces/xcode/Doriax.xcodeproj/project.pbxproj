@@ -721,7 +721,9 @@
 		717AD969290B6602007D7DB5 /* Sound.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 717AD966290B6602007D7DB5 /* Sound.cpp */; };
 		717AD96A290B6602007D7DB5 /* Sound.h in Headers */ = {isa = PBXBuildFile; fileRef = 717AD967290B6602007D7DB5 /* Sound.h */; };
 		717AD96D290B661A007D7DB5 /* AudioSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 717AD96B290B661A007D7DB5 /* AudioSystem.cpp */; };
+		5FE5C98A11FA26422914BF40 /* NetworkSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1C9F88B7677767479595FF13 /* NetworkSystem.cpp */; };
 		717AD96E290B661A007D7DB5 /* AudioSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 717AD96B290B661A007D7DB5 /* AudioSystem.cpp */; };
+		522752E642E231FD19EEE4D4 /* NetworkSystem.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1C9F88B7677767479595FF13 /* NetworkSystem.cpp */; };
 		717AD96F290B661A007D7DB5 /* AudioSystem.h in Headers */ = {isa = PBXBuildFile; fileRef = 717AD96C290B661A007D7DB5 /* AudioSystem.h */; };
 		717AD9842919E1CB007D7DB5 /* UILayout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 717AD9822919E1CB007D7DB5 /* UILayout.cpp */; };
 		717AD9852919E1CB007D7DB5 /* UILayout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 717AD9822919E1CB007D7DB5 /* UILayout.cpp */; };
@@ -1552,6 +1554,7 @@
 		71C005A2D2E7A0100C91BA00 /* MeshLodPool.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MeshLodPool.h; sourceTree = "<group>"; };
 		71C005B2D2E7A0100C91BA00 /* MeshLodPool.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = MeshLodPool.cpp; sourceTree = "<group>"; };
 		17FB42722FDDA6E3002F919C /* MirrorComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MirrorComponent.h; sourceTree = "<group>"; };
+		A021DAC65649B5C0F9932896 /* NetworkComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = NetworkComponent.h; sourceTree = "<group>"; };
 		17FB42742FDDA782002F919C /* IBLEnvironment.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = IBLEnvironment.h; sourceTree = "<group>"; };
 		17FB42752FDDA782002F919C /* IBLEnvironment.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; path = IBLEnvironment.cpp; sourceTree = "<group>"; };
 		71033D652BD1A7D200D81FB5 /* ScrollbarComponent.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ScrollbarComponent.h; sourceTree = "<group>"; };
@@ -2318,6 +2321,8 @@
 		717AD967290B6602007D7DB5 /* Sound.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Sound.h; sourceTree = "<group>"; };
 		717AD96B290B661A007D7DB5 /* AudioSystem.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = AudioSystem.cpp; sourceTree = "<group>"; };
 		717AD96C290B661A007D7DB5 /* AudioSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = AudioSystem.h; sourceTree = "<group>"; };
+		1C9F88B7677767479595FF13 /* NetworkSystem.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NetworkSystem.cpp; sourceTree = "<group>"; };
+		28AA2E511B5FFE621B04AFBC /* NetworkSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = NetworkSystem.h; sourceTree = "<group>"; };
 		717AD970290B67A5007D7DB5 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		717AD972290B67B8007D7DB5 /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		717AD9822919E1CB007D7DB5 /* UILayout.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = UILayout.cpp; sourceTree = "<group>"; };
@@ -4310,6 +4315,7 @@
 				7162FC4525962A0E0075B97D /* MeshComponent.h */,
 				71ABBD3E27A879B9001CE3AF /* MeshPolygonComponent.h */,
 				17FB42722FDDA6E3002F919C /* MirrorComponent.h */,
+				A021DAC65649B5C0F9932896 /* NetworkComponent.h */,
 				7170A3CA2818A87E0003E965 /* ModelComponent.h */,
 				71E5450D284D5BDF00C68FAB /* MorphTracksComponent.h */,
 				17145B352FF7FC3B00543CB7 /* Occluder2DComponent.h */,
@@ -4447,6 +4453,8 @@
 				71451BBD270CA16200712643 /* ActionSystem.h */,
 				717AD96B290B661A007D7DB5 /* AudioSystem.cpp */,
 				717AD96C290B661A007D7DB5 /* AudioSystem.h */,
+				1C9F88B7677767479595FF13 /* NetworkSystem.cpp */,
+				28AA2E511B5FFE621B04AFBC /* NetworkSystem.h */,
 				71ABBD4727A87A2E001CE3AF /* MeshSystem.cpp */,
 				71ABBD4827A87A2E001CE3AF /* MeshSystem.h */,
 				71E824922A9C242B00C8E6F2 /* PhysicsSystem.cpp */,
@@ -7443,6 +7451,7 @@
 				713E580727BA9CB700376680 /* MeshPolygon.cpp in Sources */,
 				71BE624425B1DB9E006D6E02 /* ShaderPool.cpp in Sources */,
 				717AD96E290B661A007D7DB5 /* AudioSystem.cpp in Sources */,
+				522752E642E231FD19EEE4D4 /* NetworkSystem.cpp in Sources */,
 				71651FF92AA804B4008D9BF5 /* Contact2D.cpp in Sources */,
 				71BE622125B1DB83006D6E02 /* TextureData.cpp in Sources */,
 				713D82A8259D307F00567F9F /* Camera.cpp in Sources */,
@@ -7650,6 +7659,7 @@
 				7162FD3725963AE00075B97D /* Rect.cpp in Sources */,
 				713E580627BA9CB700376680 /* MeshPolygon.cpp in Sources */,
 				717AD96D290B661A007D7DB5 /* AudioSystem.cpp in Sources */,
+				5FE5C98A11FA26422914BF40 /* NetworkSystem.cpp in Sources */,
 				71651FF82AA804B4008D9BF5 /* Contact2D.cpp in Sources */,
 				71BE624325B1DB9E006D6E02 /* ShaderPool.cpp in Sources */,
 				71BE622025B1DB83006D6E02 /* TextureData.cpp in Sources */,

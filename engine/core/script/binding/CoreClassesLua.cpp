@@ -1687,6 +1687,11 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addStaticFunction("unregisterRpc", &Network::unregisterRpc)
         .addStaticFunction("rpc", &sendReliableLuaRpc)
         .addStaticFunction("rpcUnreliable", &sendUnreliableLuaRpc)
+        .addStaticFunction("spawn",
+            [] (const std::string& bundle, Scene* scene) { return Network::spawn(bundle, scene); },
+            [] (const std::string& bundle, Scene* scene, int owner) { return Network::spawn(bundle, scene, owner); })
+        .addStaticFunction("getOwner", &Network::getOwner)
+        .addStaticFunction("isOwner", &Network::isOwner)
 
         .addStaticProperty("onPeerConnected", [] () { return &Network::onPeerConnected; }, [] (lua_State* L) { Network::onPeerConnected = L; })
         .addStaticProperty("onPeerDisconnected", [] () { return &Network::onPeerDisconnected; }, [] (lua_State* L) { Network::onPeerDisconnected = L; })

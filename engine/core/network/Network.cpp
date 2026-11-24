@@ -3,6 +3,8 @@
 
 #include "Network.h"
 
+#include "Scene.h"
+#include "subsystem/NetworkSystem.h"
 #include "WebSocketTransport.h"
 #ifndef __EMSCRIPTEN__
 #include "ENetTransport.h"
@@ -149,4 +151,18 @@ void Network::unregisterRpc(const std::string& name){
 
 bool Network::sendRpc(int target, const std::string& name, const Packet& values, NetworkDelivery delivery){
     return getSession().rpc(target, name, values, delivery);
+}
+
+Entity Network::spawn(const std::string& bundle, Scene* scene, int owner){
+    return scene->getSystem<NetworkSystem>()->spawn(bundle, owner);
+}
+
+int Network::getOwner(Scene* scene, Entity entity){
+    return scene->getSystem<NetworkSystem>()->getOwner(entity);
+}
+
+bool Network::isOwner(Scene* scene, Entity entity){
+    int owner = getOwner(scene, entity);
+
+    return owner != 0 && owner == getId();
 }

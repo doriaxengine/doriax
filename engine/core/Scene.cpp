@@ -13,6 +13,7 @@
 #include "subsystem/UISystem.h"
 #include "subsystem/ActionSystem.h"
 #include "subsystem/AudioSystem.h"
+#include "subsystem/NetworkSystem.h"
 #include "subsystem/PhysicsSystem.h"
 #include "manager/BundleManager.h"
 #include "object/EntityHandle.h"
@@ -35,6 +36,7 @@ void Scene::init(){
     registerSystem<RenderSystem>();
     registerSystem<PhysicsSystem>();
     registerSystem<AudioSystem>();
+    registerSystem<NetworkSystem>();
 
     camera = NULL_ENTITY;
     defaultCamera = NULL_ENTITY;

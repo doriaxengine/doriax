@@ -92,6 +92,11 @@ namespace doriax {
         std::function<void()> onConnected;
         std::function<void(const std::string&)> onConnectionFailed;
         std::function<void()> onDisconnected;
+        // the messages of NetworkSystem
+        std::function<void(int, Packet&)> onReplication;
+
+        // seconds of the clock the sessions of this process share
+        static double getTime();
 
         NetworkSession();
         ~NetworkSession();
@@ -126,6 +131,8 @@ namespace doriax {
         void removeRpcsByTag(const std::string& substring);
         void clearRpcs();
         bool rpc(int target, const std::string& name, const Packet& values, NetworkDelivery delivery);
+        // to the onReplication of a peer
+        bool send(int target, const Packet& data, NetworkDelivery delivery);
     };
 
 }
