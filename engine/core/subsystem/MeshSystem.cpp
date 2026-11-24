@@ -472,6 +472,18 @@ static Vector2 getSpritePivot(PivotPreset preset, float width, float height, boo
     return pivotPos;
 }
 
+// flat meshes draw both sides: a UI camera is y-down, which reverses their winding
+static void disableFaceCulling(MeshComponent& mesh){
+    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
+        if (mesh.submeshes[s].faceCulling){
+            mesh.submeshes[s].faceCulling = false;
+            // the pipelines hold the cull mode
+            if (mesh.loaded)
+                mesh.needReload = true;
+        }
+    }
+}
+
 bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, CameraComponent& camera){
     // Check texture loading state BEFORE clearing the buffer to avoid leaving
     // the mesh with an empty vertex buffer when the texture is still loading.
@@ -504,8 +516,8 @@ bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, Came
     mesh.submeshes[0].primitiveType = PrimitiveType::TRIANGLES;
     mesh.submeshes[0].hasTextureRect = true;
     mesh.submeshes[0].textureShadow = true;
-    mesh.submeshes[0].faceCulling = false;
     mesh.numSubmeshes = 1;
+    disableFaceCulling(mesh);
 
     mesh.buffer.clear();
     mesh.buffer.addAttribute(AttributeType::POSITION, 3);
@@ -607,8 +619,8 @@ bool MeshSystem::createSprite(SpriteComponent& sprite, MeshComponent& mesh, Came
 
 bool MeshSystem::createMeshPolygon(MeshPolygonComponent& polygon, MeshComponent& mesh){
     mesh.submeshes[0].primitiveType = PrimitiveType::TRIANGLE_STRIP;
-    mesh.submeshes[0].faceCulling = false;
     mesh.numSubmeshes = 1;
+    disableFaceCulling(mesh);
 
     mesh.buffer.clear();
     mesh.buffer.addAttribute(AttributeType::POSITION, 3);
@@ -721,12 +733,7 @@ bool MeshSystem::createTilemap(TilemapComponent& tilemap, MeshComponent& mesh){
 
     mesh.submeshes[0].primitiveType = PrimitiveType::TRIANGLES;
     mesh.submeshes[0].hasTextureRect = true;
-
-    // Like sprites (createSprite): a UI camera projects y-down, which reverses the
-    // tiles' winding, so with culling on every tile is dropped as a back face.
-    for (unsigned int s = 0; s < mesh.numSubmeshes; s++){
-        mesh.submeshes[s].faceCulling = false;
-    }
+    disableFaceCulling(mesh);
 
     mesh.buffer.clear();
     mesh.buffer.addAttribute(AttributeType::POSITION, 3);
