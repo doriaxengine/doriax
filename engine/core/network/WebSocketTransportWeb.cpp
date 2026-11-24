@@ -81,6 +81,22 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
         url = std::string(secure ? "wss://" : "ws://") + address + ":" + std::to_string(port);
     }
 
+    // the browser throws on these instead of failing the socket
+    bool allowed = EM_ASM_INT({
+        try {
+            var url = new URL(UTF8ToString($0));
+            var local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+            if (url.protocol === 'ws:') return (location.protocol !== 'https:' || local) ? 1 : 0;
+            return url.protocol === 'wss:' ? 1 : 0;
+        } catch (e) {
+            return 0;
+        }
+    }, url.c_str());
+    if (!allowed){
+        Log::error("Network: this page can't open %s", url.c_str());
+        return false;
+    }
+
     EmscriptenWebSocketCreateAttributes attributes;
     emscripten_websocket_init_create_attributes(&attributes);
     attributes.url = url.c_str();

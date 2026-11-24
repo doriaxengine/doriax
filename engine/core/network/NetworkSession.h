@@ -24,8 +24,8 @@ namespace doriax {
     public:
         using RpcHandler = std::function<void(int, Packet&)>;
 
-        static const int ALL = 0;
-        static const int SERVER = 1;
+        static constexpr int ALL = 0;
+        static constexpr int SERVER = 1;
 
     private:
         struct Peer {

@@ -3,7 +3,10 @@
 
 #include "Packet.h"
 
+#include <cmath>
 #include <cstring>
+#include <limits>
+#include <type_traits>
 
 using namespace doriax;
 
@@ -19,11 +22,21 @@ namespace {
         packet.readUInt8();
         if (type == PacketValue::INT){
             value = (T)packet.readInt();
-        }else if (type == PacketValue::FLOAT){
-            value = (T)packet.readFloat();
-        }else{
-            value = (T)packet.readDouble();
+            return packet.isValid();
         }
+
+        // a number outside the type can't be converted
+        double number = (type == PacketValue::FLOAT) ? packet.readFloat() : packet.readDouble();
+        double lowest = (double)std::numeric_limits<T>::lowest();
+        double highest = (double)std::numeric_limits<T>::max();
+        if (std::is_integral<T>::value){
+            if (!(number > lowest - 1.0 && number < highest + 1.0)){
+                return false;
+            }
+        }else if (std::isfinite(number) && (number < lowest || number > highest)){
+            return false;
+        }
+        value = (T)number;
 
         return packet.isValid();
     }

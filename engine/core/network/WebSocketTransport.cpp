@@ -46,6 +46,9 @@ namespace {
     const size_t maxPendingSize = 8 << 20;
     // wait for a peer to read the last messages before the socket closes
     const std::chrono::seconds closeTimeout(3);
+    // for a connection to ask for a WebSocket
+    const std::chrono::seconds openTimeout(5);
+    const size_t maxControlSize = 125;
 
     const uint8_t opcodeBinary = 0x2;
     const uint8_t opcodeClose = 0x8;
@@ -129,6 +132,43 @@ namespace {
         }
 
         return 1;
+    }
+
+    SocketHandle openListener(int family, uint16_t port){
+        SocketHandle socket = ::socket(family, SOCK_STREAM, 0);
+        if (socket == invalidSocket){
+            return invalidSocket;
+        }
+
+#ifndef _WIN32
+        int on = 1;
+        setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on));
+#endif
+
+        int bound;
+        if (family == AF_INET6){
+            int off = 0;
+            setsockopt(socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&off, sizeof(off));
+
+            sockaddr_in6 address = {};
+            address.sin6_family = AF_INET6;
+            address.sin6_addr = in6addr_any;
+            address.sin6_port = htons(port);
+            bound = bind(socket, (sockaddr*)&address, sizeof(address));
+        }else{
+            sockaddr_in address = {};
+            address.sin_family = AF_INET;
+            address.sin_addr.s_addr = htonl(INADDR_ANY);
+            address.sin_port = htons(port);
+            bound = bind(socket, (sockaddr*)&address, sizeof(address));
+        }
+
+        if (bound != 0 || ::listen(socket, 16) != 0){
+            closeSocket(socket);
+            return invalidSocket;
+        }
+
+        return socket;
     }
 
     void sha1(const std::string& input, uint8_t digest[20]){
@@ -229,7 +269,7 @@ struct WebSocketTransport::State {
         bool closing = false;
         bool shut = false;
         bool failed = false;
-        std::chrono::steady_clock::time_point closeDeadline;
+        std::chrono::steady_clock::time_point deadline;
         std::string key;
         std::string request;
         std::vector<uint8_t> in;
@@ -347,7 +387,7 @@ struct WebSocketTransport::State {
                 }
                 offset = 10;
             }
-            if (length > maxMessageSize){
+            if (length > maxMessageSize || (opcode >= opcodeClose && (length > maxControlSize || !fin))){
                 return false;
             }
 
@@ -419,10 +459,12 @@ struct WebSocketTransport::State {
                 result = (int)recv(connection.socket, buffer, sizeof(buffer), 0);
             }while (result > 0);
 
-            return result < 0 && wouldBlock() && std::chrono::steady_clock::now() < connection.closeDeadline;
+            return result < 0 && wouldBlock() && std::chrono::steady_clock::now() < connection.deadline;
         }
 
-        while (true){
+        // what arrived before the peer closed is still read
+        bool ended = false;
+        while (!ended){
             int result = (int)recv(connection.socket, buffer, sizeof(buffer), 0);
             if (result > 0){
                 connection.in.insert(connection.in.end(), buffer, buffer + result);
@@ -432,7 +474,7 @@ struct WebSocketTransport::State {
             }else if (result < 0 && wouldBlock()){
                 break;
             }else{
-                return false;
+                ended = true;
             }
         }
 
@@ -440,7 +482,8 @@ struct WebSocketTransport::State {
             const char terminator[] = "\r\n\r\n";
             auto end = std::search(connection.in.begin(), connection.in.end(), terminator, terminator + 4);
             if (end == connection.in.end()){
-                return connection.in.size() <= maxHeaderSize;
+                bool late = !connection.client && std::chrono::steady_clock::now() > connection.deadline;
+                return !ended && !late && connection.in.size() <= maxHeaderSize;
             }
 
             std::string headers(connection.in.begin(), end + 2);
@@ -456,7 +499,7 @@ struct WebSocketTransport::State {
             return false;
         }
 
-        return flushOut(connection);
+        return !ended && flushOut(connection);
     }
 
     void acceptConnections(){
@@ -471,7 +514,9 @@ struct WebSocketTransport::State {
             }
 
             prepareSocket(socket);
-            connections[++lastConnection].socket = socket;
+            Connection& connection = connections[++lastConnection];
+            connection.socket = socket;
+            connection.deadline = std::chrono::steady_clock::now() + openTimeout;
         }
     }
 };
@@ -492,42 +537,12 @@ bool WebSocketTransport::listen(uint16_t port, int maxConnections){
     }
 
     // one socket for IPv6 and IPv4 where the system has both
-    bool ipv6 = true;
-    SocketHandle socket = ::socket(AF_INET6, SOCK_STREAM, 0);
+    SocketHandle socket = openListener(AF_INET6, port);
     if (socket == invalidSocket){
-        ipv6 = false;
-        socket = ::socket(AF_INET, SOCK_STREAM, 0);
+        socket = openListener(AF_INET, port);
     }
     if (socket == invalidSocket){
-        return false;
-    }
-
-    int on = 1;
-    int off = 0;
-#ifndef _WIN32
-    setsockopt(socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&on, sizeof(on));
-#endif
-
-    int bound;
-    if (ipv6){
-        setsockopt(socket, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&off, sizeof(off));
-
-        sockaddr_in6 address = {};
-        address.sin6_family = AF_INET6;
-        address.sin6_addr = in6addr_any;
-        address.sin6_port = htons(port);
-        bound = bind(socket, (sockaddr*)&address, sizeof(address));
-    }else{
-        sockaddr_in address = {};
-        address.sin_family = AF_INET;
-        address.sin_addr.s_addr = htonl(INADDR_ANY);
-        address.sin_port = htons(port);
-        bound = bind(socket, (sockaddr*)&address, sizeof(address));
-    }
-
-    if (bound != 0 || ::listen(socket, 16) != 0){
         Log::error("Network: can't open TCP port %u", (unsigned int)port);
-        closeSocket(socket);
         return false;
     }
 
@@ -616,7 +631,9 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
     connection.client = true;
     connection.connecting = true;
     connection.key = Base64::encode(keyBytes, sizeof(keyBytes));
-    connection.request = "GET " + path + " HTTP/1.1\r\nHost: " + host + ":" + service +
+    // an IPv6 address goes in brackets
+    std::string hostHeader = (host.find(':') != std::string::npos) ? "[" + host + "]" : host;
+    connection.request = "GET " + path + " HTTP/1.1\r\nHost: " + hostHeader + ":" + service +
         "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + connection.key +
         "\r\nSec-WebSocket-Version: 13\r\n\r\n";
 
@@ -689,5 +706,5 @@ void WebSocketTransport::disconnect(uint32_t connection){
         state->queueFrame(it->second, opcodeClose, normal, sizeof(normal));
     }
     it->second.closing = true;
-    it->second.closeDeadline = std::chrono::steady_clock::now() + closeTimeout;
+    it->second.deadline = std::chrono::steady_clock::now() + closeTimeout;
 }

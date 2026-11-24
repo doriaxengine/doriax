@@ -54,8 +54,8 @@ namespace doriax {
         }
 
     public:
-        static const int ALL = NetworkSession::ALL;
-        static const int SERVER = NetworkSession::SERVER;
+        static constexpr int ALL = NetworkSession::ALL;
+        static constexpr int SERVER = NetworkSession::SERVER;
 
         // UDP, and WebSocket (TCP) for web builds, on the same port
         static bool host(uint16_t port, int maxPeers = 32);

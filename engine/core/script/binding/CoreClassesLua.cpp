@@ -128,60 +128,83 @@ namespace {
 
     // registerRpc(name, function) or registerRpc(name, script, methodName)
     int registerLuaRpc(lua_State* L){
-        std::string name = luaL_checkstring(L, 1);
-        std::string tag;
+        const char* name = luaL_checkstring(L, 1);
+        bool method = lua_istable(L, 2);
 
-        if (lua_istable(L, 2)){
-            const char* method = luaL_checkstring(L, 3);
-            if (lua_getfield(L, 2, method) != LUA_TFUNCTION)
-                return luaL_error(L, "Network.registerRpc: method '%s' not found on script", method);
+        if (method){
+            const char* methodName = luaL_checkstring(L, 3);
+            if (lua_getfield(L, 2, methodName) != LUA_TFUNCTION)
+                return luaL_error(L, "Network.registerRpc: method '%s' not found on script", methodName);
             lua_pushvalue(L, 2);
             lua_pushcclosure(L, callLuaRpcMethod, 2);
-            // the tag of RegisterEvent, so the RPC goes away with the script
-            tag = "Rpc_" + std::to_string(reinterpret_cast<std::uintptr_t>(lua_topointer(L, 2))) + "_" + name;
         }else{
             luaL_checktype(L, 2, LUA_TFUNCTION);
             lua_pushvalue(L, 2);
         }
 
+        // the tag of RegisterEvent, so the RPC goes away with the script
+        std::string tag;
+        if (method){
+            tag = "Rpc_" + std::to_string(reinterpret_cast<std::uintptr_t>(lua_topointer(L, 2))) + "_" + name;
+        }
         Network::registerRawRpc(name, LuaRpc(L), tag);
 
         return 0;
     }
 
-    int sendLuaRpc(lua_State* L, NetworkDelivery delivery){
-        int target = (int)luaL_checkinteger(L, 1);
-        std::string name = luaL_checkstring(L, 2);
+    // false for a value that an RPC can't carry
+    bool writeRpcValue(lua_State* L, int index, Packet& values){
+        int type = lua_type(L, index);
 
-        Packet values;
-        for (int i = 3; i <= lua_gettop(L); i++){
-            int type = lua_type(L, i);
-            if (type == LUA_TNIL){
-                values.writeNil();
-            }else if (type == LUA_TBOOLEAN){
-                values.writeValue(lua_toboolean(L, i) != 0);
-            }else if (type == LUA_TNUMBER && lua_isinteger(L, i)){
-                values.writeValue((long long)lua_tointeger(L, i));
-            }else if (type == LUA_TNUMBER){
-                values.writeValue((double)lua_tonumber(L, i));
-            }else if (type == LUA_TSTRING){
-                size_t size = 0;
-                const char* text = lua_tolstring(L, i, &size);
-                values.writeValue(std::string(text, size));
-            }else if (luabridge::isInstance<Vector2>(L, i)){
-                values.writeValue(*luabridge::get<Vector2>(L, i));
-            }else if (luabridge::isInstance<Vector3>(L, i)){
-                values.writeValue(*luabridge::get<Vector3>(L, i));
-            }else if (luabridge::isInstance<Vector4>(L, i)){
-                values.writeValue(*luabridge::get<Vector4>(L, i));
-            }else if (luabridge::isInstance<Quaternion>(L, i)){
-                values.writeValue(*luabridge::get<Quaternion>(L, i));
-            }else{
-                return luaL_argerror(L, i, "an RPC sends nil, booleans, numbers, strings, vectors and quaternions");
-            }
+        if (type == LUA_TNIL){
+            values.writeNil();
+        }else if (type == LUA_TBOOLEAN){
+            values.writeValue(lua_toboolean(L, index) != 0);
+        }else if (type == LUA_TNUMBER && lua_isinteger(L, index)){
+            values.writeValue((long long)lua_tointeger(L, index));
+        }else if (type == LUA_TNUMBER){
+            values.writeValue((double)lua_tonumber(L, index));
+        }else if (type == LUA_TSTRING){
+            size_t size = 0;
+            const char* text = lua_tolstring(L, index, &size);
+            values.writeValue(std::string(text, size));
+        }else if (luabridge::isInstance<Vector2>(L, index)){
+            values.writeValue(*luabridge::get<Vector2>(L, index));
+        }else if (luabridge::isInstance<Vector3>(L, index)){
+            values.writeValue(*luabridge::get<Vector3>(L, index));
+        }else if (luabridge::isInstance<Vector4>(L, index)){
+            values.writeValue(*luabridge::get<Vector4>(L, index));
+        }else if (luabridge::isInstance<Quaternion>(L, index)){
+            values.writeValue(*luabridge::get<Quaternion>(L, index));
+        }else{
+            return false;
         }
 
-        lua_pushboolean(L, Network::sendRpc(target, name, values, delivery));
+        return true;
+    }
+
+    int sendLuaRpc(lua_State* L, NetworkDelivery delivery){
+        int target = (int)luaL_checkinteger(L, 1);
+        const char* name = luaL_checkstring(L, 2);
+
+        int invalid = 0;
+        bool sent = false;
+        // a Lua error skips destructors, so the packet is gone before one is raised
+        {
+            Packet values;
+            for (int i = 3; i <= lua_gettop(L) && invalid == 0; i++){
+                if (!writeRpcValue(L, i, values)){
+                    invalid = i;
+                }
+            }
+            if (invalid == 0){
+                sent = Network::sendRpc(target, name, values, delivery);
+            }
+        }
+        if (invalid != 0)
+            return luaL_argerror(L, invalid, "an RPC sends nil, booleans, numbers, strings, vectors and quaternions");
+
+        lua_pushboolean(L, sent);
 
         return 1;
     }

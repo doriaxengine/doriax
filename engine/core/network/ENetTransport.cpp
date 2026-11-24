@@ -16,8 +16,18 @@ using namespace doriax;
 namespace {
     // reliable and unreliable messages don't wait for each other
     const int channelCount = 2;
+    const size_t maxMessageSize = 1 << 20;
+    // what a peer may have on the way, across its messages
+    const size_t maxWaitingData = 4 << 20;
 
     int hostCount = 0;
+
+    void releaseENet(){
+        hostCount--;
+        if (hostCount == 0){
+            enet_deinitialize();
+        }
+    }
 }
 
 ENetTransport::~ENetTransport(){
@@ -39,9 +49,11 @@ bool ENetTransport::create(uint16_t port, int maxConnections, bool server){
 
     host = enet_host_create(server ? &address : NULL, (size_t)maxConnections, channelCount, 0, 0);
     if (!host){
-        close();
+        releaseENet();
         return false;
     }
+    host->maximumPacketSize = maxMessageSize;
+    host->maximumWaitingData = maxWaitingData;
 
     return true;
 }
@@ -91,10 +103,7 @@ void ENetTransport::close(){
         enet_host_destroy(host);
         host = nullptr;
 
-        hostCount--;
-        if (hostCount == 0){
-            enet_deinitialize();
-        }
+        releaseENet();
     }
     peers.clear();
 }

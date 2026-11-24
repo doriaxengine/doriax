@@ -228,10 +228,11 @@ void NetworkSession::handleMessage(const Peer& peer, Packet& packet){
             if (onConnected){
                 onConnected();
             }
-        }else{
-            uint8_t reason = (type == REJECT) ? packet.readUInt8() : (uint8_t)REJECT_PROTOCOL;
+        }else if (type == REJECT){
+            uint8_t reason = packet.readUInt8();
             fail(reason == REJECT_VERSION ? "version" : (reason == REJECT_FULL ? "full" : "protocol"));
         }
+        // an unreliable message may arrive before the welcome
         return;
     }
 
