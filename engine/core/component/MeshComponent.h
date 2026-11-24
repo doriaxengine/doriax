@@ -107,6 +107,7 @@ namespace doriax{
         int slotFSDepthMaterial = -1;
         unsigned int sizeFSDepthMaterial = 0;
         int slotVSDepthFade = -1;
+        int slotVSDepthSprite = -1;
         int slotVSDepthSkinning = -1;
         int slotVSDepthMorphTarget = -1;
         int slotVSDepthTerrain = -1;

@@ -3537,7 +3537,8 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     sh.depthProperties = ShaderPool::getDepthMeshProperties(
         sh.depthTexture, attributes.skinning, attributes.morphTarget,
         attributes.morphNormal, attributes.morphTangent, (terrain)?true:false, (instmesh)?true:false,
-        sh.depthAlphaMask, sh.instanceFade, sh.hookUV1, sh.hookNormals, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents);
+        sh.depthAlphaMask, sh.instanceFade, sh.hookUV1, sh.hookNormals, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents,
+        sh.depthTexture && submesh.hasTextureRect && !terrain);
 
     // the G-buffer shader feeds the SSR geometry pass (MRT: packed depth + view-space
     // normal/roughness/metallic). Built only when SSR is enabled (it needs normals).
@@ -3945,6 +3946,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (sh.instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
             }
+            mesh.submeshes[i].slotVSDepthSprite = depthShaderData.getUniformBlockIndex(UniformBlockType::SPRITE_VS_PARAMS);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSDepthSkinning = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -5611,6 +5613,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             if (mesh.submeshes[i].slotVSDepthFade != -1 && instmesh){
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
+            depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthSprite, sizeof(float) * 4, &mesh.submeshes[i].textureRect);
 
             if (mesh.submeshes[i].depthParamsVS.slot != -1 || mesh.submeshes[i].depthParamsFS.slot != -1){
                 ShaderEffectView passView = effectView;
@@ -7130,6 +7133,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
 
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
+        submesh.slotVSDepthSprite = -1;
         submesh.slotFSDepthMaterial = -1;
         submesh.sizeFSDepthMaterial = 0;
         submesh.slotVSDepthSkinning = -1;

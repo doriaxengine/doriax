@@ -36,12 +36,26 @@ out vec2 v_projZW;
     #include "includes/instance_matrix.glsl"
 #endif
 
+// a surface hook can replace the alpha mask texture
+#if defined(HAS_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
+    #define USE_TEXTURE
+#endif
 // the alpha mask texture, or the hooks reading the UV set
-#if defined(HAS_TEXTURE) || defined(HOOK_UV1)
+#if defined(USE_TEXTURE) || defined(HOOK_UV1)
     in vec2 a_texcoord1;
 #endif
-#if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
-    out vec2 v_uv1;
+#ifdef USE_TEXTURE
+    #include "includes/texture_rect.glsl"
+    // centroid as in mesh.vert, the prepass cuts the same pixels
+    #ifdef HAS_TEXTURERECT
+        centroid out vec2 v_uv1;
+    #else
+        out vec2 v_uv1;
+    #endif
+#endif
+// as the mesh stores it, before any texture rect
+#ifdef HOOK_FRAGMENT_UV1
+    out vec2 v_hookUV;
 #endif
 #ifdef HOOK_UV2
     in vec2 a_texcoord2;
@@ -117,8 +131,11 @@ void main() {
         vec4 pos = localPos;
     #endif
 
-    #if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
-        v_uv1 = a_texcoord1;
+    #ifdef USE_TEXTURE
+        v_uv1 = getTextureRectUV(a_texcoord1);
+    #endif
+    #ifdef HOOK_FRAGMENT_UV1
+        v_hookUV = a_texcoord1;
     #endif
 
     #ifdef USE_VERTEX_HOOKS

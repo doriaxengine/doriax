@@ -11,8 +11,15 @@ in vec2 v_projZW;
     uniform texture2D u_depthTexture;
     uniform sampler u_depth_smp;
 #endif
-#if defined(HAS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
-    in vec2 v_uv1;
+#if defined(HAS_TEXTURE) && !defined(SURFACE_REPLACES_BASECOLOR_MAP)
+    #ifdef HAS_TEXTURERECT
+        centroid in vec2 v_uv1;
+    #else
+        in vec2 v_uv1;
+    #endif
+#endif
+#ifdef HOOK_FRAGMENT_UV1
+    in vec2 v_hookUV;
 #endif
 #ifdef HOOK_FRAGMENT_NORMAL
     in vec3 v_hookNormal;
@@ -52,7 +59,7 @@ in vec2 v_projZW;
     FragmentContext getDepthContext(){
         FragmentContext context = getFragmentContext(v_worldPosition);
         #ifdef HOOK_FRAGMENT_UV1
-            context.uv1 = v_uv1;
+            context.uv1 = v_hookUV;
         #endif
         #ifdef HOOK_FRAGMENT_NORMAL
             context.normal = normalize(gl_FrontFacing ? v_hookNormal : -v_hookNormal);

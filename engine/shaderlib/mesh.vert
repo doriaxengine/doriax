@@ -16,12 +16,6 @@ invariant gl_Position;
     } fadeParams;
 #endif
 
-#if defined(HAS_TEXTURERECT) && (defined(HAS_UV_SET1) || defined(HAS_UV_SET2))
-    uniform u_vs_spriteParams {
-        vec4 textureRect;
-    } spriteParams;
-#endif
-
 in vec3 a_position;
 
 #if !defined(MATERIAL_UNLIT) || defined(USE_MIRROR) || defined(USE_LIGHT2D) || defined(USE_FRAGMENT_HOOKS) || defined(USE_FOG_SKY)
@@ -105,10 +99,10 @@ in vec3 a_position;
     in vec4 i_matrix_col3;
     in vec4 i_matrix_col4;
     in vec4 i_color;
-    #if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
-        in vec4 i_textureRect;
-    #endif
     #include "includes/instance_matrix.glsl"
+#endif
+#if defined(HAS_UV_SET1) || defined(HAS_UV_SET2)
+    #include "includes/texture_rect.glsl"
 #endif
 
 #include "includes/parameters_vs.glsl"
@@ -238,13 +232,7 @@ void main() {
 
     #ifdef HAS_UV_SET1
         #ifndef HAS_TERRAIN
-            v_uv1 = a_texcoord1;
-            #ifdef HAS_TEXTURERECT
-                v_uv1 = v_uv1 * spriteParams.textureRect.zw + spriteParams.textureRect.xy;
-            #endif
-            #ifdef HAS_INSTANCING
-                v_uv1 = v_uv1 * i_textureRect.zw + i_textureRect.xy;
-            #endif
+            v_uv1 = getTextureRectUV(a_texcoord1);
         #else
             v_uv1 = getTerrainTiledTexture(pos.xyz);
         #endif
@@ -264,13 +252,7 @@ void main() {
     #endif
 
     #ifdef HAS_UV_SET2
-        v_uv2 = a_texcoord2;
-        #ifdef HAS_TEXTURERECT
-            v_uv2 = v_uv2 * spriteParams.textureRect.zw + spriteParams.textureRect.xy;
-        #endif
-        #ifdef HAS_INSTANCING
-            v_uv2 = v_uv2 * i_textureRect.zw + i_textureRect.xy;
-        #endif
+        v_uv2 = getTextureRectUV(a_texcoord2);
     #endif
 
     #ifdef HAS_INSTANCING
