@@ -1578,7 +1578,8 @@ bool editor::Exporter::collectWebArtifacts() {
             setError("Built web output not found: " + src.string());
             return false;
         }
-        fs::copy_file(src, config.destinationDir / (appName + ext), fs::copy_options::overwrite_existing, ec);
+        // Fixed as index.html, the default entry page on most hosting platforms.
+        fs::copy_file(src, config.destinationDir / (std::string(ext) == ".html" ? std::string("index.html") : appName + ext), fs::copy_options::overwrite_existing, ec);
         if (ec) {
             setError("Failed to copy " + src.filename().string() + ": " + ec.message());
             return false;
