@@ -2914,7 +2914,7 @@ bool editor::Exporter::writeAndroidProjectSettings() {
     }
     manifest += "        <activity android:name=\".MainActivity\"\n";
     manifest += "            android:label=\"@string/app_name\"\n";
-    manifest += "            android:configChanges=\"orientation|keyboardHidden|keyboard|screenSize\"\n";
+    manifest += "            android:configChanges=\"orientation|keyboardHidden|keyboard|navigation|screenSize\"\n";
     manifest += "            android:theme=\"@style/AppTheme\"\n";
     const std::string orientation = androidOrientationManifestValue(android.orientation);
     if (!orientation.empty()) {
