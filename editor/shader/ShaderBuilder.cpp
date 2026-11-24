@@ -1116,6 +1116,7 @@ void editor::ShaderBuilder::addDepthMeshPropertyDefinitions(std::vector<shaderco
     if (prop & (1 << 12)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"}); // 'Vc4'
     if (prop & (1 << 13)) defs.push_back({"HAS_UV_SET2", "1"});       // 'Uv2'
     if (prop & (1 << 14)) defs.push_back({"HAS_TANGENTS", "1"});      // 'Tan'
+    if (prop & (1 << 15)) defs.push_back({"HAS_TEXTURERECT", "1"});   // 'Txr'
 }
 
 void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {
@@ -1136,6 +1137,7 @@ void editor::ShaderBuilder::addGBufferMeshPropertyDefinitions(std::vector<shader
     if (prop & (1 << 14)) defs.push_back({"HAS_VERTEX_COLOR_VEC4", "1"});         // 'Vc4'
     if (prop & (1 << 15)) defs.push_back({"HAS_UV_SET2", "1"});                   // 'Uv2'
     if (prop & (1 << 16)) defs.push_back({"HAS_TANGENTS", "1"});                  // 'Tan'
+    if (prop & (1 << 17)) defs.push_back({"HAS_TEXTURERECT", "1"});               // 'Txr'
 }
 
 void editor::ShaderBuilder::addUIPropertyDefinitions(std::vector<shadercompiler::define_t>& defs, const uint32_t prop) {

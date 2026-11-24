@@ -1,5 +1,6 @@
 #version 450
 #include "includes/instance_normal.glsl"
+#include "includes/gbuffer_maps.glsl"
 
 // G-buffer geometry pass (vertex). Mirrors depth.vert's position pipeline
 // (skinning / morph / terrain / instancing) and additionally carries the surface
@@ -38,24 +39,31 @@ out vec3 v_normal;          // view space
     #include "includes/instance_matrix.glsl"
 #endif
 
-#if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
+#if defined(USE_BASECOLOR_MAP) || defined(USE_METALLICROUGHNESS_MAP)
     out vec2 v_uv1;
 #endif
 // Terrain carries no texcoord vertex attribute (its UVs are generated from the
 // world position in-shader, like mesh.vert). Declaring a_texcoord1 for terrain
 // would leave that attribute slot unbound, making the pipeline's vertex layout
 // non-continuous and failing sokol validation, so only non-terrain declares it.
-#if !defined(HAS_TERRAIN) && (defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || (defined(HAS_OCCLUSION_TEXTURE) && !defined(OCCLUSION_UV2)) || defined(HOOK_UV1))
+#if !defined(HAS_TERRAIN) && (defined(USE_BASECOLOR_MAP) || defined(USE_METALLICROUGHNESS_MAP) || (defined(USE_OCCLUSION_MAP) && !defined(OCCLUSION_UV2)) || defined(HOOK_UV1))
     in vec2 a_texcoord1;
 #endif
 // baked occlusion (material occlusionTexture), on the UV set the material names
-#ifdef HAS_OCCLUSION_TEXTURE
+#ifdef USE_OCCLUSION_MAP
     #ifdef OCCLUSION_UV2
         in vec2 a_texcoord2;
     #endif
     out vec2 v_uvOcclusion;
 #endif
-#if defined(HOOK_UV2) && !(defined(HAS_OCCLUSION_TEXTURE) && defined(OCCLUSION_UV2))
+#if !defined(HAS_TERRAIN) && (defined(USE_BASECOLOR_MAP) || defined(USE_METALLICROUGHNESS_MAP) || defined(USE_OCCLUSION_MAP))
+    #include "includes/texture_rect.glsl"
+#endif
+// as the mesh stores it, before any texture rect
+#ifdef HOOK_FRAGMENT_UV1
+    out vec2 v_hookUV;
+#endif
+#if defined(HOOK_UV2) && !(defined(USE_OCCLUSION_MAP) && defined(OCCLUSION_UV2))
     in vec2 a_texcoord2;
 #endif
 
@@ -157,22 +165,25 @@ void main() {
         vec2 terrainBaseUV = getTerrainTiledTexture(objPos.xyz);
     #endif
 
-    #if defined(HAS_BASECOLOR_TEXTURE) || defined(HAS_METALLICROUGHNESS_TEXTURE) || defined(HOOK_FRAGMENT_UV1)
+    #if defined(USE_BASECOLOR_MAP) || defined(USE_METALLICROUGHNESS_MAP)
         #ifdef HAS_TERRAIN_PBR
             v_uv1 = terrainBaseUV;
         #elif defined(HAS_TERRAIN)
             // base-tile terrain UV, matching mesh.vert's getTerrainTiledTexture()
             v_uv1 = (objPos.xz + (terrain.size / 2.0)) / terrain.size * float(terrain.textureBaseTiles);
         #else
-            v_uv1 = a_texcoord1;
+            v_uv1 = getTextureRectUV(a_texcoord1);
         #endif
     #endif
+    #ifdef HOOK_FRAGMENT_UV1
+        v_hookUV = a_texcoord1;
+    #endif
 
-    #ifdef HAS_OCCLUSION_TEXTURE
+    #ifdef USE_OCCLUSION_MAP
         #ifdef OCCLUSION_UV2
-            v_uvOcclusion = a_texcoord2;
+            v_uvOcclusion = getTextureRectUV(a_texcoord2);
         #else
-            v_uvOcclusion = a_texcoord1;
+            v_uvOcclusion = getTextureRectUV(a_texcoord1);
         #endif
     #endif
 

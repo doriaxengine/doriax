@@ -3537,7 +3537,8 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     sh.depthProperties = ShaderPool::getDepthMeshProperties(
         sh.depthTexture, attributes.skinning, attributes.morphTarget,
         attributes.morphNormal, attributes.morphTangent, (terrain)?true:false, (instmesh)?true:false,
-        sh.depthAlphaMask, sh.instanceFade, sh.hookUV1, sh.hookNormals, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents);
+        sh.depthAlphaMask, sh.instanceFade, sh.hookUV1, sh.hookNormals, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents,
+        sh.depthTexture && submesh.hasTextureRect && !terrain);
 
     // the G-buffer shader feeds the SSR geometry pass (MRT: packed depth + view-space
     // normal/roughness/metallic). Built only when SSR is enabled (it needs normals).
@@ -3551,7 +3552,8 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
         gbufferHasBaseColorTex, attributes.normal, attributes.skinning,
         attributes.morphTarget, attributes.morphNormal, attributes.morphTangent,
         (terrain)?true:false, (instmesh)?true:false, gbufferHasMRTex, sh.terrainSurface && attributes.normal,
-        gbufferHasOcclusionTex, gbufferOcclusionUV2, sh.hookUV1, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents);
+        gbufferHasOcclusionTex, gbufferOcclusionUV2, sh.hookUV1, sh.hookColor3, sh.hookColor4, sh.hookUV2, sh.hookTangents,
+        (gbufferHasBaseColorTex || gbufferHasMRTex || gbufferHasOcclusionTex) && submesh.hasTextureRect && !terrain);
 
     return sh;
 }
@@ -3945,6 +3947,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             if (sh.instanceFade){
                 mesh.submeshes[i].slotVSDepthFade = depthShaderData.getUniformBlockIndex(UniformBlockType::PBR_VS_FADE);
             }
+            mesh.submeshes[i].slotVSDepthSprite = depthShaderData.getUniformBlockIndex(UniformBlockType::SPRITE_VS_PARAMS);
 
             if (mesh.submeshes[i].hasSkinning){
                 mesh.submeshes[i].slotVSDepthSkinning = depthShaderData.getUniformBlockIndex(UniformBlockType::DEPTH_VS_SKINNING);
@@ -4074,6 +4077,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
             mesh.submeshes[i].slotVSGBufferParams = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_VS_PARAMS);
             gbufferShaderData.getUniformBlockMembers("u_vs_gbufferParams", mesh.submeshes[i].sizeVSGBufferParams);
             mesh.submeshes[i].slotFSGBufferMaterial = gbufferShaderData.getUniformBlockIndex(UniformBlockType::GBUFFER_FS_MATERIAL);
+            mesh.submeshes[i].slotVSGBufferSprite = gbufferShaderData.getUniformBlockIndex(UniformBlockType::SPRITE_VS_PARAMS);
             mesh.submeshes[i].gbufferParamsVS.resolve(gbufferShaderData, "u_vs_params", ShaderStageType::VERTEX);
             mesh.submeshes[i].gbufferParamsFS.resolve(gbufferShaderData, "u_fs_params", ShaderStageType::FRAGMENT);
             mesh.submeshes[i].gbufferParamsVS.writeObject(mesh.submeshes[i].material.shaderUniforms, inheritedUniforms);
@@ -5611,6 +5615,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
             if (mesh.submeshes[i].slotVSDepthFade != -1 && instmesh){
                 applyInstanceFadeUniform(depthRender, mesh.submeshes[i].slotVSDepthFade, *instmesh);
             }
+            depthRender.applyUniformBlock(mesh.submeshes[i].slotVSDepthSprite, sizeof(float) * 4, &mesh.submeshes[i].textureRect);
 
             if (mesh.submeshes[i].depthParamsVS.slot != -1 || mesh.submeshes[i].depthParamsFS.slot != -1){
                 ShaderEffectView passView = effectView;
@@ -6022,6 +6027,7 @@ bool RenderSystem::drawMeshGBuffer(Entity entity, MeshComponent& mesh, Transform
         const bool unlit = drawsUnlit(mesh.submeshes[i]);
         mat.emissiveFactor = unlit ? Vector4(0.0f, 0.0f, 0.0f, 1.0f) : Vector4(material.emissiveFactor.x, material.emissiveFactor.y, material.emissiveFactor.z, 0.0f);
         gbufferRender.applyUniformBlock(mesh.submeshes[i].slotFSGBufferMaterial, sizeof(fs_gbuffer_material_t), &mat);
+        gbufferRender.applyUniformBlock(mesh.submeshes[i].slotVSGBufferSprite, sizeof(float) * 4, &mesh.submeshes[i].textureRect);
 
         if (mesh.submeshes[i].hasSkinning){
             applySkinningUniform(gbufferRender, mesh.submeshes[i].slotVSGBufferSkinning, mesh, mesh.submeshes[i]);
@@ -7130,6 +7136,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
 
         submesh.slotVSDepthParams = -1;
         submesh.slotVSDepthFade = -1;
+        submesh.slotVSDepthSprite = -1;
         submesh.slotFSDepthMaterial = -1;
         submesh.sizeFSDepthMaterial = 0;
         submesh.slotVSDepthSkinning = -1;
@@ -7139,6 +7146,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
         submesh.slotVSGBufferParams = -1;
         submesh.sizeVSGBufferParams = 0;
         submesh.slotFSGBufferMaterial = -1;
+        submesh.slotVSGBufferSprite = -1;
         submesh.slotVSGBufferSkinning = -1;
         submesh.slotVSGBufferMorphTarget = -1;
         submesh.slotVSGBufferTerrain = -1;
