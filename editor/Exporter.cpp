@@ -1565,23 +1565,31 @@ bool editor::Exporter::collectWebArtifacts() {
     const fs::path buildDir = config.targetDir / "build";
     const std::string appName = getAppName();
 
+    // The page is index.html, the default entry on hosting platforms
+    const std::pair<std::string, std::string> artifacts[] = {
+        {appName + ".export.html", "index.html"},
+        {appName + ".js", appName + ".js"},
+        {appName + ".wasm", appName + ".wasm"},
+    };
+
     std::error_code ec;
+    for (const auto& [source, target] : artifacts) {
+        if (!fs::exists(buildDir / source, ec)) {
+            setError("Built web output not found: " + (buildDir / source).string());
+            return false;
+        }
+    }
+
     fs::create_directories(config.destinationDir, ec);
     if (ec) {
         setError("Failed to create destination directory: " + ec.message());
         return false;
     }
 
-    for (const char* ext : {".html", ".js", ".wasm"}) {
-        fs::path src = buildDir / (appName + (std::string(ext) == ".html" ? ".export.html" : ext));
-        if (!fs::exists(src, ec)) {
-            setError("Built web output not found: " + src.string());
-            return false;
-        }
-        // Fixed as index.html, the default entry page on most hosting platforms.
-        fs::copy_file(src, config.destinationDir / (std::string(ext) == ".html" ? std::string("index.html") : appName + ext), fs::copy_options::overwrite_existing, ec);
+    for (const auto& [source, target] : artifacts) {
+        fs::copy_file(buildDir / source, config.destinationDir / target, fs::copy_options::overwrite_existing, ec);
         if (ec) {
-            setError("Failed to copy " + src.filename().string() + ": " + ec.message());
+            setError("Failed to copy " + target + ": " + ec.message());
             return false;
         }
     }
@@ -1602,6 +1610,15 @@ bool editor::Exporter::collectWebArtifacts() {
         fs::remove(config.destinationDir / (appName + ".data"), ec);
     }
     if (ec) { setError("Failed to update " + appName + ".data: " + ec.message()); return false; }
+
+    // Page of earlier versions; if a case-insensitive disk reused Index.html, it only gets the new name
+    const fs::path page = config.destinationDir / "index.html";
+    const fs::path oldPage = config.destinationDir / (appName + ".html");
+    if (oldPage != page && fs::is_regular_file(fs::symlink_status(oldPage, ec))) {
+        if (fs::equivalent(oldPage, page, ec)) fs::rename(oldPage, page, ec);
+        else if (!ec) fs::remove(oldPage, ec);
+        if (ec) { setError("Failed to remove previous " + appName + ".html: " + ec.message()); return false; }
+    }
 
     return true;
 }
