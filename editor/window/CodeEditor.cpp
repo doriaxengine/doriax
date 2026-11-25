@@ -1567,11 +1567,13 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
 // The breakpoints of an open file are those of its editor, which edits move
 void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
     ScriptDebugger& debugger = project->getDebugger();
+    const bool native = instance.languageType == SyntaxLanguage::Cpp;
     std::set<int> lines;
-    if (instance.luaSource.empty()) {
-        // the name the engine gives the chunk
-        instance.luaSource = FileUtils::pathToGenericUtf8(project->normalizeToLuaRelative(resolveFilepath(instance.filepath)));
-        for (int line : debugger.getBreakpoints(instance.luaSource)) {
+    if (instance.debugSource.empty()) {
+        // the name the engine gives the chunk, or the path in the debug info
+        const fs::path file = resolveFilepath(instance.filepath);
+        instance.debugSource = native ? NativeDebugger::sourceName(file) : FileUtils::pathToGenericUtf8(project->normalizeToLuaRelative(file));
+        for (int line : debugger.getBreakpoints(instance.debugSource, native)) {
             lines.insert(line - 1);
         }
         instance.editor->SetBreakpointsEnabled(true);
@@ -1581,12 +1583,12 @@ void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
     for (int line : instance.editor->GetBreakpoints()) {
         lines.insert(line + 1);
     }
-    debugger.setBreakpoints(instance.luaSource, lines);
+    debugger.setBreakpoints(instance.debugSource, lines, native);
     // a scene that plays in the editor does not stop at them
     instance.editor->SetBreakpointsMuted(project->isPlaySessionActive());
 
     const std::vector<DebugFrame>& frames = debugger.getFrames();
-    const bool stoppedHere = !frames.empty() && frames[debugger.getSelectedFrame()].source == instance.luaSource;
+    const bool stoppedHere = !frames.empty() && debugger.isNativeStop() == native && frames[debugger.getSelectedFrame()].source == instance.debugSource;
     instance.editor->SetExecutionLine(stoppedHere ? frames[debugger.getSelectedFrame()].line - 1 : -1);
 }
 
@@ -1678,7 +1680,7 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
     EditorInstance instance = std::move(it->second);
     instance.filepath = newKey;
     // the project moved its breakpoints to the new name
-    instance.luaSource.clear();
+    instance.debugSource.clear();
     instance.lastWriteTime = newWriteTime;
     editors.erase(it);
 
@@ -1808,7 +1810,7 @@ void editor::CodeEditor::show() {
             showSettingsButton();
             ImGui::SetCursorPosY(statusRowY + ImGui::GetTextLineHeightWithSpacing());
 
-            if (instance.languageType == SyntaxLanguage::Lua) {
+            if (instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) {
                 if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
                     instance.editor->ToggleBreakpoint(line);
                 }

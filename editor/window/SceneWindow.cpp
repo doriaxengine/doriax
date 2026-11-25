@@ -2317,7 +2317,7 @@ void editor::SceneWindow::show() {
             if (ImGui::Button(ICON_FA_BUG " Debug")) {
                 project->startDebug();
             }
-            ImGui::SetItemTooltip("Runs the scene in a window of its own, with the Lua debugger (Ctrl+F5)");
+            ImGui::SetItemTooltip("Runs the scene in a window of its own, with the debugger (Ctrl+F5)");
             ImGui::EndDisabled();
 
             // Pause button - disabled unless it runs

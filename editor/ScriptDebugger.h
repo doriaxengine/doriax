@@ -3,9 +3,11 @@
 
 #pragma once
 
+#include "NativeDebugger.h"
 #include "util/CommandRunner.h"
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <set>
@@ -15,32 +17,15 @@
 
 namespace doriax::editor {
 
-    struct DebugFrame {
-        int level = 0;
-        std::string name;
-        // path from the Lua folder
-        std::string source;
-        int line = 0;
-    };
-
-    struct DebugVariable {
-        std::string name;
-        std::string type;
-        std::string value;
-        // of a table, 0 when there are no fields to show
-        int ref = 0;
-    };
-
-    // Runs a scene as a process of its own and debugs its Lua scripts.
-    // Files are paths from the Lua folder and lines start at 1.
+    // Runs a scene as a process of its own and debugs its scripts, lines start at 1
     class ScriptDebugger {
     public:
         enum class State { IDLE, BUILDING, RUNNING, STOPPED };
 
         ~ScriptDebugger();
 
-        // build runs first, on the thread that then waits for the process
-        void start(const std::string& command, const fs::path& workingDir, std::function<bool()> build);
+        // build runs first, nativeAdapter is the command of gdb or lldb for C++
+        void start(const std::string& command, const fs::path& workingDir, std::function<bool()> build, const std::string& nativeAdapter = "");
         void stop();
         // true from stop() on, for a build that has to end as well
         bool isStopRequested() const;
@@ -51,20 +36,24 @@ namespace doriax::editor {
         State getState() const;
         bool isActive() const;
 
+        // a Lua file is a path from the Lua folder, a native one (C++) a whole path
         bool hasBreakpoints() const;
-        void toggleBreakpoint(const std::string& file, int line);
-        void setBreakpoints(const std::string& file, const std::set<int>& lines);
-        const std::set<int>& getBreakpoints(const std::string& file) const;
+        bool hasNativeBreakpoints() const;
+        void setBreakpoints(const std::string& file, const std::set<int>& lines, bool native = false);
+        const std::set<int>& getBreakpoints(const std::string& file, bool native = false) const;
         // of a renamed file, or of the files in a renamed folder
-        void renameBreakpoints(const std::string& from, const std::string& to);
+        void renameBreakpoints(const std::string& from, const std::string& to, bool native = false);
 
         void resume();
         void stepOver();
         void stepInto();
         void stepOut();
         void pause();
+        // gdb or lldb is on the process too
+        bool isNativeAttached() const;
 
         // Of the last stop
+        bool isNativeStop() const;
         const std::string& getStopReason() const;
         const std::string& getStopMessage() const;
         // counts the stops, for a view to follow each one
@@ -79,6 +68,9 @@ namespace doriax::editor {
     private:
         void send(const std::string& command, const std::string& extra = "");
         void sendBreakpoints(const std::string& file);
+        void release();
+        void awaitPause(unsigned int started);
+        void showStop();
         void onLine(const std::string& line, unsigned int started);
         void onMessage(const std::string& text);
         void clearStop();
@@ -90,6 +82,15 @@ namespace doriax::editor {
         unsigned int session = 0;
 
         std::map<std::string, std::set<int>> breakpoints;
+        std::map<std::string, std::set<int>> nativeBreakpoints;
+
+        // gdb or lldb on the same process, for the C++ scripts
+        NativeDebugger native;
+        std::string nativeAdapter;
+        // a stop of it hides the one of Lua
+        bool nativeStop = false;
+        bool luaStop = false;
+        std::chrono::steady_clock::time_point pauseDeadline;
 
         std::string stopReason;
         std::string stopMessage;
