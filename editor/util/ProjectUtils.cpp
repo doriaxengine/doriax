@@ -1100,24 +1100,23 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
 
         auto transforms = registry->getComponentArray<Transform>();
 
-        size_t sourceTransformIndex = transforms->getIndex(source);
-        size_t targetTransformIndex = transforms->getIndex(target);
-
-        Entity newParent = NULL_ENTITY;
-        if (type == InsertionType::INTO){
-            newParent = target;
-        }else{
-            newParent = transformTarget->parent;
-        }
+        const Entity newParent = (type == InsertionType::INTO) ? target : transformTarget->parent;
 
         oldParent = transformSource->parent;
-        oldIndex = sourceTransformIndex;
+        oldIndex = transforms->getIndex(source);
 
-        if (type == InsertionType::AFTER || type == InsertionType::INTO){
-            targetTransformIndex++;
+        // joining the new parent moves the source, so the target is located after it
+        registry->addEntityChild(newParent, source, true);
+
+        size_t targetIndex = transforms->getIndex(target);
+        if (type == InsertionType::INTO){
+            targetIndex++;
+        }else if (type == InsertionType::AFTER){
+            targetIndex = registry->findBranchLastIndex(target) + 1;
         }
 
-        moveEntityOrderByTransform(registry, entities, source, newParent, targetTransformIndex);
+        registry->moveChildToIndex(source, targetIndex);
+        sortEntitiesByTransformOrder(registry, entities);
 
     }else{
 
@@ -1159,15 +1158,17 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
 void editor::ProjectUtils::moveEntityOrderByIndex(EntityRegistry* registry, std::vector<Entity>& entities, Entity source, Entity parent, size_t index, bool hasTransform){
     if (hasTransform){
 
-        auto transforms = registry->getComponentArray<Transform>();
-        size_t sourceTransformIndex = transforms->getIndex(source);
+        // joining the old parent moves the source, so it is located after it
+        registry->addEntityChild(parent, source, true);
 
-        size_t sizeOfSourceBranch = registry->findBranchLastIndex(source) - sourceTransformIndex + 1;
-        if (sourceTransformIndex < index){
-            index += sizeOfSourceBranch;
+        auto transforms = registry->getComponentArray<Transform>();
+        size_t sourceIndex = transforms->getIndex(source);
+        if (sourceIndex < index){
+            index += registry->findBranchLastIndex(source) - sourceIndex + 1;
         }
 
-        moveEntityOrderByTransform(registry, entities, source, parent, index);
+        registry->moveChildToIndex(source, index);
+        sortEntitiesByTransformOrder(registry, entities);
 
     }else{
 
