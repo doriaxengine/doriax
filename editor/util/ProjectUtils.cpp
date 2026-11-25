@@ -1011,6 +1011,47 @@ bool editor::ProjectUtils::canMoveLockedEntityOrder(Scene* scene, Entity source,
     return reject("Generated entities can only be reordered within the same parent");
 }
 
+std::unordered_set<std::string> editor::ProjectUtils::getBranchBundles(Scene* scene, Entity entity) {
+    std::unordered_set<std::string> bundlePaths;
+    auto addBundle = [&](Entity candidate) {
+        BundleComponent* bundle = scene->findComponent<BundleComponent>(candidate);
+        if (bundle && !bundle->path.empty()) {
+            bundlePaths.insert(bundle->path);
+        }
+    };
+
+    addBundle(entity);
+    if (!scene->findComponent<Transform>(entity)) {
+        return bundlePaths;
+    }
+
+    // the children follow their parent in the Transform array
+    auto transforms = scene->getComponentArray<Transform>();
+    std::unordered_set<Entity> branch = {entity};
+    for (size_t i = transforms->getIndex(entity) + 1; i < transforms->size(); i++) {
+        if (branch.count(transforms->getComponentFromIndex(i).parent) == 0) {
+            break;
+        }
+        branch.insert(transforms->getEntity(i));
+        addBundle(transforms->getEntity(i));
+    }
+
+    return bundlePaths;
+}
+
+bool editor::ProjectUtils::isInsideBundle(Scene* scene, Entity entity, const std::unordered_set<std::string>& bundlePaths) {
+    while (entity != NULL_ENTITY) {
+        BundleComponent* bundle = scene->findComponent<BundleComponent>(entity);
+        if (bundle && bundlePaths.count(bundle->path) > 0) {
+            return true;
+        }
+        Transform* transform = scene->findComponent<Transform>(entity);
+        entity = transform ? transform->parent : NULL_ENTITY;
+    }
+
+    return false;
+}
+
 std::string editor::ProjectUtils::makeUniqueEntityName(const std::string& baseName, const std::unordered_set<std::string>& existingNames) {
     if (baseName.empty() || existingNames.find(baseName) == existingNames.end()) {
         return baseName;
@@ -1100,24 +1141,23 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
 
         auto transforms = registry->getComponentArray<Transform>();
 
-        size_t sourceTransformIndex = transforms->getIndex(source);
-        size_t targetTransformIndex = transforms->getIndex(target);
-
-        Entity newParent = NULL_ENTITY;
-        if (type == InsertionType::INTO){
-            newParent = target;
-        }else{
-            newParent = transformTarget->parent;
-        }
+        const Entity newParent = (type == InsertionType::INTO) ? target : transformTarget->parent;
 
         oldParent = transformSource->parent;
-        oldIndex = sourceTransformIndex;
+        oldIndex = transforms->getIndex(source);
 
-        if (type == InsertionType::AFTER || type == InsertionType::INTO){
-            targetTransformIndex++;
+        // joining the new parent moves the source, so the target is located after it
+        registry->addEntityChild(newParent, source, true);
+
+        size_t targetIndex = transforms->getIndex(target);
+        if (type == InsertionType::INTO){
+            targetIndex++;
+        }else if (type == InsertionType::AFTER){
+            targetIndex = registry->findBranchLastIndex(target) + 1;
         }
 
-        moveEntityOrderByTransform(registry, entities, source, newParent, targetTransformIndex);
+        registry->moveChildToIndex(source, targetIndex);
+        sortEntitiesByTransformOrder(registry, entities);
 
     }else{
 
@@ -1159,15 +1199,17 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
 void editor::ProjectUtils::moveEntityOrderByIndex(EntityRegistry* registry, std::vector<Entity>& entities, Entity source, Entity parent, size_t index, bool hasTransform){
     if (hasTransform){
 
-        auto transforms = registry->getComponentArray<Transform>();
-        size_t sourceTransformIndex = transforms->getIndex(source);
+        // joining the old parent moves the source, so it is located after it
+        registry->addEntityChild(parent, source, true);
 
-        size_t sizeOfSourceBranch = registry->findBranchLastIndex(source) - sourceTransformIndex + 1;
-        if (sourceTransformIndex < index){
-            index += sizeOfSourceBranch;
+        auto transforms = registry->getComponentArray<Transform>();
+        size_t sourceIndex = transforms->getIndex(source);
+        if (sourceIndex < index){
+            index += registry->findBranchLastIndex(source) - sourceIndex + 1;
         }
 
-        moveEntityOrderByTransform(registry, entities, source, parent, index);
+        registry->moveChildToIndex(source, index);
+        sortEntitiesByTransformOrder(registry, entities);
 
     }else{
 

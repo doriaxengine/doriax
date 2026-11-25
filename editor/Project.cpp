@@ -8797,11 +8797,13 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
                 Entity localEntity = decoded[0];
                 scene->addEntityChild(parentEntity, localEntity, true);
 
-                // Position at childIndex using moveChildToIndex
+                // childIndex counts the direct children, and the new entity is the last of them
                 if (scene->findComponent<Transform>(localEntity)) {
                     auto transforms = scene->getComponentArray<Transform>();
-                    size_t parentIndex = transforms->getIndex(parentEntity);
-                    size_t targetIndex = parentIndex + 1 + childIndex;
+                    size_t targetIndex = transforms->getIndex(parentEntity) + 1;
+                    for (size_t i = 0; i < childIndex && transforms->getEntity(targetIndex) != localEntity; i++) {
+                        targetIndex = scene->findBranchLastIndex(transforms->getEntity(targetIndex)) + 1;
+                    }
                     scene->moveChildToIndex(localEntity, targetIndex);
                 }
 
@@ -9003,6 +9005,21 @@ bool editor::Project::addEntityToBundle(uint32_t sceneId, Entity entity, Entity 
     if (instanceId == 0) {
         Out::error("Failed to find instance for parent entity %u in scene %u", parent, sceneId);
         return false;
+    }
+
+    // Every instance gets the entity, so none can be inside one of its bundles
+    const std::unordered_set<std::string> branchBundles = ProjectUtils::getBranchBundles(scene, entity);
+    for (const auto& [otherSceneId, sceneInstances] : bundle->instances) {
+        SceneProject* otherScene = getScene(otherSceneId);
+        if (!otherScene || !otherScene->scene) {
+            continue;
+        }
+        for (const EntityBundle::Instance& instance : sceneInstances) {
+            if (ProjectUtils::isInsideBundle(otherScene->scene, instance.rootEntity, branchBundles)) {
+                Out::error("Cannot add entity %u to '%s': a bundle cannot be inside another instance of itself", entity, filepath.string().c_str());
+                return false;
+            }
+        }
     }
 
     Entity registryParent = bundle->getRegistryEntity(sceneId, parent);
@@ -9893,6 +9910,89 @@ bool editor::Project::bundleNameChanged(uint32_t sceneId, Entity entity, std::st
     return true;
 }
 
+bool editor::Project::canMoveBundleEntity(uint32_t sceneId, Entity source, Entity target, InsertionType type, std::string* reason) const {
+    const SceneProject* sceneProject = getScene(sceneId);
+    if (!sceneProject || !sceneProject->scene) {
+        return true;
+    }
+    Scene* scene = sceneProject->scene;
+
+    // an entity without a Transform has no parent, it only goes beside the target
+    const bool hasTransform = scene->findComponent<Transform>(source) != nullptr;
+    const Transform* targetTransform = scene->findComponent<Transform>(target);
+    const Entity newParent = (type == InsertionType::INTO || !targetTransform) ? target : targetTransform->parent;
+
+    if (hasTransform && ProjectUtils::isInsideBundle(scene, newParent, ProjectUtils::getBranchBundles(scene, source))) {
+        if (reason) *reason = "A bundle cannot be inside another instance of itself";
+        return false;
+    }
+
+    // an instance root has no registry entity, moving it only changes this scene
+    const EntityBundle* bundle = getEntityBundle(findEntityBundlePathFor(sceneId, source));
+    if (!bundle || bundle->getRegistryEntity(sceneId, source) == NULL_ENTITY) {
+        return true;
+    }
+
+    const bool sameInstance = bundle->getInstanceId(sceneId, newParent) == bundle->getInstanceId(sceneId, source);
+    const bool isNestedRoot = hasTransform && scene->findComponent<BundleComponent>(newParent) && bundle->getRootEntity(sceneId, newParent) != newParent;
+    if (!sameInstance || isNestedRoot) {
+        if (reason) *reason = "Bundle members must stay inside their own instance";
+        return false;
+    }
+
+    return true;
+}
+
+// The registry only has members, so the closest one stands for an instance root or a scene entity
+static bool findBundleMoveTarget(const editor::EntityBundle& bundle, uint32_t sceneId, Scene* scene, Entity entity, Entity& target, editor::InsertionType& type) {
+    const uint32_t instanceId = bundle.getInstanceId(sceneId, entity);
+    auto isMember = [&](Entity candidate) {
+        return bundle.getRegistryEntity(sceneId, candidate) != NULL_ENTITY && bundle.getInstanceId(sceneId, candidate) == instanceId;
+    };
+
+    if (!isMember(entity)) {
+        return false;
+    }
+    if (isMember(target)) {
+        return true;
+    }
+
+    Transform* targetTransform = scene->findComponent<Transform>(target);
+    if (!targetTransform) {
+        return false;
+    }
+
+    const Entity parent = (type == editor::InsertionType::INTO) ? target : targetTransform->parent;
+    bool isAfterTarget = (type == editor::InsertionType::INTO);
+    Entity previous = NULL_ENTITY;
+    Entity next = NULL_ENTITY;
+
+    auto transforms = scene->getComponentArray<Transform>();
+    for (size_t i = 0; i < transforms->size() && next == NULL_ENTITY; i++) {
+        Entity sibling = transforms->getEntity(i);
+        if (transforms->getComponentFromIndex(i).parent != parent || sibling == entity) {
+            continue;
+        }
+        if (sibling == target) {
+            isAfterTarget = true;
+        } else if (isMember(sibling)) {
+            (isAfterTarget ? next : previous) = sibling;
+        }
+    }
+
+    if (previous != NULL_ENTITY) {
+        target = previous;
+        type = editor::InsertionType::AFTER;
+    } else if (next != NULL_ENTITY) {
+        target = next;
+        type = editor::InsertionType::BEFORE;
+    } else {
+        target = parent;
+        type = editor::InsertionType::INTO;
+    }
+    return isMember(target);
+}
+
 editor::SharedMoveRecovery editor::Project::moveEntityFromBundle(uint32_t sceneId, Entity entity, Entity target, InsertionType type, bool moveItself){
     fs::path filepath = findEntityBundlePathFor(sceneId, entity);
     if (filepath.empty()) {
@@ -9903,42 +10003,9 @@ editor::SharedMoveRecovery editor::Project::moveEntityFromBundle(uint32_t sceneI
     EntityBundle* bundle = getEntityBundle(filepath);
     uint32_t instanceId = bundle->getInstanceId(sceneId, entity);
 
-    if (!isEntityInBundle(sceneId, target)){
-        if (type == InsertionType::INTO){
-            Out::error("Cannot move bundle entity %u into non-bundle target %u in scene %u", entity, target, sceneId);
-            return {};
-        }
-
-        auto& entities = getScene(sceneId)->entities;
-        auto entityIt = std::find(entities.begin(), entities.end(), entity);
-        auto targetIt = std::find(entities.begin(), entities.end(), target);
-
-        if (entityIt != entities.end() && targetIt != entities.end()) {
-            Entity nextBundle = NULL_ENTITY;
-
-            if (entityIt < targetIt) {
-                for (auto it = targetIt - 1; it > entityIt; --it) {
-                    if (isEntityInBundle(sceneId, *it)) {
-                        nextBundle = *it;
-                        break;
-                    }
-                }
-            } else {
-                for (auto it = targetIt + 1; it < entityIt; ++it) {
-                    if (isEntityInBundle(sceneId, *it)) {
-                        nextBundle = *it;
-                        break;
-                    }
-                }
-            }
-
-            if (nextBundle != NULL_ENTITY) {
-                target = nextBundle;
-            }else{
-                // Not need to move entity in other scenes and registry if target is not in bundle
-                return {};
-            }
-        }
+    SceneProject* sceneProject = getScene(sceneId);
+    if (!sceneProject || !findBundleMoveTarget(*bundle, sceneId, sceneProject->scene, entity, target, type)) {
+        return {};
     }
 
     Entity registryEntity = bundle->getRegistryEntity(sceneId, entity);
@@ -9997,7 +10064,7 @@ editor::SharedMoveRecovery editor::Project::moveEntityFromBundle(uint32_t sceneI
     return recovery;
 }
 
-bool editor::Project::undoMoveEntityInBundle(uint32_t sceneId, Entity entity, Entity target, const SharedMoveRecovery& recovery, bool moveItself){
+bool editor::Project::undoMoveEntityInBundle(uint32_t sceneId, Entity entity, const SharedMoveRecovery& recovery, bool moveItself){
     fs::path filepath = findEntityBundlePathFor(sceneId, entity);
     if (filepath.empty()) {
         Out::error("Entity %u in scene %u is not part of any entity bundle", entity, sceneId);
@@ -10008,9 +10075,8 @@ bool editor::Project::undoMoveEntityInBundle(uint32_t sceneId, Entity entity, En
     uint32_t instanceId = bundle->getInstanceId(sceneId, entity);
 
     Entity registryEntity = bundle->getRegistryEntity(sceneId, entity);
-    Entity registryTarget = bundle->getRegistryEntity(sceneId, target);
-    if (registryEntity == NULL_ENTITY || registryTarget == NULL_ENTITY) {
-        Out::error("Failed to find registry entities for bundle entities %u or %u in scene %u", entity, target, sceneId);
+    if (registryEntity == NULL_ENTITY) {
+        Out::error("Failed to find registry entity for bundle entity %u in scene %u", entity, sceneId);
         return false;
     }
 
@@ -10041,8 +10107,7 @@ bool editor::Project::undoMoveEntityInBundle(uint32_t sceneId, Entity entity, En
                 std::string recoveryKey = std::to_string(otherSceneId) + "_" + std::to_string(instance.instanceId);
                 if (recovery.find(recoveryKey) != recovery.end()) {
                     Entity otherEntity = bundle->getLocalEntity(otherSceneId, instance.instanceId, registryEntity);
-                    Entity otherTarget = bundle->getLocalEntity(otherSceneId, instance.instanceId, registryTarget);
-                    if (otherEntity != NULL_ENTITY && otherTarget != NULL_ENTITY) {
+                    if (otherEntity != NULL_ENTITY) {
                         ProjectUtils::moveEntityOrderByIndex(otherScene->scene, otherScene->entities, otherEntity, recovery.at(recoveryKey).oldParent, recovery.at(recoveryKey).oldIndex, recovery.at(recoveryKey).hasTransform);
                     }
                 }

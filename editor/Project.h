@@ -1024,8 +1024,10 @@ namespace doriax::editor{
         bool addComponentToBundle(uint32_t sceneId, Entity entity, ComponentType componentType, const ComponentRecovery& recovery, bool addToItself = true);
         ComponentRecovery removeComponentFromBundle(uint32_t sceneId, Entity entity, ComponentType componentType, bool encodeComponent = true, bool removeToItself = true);
 
+        // A target of NULL_ENTITY is the scene root
+        bool canMoveBundleEntity(uint32_t sceneId, Entity source, Entity target, InsertionType type, std::string* reason = nullptr) const;
         SharedMoveRecovery moveEntityFromBundle(uint32_t sceneId, Entity entity, Entity target, InsertionType type, bool moveItself = true);
-        bool undoMoveEntityInBundle(uint32_t sceneId, Entity entity, Entity target, const SharedMoveRecovery& recovery, bool moveItself = true);
+        bool undoMoveEntityInBundle(uint32_t sceneId, Entity entity, const SharedMoveRecovery& recovery, bool moveItself = true);
 
         void cleanupEntityBundlesForScene(uint32_t sceneId);
 

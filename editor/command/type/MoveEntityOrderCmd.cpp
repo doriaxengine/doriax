@@ -35,46 +35,14 @@ bool editor::MoveEntityOrderCmd::execute(){
         return false;
     }
 
+    if (!project->canMoveBundleEntity(sceneId, source, target, type, &reason)){
+        editor::Out::warning("Cannot move entity '%u': %s", source, reason.c_str());
+        return false;
+    }
+
+    // only members reach the registry, the move of an instance root stays in this scene
     if (project->isEntityInBundle(sceneId, source)){
-
-        fs::path sourceBundlePath = project->findEntityBundlePathFor(sceneId, source);
-        fs::path targetBundlePath = project->findEntityBundlePathFor(sceneId, target);
-
-        if (type == InsertionType::INTO){
-            if (!project->isEntityInBundle(sceneId, target)){
-                Out::error("Cannot move bundle entity %u into target %u", source, target);
-                return false;
-            }
-        }else{
-            Transform* transformTarget = sceneProject->scene->findComponent<Transform>(target);
-            if (transformTarget){
-                fs::path parentBundlePath = project->findEntityBundlePathFor(sceneId, transformTarget->parent);
-
-                EntityBundle* sourceBundle = project->getEntityBundle(sourceBundlePath);
-                bool isSourceRoot = sourceBundle && (sourceBundle->getRootEntity(sceneId, source) == source);
-
-                if (parentBundlePath != sourceBundlePath && targetBundlePath != sourceBundlePath && !isSourceRoot){
-                    Out::error("Cannot move bundle entity %u outside entity bundle", source);
-                    return false;
-                }
-            }
-        }
-
-        if (targetBundlePath == sourceBundlePath){
-            EntityBundle* bundle = project->getEntityBundle(sourceBundlePath);
-            bool isSourceRoot = bundle && (bundle->getRootEntity(sceneId, source) == source);
-            bool sameInstance = bundle && (bundle->getInstanceId(sceneId, source) == bundle->getInstanceId(sceneId, target));
-
-            // an instance root has no registry entity, reordering it only changes this scene
-            if (!isSourceRoot || type == InsertionType::INTO){
-                // another copy of the same bundle holds the same registry entities
-                if (!sameInstance){
-                    Out::error("Cannot move bundle entity %u into another instance of its bundle", source);
-                    return false;
-                }
-                bundleMoveRecovery = project->moveEntityFromBundle(sceneId, source, target, type, false);
-            }
-        }
+        bundleMoveRecovery = project->moveEntityFromBundle(sceneId, source, target, type, false);
     }
     ProjectUtils::moveEntityOrderByTarget(sceneProject->scene, sceneProject->entities, source, target, type, oldParent, oldIndex, hasTransform);
 
@@ -93,7 +61,7 @@ void editor::MoveEntityOrderCmd::undo(){
     SceneProject* sceneProject = project->getScene(sceneId);
 
     if (bundleMoveRecovery.size() > 0){
-        project->undoMoveEntityInBundle(sceneId, source, target, bundleMoveRecovery, false);
+        project->undoMoveEntityInBundle(sceneId, source, bundleMoveRecovery, false);
     }
     ProjectUtils::moveEntityOrderByIndex(sceneProject->scene, sceneProject->entities, source, oldParent, oldIndex, hasTransform);
 
