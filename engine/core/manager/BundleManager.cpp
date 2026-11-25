@@ -218,7 +218,7 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
     getInstances().push_back(std::move(instance));
 
     // before init(), which may ask for the owner
-    scene->getSystem<NetworkSystem>()->bundleCreated(root, id, ownsRoot);
+    scene->getSystem<NetworkSystem>()->bundleCreated(root, id, ownsRoot, getInstances().back().entities);
 
     // tracked first, init() can destroy it
     scriptStarter(scene);

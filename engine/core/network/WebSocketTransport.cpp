@@ -49,6 +49,10 @@ namespace {
     // for a connection to ask for a WebSocket
     const std::chrono::seconds openTimeout(5);
     const size_t maxControlSize = 125;
+    // reads of a closing connection in one poll
+    const int maxCloseReads = 16;
+
+    const uint8_t opcodeContinuation = 0x0;
 
     const uint8_t opcodeBinary = 0x2;
     const uint8_t opcodeClose = 0x8;
@@ -260,6 +264,13 @@ namespace {
 }
 
 struct WebSocketTransport::State {
+    // one of the addresses a host name gave
+    struct Address {
+        int family;
+        int protocol;
+        std::vector<uint8_t> data;
+    };
+
     struct Connection {
         SocketHandle socket = invalidSocket;
         // opened by this side, so its frames are masked
@@ -269,6 +280,11 @@ struct WebSocketTransport::State {
         bool closing = false;
         bool shut = false;
         bool failed = false;
+        // a message is arriving in more than one frame
+        bool fragmented = false;
+        // tried in order until one connects
+        std::vector<Address> addresses;
+        size_t nextAddress = 0;
         std::chrono::steady_clock::time_point deadline;
         std::string key;
         std::string request;
@@ -407,15 +423,22 @@ struct WebSocketTransport::State {
             }
 
             if (opcode <= opcodeBinary){
-                if (connection.message.size() + length > maxMessageSize){
+                // binary only, and continuations of the frame that started it
+                if (opcode != (connection.fragmented ? opcodeContinuation : opcodeBinary) ||
+                    connection.message.size() + length > maxMessageSize){
                     return false;
                 }
+                connection.fragmented = !fin;
                 connection.message.insert(connection.message.end(), payload, payload + length);
                 if (fin){
                     events.push_back({NetworkEventType::RECEIVED, id, std::move(connection.message)});
                     connection.message.clear();
                 }
             }else if (opcode == opcodePing){
+                // answered while the peer reads the answers
+                if (connection.out.size() > maxPendingSize){
+                    return false;
+                }
                 queueFrame(connection, opcodePong, payload, (size_t)length);
             }else if (opcode != opcodePong){
                 return false;
@@ -429,6 +452,26 @@ struct WebSocketTransport::State {
         return true;
     }
 
+    // false when none of the addresses left can be tried
+    bool startConnect(Connection& connection){
+        while (connection.nextAddress < connection.addresses.size()){
+            const Address& address = connection.addresses[connection.nextAddress++];
+
+            connection.socket = ::socket(address.family, SOCK_STREAM, address.protocol);
+            if (connection.socket == invalidSocket){
+                continue;
+            }
+            prepareSocket(connection.socket);
+            if (::connect(connection.socket, (const sockaddr*)address.data.data(), (int)address.data.size()) == 0 || wouldBlock()){
+                return true;
+            }
+            closeSocket(connection.socket);
+            connection.socket = invalidSocket;
+        }
+
+        return false;
+    }
+
     // false when the connection ended
     bool service(Connection& connection, uint32_t id, std::vector<NetworkEvent>& events){
         if (connection.failed){
@@ -436,8 +479,14 @@ struct WebSocketTransport::State {
         }
         if (connection.connecting){
             int result = getConnectResult(connection.socket);
-            if (result <= 0){
-                return result == 0;
+            if (result < 0){
+                // refused on IPv6, a server may still listen on IPv4
+                closeSocket(connection.socket);
+                connection.socket = invalidSocket;
+                return startConnect(connection);
+            }
+            if (result == 0){
+                return true;
             }
             connection.connecting = false;
             connection.out.insert(connection.out.end(), connection.request.begin(), connection.request.end());
@@ -454,12 +503,13 @@ struct WebSocketTransport::State {
                 connection.shut = true;
             }
             // closing with unread data would reset what the peer has not read yet
-            int result;
-            do{
+            int result = 1;
+            for (int reads = 0; reads < maxCloseReads && result > 0; reads++){
                 result = (int)recv(connection.socket, buffer, sizeof(buffer), 0);
-            }while (result > 0);
+            }
+            bool waiting = result > 0 || (result < 0 && wouldBlock());
 
-            return result < 0 && wouldBlock() && std::chrono::steady_clock::now() < connection.deadline;
+            return waiting && std::chrono::steady_clock::now() < connection.deadline;
         }
 
         // what arrived before the peer closed is still read
@@ -468,7 +518,7 @@ struct WebSocketTransport::State {
             int result = (int)recv(connection.socket, buffer, sizeof(buffer), 0);
             if (result > 0){
                 connection.in.insert(connection.in.end(), buffer, buffer + result);
-                if (connection.in.size() > maxMessageSize + maxHeaderSize){
+                if (connection.in.size() > (connection.open ? maxMessageSize + maxHeaderSize : maxHeaderSize)){
                     break;
                 }
             }else if (result < 0 && wouldBlock()){
@@ -484,6 +534,10 @@ struct WebSocketTransport::State {
             if (end == connection.in.end()){
                 bool late = !connection.client && std::chrono::steady_clock::now() > connection.deadline;
                 return !ended && !late && connection.in.size() <= maxHeaderSize;
+            }
+
+            if ((size_t)(end - connection.in.begin()) > maxHeaderSize){
+                return false;
             }
 
             std::string headers(connection.in.begin(), end + 2);
@@ -591,6 +645,9 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
         service = host.substr(colon + 1);
         host.erase(colon);
     }
+    if (service.empty()){
+        service = std::to_string(port);
+    }
 
     addrinfo hints = {};
     hints.ai_family = AF_UNSPEC;
@@ -601,22 +658,14 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
         return false;
     }
 
-    SocketHandle socket = invalidSocket;
+    State::Connection connection;
     for (addrinfo* info = list; info; info = info->ai_next){
-        socket = ::socket(info->ai_family, info->ai_socktype, info->ai_protocol);
-        if (socket == invalidSocket){
-            continue;
-        }
-        prepareSocket(socket);
-        if (::connect(socket, info->ai_addr, (int)info->ai_addrlen) == 0 || wouldBlock()){
-            break;
-        }
-        closeSocket(socket);
-        socket = invalidSocket;
+        const uint8_t* bytes = (const uint8_t*)info->ai_addr;
+        connection.addresses.push_back({info->ai_family, info->ai_protocol, std::vector<uint8_t>(bytes, bytes + info->ai_addrlen)});
     }
     freeaddrinfo(list);
 
-    if (socket == invalidSocket){
+    if (!state->startConnect(connection)){
         Log::error("Network: can't reach %s", host.c_str());
         return false;
     }
@@ -626,8 +675,6 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
         byte = (uint8_t)state->random();
     }
 
-    State::Connection& connection = state->connections[++state->lastConnection];
-    connection.socket = socket;
     connection.client = true;
     connection.connecting = true;
     connection.key = Base64::encode(keyBytes, sizeof(keyBytes));
@@ -636,6 +683,7 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
     connection.request = "GET " + path + " HTTP/1.1\r\nHost: " + hostHeader + ":" + service +
         "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + connection.key +
         "\r\nSec-WebSocket-Version: 13\r\n\r\n";
+    state->connections[++state->lastConnection] = std::move(connection);
 
     return true;
 }

@@ -39,6 +39,8 @@ namespace doriax {
         bool valid = true;
 
         bool take(void* out, size_t size);
+        template<typename T>
+        bool readNumber(T& value);
 
     public:
         Packet();

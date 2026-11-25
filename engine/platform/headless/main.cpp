@@ -4,7 +4,7 @@
 #include "Engine.h"
 #include "System.h"
 
-#include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <thread>
@@ -12,10 +12,10 @@
 using namespace doriax;
 
 namespace {
-    std::atomic<bool> running{true};
+    volatile std::sig_atomic_t running = 1;
 
     void stop(int){
-        running = false;
+        running = 0;
     }
 
     // A server has no window: the canvas has the size the project asked for
@@ -30,7 +30,7 @@ namespace {
         }
 
         void quit() override {
-            running = false;
+            running = 0;
         }
 
         std::string getAssetPath() override {

@@ -108,7 +108,8 @@ int NetworkSession::countPeers() const{
 }
 
 void NetworkSession::sendTo(const Peer& peer, const Packet& packet, NetworkDelivery delivery){
-    if (latency <= 0 && jitter <= 0 && loss <= 0){
+    // what is still delayed goes first
+    if (latency <= 0 && jitter <= 0 && loss <= 0 && delayed.empty()){
         peer.transport->send(peer.connection, packet.getData(), packet.getSize(), delivery);
         return;
     }
@@ -250,7 +251,7 @@ void NetworkSession::handleMessage(const Peer& peer, Packet& packet){
             sendTo(peer, pong, NetworkDelivery::UNRELIABLE);
         }
     }else if (type == PONG){
-        uint32_t elapsed = (uint32_t)(getTime() * 1000.0) - packet.readUInt32();
+        uint32_t elapsed = (uint32_t)(uint64_t)(getTime() * 1000.0) - packet.readUInt32();
         Peer* stored = findPeer(peer.transport, peer.connection);
         if (packet.isValid() && stored && elapsed < 60000){
             stored->ping = (stored->ping > 0) ? stored->ping * 0.8f + (float)elapsed * 0.2f : (float)elapsed;
@@ -275,6 +276,7 @@ void NetworkSession::callRpc(int sender, Packet& packet){
 bool NetworkSession::host(std::vector<std::unique_ptr<NetworkTransport>> transports, uint16_t port, int maxPeers){
     close();
 
+    maxPeers = std::max(maxPeers, 0);
     for (auto& transport : transports){
         if (!transport->listen(port, maxPeers + spareConnections)){
             return false;
@@ -319,6 +321,7 @@ void NetworkSession::close(){
     id = 0;
     lastPeerId = SERVER;
     lastPing = 0;
+    lastDelayedTime = 0;
 }
 
 void NetworkSession::disconnect(int peer){
@@ -390,7 +393,7 @@ void NetworkSession::update(){
 
         Packet ping;
         ping.writeUInt8(PING);
-        ping.writeUInt32((uint32_t)(now * 1000.0));
+        ping.writeUInt32((uint32_t)(uint64_t)(now * 1000.0));
         for (const Peer& peer : peers){
             if (peer.id != 0){
                 sendTo(peer, ping, NetworkDelivery::UNRELIABLE);
@@ -426,6 +429,10 @@ void NetworkSession::flush(){
 
 NetworkState NetworkSession::getState() const{
     return state;
+}
+
+unsigned int NetworkSession::getGeneration() const{
+    return generation;
 }
 
 int NetworkSession::getId() const{
@@ -470,6 +477,10 @@ bool NetworkSession::registerRpc(const std::string& name, RpcHandler handler, co
     if (it != rpcs.end() && it->second.name != name){
         Log::error("Network: RPC %s has the hash of %s, rename one of them", name.c_str(), it->second.name.c_str());
         return false;
+    }
+
+    if (it != rpcs.end() && !tag.empty() && !it->second.tag.empty() && it->second.tag != tag){
+        Log::warn("Network: RPC %s was registered by another script, which loses it", name.c_str());
     }
 
     rpcs[hash] = {name, tag, std::move(handler)};

@@ -85,7 +85,7 @@ bool WebSocketTransport::connect(const std::string& address, uint16_t port){
     bool allowed = EM_ASM_INT({
         try {
             var url = new URL(UTF8ToString($0));
-            var local = url.hostname === 'localhost' || url.hostname === '127.0.0.1';
+            var local = url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]';
             if (url.protocol === 'ws:') return (location.protocol !== 'https:' || local) ? 1 : 0;
             return url.protocol === 'wss:' ? 1 : 0;
         } catch (e) {

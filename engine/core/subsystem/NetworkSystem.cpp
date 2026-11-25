@@ -28,6 +28,8 @@ namespace {
     const size_t maxStates = 32;
     // an unreliable message has to fit in one UDP packet
     const size_t maxStateSize = 1100;
+    // a reliable one is split well before the limit of the transports
+    const size_t maxReliableSize = 32768;
     // its size travels in 16 bits
     const size_t maxValueSize = 0xFFFF;
     // a clock that jumped is taken again from the next message
@@ -78,6 +80,7 @@ void NetworkSystem::receive(NetworkSession* session, int sender, Packet& packet)
             continue;
         }
 
+        system->checkSession();
         if (system->isServer()){
             if (type == JOIN){
                 system->receiveJoin(sender);
@@ -163,7 +166,35 @@ void NetworkSystem::writeState(Packet& packet, unsigned int id, const State& sta
     }
 }
 
+void NetworkSystem::checkSession(){
+    if (generation == session->getGeneration()){
+        return;
+    }
+    generation = session->getGeneration();
+
+    // what the session before spawned and sent means nothing to this one
+    removeSpawned();
+    subscribers.clear();
+    despawned.clear();
+    for (auto& entry : replicas){
+        entry.second.moving = false;
+    }
+    for (Sync& sync : syncs){
+        sync.sent.clear();
+    }
+    lastNetworkId = firstSpawnId;
+    sendTime = 0;
+    joined = false;
+    hasOffset = false;
+    lastStateTime = 0;
+}
+
 void NetworkSystem::setFollowing(Replica& replica, bool following){
+    const NetworkComponent* component = scene->findComponent<NetworkComponent>(replica.entity);
+    // an entity that only syncs values keeps its own physics
+    if (following && component && !component->syncPosition && !component->syncRotation){
+        return;
+    }
     if (replica.following == following){
         return;
     }
@@ -196,8 +227,9 @@ void NetworkSystem::setFollowing(Replica& replica, bool following){
     }
 
     Character3DComponent* character = scene->findComponent<Character3DComponent>(replica.entity);
-    if (character){
+    if (character && (following ? !character->kinematic : replica.simulated)){
         character->kinematic = following;
+        replica.simulated = following;
     }
 #endif
 }
@@ -205,8 +237,15 @@ void NetworkSystem::setFollowing(Replica& replica, bool following){
 void NetworkSystem::registerAdded(){
     for (Entity entity : added){
         NetworkComponent* component = scene->findComponent<NetworkComponent>(entity);
-        // a spawned bundle was registered by bundleCreated
-        if (component && !ids.count(entity)){
+        auto it = ids.find(entity);
+        if (it != ids.end()){
+            // a body it got after it started to follow is held too
+            Replica& replica = replicas[it->second];
+            if (replica.following){
+                replica.following = false;
+                setFollowing(replica, true);
+            }
+        }else if (component){
             component->networkId = entity;
             registerReplica(entity, *component, 0);
         }
@@ -256,7 +295,7 @@ Packet NetworkSystem::createMessage(uint8_t type) const{
 
 Packet NetworkSystem::createState() const{
     Packet packet = createMessage(STATE);
-    packet.writeUInt32((uint32_t)(NetworkSession::getTime() * 1000.0));
+    packet.writeInt((int64_t)(NetworkSession::getTime() * 1000.0));
 
     return packet;
 }
@@ -292,11 +331,12 @@ void NetworkSystem::updateServer(double dt){
         }
     }
 
+    double interval = 1.0 / sendRate;
     sendTime += dt;
-    if (sendTime < 1.0 / sendRate){
+    if (sendTime < interval){
         return;
     }
-    sendTime = 0;
+    sendTime = std::fmod(sendTime, interval);
 
     for (unsigned int id : despawned){
         Packet packet = createMessage(DESPAWN);
@@ -338,6 +378,11 @@ void NetworkSystem::updateServer(double dt){
             // where it stopped can't be lost
             writeState(rested, entry.first, state, component);
             replica.moving = false;
+
+            if (rested.getSize() > maxReliableSize){
+                sendToSubscribers(rested, NetworkDelivery::RELIABLE);
+                rested = createState();
+            }
         }
     }
 
@@ -348,15 +393,22 @@ void NetworkSystem::updateServer(double dt){
         sendToSubscribers(rested, NetworkDelivery::RELIABLE);
     }
 
-    Packet values = createMessage(VALUES);
-    emptySize = values.getSize();
-    writeValues(values, false);
-    if (values.getSize() > emptySize){
-        sendToSubscribers(values, NetworkDelivery::RELIABLE);
-    }
+    sendValues(0, false);
 }
 
-void NetworkSystem::writeValues(Packet& packet, bool all){
+void NetworkSystem::sendValues(int peer, bool all){
+    Packet packet = createMessage(VALUES);
+    size_t emptySize = packet.getSize();
+
+    auto send = [&](){
+        if (peer != 0){
+            session->send(peer, packet, NetworkDelivery::RELIABLE);
+        }else{
+            sendToSubscribers(packet, NetworkDelivery::RELIABLE);
+        }
+        packet = createMessage(VALUES);
+    };
+
     for (Sync& sync : syncs){
         auto it = ids.find(sync.entity);
         if (it == ids.end()){
@@ -377,6 +429,14 @@ void NetworkSystem::writeValues(Packet& packet, bool all){
         packet.writeUInt32(sync.name);
         packet.writeUInt16((uint16_t)bytes.size());
         packet.writeBytes(bytes.data(), bytes.size());
+
+        if (packet.getSize() > maxReliableSize){
+            send();
+        }
+    }
+
+    if (packet.getSize() > emptySize){
+        send();
     }
 }
 
@@ -389,10 +449,6 @@ void NetworkSystem::updateClient(){
         for (auto& entry : replicas){
             setFollowing(entry.second, true);
         }
-    }else if (!connected && joined){
-        joined = false;
-        hasOffset = false;
-        removeSpawned();
     }
 
     if (joined){
@@ -437,17 +493,20 @@ void NetworkSystem::receiveJoin(int sender){
     Packet state = createState();
     for (auto& entry : replicas){
         Replica& replica = entry.second;
-        if (replica.bundle != 0){
-            session->send(sender, createSpawn(entry.first, replica), NetworkDelivery::RELIABLE);
-        }else{
+        if (replica.bundle == 0){
             writeState(state, entry.first, readState(replica.entity), scene->getComponent<NetworkComponent>(replica.entity));
+            if (state.getSize() > maxReliableSize){
+                session->send(sender, state, NetworkDelivery::RELIABLE);
+                state = createState();
+            }
+        }else if (replica.announced){
+            // one not announced yet goes to every subscriber at the next send
+            session->send(sender, createSpawn(entry.first, replica), NetworkDelivery::RELIABLE);
         }
     }
     session->send(sender, state, NetworkDelivery::RELIABLE);
 
-    Packet values = createMessage(VALUES);
-    writeValues(values, true);
-    session->send(sender, values, NetworkDelivery::RELIABLE);
+    sendValues(sender, true);
 }
 
 void NetworkSystem::receiveSpawn(Packet& packet){
@@ -489,15 +548,19 @@ void NetworkSystem::receiveDespawn(Packet& packet){
 }
 
 void NetworkSystem::receiveState(Packet& packet){
-    double time = packet.readUInt32() / 1000.0;
+    double time = packet.readInt() / 1000.0;
+    double now = NetworkSession::getTime();
 
-    // how far this clock is from the server's, the trip included
-    double sample = NetworkSession::getTime() - time;
-    if (hasOffset && std::fabs(sample - offset) < maxOffsetError){
-        offset += (sample - offset) * 0.1;
-    }else{
-        offset = sample;
-        hasOffset = true;
+    // this clock against the server's, trip included; a late message says nothing
+    if (!hasOffset || time > lastStateTime){
+        double sample = now - time;
+        if (hasOffset && std::fabs(sample - offset) < maxOffsetError){
+            offset += (sample - offset) * 0.1;
+        }else{
+            offset = sample;
+            hasOffset = true;
+        }
+        lastStateTime = time;
     }
 
     while (packet.isValid() && packet.getRemaining() > 0){
@@ -530,6 +593,14 @@ void NetworkSystem::receiveState(Packet& packet){
             continue;
         }
 
+        // from rest it moves from where it is shown, without a jump
+        double shown = now - offset - interpolationDelay;
+        if (states.empty() && shown < time){
+            State current = readState(it->second.entity);
+            current.time = shown;
+            states.push_back(current);
+        }
+
         state.time = time;
         states.push_back(state);
         if (states.size() > maxStates){
@@ -556,7 +627,9 @@ void NetworkSystem::receiveValues(Packet& packet){
         }
         for (Sync& sync : syncs){
             if (sync.entity == it->second.entity && sync.name == name){
-                sync.write(value);
+                // a copy, the call may remove the sync
+                std::function<void(Packet&)> write = sync.write;
+                write(value);
                 break;
             }
         }
@@ -569,7 +642,13 @@ void NetworkSystem::sync(Entity entity, const std::string& name, std::function<v
         return;
     }
 
-    syncs.push_back({entity, NetworkSession::hashName(name), tag, std::move(read), std::move(write), {}});
+    // registered again, the new one takes its place
+    uint32_t hash = NetworkSession::hashName(name);
+    syncs.erase(std::remove_if(syncs.begin(), syncs.end(), [&](const Sync& sync){
+        return sync.entity == entity && sync.name == hash;
+    }), syncs.end());
+
+    syncs.push_back({entity, hash, tag, std::move(read), std::move(write), {}});
 }
 
 void NetworkSystem::removeSyncsByTag(const std::string& substring){
@@ -583,6 +662,7 @@ void NetworkSystem::removeSyncsByTag(const std::string& substring){
 
 void NetworkSystem::setSession(NetworkSession* session){
     this->session = session;
+    generation = session->getGeneration();
     session->onReplication = [session](int sender, Packet& packet){ receive(session, sender, packet); };
 }
 
@@ -591,7 +671,9 @@ void NetworkSystem::setSceneId(uint32_t sceneId){
 }
 
 void NetworkSystem::setSendRate(float sendRate){
-    this->sendRate = sendRate;
+    if (sendRate > 0){
+        this->sendRate = sendRate;
+    }
 }
 
 float NetworkSystem::getSendRate() const{
@@ -607,6 +689,7 @@ float NetworkSystem::getInterpolationDelay() const{
 }
 
 Entity NetworkSystem::spawn(const std::string& bundle, int owner){
+    checkSession();
     if (!isServer()){
         Log::error("Network: only the server spawns, %s was not created", bundle.c_str());
         return NULL_ENTITY;
@@ -622,13 +705,16 @@ Entity NetworkSystem::spawn(const std::string& bundle, int owner){
     return root;
 }
 
-void NetworkSystem::bundleCreated(Entity root, uint32_t bundle, bool created){
-    // not spawned, or a bundle inside the spawned one
-    if (!spawning || bundle != spawnBundle){
-        // a root made now has another id on each peer, it stays local
-        if (created){
-            added.erase(std::remove(added.begin(), added.end(), root), added.end());
-        }
+void NetworkSystem::bundleCreated(Entity root, uint32_t bundle, bool created, const std::vector<Entity>& entities){
+    bool spawned = spawning && bundle == spawnBundle;
+
+    // ids made now differ on each peer, only a spawned root follows
+    added.erase(std::remove_if(added.begin(), added.end(), [&](Entity entity){
+        bool member = std::find(entities.begin(), entities.end(), entity) != entities.end();
+        return member && (entity != root || created);
+    }), added.end());
+
+    if (!spawned){
         return;
     }
 
@@ -668,6 +754,7 @@ void NetworkSystem::draw(){
 }
 
 void NetworkSystem::update(double dt){
+    checkSession();
     registerAdded();
 
     // the server sends what it is about to draw
@@ -679,7 +766,8 @@ void NetworkSystem::update(double dt){
 }
 
 void NetworkSystem::onComponentAdded(Entity entity, ComponentId componentId){
-    if (componentId == scene->getComponentId<NetworkComponent>()){
+    // a replica is seen again for the body it may have got
+    if (componentId == scene->getComponentId<NetworkComponent>() || ids.count(entity)){
         added.push_back(entity);
     }
 }

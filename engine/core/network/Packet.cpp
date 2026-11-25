@@ -10,36 +10,41 @@
 
 using namespace doriax;
 
-namespace {
-    // every integer type goes through the same tagged read
-    template<typename T>
-    bool readNumber(Packet& packet, T& value){
-        PacketValue type = packet.peekValue();
-        if (type != PacketValue::INT && type != PacketValue::FLOAT && type != PacketValue::DOUBLE){
-            return false;
-        }
+// the tagged read of every number type, takes nothing when it fails
+template<typename T>
+bool Packet::readNumber(T& value){
+    PacketValue type = peekValue();
+    if (type != PacketValue::INT && type != PacketValue::FLOAT && type != PacketValue::DOUBLE){
+        return false;
+    }
 
-        packet.readUInt8();
-        if (type == PacketValue::INT){
-            value = (T)packet.readInt();
-            return packet.isValid();
-        }
+    size_t start = position;
+    position++;
 
-        // a number outside the type can't be converted
-        double number = (type == PacketValue::FLOAT) ? packet.readFloat() : packet.readDouble();
+    bool fits;
+    if (type == PacketValue::INT){
+        int64_t number = readInt();
+        value = (T)number;
+        fits = std::is_floating_point<T>::value || ((int64_t)value == number && (number >= 0 || std::is_signed<T>::value));
+    }else{
+        double number = (type == PacketValue::FLOAT) ? readFloat() : readDouble();
         double lowest = (double)std::numeric_limits<T>::lowest();
         double highest = (double)std::numeric_limits<T>::max();
         if (std::is_integral<T>::value){
-            if (!(number > lowest - 1.0 && number < highest + 1.0)){
-                return false;
-            }
-        }else if (std::isfinite(number) && (number < lowest || number > highest)){
-            return false;
+            fits = number >= lowest && number < highest + 1.0;
+        }else{
+            fits = !std::isfinite(number) || (number >= lowest && number <= highest);
         }
-        value = (T)number;
-
-        return packet.isValid();
+        if (fits){
+            value = (T)number;
+        }
     }
+
+    if (!fits){
+        position = start;
+    }
+
+    return valid && fits;
 }
 
 Packet::Packet(){
@@ -79,7 +84,7 @@ bool Packet::isValid() const{
 }
 
 void Packet::skip(size_t size){
-    if (size > getRemaining()){
+    if (!valid || size > getRemaining()){
         valid = false;
         return;
     }
@@ -307,7 +312,7 @@ void Packet::writeValue(double value){
 }
 
 void Packet::writeValue(const char* value){
-    writeValue(std::string(value));
+    writeValue(std::string(value ? value : ""));
 }
 
 void Packet::writeValue(const std::string& value){
@@ -364,35 +369,35 @@ bool Packet::readValue(bool& value){
 }
 
 bool Packet::readValue(int& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(unsigned int& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(long& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(unsigned long& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(long long& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(unsigned long long& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(float& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(double& value){
-    return readNumber(*this, value);
+    return readNumber(value);
 }
 
 bool Packet::readValue(std::string& value){

@@ -18,6 +18,8 @@ namespace doriax::editor {
         static int runShadersCommand(int argc, char** argv, const char* executableName);
 
         static int runBenchmarkHelp(int argc, char** argv, const char* executableName);
+        // false, with the reason printed, when play can't start with these arguments
+        static bool checkPlayArgs(int argc, char** argv);
 
         // Prints the shader graph node types as JSON, for docs and tests.
         static int runShaderNodesCommand(int argc, char** argv, const char* executableName);

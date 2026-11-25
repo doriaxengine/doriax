@@ -417,6 +417,10 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         endif()
     endif()
 
+    if(DORIAX_HEADLESS AND NOT CMAKE_SYSTEM_NAME MATCHES "Linux|FreeBSD")
+        message(FATAL_ERROR "DORIAX_HEADLESS builds a Linux server only")
+    endif()
+
     if((CMAKE_SYSTEM_NAME STREQUAL "Linux") OR (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"))
         # The native X11 backend creates a GLX context or a Vulkan surface and
         # swapchain. A headless server has neither and draws nothing.

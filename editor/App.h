@@ -114,6 +114,7 @@ namespace doriax::editor{
         bool instanceEnabled = false;
         bool instanceStarted = false;
         bool instanceRunning = false;
+        bool instanceFailed = false;
         uint32_t instanceSceneId = 0;
         std::filesystem::path instanceProject;
         std::string instanceScene;
@@ -291,7 +292,7 @@ namespace doriax::editor{
         bool isBenchmarkMode() const { return benchmarkEnabled; }
         bool isInstanceMode() const { return instanceEnabled; }
         bool consumeExitRequest();
-        int getExitCode() const { return benchmarkFailed ? 1 : 0; }
+        int getExitCode() const { return (benchmarkFailed || instanceFailed) ? 1 : 0; }
 
         bool isProjectLoading() const { return projectLoading; }
         const std::string& getLoadingStatus() const { return loadingStatus; }

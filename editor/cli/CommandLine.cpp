@@ -648,6 +648,28 @@ int CommandLine::runShadersCommand(int argc, char** argv, const char* executable
     return 0;
 }
 
+bool CommandLine::checkPlayArgs(int argc, char** argv) {
+    bool hasProject = false;
+    for (int i = 1; i < argc; i++) {
+        const std::string arg = argv[i];
+        const bool hasValue = i + 1 < argc;
+        if ((arg == "-p" || arg == "--project") && hasValue) {
+            hasProject = true;
+            i++;
+        } else if ((arg == "-s" || arg == "--scene") && hasValue) {
+            i++;
+        } else {
+            std::cerr << "play: unknown or incomplete argument '" << arg << "'\n";
+            return false;
+        }
+    }
+
+    if (!hasProject) {
+        std::cerr << "play: --project is required\n";
+    }
+    return hasProject;
+}
+
 int CommandLine::runBenchmarkHelp(int argc, char** argv, const char* executableName) {
     attachHostConsoleIfNeeded();
     printBenchmarkUsage(getCommandName(executableName));

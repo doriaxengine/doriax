@@ -37,11 +37,13 @@ namespace doriax{
             // on a client: the states it moves between
             std::deque<State> states;
             bool following = false;
-            // a dynamic body is kinematic while it follows the server
+            // a dynamic body and a simulated character are kinematic while they follow
             bool dynamic = false;
+            bool simulated = false;
         };
 
         NetworkSession* session;
+        unsigned int generation = 0;
         // 0 takes the id the scene has in SceneManager
         uint32_t sceneId = 0;
 
@@ -60,6 +62,7 @@ namespace doriax{
         bool joined = false;
         bool hasOffset = false;
         double offset = 0;
+        double lastStateTime = 0;
 
         // the bundle being created by spawn() or by the server's message
         bool spawning = false;
@@ -93,6 +96,7 @@ namespace doriax{
         void applyState(Entity entity, const NetworkComponent& component, const State& state);
         void writeState(Packet& packet, unsigned int id, const State& state, const NetworkComponent& component) const;
 
+        void checkSession();
         void setFollowing(Replica& replica, bool following);
         void registerAdded();
         void registerReplica(Entity entity, NetworkComponent& component, uint32_t bundle);
@@ -112,7 +116,8 @@ namespace doriax{
         void receiveDespawn(Packet& packet);
         void receiveState(Packet& packet);
         void receiveValues(Packet& packet);
-        void writeValues(Packet& packet, bool all);
+        // to a peer, or to the subscribers when it is 0
+        void sendValues(int peer, bool all);
 
     public:
         NetworkSystem(Scene* scene);
@@ -133,7 +138,7 @@ namespace doriax{
         // on the server, creates the bundle here and on every client of this scene
         Entity spawn(const std::string& bundle, int owner);
         // called by BundleManager before the scripts of a new instance start
-        void bundleCreated(Entity root, uint32_t bundle, bool created);
+        void bundleCreated(Entity root, uint32_t bundle, bool created, const std::vector<Entity>& entities);
 
         int getOwner(Entity entity) const;
 

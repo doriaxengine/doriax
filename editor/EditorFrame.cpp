@@ -69,7 +69,7 @@ std::string EditorFrame::formatWindowTitle(const std::string& projectName){
 }
 
 bool EditorFrame::isIdle() const{
-    if (app && app->isBenchmarkMode())
+    if (app && (app->isBenchmarkMode() || app->isInstanceMode()))
         return false;
     return monotonicSeconds() - lastActivityTime > IDLE_ENTER_DELAY;
 }

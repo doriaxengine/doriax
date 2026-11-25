@@ -102,7 +102,7 @@ namespace {
             lua_pushinteger(m_vm, sender);
 
             int values = 0;
-            while (packet.peekValue() != PacketValue::NONE){
+            while (packet.getRemaining() > 0){
                 if (values == maxRpcValues || !pushRpcValue(m_vm, packet)){
                     lua_pop(m_vm, values + 2);
                     Log::error("Network: wrong values in an RPC from peer %i", sender);
@@ -238,6 +238,9 @@ namespace {
 
     // the field of a script that the clients take from the server
     class LuaSync : public LuaFunctionBase {
+    private:
+        bool warned = false;
+
     public:
         LuaSync(lua_State* vm): LuaFunctionBase(vm){ }
 
@@ -249,6 +252,10 @@ namespace {
             call(0, 1);
             if (!writeRpcValue(m_vm, lua_gettop(m_vm), packet)){
                 packet.writeNil();
+                if (!warned){
+                    Log::error("Network.sync: a %s can't be sent, the clients get nil", luaL_typename(m_vm, -1));
+                    warned = true;
+                }
             }
             lua_pop(m_vm, 1);
         }
@@ -270,8 +277,13 @@ namespace {
     int registerLuaSync(lua_State* L){
         luaL_checktype(L, 1, LUA_TTABLE);
         const char* name = luaL_checkstring(L, 2);
-        if (!lua_isnoneornil(L, 3)){
-            luaL_checkstring(L, 3);
+        // without a method the third value is nil, not what is pushed below
+        lua_settop(L, 3);
+        if (!lua_isnil(L, 3)){
+            const char* method = luaL_checkstring(L, 3);
+            if (lua_getfield(L, 1, method) != LUA_TFUNCTION)
+                return luaL_error(L, "Network.sync: method '%s' not found on script", method);
+            lua_pop(L, 1);
         }
 
         lua_getfield(L, 1, "scene");

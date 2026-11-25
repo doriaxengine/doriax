@@ -118,6 +118,8 @@ namespace doriax {
         void flush();
 
         NetworkState getState() const;
+        // changes when the session closes, also to host or connect again
+        unsigned int getGeneration() const;
         int getId() const;
         std::vector<int> getPeers() const;
         // round trip in milliseconds, 0 while unknown

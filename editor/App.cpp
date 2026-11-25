@@ -710,8 +710,10 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
         case AppMenuCommand::RunInstance:
             // a second editor that plays the scene, to test multiplayer on one machine
             if (SceneProject* selected = project.getSelectedScene()) {
+                // by its file, two scenes may share a name
+                const std::string scene = selected->filepath.empty() ? selected->name : FileUtils::pathToUtf8(selected->filepath);
                 if (!ExternalEditor::launch({FileUtils::pathToUtf8(FileUtils::getExecutablePath()), "play",
-                        "--project", FileUtils::pathToUtf8(project.getProjectPath()), "--scene", selected->name}))
+                        "--project", FileUtils::pathToUtf8(project.getProjectPath()), "--scene", scene}))
                     Out::error("Failed to start another instance of the editor");
             }
             break;
@@ -2197,27 +2199,19 @@ bool editor::App::selectStartupScene(const std::string& scene, uint32_t& sceneId
     return selected && selected->id == sceneId;
 }
 
+// checked by CommandLine::checkPlayArgs before the window opens
 void editor::App::parseInstanceArgs(int argc, char** argv) {
     if (argc < 2 || std::strcmp(argv[1], "play") != 0)
         return;
 
     instanceEnabled = true;
-    for (int i = 2; i < argc; i++) {
+    for (int i = 2; i + 1 < argc; i += 2) {
         const std::string arg = argv[i];
-        const bool hasValue = i + 1 < argc;
-        if ((arg == "-p" || arg == "--project") && hasValue) {
-            instanceProject = std::filesystem::absolute(argv[++i]);
-        } else if ((arg == "-s" || arg == "--scene") && hasValue) {
-            instanceScene = argv[++i];
+        if (arg == "-p" || arg == "--project") {
+            instanceProject = std::filesystem::absolute(argv[i + 1]);
         } else {
-            std::cerr << "play: unknown or incomplete argument '" << arg << "'\n";
-            exitRequested = true;
+            instanceScene = argv[i + 1];
         }
-    }
-
-    if (instanceProject.empty()) {
-        std::cerr << "play: --project is required\n";
-        exitRequested = true;
     }
 }
 
@@ -2331,6 +2325,7 @@ void editor::App::loadStartupProject() {
 
         if (!project.loadProject(projectPath, false) || !selectStartupScene(instanceScene, instanceSceneId)) {
             std::cerr << "play: failed to open the scene of '" << instanceProject.string() << "'\n";
+            instanceFailed = true;
             exitRequested = true;
             return;
         }
@@ -2940,11 +2935,11 @@ void editor::App::resetLastActivatedScene(){
 }
 
 bool editor::App::shouldSyncEngineApi() const {
-    return true;
+    return !instanceEnabled;
 }
 
 bool editor::App::recordsRecentProjects() const {
-    return true;
+    return !instanceEnabled;
 }
 
 bool editor::App::locksProjects() const {
