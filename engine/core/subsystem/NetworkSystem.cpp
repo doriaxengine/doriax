@@ -178,6 +178,7 @@ void NetworkSystem::checkSession(){
     despawned.clear();
     for (auto& entry : replicas){
         entry.second.moving = false;
+        entry.second.received = false;
     }
     for (Sync& sync : syncs){
         sync.sent.clear();
@@ -230,6 +231,12 @@ void NetworkSystem::setFollowing(Replica& replica, bool following){
     if (character && (following ? !character->kinematic : replica.simulated)){
         character->kinematic = following;
         replica.simulated = following;
+        // what it was told to do does not come back with the simulation
+        character->moveVelocity = Vector3::ZERO;
+        character->needJump = false;
+        if (character->character){
+            character->character->SetLinearVelocity(JPH::Vec3::sZero());
+        }
     }
 #endif
 }
@@ -265,6 +272,7 @@ void NetworkSystem::registerReplica(Entity entity, NetworkComponent& component, 
     replica.bundle = bundle;
     replica.sent = readState(entity);
     ids[entity] = component.networkId;
+    replica.received = (bundle != 0);
 
     setFollowing(replica, joined);
 }
@@ -345,9 +353,11 @@ void NetworkSystem::updateServer(double dt){
     }
     despawned.clear();
 
-    Packet moved = createState();
-    Packet rested = createState();
-    size_t emptySize = moved.getSize();
+    // one time for the states of this send
+    const Packet empty = createState();
+    Packet moved = empty;
+    Packet rested = empty;
+    size_t emptySize = empty.getSize();
 
     for (auto& entry : replicas){
         Replica& replica = entry.second;
@@ -372,7 +382,7 @@ void NetworkSystem::updateServer(double dt){
 
             if (moved.getSize() > maxStateSize){
                 sendToSubscribers(moved, NetworkDelivery::UNRELIABLE);
-                moved = createState();
+                moved = empty;
             }
         }else if (replica.moving){
             // where it stopped can't be lost
@@ -381,7 +391,7 @@ void NetworkSystem::updateServer(double dt){
 
             if (rested.getSize() > maxReliableSize){
                 sendToSubscribers(rested, NetworkDelivery::RELIABLE);
-                rested = createState();
+                rested = empty;
             }
         }
     }
@@ -550,6 +560,9 @@ void NetworkSystem::receiveDespawn(Packet& packet){
 void NetworkSystem::receiveState(Packet& packet){
     double time = packet.readInt() / 1000.0;
     double now = NetworkSession::getTime();
+    if (!packet.isValid()){
+        return;
+    }
 
     // this clock against the server's, trip included; a late message says nothing
     if (!hasOffset || time > lastStateTime){
@@ -595,11 +608,12 @@ void NetworkSystem::receiveState(Packet& packet){
 
         // from rest it moves from where it is shown, without a jump
         double shown = now - offset - interpolationDelay;
-        if (states.empty() && shown < time){
+        if (states.empty() && it->second.received && shown < time){
             State current = readState(it->second.entity);
             current.time = shown;
             states.push_back(current);
         }
+        it->second.received = true;
 
         state.time = time;
         states.push_back(state);
@@ -630,6 +644,10 @@ void NetworkSystem::receiveValues(Packet& packet){
                 // a copy, the call may remove the sync
                 std::function<void(Packet&)> write = sync.write;
                 write(value);
+                // the call closed the session
+                if (generation != session->getGeneration()){
+                    return;
+                }
                 break;
             }
         }
@@ -681,7 +699,7 @@ float NetworkSystem::getSendRate() const{
 }
 
 void NetworkSystem::setInterpolationDelay(float interpolationDelay){
-    this->interpolationDelay = interpolationDelay;
+    this->interpolationDelay = std::max(interpolationDelay, 0.0f);
 }
 
 float NetworkSystem::getInterpolationDelay() const{
@@ -723,6 +741,9 @@ void NetworkSystem::bundleCreated(Entity root, uint32_t bundle, bool created, co
         Log::error("Network: the root of bundle %s has no NetworkComponent", BundleManager::getBundleName(bundle).c_str());
         return;
     }
+
+    // init() may create the same bundle, which is not this spawn
+    spawning = false;
 
     component->networkId = spawnId;
     component->owner = spawnOwner;

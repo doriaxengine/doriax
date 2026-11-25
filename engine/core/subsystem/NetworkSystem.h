@@ -36,6 +36,8 @@ namespace doriax{
             bool moving = false;
             // on a client: the states it moves between
             std::deque<State> states;
+            // a first state places it, the next ones move it
+            bool received = false;
             bool following = false;
             // a dynamic body and a simulated character are kinematic while they follow
             bool dynamic = false;

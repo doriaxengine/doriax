@@ -265,6 +265,7 @@ namespace doriax::editor{
         void parseInstanceArgs(int argc, char** argv);
         bool selectStartupScene(const std::string& scene, uint32_t& sceneId);
         void tickInstance();
+        void runInstance();
         void failBenchmark(const std::string& message);
         void tickBenchmark();
         void finishBenchmark();

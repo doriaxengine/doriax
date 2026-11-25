@@ -649,6 +649,8 @@ int CommandLine::runShadersCommand(int argc, char** argv, const char* executable
 }
 
 bool CommandLine::checkPlayArgs(int argc, char** argv) {
+    attachHostConsoleIfNeeded();
+
     bool hasProject = false;
     for (int i = 1; i < argc; i++) {
         const std::string arg = argv[i];

@@ -370,6 +370,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
     bool canPause = hasSelectedScene && controlState == ScenePlayState::PLAYING;
     bool canResume = hasSelectedScene && controlState == ScenePlayState::PAUSED;
     bool canStop = hasSelectedScene && (canPause || canResume || controlState == ScenePlayState::LOADING);
+    // not while this editor saves or builds for its own Play
+    bool canRunInstance = hasSelectedScene && !instanceEnabled && controlState != ScenePlayState::SAVING && controlState != ScenePlayState::LOADING;
     bool canDetachCamera = hasSelectedScene && (isPlaying || isPaused);
     bool canRemove = hasSelectedScene && !isProjectBusy && project.getScenes().size() > 1;
 
@@ -495,7 +497,7 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuSeparator(),
         menuShortcut(AppMenuCommand::RunScene, "Run Current Scene", "F5", canRun),
         menuShortcut(AppMenuCommand::DebugScene, "Debug Current Scene", "Ctrl+F5", canRun),
-        menuCommand(AppMenuCommand::RunInstance, "Run in Another Instance", hasSelectedScene && !instanceEnabled),
+        menuCommand(AppMenuCommand::RunInstance, "Run in Another Instance", canRunInstance),
         menuShortcut(AppMenuCommand::PauseScene, "Pause", "F6", canPause),
         menuShortcut(AppMenuCommand::ResumeScene, "Resume", "F5", canResume),
         menuShortcut(AppMenuCommand::StopScene, "Stop", "F7", canStop),
@@ -708,14 +710,11 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 project.startDebug();
             break;
         case AppMenuCommand::RunInstance:
-            // a second editor that plays the scene, to test multiplayer on one machine
-            if (SceneProject* selected = project.getSelectedScene()) {
-                // by its file, two scenes may share a name
-                const std::string scene = selected->filepath.empty() ? selected->name : FileUtils::pathToUtf8(selected->filepath);
-                if (!ExternalEditor::launch({FileUtils::pathToUtf8(FileUtils::getExecutablePath()), "play",
-                        "--project", FileUtils::pathToUtf8(project.getProjectPath()), "--scene", scene}))
-                    Out::error("Failed to start another instance of the editor");
-            }
+            // the instance plays what is saved
+            if (!project.isAnyScenePlaying() && project.hasScenesUnsavedChanges())
+                project.saveAllScenes([this](bool saved) { if (saved) runInstance(); });
+            else
+                runInstance();
             break;
         case AppMenuCommand::PauseScene:
             if (SceneProject* scene = project.getSelectedScene();
@@ -2213,6 +2212,19 @@ void editor::App::parseInstanceArgs(int argc, char** argv) {
             instanceScene = argv[i + 1];
         }
     }
+}
+
+// a second editor that plays the scene, to test multiplayer on one machine
+void editor::App::runInstance() {
+    SceneProject* selected = project.getSelectedScene();
+    if (!selected)
+        return;
+
+    // by its file, two scenes may share a name
+    const std::string scene = selected->filepath.empty() ? selected->name : FileUtils::pathToUtf8(selected->filepath);
+    if (!ExternalEditor::launch({FileUtils::pathToUtf8(FileUtils::getExecutablePath()), "play",
+            "--project", FileUtils::pathToUtf8(project.getProjectPath()), "--scene", scene}))
+        Out::error("Failed to start another instance of the editor");
 }
 
 void editor::App::tickInstance() {

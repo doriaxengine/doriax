@@ -24,8 +24,11 @@ bool Packet::readNumber(T& value){
     bool fits;
     if (type == PacketValue::INT){
         int64_t number = readInt();
-        value = (T)number;
-        fits = std::is_floating_point<T>::value || ((int64_t)value == number && (number >= 0 || std::is_signed<T>::value));
+        T converted = (T)number;
+        fits = std::is_floating_point<T>::value || ((int64_t)converted == number && (number >= 0 || std::is_signed<T>::value));
+        if (fits){
+            value = converted;
+        }
     }else{
         double number = (type == PacketValue::FLOAT) ? readFloat() : readDouble();
         double lowest = (double)std::numeric_limits<T>::lowest();

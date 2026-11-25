@@ -79,6 +79,9 @@ namespace {
     }
 
     void closeSocket(SocketHandle socket){
+        if (socket == invalidSocket){
+            return;
+        }
 #ifdef _WIN32
         closesocket(socket);
 #else

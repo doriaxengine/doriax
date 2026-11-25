@@ -87,6 +87,7 @@ namespace doriax {
         void writeValue(long value);
         void writeValue(unsigned long value);
         void writeValue(long long value);
+        // up to INT64_MAX, integers travel signed
         void writeValue(unsigned long long value);
         void writeValue(float value);
         void writeValue(double value);
