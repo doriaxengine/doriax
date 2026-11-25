@@ -371,7 +371,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
     bool canResume = hasSelectedScene && controlState == ScenePlayState::PAUSED;
     bool canStop = hasSelectedScene && (canPause || canResume || controlState == ScenePlayState::LOADING);
     // not while this editor saves or builds for its own Play
-    bool canRunInstance = hasSelectedScene && !instanceEnabled && controlState != ScenePlayState::SAVING && controlState != ScenePlayState::LOADING;
+    bool canRunInstance = hasSelectedScene && !instanceEnabled && !project.isAnySceneSaving() && !project.isAnySceneLoading() &&
+                          controlState != ScenePlayState::LOADING;
     bool canDetachCamera = hasSelectedScene && (isPlaying || isPaused);
     bool canRemove = hasSelectedScene && !isProjectBusy && project.getScenes().size() > 1;
 
