@@ -78,22 +78,12 @@ bool Packet::isValid() const{
     return valid;
 }
 
-void Packet::clear(){
-    data.clear();
-    position = 0;
-    valid = true;
-}
-
 void Packet::skip(size_t size){
     if (size > getRemaining()){
         valid = false;
         return;
     }
     position += size;
-}
-
-void Packet::writeBool(bool value){
-    data.push_back(value ? 1 : 0);
 }
 
 void Packet::writeUInt8(uint8_t value){
@@ -167,10 +157,6 @@ void Packet::writeQuaternion(const Quaternion& value){
 
 void Packet::writeBytes(const uint8_t* bytes, size_t size){
     data.insert(data.end(), bytes, bytes + size);
-}
-
-bool Packet::readBool(){
-    return readUInt8() != 0;
 }
 
 uint8_t Packet::readUInt8(){

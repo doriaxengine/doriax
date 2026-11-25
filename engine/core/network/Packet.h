@@ -48,11 +48,9 @@ namespace doriax {
         size_t getSize() const;
         size_t getRemaining() const;
         bool isValid() const;
-        void clear();
         // moves the reading position
         void skip(size_t size);
 
-        void writeBool(bool value);
         void writeUInt8(uint8_t value);
         void writeUInt16(uint16_t value);
         void writeUInt32(uint32_t value);
@@ -67,7 +65,6 @@ namespace doriax {
         void writeQuaternion(const Quaternion& value);
         void writeBytes(const uint8_t* bytes, size_t size);
 
-        bool readBool();
         uint8_t readUInt8();
         uint16_t readUInt16();
         uint32_t readUInt32();

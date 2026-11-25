@@ -477,7 +477,6 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
         endif()
 
         if(DORIAX_HEADLESS)
-            # nothing to link for graphics
         elseif(GRAPHIC_BACKEND STREQUAL "vulkan")
             # The device and swapchain are the same on every desktop; only the
             # surface differs, so the backend passes that in.
@@ -907,7 +906,6 @@ set(DORIAX_SRCS
     core/math/Vector2.cpp
     core/math/Vector3.cpp
     core/math/Vector4.cpp
-    core/network/LoopbackTransport.cpp
     core/network/Network.cpp
     core/network/NetworkSession.cpp
     core/network/Packet.cpp

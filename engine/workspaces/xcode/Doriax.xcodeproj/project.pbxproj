@@ -558,7 +558,6 @@
 		28E52BA95CCC81E935E8C5C9 /* AdMob.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FFF5659A4A956B408AC2FB6E /* AdMob.cpp */; };
 		F37B1C8358CB5EB3EBE70B3A /* WebPortal.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CEC8376B872CD830EFEEEEB9 /* WebPortal.cpp */; };
 		65776F3A8F4747C0463D2F62 /* ENetTransport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 236E8FA82A518585D8E07D62 /* ENetTransport.cpp */; };
-		99FC91E9D491619864143648 /* LoopbackTransport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D24AFA539D17499B36D7569C /* LoopbackTransport.cpp */; };
 		46F36CCADC7FD88D816F7F76 /* Network.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9C55134AAA7FAB85579BD621 /* Network.cpp */; };
 		FFFEEFC32C4FD8372D78266B /* NetworkSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DE91414F8E6642D2471E3990 /* NetworkSession.cpp */; };
 		BDB4658B293002F1993236DA /* Packet.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1115CB9C76300C513834993 /* Packet.cpp */; };
@@ -566,7 +565,6 @@
 		F84CC14AEBB190B5A8922A45 /* AdMob.cpp in Sources */ = {isa = PBXBuildFile; fileRef = FFF5659A4A956B408AC2FB6E /* AdMob.cpp */; };
 		C62CFC18C760189F8AF8A75C /* WebPortal.cpp in Sources */ = {isa = PBXBuildFile; fileRef = CEC8376B872CD830EFEEEEB9 /* WebPortal.cpp */; };
 		ECDEDA9359E7F90584E3DE42 /* ENetTransport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 236E8FA82A518585D8E07D62 /* ENetTransport.cpp */; };
-		6747EA27ED75F74432F0CAE0 /* LoopbackTransport.cpp in Sources */ = {isa = PBXBuildFile; fileRef = D24AFA539D17499B36D7569C /* LoopbackTransport.cpp */; };
 		9AD233C5853B12E6026C018F /* Network.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 9C55134AAA7FAB85579BD621 /* Network.cpp */; };
 		97E7D07CE2CB771B232D6299 /* NetworkSession.cpp in Sources */ = {isa = PBXBuildFile; fileRef = DE91414F8E6642D2471E3990 /* NetworkSession.cpp */; };
 		A03FC8AF0E8CF172A2C6279D /* Packet.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E1115CB9C76300C513834993 /* Packet.cpp */; };
@@ -2168,8 +2166,6 @@
 		CEC8376B872CD830EFEEEEB9 /* WebPortal.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = WebPortal.cpp; sourceTree = "<group>"; };
 		236E8FA82A518585D8E07D62 /* ENetTransport.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = ENetTransport.cpp; sourceTree = "<group>"; };
 		C2E2DD521664ECF583A6C97B /* ENetTransport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ENetTransport.h; sourceTree = "<group>"; };
-		D24AFA539D17499B36D7569C /* LoopbackTransport.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = LoopbackTransport.cpp; sourceTree = "<group>"; };
-		D8D6E2304A1C20C9D3759C10 /* LoopbackTransport.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = LoopbackTransport.h; sourceTree = "<group>"; };
 		9C55134AAA7FAB85579BD621 /* Network.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = Network.cpp; sourceTree = "<group>"; };
 		18D66EECD9880E426F82A12B /* Network.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Network.h; sourceTree = "<group>"; };
 		DE91414F8E6642D2471E3990 /* NetworkSession.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = NetworkSession.cpp; sourceTree = "<group>"; };
@@ -3356,8 +3352,6 @@
 			children = (
 				C2E2DD521664ECF583A6C97B /* ENetTransport.h */,
 				236E8FA82A518585D8E07D62 /* ENetTransport.cpp */,
-				D8D6E2304A1C20C9D3759C10 /* LoopbackTransport.h */,
-				D24AFA539D17499B36D7569C /* LoopbackTransport.cpp */,
 				18D66EECD9880E426F82A12B /* Network.h */,
 				9C55134AAA7FAB85579BD621 /* Network.cpp */,
 				CC0473DD56327A7FE0176D76 /* NetworkSession.h */,
@@ -7476,7 +7470,6 @@
 				28E52BA95CCC81E935E8C5C9 /* AdMob.cpp in Sources */,
 				F37B1C8358CB5EB3EBE70B3A /* WebPortal.cpp in Sources */,
 				65776F3A8F4747C0463D2F62 /* ENetTransport.cpp in Sources */,
-				99FC91E9D491619864143648 /* LoopbackTransport.cpp in Sources */,
 				46F36CCADC7FD88D816F7F76 /* Network.cpp in Sources */,
 				FFFEEFC32C4FD8372D78266B /* NetworkSession.cpp in Sources */,
 				BDB4658B293002F1993236DA /* Packet.cpp in Sources */,
@@ -7704,7 +7697,6 @@
 				F84CC14AEBB190B5A8922A45 /* AdMob.cpp in Sources */,
 				C62CFC18C760189F8AF8A75C /* WebPortal.cpp in Sources */,
 				ECDEDA9359E7F90584E3DE42 /* ENetTransport.cpp in Sources */,
-				6747EA27ED75F74432F0CAE0 /* LoopbackTransport.cpp in Sources */,
 				9AD233C5853B12E6026C018F /* Network.cpp in Sources */,
 				97E7D07CE2CB771B232D6299 /* NetworkSession.cpp in Sources */,
 				A03FC8AF0E8CF172A2C6279D /* Packet.cpp in Sources */,
