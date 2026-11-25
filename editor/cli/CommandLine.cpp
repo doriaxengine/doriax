@@ -277,6 +277,7 @@ static void printMainUsage(const std::string& commandName) {
         << "  " << commandName << " ide --project <path>     Write the CMake and IDE files of a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
         << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"
+        << "  " << commandName << " play --project <path>    Play a scene in another editor, --scene picks it.\n"
         << "  " << commandName << " shader-nodes             Print the shader graph node types as JSON.\n"
         << "  " << commandName << " logic-nodes              Print the logic graph node types as JSON.\n"
         << "  " << commandName << " logic <file> [options]   Write the Lua script of a logic graph.\n\n"

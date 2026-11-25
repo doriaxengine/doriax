@@ -43,6 +43,9 @@ static int run(int argc, char* argv[]) {
         }
         return editor::Backend::init(argc, argv);
     }
+    if (argc >= 2 && std::strcmp(argv[1], "play") == 0) {
+        return editor::Backend::init(argc, argv);
+    }
     if (argc == 3 && (std::strcmp(argv[1], "-p") == 0 || std::strcmp(argv[1], "--project") == 0)) {
         return editor::Backend::init(argc, argv);
     }
