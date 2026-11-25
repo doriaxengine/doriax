@@ -46,15 +46,15 @@ namespace {
         return std::uniform_real_distribution<float>(0.0f, 1.0f)(generator);
     }
 
-    // FNV-1a, an RPC travels as the hash of its name
-    uint32_t hashName(const std::string& name){
-        uint32_t hash = 2166136261u;
-        for (unsigned char c : name){
-            hash = (hash ^ c) * 16777619u;
-        }
+}
 
-        return hash;
+uint32_t NetworkSession::hashName(const std::string& name){
+    uint32_t hash = 2166136261u;
+    for (unsigned char c : name){
+        hash = (hash ^ c) * 16777619u;
     }
+
+    return hash;
 }
 
 double NetworkSession::getTime(){

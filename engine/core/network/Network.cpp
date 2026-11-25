@@ -60,6 +60,7 @@ void Network::removeSubscriptionsByTag(const std::string& substring){
     onDisconnected.removeByTagSubstring(substring);
 
     getSession().removeRpcsByTag(substring);
+    NetworkSystem::removeSyncsByTag(substring);
 }
 
 void Network::reset(){
@@ -165,4 +166,8 @@ bool Network::isOwner(Scene* scene, Entity entity){
     int owner = getOwner(scene, entity);
 
     return owner != 0 && owner == getId();
+}
+
+void Network::syncRaw(Scene* scene, Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag){
+    scene->getSystem<NetworkSystem>()->sync(entity, name, std::move(read), std::move(write), tag);
 }

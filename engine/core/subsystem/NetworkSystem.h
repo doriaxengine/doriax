@@ -71,6 +71,19 @@ namespace doriax{
         float sendRate = 20;
         float interpolationDelay = 0.1f;
 
+        // a value of a script that the clients take from the server
+        struct Sync {
+            Entity entity;
+            uint32_t name;
+            // of the script that registered it
+            std::string tag;
+            std::function<void(Packet&)> read;
+            std::function<void(Packet&)> write;
+            std::vector<uint8_t> sent;
+        };
+
+        std::vector<Sync> syncs;
+
         static void receive(NetworkSession* session, int sender, Packet& packet);
 
         uint32_t getSceneId() const;
@@ -98,6 +111,8 @@ namespace doriax{
         void receiveSpawn(Packet& packet);
         void receiveDespawn(Packet& packet);
         void receiveState(Packet& packet);
+        void receiveValues(Packet& packet);
+        void writeValues(Packet& packet, bool all);
 
     public:
         NetworkSystem(Scene* scene);
@@ -121,6 +136,10 @@ namespace doriax{
         void bundleCreated(Entity root, uint32_t bundle, bool created);
 
         int getOwner(Entity entity) const;
+
+        // read writes the value to a packet on the server, write takes it on a client
+        void sync(Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag);
+        static void removeSyncsByTag(const std::string& substring);
 
         void load() override;
         void destroy() override;

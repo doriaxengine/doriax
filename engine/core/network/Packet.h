@@ -49,6 +49,8 @@ namespace doriax {
         size_t getRemaining() const;
         bool isValid() const;
         void clear();
+        // moves the reading position
+        void skip(size_t size);
 
         void writeBool(bool value);
         void writeUInt8(uint8_t value);

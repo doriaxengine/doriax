@@ -28,6 +28,8 @@ namespace {
     const size_t maxStates = 32;
     // an unreliable message has to fit in one UDP packet
     const size_t maxStateSize = 1100;
+    // its size travels in 16 bits
+    const size_t maxValueSize = 0xFFFF;
     // a clock that jumped is taken again from the next message
     const double maxOffsetError = 0.25;
 
@@ -36,7 +38,8 @@ namespace {
         LEAVE,
         SPAWN,
         DESPAWN,
-        STATE
+        STATE,
+        VALUES
     };
 
     enum StateFlags : uint8_t {
@@ -88,6 +91,8 @@ void NetworkSystem::receive(NetworkSession* session, int sender, Packet& packet)
                 system->receiveDespawn(packet);
             }else if (type == STATE){
                 system->receiveState(packet);
+            }else if (type == VALUES){
+                system->receiveValues(packet);
             }
         }
         return;
@@ -342,6 +347,37 @@ void NetworkSystem::updateServer(double dt){
     if (rested.getSize() > emptySize){
         sendToSubscribers(rested, NetworkDelivery::RELIABLE);
     }
+
+    Packet values = createMessage(VALUES);
+    emptySize = values.getSize();
+    writeValues(values, false);
+    if (values.getSize() > emptySize){
+        sendToSubscribers(values, NetworkDelivery::RELIABLE);
+    }
+}
+
+void NetworkSystem::writeValues(Packet& packet, bool all){
+    for (Sync& sync : syncs){
+        auto it = ids.find(sync.entity);
+        if (it == ids.end()){
+            continue;
+        }
+
+        Packet value;
+        sync.read(value);
+        std::vector<uint8_t> bytes(value.getData(), value.getData() + value.getSize());
+        if ((!all && bytes == sync.sent) || bytes.size() > maxValueSize){
+            continue;
+        }
+        if (!all){
+            sync.sent = bytes;
+        }
+
+        packet.writeUInt32(it->second);
+        packet.writeUInt32(sync.name);
+        packet.writeUInt16((uint16_t)bytes.size());
+        packet.writeBytes(bytes.data(), bytes.size());
+    }
 }
 
 void NetworkSystem::updateClient(){
@@ -408,6 +444,10 @@ void NetworkSystem::receiveJoin(int sender){
         }
     }
     session->send(sender, state, NetworkDelivery::RELIABLE);
+
+    Packet values = createMessage(VALUES);
+    writeValues(values, true);
+    session->send(sender, values, NetworkDelivery::RELIABLE);
 }
 
 void NetworkSystem::receiveSpawn(Packet& packet){
@@ -495,6 +535,49 @@ void NetworkSystem::receiveState(Packet& packet){
         if (states.size() > maxStates){
             states.pop_front();
         }
+    }
+}
+
+void NetworkSystem::receiveValues(Packet& packet){
+    while (packet.isValid() && packet.getRemaining() > 0){
+        unsigned int id = packet.readUInt32();
+        uint32_t name = packet.readUInt32();
+        size_t size = packet.readUInt16();
+        if (!packet.isValid() || size > packet.getRemaining()){
+            return;
+        }
+
+        Packet value(packet.getData() + packet.getSize() - packet.getRemaining(), size);
+        packet.skip(size);
+
+        auto it = replicas.find(id);
+        if (it == replicas.end()){
+            continue;
+        }
+        for (Sync& sync : syncs){
+            if (sync.entity == it->second.entity && sync.name == name){
+                sync.write(value);
+                break;
+            }
+        }
+    }
+}
+
+void NetworkSystem::sync(Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag){
+    if (!scene->findComponent<NetworkComponent>(entity)){
+        Log::error("Network: entity %u needs a NetworkComponent to sync %s", entity, name.c_str());
+        return;
+    }
+
+    syncs.push_back({entity, NetworkSession::hashName(name), tag, std::move(read), std::move(write), {}});
+}
+
+void NetworkSystem::removeSyncsByTag(const std::string& substring){
+    for (NetworkSystem* system : getSystems()){
+        std::vector<Sync>& syncs = system->syncs;
+        syncs.erase(std::remove_if(syncs.begin(), syncs.end(), [&](const Sync& sync){
+            return sync.tag.find(substring) != std::string::npos;
+        }), syncs.end());
     }
 }
 
@@ -610,6 +693,7 @@ void NetworkSystem::onComponentRemoved(Entity entity, ComponentId componentId){
     if (isServer() && replicas[it->second].announced){
         despawned.push_back(it->second);
     }
+    syncs.erase(std::remove_if(syncs.begin(), syncs.end(), [entity](const Sync& sync){ return sync.entity == entity; }), syncs.end());
     replicas.erase(it->second);
     ids.erase(it);
 }

@@ -84,6 +84,14 @@ void Packet::clear(){
     valid = true;
 }
 
+void Packet::skip(size_t size){
+    if (size > getRemaining()){
+        valid = false;
+        return;
+    }
+    position += size;
+}
+
 void Packet::writeBool(bool value){
     data.push_back(value ? 1 : 0);
 }

@@ -209,6 +209,91 @@ namespace {
         return 1;
     }
 
+    // without arguments returns script[name], with one sets it and calls the method
+    int accessLuaSync(lua_State* L){
+        bool reading = (lua_gettop(L) == 0);
+
+        lua_pushvalue(L, lua_upvalueindex(2));
+        lua_gettable(L, lua_upvalueindex(1));
+        if (reading || lua_compare(L, 1, 2, LUA_OPEQ)){
+            return reading ? 1 : 0;
+        }
+
+        lua_pushvalue(L, lua_upvalueindex(2));
+        lua_pushvalue(L, 1);
+        lua_settable(L, lua_upvalueindex(1));
+
+        // method(self, value, oldValue)
+        if (lua_isstring(L, lua_upvalueindex(3))){
+            lua_pushvalue(L, lua_upvalueindex(3));
+            lua_gettable(L, lua_upvalueindex(1));
+            lua_pushvalue(L, lua_upvalueindex(1));
+            lua_pushvalue(L, 1);
+            lua_pushvalue(L, 2);
+            lua_call(L, 3, 0);
+        }
+
+        return 0;
+    }
+
+    // the field of a script that the clients take from the server
+    class LuaSync : public LuaFunctionBase {
+    public:
+        LuaSync(lua_State* vm): LuaFunctionBase(vm){ }
+
+        void read(Packet& packet){
+            if (!can_call(0))
+                return;
+
+            push_function(m_vm, m_func);
+            call(0, 1);
+            if (!writeRpcValue(m_vm, lua_gettop(m_vm), packet)){
+                packet.writeNil();
+            }
+            lua_pop(m_vm, 1);
+        }
+
+        void write(Packet& packet){
+            if (!can_call(1))
+                return;
+
+            push_function(m_vm, m_func);
+            if (!pushRpcValue(m_vm, packet)){
+                lua_pop(m_vm, 1);
+                return;
+            }
+            call(1);
+        }
+    };
+
+    // sync(script, name [, methodName])
+    int registerLuaSync(lua_State* L){
+        luaL_checktype(L, 1, LUA_TTABLE);
+        const char* name = luaL_checkstring(L, 2);
+        if (!lua_isnoneornil(L, 3)){
+            luaL_checkstring(L, 3);
+        }
+
+        lua_getfield(L, 1, "scene");
+        lua_getfield(L, 1, "entity");
+        if (!luabridge::isInstance<Scene>(L, -2) || !lua_isinteger(L, -1))
+            return luaL_error(L, "Network.sync: the first argument is the script, self");
+        Scene* scene = *luabridge::get<Scene*>(L, -2);
+        Entity entity = (Entity)lua_tointeger(L, -1);
+
+        lua_pushvalue(L, 1);
+        lua_pushvalue(L, 2);
+        lua_pushvalue(L, 3);
+        lua_pushcclosure(L, accessLuaSync, 3);
+
+        LuaSync sync(L);
+        std::string tag = "Sync_" + std::to_string(reinterpret_cast<std::uintptr_t>(lua_topointer(L, 1))) + "_" + name;
+        Network::syncRaw(scene, entity, name, [sync](Packet& packet) mutable { sync.read(packet); },
+            [sync](Packet& packet) mutable { sync.write(packet); }, tag);
+
+        return 0;
+    }
+
     int sendReliableLuaRpc(lua_State* L){
         return sendLuaRpc(L, NetworkDelivery::RELIABLE);
     }
@@ -1715,6 +1800,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
             [] (const std::string& bundle, Scene* scene, int owner) { return Network::spawn(bundle, scene, owner); })
         .addStaticFunction("getOwner", &Network::getOwner)
         .addStaticFunction("isOwner", &Network::isOwner)
+        .addStaticFunction("sync", &registerLuaSync)
 
         .addStaticProperty("onPeerConnected", [] () { return &Network::onPeerConnected; }, [] (lua_State* L) { Network::onPeerConnected = L; })
         .addStaticProperty("onPeerDisconnected", [] () { return &Network::onPeerDisconnected; }, [] (lua_State* L) { Network::onPeerDisconnected = L; })

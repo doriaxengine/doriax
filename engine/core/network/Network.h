@@ -16,6 +16,10 @@
 #define REGISTER_RPC(NAME, METHOD) \
     ::doriax::Network::registerRpc(NAME, this, &std::remove_pointer_t<decltype(this)>::METHOD, DORIAX_EVENT_SUBSCRIPTION_TAG(METHOD))
 
+// A member of this script that the clients take from the server
+#define REGISTER_SYNC(MEMBER) \
+    ::doriax::Network::sync(this->getScene(), this->getEntity(), #MEMBER, &this->MEMBER, nullptr, DORIAX_EVENT_SUBSCRIPTION_TAG(MEMBER))
+
 namespace doriax {
 
     class Scene;
@@ -121,6 +125,23 @@ namespace doriax {
         // the peer in the entity's NetworkComponent, 0 without one
         static int getOwner(Scene* scene, Entity entity);
         static bool isOwner(Scene* scene, Entity entity);
+
+        // A value the clients take from the server, with a call when it changes there
+        template<typename T>
+        static void sync(Scene* scene, Entity entity, const std::string& name, T* value, std::function<void()> changed = nullptr, const std::string& tag = ""){
+            syncRaw(scene, entity, name, [value](Packet& packet){
+                packet.writeValue(*value);
+            }, [value, changed](Packet& packet){
+                T received;
+                if (packet.readValue(received) && !(received == *value)){
+                    *value = received;
+                    if (changed){
+                        changed();
+                    }
+                }
+            }, tag);
+        }
+        static void syncRaw(Scene* scene, Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag = "");
 
         // on the server
         static FunctionSubscribe<void(int)> onPeerConnected;

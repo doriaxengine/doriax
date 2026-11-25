@@ -97,6 +97,8 @@ namespace doriax {
 
         // seconds of the clock the sessions of this process share
         static double getTime();
+        // FNV-1a, a name travels as its hash
+        static uint32_t hashName(const std::string& name);
 
         NetworkSession();
         ~NetworkSession();
