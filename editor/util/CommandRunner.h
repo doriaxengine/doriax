@@ -36,6 +36,10 @@ namespace doriax::editor {
         // The next run() gets a pipe as its input, which write() feeds
         void setInputPipe(bool enabled);
         bool write(const std::string& text);
+        // Written to the input pipe as soon as the next run() has its process
+        void setFirstInput(const std::string& text);
+        // The next run() passes the output on as it comes, not line by line
+        void setRawOutput(bool enabled);
 
         // Request cancellation and terminate the running process (if any).
         void cancel();
@@ -64,6 +68,8 @@ namespace doriax::editor {
 
         std::atomic<bool> cancelRequested{false};
         bool inputPipe = false;
+        bool rawOutput = false;
+        std::string firstInput;
 
 #ifdef _WIN32
         HANDLE currentProcessHandle = NULL;
