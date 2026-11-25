@@ -587,7 +587,8 @@ Platform Engine::getPlatform(){
 }
 
 GraphicBackend Engine::getGraphicBackend(){
-#if defined(SOKOL_GLCORE)
+// a headless server loads the shaders of an OpenGL export and draws none
+#if defined(SOKOL_GLCORE) || defined(DORIAX_HEADLESS)
     return GraphicBackend::GLCORE;
 #elif defined(SOKOL_GLES3)
     return GraphicBackend::GLES3;

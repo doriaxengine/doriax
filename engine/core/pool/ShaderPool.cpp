@@ -17,7 +17,7 @@
 #include <set>
 #include <bitset>
 
-#ifdef SOKOL_GLCORE
+#if defined(SOKOL_GLCORE) || defined(DORIAX_HEADLESS)
 #include "glsl410.h"
 #endif
 #ifdef SOKOL_GLES3

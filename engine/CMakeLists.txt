@@ -9,6 +9,7 @@ endif()
 option(DORIAX_PHYSICS_2D "Enable Box2D-based 2D physics" ON)
 option(DORIAX_PHYSICS_3D "Enable Jolt-based 3D physics" ON)
 option(DORIAX_ADMOB "Link Google Mobile Ads into iOS builds" ON)
+option(DORIAX_HEADLESS "Build a Linux server without window, graphics and sound" OFF)
 option(DORIAX_STOREKIT "Compile StoreKit in-app purchases into iOS builds" ON)
 set(DORIAX_WEB_PORTALS none crazygames poki gamedistribution yandex youtube)
 set(DORIAX_WEB_PORTAL none CACHE STRING "Game portal SDK of web builds")
@@ -418,8 +419,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
     if((CMAKE_SYSTEM_NAME STREQUAL "Linux") OR (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD"))
         # The native X11 backend creates a GLX context or a Vulkan surface and
-        # swapchain.
-        if(GRAPHIC_BACKEND STREQUAL "glcore")
+        # swapchain. A headless server has neither and draws nothing.
+        if(DORIAX_HEADLESS)
+            add_definitions("-DSOKOL_DUMMY_BACKEND")
+            add_definitions("-DDORIAX_HEADLESS")
+        elseif(GRAPHIC_BACKEND STREQUAL "glcore")
             add_definitions("-DSOKOL_GLCORE")
         elseif(GRAPHIC_BACKEND STREQUAL "vulkan")
             add_definitions("-DSOKOL_VULKAN")
@@ -439,28 +443,42 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 
         add_definitions("-DDORIAX_LINUX")
 
-        find_package(X11 REQUIRED)
+        if(DORIAX_HEADLESS)
+            set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/headless)
 
-        set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/linux)
+            list(APPEND PLATFORM_SOURCE
+                ${PLATFORM_ROOT}/main.cpp
+            )
 
-        list(APPEND PLATFORM_SOURCE
-            ${PLATFORM_ROOT}/DoriaxLinux.cpp
-            ${PLATFORM_ROOT}/WindowLinux.cpp
-            ${PLATFORM_ROOT}/SystemLinux.cpp
-            ${PLATFORM_ROOT}/LinuxInputRouter.cpp
-            ${PLATFORM_ROOT}/GamepadLinux.cpp
-            ${PLATFORM_ROOT}/GamepadDB.cpp
-            ${PLATFORM_ROOT}/main.cpp
-        )
+            list(APPEND PLATFORM_LIBS
+                dl m
+            )
+        else()
+            find_package(X11 REQUIRED)
 
-        # GamepadDB parses the community mapping database in common/
-        include_directories(${DORIAX_ROOT}/platform/common)
+            set(PLATFORM_ROOT ${DORIAX_ROOT}/platform/linux)
 
-        list(APPEND PLATFORM_LIBS
-            X11::X11 dl m
-        )
+            list(APPEND PLATFORM_SOURCE
+                ${PLATFORM_ROOT}/DoriaxLinux.cpp
+                ${PLATFORM_ROOT}/WindowLinux.cpp
+                ${PLATFORM_ROOT}/SystemLinux.cpp
+                ${PLATFORM_ROOT}/LinuxInputRouter.cpp
+                ${PLATFORM_ROOT}/GamepadLinux.cpp
+                ${PLATFORM_ROOT}/GamepadDB.cpp
+                ${PLATFORM_ROOT}/main.cpp
+            )
 
-        if(GRAPHIC_BACKEND STREQUAL "vulkan")
+            # GamepadDB parses the community mapping database in common/
+            include_directories(${DORIAX_ROOT}/platform/common)
+
+            list(APPEND PLATFORM_LIBS
+                X11::X11 dl m
+            )
+        endif()
+
+        if(DORIAX_HEADLESS)
+            # nothing to link for graphics
+        elseif(GRAPHIC_BACKEND STREQUAL "vulkan")
             # The device and swapchain are the same on every desktop; only the
             # surface differs, so the backend passes that in.
             list(APPEND PLATFORM_SOURCE
