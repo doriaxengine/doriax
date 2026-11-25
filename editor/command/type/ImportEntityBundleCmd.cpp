@@ -114,6 +114,15 @@ bool editor::ImportEntityBundleCmd::execute(){
         rootEntity = NULL_ENTITY;
         return false;
     }
+
+    if (ProjectUtils::isInsideBundle(scene, parent, ProjectUtils::getBranchBundles(scene, rootEntity))){
+        Out::error("Cannot import '%s' here: a bundle cannot be inside another instance of itself", filepath.string().c_str());
+        project->unimportEntityBundle(sceneId, filepath, rootEntity, importedEntities);
+        sceneProject->isModified = wasModified;
+        rootEntity = NULL_ENTITY;
+        return false;
+    }
+
     ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     // Applied after the import so nothing the bundle brings in overwrites it.

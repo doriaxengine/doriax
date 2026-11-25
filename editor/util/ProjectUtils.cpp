@@ -1011,6 +1011,47 @@ bool editor::ProjectUtils::canMoveLockedEntityOrder(Scene* scene, Entity source,
     return reject("Generated entities can only be reordered within the same parent");
 }
 
+std::unordered_set<std::string> editor::ProjectUtils::getBranchBundles(Scene* scene, Entity entity) {
+    std::unordered_set<std::string> bundlePaths;
+    auto addBundle = [&](Entity candidate) {
+        BundleComponent* bundle = scene->findComponent<BundleComponent>(candidate);
+        if (bundle && !bundle->path.empty()) {
+            bundlePaths.insert(bundle->path);
+        }
+    };
+
+    addBundle(entity);
+    if (!scene->findComponent<Transform>(entity)) {
+        return bundlePaths;
+    }
+
+    // the children follow their parent in the Transform array
+    auto transforms = scene->getComponentArray<Transform>();
+    std::unordered_set<Entity> branch = {entity};
+    for (size_t i = transforms->getIndex(entity) + 1; i < transforms->size(); i++) {
+        if (branch.count(transforms->getComponentFromIndex(i).parent) == 0) {
+            break;
+        }
+        branch.insert(transforms->getEntity(i));
+        addBundle(transforms->getEntity(i));
+    }
+
+    return bundlePaths;
+}
+
+bool editor::ProjectUtils::isInsideBundle(Scene* scene, Entity entity, const std::unordered_set<std::string>& bundlePaths) {
+    while (entity != NULL_ENTITY) {
+        BundleComponent* bundle = scene->findComponent<BundleComponent>(entity);
+        if (bundle && bundlePaths.count(bundle->path) > 0) {
+            return true;
+        }
+        Transform* transform = scene->findComponent<Transform>(entity);
+        entity = transform ? transform->parent : NULL_ENTITY;
+    }
+
+    return false;
+}
+
 std::string editor::ProjectUtils::makeUniqueEntityName(const std::string& baseName, const std::unordered_set<std::string>& existingNames) {
     if (baseName.empty() || existingNames.find(baseName) == existingNames.end()) {
         return baseName;

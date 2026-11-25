@@ -152,7 +152,8 @@ std::vector<Entity> editor::Structure::getMovableDraggedEntities(Entity draggedE
                 continue;
             }
             if (ProjectUtils::isEntityLocked(scene, sourceEntity)
-                || ProjectUtils::getModelBranchOwner(scene, sourceEntity) != NULL_ENTITY) {
+                || ProjectUtils::getModelBranchOwner(scene, sourceEntity) != NULL_ENTITY
+                || !project->canMoveBundleEntity(sceneProject->id, sourceEntity, NULL_ENTITY, type)) {
                 return {};
             }
 
@@ -181,7 +182,8 @@ std::vector<Entity> editor::Structure::getMovableDraggedEntities(Entity draggedE
             }
         }
 
-        if (!ProjectUtils::canMoveLockedEntityOrder(scene, sourceEntity, targetNode.id, type)) {
+        if (!ProjectUtils::canMoveLockedEntityOrder(scene, sourceEntity, targetNode.id, type)
+            || !project->canMoveBundleEntity(sceneProject->id, sourceEntity, targetNode.id, type)) {
             return {};
         }
 
@@ -974,12 +976,9 @@ void editor::Structure::handleEntityFilesDrop(const std::vector<std::string>& fi
             // Import the entity bundle into the current scene using command
             std::filesystem::path relativePath = std::filesystem::relative(path, project->getProjectPath());
 
-            ImportEntityBundleCmd* importCmd = new ImportEntityBundleCmd(project, project->getSelectedSceneId(), relativePath, parent, true);
-            CommandHandle::get(project->getSelectedSceneId())->addCommandNoMerge(importCmd);
+            uint32_t sceneId = project->getSelectedSceneId();
 
-            std::vector<Entity> newEntities = importCmd->getImportedEntities();
-
-            if (newEntities.size() > 0) {
+            if (CommandHandle::get(sceneId)->addCommandNoMerge(new ImportEntityBundleCmd(project, sceneId, relativePath, parent, true))) {
                 Out::info("Successfully imported bundle from: %s", path.string().c_str());
             } else {
                 Out::warning("Failed to import bundle from: %s", path.string().c_str());
@@ -1522,8 +1521,11 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                                 allowResourceDragDrop = true;
                                 break;
                             }
-                        } else {
-                            if (Util::isBundleFile(path)) {
+                        } else if (Util::isBundleFile(path)) {
+                            // the import refuses a bundle under another instance of itself
+                            std::string bundlePath = std::filesystem::path(path).lexically_relative(project->getProjectPath()).string();
+                            Scene* scene = project->getSelectedScene()->scene;
+                            if (!node.hasTransform || !ProjectUtils::isInsideBundle(scene, node.id, {bundlePath})) {
                                 allowResourceDragDrop = true;
                                 break;
                             }
