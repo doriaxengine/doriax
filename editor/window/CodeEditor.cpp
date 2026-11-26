@@ -561,7 +561,8 @@ void editor::CodeEditor::updateAllProjectSymbols() {
 
     for (const auto& [key, instance] : editors) {
         openFiles.insert(key);
-        if (!instance.editor) continue;
+        // a file from outside adds nothing to the suggestions
+        if (!instance.editor || instance.editor->IsReadOnly()) continue;
 
         if (instance.languageType == SyntaxLanguage::Lua) {
             luaContents.push_back(instance.editor->GetText());
@@ -1441,6 +1442,10 @@ void editor::CodeEditor::closeAll() {
 }
 
 bool editor::CodeEditor::save(EditorInstance& instance) {
+    // a file from outside is never written
+    if (instance.editor->IsReadOnly()) {
+        return true;
+    }
     try {
         fs::path fullPath = resolveFilepath(instance.filepath);
         if (!writeFile(fullPath, instance.editor->GetText(), instance.crlf)) {
@@ -1562,7 +1567,7 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
     }
 
     // a file from outside, as the debugger shows, is only read and not kept as a tab
-    const bool outside = instance.filepath.is_absolute() || *instance.filepath.begin() == "..";
+    const bool outside = instance.filepath.is_absolute() || (!instance.filepath.empty() && *instance.filepath.begin() == "..");
     instance.editor->SetReadOnly(outside);
     if (!outside) {
         project->addTab(TabType::CODE_EDITOR, key);
@@ -1743,7 +1748,10 @@ void editor::CodeEditor::show() {
     std::vector<std::string> openFiles;
     openFiles.reserve(editors.size());
     for (const auto& [key, instance] : editors) {
-        openFiles.push_back(key);
+        // not the files from outside, of no interest to the project's git
+        if (!instance.editor->IsReadOnly()) {
+            openFiles.push_back(key);
+        }
     }
     gitMonitor->setFiles(openFiles);
 
@@ -1805,7 +1813,7 @@ void editor::CodeEditor::show() {
             // Full-height buttons vertically centered on the status row, overlapping the
             // spacing above and below so the row keeps its text-only height
             std::string filepath = instance.filepath.string();
-            bool showEvents = Util::isLuaFile(filepath) || Util::isHeaderFile(filepath) || Util::isSourceFile(filepath);
+            bool showEvents = !instance.editor->IsReadOnly() && (Util::isLuaFile(filepath) || Util::isHeaderFile(filepath) || Util::isSourceFile(filepath));
             float framePadding = ImGui::GetStyle().FramePadding.x * 2.0f;
             float buttonsWidth = ImGui::CalcTextSize(ICON_FA_GEAR).x + framePadding;
             if (showEvents) {
@@ -1834,7 +1842,7 @@ void editor::CodeEditor::show() {
             instance.editor->Render("TextEditor");
             ImGui::PopFont();
 
-            if ((instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) && ImGui::BeginDragDropTarget()) {
+            if (!instance.editor->IsReadOnly() && (instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) && ImGui::BeginDragDropTarget()) {
                 bool isCppSource = (instance.languageType == SyntaxLanguage::Cpp) && !Util::isHeaderFile(instance.filepath.string());
 
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("entity")) {
