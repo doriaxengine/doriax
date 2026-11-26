@@ -85,7 +85,8 @@ void ComponentAddDialog::initializeCategories() {
         }},
         {"Sound & Script", ICON_FA_CODE, ImVec4(0.6f, 0.6f, 0.6f, 1.0f), {
             {ComponentType::SoundComponent, ICON_FA_VOLUME_HIGH, "Sound", "Sound player", ImVec4(0.4f, 0.7f, 0.9f, 1.0f)},
-            {ComponentType::ScriptComponent, ICON_FA_CODE, "Script", "C++ or Lua script", ImVec4(0.7f, 0.5f, 0.8f, 1.0f)}
+            {ComponentType::ScriptComponent, ICON_FA_CODE, "Script", "C++ or Lua script", ImVec4(0.7f, 0.5f, 0.8f, 1.0f)},
+            {ComponentType::NetworkComponent, ICON_FA_NETWORK_WIRED, "Network", "Follows the server in multiplayer", ImVec4(0.5f, 0.8f, 0.6f, 1.0f)}
         }}
     };
 }

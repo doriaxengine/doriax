@@ -339,6 +339,10 @@ bool editor::ExternalEditor::openFile(const fs::path& projectPath, const fs::pat
     return run(args);
 }
 
+bool editor::ExternalEditor::launch(const std::vector<std::string>& args) {
+    return run(args);
+}
+
 bool editor::ExternalEditor::openProject(const fs::path& projectPath) {
     const ScriptEditor scriptEditor = AppSettings::getScriptEditor();
     const std::string project = FileUtils::pathToUtf8(projectPath);

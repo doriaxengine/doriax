@@ -499,6 +499,12 @@ namespace {
         makeFastProperty<MirrorComponent, Vector3, &MirrorComponent::normal>("normal", PropertyType::Vector3, UpdateFlags_None),
     };
 
+    static const FastPropertyDescriptor kNetworkProperties[] = {
+        makeFastProperty<NetworkComponent, bool, &NetworkComponent::syncPosition>("syncPosition", PropertyType::Bool, UpdateFlags_None),
+        makeFastProperty<NetworkComponent, bool, &NetworkComponent::syncRotation>("syncRotation", PropertyType::Bool, UpdateFlags_None),
+        makeFastProperty<NetworkComponent, bool, &NetworkComponent::syncScale>("syncScale", PropertyType::Bool, UpdateFlags_None),
+    };
+
     static const FastPropertyDescriptor kReflectionProbeProperties[] = {
         makeFastProperty<ReflectionProbeComponent, ReflectionProbeMode, &ReflectionProbeComponent::mode>("mode", PropertyType::Enum, UpdateFlags_Reflection_Probe_Capture),
         makeFastProperty<ReflectionProbeComponent, ReflectionProbeUpdateMode, &ReflectionProbeComponent::updateMode>("updateMode", PropertyType::Enum, UpdateFlags_Reflection_Probe_Sampling),
@@ -1579,6 +1585,10 @@ namespace {
         return resolveDirectProperties(static_cast<MirrorComponent*>(comp), propertyName, kMirrorProperties);
     }
 
+    PropertyData resolveNetworkPropertyFast(void* comp, const std::string& propertyName) {
+        return resolveDirectProperties(static_cast<NetworkComponent*>(comp), propertyName, kNetworkProperties);
+    }
+
     PropertyData resolveReflectionProbePropertyFast(void* comp, const std::string& propertyName) {
         return resolveDirectProperties(static_cast<ReflectionProbeComponent*>(comp), propertyName, kReflectionProbeProperties);
     }
@@ -2608,6 +2618,10 @@ namespace {
         enumerateFromDescriptors(comp, ps, kMirrorProperties);
     }
 
+    void enumerateNetworkProperties(void* comp, std::map<std::string, PropertyData>& ps) {
+        enumerateFromDescriptors(comp, ps, kNetworkProperties);
+    }
+
     void enumerateReflectionProbeProperties(void* comp, std::map<std::string, PropertyData>& ps) {
         enumerateFromDescriptors(comp, ps, kReflectionProbeProperties);
     }
@@ -3314,6 +3328,7 @@ namespace {
         {ComponentType::LightComponent, &findComponentPtr<LightComponent>, &resolveLightPropertyFast, &enumerateLightProperties},
         {ComponentType::FogComponent, &findComponentPtr<FogComponent>, &resolveFogPropertyFast, &enumerateFogProperties},
         {ComponentType::MirrorComponent, &findComponentPtr<MirrorComponent>, &resolveMirrorPropertyFast, &enumerateMirrorProperties},
+        {ComponentType::NetworkComponent, &findComponentPtr<NetworkComponent>, &resolveNetworkPropertyFast, &enumerateNetworkProperties},
         {ComponentType::ReflectionProbeComponent, &findComponentPtr<ReflectionProbeComponent>, &resolveReflectionProbePropertyFast, &enumerateReflectionProbeProperties},
         {ComponentType::Light2DComponent, &findComponentPtr<Light2DComponent>, &resolveLight2DPropertyFast, &enumerateLight2DProperties},
         {ComponentType::Occluder2DComponent, &findComponentPtr<Occluder2DComponent>, &resolveOccluder2DPropertyFast, &enumerateOccluder2DProperties},
@@ -3445,6 +3460,8 @@ std::string editor::Catalog::getComponentName(ComponentType component, bool remo
         name = "FogComponent";
     }else if(component == ComponentType::MirrorComponent){
         name = "MirrorComponent";
+    }else if(component == ComponentType::NetworkComponent){
+        name = "NetworkComponent";
     }else if(component == ComponentType::ReflectionProbeComponent){
         name = "ReflectionProbeComponent";
     }else if(component == ComponentType::WaterComponent){
@@ -3580,6 +3597,8 @@ ComponentId editor::Catalog::getComponentId(const EntityRegistry* registry, Comp
             return registry->getComponentId<FogComponent>();
         case ComponentType::MirrorComponent:
             return registry->getComponentId<MirrorComponent>();
+        case ComponentType::NetworkComponent:
+            return registry->getComponentId<NetworkComponent>();
         case ComponentType::ReflectionProbeComponent:
             return registry->getComponentId<ReflectionProbeComponent>();
         case ComponentType::WaterComponent:
@@ -3692,6 +3711,8 @@ editor::ComponentType editor::Catalog::getComponentType(const std::string& compo
         return ComponentType::FogComponent;
     }else if(normalizedName == "mirror"){
         return ComponentType::MirrorComponent;
+    }else if(normalizedName == "network"){
+        return ComponentType::NetworkComponent;
     }else if(normalizedName == "reflectionprobe"){
         return ComponentType::ReflectionProbeComponent;
     }else if(normalizedName == "water"){
@@ -3863,6 +3884,9 @@ std::vector<editor::ComponentType> editor::Catalog::findComponents(EntityRegistr
     }
     if (registry->findComponent<MirrorComponent>(entity)){
         ret.push_back(ComponentType::MirrorComponent);
+    }
+    if (registry->findComponent<NetworkComponent>(entity)){
+        ret.push_back(ComponentType::NetworkComponent);
     }
     if (registry->findComponent<ReflectionProbeComponent>(entity)){
         ret.push_back(ComponentType::ReflectionProbeComponent);
@@ -4610,6 +4634,11 @@ void editor::Catalog::copyComponent(EntityRegistry* sourceRegistry, Entity sourc
         case ComponentType::MirrorComponent: {
             YAML::Node encoded = Stream::encodeMirrorComponent(sourceRegistry->getComponent<MirrorComponent>(sourceEntity));
             targetRegistry->getComponent<MirrorComponent>(targetEntity) = Stream::decodeMirrorComponent(encoded);
+            break;
+        }
+        case ComponentType::NetworkComponent: {
+            YAML::Node encoded = Stream::encodeNetworkComponent(sourceRegistry->getComponent<NetworkComponent>(sourceEntity));
+            targetRegistry->getComponent<NetworkComponent>(targetEntity) = Stream::decodeNetworkComponent(encoded);
             break;
         }
 

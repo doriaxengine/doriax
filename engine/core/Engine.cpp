@@ -11,6 +11,7 @@
 #include "render/SystemRender.h"
 #include "script/LuaBinding.h"
 #include "manager/SceneManager.h"
+#include "network/Network.h"
 #include "subsystem/AudioSystem.h"
 #include "subsystem/PhysicsSystem.h"
 #include "subsystem/RenderSystem.h"
@@ -586,7 +587,8 @@ Platform Engine::getPlatform(){
 }
 
 GraphicBackend Engine::getGraphicBackend(){
-#if defined(SOKOL_GLCORE)
+// a headless server loads the shaders of an OpenGL export and draws none
+#if defined(SOKOL_GLCORE) || defined(DORIAX_HEADLESS)
     return GraphicBackend::GLCORE;
 #elif defined(SOKOL_GLES3)
     return GraphicBackend::GLES3;
@@ -839,6 +841,7 @@ void Engine::removeSubscriptionsByTag(const std::string& substring) {
     AdMob::removeSubscriptionsByTag(substring);
     InAppPurchase::removeSubscriptionsByTag(substring);
     WebPortal::removeSubscriptionsByTag(substring);
+    Network::removeSubscriptionsByTag(substring);
 }
 
 void Engine::clearAllSubscriptions(bool includeLifecycle) {
@@ -873,6 +876,7 @@ void Engine::clearAllSubscriptions(bool includeLifecycle) {
     AdMob::clearSubscriptions();
     InAppPurchase::clearSubscriptions();
     WebPortal::clearSubscriptions();
+    Network::clearSubscriptions();
 
     if (includeLifecycle) {
         onViewLoaded.clear();
@@ -882,6 +886,9 @@ void Engine::clearAllSubscriptions(bool includeLifecycle) {
         onPause.clear();
         onResume.clear();
         onShutdown.clear();
+
+        // the project stopped, its connections end with it
+        Network::reset();
     }
 }
 
@@ -1151,6 +1158,9 @@ void Engine::runFrame(bool draw){
     InAppPurchase::dispatchEvents();
     WebPortal::dispatchEvents();
 
+    // what the peers sent since the last frame
+    Network::update();
+
     // a transition requested during the last frame; one requested by its factory waits again
     SceneManager::applyPendingLoad();
 
@@ -1220,6 +1230,9 @@ void Engine::runFrame(bool draw){
         }
         Engine::onPostUpdate.call();
     }
+
+    // RPCs of this frame leave now, not with the next one
+    Network::flush();
 
     if (draw){
         Engine::onDraw.call();
@@ -1316,6 +1329,8 @@ void Engine::systemShutdown(){
     InAppPurchase::reset();
     WebPortal::clearSubscriptions();
     WebPortal::reset();
+    Network::clearSubscriptions();
+    Network::reset();
 
     LuaBinding::cleanup();
 

@@ -1495,6 +1495,19 @@ std::string editor::Factory::createMirrorComponent(int indentSpaces, EntityRegis
     return code.str();
 }
 
+std::string editor::Factory::createNetworkComponent(int indentSpaces, EntityRegistry* scene, Entity entity, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
+    if (!scene->findComponent<NetworkComponent>(entity)) return "";
+    NetworkComponent& network = scene->getComponent<NetworkComponent>(entity);
+    std::ostringstream code;
+    const std::string ind = indentation(indentSpaces);
+    code << ind << "NetworkComponent network;\n";
+    code << ind << "network.syncPosition = " << formatBool(network.syncPosition) << ";\n";
+    code << ind << "network.syncRotation = " << formatBool(network.syncRotation) << ";\n";
+    code << ind << "network.syncScale = " << formatBool(network.syncScale) << ";\n";
+    addComponentCode(code, ind, sceneName, entityName, entity, "NetworkComponent", "network", assignExisting);
+    return code.str();
+}
+
 std::string editor::Factory::createReflectionProbeComponent(int indentSpaces, EntityRegistry* scene, Entity entity, const fs::path& projectPath, std::string sceneName, std::string entityName, bool assignExisting, const std::unordered_map<Entity, std::string>* entityVarNames) {
     if (!scene->findComponent<ReflectionProbeComponent>(entity)) return "";
     ReflectionProbeComponent& probe = scene->getComponent<ReflectionProbeComponent>(entity);
@@ -2462,6 +2475,7 @@ std::string editor::Factory::createComponent(int indentSpaces, EntityRegistry* s
         case ComponentType::Occluder2DComponent: return createOccluder2DComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::FogComponent: return createFogComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::MirrorComponent: return createMirrorComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
+        case ComponentType::NetworkComponent: return createNetworkComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::ReflectionProbeComponent: return createReflectionProbeComponent(indentSpaces, scene, entity, projectPath, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::CameraComponent: return createCameraComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);
         case ComponentType::SoundComponent: return createSoundComponent(indentSpaces, scene, entity, sceneName, entityName, assignExisting, entityVarNames);

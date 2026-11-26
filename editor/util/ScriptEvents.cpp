@@ -37,6 +37,7 @@ const std::vector<ScriptEventSourceInfo>& sourceList() {
         {S::AdMob, "AdMob", ICON_FA_RECTANGLE_AD, "AdMob.h", "", "REGISTER_EVENT", "", "AdMob"},
         {S::InAppPurchase, "In-App Purchase", ICON_FA_CART_SHOPPING, "InAppPurchase.h", "", "REGISTER_EVENT", "", "InAppPurchase"},
         {S::WebPortal, "Web Portal", ICON_FA_GLOBE, "WebPortal.h", "", "REGISTER_EVENT", "", "WebPortal"},
+        {S::Network, "Network", ICON_FA_NETWORK_WIRED, "Network.h", "", "REGISTER_EVENT", "", "Network"},
     };
     return sources;
 }
@@ -177,6 +178,12 @@ const std::vector<ScriptEvent>& eventList() {
         {S::WebPortal, "onDataLoaded", "Cloud Save", "The cloud save loaded; saving works from now on", {{"std::string", "data"}}},
         {S::WebPortal, "onDataLoadFailed", "Cloud Save", "The cloud save could not be loaded", {{"std::string", "message"}}},
         {S::WebPortal, "onDataSaveFailed", "Cloud Save", "Saving to the cloud failed", {{"std::string", "message"}}},
+
+        {S::Network, "onPeerConnected", "Server", "A client joined the server", {{"int", "peer"}}},
+        {S::Network, "onPeerDisconnected", "Server", "A client left the server", {{"int", "peer"}}},
+        {S::Network, "onConnected", "Client", "The server accepted the connection", {}},
+        {S::Network, "onConnectionFailed", "Client", "No connection: unreachable, timeout, version, full or protocol", {{"std::string", "reason"}}},
+        {S::Network, "onDisconnected", "Client", "The server closed or was lost", {}},
     };
     return events;
 }

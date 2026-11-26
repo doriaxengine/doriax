@@ -8625,6 +8625,17 @@ void editor::Properties::drawMirrorComponent(ComponentType cpType, SceneProject*
     endTable();
 }
 
+void editor::Properties::drawNetworkComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    RowSettings positionSettings;
+    positionSettings.help = "Clients follow the position this entity has on the server. In a bundle only the root follows, and the bundle is created with Network.spawn.";
+
+    beginTable(cpType, getLabelSize("Sync Position"));
+    propertyRow(RowPropertyType::Bool, cpType, "syncPosition", "Sync Position", sceneProject, entities, positionSettings);
+    propertyRow(RowPropertyType::Bool, cpType, "syncRotation", "Sync Rotation", sceneProject, entities);
+    propertyRow(RowPropertyType::Bool, cpType, "syncScale", "Sync Scale", sceneProject, entities);
+    endTable();
+}
+
 void editor::Properties::drawReflectionProbeComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
     ReflectionProbeComponent& probe = sceneProject->scene->getComponent<ReflectionProbeComponent>(entities[0]);
 
@@ -14258,6 +14269,8 @@ void editor::Properties::show(){
                     drawFogComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::MirrorComponent){
                     drawMirrorComponent(cpType, sceneProject, entities);
+                }else if (cpType == ComponentType::NetworkComponent){
+                    drawNetworkComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::ReflectionProbeComponent){
                     drawReflectionProbeComponent(cpType, sceneProject, entities);
                 }else if (cpType == ComponentType::CameraComponent){

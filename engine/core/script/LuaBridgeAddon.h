@@ -9,6 +9,7 @@
 #include "service/AdMob.h"
 #include "service/InAppPurchase.h"
 #include "service/WebPortal.h"
+#include "network/NetworkSession.h"
 #include "FileData.h"
 #include "thread/ResourceProgress.h"
 #include "texture/Material.h"
@@ -87,6 +88,7 @@ namespace luabridge
     template<> struct Stack<WebPortalType> : EnumWrapper<WebPortalType>{};
     template<> struct Stack<WebPortalAdType> : EnumWrapper<WebPortalAdType>{};
     template<> struct Stack<WebPortalEnvironment> : EnumWrapper<WebPortalEnvironment>{};
+    template<> struct Stack<NetworkState> : EnumWrapper<NetworkState>{};
     template<> struct Stack<PurchaseState> : EnumWrapper<PurchaseState>{};
     template<> struct Stack<BillingResponse> : SignedEnumWrapper<BillingResponse>{};
     template<> struct Stack<RecurrenceMode> : EnumWrapper<RecurrenceMode>{};

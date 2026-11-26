@@ -738,6 +738,13 @@ Scene* SceneManager::getScenePtr(uint32_t id) {
     return (it != scenePtrs.end()) ? it->second : nullptr;
 }
 
+uint32_t SceneManager::getScenePtrId(Scene* scene) {
+    for (const auto& entry : scenePtrs) {
+        if (entry.second == scene) return entry.first;
+    }
+    return 0;
+}
+
 void SceneManager::removeScenePtr(uint32_t id) {
     scenePtrs.erase(id);
 }

@@ -1637,6 +1637,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addProperty("maxStrength", &Character3D::getMaxStrength, &Character3D::setMaxStrength)
         .addProperty("gravityFactor", &Character3D::getGravityFactor, &Character3D::setGravityFactor)
         .addProperty("airControl", &Character3D::getAirControl, &Character3D::setAirControl)
+        .addProperty("kinematic", &Character3D::isKinematic, &Character3D::setKinematic)
         .addFunction("getCharacter3DComponent", [] (Character3D* self) -> Character3DComponent& { return self->getComponent<Character3DComponent>(); })
         .endClass();
 

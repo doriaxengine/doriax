@@ -227,6 +227,8 @@ namespace doriax {
 
         // Retrieve a stored scene pointer by ID. Returns nullptr if not found.
         static Scene* getScenePtr(uint32_t id);
+        // the id a scene was set with, or 0
+        static uint32_t getScenePtrId(Scene* scene);
 
         // Remove a stored scene pointer.
         static void removeScenePtr(uint32_t id);

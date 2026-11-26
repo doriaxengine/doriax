@@ -129,7 +129,8 @@ namespace doriax::editor{
         WaterComponent,
         WaterExclusionComponent,
         SkinComponent,
-        Character3DComponent
+        Character3DComponent,
+        NetworkComponent
     };
 
     enum class PropertyType{
