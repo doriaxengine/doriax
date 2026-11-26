@@ -98,8 +98,6 @@ namespace doriax {
                 (instance->*method)(sender, args...);
             }), tag);
         }
-        // the handler reads the values from the packet
-        static void registerRawRpc(const std::string& name, NetworkSession::RpcHandler handler, const std::string& tag = "");
         static void unregisterRpc(const std::string& name);
 
         // to a peer, to ALL, or to this peer to call it here
@@ -118,7 +116,6 @@ namespace doriax {
 
             return sendRpc(target, name, values, NetworkDelivery::UNRELIABLE);
         }
-        static bool sendRpc(int target, const std::string& name, const Packet& values, NetworkDelivery delivery);
 
         // on the server, creates the bundle here and on the clients
         static Entity spawn(const std::string& bundle, Scene* scene, int owner = SERVER);
@@ -141,6 +138,10 @@ namespace doriax {
                 }
             }, tag);
         }
+
+        // For the script bindings, which read and write the values of a packet themselves
+        static void registerRawRpc(const std::string& name, NetworkSession::RpcHandler handler, const std::string& tag = "");
+        static bool sendRpc(int target, const std::string& name, const Packet& values, NetworkDelivery delivery);
         static void syncRaw(Scene* scene, Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag = "");
 
         // on the server

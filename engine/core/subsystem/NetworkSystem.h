@@ -17,6 +17,10 @@ namespace doriax{
 
     // Keeps the entities with a NetworkComponent of the clients like those of the server
     class DORIAX_API NetworkSystem : public SubSystem {
+
+        friend class Network;
+        friend class BundleManager;
+
     private:
         struct State {
             // of the server clock, in seconds
@@ -121,12 +125,24 @@ namespace doriax{
         // to a peer, or to the subscribers when it is 0
         void sendValues(int peer, bool all);
 
+        // Network's own
+        void setSession(NetworkSession* session);
+
+        // Called by Network
+        Entity spawn(const std::string& bundle, int owner);
+        int getOwner(Entity entity) const;
+        // read writes the value to a packet on the server, write takes it on a client
+        void sync(Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag);
+        static void removeSyncsByTag(const std::string& substring);
+
+        // Called by BundleManager before the scripts of a new instance start
+        void bundleCreated(Entity root, uint32_t bundle, bool created, const std::vector<Entity>& entities);
+
     public:
         NetworkSystem(Scene* scene);
         virtual ~NetworkSystem();
 
-        // Network's own by default
-        void setSession(NetworkSession* session);
+        // for a scene that SceneManager did not create, the same on every peer
         void setSceneId(uint32_t sceneId);
 
         // states sent per second by the server
@@ -136,17 +152,6 @@ namespace doriax{
         // seconds a client shows the past, to always have two states to move between
         void setInterpolationDelay(float interpolationDelay);
         float getInterpolationDelay() const;
-
-        // on the server, creates the bundle here and on every client of this scene
-        Entity spawn(const std::string& bundle, int owner);
-        // called by BundleManager before the scripts of a new instance start
-        void bundleCreated(Entity root, uint32_t bundle, bool created, const std::vector<Entity>& entities);
-
-        int getOwner(Entity entity) const;
-
-        // read writes the value to a packet on the server, write takes it on a client
-        void sync(Entity entity, const std::string& name, std::function<void(Packet&)> read, std::function<void(Packet&)> write, const std::string& tag);
-        static void removeSyncsByTag(const std::string& substring);
 
         void load() override;
         void destroy() override;
