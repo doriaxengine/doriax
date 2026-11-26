@@ -28,9 +28,9 @@ namespace {
         return it != from.end() && it->is_string() ? it->get<std::string>() : "";
     }
 
-    int number(const json& from, const char* key) {
+    int64_t number(const json& from, const char* key) {
         const auto it = from.find(key);
-        return it != from.end() && it->is_number_integer() ? it->get<int>() : 0;
+        return it != from.end() && it->is_number_integer() ? it->get<int64_t>() : 0;
     }
 
     json object(const json& from, const char* key) {
@@ -108,7 +108,7 @@ std::string editor::NativeDebugger::sourceName(const fs::path& file) {
 
 bool editor::NativeDebugger::isSource(const fs::path& file) {
     const std::string extension = file.extension().string();
-    return extension == ".c" || Util::isSourceFile(extension) || Util::isHeaderFile(extension);
+    return extension == ".c" || extension == ".C" || Util::isSourceFile(extension) || Util::isHeaderFile(extension);
 }
 
 editor::NativeDebugger::~NativeDebugger() {
@@ -120,6 +120,7 @@ void editor::NativeDebugger::attach(const std::string& adapter, int pid, const s
     this->pid = pid;
     this->ready = std::move(ready);
     breakpoints = files;
+    gdb = adapter.find("--interpreter=dap") != std::string::npos;
     state = State::ATTACHING;
     processRunning = true;
     runner.setInputPipe(true);
@@ -325,7 +326,7 @@ void editor::NativeDebugger::onMessage(const json& message) {
 }
 
 void editor::NativeDebugger::onResponse(const json& message) {
-    const auto it = pending.find(number(message, "request_seq"));
+    const auto it = pending.find(static_cast<int>(number(message, "request_seq")));
     if (it == pending.end()) {
         return;
     }
@@ -349,22 +350,22 @@ void editor::NativeDebugger::onResponse(const json& message) {
         case Request::ATTACH:
             send("threads", json::object(), Request::THREADS);
             break;
-        case Request::THREADS: {
-            // gdb says nothing when the system refuses the attach
-            const json threads = list(body, "threads");
-            if (threads.empty()) {
-                fail("the system refused it (ptrace)");
-                break;
-            }
-            mainThread = number(threads[0], "id");
-            threadsAnswered = true;
-            checkReady();
-            break;
-        }
         case Request::CONFIGURATION:
             configurationAnswered = true;
             checkReady();
             break;
+        case Request::THREADS: {
+            // lldb has none to tell once the process runs again
+            const json threads = list(body, "threads");
+            if (threads.empty() && gdb) {
+                fail("the system refused it (ptrace)");
+                break;
+            }
+            mainThread = threads.empty() ? 0 : number(threads[0], "id");
+            threadsAnswered = true;
+            checkReady();
+            break;
+        }
         case Request::STACK:
             for (const json& entry : list(body, "stackFrames")) {
                 const fs::path file = FileUtils::pathFromUtf8(text(object(entry, "source"), "path"));
@@ -372,7 +373,7 @@ void editor::NativeDebugger::onResponse(const json& message) {
                 frame.level = static_cast<int>(frames.size());
                 frame.name = text(entry, "name");
                 frame.source = file.is_absolute() ? sourceName(file) : FileUtils::pathToGenericUtf8(file);
-                frame.line = number(entry, "line");
+                frame.line = static_cast<int>(number(entry, "line"));
                 frames.push_back(frame);
                 frameIds.push_back(number(entry, "id"));
             }
@@ -397,7 +398,7 @@ void editor::NativeDebugger::onResponse(const json& message) {
                 // not the globals nor the registers, by name where no hint comes
                 const std::string hint = text(scope, "presentationHint");
                 const std::string name = hint.empty() ? text(scope, "name") : "";
-                const int ref = number(scope, "variablesReference");
+                const int64_t ref = number(scope, "variablesReference");
                 if (ref > 0 && (hint == "arguments" || hint == "locals" || name == "Arguments" || name == "Locals")) {
                     variables.waiting++;
                     send("variables", {{"variablesReference", ref}}, Request::VARIABLES, asked.key);
@@ -416,7 +417,7 @@ void editor::NativeDebugger::onResponse(const json& message) {
             // gdb puts what a pointer points to under one more level, a "value" with none
             const json entries = list(body, "variables");
             const bool wrapped = entries.size() == 1 && text(entries[0], "name") == "value" && text(entries[0], "value").empty();
-            const int pointee = wrapped && pointers.count(asked.key) ? number(entries[0], "variablesReference") : 0;
+            const int64_t pointee = wrapped && pointers.count(asked.key) ? number(entries[0], "variablesReference") : 0;
             if (pointee > 0) {
                 send("variables", {{"variablesReference", pointee}}, Request::POINTEE, asked.key);
             } else {
@@ -433,7 +434,8 @@ void editor::NativeDebugger::onResponse(const json& message) {
 }
 
 void editor::NativeDebugger::onStop(const json& body) {
-    stopThread = body.contains("threadId") ? number(body, "threadId") : mainThread;
+    const int64_t thread = number(body, "threadId");
+    stopThread = thread ? thread : mainThread;
     const std::string reason = text(body, "reason");
     // gdb stops the process it attaches to
     if (state == State::ATTACHING || reason == "attach" || reason == "entry") {
@@ -465,7 +467,7 @@ std::vector<editor::DebugVariable> editor::NativeDebugger::readVariables(const j
         if (variable.value.empty()) {
             variable.value = variable.type;
         }
-        variable.ref = number(entry, "variablesReference");
+        variable.ref = static_cast<int>(number(entry, "variablesReference"));
         if (variable.ref && variable.type.find('*') != std::string::npos) {
             pointers.insert(variable.ref);
         }

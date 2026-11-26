@@ -101,7 +101,8 @@ namespace doriax::editor {
         bool released = false;
         // the project folder as the frames of C++ files start
         std::string sourceRoot;
-        bool pausePending = false;
+        // the session a pause waits in, 0 for none
+        unsigned int pauseSession = 0;
         std::chrono::steady_clock::time_point pauseDeadline;
 
         std::string stopReason;

@@ -8,6 +8,7 @@
 #include "json.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <set>
@@ -75,7 +76,7 @@ namespace doriax::editor {
 
     private:
         enum class State { IDLE, ATTACHING, RUNNING, STOPPED };
-        enum class Request { OTHER, INITIALIZE, ATTACH, THREADS, CONFIGURATION, STACK, SIGNAL, SCOPES, VARIABLES, FIELDS, POINTEE };
+        enum class Request { OTHER, INITIALIZE, ATTACH, CONFIGURATION, THREADS, STACK, SIGNAL, SCOPES, VARIABLES, FIELDS, POINTEE };
 
         struct Pending {
             Request request;
@@ -117,6 +118,8 @@ namespace doriax::editor {
         std::string noise;
 
         int pid = 0;
+        // it answers an attach the system refused as a good one
+        bool gdb = false;
         std::function<void()> ready;
         bool threadsAnswered = false;
         bool configurationAnswered = false;
@@ -127,13 +130,14 @@ namespace doriax::editor {
         int sequence = 0;
         std::map<int, Pending> pending;
 
-        int mainThread = 0;
-        int stopThread = 0;
+        // ids of lldb go past 32 bits
+        int64_t mainThread = 0;
+        int64_t stopThread = 0;
         unsigned int stopSerial = 0;
         std::string stopReason;
         std::string stopMessage;
         std::vector<DebugFrame> frames;
-        std::vector<int> frameIds;
+        std::vector<int64_t> frameIds;
         std::map<int, FrameVariables> frameVariables;
         std::map<int, std::vector<DebugVariable>> fields;
         std::set<int> requestedFields;

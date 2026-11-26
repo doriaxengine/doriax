@@ -51,7 +51,7 @@ void editor::DebuggerWindow::showControls(ScriptDebugger& debugger) {
     ImGui::EndDisabled();
 
     ImGui::SameLine();
-    ImGui::BeginDisabled(state != ScriptDebugger::State::RUNNING);
+    ImGui::BeginDisabled(state != ScriptDebugger::State::RUNNING || debugger.isNativeAttaching());
     if (ImGui::Button(ICON_FA_PAUSE " Pause")) debugger.pause();
     ImGui::SetItemTooltip(debugger.isNativeAttached() ? "F6, stops at the next line of Lua that runs, or in the C++ code when none does"
                                                       : "F6, stops at the next line of Lua that runs");

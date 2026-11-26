@@ -11192,6 +11192,7 @@ void editor::Project::start(uint32_t sceneId) {
         Out::warning("Cannot start: a scene runs with the debugger");
         return;
     }
+    debugger.dropStaleBreakpoints();
     if (debugger.hasBreakpoints()) {
         Out::info("Breakpoints do not stop a scene that plays in the editor: use Debug (Ctrl+F5)");
     }

@@ -62,7 +62,10 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
         worker.join();
     }
     this->nativeAdapter = nativeAdapter;
-    sourceRoot = NativeDebugger::sourceName(workingDir) + "/";
+    sourceRoot = NativeDebugger::sourceName(workingDir);
+    if (sourceRoot.empty() || sourceRoot.back() != '/') {
+        sourceRoot += "/";
+    }
     released = false;
     native.onStopped = [this]() {
         nativeStop = true;
@@ -213,9 +216,9 @@ void editor::ScriptDebugger::pause() {
         return;
     }
     send("pause");
-    if (native.isAttached() && !pausePending) {
+    if (native.isAttached() && pauseSession != session) {
         // with no Lua to stop at, the whole process stops
-        pausePending = true;
+        pauseSession = session;
         pauseDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
         awaitPause(session);
     }
@@ -379,7 +382,9 @@ void editor::ScriptDebugger::awaitPause(unsigned int started) {
             awaitPause(started);
             return;
         }
-        pausePending = false;
+        if (started == pauseSession) {
+            pauseSession = 0;
+        }
         if (waiting) {
             // takes the pause of Lua back
             send("continue");

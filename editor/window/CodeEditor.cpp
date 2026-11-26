@@ -456,6 +456,11 @@ editor::SyntaxLanguage languageForPath(const fs::path& path) {
     return editor::SyntaxLanguage::None;
 }
 
+// Shaders share the C++ highlighter, with no breakpoints
+bool hasBreakpoints(const fs::path& path) {
+    return languageForPath(path) == editor::SyntaxLanguage::Lua || editor::NativeDebugger::isSource(path);
+}
+
 // Reads every project script that is not already open in the editor
 void collectProjectSources(const fs::path& projectPath, const std::unordered_set<std::string>& openFiles,
                            std::vector<std::string>& luaContents, std::vector<std::string>& cppContents) {
@@ -1556,8 +1561,13 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
         return;
     }
 
-    project->addTab(TabType::CODE_EDITOR, key);
-    project->saveWorkspaceFile();
+    // a file from outside, as the debugger shows, is only read and not kept as a tab
+    const bool outside = instance.filepath.is_absolute() || *instance.filepath.begin() == "..";
+    instance.editor->SetReadOnly(outside);
+    if (!outside) {
+        project->addTab(TabType::CODE_EDITOR, key);
+        project->saveWorkspaceFile();
+    }
 
     Backend::getApp().addNewCodeWindowToDock(instance.filepath, dockToCentral);
 
@@ -1693,11 +1703,13 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
     // A new extension needs its own highlighter, and SetLanguage drops the project
     // symbols the suggestions engine had for this buffer
     SyntaxLanguage language = languageForPath(newKey);
+    if (language != renamed.languageType || !hasBreakpoints(newKey)) {
+        renamed.editor->SetBreakpointsEnabled(false);
+        renamed.editor->SetBreakpoints({});
+    }
     if (language != renamed.languageType) {
         renamed.languageType = language;
         renamed.editor->SetLanguage(language);
-        renamed.editor->SetBreakpointsEnabled(false);
-        renamed.editor->SetBreakpoints({});
         updateAllProjectSymbols();
     }
 
@@ -1810,7 +1822,7 @@ void editor::CodeEditor::show() {
             showSettingsButton();
             ImGui::SetCursorPosY(statusRowY + ImGui::GetTextLineHeightWithSpacing());
 
-            if (instance.languageType == SyntaxLanguage::Lua || NativeDebugger::isSource(instance.filepath)) {
+            if (hasBreakpoints(instance.filepath)) {
                 if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
                     instance.editor->ToggleBreakpoint(line);
                 }
