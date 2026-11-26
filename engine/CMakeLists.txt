@@ -778,7 +778,7 @@ include_directories(core/ecs)
 include_directories(core/io)
 include_directories(core/manager)
 include_directories(core/math)
-include_directories(core/network)
+include_directories(core/networking)
 include_directories(core/object)
 include_directories(core/object/sound)
 include_directories(core/object/ui)
@@ -910,9 +910,9 @@ set(DORIAX_SRCS
     core/math/Vector2.cpp
     core/math/Vector3.cpp
     core/math/Vector4.cpp
-    core/network/Network.cpp
-    core/network/NetworkSession.cpp
-    core/network/Packet.cpp
+    core/networking/Network.cpp
+    core/networking/NetworkSession.cpp
+    core/networking/Packet.cpp
     core/object/Bone.cpp
     core/object/Camera.cpp
     core/object/EntityHandle.cpp
@@ -1007,12 +1007,12 @@ set(DORIAX_SRCS
 # A browser has no UDP, and its WebSocket is the page's own
 if(EMSCRIPTEN)
     list(APPEND DORIAX_SRCS
-        core/network/WebSocketTransportWeb.cpp
+        core/networking/WebSocketTransportWeb.cpp
     )
 else()
     list(APPEND DORIAX_SRCS
-        core/network/ENetTransport.cpp
-        core/network/WebSocketTransport.cpp
+        core/networking/ENetTransport.cpp
+        core/networking/WebSocketTransport.cpp
     )
 endif()
 
@@ -1069,7 +1069,7 @@ if(EMSCRIPTEN AND EMSCRIPTEN_THREAD_SUPPORT)
 	target_compile_options(doriax PRIVATE -pthread)
 endif()
 
-# Sockets of core/network
+# Sockets of core/networking
 if(EMSCRIPTEN)
     target_link_libraries(doriax PUBLIC websocket.js)
 elseif(WIN32)

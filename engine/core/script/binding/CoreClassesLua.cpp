@@ -18,7 +18,7 @@
 #include "AdMob.h"
 #include "InAppPurchase.h"
 #include "WebPortal.h"
-#include "network/Network.h"
+#include "networking/Network.h"
 #ifdef DORIAX_PHYSICS_2D
 #include "Body2D.h"
 #include "Contact2D.h"

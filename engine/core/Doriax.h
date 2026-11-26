@@ -195,7 +195,7 @@
 #include "service/AdMob.h"
 #include "service/InAppPurchase.h"
 #include "service/WebPortal.h"
-#include "network/Network.h"
+#include "networking/Network.h"
 
 #include "shader/ShaderData.h"
 #include "shader/ShaderDataSerializer.h"

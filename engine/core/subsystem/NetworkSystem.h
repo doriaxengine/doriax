@@ -6,7 +6,7 @@
 
 #include "SubSystem.h"
 #include "component/NetworkComponent.h"
-#include "network/NetworkSession.h"
+#include "networking/NetworkSession.h"
 #include <deque>
 #include <map>
 #include <set>

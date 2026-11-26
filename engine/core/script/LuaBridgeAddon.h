@@ -9,7 +9,7 @@
 #include "service/AdMob.h"
 #include "service/InAppPurchase.h"
 #include "service/WebPortal.h"
-#include "network/NetworkSession.h"
+#include "networking/NetworkSession.h"
 #include "FileData.h"
 #include "thread/ResourceProgress.h"
 #include "texture/Material.h"

@@ -8,7 +8,7 @@
 #include "component/Transform.h"
 #include "manager/BundleManager.h"
 #include "manager/SceneManager.h"
-#include "network/Network.h"
+#include "networking/Network.h"
 #ifdef DORIAX_PHYSICS_2D
 #include "object/physics/Body2D.h"
 #endif

@@ -3347,7 +3347,7 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		77129D9486B025193C81AE12 /* network */ = {
+		77129D9486B025193C81AE12 /* networking */ = {
 			isa = PBXGroup;
 			children = (
 				C2E2DD521664ECF583A6C97B /* ENetTransport.h */,
@@ -3362,7 +3362,7 @@
 				4BECBDB142D0D37FA5FF5915 /* WebSocketTransport.h */,
 				57DD0944EBFD622001FF0034 /* WebSocketTransport.cpp */,
 			);
-			path = network;
+			path = networking;
 			sourceTree = "<group>";
 		};
 		CAC81CE6E6C006848F308998 /* service */ = {
@@ -4192,7 +4192,7 @@
 				7162FC2C25962A0E0075B97D /* Log.cpp */,
 				1787AD932F6C333300DB1D75 /* manager */,
 				7162FC4825962A0E0075B97D /* math */,
-				77129D9486B025193C81AE12 /* network */,
+				77129D9486B025193C81AE12 /* networking */,
 				7162FC6225962A0E0075B97D /* object */,
 				71BE623325B1DB9E006D6E02 /* pool */,
 				71125F192E41845E006D11A1 /* registry */,
