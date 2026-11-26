@@ -257,7 +257,10 @@ void editor::CommandRunner::terminateCurrentProcess() {
 }
 
 bool editor::CommandRunner::run(const std::string& command, const fs::path& workingDir, const std::function<void(const std::string&)>& onLine) {
-    cancelRequested.store(false, std::memory_order_relaxed);
+    // a cancel that came before the process holds, until resetCancel()
+    if (cancelRequested.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     auto emit = [&onLine](const std::string& rawLine) {
         const std::string line = TextEncoding::consoleToUtf8(rawLine);
@@ -394,7 +397,9 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
                     std::lock_guard<std::mutex> lock(processHandleMutex);
                     currentProcessHandle = NULL;
                     currentJobHandle = NULL;
+                    currentInputHandle = NULL;
                 }
+                if (hInputWrite) CloseHandle(hInputWrite);
                 CloseHandle(pi.hProcess);
                 if (hJob) CloseHandle(hJob);
                 CloseHandle(hReadPipe);  // Close pipe at the end

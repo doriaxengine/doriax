@@ -646,6 +646,7 @@ void editor::Exporter::startExport(Project* proj, const ExportConfig& cfg) {
     this->project = proj;
     this->config = cfg;
     cancelRequested.store(false);
+    commandRunner.resetCancel();
     {
         std::lock_guard<std::mutex> lock(progressMutex);
         this->progress = ExportProgress();
@@ -664,6 +665,7 @@ bool editor::Exporter::exportProject(Project* proj, const ExportConfig& cfg) {
     this->project = proj;
     this->config = cfg;
     cancelRequested.store(false);
+    commandRunner.resetCancel();
     {
         std::lock_guard<std::mutex> lock(progressMutex);
         this->progress = ExportProgress();
@@ -684,6 +686,7 @@ bool editor::Exporter::generateShaders(const ExportConfig& cfg) {
     this->project = nullptr;
     this->config = cfg;
     cancelRequested.store(false);
+    commandRunner.resetCancel();
     {
         std::lock_guard<std::mutex> lock(progressMutex);
         this->progress = ExportProgress();
