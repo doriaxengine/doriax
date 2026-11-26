@@ -8,6 +8,33 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+// iOS lacks this macro and ENet then defines its own clock_gettime
+#ifdef __APPLE__
+// the system headers of ENet first, they must not see the macro
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <time.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/time.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <netdb.h>
+#include <unistd.h>
+#include <string.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <mach/clock.h>
+#include <mach/mach.h>
+#include <Availability.h>
+#ifndef __MAC_OS_X_VERSION_MIN_REQUIRED
+#define __MAC_OS_X_VERSION_MIN_REQUIRED 101200
+#endif
+#endif
 #define ENET_IMPLEMENTATION
 #include "enet/enet.h"
 
