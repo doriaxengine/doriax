@@ -1824,7 +1824,8 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
     }
 
-    if (!ImGui::IsAnyItemActive() && !ImGui::IsAnyItemFocused()){
+    // Shortcuts wait while typing, not for the keyboard cursor arrow keys leave in a panel
+    if (!ImGui::IsAnyItemActive() && !ImGui::GetIO().WantTextInput){
         if (project->getSelectedSceneId() == sceneId){
             if (!walkingMode){
 
