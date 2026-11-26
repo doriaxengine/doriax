@@ -8798,7 +8798,7 @@ std::vector<Entity> editor::Project::importEntityBundle(SceneProject* sceneProje
                 scene->addEntityChild(parentEntity, localEntity, true);
 
                 // childIndex counts the direct children, and the new entity is the last of them
-                if (scene->findComponent<Transform>(localEntity)) {
+                if (scene->findComponent<Transform>(localEntity) && scene->findComponent<Transform>(parentEntity)) {
                     auto transforms = scene->getComponentArray<Transform>();
                     size_t targetIndex = transforms->getIndex(parentEntity) + 1;
                     for (size_t i = 0; i < childIndex && transforms->getEntity(targetIndex) != localEntity; i++) {
@@ -9008,14 +9008,14 @@ bool editor::Project::addEntityToBundle(uint32_t sceneId, Entity entity, Entity 
     }
 
     // Every instance gets the entity, so none can be inside one of its bundles
-    const std::unordered_set<std::string> branchBundles = ProjectUtils::getBranchBundles(scene, entity);
+    const std::unordered_set<std::string> branchBundles = withNestedBundles(ProjectUtils::getBranchBundles(scene, entity));
     for (const auto& [otherSceneId, sceneInstances] : bundle->instances) {
         SceneProject* otherScene = getScene(otherSceneId);
         if (!otherScene || !otherScene->scene) {
             continue;
         }
         for (const EntityBundle::Instance& instance : sceneInstances) {
-            if (ProjectUtils::isInsideBundle(otherScene->scene, instance.rootEntity, branchBundles)) {
+            if (isInsideBundle(otherSceneId, instance.rootEntity, branchBundles)) {
                 Out::error("Cannot add entity %u to '%s': a bundle cannot be inside another instance of itself", entity, filepath.string().c_str());
                 return false;
             }
@@ -9910,6 +9910,51 @@ bool editor::Project::bundleNameChanged(uint32_t sceneId, Entity entity, std::st
     return true;
 }
 
+std::unordered_set<std::string> editor::Project::withNestedBundles(std::unordered_set<std::string> bundlePaths) const {
+    std::vector<std::string> pending(bundlePaths.begin(), bundlePaths.end());
+    while (!pending.empty()) {
+        const EntityBundle* bundle = getEntityBundle(pending.back());
+        pending.pop_back();
+        if (!bundle || !bundle->registry) {
+            continue;
+        }
+        auto components = bundle->registry->getComponentArray<BundleComponent>();
+        for (size_t i = 0; i < components->size(); i++) {
+            const std::string path = ProjectUtils::getBundlePathKey(components->getComponentFromIndex(i).path);
+            if (!path.empty() && bundlePaths.insert(path).second) {
+                pending.push_back(path);
+            }
+        }
+    }
+    return bundlePaths;
+}
+
+bool editor::Project::isInsideBundle(uint32_t sceneId, Entity entity, const std::unordered_set<std::string>& bundlePaths) const {
+    const SceneProject* sceneProject = getScene(sceneId);
+    if (!sceneProject || !sceneProject->scene || bundlePaths.empty()) {
+        return false;
+    }
+    Scene* scene = sceneProject->scene;
+
+    while (entity != NULL_ENTITY) {
+        BundleComponent* component = scene->findComponent<BundleComponent>(entity);
+        if (component && bundlePaths.count(ProjectUtils::getBundlePathKey(component->path)) > 0) {
+            return true;
+        }
+        Transform* transform = scene->findComponent<Transform>(entity);
+        if (transform && transform->parent != NULL_ENTITY) {
+            entity = transform->parent;
+        } else {
+            // a member without a parent is still inside its instance, as under a root with no Transform
+            const EntityBundle* bundle = getEntityBundle(findEntityBundlePathFor(sceneId, entity));
+            const Entity root = bundle ? bundle->getRootEntity(sceneId, entity) : NULL_ENTITY;
+            entity = (root != entity) ? root : NULL_ENTITY;
+        }
+    }
+
+    return false;
+}
+
 bool editor::Project::canMoveBundleEntity(uint32_t sceneId, Entity source, Entity target, InsertionType type, std::string* reason) const {
     const SceneProject* sceneProject = getScene(sceneId);
     if (!sceneProject || !sceneProject->scene) {
@@ -9922,7 +9967,7 @@ bool editor::Project::canMoveBundleEntity(uint32_t sceneId, Entity source, Entit
     const Transform* targetTransform = scene->findComponent<Transform>(target);
     const Entity newParent = (type == InsertionType::INTO || !targetTransform) ? target : targetTransform->parent;
 
-    if (hasTransform && ProjectUtils::isInsideBundle(scene, newParent, ProjectUtils::getBranchBundles(scene, source))) {
+    if (hasTransform && isInsideBundle(sceneId, newParent, withNestedBundles(ProjectUtils::getBranchBundles(scene, source)))) {
         if (reason) *reason = "A bundle cannot be inside another instance of itself";
         return false;
     }
@@ -9937,6 +9982,12 @@ bool editor::Project::canMoveBundleEntity(uint32_t sceneId, Entity source, Entit
     const bool isNestedRoot = hasTransform && scene->findComponent<BundleComponent>(newParent) && bundle->getRootEntity(sceneId, newParent) != newParent;
     if (!sameInstance || isNestedRoot) {
         if (reason) *reason = "Bundle members must stay inside their own instance";
+        return false;
+    }
+
+    // without a hierarchy, the registry can only place it beside another member
+    if (!hasTransform && bundle->getRegistryEntity(sceneId, target) == NULL_ENTITY) {
+        if (reason) *reason = "Bundle members without a Transform only move beside other members";
         return false;
     }
 
@@ -10020,7 +10071,9 @@ editor::SharedMoveRecovery editor::Project::moveEntityFromBundle(uint32_t sceneI
     Entity oldParent;
     size_t oldIndex;
     bool hasTransform;
-    ProjectUtils::moveEntityOrderByTarget(bundle->registry.get(), bundle->registryEntities, registryEntity, registryTarget, type, oldParent, oldIndex, hasTransform);
+    if (!ProjectUtils::moveEntityOrderByTarget(bundle->registry.get(), bundle->registryEntities, registryEntity, registryTarget, type, oldParent, oldIndex, hasTransform)) {
+        return {};
+    }
     std::string recoveryDefKey = std::to_string(NULL_PROJECT_SCENE);
     recovery[recoveryDefKey] = {oldParent, oldIndex, hasTransform};
 
@@ -10042,11 +10095,11 @@ editor::SharedMoveRecovery editor::Project::moveEntityFromBundle(uint32_t sceneI
                 Entity otherEntity = bundle->getLocalEntity(otherSceneId, instance.instanceId, registryEntity);
                 Entity otherTarget = bundle->getLocalEntity(otherSceneId, instance.instanceId, registryTarget);
 
-                if (otherEntity != NULL_ENTITY && otherTarget != NULL_ENTITY) {
-                    Entity otherOldParent;
-                    size_t otherOldIndex;
-                    bool otherHasTransform;
-                    ProjectUtils::moveEntityOrderByTarget(otherScene->scene, otherScene->entities, otherEntity, otherTarget, type, otherOldParent, otherOldIndex, otherHasTransform);
+                Entity otherOldParent;
+                size_t otherOldIndex;
+                bool otherHasTransform;
+                if (otherEntity != NULL_ENTITY && otherTarget != NULL_ENTITY &&
+                    ProjectUtils::moveEntityOrderByTarget(otherScene->scene, otherScene->entities, otherEntity, otherTarget, type, otherOldParent, otherOldIndex, otherHasTransform)) {
                     std::string recoveryKey = std::to_string(otherSceneId) + "_" + std::to_string(instance.instanceId);
                     recovery[recoveryKey] = {otherOldParent, otherOldIndex, otherHasTransform};
 

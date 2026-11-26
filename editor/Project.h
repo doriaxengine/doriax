@@ -1024,6 +1024,10 @@ namespace doriax::editor{
         bool addComponentToBundle(uint32_t sceneId, Entity entity, ComponentType componentType, const ComponentRecovery& recovery, bool addToItself = true);
         ComponentRecovery removeComponentFromBundle(uint32_t sceneId, Entity entity, ComponentType componentType, bool encodeComponent = true, bool removeToItself = true);
 
+        // The bundles and the ones nested in them at any depth, as far as they are loaded
+        std::unordered_set<std::string> withNestedBundles(std::unordered_set<std::string> bundlePaths) const;
+        // True when the entity or an ancestor is an instance of one of the bundles
+        bool isInsideBundle(uint32_t sceneId, Entity entity, const std::unordered_set<std::string>& bundlePaths) const;
         // A target of NULL_ENTITY is the scene root
         bool canMoveBundleEntity(uint32_t sceneId, Entity source, Entity target, InsertionType type, std::string* reason = nullptr) const;
         SharedMoveRecovery moveEntityFromBundle(uint32_t sceneId, Entity entity, Entity target, InsertionType type, bool moveItself = true);

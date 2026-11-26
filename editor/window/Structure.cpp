@@ -1523,9 +1523,8 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
                             }
                         } else if (Util::isBundleFile(path)) {
                             // the import refuses a bundle under another instance of itself
-                            std::string bundlePath = std::filesystem::path(path).lexically_relative(project->getProjectPath()).string();
-                            Scene* scene = project->getSelectedScene()->scene;
-                            if (!node.hasTransform || !ProjectUtils::isInsideBundle(scene, node.id, {bundlePath})) {
+                            std::string bundlePath = ProjectUtils::getBundlePathKey(project->normalizeToProjectRelative(path).string());
+                            if (!node.hasTransform || !project->isInsideBundle(project->getSelectedSceneId(), node.id, project->withNestedBundles({bundlePath}))) {
                                 allowResourceDragDrop = true;
                                 break;
                             }

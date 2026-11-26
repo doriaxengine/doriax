@@ -41,10 +41,10 @@ public:
     static bool hasCustomMeshParenting(Scene* scene, Entity model);
     static Entity getEffectiveParent(Scene* scene, Entity entity);
     static bool canMoveLockedEntityOrder(Scene* scene, Entity source, Entity target, InsertionType type, std::string* reason = nullptr);
+    // Bundle paths are compared in this form, whatever separator they were saved with
+    static std::string getBundlePathKey(std::string path);
     // Paths of the bundles an entity and its children are instances of
     static std::unordered_set<std::string> getBranchBundles(Scene* scene, Entity entity);
-    // True when the entity or an ancestor is an instance of one of the bundles
-    static bool isInsideBundle(Scene* scene, Entity entity, const std::unordered_set<std::string>& bundlePaths);
     static std::string makeUniqueEntityName(const std::string& baseName, const std::unordered_set<std::string>& existingNames);
     static std::string makeUniqueEntityName(Scene* scene, const std::vector<Entity>& entities, const std::string& baseName, const std::unordered_set<Entity>& ignoredEntities = {});
 
