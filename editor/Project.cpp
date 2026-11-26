@@ -2501,6 +2501,13 @@ Entity editor::Project::createRuntimeCamera3D(Scene* scene, const SceneProject* 
     return entity;
 }
 
+// Each child scene draws from its own camera, and a 3D one without a main camera only has the stand-in
+void editor::Project::warnChildSceneCamera(const SceneProject* runtime) const {
+    if (runtime && runtime->sceneType == SceneType::SCENE_3D && getSceneCamera(runtime) != runtime->mainCamera) {
+        Out::warning("Child scene '%s' has no main camera: unless a script sets one, it plays from its own editor view", runtime->name.c_str());
+    }
+}
+
 void editor::Project::checkUnsavedAndExecute(uint32_t sceneId, std::function<void()> action) {
     SceneProject* sceneProject = getScene(sceneId);
 
@@ -5034,6 +5041,10 @@ bool editor::Project::loadChildSceneInline(uint32_t childSceneId) {
         loadSceneProjectData(childScene, sceneNode);
         childScene->shaderKeysStale = hasStaleShaderKeys(childScene, sceneNode);
 
+        setInlineSceneCamera(childScene);
+        // edited, not running: the engine updates every layer
+        pauseEngineScene(childScene->scene, true);
+
         childScene->expandedInline = true;
         childScene->needUpdateRender = true;
         childScene->isModified = false;
@@ -5063,6 +5074,7 @@ void editor::Project::unloadChildSceneInline(uint32_t childSceneId) {
     if (childScene->opened) {
         // Scene is open as a tab, only clear the inline flag
         childScene->expandedInline = false;
+        releaseInlineViewCamera(childScene);
         markParentScenesNeedUpdate(childSceneId);
         return;
     }
@@ -5073,6 +5085,92 @@ void editor::Project::unloadChildSceneInline(uint32_t childSceneId) {
     markParentScenesNeedUpdate(childSceneId);
 
     Out::info("Unloaded child scene '%s' from inline", childScene->name.c_str());
+}
+
+bool editor::Project::isInlineChildDrawn(const SceneProject* sceneProject, const SceneProject* childScene) const {
+    return childScene->expandedInline && childScene->scene
+        && sceneProject->playState == ScenePlayState::STOPPED && childScene->playState == ScenePlayState::STOPPED;
+}
+
+bool editor::Project::sharesSceneView(const SceneProject* sceneProject, const SceneProject* childScene) const {
+    return isInlineChildDrawn(sceneProject, childScene) && childScene->sceneType == sceneProject->sceneType;
+}
+
+// a camera can be deleted or lose its components, and without a Transform it has no view
+static bool isUsableCamera(Scene* scene, Entity camera) {
+    return camera != NULL_ENTITY && scene->isEntityCreated(camera)
+        && scene->findComponent<CameraComponent>(camera) && scene->findComponent<Transform>(camera);
+}
+
+Entity editor::Project::getInlineGameCamera(const SceneProject* childScene) const {
+    Scene* scene = childScene->scene;
+    // an open tab's editor camera last, which picking can need before a sync heals the scene camera
+    Entity editorCamera = childScene->sceneRender ? childScene->sceneRender->getCamera()->getEntity() : NULL_ENTITY;
+    for (Entity camera : {getSceneCamera(childScene), childScene->defaultCamera, scene->getCamera(), editorCamera}) {
+        if (isUsableCamera(scene, camera)) {
+            return camera;
+        }
+    }
+    return NULL_ENTITY;
+}
+
+void editor::Project::setInlineSceneCamera(SceneProject* childScene) {
+    Scene* scene = childScene->scene;
+    Entity camera = getInlineGameCamera(childScene);
+    if (camera == NULL_ENTITY && childScene->sceneType == SceneType::SCENE_3D) {
+        camera = createRuntimeCamera3D(scene, childScene);
+    }
+    if (camera != NULL_ENTITY) {
+        scene->setCamera(camera);
+    }
+}
+
+void editor::Project::syncInlineViewCamera(SceneProject* sceneProject, SceneProject* childScene) {
+    // a deleted camera would crash the sprite and UI updates, which read the scene's own camera
+    if (!isUsableCamera(childScene->scene, childScene->scene->getCamera())) {
+        if (childScene->sceneRender) {
+            // a camera its hidden tab still previews, the tab heals only when it draws
+            childScene->sceneRender->clearPreviewCamera();
+        } else {
+            setInlineSceneCamera(childScene);
+        }
+    }
+    const bool shared = sharesSceneView(sceneProject, childScene);
+    sceneProject->sceneRender->syncChildViewCamera(childScene->scene, childScene->inlineViewCamera, getInlineGameCamera(childScene), shared);
+    // laid out on the canvas the parent shows, as an open tab is, and otherwise on the view
+    if (!childScene->sceneRender) {
+        childScene->scene->getSystem<UISystem>()->setAnchorReferenceSize(shared ? canvasWidth : 0, shared ? canvasHeight : 0);
+    }
+}
+
+void editor::Project::releaseInlineViewCamera(SceneProject* childScene) {
+    // a playing scene's view camera is its detached camera
+    if (childScene->scene && childScene->playState == ScenePlayState::STOPPED) {
+        SceneRender::releaseChildViewCamera(childScene->scene, childScene->inlineViewCamera);
+    }
+}
+
+std::vector<std::pair<Scene*, Entity>> editor::Project::getViewEntities(uint32_t sceneId, bool onlySelected) {
+    std::vector<std::pair<Scene*, Entity>> entities;
+    SceneProject* sceneProject = getScene(sceneId);
+    if (!sceneProject || !sceneProject->scene) {
+        return entities;
+    }
+
+    std::vector<SceneProject*> viewScenes = {sceneProject};
+    for (const ChildSceneRef& childSceneRef : sceneProject->childScenes) {
+        SceneProject* childScene = getScene(childSceneRef.id);
+        if (childScene && sharesSceneView(sceneProject, childScene)) {
+            viewScenes.push_back(childScene);
+        }
+    }
+
+    for (SceneProject* viewScene : viewScenes) {
+        for (Entity entity : onlySelected ? viewScene->selectedEntities : viewScene->entities) {
+            entities.emplace_back(viewScene->scene, entity);
+        }
+    }
+    return entities;
 }
 
 bool editor::Project::addChildScene(uint32_t sceneId, uint32_t childSceneId, bool startActive) {
@@ -5130,8 +5228,9 @@ void editor::Project::removeChildScene(uint32_t sceneId, uint32_t childSceneId) 
         // Dropped an inline child, so the Engine layers need rebuilding.
         editor::getEditorHost().resetLastActivatedScene();
 
-        const SceneProject* childScene = getScene(childSceneId);
+        SceneProject* childScene = getScene(childSceneId);
         if (childScene) {
+            releaseInlineViewCamera(childScene);
             Out::info("Removed child scene '%s' from scene '%s'", childScene->name.c_str(), sceneProject->name.c_str());
         }
     }
@@ -5281,6 +5380,7 @@ void editor::Project::deleteSceneProject(SceneProject* sceneProject){
 
     sceneProject->mainCamera = NULL_ENTITY;
     sceneProject->defaultCamera = NULL_ENTITY;
+    sceneProject->inlineViewCamera = NULL_ENTITY;
 
     sceneProject->entities.clear();
     sceneProject->selectedEntities.clear();
@@ -7222,11 +7322,15 @@ Entity editor::Project::findObjectByRay(uint32_t sceneId, float x, float y, uint
     for (const ChildSceneRef& childSceneRef : scenedata->childScenes) {
         uint32_t childId = childSceneRef.id;
         SceneProject* childScene = getScene(childId);
-        if (!childScene || !childScene->expandedInline || !childScene->scene) continue;
+        if (!childScene || !isInlineChildDrawn(scenedata, childScene)) continue;
 
-        Entity childCamEntity = childScene->scene->getCamera();
-        if (childCamEntity == NULL_ENTITY) continue;
-        Ray childRay = screenToRayFromCamera(childScene->scene->getComponent<CameraComponent>(childCamEntity), x, y);
+        // what the child is drawn from, whichever viewport drew it last
+        Ray childRay = ray;
+        if (!sharesSceneView(scenedata, childScene)) {
+            Entity childCamEntity = getInlineGameCamera(childScene);
+            if (childCamEntity == NULL_ENTITY) continue;
+            childRay = screenToRayFromCamera(childScene->scene->getComponent<CameraComponent>(childCamEntity), x, y);
+        }
 
         distance = FLT_MAX;
         index = 0;
@@ -7301,14 +7405,17 @@ bool editor::Project::selectObjectsByRect(uint32_t sceneId, Vector2 start, Vecto
     for (const ChildSceneRef& childSceneRef : scenedata->childScenes) {
         uint32_t childId = childSceneRef.id;
         SceneProject* childScene = getScene(childId);
-        if (!childScene || !childScene->expandedInline || !childScene->scene) continue;
+        if (!childScene || !isInlineChildDrawn(scenedata, childScene)) continue;
 
-        Entity childCamEntity = childScene->scene->getCamera();
-        if (childCamEntity == NULL_ENTITY) continue;
+        // what the child is drawn from, whichever viewport drew it last
+        Matrix4 childViewProjection = camera->getViewProjectionMatrix();
+        if (!sharesSceneView(scenedata, childScene)) {
+            Entity childCamEntity = getInlineGameCamera(childScene);
+            if (childCamEntity == NULL_ENTITY) continue;
+            childViewProjection = childScene->scene->getComponent<CameraComponent>(childCamEntity).viewProjectionMatrix;
+        }
 
-        CameraComponent& childCam = childScene->scene->getComponent<CameraComponent>(childCamEntity);
-
-        if (selectEntitiesInRect(childId, childScene->entities, childScene->scene, childCam.viewProjectionMatrix, start, end)) {
+        if (selectEntitiesInRect(childId, childScene->entities, childScene->scene, childViewProjection, start, end)) {
             setSelectedSceneForProperties(childId);
         }
     }
@@ -10412,6 +10519,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
                 } else {
                     entry.runtime = createRuntimeCloneFromSource(&currentSceneProject);
                     entry.ownedRuntime = true;
+                    warnChildSceneCamera(entry.runtime);
                 }
 
                 if (!entry.runtime) {
@@ -10602,7 +10710,7 @@ void editor::Project::runPlayStartup(const std::shared_ptr<PlaySession>& session
     }
 }
 
-std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeSceneStack(uint32_t sceneId, std::vector<size_t>& stackIndices) {
+std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeSceneStack(uint32_t sceneId, std::vector<size_t>& stackIndices, bool asChild) {
     std::shared_ptr<PlaySession> session;
     {
         std::scoped_lock lock(playSessionMutex);
@@ -10631,6 +10739,9 @@ std::shared_ptr<editor::Project::PlaySession> editor::Project::buildRuntimeScene
                     newEntry.sourceSceneId = invSceneId;
                     newEntry.runtime = createRuntimeCloneFromSource(sourceScene);
                     newEntry.ownedRuntime = true;
+                    if (invSceneId != sceneId || asChild) {
+                        warnChildSceneCamera(newEntry.runtime);
+                    }
 
                     if (newEntry.runtime) {
                         session->runtimeScenes.push_back(newEntry);
@@ -10844,7 +10955,7 @@ void editor::Project::registerSceneManager() {
         }, [this, sceneId = sceneProject.id]() {
             // SceneManager::addChildScene() puts the scenes on screen
             std::vector<size_t> stackIndices;
-            buildRuntimeSceneStack(sceneId, stackIndices);
+            buildRuntimeSceneStack(sceneId, stackIndices, true);
         }, stackSceneIds, [this, sceneId = sceneProject.id]() {
             return collectPlaySceneResources(sceneId);
         });
@@ -11243,6 +11354,8 @@ void editor::Project::start(uint32_t sceneId) {
     if (sceneProject->sceneRender){
         sceneProject->sceneRender->clearPreviewCamera();
     }
+    // a parent drawing it inline may have set its view camera, the game draws from its own
+    releaseInlineViewCamera(sceneProject);
 
     sceneProject->playState = ScenePlayState::LOADING;
     editor::getEditorHost().saveAllCodeEditors();

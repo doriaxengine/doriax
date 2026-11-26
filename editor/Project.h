@@ -97,6 +97,8 @@ namespace doriax::editor{
         std::vector<Entity> entities;
         Entity mainCamera = NULL_ENTITY;
         Entity defaultCamera = NULL_ENTITY;
+        // copy of the camera of the parent scene that shows this one inline
+        Entity inlineViewCamera = NULL_ENTITY;
         SceneRender* sceneRender = nullptr;
         std::vector<Entity> selectedEntities;
         fs::path filepath;
@@ -422,7 +424,8 @@ namespace doriax::editor{
 
         SceneProject* createRuntimeCloneFromSource(const SceneProject* source);
         void prepareRuntimeScene(PlayRuntimeScene& entry);
-        std::shared_ptr<PlaySession> buildRuntimeSceneStack(uint32_t sceneId, std::vector<size_t>& stackIndices);
+        // asChild: SceneManager::addChildScene puts the stack on top of the running scenes
+        std::shared_ptr<PlaySession> buildRuntimeSceneStack(uint32_t sceneId, std::vector<size_t>& stackIndices, bool asChild = false);
         void retireRuntimeStack(uint32_t sceneId);
         Entity getSceneCamera(const SceneProject* sceneProject) const;
         void cleanupPlaySession(const std::shared_ptr<PlaySession>& session);
@@ -430,6 +433,7 @@ namespace doriax::editor{
         SceneRender* createSceneRender(SceneType type, Scene* scene) const;
         Entity createDefaultCamera(SceneType type, Scene* scene) const;
         Entity createRuntimeCamera3D(Scene* scene, const SceneProject* source) const;
+        void warnChildSceneCamera(const SceneProject* runtime) const;
         Ray screenToRayFromCamera(const CameraComponent& camera, float x, float y) const;
         AABB getEntityWorldAABB(Scene* scene, Entity entity, Scene* mainScene) const;
         AABB getEntityLocalAABB(Scene* scene, Entity entity) const;
@@ -877,6 +881,19 @@ namespace doriax::editor{
         bool isChildSceneStartActive(uint32_t sceneId, uint32_t childSceneId) const;
         void setChildSceneStartActive(uint32_t sceneId, uint32_t childSceneId, bool startActive);
         std::vector<uint32_t> getChildScenes(uint32_t sceneId) const;
+        // A loaded inline child is drawn in the scene's view only while both are stopped
+        bool isInlineChildDrawn(const SceneProject* sceneProject, const SceneProject* childScene) const;
+        // One of the scene's type is drawn from its editor camera
+        bool sharesSceneView(const SceneProject* sceneProject, const SceneProject* childScene) const;
+        // The camera a drawn inline child of another type uses, the one Play would give it
+        Entity getInlineGameCamera(const SceneProject* childScene) const;
+        // An inline child without a tab draws from that camera, or the engine falls back to a UI camera
+        void setInlineSceneCamera(SceneProject* childScene);
+        // That child draws from a copy of the editor camera, another one from its game camera
+        void syncInlineViewCamera(SceneProject* sceneProject, SceneProject* childScene);
+        void releaseInlineViewCamera(SceneProject* childScene);
+        // Entities of the scene and of its inline children of the same type, which share its view
+        std::vector<std::pair<Scene*, Entity>> getViewEntities(uint32_t sceneId, bool onlySelected);
         // The scene, its ancestors and their descendants
         std::vector<uint32_t> getRelatedScenes(uint32_t sceneId);
 

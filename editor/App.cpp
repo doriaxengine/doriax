@@ -969,6 +969,11 @@ void editor::App::showFooter(){
             ImGui::SameLine();
 
             size_t selectionCount = selectedScene->selectedEntities.size();
+            // entities of a child scene shown inline are selected through this scene
+            for (uint32_t childId : project.getChildScenes(selectedScene->id)) {
+                const SceneProject* childScene = project.getScene(childId);
+                if (childScene && project.isInlineChildDrawn(selectedScene, childScene)) selectionCount += childScene->selectedEntities.size();
+            }
             if (selectionCount == 0) {
                 ImGui::TextDisabled("No Selection");
             } else if (selectionCount == 1) {
@@ -2423,24 +2428,41 @@ void editor::App::engineRender(){
     // shader builds still get presented.
     const int RENDER_SETTLE_FRAMES = 30;
 
+    // Dirty when the frame starts: a scene drawn first, or inline in a parent, clears its flag
+    // before a later viewport showing it looks.
+    std::unordered_set<uint32_t> dirtyScenes;
+    for (const SceneProject& sp : project.getScenes()) {
+        if (sp.needUpdateRender) dirtyScenes.insert(sp.id);
+    }
+
     auto sceneNeedsRender = [&](SceneProject& sp, bool isSelected) -> bool {
-        bool active = sp.needUpdateRender;
+        bool active = sp.needUpdateRender || dirtyScenes.count(sp.id) > 0;
         bool gaugeAnimating = false;
         if (benchmarkEnabled) active = true;
         // A running play session must advance and redraw its simulation every frame.
         if (sp.playState == ScenePlayState::PLAYING) active = true;
         // A drag preview redraws until the settle frames cover its restore.
         if (draggingResourceFile) active = true;
-        if (isSelected && sp.scene && sp.sceneRender) {
-            // Still loading a model, previewing a camera, or capturing a thumbnail.
-            auto ms = sp.scene->getSystem<MeshSystem>();
-            if (ms && (ms->hasPendingAsyncModelLoads() || ms->hasPendingFoliageUpdates())) active = true;
+        // Still loading a model or an image.
+        auto isLoading = [](Scene* scene) {
+            auto ms = scene->getSystem<MeshSystem>();
+            if (ms && (ms->hasPendingAsyncModelLoads() || ms->hasPendingFoliageUpdates())) return true;
             // A parsed model still has per-mesh work that only runs while drawing.
-            auto rs = sp.scene->getSystem<RenderSystem>();
-            if (rs && !rs->isAllLoaded()) active = true;
+            auto rs = scene->getSystem<RenderSystem>();
+            if (rs && !rs->isAllLoaded()) return true;
             // isAllLoaded skips empty UIs, and an image builds its geometry only once its texture loads
-            auto us = sp.scene->getSystem<UISystem>();
-            if (us && us->hasPendingImages()) active = true;
+            auto us = scene->getSystem<UISystem>();
+            return us && us->hasPendingImages();
+        };
+        // An inline child scene is drawn with this one.
+        for (const ChildSceneRef& childSceneRef : sp.childScenes) {
+            const SceneProject* childScene = project.getScene(childSceneRef.id);
+            if (childScene && project.isInlineChildDrawn(&sp, childScene)
+                    && (childScene->needUpdateRender || dirtyScenes.count(childScene->id) > 0 || (isSelected && isLoading(childScene->scene)))) active = true;
+        }
+        if (isSelected && sp.scene && sp.sceneRender) {
+            // Still loading, previewing a camera, or capturing a thumbnail.
+            if (isLoading(sp.scene)) active = true;
             if (sp.sceneRender->isPreviewCameraActive()) active = true;
             gaugeAnimating = sp.sceneRender->getUILayer()->isCameraGaugeAnimating();
             if (thumbnailsPending) active = true;
@@ -2494,15 +2516,19 @@ void editor::App::engineRender(){
 
             bool sceneChanged = false;
 
+            // as the main scene it draws from its own camera, not from the one a parent showing it inline set
+            if (sceneProject.playState == ScenePlayState::STOPPED && sceneProject.scene->getRenderCamera() != sceneProject.scene->getCamera()) {
+                sceneProject.scene->setViewCamera(NULL_ENTITY);
+            }
+
             // Collect loaded child scene layers (skip if playing — runtime manages its own layers)
             std::vector<Scene*> childLayers;
-            if (sceneProject.playState == ScenePlayState::STOPPED) {
-                for (const ChildSceneRef& childSceneRef : sceneProject.childScenes) {
-                    uint32_t childId = childSceneRef.id;
-                    const SceneProject* childScene = project.getScene(childId);
-                    if (childScene && childScene->expandedInline && childScene->scene) {
-                        childLayers.push_back(childScene->scene);
-                    }
+            for (const ChildSceneRef& childSceneRef : sceneProject.childScenes) {
+                SceneProject* childScene = project.getScene(childSceneRef.id);
+                if (childScene && project.isInlineChildDrawn(&sceneProject, childScene)) {
+                    childLayers.push_back(childScene->scene);
+                    // before it loads as a layer: its first update already needs this camera
+                    project.syncInlineViewCamera(&sceneProject, childScene);
                 }
             }
             sceneProject.sceneRender->setChildSceneLayers(childLayers);
@@ -2557,7 +2583,9 @@ void editor::App::engineRender(){
                 for (const ChildSceneRef& childSceneRef : sceneProject.childScenes) {
                     uint32_t childId = childSceneRef.id;
                     SceneProject* childScene = project.getScene(childId);
-                    if (childScene && childScene->expandedInline && childScene->scene && Engine::isSceneRunning(childScene->scene)) {
+                    if (childScene && project.isInlineChildDrawn(&sceneProject, childScene) && Engine::isSceneRunning(childScene->scene)) {
+                        // again, now that this view has its size
+                        project.syncInlineViewCamera(&sceneProject, childScene);
                         if (childScene->sceneRender) {
                             childScene->sceneRender->hideAllGizmos();
                         }
@@ -2577,6 +2605,8 @@ void editor::App::engineRender(){
                     std::vector<Entity> created = project.getPlayCreatedEntities(&sceneProject);
                     entities.insert(entities.end(), created.begin(), created.end());
                 }
+
+                sceneRender->setChildSelection(project.getViewEntities(sceneProject.id, true));
 
                 //TODO: avoid calling every frame
                 sceneRender->update(project.getSelectedEntities(sceneProject.id), entities, sceneProject.mainCamera, sceneProject.displaySettings);

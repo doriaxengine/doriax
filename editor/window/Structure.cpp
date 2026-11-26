@@ -1621,9 +1621,10 @@ void editor::Structure::showTreeNode(editor::TreeNode& node) {
     // Handle double-click on entity to focus camera on it
     if (!node.isScene && !node.isChildScene && nodeHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         SceneProject* sceneProject = project->getSelectedScene();
-        if (sceneProject) {
-            std::vector<Entity> entities = { static_cast<Entity>(node.id) };
-            sceneWindow->focusOnEntities(sceneProject, entities);
+        SceneProject* nodeScene = project->getScene(getNodeSceneId(node));
+        // an inline child of another type, such as a HUD, is not in this view's space
+        if (sceneProject && nodeScene && (nodeScene == sceneProject || project->sharesSceneView(sceneProject, nodeScene))) {
+            sceneWindow->focusOnEntities(sceneProject, {{nodeScene->scene, static_cast<Entity>(node.id)}});
         }
     }
 

@@ -61,7 +61,7 @@ namespace doriax::editor{
         void activate() override;
         void setCanvasFrameSize(unsigned int width, unsigned int height);
         void updateSize(int width, int height) override;
-        void updateSelLines(std::vector<OBB> obbs) override;
+        void updateSelLines(Lines* lines, const std::vector<OBB>& obbs) override;
 
         void update(std::vector<Entity> selEntities, std::vector<Entity> entities, Entity mainCamera, const SceneDisplaySettings& settings = SceneDisplaySettings{}) override;
         void mouseHoverEvent(float x, float y) override;

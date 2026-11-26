@@ -57,6 +57,11 @@ editor::SceneRender::SceneRender(Scene* scene, bool use2DGizmos, bool enable3DOv
     selLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
     selLines->setVisible(false);
 
+    // inline child scenes draw over this scene, so the outline of their entities goes above them
+    childSelLines = new Lines(toolslayer.getScene());
+    childSelLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
+    childSelLines->setVisible(false);
+
     terrainBrushLines = new Lines(scene);
     terrainBrushLines->addLine(Vector3::ZERO, Vector3::ZERO, Vector4::ZERO);
     terrainBrushLines->setVisible(false);
@@ -77,7 +82,7 @@ AABB editor::SceneRender::getMeshLocalAABB(const MeshComponent& mesh){
     return mesh.skinnedAABB.isNull() ? mesh.aabb : mesh.skinnedAABB;
 }
 
-AABB editor::SceneRender::getAABB(Entity entity, bool local){
+AABB editor::SceneRender::getAABB(Scene* scene, Entity entity, bool local){
     Signature signature = scene->getSignature(entity);
     if (signature.test(scene->getComponentId<MeshComponent>())){
         MeshComponent& mesh = scene->getComponent<MeshComponent>(entity);
@@ -136,7 +141,7 @@ AABB editor::SceneRender::getAABB(Entity entity, bool local){
                signature.test(scene->getComponentId<Light2DComponent>()) ||
                signature.test(scene->getComponentId<SoundComponent>())) && signature.test(scene->getComponentId<Transform>())){
         Transform& transform = scene->getComponent<Transform>(entity);
-        CameraComponent& sceneCamera = scene->getComponent<CameraComponent>(camera->getEntity());
+        CameraComponent& sceneCamera = this->scene->getComponent<CameraComponent>(camera->getEntity());
         float halfSize = billboardScreenScale(transform.worldPosition, 16.0f);
         AABB aabb = (sceneCamera.type == CameraType::CAMERA_ORTHO)
             ? AABB(-halfSize, -halfSize, -1, halfSize, halfSize, 1)
@@ -200,10 +205,10 @@ AABB editor::SceneRender::getAABB(Entity entity, bool local){
     return AABB();
 }
 
-AABB editor::SceneRender::getFamilyAABB(Entity entity, float offset){
+AABB editor::SceneRender::getFamilyAABB(Scene* scene, Entity entity, float offset){
     Signature signature = scene->getSignature(entity);
     if (!signature.test(scene->getComponentId<Transform>())) {
-        AABB entityAABB = getAABB(entity, false);
+        AABB entityAABB = getAABB(scene, entity, false);
         if (!entityAABB.isNull() && !entityAABB.isInfinite()) {
             Vector3 min = entityAABB.getMinimum() - Vector3(offset);
             Vector3 max = entityAABB.getMaximum() + Vector3(offset);
@@ -230,7 +235,7 @@ AABB editor::SceneRender::getFamilyAABB(Entity entity, float offset){
         entity = transforms->getEntity(i);
         parentList.push_back(entity);
 
-        AABB entityAABB = getAABB(entity, false);
+        AABB entityAABB = getAABB(scene, entity, false);
 
         if (!entityAABB.isNull() && !entityAABB.isInfinite()){
             Vector3 min = entityAABB.getMinimum() - Vector3(offset);
@@ -247,7 +252,7 @@ AABB editor::SceneRender::getFamilyAABB(Entity entity, float offset){
 AABB editor::SceneRender::getEntitiesAABB(const std::vector<Entity>& entities){
     AABB aabb;
     for (Entity entity : entities) {
-        AABB entityAABB = getFamilyAABB(entity, 0.0f);
+        AABB entityAABB = getFamilyAABB(scene, entity, 0.0f);
         if (!entityAABB.isNull() && !entityAABB.isInfinite()) {
             aabb.merge(entityAABB);
         }
@@ -295,7 +300,7 @@ OBB editor::SceneRender::transformAABBPreservingShear(const Matrix4& modelMatrix
     return result;
 }
 
-OBB editor::SceneRender::getOBB(Entity entity, bool local, bool visual){
+OBB editor::SceneRender::getOBB(Scene* scene, Entity entity, bool local, bool visual){
     Signature signature = scene->getSignature(entity);
 
     Matrix4 modelMatrix;
@@ -350,7 +355,7 @@ OBB editor::SceneRender::getOBB(Entity entity, bool local, bool visual){
                    signature.test(scene->getComponentId<LightComponent>()) ||
                    signature.test(scene->getComponentId<Light2DComponent>()) ||
                    signature.test(scene->getComponentId<SoundComponent>())){
-            CameraComponent& sceneCamera = scene->getComponent<CameraComponent>(camera->getEntity());
+            CameraComponent& sceneCamera = this->scene->getComponent<CameraComponent>(camera->getEntity());
             float halfSize = billboardScreenScale(transform.worldPosition, 16.0f);
             AABB aabb = (sceneCamera.type == CameraType::CAMERA_ORTHO)
                 ? AABB(-halfSize, -halfSize, -1, halfSize, halfSize, 1)
@@ -430,10 +435,10 @@ OBB editor::SceneRender::getOBB(Entity entity, bool local, bool visual){
 // entity's matrix. The box is oriented to the selected node and tightly bounds the
 // whole subtree (and reduces to the exact single-mesh box for a leaf). A singular
 // selected transform falls back to an axis-aligned world-space box.
-OBB editor::SceneRender::getFamilyVisualOBB(Entity entity, float offset){
+OBB editor::SceneRender::getFamilyVisualOBB(Scene* scene, Entity entity, float offset){
     Signature signature = scene->getSignature(entity);
     if (!signature.test(scene->getComponentId<Transform>())) {
-        OBB entityOBB = getOBB(entity, false, /*visual*/ true);
+        OBB entityOBB = getOBB(scene, entity, false, /*visual*/ true);
         if (!entityOBB.isNull()){
             entityOBB.setHalfExtents(entityOBB.getHalfExtents() + Vector3(offset));
         }
@@ -466,7 +471,7 @@ OBB editor::SceneRender::getFamilyVisualOBB(Entity entity, float offset){
         Entity member = transforms->getEntity(i);
         parentList.push_back(member);
 
-        OBB memberOBB = getOBB(member, false, /*visual*/ true);
+        OBB memberOBB = getOBB(scene, member, false, /*visual*/ true);
         if (memberOBB.isNull()){
             continue;
         }
@@ -493,6 +498,7 @@ OBB editor::SceneRender::getFamilyVisualOBB(Entity entity, float offset){
 
 void editor::SceneRender::hideAllGizmos(){
     selLines->setVisible(false);
+    childSelLines->setVisible(false);
     terrainBrushLines->setVisible(false);
     toolslayer.setGizmoVisible(false);
     uilayer.setViewGizmoImageVisible(false);
@@ -532,12 +538,70 @@ bool editor::SceneRender::isCameraDetached() const{
     return cameraDetached;
 }
 
-// a deleted runtime scene's address can be reused, so the copy is also known by name
-static const char* RUNTIME_VIEW_CAMERA_NAME = "Editor View Camera";
+// a deleted scene's address can be reused, so the copy is also known by name
+static const char* VIEW_CAMERA_NAME = "Editor View Camera";
 
-static bool isRuntimeViewCamera(Scene* scene, Entity entity){
+static bool isViewCamera(Scene* scene, Entity entity){
     return entity != NULL_ENTITY && scene->isEntityCreated(entity) &&
-        scene->getEntityName(entity) == RUNTIME_VIEW_CAMERA_NAME && scene->findComponent<CameraComponent>(entity);
+        scene->getEntityName(entity) == VIEW_CAMERA_NAME && scene->findComponent<CameraComponent>(entity);
+}
+
+static Entity createViewCamera(Scene* scene){
+    Entity entity = scene->createSystemEntity();
+    scene->setEntityName(entity, VIEW_CAMERA_NAME);
+    scene->addComponent<Transform>(entity, {});
+    scene->addComponent<CameraComponent>(entity, {});
+    return entity;
+}
+
+static void destroyViewCamera(Scene* scene, Entity viewCamera){
+    if (!isViewCamera(scene, viewCamera)){
+        return;
+    }
+    if (scene->getRenderCamera() == viewCamera){
+        scene->setViewCamera(NULL_ENTITY);
+    }
+    scene->destroyEntity(viewCamera);
+}
+
+// The scene draws from the copy, its own camera stays as it is
+static void copyViewCamera(Scene* scene, Entity viewCamera, const CameraComponent& from, CameraType type,
+        const Vector3& position, const Quaternion& rotation, const Vector3& target, const Vector3& up){
+    Transform& toTransform = scene->getComponent<Transform>(viewCamera);
+    CameraComponent& to = scene->getComponent<CameraComponent>(viewCamera);
+
+    // only on a change, a camera update rebuilds the instance views
+    if (toTransform.position != position || toTransform.rotation != rotation){
+        toTransform.position = position;
+        toTransform.rotation = rotation;
+        toTransform.needUpdate = true;
+    }
+    if (to.type != type || to.target != target || to.up != up || to.useTarget != from.useTarget ||
+            to.yfov != from.yfov || to.aspect != from.aspect || to.nearClip != from.nearClip || to.farClip != from.farClip ||
+            to.leftClip != from.leftClip || to.rightClip != from.rightClip ||
+            to.bottomClip != from.bottomClip || to.topClip != from.topClip || to.autoResize != from.autoResize ||
+            to.depthTest != from.depthTest || to.transparentSort != from.transparentSort){
+        to.type = type;
+        to.target = target;
+        to.up = up;
+        to.useTarget = from.useTarget;
+        to.yfov = from.yfov;
+        to.aspect = from.aspect;
+        to.nearClip = from.nearClip;
+        to.farClip = from.farClip;
+        to.leftClip = from.leftClip;
+        to.rightClip = from.rightClip;
+        to.bottomClip = from.bottomClip;
+        to.topClip = from.topClip;
+        to.autoResize = from.autoResize;
+        to.depthTest = from.depthTest;
+        to.transparentSort = from.transparentSort;
+        to.needUpdate = true;
+    }
+
+    if (scene->getRenderCamera() != viewCamera){
+        scene->setViewCamera(viewCamera);
+    }
 }
 
 // A scene loaded by SceneManager during Play draws from a copy of the editor camera
@@ -562,11 +626,8 @@ void editor::SceneRender::syncRuntimeViewCamera(){
         releaseRuntimeViewCamera();
         runtimeViewScene = shown;
     }
-    if (!isRuntimeViewCamera(shown, runtimeViewCamera)){
-        runtimeViewCamera = shown->createSystemEntity();
-        shown->setEntityName(runtimeViewCamera, RUNTIME_VIEW_CAMERA_NAME);
-        shown->addComponent<Transform>(runtimeViewCamera, {});
-        shown->addComponent<CameraComponent>(runtimeViewCamera, {});
+    if (!isViewCamera(shown, runtimeViewCamera)){
+        runtimeViewCamera = createViewCamera(shown);
         runtimeViewMirrorY = 2.0f * fromTransform.position.y + from.topClip - from.bottomClip;
     }
 
@@ -584,42 +645,47 @@ void editor::SceneRender::syncRuntimeViewCamera(){
         target.y = runtimeViewMirrorY - target.y - height;
     }
 
-    Transform& toTransform = shown->getComponent<Transform>(runtimeViewCamera);
-    CameraComponent& to = shown->getComponent<CameraComponent>(runtimeViewCamera);
-
-    // only on a change, a camera update rebuilds the instance views
-    if (toTransform.position != position || toTransform.rotation != fromTransform.rotation){
-        toTransform.position = position;
-        toTransform.rotation = fromTransform.rotation;
-        toTransform.needUpdate = true;
-    }
-    if (to.type != type || to.target != target || to.up != from.up || to.useTarget != from.useTarget ||
-            to.yfov != from.yfov || to.aspect != from.aspect || to.nearClip != from.nearClip || to.farClip != from.farClip ||
-            to.leftClip != from.leftClip || to.rightClip != from.rightClip ||
-            to.bottomClip != from.bottomClip || to.topClip != from.topClip || to.autoResize != from.autoResize ||
-            to.depthTest != from.depthTest || to.transparentSort != from.transparentSort){
-        to.type = type;
-        to.target = target;
-        to.up = from.up;
-        to.useTarget = from.useTarget;
-        to.yfov = from.yfov;
-        to.aspect = from.aspect;
-        to.nearClip = from.nearClip;
-        to.farClip = from.farClip;
-        to.leftClip = from.leftClip;
-        to.rightClip = from.rightClip;
-        to.bottomClip = from.bottomClip;
-        to.topClip = from.topClip;
-        to.autoResize = from.autoResize;
-        to.depthTest = from.depthTest;
-        to.transparentSort = from.transparentSort;
-        to.needUpdate = true;
-    }
-
-    if (shown->getRenderCamera() != runtimeViewCamera){
-        shown->setViewCamera(runtimeViewCamera);
-    }
+    copyViewCamera(shown, runtimeViewCamera, from, type, position, fromTransform.rotation, target, from.up);
     shown->getSystem<RenderSystem>()->setDisableFixedResolution(true);
+}
+
+// A child sharing this view draws from a copy of the editor camera. Otherwise, and during a
+// camera preview, which shows what the game draws, it draws from its own game camera.
+void editor::SceneRender::syncChildViewCamera(Scene* child, Entity& viewCamera, Entity gameCamera, bool shareView){
+    if (!shareView || isPreviewCameraActive()){
+        // every camera adds its pipelines to the scene, so an unused copy goes
+        if (!shareView){
+            destroyViewCamera(child, viewCamera);
+            viewCamera = NULL_ENTITY;
+        }
+        // bound only when it differs, so a bound view camera always tells a parent set it
+        child->setViewCamera((gameCamera != NULL_ENTITY && gameCamera != child->getCamera()) ? gameCamera : NULL_ENTITY);
+        return;
+    }
+
+    if (!isViewCamera(child, viewCamera)){
+        viewCamera = createViewCamera(child);
+    }
+    const Entity source = camera->getEntity();
+    const CameraComponent& from = scene->getComponent<CameraComponent>(source);
+    const Transform& fromTransform = scene->getComponent<Transform>(source);
+    copyViewCamera(child, viewCamera, from, from.type, fromTransform.position, fromTransform.rotation, from.target, from.up);
+}
+
+void editor::SceneRender::releaseChildViewCamera(Scene* child, Entity& viewCamera){
+    child->setViewCamera(NULL_ENTITY);
+    destroyViewCamera(child, viewCamera);
+    viewCamera = NULL_ENTITY;
+}
+
+void editor::SceneRender::setChildSelection(const std::vector<std::pair<Scene*, Entity>>& selection){
+    childSelBB.clear();
+    for (const auto& [entityScene, entity] : selection){
+        OBB box = (entityScene != scene) ? getFamilyVisualOBB(entityScene, entity, selectionOffset) : OBB();
+        if (!box.isNull()){
+            childSelBB.push_back(box);
+        }
+    }
 }
 
 void editor::SceneRender::releaseRuntimeViewCamera(){
@@ -628,12 +694,7 @@ void editor::SceneRender::releaseRuntimeViewCamera(){
     }
     // a retired or stopped runtime scene is already deleted
     if (Backend::getApp().getProject()->getRuntimeScene(runtimeViewScene)){
-        if (isRuntimeViewCamera(runtimeViewScene, runtimeViewCamera)){
-            if (runtimeViewScene->getRenderCamera() == runtimeViewCamera){
-                runtimeViewScene->setViewCamera(NULL_ENTITY);
-            }
-            runtimeViewScene->destroyEntity(runtimeViewCamera);
-        }
+        destroyViewCamera(runtimeViewScene, runtimeViewCamera);
         runtimeViewScene->getSystem<RenderSystem>()->setDisableFixedResolution(false);
     }
     runtimeViewScene = nullptr;
@@ -791,9 +852,9 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
                 gizmoRotation = transform->worldRotation;
             }
 
-            selBB.push_back(getFamilyVisualOBB(entity, selectionOffset));
+            selBB.push_back(getFamilyVisualOBB(scene, entity, selectionOffset));
 
-            totalSelBB.enclose(getOBB(entity, false));
+            totalSelBB.enclose(getOBB(scene, entity, false));
         }
 
     }
@@ -947,7 +1008,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
         }
 
         if (selBB.size() > 0) {
-            updateSelLines(selBB);
+            updateSelLines(selLines, selBB);
         }
     }
 
@@ -977,6 +1038,12 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
         }
     }
     selLines->setVisible(showSelLines && !displaySettings.hideSelectionOutline);
+
+    // entities of an inline child scene are only outlined, their gizmo is in their own scene
+    if (!childSelBB.empty()){
+        updateSelLines(childSelLines, childSelBB);
+    }
+    childSelLines->setVisible(!childSelBB.empty() && !displaySettings.hideSelectionOutline);
 
     // no editing while playing, hiding also clears the hovered side
     if (terrainEditing || isPlaying){

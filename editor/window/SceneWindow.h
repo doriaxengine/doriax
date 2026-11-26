@@ -114,7 +114,8 @@ namespace doriax::editor {
         void beginStructureVisibilityUpdate(uint32_t sceneId);
         void setStructureSelectionParent(uint32_t sceneId, Entity entity, Entity selectionParent);
 
-        void focusOnEntities(SceneProject* sceneProject, const std::vector<Entity>& entities);
+        // Each entity comes with its scene: the one in view or an inline child that shares it
+        void focusOnEntities(SceneProject* sceneProject, const std::vector<std::pair<Scene*, Entity>>& entities);
         bool viewThroughCamera(uint32_t sceneId, Entity cameraEntity);
         void stopViewingCamera(uint32_t sceneId);
 

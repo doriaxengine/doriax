@@ -118,7 +118,7 @@ namespace doriax::editor{
 
         void activate() override;
         void setOverlayScale(float scale) override;
-        void updateSelLines(std::vector<OBB> obbs) override;
+        void updateSelLines(Lines* lines, const std::vector<OBB>& obbs) override;
 
         void zoomCamera(float amount);
 

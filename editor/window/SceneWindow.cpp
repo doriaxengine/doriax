@@ -1870,13 +1870,12 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
                 // F key: Focus camera on selected entities
                 if (sceneProject->sceneType == SceneType::SCENE_3D && ImGui::IsKeyPressed(ImGuiKey_F)) {
-                    std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
-                    focusOnEntities(sceneProject, selEntities);
+                    focusOnEntities(sceneProject, project->getViewEntities(sceneId, true));
                 }
 
                 // Home key: Frame all objects in the scene
                 if (sceneProject->sceneType == SceneType::SCENE_3D && ImGui::IsKeyPressed(ImGuiKey_Home)) {
-                    focusOnEntities(sceneProject, sceneProject->entities);
+                    focusOnEntities(sceneProject, project->getViewEntities(sceneId, false));
                 }
 
                 // Numpad preset views (3D only)
@@ -1925,18 +1924,18 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
 }
 
-void editor::SceneWindow::focusOnEntities(SceneProject* sceneProject, const std::vector<Entity>& entities) {
+void editor::SceneWindow::focusOnEntities(SceneProject* sceneProject, const std::vector<std::pair<Scene*, Entity>>& entities) {
     if (entities.empty() || !sceneProject || !sceneProject->sceneRender) return;
     if (sceneProject->sceneType != SceneType::SCENE_3D) return;
 
     Camera* camera = sceneProject->sceneRender->getCamera();
 
     AABB aabb;
-    for (Entity entity : entities) {
-        AABB entityAABB = sceneProject->sceneRender->getEntitiesAABB({entity});
+    for (const auto& [scene, entity] : entities) {
+        AABB entityAABB = sceneProject->sceneRender->getEntityAABB(scene, entity);
         if (!entityAABB.isNull() && !entityAABB.isInfinite()) {
             aabb.merge(entityAABB);
-        } else if (Transform* transform = sceneProject->scene->findComponent<Transform>(entity)) {
+        } else if (Transform* transform = scene->findComponent<Transform>(entity)) {
             // entities without bounds, like lights, still have a world origin to focus on
             aabb.merge(transform->worldPosition);
         }

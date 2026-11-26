@@ -132,6 +132,9 @@ namespace doriax::editor{
         int selectedBody2DPointShape = -1;
         int selectedBody2DPointIndex = -1;
 
+        // outline of the selected entities of inline child scenes
+        std::vector<OBB> childSelBB;
+
         // editor camera copy in a scene SceneManager loaded during Play
         Scene* runtimeViewScene = nullptr;
         Entity runtimeViewCamera = NULL_ENTITY;
@@ -143,15 +146,16 @@ namespace doriax::editor{
 
         bool getTrackPointWorld(Entity entity, int pointIndex, Vector3& worldPoint);
 
-        AABB getAABB(Entity entity, bool local);
-        AABB getFamilyAABB(Entity entity, float offset);
+        // The scene is the one the entity is in, this one or an inline child
+        AABB getAABB(Scene* scene, Entity entity, bool local);
+        AABB getFamilyAABB(Scene* scene, Entity entity, float offset);
 
         // visual=true returns a shear-preserving box (parallelepiped) that hugs the
         // rendered geometry, for the selection outline / gizmo handles only.
         // visual=false (default) returns an orthonormal OBB, required by ray picking
         // (Ray::intersects) and OBB::enclose, which assume orthonormal axes.
-        OBB getOBB(Entity entity, bool local, bool visual = false);
-        OBB getFamilyVisualOBB(Entity entity, float offset);
+        OBB getOBB(Scene* scene, Entity entity, bool local, bool visual = false);
+        OBB getFamilyVisualOBB(Scene* scene, Entity entity, float offset);
         static OBB transformAABBPreservingShear(const Matrix4& modelMatrix, const AABB& localAABB);
         void updateTerrainBrushCursor();
         float snapRotationAngle(float angle, bool invertRotationSnap) const;
@@ -181,6 +185,7 @@ namespace doriax::editor{
         Entity previewCameraEntity;
 
         Lines* selLines;
+        Lines* childSelLines;
         Lines* terrainBrushLines;
 
         ToolsLayer toolslayer;
@@ -220,7 +225,7 @@ namespace doriax::editor{
         virtual void updateSize(int width, int height);
         virtual void setOverlayScale(float scale);
         float billboardScreenScale(const Vector3& worldPos, float logicalScale) const;
-        virtual void updateSelLines(std::vector<OBB> obbs) = 0;
+        virtual void updateSelLines(Lines* lines, const std::vector<OBB>& obbs) = 0;
 
         void updateRenderSystem();
 
@@ -236,6 +241,12 @@ namespace doriax::editor{
         bool hasHoverFeedback() const;
 
         void setChildSceneLayers(const std::vector<Scene*>& layers);
+        // A child sharing this view draws from a copy of the editor camera, otherwise from its game camera
+        void syncChildViewCamera(Scene* child, Entity& viewCamera, Entity gameCamera, bool shareView);
+        // The child draws from its own camera again, the copy is destroyed
+        static void releaseChildViewCamera(Scene* child, Entity& viewCamera);
+        // Entities of other scenes are outlined, this scene's own come with update()
+        void setChildSelection(const std::vector<std::pair<Scene*, Entity>>& selection);
 
         TextureRender& getTexture();
         Framebuffer& getFramebuffer();
@@ -258,6 +269,8 @@ namespace doriax::editor{
         bool isMultipleEntitesSelected() const;
 
         AABB getEntitiesAABB(const std::vector<Entity>& entities);
+        // The scene is the one the entity is in, this one or an inline child
+        AABB getEntityAABB(Scene* scene, Entity entity){ return getFamilyAABB(scene, entity, 0.0f); }
 
         // Tile sub-selection
         int getSelectedTileIndex() const { return selectedTileIndex; }
