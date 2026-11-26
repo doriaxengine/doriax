@@ -6,9 +6,11 @@
 #include "EditorHost.h"
 #include "Out.h"
 #include "LuaDebugger.h"
+#include "util/FileUtils.h"
 
 #include "json.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 using namespace doriax;
@@ -52,13 +54,27 @@ editor::ScriptDebugger::~ScriptDebugger() {
     waitForEnd();
 }
 
-void editor::ScriptDebugger::start(const std::string& command, const fs::path& workingDir, std::function<bool()> build) {
+void editor::ScriptDebugger::start(const std::string& command, const fs::path& workingDir, std::function<bool()> build, const std::string& nativeAdapter) {
     if (isActive()) {
         return;
     }
     if (worker.joinable()) {
         worker.join();
     }
+    this->nativeAdapter = nativeAdapter;
+    sourceRoot = NativeDebugger::sourceName(workingDir);
+    if (sourceRoot.empty() || sourceRoot.back() != '/') {
+        sourceRoot += "/";
+    }
+    released = false;
+    native.onStopped = [this]() {
+        nativeStop = true;
+        showStop();
+    };
+    native.onContinued = [this]() {
+        nativeStop = false;
+        showStop();
+    };
     state = State::BUILDING;
     runner.setInputPipe(true);
     runner.resetCancel();
@@ -71,6 +87,9 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
         }
         getEditorHost().enqueueMainThreadTask([this, started]() {
             if (started == session) {
+                native.end();
+                nativeStop = false;
+                released = false;
                 clearStop();
                 state = State::IDLE;
             }
@@ -80,6 +99,9 @@ void editor::ScriptDebugger::start(const std::string& command, const fs::path& w
 
 void editor::ScriptDebugger::stop() {
     if (isActive()) {
+        // a process it holds stopped would not take the signal
+        native.detach();
+        nativeStop = false;
         runner.cancel();
     }
 }
@@ -95,6 +117,9 @@ void editor::ScriptDebugger::waitForEnd() {
     }
     // the task of the thread would only do it on a later frame
     session++;
+    native.end();
+    nativeStop = false;
+    released = false;
     clearStop();
     state = State::IDLE;
 }
@@ -102,6 +127,7 @@ void editor::ScriptDebugger::waitForEnd() {
 void editor::ScriptDebugger::reset() {
     waitForEnd();
     breakpoints.clear();
+    nativeBreakpoints.clear();
 }
 
 editor::ScriptDebugger::State editor::ScriptDebugger::getState() const {
@@ -113,78 +139,118 @@ bool editor::ScriptDebugger::isActive() const {
 }
 
 bool editor::ScriptDebugger::hasBreakpoints() const {
-    return !breakpoints.empty();
+    return !breakpoints.empty() || !nativeBreakpoints.empty();
 }
 
-void editor::ScriptDebugger::toggleBreakpoint(const std::string& file, int line) {
-    std::set<int> lines = getBreakpoints(file);
-    if (!lines.erase(line)) {
-        lines.insert(line);
+bool editor::ScriptDebugger::hasNativeBreakpoints() const {
+    return !nativeBreakpoints.empty();
+}
+
+void editor::ScriptDebugger::dropStaleBreakpoints() {
+    std::error_code ec;
+    for (auto it = nativeBreakpoints.begin(); it != nativeBreakpoints.end();) {
+        const fs::path file = FileUtils::pathFromUtf8(it->first);
+        it = NativeDebugger::isSource(file) && fs::is_regular_file(file, ec) ? std::next(it) : nativeBreakpoints.erase(it);
     }
-    setBreakpoints(file, lines);
 }
 
-void editor::ScriptDebugger::setBreakpoints(const std::string& file, const std::set<int>& lines) {
-    if (getBreakpoints(file) == lines) {
+void editor::ScriptDebugger::setBreakpoints(const std::string& file, const std::set<int>& lines, bool native) {
+    if (getBreakpoints(file, native) == lines) {
         return;
     }
+    std::map<std::string, std::set<int>>& files = native ? nativeBreakpoints : breakpoints;
     if (lines.empty()) {
-        breakpoints.erase(file);
+        files.erase(file);
     } else {
-        breakpoints[file] = lines;
+        files[file] = lines;
     }
-    sendBreakpoints(file);
+    if (native) {
+        this->native.setBreakpoints(file, lines);
+    } else {
+        sendBreakpoints(file);
+    }
 }
 
-const std::set<int>& editor::ScriptDebugger::getBreakpoints(const std::string& file) const {
+const std::set<int>& editor::ScriptDebugger::getBreakpoints(const std::string& file, bool native) const {
     static const std::set<int> none;
-    const auto it = breakpoints.find(file);
-    return it != breakpoints.end() ? it->second : none;
+    const std::map<std::string, std::set<int>>& files = native ? nativeBreakpoints : breakpoints;
+    const auto it = files.find(file);
+    return it != files.end() ? it->second : none;
 }
 
-void editor::ScriptDebugger::renameBreakpoints(const std::string& from, const std::string& to) {
+void editor::ScriptDebugger::renameBreakpoints(const std::string& from, const std::string& to, bool native) {
     if (from.empty() || from == to) {
         return;
     }
     std::vector<std::string> files;
-    for (const auto& [file, lines] : breakpoints) {
+    for (const auto& [file, lines] : native ? nativeBreakpoints : breakpoints) {
         if (file == from || file.rfind(from + "/", 0) == 0) {
             files.push_back(file);
         }
     }
     for (const std::string& file : files) {
-        const std::set<int> lines = getBreakpoints(file);
-        setBreakpoints(file, {});
-        setBreakpoints(to + file.substr(from.size()), lines);
+        const std::set<int> lines = getBreakpoints(file, native);
+        setBreakpoints(file, {}, native);
+        setBreakpoints(to + file.substr(from.size()), lines, native);
     }
 }
 
 void editor::ScriptDebugger::resume() {
-    send("continue");
+    nativeStop ? native.resume() : send("continue");
 }
 
 void editor::ScriptDebugger::stepOver() {
-    send("stepOver");
+    nativeStop ? native.stepOver() : send("stepOver");
 }
 
 void editor::ScriptDebugger::stepInto() {
-    send("stepInto");
+    nativeStop ? native.stepInto() : send("stepInto");
 }
 
 void editor::ScriptDebugger::stepOut() {
-    send("stepOut");
+    nativeStop ? native.stepOut() : send("stepOut");
 }
 
 void editor::ScriptDebugger::pause() {
+    if (state != State::RUNNING) {
+        return;
+    }
     send("pause");
+    if (native.isAttached() && pauseSession != session) {
+        // with no Lua to stop at, the whole process stops
+        pauseSession = session;
+        pauseDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(300);
+        awaitPause(session);
+    }
+}
+
+bool editor::ScriptDebugger::isNativeAttached() const {
+    return native.isAttached();
+}
+
+bool editor::ScriptDebugger::isNativeAttaching() const {
+    return native.isAttaching();
+}
+
+bool editor::ScriptDebugger::isNativeOff() const {
+    return released && !native.isAttached();
+}
+
+bool editor::ScriptDebugger::isNativeStop() const {
+    return nativeStop;
+}
+
+bool editor::ScriptDebugger::isProjectFrame(const DebugFrame& frame) const {
+    // the build has its copy of engine files in a hidden folder of the project
+    return !nativeStop || (frame.source.rfind(sourceRoot, 0) == 0 && frame.source.compare(sourceRoot.size(), 1, ".") != 0);
 }
 
 const std::string& editor::ScriptDebugger::getStopReason() const {
-    return stopReason;
+    return nativeStop ? native.getStopReason() : stopReason;
 }
 
 const std::string& editor::ScriptDebugger::getStopMessage() const {
-    return stopMessage;
+    return nativeStop ? native.getStopMessage() : stopMessage;
 }
 
 unsigned int editor::ScriptDebugger::getStopCount() const {
@@ -192,7 +258,7 @@ unsigned int editor::ScriptDebugger::getStopCount() const {
 }
 
 const std::vector<editor::DebugFrame>& editor::ScriptDebugger::getFrames() const {
-    return frames;
+    return nativeStop ? native.getFrames() : frames;
 }
 
 int editor::ScriptDebugger::getSelectedFrame() const {
@@ -200,12 +266,15 @@ int editor::ScriptDebugger::getSelectedFrame() const {
 }
 
 void editor::ScriptDebugger::selectFrame(int index) {
-    if (index >= 0 && index < static_cast<int>(frames.size())) {
+    if (index >= 0 && index < static_cast<int>(getFrames().size())) {
         selectedFrame = index;
     }
 }
 
 const std::vector<editor::DebugVariable>* editor::ScriptDebugger::getVariables() {
+    if (nativeStop) {
+        return native.getVariables(selectedFrame);
+    }
     if (state != State::STOPPED || frames.empty()) {
         return nullptr;
     }
@@ -218,6 +287,9 @@ const std::vector<editor::DebugVariable>* editor::ScriptDebugger::getVariables()
 }
 
 const std::vector<editor::DebugVariable>* editor::ScriptDebugger::getFields(int ref) {
+    if (nativeStop) {
+        return native.getFields(ref);
+    }
     if (state != State::STOPPED) {
         return nullptr;
     }
@@ -262,11 +334,13 @@ void editor::ScriptDebugger::onMessage(const std::string& text) {
     }
     const std::string event = message.value("event", "");
     if (event == "attached") {
-        // it waits for the breakpoints before any script runs
-        for (const auto& [file, lines] : breakpoints) {
-            sendBreakpoints(file);
+        const int pid = message.value("pid", 0);
+        if (nativeAdapter.empty() || pid <= 0) {
+            release();
+            return;
         }
-        resume();
+        // it waits meanwhile, so no C++ breakpoint is missed either
+        native.attach(nativeAdapter, pid, nativeBreakpoints, [this]() { release(); });
     } else if (event == "stopped") {
         clearStop();
         stopReason = message.value("reason", "");
@@ -279,11 +353,11 @@ void editor::ScriptDebugger::onMessage(const std::string& text) {
             frame.line = entry.value("line", 0);
             frames.push_back(frame);
         }
-        stopCount++;
-        state = State::STOPPED;
+        luaStop = true;
+        showStop();
     } else if (event == "continued") {
         clearStop();
-        state = State::RUNNING;
+        showStop();
     } else if (event == "frame") {
         frameVariables[message.value("level", 0)] = readVariables(message);
     } else if (event == "expand") {
@@ -291,7 +365,50 @@ void editor::ScriptDebugger::onMessage(const std::string& text) {
     }
 }
 
+// The process waits for the breakpoints before any script runs
+void editor::ScriptDebugger::release() {
+    released = true;
+    for (const auto& [file, lines] : breakpoints) {
+        sendBreakpoints(file);
+    }
+    send("continue");
+}
+
+// Checked frame by frame, until Lua stops or its time is over
+void editor::ScriptDebugger::awaitPause(unsigned int started) {
+    getEditorHost().enqueueMainThreadTask([this, started]() {
+        const bool waiting = started == session && state == State::RUNNING;
+        if (waiting && std::chrono::steady_clock::now() < pauseDeadline) {
+            awaitPause(started);
+            return;
+        }
+        if (started == pauseSession) {
+            pauseSession = 0;
+        }
+        if (waiting) {
+            // takes the pause of Lua back
+            send("continue");
+            native.pause();
+        }
+    });
+}
+
+// After a stop began or ended, of Lua or of the native debugger
+void editor::ScriptDebugger::showStop() {
+    if (!nativeStop && !luaStop) {
+        state = State::RUNNING;
+        return;
+    }
+    // the first frame of the project, under those of the engine or the system
+    const std::vector<DebugFrame>& stack = getFrames();
+    const auto own = std::find_if(stack.begin(), stack.end(), [this](const DebugFrame& frame) { return isProjectFrame(frame); });
+    selectedFrame = own != stack.end() ? static_cast<int>(own - stack.begin()) : 0;
+    stopCount++;
+    state = State::STOPPED;
+}
+
 void editor::ScriptDebugger::clearStop() {
+    luaStop = false;
     frames.clear();
     selectedFrame = 0;
     frameVariables.clear();

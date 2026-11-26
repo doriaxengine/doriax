@@ -456,6 +456,11 @@ editor::SyntaxLanguage languageForPath(const fs::path& path) {
     return editor::SyntaxLanguage::None;
 }
 
+// Shaders share the C++ highlighter, with no breakpoints
+bool hasBreakpoints(const fs::path& path) {
+    return languageForPath(path) == editor::SyntaxLanguage::Lua || editor::NativeDebugger::isSource(path);
+}
+
 // Reads every project script that is not already open in the editor
 void collectProjectSources(const fs::path& projectPath, const std::unordered_set<std::string>& openFiles,
                            std::vector<std::string>& luaContents, std::vector<std::string>& cppContents) {
@@ -556,7 +561,8 @@ void editor::CodeEditor::updateAllProjectSymbols() {
 
     for (const auto& [key, instance] : editors) {
         openFiles.insert(key);
-        if (!instance.editor) continue;
+        // a file from outside adds nothing to the suggestions
+        if (!instance.editor || instance.editor->IsReadOnly()) continue;
 
         if (instance.languageType == SyntaxLanguage::Lua) {
             luaContents.push_back(instance.editor->GetText());
@@ -1436,6 +1442,10 @@ void editor::CodeEditor::closeAll() {
 }
 
 bool editor::CodeEditor::save(EditorInstance& instance) {
+    // a file from outside is never written
+    if (instance.editor->IsReadOnly()) {
+        return true;
+    }
     try {
         fs::path fullPath = resolveFilepath(instance.filepath);
         if (!writeFile(fullPath, instance.editor->GetText(), instance.crlf)) {
@@ -1556,8 +1566,13 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
         return;
     }
 
-    project->addTab(TabType::CODE_EDITOR, key);
-    project->saveWorkspaceFile();
+    // a file from outside, as the debugger shows, is only read and not kept as a tab
+    const bool outside = instance.filepath.is_absolute() || (!instance.filepath.empty() && *instance.filepath.begin() == "..");
+    instance.editor->SetReadOnly(outside);
+    if (!outside) {
+        project->addTab(TabType::CODE_EDITOR, key);
+        project->saveWorkspaceFile();
+    }
 
     Backend::getApp().addNewCodeWindowToDock(instance.filepath, dockToCentral);
 
@@ -1567,11 +1582,13 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
 // The breakpoints of an open file are those of its editor, which edits move
 void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
     ScriptDebugger& debugger = project->getDebugger();
+    const bool native = instance.languageType != SyntaxLanguage::Lua;
     std::set<int> lines;
-    if (instance.luaSource.empty()) {
-        // the name the engine gives the chunk
-        instance.luaSource = FileUtils::pathToGenericUtf8(project->normalizeToLuaRelative(resolveFilepath(instance.filepath)));
-        for (int line : debugger.getBreakpoints(instance.luaSource)) {
+    if (instance.debugSource.empty()) {
+        // the name the engine gives the chunk, or the path in the debug info
+        const fs::path file = resolveFilepath(instance.filepath);
+        instance.debugSource = native ? NativeDebugger::sourceName(file) : FileUtils::pathToGenericUtf8(project->normalizeToLuaRelative(file));
+        for (int line : debugger.getBreakpoints(instance.debugSource, native)) {
             lines.insert(line - 1);
         }
         instance.editor->SetBreakpointsEnabled(true);
@@ -1581,12 +1598,12 @@ void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
     for (int line : instance.editor->GetBreakpoints()) {
         lines.insert(line + 1);
     }
-    debugger.setBreakpoints(instance.luaSource, lines);
-    // a scene that plays in the editor does not stop at them
-    instance.editor->SetBreakpointsMuted(project->isPlaySessionActive());
+    debugger.setBreakpoints(instance.debugSource, lines, native);
+    // a scene that plays in the editor does not stop at them, nor C++ with no debugger
+    instance.editor->SetBreakpointsMuted(project->isPlaySessionActive() || (native && debugger.isNativeOff()));
 
     const std::vector<DebugFrame>& frames = debugger.getFrames();
-    const bool stoppedHere = !frames.empty() && frames[debugger.getSelectedFrame()].source == instance.luaSource;
+    const bool stoppedHere = !frames.empty() && debugger.isNativeStop() == native && frames[debugger.getSelectedFrame()].source == instance.debugSource;
     instance.editor->SetExecutionLine(stoppedHere ? frames[debugger.getSelectedFrame()].line - 1 : -1);
 }
 
@@ -1678,7 +1695,7 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
     EditorInstance instance = std::move(it->second);
     instance.filepath = newKey;
     // the project moved its breakpoints to the new name
-    instance.luaSource.clear();
+    instance.debugSource.clear();
     instance.lastWriteTime = newWriteTime;
     editors.erase(it);
 
@@ -1691,11 +1708,13 @@ bool editor::CodeEditor::handleFileRename(const fs::path& oldPath, const fs::pat
     // A new extension needs its own highlighter, and SetLanguage drops the project
     // symbols the suggestions engine had for this buffer
     SyntaxLanguage language = languageForPath(newKey);
+    if (language != renamed.languageType || !hasBreakpoints(newKey)) {
+        renamed.editor->SetBreakpointsEnabled(false);
+        renamed.editor->SetBreakpoints({});
+    }
     if (language != renamed.languageType) {
         renamed.languageType = language;
         renamed.editor->SetLanguage(language);
-        renamed.editor->SetBreakpointsEnabled(false);
-        renamed.editor->SetBreakpoints({});
         updateAllProjectSymbols();
     }
 
@@ -1729,7 +1748,10 @@ void editor::CodeEditor::show() {
     std::vector<std::string> openFiles;
     openFiles.reserve(editors.size());
     for (const auto& [key, instance] : editors) {
-        openFiles.push_back(key);
+        // not the files from outside, of no interest to the project's git
+        if (!instance.editor->IsReadOnly()) {
+            openFiles.push_back(key);
+        }
     }
     gitMonitor->setFiles(openFiles);
 
@@ -1791,7 +1813,7 @@ void editor::CodeEditor::show() {
             // Full-height buttons vertically centered on the status row, overlapping the
             // spacing above and below so the row keeps its text-only height
             std::string filepath = instance.filepath.string();
-            bool showEvents = Util::isLuaFile(filepath) || Util::isHeaderFile(filepath) || Util::isSourceFile(filepath);
+            bool showEvents = !instance.editor->IsReadOnly() && (Util::isLuaFile(filepath) || Util::isHeaderFile(filepath) || Util::isSourceFile(filepath));
             float framePadding = ImGui::GetStyle().FramePadding.x * 2.0f;
             float buttonsWidth = ImGui::CalcTextSize(ICON_FA_GEAR).x + framePadding;
             if (showEvents) {
@@ -1808,7 +1830,7 @@ void editor::CodeEditor::show() {
             showSettingsButton();
             ImGui::SetCursorPosY(statusRowY + ImGui::GetTextLineHeightWithSpacing());
 
-            if (instance.languageType == SyntaxLanguage::Lua) {
+            if (hasBreakpoints(instance.filepath)) {
                 if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
                     instance.editor->ToggleBreakpoint(line);
                 }
@@ -1820,7 +1842,7 @@ void editor::CodeEditor::show() {
             instance.editor->Render("TextEditor");
             ImGui::PopFont();
 
-            if ((instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) && ImGui::BeginDragDropTarget()) {
+            if (!instance.editor->IsReadOnly() && (instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) && ImGui::BeginDragDropTarget()) {
                 bool isCppSource = (instance.languageType == SyntaxLanguage::Cpp) && !Util::isHeaderFile(instance.filepath.string());
 
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("entity")) {

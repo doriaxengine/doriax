@@ -1370,8 +1370,9 @@ void editor::Project::remapScriptFilePath(const std::filesystem::path& oldPath, 
         ProjectUtils::removeLogicScript(this, oldPath);
     }
 
-    // breakpoints go with the Lua files, open in an editor or not
+    // breakpoints go with the files, open in an editor or not
     debugger.renameBreakpoints(FileUtils::pathToGenericUtf8(normalizeToLuaRelative(oldPath)), FileUtils::pathToGenericUtf8(normalizeToLuaRelative(newPath)));
+    debugger.renameBreakpoints(NativeDebugger::sourceName(getProjectPath() / oldPath), NativeDebugger::sourceName(getProjectPath() / newPath), true);
 
     for (auto& sceneProject : scenes) {
         if (!sceneProject.scene) {
@@ -11191,6 +11192,7 @@ void editor::Project::start(uint32_t sceneId) {
         Out::warning("Cannot start: a scene runs with the debugger");
         return;
     }
+    debugger.dropStaleBreakpoints();
     if (debugger.hasBreakpoints()) {
         Out::info("Breakpoints do not stop a scene that plays in the editor: use Debug (Ctrl+F5)");
     }
@@ -11533,6 +11535,19 @@ void editor::Project::startDebug() {
     const fs::path executable = buildPath / libName;
 #endif
     const std::string command = "\"" + executable.string() + "\" " + LuaDebugger::ARGUMENT;
+
+    // gdb or lldb comes along when there is C++ to debug
+    debugger.dropStaleBreakpoints();
+    const bool nativeScripts = debugger.hasNativeBreakpoints() || !collectAllSceneCppScripts().empty();
+    std::string nativeAdapter;
+    if (nativeScripts && build.debugInfo != ScriptDebugInfo::NONE) {
+        nativeAdapter = NativeDebugger::findAdapter(kit.cxxCompiler);
+    }
+    if (nativeAdapter.empty() && debugger.hasNativeBreakpoints()) {
+        Out::warning("C++ breakpoints are off: %s", build.debugInfo == ScriptDebugInfo::NONE ? "Debug Info is None in the Editor Settings"
+                                                                                           : "no gdb or lldb-dap was found for the compiler");
+    }
+
     debugger.start(command, getProjectPath(), [this, buildPath, kit, build]() {
         buildStandaloneShaderCache();
         generator.build(getProjectPath(), getProjectInternalPath(), buildPath, kit.cCompiler, kit.cxxCompiler, kit.generator, build.buildJobs, build.debugInfo, false);
@@ -11542,7 +11557,7 @@ void editor::Project::startDebug() {
         }
         generator.waitForBuildToComplete();
         return generator.didLastBuildSucceed();
-    });
+    }, nativeAdapter);
 }
 
 void editor::Project::stopDebug() {

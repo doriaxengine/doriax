@@ -1056,7 +1056,7 @@ namespace doriax::editor{
         void toggleCameraDetached(uint32_t sceneId);
         void waitForPlaySessionToFinish();
 
-        // Runs the selected scene in a window of its own, with the Lua debugger.
+        // Runs the selected scene in a window of its own, with the debugger.
         // pause(), resume() and stop() act on it while it runs.
         void startDebug();
         void stopDebug();

@@ -34,7 +34,7 @@ namespace doriax::editor {
         bool pendingWindowFocus; // focus the window when it is drawn next
         uint64_t diffBaseVersion; // of the GitFileBase the change marks come from, 0 for none
         bool crlf; // the file uses CRLF line endings, kept on save
-        std::string luaSource; // name the debugger knows a Lua file by, set when first drawn
+        std::string debugSource; // name the debugger knows the file by, set when first drawn
 
         EditorInstance() : isOpen(true), languageType(SyntaxLanguage::None), isModified(false), lastCheckTime(0.0), savedUndoIndex(0), propertyInsertUndoIndex(-1), pendingWindowFocus(false), diffBaseVersion(0), crlf(false) {}
     };

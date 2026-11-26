@@ -25,6 +25,15 @@
 #include <thread>
 #include <vector>
 
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 using namespace doriax;
 using json = nlohmann::json;
 
@@ -237,7 +246,8 @@ namespace {
         if (command == "breakpoints") {
             setBreakpoints(message);
         } else if (!stopped) {
-            pauseRequested = pauseRequested || command == "pause";
+            // a continue takes back a pause that stopped nowhere yet
+            pauseRequested = command == "pause" || (pauseRequested && command != "continue");
         } else if (command == "continue") {
             return true;
         } else if (command == "stepInto" || command == "stepOver" || command == "stepOut") {
@@ -364,8 +374,17 @@ void LuaDebugger::attach(lua_State* L) {
     // a pipe would hold the output back otherwise
     std::setvbuf(stdout, nullptr, _IONBF, 0);
     std::thread(readCommands).detach();
+#ifdef __linux__
+    // gdb or lldb of the editor may attach, not being a parent
+    prctl(PR_SET_PTRACER, PR_SET_PTRACER_ANY, 0, 0, 0);
+#endif
+#ifdef _WIN32
+    const int pid = _getpid();
+#else
+    const int pid = getpid();
+#endif
     // the editor sends its breakpoints before any script runs
-    send({{"event", "attached"}});
+    send({{"event", "attached"}, {"pid", pid}});
     waitForResume(L);
 }
 

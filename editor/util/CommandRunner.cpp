@@ -199,6 +199,14 @@ void editor::CommandRunner::setInputPipe(bool enabled) {
     inputPipe = enabled;
 }
 
+void editor::CommandRunner::setFirstInput(const std::string& text) {
+    firstInput = text;
+}
+
+void editor::CommandRunner::setRawOutput(bool enabled) {
+    rawOutput = enabled;
+}
+
 bool editor::CommandRunner::write(const std::string& text) {
     #ifdef _WIN32
         std::lock_guard<std::mutex> lock(processHandleMutex);
@@ -249,7 +257,10 @@ void editor::CommandRunner::terminateCurrentProcess() {
 }
 
 bool editor::CommandRunner::run(const std::string& command, const fs::path& workingDir, const std::function<void(const std::string&)>& onLine) {
-    cancelRequested.store(false, std::memory_order_relaxed);
+    // a cancel that came before the process holds, until resetCancel()
+    if (cancelRequested.load(std::memory_order_relaxed)) {
+        return false;
+    }
 
     auto emit = [&onLine](const std::string& rawLine) {
         const std::string line = TextEncoding::consoleToUtf8(rawLine);
@@ -336,6 +347,10 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
             currentJobHandle = hJob;
             currentInputHandle = hInputWrite;
         }
+        if (!firstInput.empty()) {
+            write(firstInput);
+            firstInput.clear();
+        }
 
         constexpr size_t BUFFER_SIZE = 4096;
         char buffer[BUFFER_SIZE];
@@ -349,6 +364,10 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
                     break;
                 }
 
+                if (rawOutput && onLine) {
+                    onLine(std::string(buffer, bytesRead));
+                    continue;
+                }
                 accumulator.append(buffer, bytesRead);
 
                 size_t pos = 0;
@@ -378,7 +397,9 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
                     std::lock_guard<std::mutex> lock(processHandleMutex);
                     currentProcessHandle = NULL;
                     currentJobHandle = NULL;
+                    currentInputHandle = NULL;
                 }
+                if (hInputWrite) CloseHandle(hInputWrite);
                 CloseHandle(pi.hProcess);
                 if (hJob) CloseHandle(hJob);
                 CloseHandle(hReadPipe);  // Close pipe at the end
@@ -491,6 +512,10 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
             currentProcessPid = pid;
             currentInputFd = inputfd[1];
         }
+        if (!firstInput.empty()) {
+            write(firstInput);
+            firstInput.clear();
+        }
 
         constexpr size_t BUFFER_SIZE = 4096;
         char buffer[BUFFER_SIZE];
@@ -502,6 +527,10 @@ bool editor::CommandRunner::run(const std::string& command, const fs::path& work
         // lines or a partial one), matching the Win32 path.
         std::string accumulator;
         auto emitLines = [&](const char* data, size_t length) {
+            if (rawOutput && onLine) {
+                onLine(std::string(data, length));
+                return;
+            }
             accumulator.append(data, length);
             size_t pos = 0;
             size_t nextPos = 0;
