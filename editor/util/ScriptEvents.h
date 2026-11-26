@@ -22,7 +22,8 @@ namespace doriax::editor {
         Physics3D,
         AdMob,
         InAppPurchase,
-        WebPortal
+        WebPortal,
+        Network
     };
 
     struct ScriptEventParam {

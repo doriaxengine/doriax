@@ -369,6 +369,7 @@ namespace doriax::editor{
         void drawOccluder2DComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawFogComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawMirrorComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
+        void drawNetworkComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawReflectionProbeComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawCameraComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);
         void drawAudioComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities);

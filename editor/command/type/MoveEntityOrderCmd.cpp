@@ -35,16 +35,23 @@ bool editor::MoveEntityOrderCmd::execute(){
         return false;
     }
 
+    if (source == target || (sourceHasTransform && sceneProject->scene->isParentOf(source, target))){
+        editor::Out::warning("Cannot move entity '%u' to itself or its own child", source);
+        return false;
+    }
+
     if (!project->canMoveBundleEntity(sceneId, source, target, type, &reason)){
         editor::Out::warning("Cannot move entity '%u': %s", source, reason.c_str());
         return false;
     }
 
+    if (!ProjectUtils::moveEntityOrderByTarget(sceneProject->scene, sceneProject->entities, source, target, type, oldParent, oldIndex, hasTransform)){
+        return false;
+    }
     // only members reach the registry, the move of an instance root stays in this scene
     if (project->isEntityInBundle(sceneId, source)){
         bundleMoveRecovery = project->moveEntityFromBundle(sceneId, source, target, type, false);
     }
-    ProjectUtils::moveEntityOrderByTarget(sceneProject->scene, sceneProject->entities, source, target, type, oldParent, oldIndex, hasTransform);
 
     // a bundle registry has no current model matrices to keep the world transform with,
     // so the bundle takes the local transform the entity got here

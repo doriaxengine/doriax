@@ -2815,7 +2815,7 @@ ActionResult EditorActionExecutor::inspectComponent(const Json& arguments) {
 
 ActionResult EditorActionExecutor::listComponentTypes() {
     Json components = Json::array();
-    for (int i = static_cast<int>(ComponentType::Transform); i <= static_cast<int>(ComponentType::Character3DComponent); ++i) {
+    for (int i = static_cast<int>(ComponentType::Transform); i <= static_cast<int>(ComponentType::NetworkComponent); ++i) {
         ComponentType type = static_cast<ComponentType>(i);
         std::string name = Catalog::getComponentName(type);
         if (!name.empty()) {

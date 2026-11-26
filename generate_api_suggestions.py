@@ -1148,7 +1148,7 @@ def _lua_params(params, names):
         parts = declaration.strip().rsplit(' ', 1)
         cpp_type, name = (parts[0], parts[1]) if len(parts) == 2 else (parts[0], '')
         # the method reads its arguments from the Lua stack
-        if 'lua_State' in cpp_type or cpp_type == '...':
+        if 'lua_State' in cpp_type or cpp_type.endswith('...'):
             result.append(('...', 'any', False))
             continue
         if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):

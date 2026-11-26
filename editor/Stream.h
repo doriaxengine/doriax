@@ -332,6 +332,9 @@ namespace doriax::editor {
         static YAML::Node encodeMirrorComponent(const MirrorComponent& mirror);
         static MirrorComponent decodeMirrorComponent(const YAML::Node& node, const MirrorComponent* oldMirror = nullptr);
 
+        static YAML::Node encodeNetworkComponent(const NetworkComponent& network);
+        static NetworkComponent decodeNetworkComponent(const YAML::Node& node, const NetworkComponent* oldNetwork = nullptr);
+
         static YAML::Node encodeReflectionProbeComponent(const ReflectionProbeComponent& probe);
         static ReflectionProbeComponent decodeReflectionProbeComponent(const YAML::Node& node, const ReflectionProbeComponent* oldProbe = nullptr);
 

@@ -38,6 +38,8 @@ namespace doriax{
         float gravityFactor = 1.0f;
         float airControl = 1.0f;
         bool innerBody = true;
+        // only follows its Transform, no gravity or movement of its own
+        bool kinematic = false;
 
         Vector3 moveVelocity = Vector3::ZERO;
         float jumpSpeed = 0.0f;

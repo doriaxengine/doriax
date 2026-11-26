@@ -115,14 +115,6 @@ bool editor::ImportEntityBundleCmd::execute(){
         return false;
     }
 
-    if (ProjectUtils::isInsideBundle(scene, parent, ProjectUtils::getBranchBundles(scene, rootEntity))){
-        Out::error("Cannot import '%s' here: a bundle cannot be inside another instance of itself", filepath.string().c_str());
-        project->unimportEntityBundle(sceneId, filepath, rootEntity, importedEntities);
-        sceneProject->isModified = wasModified;
-        rootEntity = NULL_ENTITY;
-        return false;
-    }
-
     ProjectUtils::sortEntitiesByTransformOrder(scene, sceneProject->entities);
 
     // Applied after the import so nothing the bundle brings in overwrites it.
@@ -138,8 +130,18 @@ bool editor::ImportEntityBundleCmd::execute(){
     // If parent is part of a bundle, add the new root as a nested bundle member. A brush
     // placement never does: it drops props into the scene, not into a shared bundle asset.
     addedToParentBundle = false;
-    if (parent != NULL_ENTITY && !hasPlacement && project->isEntityInBundle(sceneId, parent)) {
+    bool refused = parent != NULL_ENTITY && project->isInsideBundle(sceneId, parent, project->withNestedBundles(ProjectUtils::getBranchBundles(scene, rootEntity)));
+    if (refused) {
+        Out::error("Cannot import '%s' here: a bundle cannot be inside another instance of itself", filepath.string().c_str());
+    } else if (parent != NULL_ENTITY && !hasPlacement && project->isEntityInBundle(sceneId, parent)) {
         addedToParentBundle = project->addEntityToBundle(sceneId, rootEntity, parent, false);
+        refused = !addedToParentBundle;
+    }
+    if (refused) {
+        project->unimportEntityBundle(sceneId, filepath, rootEntity, importedEntities);
+        sceneProject->isModified = wasModified;
+        rootEntity = NULL_ENTITY;
+        return false;
     }
 
     if (!quiet){

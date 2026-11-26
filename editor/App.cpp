@@ -277,6 +277,7 @@ enum class AppMenuCommand : uint32_t {
     ClearTrash,
     RunScene,
     DebugScene,
+    RunInstance,
     PauseScene,
     ResumeScene,
     StopScene,
@@ -369,6 +370,9 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
     bool canPause = hasSelectedScene && controlState == ScenePlayState::PLAYING;
     bool canResume = hasSelectedScene && controlState == ScenePlayState::PAUSED;
     bool canStop = hasSelectedScene && (canPause || canResume || controlState == ScenePlayState::LOADING);
+    // not while this editor saves or builds for its own Play
+    bool canRunInstance = hasSelectedScene && !instanceEnabled && !project.isAnySceneSaving() && !project.isAnySceneLoading() &&
+                          controlState != ScenePlayState::LOADING;
     bool canDetachCamera = hasSelectedScene && (isPlaying || isPaused);
     bool canRemove = hasSelectedScene && !isProjectBusy && project.getScenes().size() > 1;
 
@@ -494,6 +498,7 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
         menuSeparator(),
         menuShortcut(AppMenuCommand::RunScene, "Run Current Scene", "F5", canRun),
         menuShortcut(AppMenuCommand::DebugScene, "Debug Current Scene", "Ctrl+F5", canRun),
+        menuCommand(AppMenuCommand::RunInstance, "Run in Another Instance", canRunInstance),
         menuShortcut(AppMenuCommand::PauseScene, "Pause", "F6", canPause),
         menuShortcut(AppMenuCommand::ResumeScene, "Resume", "F5", canResume),
         menuShortcut(AppMenuCommand::StopScene, "Stop", "F7", canStop),
@@ -704,6 +709,13 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
         case AppMenuCommand::DebugScene:
             if (project.getSelectedScene() && !project.isAnyScenePlaying())
                 project.startDebug();
+            break;
+        case AppMenuCommand::RunInstance:
+            // the instance plays what is saved
+            if (!project.isAnyScenePlaying() && project.hasScenesUnsavedChanges())
+                project.saveAllScenes([this](bool saved) { if (saved) runInstance(); });
+            else
+                runInstance();
             break;
         case AppMenuCommand::PauseScene:
             if (SceneProject* scene = project.getSelectedScene();
@@ -1719,7 +1731,9 @@ void editor::App::setup() {
     Theme::setUiScale(AppSettings::getUiScale());
     Theme::applyDpiScale(dpiScale);
 
-    mcpServer->applySettings(AppSettings::getMcpSettings());
+    // the port belongs to the editor that has the project
+    if (!instanceEnabled)
+        mcpServer->applySettings(AppSettings::getMcpSettings());
 }
 
 bool editor::App::canEditSelection(bool duplicate) {
@@ -2156,16 +2170,16 @@ void editor::App::parseBenchmarkArgs(int argc, char** argv) {
 }
 
 // the project's start scene unless --scene names another; true once it is the selected one
-bool editor::App::selectBenchmarkScene() {
-    fs::path scenePath = benchmarkScene;
+bool editor::App::selectStartupScene(const std::string& scene, uint32_t& sceneId) {
+    fs::path scenePath = scene;
     if (scenePath.is_relative())
         scenePath = project.getProjectPath() / scenePath;
 
     SceneProject* match = nullptr;
     for (SceneProject& sceneProject : project.getScenes()) {
-        const bool wanted = benchmarkScene.empty()
+        const bool wanted = scene.empty()
             ? sceneProject.id == project.getStartSceneId()
-            : (sceneProject.name == benchmarkScene || sceneProject.filepath.filename() == benchmarkScene ||
+            : (sceneProject.name == scene || sceneProject.filepath.filename() == scene ||
                project.getProjectPath() / sceneProject.filepath == scenePath);
         if (wanted) {
             match = &sceneProject;
@@ -2175,30 +2189,78 @@ bool editor::App::selectBenchmarkScene() {
     if (!match)
         return false;
 
-    benchmarkSceneId = match->id;
+    sceneId = match->id;
     if (!match->opened)
         project.openScene(match->filepath, false);
     else
-        project.setSelectedSceneId(benchmarkSceneId);
+        project.setSelectedSceneId(sceneId);
 
     SceneProject* selected = project.getSelectedScene();
-    return selected && selected->id == benchmarkSceneId;
+    return selected && selected->id == sceneId;
+}
+
+// checked by CommandLine::checkPlayArgs before the window opens
+void editor::App::parseInstanceArgs(int argc, char** argv) {
+    if (argc < 2 || std::strcmp(argv[1], "play") != 0)
+        return;
+
+    instanceEnabled = true;
+    for (int i = 2; i + 1 < argc; i += 2) {
+        const std::string arg = argv[i];
+        if (arg == "-p" || arg == "--project") {
+            instanceProject = std::filesystem::absolute(argv[i + 1]);
+        } else {
+            instanceScene = argv[i + 1];
+        }
+    }
+}
+
+// a second editor that plays the scene, to test multiplayer on one machine
+void editor::App::runInstance() {
+    SceneProject* selected = project.getSelectedScene();
+    if (!selected)
+        return;
+
+    // by its file, two scenes may share a name
+    const std::string scene = selected->filepath.empty() ? selected->name : FileUtils::pathToUtf8(selected->filepath);
+    if (!ExternalEditor::launch({FileUtils::pathToUtf8(FileUtils::getExecutablePath()), "play",
+            "--project", FileUtils::pathToUtf8(project.getProjectPath()), "--scene", scene}))
+        Out::error("Failed to start another instance of the editor");
+}
+
+void editor::App::tickInstance() {
+    SceneProject* selected = project.getScene(instanceSceneId);
+    if (!selected || !selected->scene || !selected->sceneRender)
+        return;
+
+    if (!instanceStarted) {
+        if (sceneWindow)
+            sceneWindow->requestPlayFocus(instanceSceneId);
+        project.start(instanceSceneId);
+        instanceStarted = true;
+    } else if (instanceRunning && selected->playState == ScenePlayState::STOPPED) {
+        // stopped, there is nothing else for an instance to do
+        exitRequested = true;
+    } else if (selected->playState == ScenePlayState::PLAYING) {
+        instanceRunning = true;
+    }
 }
 
 void editor::App::failBenchmark(const std::string& message) {
     std::cerr << "benchmark: " << message << "\n";
     benchmarkFailed = true;
-    benchmarkExit = true;
+    exitRequested = true;
 }
 
-bool editor::App::consumeBenchmarkExit() {
-    const bool exit = benchmarkExit;
-    benchmarkExit = false;
+bool editor::App::consumeExitRequest() {
+    const bool exit = exitRequested;
+    exitRequested = false;
     return exit;
 }
 
 void editor::App::engineInit(int argc, char** argv) {
     parseBenchmarkArgs(argc, argv);
+    parseInstanceArgs(argc, argv);
     if (argc == 3 && (std::strcmp(argv[1], "-p") == 0 || std::strcmp(argv[1], "--project") == 0)) {
         startupProject = std::filesystem::absolute(argv[2]);
     }
@@ -2235,10 +2297,10 @@ void editor::App::loadStartupProject() {
     lastLoadingFrame = {};
     reportLoadingProgress("Loading project...");
 
-    // a failed benchmark still runs one frame: the main loop exits on benchmarkExit, and
+    // a failed benchmark still runs one frame: the main loop exits on exitRequested, and
     // closing before the first frame would leave the render queue waiting on shutdown
     if (benchmarkEnabled) {
-        if (benchmarkExit)
+        if (exitRequested)
             return;
 
         fs::path projectPath = benchmarkProject;
@@ -2250,7 +2312,7 @@ void editor::App::loadStartupProject() {
             return;
         }
 
-        if (!selectBenchmarkScene()) {
+        if (!selectStartupScene(benchmarkScene, benchmarkSceneId)) {
             failBenchmark(benchmarkScene.empty() ? "the project has no start scene" : "scene '" + benchmarkScene + "' is not in the project");
             return;
         }
@@ -2260,6 +2322,25 @@ void editor::App::loadStartupProject() {
             selected->displaySettings.showGrid3D = false;
             selected->displaySettings.showOrigin = false;
             selected->displaySettings.hideSelectionOutline = true;
+        }
+        projectLoading = false;
+        requestRedraw();
+        return;
+    }
+
+    if (instanceEnabled) {
+        if (exitRequested)
+            return;
+
+        fs::path projectPath = instanceProject;
+        if (fs::is_regular_file(projectPath) && projectPath.filename() == "project.yaml")
+            projectPath = projectPath.parent_path();
+
+        if (!project.loadProject(projectPath, false) || !selectStartupScene(instanceScene, instanceSceneId)) {
+            std::cerr << "play: failed to open the scene of '" << instanceProject.string() << "'\n";
+            instanceFailed = true;
+            exitRequested = true;
+            return;
         }
         projectLoading = false;
         requestRedraw();
@@ -2523,10 +2604,12 @@ void editor::App::engineRender(){
     renderedScenePrevFrame = renderedSceneThisFrame;
     if (benchmarkEnabled)
         tickBenchmark();
+    if (instanceEnabled)
+        tickInstance();
 }
 
 void editor::App::tickBenchmark() {
-    if (benchmarkExit)
+    if (exitRequested)
         return;
 
     SceneProject* selected = project.getScene(benchmarkSceneId);
@@ -2681,7 +2764,7 @@ void editor::App::finishBenchmark() {
     }
 
     benchmarkEnabled = false;
-    benchmarkExit = true;
+    exitRequested = true;
 }
 
 void editor::App::enqueueMainThreadTask(std::function<void()> task) {
@@ -2865,15 +2948,15 @@ void editor::App::resetLastActivatedScene(){
 }
 
 bool editor::App::shouldSyncEngineApi() const {
-    return true;
+    return !instanceEnabled;
 }
 
 bool editor::App::recordsRecentProjects() const {
-    return true;
+    return !instanceEnabled;
 }
 
 bool editor::App::locksProjects() const {
-    return !benchmarkEnabled;
+    return !benchmarkEnabled && !instanceEnabled;
 }
 
 void editor::App::updateResourcesPath(){
@@ -2901,7 +2984,7 @@ void editor::App::requestDockspaceRebuild() {
 }
 
 void editor::App::updateWindowTitle(const std::string& projectName) {
-    Backend::updateWindowTitle(projectName);
+    Backend::updateWindowTitle(instanceEnabled ? projectName + " (instance)" : projectName);
 }
 
 void editor::App::stopTransientPreviews() {
@@ -3436,7 +3519,7 @@ void editor::App::closeWindow(){
     // A moved camera, a different selected scene and a changed terrain brush live
     // only in the model until this runs, and nothing else asks for it. Also flushes
     // a tab reorder still sitting in captureTabOrder()'s debounce.
-    if (!benchmarkEnabled) {
+    if (!benchmarkEnabled && !instanceEnabled) {
         project.saveWorkspaceFile();
         tabsOrderDirty = false;
     }

@@ -2365,8 +2365,13 @@ unsigned int RenderSystem::clampShadowAtlasSlotResolution(unsigned int requested
     }
 
     if (requestedResolution > maxSlotResolution){
-        Log::warn("Shadow atlas slot resolution clamped from %u to %u (GPU max texture %d, %dx%d grid)",
-                  requestedResolution, maxSlotResolution, maxTextureSize, atlasCols, atlasRows);
+        // once, every frame asks again
+        static bool warned = false;
+        if (!warned){
+            Log::warn("Shadow atlas slot resolution clamped from %u to %u (GPU max texture %d, %dx%d grid)",
+                      requestedResolution, maxSlotResolution, maxTextureSize, atlasCols, atlasRows);
+            warned = true;
+        }
         return maxSlotResolution;
     }
 

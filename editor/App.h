@@ -110,8 +110,17 @@ namespace doriax::editor{
         // Branch in the footer and change marks in the code editor
         GitMonitor gitMonitor;
 
+        // an instance only plays a scene of a project that another editor has open
+        bool instanceEnabled = false;
+        bool instanceStarted = false;
+        bool instanceRunning = false;
+        bool instanceFailed = false;
+        uint32_t instanceSceneId = 0;
+        std::filesystem::path instanceProject;
+        std::string instanceScene;
+
         bool benchmarkEnabled = false;
-        bool benchmarkExit = false;
+        bool exitRequested = false;
         bool benchmarkFailed = false;
         bool benchmarkCameraReady = false;
         uint32_t benchmarkSceneId = 0;
@@ -253,7 +262,10 @@ namespace doriax::editor{
 
         void closeWindow();
         void parseBenchmarkArgs(int argc, char** argv);
-        bool selectBenchmarkScene();
+        void parseInstanceArgs(int argc, char** argv);
+        bool selectStartupScene(const std::string& scene, uint32_t& sceneId);
+        void tickInstance();
+        void runInstance();
         void failBenchmark(const std::string& message);
         void tickBenchmark();
         void finishBenchmark();
@@ -279,8 +291,9 @@ namespace doriax::editor{
         void engineShutdown();
 
         bool isBenchmarkMode() const { return benchmarkEnabled; }
-        bool consumeBenchmarkExit();
-        int getExitCode() const { return benchmarkFailed ? 1 : 0; }
+        bool isInstanceMode() const { return instanceEnabled; }
+        bool consumeExitRequest();
+        int getExitCode() const { return (benchmarkFailed || instanceFailed) ? 1 : 0; }
 
         bool isProjectLoading() const { return projectLoading; }
         const std::string& getLoadingStatus() const { return loadingStatus; }

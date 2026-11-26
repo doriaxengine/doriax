@@ -2309,6 +2309,11 @@ void PhysicsSystem::updateCharacter3D(Entity entity, float stepTime){
     const JPH::RVec3 oldPosition = jcharacter->GetPosition();
     character->previousPosition = Vector3(oldPosition.GetX(), oldPosition.GetY(), oldPosition.GetZ());
 
+    if (character->kinematic){
+        character->syncedPosition = character->previousPosition;
+        return;
+    }
+
     jcharacter->UpdateGroundVelocity();
 
     const JPH::Vec3 up = jcharacter->GetUp();

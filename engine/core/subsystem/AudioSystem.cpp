@@ -33,6 +33,10 @@ SoLoud::Soloud& AudioSystem::getSoloud(){
 };
 
 bool AudioSystem::init(){
+#ifdef DORIAX_HEADLESS
+    // a server plays no sound
+    return false;
+#endif
     if (!inited) {
         SoLoud::result result = getSoloud().init();
         if (result != SoLoud::SOLOUD_ERRORS::SO_NO_ERROR) {

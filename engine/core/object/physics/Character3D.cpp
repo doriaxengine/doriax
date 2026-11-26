@@ -215,3 +215,11 @@ float Character3D::getAirControl() const{
 void Character3D::setAirControl(float airControl){
     getComponent<Character3DComponent>().airControl = airControl;
 }
+
+bool Character3D::isKinematic() const{
+    return getComponent<Character3DComponent>().kinematic;
+}
+
+void Character3D::setKinematic(bool kinematic){
+    getComponent<Character3DComponent>().kinematic = kinematic;
+}

@@ -28,6 +28,8 @@ namespace doriax::editor {
         // line and column start at 1, 0 for none
         static bool openFile(const std::filesystem::path& projectPath, const std::filesystem::path& file, int line = 0, int column = 0);
         static bool openProject(const std::filesystem::path& projectPath);
+        // starts a program and leaves it running
+        static bool launch(const std::vector<std::string>& args);
 
         // Linux only lets a parent process attach otherwise
         static void setDebuggerAllowed(bool allowed);

@@ -1011,12 +1011,17 @@ bool editor::ProjectUtils::canMoveLockedEntityOrder(Scene* scene, Entity source,
     return reject("Generated entities can only be reordered within the same parent");
 }
 
+std::string editor::ProjectUtils::getBundlePathKey(std::string path) {
+    std::replace(path.begin(), path.end(), '\\', '/');
+    return std::filesystem::path(path).lexically_normal().generic_string();
+}
+
 std::unordered_set<std::string> editor::ProjectUtils::getBranchBundles(Scene* scene, Entity entity) {
     std::unordered_set<std::string> bundlePaths;
     auto addBundle = [&](Entity candidate) {
         BundleComponent* bundle = scene->findComponent<BundleComponent>(candidate);
         if (bundle && !bundle->path.empty()) {
-            bundlePaths.insert(bundle->path);
+            bundlePaths.insert(getBundlePathKey(bundle->path));
         }
     };
 
@@ -1037,19 +1042,6 @@ std::unordered_set<std::string> editor::ProjectUtils::getBranchBundles(Scene* sc
     }
 
     return bundlePaths;
-}
-
-bool editor::ProjectUtils::isInsideBundle(Scene* scene, Entity entity, const std::unordered_set<std::string>& bundlePaths) {
-    while (entity != NULL_ENTITY) {
-        BundleComponent* bundle = scene->findComponent<BundleComponent>(entity);
-        if (bundle && bundlePaths.count(bundle->path) > 0) {
-            return true;
-        }
-        Transform* transform = scene->findComponent<Transform>(entity);
-        entity = transform ? transform->parent : NULL_ENTITY;
-    }
-
-    return false;
 }
 
 std::string editor::ProjectUtils::makeUniqueEntityName(const std::string& baseName, const std::unordered_set<std::string>& existingNames) {
@@ -1134,8 +1126,8 @@ bool editor::ProjectUtils::moveEntityOrderByTarget(EntityRegistry* registry, std
     if (transformSource && transformTarget){
         hasTransform = true;
 
-        if (registry->isParentOf(source, target)){
-            Out::error("Cannot move an entity to its own child");
+        if (source == target || registry->isParentOf(source, target)){
+            Out::error("Cannot move an entity to itself or its own child");
             return false;
         }
 
@@ -1375,6 +1367,13 @@ void editor::ProjectUtils::addEntityComponent(EntityRegistry* registry, Entity e
                 registry->addComponent<MirrorComponent>(entity, {});
             }else{
                 registry->addComponent<MirrorComponent>(entity, Stream::decodeMirrorComponent(componentNode));
+            }
+            break;
+        case ComponentType::NetworkComponent:
+            if (!componentNode.IsDefined() || componentNode.IsNull()){
+                registry->addComponent<NetworkComponent>(entity, {});
+            }else{
+                registry->addComponent<NetworkComponent>(entity, Stream::decodeNetworkComponent(componentNode));
             }
             break;
         case ComponentType::ReflectionProbeComponent:
@@ -1854,6 +1853,12 @@ YAML::Node editor::ProjectUtils::removeEntityComponent(EntityRegistry* registry,
                 oldComponent = Stream::encodeMirrorComponent(registry->getComponent<MirrorComponent>(entity));
             }
             registry->removeComponent<MirrorComponent>(entity);
+            break;
+        case ComponentType::NetworkComponent:
+            if (encodeComponent){
+                oldComponent = Stream::encodeNetworkComponent(registry->getComponent<NetworkComponent>(entity));
+            }
+            registry->removeComponent<NetworkComponent>(entity);
             break;
         case ComponentType::ReflectionProbeComponent:
             if (encodeComponent){

@@ -13,6 +13,7 @@
 #include "subsystem/UISystem.h"
 #include "subsystem/ActionSystem.h"
 #include "subsystem/AudioSystem.h"
+#include "subsystem/NetworkSystem.h"
 #include "subsystem/PhysicsSystem.h"
 #include "manager/BundleManager.h"
 #include "object/EntityHandle.h"
@@ -30,6 +31,8 @@ Scene::Scene(EntityPool defaultPool) : EntityRegistry(defaultPool) {
 
 void Scene::init(){
     registerSystem<ActionSystem>();
+    // moves entities too, before the render system resolves them
+    registerSystem<NetworkSystem>();
     registerSystem<MeshSystem>();
     registerSystem<UISystem>();
     registerSystem<RenderSystem>();

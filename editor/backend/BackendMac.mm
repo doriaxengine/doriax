@@ -1074,7 +1074,7 @@ int editor::Backend::init(int argc, char* argv[]) {
                     if (remaining > 0.0)
                         [NSThread sleepForTimeInterval:remaining];
                 }
-                if (app.consumeBenchmarkExit())
+                if (app.consumeExitRequest())
                     backend->shouldClose = true;
             }
         }

@@ -968,7 +968,7 @@ int editor::Backend::init(int argc, char* argv[]) {
         app.processProjectChange();
         if (backend->shouldClose) break;
         renderFrame(false);
-        if (app.consumeBenchmarkExit())
+        if (app.consumeExitRequest())
             backend->shouldClose = true;
     }
     backend->liveResizeFrame = {};

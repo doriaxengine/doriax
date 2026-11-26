@@ -277,6 +277,7 @@ static void printMainUsage(const std::string& commandName) {
         << "  " << commandName << " ide --project <path>     Write the CMake and IDE files of a project.\n"
         << "  " << commandName << " shaders [options]        Generate shaders.\n"
         << "  " << commandName << " benchmark [options]      Measure scene FPS with vsync off.\n"
+        << "  " << commandName << " play --project <path>    Play a scene in another editor, --scene picks it.\n"
         << "  " << commandName << " shader-nodes             Print the shader graph node types as JSON.\n"
         << "  " << commandName << " logic-nodes              Print the logic graph node types as JSON.\n"
         << "  " << commandName << " logic <file> [options]   Write the Lua script of a logic graph.\n\n"
@@ -645,6 +646,30 @@ int CommandLine::runShadersCommand(int argc, char** argv, const char* executable
     }
 
     return 0;
+}
+
+bool CommandLine::checkPlayArgs(int argc, char** argv) {
+    attachHostConsoleIfNeeded();
+
+    bool hasProject = false;
+    for (int i = 1; i < argc; i++) {
+        const std::string arg = argv[i];
+        const bool hasValue = i + 1 < argc;
+        if ((arg == "-p" || arg == "--project") && hasValue) {
+            hasProject = true;
+            i++;
+        } else if ((arg == "-s" || arg == "--scene") && hasValue) {
+            i++;
+        } else {
+            std::cerr << "play: unknown or incomplete argument '" << arg << "'\n";
+            return false;
+        }
+    }
+
+    if (!hasProject) {
+        std::cerr << "play: --project is required\n";
+    }
+    return hasProject;
 }
 
 int CommandLine::runBenchmarkHelp(int argc, char** argv, const char* executableName) {

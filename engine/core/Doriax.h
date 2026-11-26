@@ -79,6 +79,7 @@
 #include "component/SkyComponent.h"
 #include "component/WaterComponent.h"
 #include "component/WaterExclusionComponent.h"
+#include "component/NetworkComponent.h"
 #include "component/SpriteAnimationComponent.h"
 #include "component/SpriteComponent.h"
 #include "component/TerrainComponent.h"
@@ -194,12 +195,14 @@
 #include "service/AdMob.h"
 #include "service/InAppPurchase.h"
 #include "service/WebPortal.h"
+#include "network/Network.h"
 
 #include "shader/ShaderData.h"
 #include "shader/ShaderDataSerializer.h"
 
 #include "subsystem/ActionSystem.h"
 #include "subsystem/AudioSystem.h"
+#include "subsystem/NetworkSystem.h"
 #include "subsystem/MeshSystem.h"
 #include "subsystem/PhysicsSystem.h"
 #include "subsystem/RenderSystem.h"

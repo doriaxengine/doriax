@@ -22,6 +22,7 @@
 #include "component/ReflectionProbeComponent.h"
 #include "component/WaterComponent.h"
 #include "component/WaterExclusionComponent.h"
+#include "component/NetworkComponent.h"
 #include "component/ImageComponent.h"
 #include "component/UILayoutComponent.h"
 #include "component/UIContainerComponent.h"
