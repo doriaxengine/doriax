@@ -49,6 +49,8 @@ void editor::ToolsLayer::updateCamera(CameraComponent& extCamera, Transform& ext
 
     camera->setPosition(extCameraTransform.position);
     camera->setTarget(extCamera.target);
+    // a top or bottom view looks along y, with z as up
+    camera->setUp(extCamera.up);
 
     cameracomp.type = extCamera.type;
     cameracomp.leftClip = extCamera.leftClip;
