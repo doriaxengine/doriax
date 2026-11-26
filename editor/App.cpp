@@ -786,7 +786,7 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
                 "F7    Stop\n"
                 "F8    Detach / attach camera\n"
                 "F11    Full screen\n\n"
-                "LUA DEBUGGER\n"
+                "DEBUGGER\n"
                 "Ctrl+F5    Debug current scene, in a window of its own\n"
                 "F9    Toggle a breakpoint (code editor)\n"
                 "F5 / F6 / F7    Continue / Pause / Stop\n"

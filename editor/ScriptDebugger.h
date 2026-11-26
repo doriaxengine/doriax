@@ -39,6 +39,8 @@ namespace doriax::editor {
         // a Lua file is a path from the Lua folder, a native one (C++) a whole path
         bool hasBreakpoints() const;
         bool hasNativeBreakpoints() const;
+        // forgets the native ones of files that are gone or no longer C++
+        void dropStaleBreakpoints();
         void setBreakpoints(const std::string& file, const std::set<int>& lines, bool native = false);
         const std::set<int>& getBreakpoints(const std::string& file, bool native = false) const;
         // of a renamed file, or of the files in a renamed folder
@@ -51,9 +53,14 @@ namespace doriax::editor {
         void pause();
         // gdb or lldb is on the process too
         bool isNativeAttached() const;
+        bool isNativeAttaching() const;
+        // true while a run goes on with no debugger for the C++ breakpoints
+        bool isNativeOff() const;
 
         // Of the last stop
         bool isNativeStop() const;
+        // false for a C++ frame of the engine or of the system
+        bool isProjectFrame(const DebugFrame& frame) const;
         const std::string& getStopReason() const;
         const std::string& getStopMessage() const;
         // counts the stops, for a view to follow each one
@@ -90,6 +97,11 @@ namespace doriax::editor {
         // a stop of it hides the one of Lua
         bool nativeStop = false;
         bool luaStop = false;
+        // from when the scripts of the process run
+        bool released = false;
+        // the project folder as the frames of C++ files start
+        std::string sourceRoot;
+        bool pausePending = false;
         std::chrono::steady_clock::time_point pauseDeadline;
 
         std::string stopReason;

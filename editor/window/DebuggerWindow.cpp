@@ -13,6 +13,8 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 
+#include <map>
+
 using namespace doriax;
 
 editor::DebuggerWindow::DebuggerWindow(Project* project, CodeEditor* codeEditor) {
@@ -64,7 +66,7 @@ void editor::DebuggerWindow::showControls(ScriptDebugger& debugger) {
     if (state == ScriptDebugger::State::BUILDING) {
         ImGui::TextUnformatted("Building the project...");
     } else if (!stopped) {
-        ImGui::TextUnformatted("Running");
+        ImGui::TextUnformatted(debugger.isNativeAttaching() ? "Attaching the C++ debugger..." : "Running");
     } else if (debugger.getStopReason() == "error") {
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Error: %s", debugger.getStopMessage().c_str());
     } else if (debugger.getStopReason() == "breakpoint") {
@@ -78,12 +80,14 @@ void editor::DebuggerWindow::showVariables(ScriptDebugger& debugger, const std::
     if (!variables) {
         return;
     }
+    std::map<std::string, int> repeats;
     for (const DebugVariable& variable : *variables) {
         ImGui::TableNextRow();
         ImGui::TableNextColumn();
         const ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAllColumns | (variable.ref ? 0 : ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_Bullet | ImGuiTreeNodeFlags_NoTreePushOnOpen);
-        // named, so a table stays open from one stop to the next
-        const bool open = ImGui::TreeNodeEx(variable.name.c_str(), flags);
+        // named, so a table stays open from one stop to the next, numbered when a name repeats
+        const int repeat = repeats[variable.name]++;
+        const bool open = ImGui::TreeNodeEx((variable.name + (repeat ? "##" + std::to_string(repeat) : "")).c_str(), flags);
         ImGui::TableNextColumn();
         ImGui::TextUnformatted(variable.value.c_str());
         if (open && variable.ref) {
@@ -108,7 +112,10 @@ void editor::DebuggerWindow::show() {
     }
     if (!frames.empty() && debugger.getSelectedFrame() != shownFrame) {
         shownFrame = debugger.getSelectedFrame();
-        showLocation(frames[shownFrame]);
+        // no file of the engine or the system opens by itself
+        if (debugger.isProjectFrame(frames[shownFrame])) {
+            showLocation(frames[shownFrame]);
+        }
         // the caret moves on a later frame, drawn even with no input
         Backend::getApp().requestRedraw();
     }
@@ -141,8 +148,9 @@ void editor::DebuggerWindow::show() {
                     const std::string label = frame.name + "  " + source + (frame.line > 0 ? ":" + std::to_string(frame.line) : "") + "##" + std::to_string(i);
                     if (ImGui::Selectable(label.c_str(), i == debugger.getSelectedFrame())) {
                         debugger.selectFrame(i);
-                        // a click on the frame it shows goes back to its line
-                        shownFrame = -1;
+                        // a click shows any file, and goes back to the line of the shown frame
+                        shownFrame = i;
+                        showLocation(frame);
                     }
                 }
             }

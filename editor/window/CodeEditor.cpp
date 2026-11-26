@@ -1567,7 +1567,7 @@ void editor::CodeEditor::openFile(const std::string& filepath, bool dockToCentra
 // The breakpoints of an open file are those of its editor, which edits move
 void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
     ScriptDebugger& debugger = project->getDebugger();
-    const bool native = instance.languageType == SyntaxLanguage::Cpp;
+    const bool native = instance.languageType != SyntaxLanguage::Lua;
     std::set<int> lines;
     if (instance.debugSource.empty()) {
         // the name the engine gives the chunk, or the path in the debug info
@@ -1584,8 +1584,8 @@ void editor::CodeEditor::updateDebugger(EditorInstance& instance) {
         lines.insert(line + 1);
     }
     debugger.setBreakpoints(instance.debugSource, lines, native);
-    // a scene that plays in the editor does not stop at them
-    instance.editor->SetBreakpointsMuted(project->isPlaySessionActive());
+    // a scene that plays in the editor does not stop at them, nor C++ with no debugger
+    instance.editor->SetBreakpointsMuted(project->isPlaySessionActive() || (native && debugger.isNativeOff()));
 
     const std::vector<DebugFrame>& frames = debugger.getFrames();
     const bool stoppedHere = !frames.empty() && debugger.isNativeStop() == native && frames[debugger.getSelectedFrame()].source == instance.debugSource;
@@ -1810,7 +1810,7 @@ void editor::CodeEditor::show() {
             showSettingsButton();
             ImGui::SetCursorPosY(statusRowY + ImGui::GetTextLineHeightWithSpacing());
 
-            if (instance.languageType == SyntaxLanguage::Lua || instance.languageType == SyntaxLanguage::Cpp) {
+            if (instance.languageType == SyntaxLanguage::Lua || NativeDebugger::isSource(instance.filepath)) {
                 if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && ImGui::IsKeyPressed(ImGuiKey_F9, false)) {
                     instance.editor->ToggleBreakpoint(line);
                 }

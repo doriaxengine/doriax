@@ -7,9 +7,8 @@
 #include "Out.h"
 #include "util/FileUtils.h"
 #include "util/ShellEnv.h"
+#include "util/Util.h"
 
-#include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -23,48 +22,50 @@ namespace {
     const int MAX_FRAMES = 64;
     const char* const HEADER = "Content-Length:";
 
-    std::string lastLine(std::string text) {
-        text.erase(text.find_last_not_of(" \t\r\n") + 1);
-        return text.substr(text.find_last_of('\n') + 1);
+    // A field of another type, null included, reads as if it was not there
+    std::string text(const json& from, const char* key) {
+        const auto it = from.find(key);
+        return it != from.end() && it->is_string() ? it->get<std::string>() : "";
+    }
+
+    int number(const json& from, const char* key) {
+        const auto it = from.find(key);
+        return it != from.end() && it->is_number_integer() ? it->get<int>() : 0;
+    }
+
+    json object(const json& from, const char* key) {
+        const auto it = from.find(key);
+        return it != from.end() && it->is_object() ? *it : json::object();
+    }
+
+    json list(const json& from, const char* key) {
+        const auto it = from.find(key);
+        return it != from.end() && it->is_array() ? *it : json::array();
+    }
+
+    std::string lastLine(std::string output) {
+        output.erase(output.find_last_not_of(" \t\r\n") + 1);
+        return output.substr(output.find_last_of('\n') + 1);
     }
 
     std::string adapterCommand(const std::string& name, const std::string& path) {
         if (name == "gdb") {
-            // no symbols come from the network while a scene waits
-            return "\"" + path + "\" -q -iex \"set debuginfod enabled off\" --interpreter=dap";
+            // no file of the user, no symbols from the network, no stop at a closed socket
+            return "\"" + path + "\" -q -nh -iex \"set debuginfod enabled off\" -iex \"handle SIGPIPE nostop noprint pass\" --interpreter=dap";
         }
         return "\"" + path + "\"";
-    }
-
-    std::vector<editor::DebugVariable> readVariables(const json& body) {
-        std::vector<editor::DebugVariable> variables;
-        for (const json& entry : body.value("variables", json::array())) {
-            editor::DebugVariable variable;
-            variable.name = entry.value("name", "");
-            variable.type = entry.value("type", "");
-            variable.value = entry.value("value", "");
-            if (variable.value.empty()) {
-                variable.value = variable.type;
-            }
-            variable.ref = entry.value("variablesReference", 0);
-            variables.push_back(variable);
-        }
-        return variables;
     }
 
 }
 
 std::string editor::NativeDebugger::findAdapter(const std::string& cxxCompiler) {
+#if defined(_WIN32) && !defined(__MINGW32__)
+    // neither reads well what the kits of this editor write, all of the MSVC ABI
+    (void)cxxCompiler;
+    return "";
+#else
     std::error_code ec;
     const fs::path compiler = FileUtils::pathFromUtf8(cxxCompiler);
-#if defined(_WIN32) && !defined(__MINGW32__)
-    // neither reads well what the Visual Studio compilers write
-    std::string tool = compiler.stem().string();
-    std::transform(tool.begin(), tool.end(), tool.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    if (tool.empty() || tool == "cl" || tool == "clang-cl") {
-        return "";
-    }
-#endif
 #ifdef _WIN32
     const std::string extension = ".exe";
 #else
@@ -75,12 +76,14 @@ std::string editor::NativeDebugger::findAdapter(const std::string& cxxCompiler) 
 #else
     const char* const names[] = {"gdb", "lldb-dap"};
 #endif
+    // the one of the toolchain first, as with MinGW
     for (const char* name : names) {
-        // the one of the toolchain first, as with MinGW
         const fs::path beside = compiler.parent_path() / (name + extension);
         if (compiler.has_parent_path() && fs::is_regular_file(beside, ec)) {
             return adapterCommand(name, beside.string());
         }
+    }
+    for (const char* name : names) {
         const std::string found = ShellEnv::findExecutable(name);
         if (!found.empty()) {
             return adapterCommand(name, found);
@@ -94,12 +97,18 @@ std::string editor::NativeDebugger::findAdapter(const std::string& cxxCompiler) 
     }
 #endif
     return "";
+#endif
 }
 
 std::string editor::NativeDebugger::sourceName(const fs::path& file) {
     std::error_code ec;
     const fs::path canonical = fs::weakly_canonical(file, ec);
     return FileUtils::pathToGenericUtf8(ec ? file : canonical);
+}
+
+bool editor::NativeDebugger::isSource(const fs::path& file) {
+    const std::string extension = file.extension().string();
+    return extension == ".c" || Util::isSourceFile(extension) || Util::isHeaderFile(extension);
 }
 
 editor::NativeDebugger::~NativeDebugger() {
@@ -160,10 +169,15 @@ void editor::NativeDebugger::end() {
     }
     pending.clear();
     noise.clear();
-    attachAnswered = false;
+    threadsAnswered = false;
     configurationAnswered = false;
     configurable = false;
+    mainThread = 0;
     stopThread = 0;
+}
+
+bool editor::NativeDebugger::isAttaching() const {
+    return state == State::ATTACHING;
 }
 
 bool editor::NativeDebugger::isAttached() const {
@@ -199,7 +213,7 @@ void editor::NativeDebugger::stepOut() {
 
 void editor::NativeDebugger::pause() {
     if (state == State::RUNNING) {
-        send("pause", {{"threadId", stopThread}});
+        send("pause", {{"threadId", mainThread}});
     }
 }
 
@@ -213,16 +227,6 @@ const std::string& editor::NativeDebugger::getStopMessage() const {
 
 const std::vector<editor::DebugFrame>& editor::NativeDebugger::getFrames() const {
     return frames;
-}
-
-int editor::NativeDebugger::getSourceFrame() const {
-    std::error_code ec;
-    for (size_t i = 0; i < frames.size(); i++) {
-        if (fs::is_regular_file(FileUtils::pathFromUtf8(frames[i].source), ec)) {
-            return static_cast<int>(i);
-        }
-    }
-    return 0;
 }
 
 const std::vector<editor::DebugVariable>* editor::NativeDebugger::getVariables(int frame) {
@@ -284,15 +288,16 @@ void editor::NativeDebugger::onOutput(const std::string& chunk, unsigned int sta
         if (body == std::string::npos) {
             return;
         }
-        const size_t end = body + 4 + std::strtoul(received.c_str() + header + std::strlen(HEADER), nullptr, 10);
-        if (received.size() < end) {
+        const size_t length = std::strtoul(received.c_str() + header + std::strlen(HEADER), nullptr, 10);
+        if (received.size() - (body + 4) < length) {
             return;
         }
-        getEditorHost().enqueueMainThreadTask([this, started, before = received.substr(0, header), text = received.substr(body + 4, end - body - 4)]() {
+        const size_t end = body + 4 + length;
+        getEditorHost().enqueueMainThreadTask([this, started, before = received.substr(0, header), content = received.substr(body + 4, length)]() {
             // a message may wait in the queue past the end of its session
             if (started == session) {
                 noise += before;
-                onMessage(json::parse(text, nullptr, false));
+                onMessage(json::parse(content, nullptr, false));
             }
         });
         received.erase(0, end);
@@ -303,9 +308,8 @@ void editor::NativeDebugger::onMessage(const json& message) {
     if (!message.is_object()) {
         return;
     }
-    const std::string type = message.value("type", "");
-    const std::string event = message.value("event", "");
-    if (type == "response") {
+    const std::string event = text(message, "event");
+    if (text(message, "type") == "response") {
         onResponse(message);
     } else if (event == "initialized") {
         configurable = true;
@@ -314,53 +318,63 @@ void editor::NativeDebugger::onMessage(const json& message) {
         }
         send("configurationDone", json::object(), Request::CONFIGURATION);
     } else if (event == "stopped") {
-        onStop(message.value("body", json::object()));
+        onStop(object(message, "body"));
     } else if (event == "continued" && state == State::STOPPED) {
         setRunning();
     }
 }
 
 void editor::NativeDebugger::onResponse(const json& message) {
-    const auto it = pending.find(message.value("request_seq", 0));
+    const auto it = pending.find(number(message, "request_seq"));
     if (it == pending.end()) {
         return;
     }
     const Pending asked = it->second;
     pending.erase(it);
-    const bool success = message.value("success", false);
-    const json body = message.value("body", json::object());
+    const json body = object(message, "body");
     // the answer of a stop that is over
     if (asked.request >= Request::STACK && asked.stop != stopSerial) {
+        return;
+    }
+    const auto success = message.find("success");
+    if (asked.request <= Request::CONFIGURATION && (success == message.end() || *success != true)) {
+        fail(text(message, "message"));
         return;
     }
 
     switch (asked.request) {
         case Request::INITIALIZE:
-        case Request::ATTACH:
-            if (!success) {
-                fail(message.value("message", ""));
-            } else if (asked.request == Request::INITIALIZE) {
-                send("attach", {{"pid", pid}}, Request::ATTACH);
-            } else {
-                attachAnswered = true;
-                checkReady();
-            }
+            send("attach", {{"pid", pid}}, Request::ATTACH);
             break;
+        case Request::ATTACH:
+            send("threads", json::object(), Request::THREADS);
+            break;
+        case Request::THREADS: {
+            // gdb says nothing when the system refuses the attach
+            const json threads = list(body, "threads");
+            if (threads.empty()) {
+                fail("the system refused it (ptrace)");
+                break;
+            }
+            mainThread = number(threads[0], "id");
+            threadsAnswered = true;
+            checkReady();
+            break;
+        }
         case Request::CONFIGURATION:
             configurationAnswered = true;
             checkReady();
             break;
         case Request::STACK:
-            for (const json& entry : body.value("stackFrames", json::array())) {
-                const json source = entry.value("source", json::object());
-                const fs::path file = FileUtils::pathFromUtf8(source.value("path", ""));
+            for (const json& entry : list(body, "stackFrames")) {
+                const fs::path file = FileUtils::pathFromUtf8(text(object(entry, "source"), "path"));
                 DebugFrame frame;
                 frame.level = static_cast<int>(frames.size());
-                frame.name = entry.value("name", "");
+                frame.name = text(entry, "name");
                 frame.source = file.is_absolute() ? sourceName(file) : FileUtils::pathToGenericUtf8(file);
-                frame.line = entry.value("line", 0);
+                frame.line = number(entry, "line");
                 frames.push_back(frame);
-                frameIds.push_back(entry.value("id", 0));
+                frameIds.push_back(number(entry, "id"));
             }
             state = State::STOPPED;
             if (onStopped) {
@@ -369,7 +383,7 @@ void editor::NativeDebugger::onResponse(const json& message) {
             break;
         case Request::SIGNAL: {
             // "It stopped with signal SIGSEGV, Segmentation fault."
-            const std::string result = body.value("result", "");
+            const std::string result = text(body, "result");
             const size_t signal = result.find("SIG");
             if (signal != std::string::npos) {
                 stopMessage = result.substr(signal, result.find_first_of(".\r\n", signal) - signal);
@@ -379,12 +393,14 @@ void editor::NativeDebugger::onResponse(const json& message) {
         case Request::SCOPES: {
             FrameVariables& variables = frameVariables[asked.key];
             variables.waiting = 0;
-            for (const json& scope : body.value("scopes", json::array())) {
-                // not the globals nor the registers
-                const std::string hint = scope.value("presentationHint", "");
-                if (hint == "arguments" || hint == "locals") {
+            for (const json& scope : list(body, "scopes")) {
+                // not the globals nor the registers, by name where no hint comes
+                const std::string hint = text(scope, "presentationHint");
+                const std::string name = hint.empty() ? text(scope, "name") : "";
+                const int ref = number(scope, "variablesReference");
+                if (ref > 0 && (hint == "arguments" || hint == "locals" || name == "Arguments" || name == "Locals")) {
                     variables.waiting++;
-                    send("variables", {{"variablesReference", scope.value("variablesReference", 0)}}, Request::VARIABLES, asked.key);
+                    send("variables", {{"variablesReference", ref}}, Request::VARIABLES, asked.key);
                 }
             }
             break;
@@ -397,23 +413,28 @@ void editor::NativeDebugger::onResponse(const json& message) {
             break;
         }
         case Request::FIELDS: {
-            const std::vector<DebugVariable> variables = readVariables(body);
-            // gdb puts what a pointer points to under one more level
-            if (variables.size() == 1 && variables[0].name == "value" && variables[0].ref) {
-                send("variables", {{"variablesReference", variables[0].ref}}, Request::FIELDS, asked.key);
+            // gdb puts what a pointer points to under one more level, a "value" with none
+            const json entries = list(body, "variables");
+            const bool wrapped = entries.size() == 1 && text(entries[0], "name") == "value" && text(entries[0], "value").empty();
+            const int pointee = wrapped && pointers.count(asked.key) ? number(entries[0], "variablesReference") : 0;
+            if (pointee > 0) {
+                send("variables", {{"variablesReference", pointee}}, Request::POINTEE, asked.key);
             } else {
-                fields[asked.key] = variables;
+                fields[asked.key] = readVariables(body);
             }
             break;
         }
+        case Request::POINTEE:
+            fields[asked.key] = readVariables(body);
+            break;
         default:
             break;
     }
 }
 
 void editor::NativeDebugger::onStop(const json& body) {
-    stopThread = body.value("threadId", stopThread);
-    const std::string reason = body.value("reason", "");
+    stopThread = body.contains("threadId") ? number(body, "threadId") : mainThread;
+    const std::string reason = text(body, "reason");
     // gdb stops the process it attaches to
     if (state == State::ATTACHING || reason == "attach" || reason == "entry") {
         send("continue", {{"threadId", stopThread}});
@@ -424,7 +445,7 @@ void editor::NativeDebugger::onStop(const json& body) {
     stopReason = reason;
     if (reason == "signal" || reason == "exception") {
         stopReason = "error";
-        stopMessage = body.value("description", body.value("text", ""));
+        stopMessage = text(body, "description").empty() ? text(body, "text") : text(body, "description");
         if (stopMessage.empty()) {
             // gdb only names the signal when asked
             stopMessage = "stopped by a signal";
@@ -434,8 +455,27 @@ void editor::NativeDebugger::onStop(const json& body) {
     send("stackTrace", {{"threadId", stopThread}, {"levels", MAX_FRAMES}}, Request::STACK);
 }
 
+std::vector<editor::DebugVariable> editor::NativeDebugger::readVariables(const json& body) {
+    std::vector<DebugVariable> variables;
+    for (const json& entry : list(body, "variables")) {
+        DebugVariable variable;
+        variable.name = text(entry, "name");
+        variable.type = text(entry, "type");
+        variable.value = text(entry, "value");
+        if (variable.value.empty()) {
+            variable.value = variable.type;
+        }
+        variable.ref = number(entry, "variablesReference");
+        if (variable.ref && variable.type.find('*') != std::string::npos) {
+            pointers.insert(variable.ref);
+        }
+        variables.push_back(variable);
+    }
+    return variables;
+}
+
 void editor::NativeDebugger::checkReady() {
-    if (state == State::ATTACHING && attachAnswered && configurationAnswered) {
+    if (state == State::ATTACHING && threadsAnswered && configurationAnswered) {
         state = State::RUNNING;
         // it may attach again, which replaces ready
         const std::function<void()> call = std::move(ready);
@@ -471,4 +511,5 @@ void editor::NativeDebugger::clearStop() {
     frameVariables.clear();
     fields.clear();
     requestedFields.clear();
+    pointers.clear();
 }

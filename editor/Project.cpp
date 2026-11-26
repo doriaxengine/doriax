@@ -11536,10 +11536,8 @@ void editor::Project::startDebug() {
     const std::string command = "\"" + executable.string() + "\" " + LuaDebugger::ARGUMENT;
 
     // gdb or lldb comes along when there is C++ to debug
-    bool nativeScripts = debugger.hasNativeBreakpoints();
-    for (const SceneProject& sceneProject : scenes) {
-        nativeScripts = nativeScripts || !sceneProject.cppScripts.empty();
-    }
+    debugger.dropStaleBreakpoints();
+    const bool nativeScripts = debugger.hasNativeBreakpoints() || !collectAllSceneCppScripts().empty();
     std::string nativeAdapter;
     if (nativeScripts && build.debugInfo != ScriptDebugInfo::NONE) {
         nativeAdapter = NativeDebugger::findAdapter(kit.cxxCompiler);

@@ -40,6 +40,8 @@ namespace doriax::editor {
         static std::string findAdapter(const std::string& cxxCompiler);
         // The name of a file in breakpoints and frames
         static std::string sourceName(const fs::path& file);
+        // true for a C or C++ file, which may have breakpoints
+        static bool isSource(const fs::path& file);
 
         ~NativeDebugger();
 
@@ -48,6 +50,7 @@ namespace doriax::editor {
         // lets the process go, the debugger then ends by itself
         void detach();
         void end();
+        bool isAttaching() const;
         bool isAttached() const;
 
         // lines start at 1
@@ -66,15 +69,13 @@ namespace doriax::editor {
         const std::string& getStopReason() const;
         const std::string& getStopMessage() const;
         const std::vector<DebugFrame>& getFrames() const;
-        // the first one with a file to show
-        int getSourceFrame() const;
         // nullptr until the debugger answers
         const std::vector<DebugVariable>* getVariables(int frame);
         const std::vector<DebugVariable>* getFields(int ref);
 
     private:
         enum class State { IDLE, ATTACHING, RUNNING, STOPPED };
-        enum class Request { OTHER, INITIALIZE, ATTACH, CONFIGURATION, STACK, SIGNAL, SCOPES, VARIABLES, FIELDS };
+        enum class Request { OTHER, INITIALIZE, ATTACH, THREADS, CONFIGURATION, STACK, SIGNAL, SCOPES, VARIABLES, FIELDS, POINTEE };
 
         struct Pending {
             Request request;
@@ -97,6 +98,7 @@ namespace doriax::editor {
         void onMessage(const nlohmann::json& message);
         void onResponse(const nlohmann::json& message);
         void onStop(const nlohmann::json& body);
+        std::vector<DebugVariable> readVariables(const nlohmann::json& body);
         void checkReady();
         void fail(const std::string& reason);
         void setRunning();
@@ -116,7 +118,7 @@ namespace doriax::editor {
 
         int pid = 0;
         std::function<void()> ready;
-        bool attachAnswered = false;
+        bool threadsAnswered = false;
         bool configurationAnswered = false;
         // from when the debugger takes breakpoints
         bool configurable = false;
@@ -125,6 +127,7 @@ namespace doriax::editor {
         int sequence = 0;
         std::map<int, Pending> pending;
 
+        int mainThread = 0;
         int stopThread = 0;
         unsigned int stopSerial = 0;
         std::string stopReason;
@@ -134,6 +137,8 @@ namespace doriax::editor {
         std::map<int, FrameVariables> frameVariables;
         std::map<int, std::vector<DebugVariable>> fields;
         std::set<int> requestedFields;
+        // refs of the variables that are pointers
+        std::set<int> pointers;
     };
 
 }
