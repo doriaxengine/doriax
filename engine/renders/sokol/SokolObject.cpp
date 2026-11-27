@@ -508,7 +508,7 @@ bool SokolObject::makePipelines(const sg_pipeline_desc& pipeline_desc, uint16_t 
 
     if (pipelines & (int)PipelineType::PIP_GBUFFER) {
         // Mesh geometry pass with four color attachments (MRT):
-        //   color[0] = packed depth (same as PIP_DEPTH, so SSAO/SSR depth is unchanged)
+        //   color[0] = packed depth (same as PIP_DEPTH, so GTAO/SSR depth is unchanged)
         //   color[1] = view-space normal (octahedral .rg) + roughness (.b) + metallic (.a)
         //   color[2] = linear base color (.rgb) + IBL source code (.a)
         //   color[3] = material occlusion (.r)

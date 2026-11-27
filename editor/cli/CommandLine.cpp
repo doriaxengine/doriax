@@ -171,8 +171,9 @@ static bool parseShaderTypeName(const std::string& value, ShaderType& out) {
     if (token == "depth")                       { out = ShaderType::DEPTH;  return true; }
     if (token == "gbuffer")                     { out = ShaderType::GBUFFER; return true; }
     if (token == "ui")                          { out = ShaderType::UI;     return true; }
-    if (token == "ssao")                        { out = ShaderType::SSAO;   return true; }
-    if (token == "ssaoblur")                    { out = ShaderType::SSAO_BLUR; return true; }
+    // ssao and ssaoblur are the older names, read until a later version
+    if (token == "gtao"   || token == "ssao")   { out = ShaderType::GTAO;   return true; }
+    if (token == "gtaoblur" || token == "ssaoblur") { out = ShaderType::GTAO_BLUR; return true; }
     if (token == "ssr")                         { out = ShaderType::SSR;    return true; }
     if (token == "ssrblur")                     { out = ShaderType::SSR_BLUR; return true; }
     if (token == "composite")                   { out = ShaderType::COMPOSITE; return true; }

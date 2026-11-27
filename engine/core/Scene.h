@@ -159,6 +159,8 @@ namespace doriax{
         [[deprecated("use isGTAOHalfResolution")]] bool isSSAOHalfResolution() const{ return isGTAOHalfResolution(); }
         [[deprecated("use setGTAODebug")]] void setSSAODebug(bool debug){ setGTAODebug(debug); }
         [[deprecated("use isGTAODebug")]] bool isSSAODebug() const{ return isGTAODebug(); }
+        [[deprecated("GTAO has no bias")]] void setSSAOBias(float bias){}
+        [[deprecated("GTAO has no bias")]] float getSSAOBias() const{ return 0.0f; }
 
         // runtime values of "#pragma scene Collection.name" parameters, over the saved defaults
         void setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);

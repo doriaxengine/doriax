@@ -10,13 +10,13 @@ uniform sampler u_depth_smp;
 uniform texture2D u_gbufferTexture;   // SSR G-buffer view-space normal (oct .rg); used when flags.x > 0.5
 uniform sampler u_gbuffer_smp;
 
-uniform u_fs_ssaoParams {
+uniform u_fs_gtaoParams {
     vec4 params;      // radius, thin occluders, texels per unit at 1, texel y/x in view
     vec4 screen;      // xy = 1 / depth size, zw = depth texels per AO texel
     vec4 ndcToView;   // view xy = (ndc * xy + zw) * distance
     vec4 depthParams; // view z = (x * ndc + y) / (z * ndc + w)
     vec4 flags;       // x = G-buffer normal, y = orthographic
-} ssao;
+} gtao;
 
 #include "includes/depth_util.glsl"
 #include "includes/octahedral.glsl"
@@ -34,7 +34,7 @@ const float HALF_PI = 1.57079633;
 float toDistance(float depth01){
     // the cleared background decodes a little past 1.0
     float ndc = min(depth01, 1.0) * 2.0 - 1.0;
-    vec4 p = ssao.depthParams;
+    vec4 p = gtao.depthParams;
     return -(p.x * ndc + p.y) / (p.z * ndc + p.w);
 }
 
@@ -44,7 +44,7 @@ float viewDistance(vec2 uv){
 
 vec3 viewPosition(vec2 uv, float dist){
     vec2 ndc = vec2(uv.x * 2.0 - 1.0, depthUVToNDCY(uv.y));
-    return vec3((ndc * ssao.ndcToView.xy + ssao.ndcToView.zw) * mix(dist, 1.0, ssao.flags.y), -dist);
+    return vec3((ndc * gtao.ndcToView.xy + gtao.ndcToView.zw) * mix(dist, 1.0, gtao.flags.y), -dist);
 }
 
 float fastAcos(float x){
@@ -62,7 +62,7 @@ float bayer(ivec2 p){
 void main(){
     // the depth texel under this AO texel, as the blur reads it
     ivec2 pixel = ivec2(gl_FragCoord.xy);
-    vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * ssao.screen.zw)) + 0.5) * ssao.screen.xy;
+    vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * gtao.screen.zw)) + 0.5) * gtao.screen.xy;
 
     float depth01 = decodeDepth(textureLod(sampler2D(u_depthTexture, u_depth_smp), uv, 0.0));
     if (depth01 >= 1.0){
@@ -71,14 +71,14 @@ void main(){
     }
     float dist = toDistance(depth01);
     vec3 P = viewPosition(uv, dist);
-    vec3 V = ssao.flags.y > 0.5 ? vec3(0.0, 0.0, 1.0) : normalize(-P);
+    vec3 V = gtao.flags.y > 0.5 ? vec3(0.0, 0.0, 1.0) : normalize(-P);
 
     vec3 N;
-    if (ssao.flags.x > 0.5){
+    if (gtao.flags.x > 0.5){
         N = octDecode(textureLod(sampler2D(u_gbufferTexture, u_gbuffer_smp), uv, 0.0).rg);
     }else{
         // nearer neighbour per axis, so edges keep their normal
-        vec2 tx = ssao.screen.xy;
+        vec2 tx = gtao.screen.xy;
         vec3 Pl = viewPosition(uv - vec2(tx.x, 0.0), viewDistance(uv - vec2(tx.x, 0.0)));
         vec3 Pr = viewPosition(uv + vec2(tx.x, 0.0), viewDistance(uv + vec2(tx.x, 0.0)));
         vec3 Pd = viewPosition(uv - vec2(0.0, tx.y), viewDistance(uv - vec2(0.0, tx.y)));
@@ -89,14 +89,14 @@ void main(){
     }
     if (dot(N, V) < 0.0) N = -N;
 
-    float radius = ssao.params.x;
-    float pixelRadius = radius * ssao.params.z / mix(dist, 1.0, ssao.flags.y);
+    float radius = gtao.params.x;
+    float pixelRadius = radius * gtao.params.z / mix(dist, 1.0, gtao.flags.y);
     // under a texel in every direction
-    if (pixelRadius < min(1.0, abs(ssao.params.w))){
+    if (pixelRadius < min(1.0, abs(gtao.params.w))){
         frag_color = vec4(vec3(1.0 / AO_TERM_SCALE), 1.0);
         return;
     }
-    float maxRadius = MAX_SCREEN_RADIUS / ssao.screen.y;
+    float maxRadius = MAX_SCREEN_RADIUS / gtao.screen.y;
     float falloffMul = -1.0 / (FALLOFF * radius);
     float falloffAdd = 1.0 / FALLOFF;
 
@@ -109,7 +109,7 @@ void main(){
     for (int slice = 0; slice < SLICES; slice++){
         float phi = (float(slice) + noiseSlice) * (PI / float(SLICES));
         vec2 dir = vec2(cos(phi), sin(phi));
-        vec2 viewDir = vec2(dir.x, dir.y * ssao.params.w);
+        vec2 viewDir = vec2(dir.x, dir.y * gtao.params.w);
         float sliceRadius = max(min(pixelRadius / length(viewDir), maxRadius), FIRST_TAP);
 
         vec3 directionVec = vec3(viewDir.x, viewDir.y * ySign, 0.0);
@@ -128,12 +128,12 @@ void main(){
         float horizonCos1 = lowHorizonCos1;
         for (int step = 0; step < STEPS; step++){
             float s = (float(step) + fract(noiseStep + float(slice + step * STEPS) * 0.618034)) / float(STEPS);
-            vec2 offset = round(mix(FIRST_TAP, sliceRadius, s * s) * dir) * ssao.screen.xy;
+            vec2 offset = round(mix(FIRST_TAP, sliceRadius, s * s) * dir) * gtao.screen.xy;
             vec3 delta0 = viewPosition(uv + offset, viewDistance(uv + offset)) - P;
             vec3 delta1 = viewPosition(uv - offset, viewDistance(uv - offset)) - P;
             // occluders in front of the point fade sooner, as thin ones
-            float fall0 = length(vec3(delta0.xy, delta0.z + max(delta0.z, 0.0) * ssao.params.y));
-            float fall1 = length(vec3(delta1.xy, delta1.z + max(delta1.z, 0.0) * ssao.params.y));
+            float fall0 = length(vec3(delta0.xy, delta0.z + max(delta0.z, 0.0) * gtao.params.y));
+            float fall1 = length(vec3(delta1.xy, delta1.z + max(delta1.z, 0.0) * gtao.params.y));
             float weight0 = clamp(fall0 * falloffMul + falloffAdd, 0.0, 1.0);
             float weight1 = clamp(fall1 * falloffMul + falloffAdd, 0.0, 1.0);
             horizonCos0 = max(horizonCos0, mix(lowHorizonCos0, dot(delta0, V) / max(length(delta0), 1e-6), weight0));

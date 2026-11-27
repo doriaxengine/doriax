@@ -1041,7 +1041,7 @@ void ExportWindow::drawAddShaderDialog() {
         static const ShaderType typeValues[] = {
             ShaderType::POINTS, ShaderType::LINES, ShaderType::MESH, ShaderType::SKYBOX,
             ShaderType::DEPTH, ShaderType::GBUFFER, ShaderType::UI,
-            ShaderType::SSAO, ShaderType::SSAO_BLUR,
+            ShaderType::GTAO, ShaderType::GTAO_BLUR,
             ShaderType::SSR, ShaderType::SSR_BLUR, ShaderType::COMPOSITE,
             ShaderType::SHADOW2D, ShaderType::BLIT, ShaderType::POSTPROCESS,
             ShaderType::WATER, ShaderType::UNDERWATER, ShaderType::PROBE_FILTER,

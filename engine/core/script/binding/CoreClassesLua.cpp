@@ -1318,6 +1318,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addProperty("ssaoIntensity", &Scene::getGTAOIntensity, &Scene::setGTAOIntensity)
         .addProperty("ssaoHalfResolution", &Scene::isGTAOHalfResolution, &Scene::setGTAOHalfResolution)
         .addProperty("ssaoDebug", &Scene::isGTAODebug, &Scene::setGTAODebug)
+        .addProperty("ssaoBias", [] (Scene* self) -> float { return 0.0f; }, [] (Scene* self, float bias) {})
         .addProperty("meshLodEnabled", &Scene::isMeshLodEnabled, &Scene::setMeshLodEnabled)
         .addProperty("meshLodThreshold", &Scene::getMeshLodThreshold, &Scene::setMeshLodThreshold)
         .addProperty("depthPrepassEnabled", &Scene::isDepthPrepassEnabled, &Scene::setDepthPrepassEnabled)

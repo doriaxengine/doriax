@@ -115,7 +115,7 @@ namespace doriax{
 						bool punctual, bool shadows, bool normals, bool normalMap,
 						bool tangents, bool vertexColorVec3, bool vertexColorVec4, bool textureRect,
                         bool fog, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent,
-                        bool terrain, bool instanced, bool ibl, bool mirror, bool ssao = false,
+                        bool terrain, bool instanced, bool ibl, bool mirror, bool gtao = false,
                         bool light2d = false, bool shadows2d = false,
                         bool alphaMask = false, bool alphaOpaque = false, bool instanceFade = false,
                         bool terrainPBR = false, bool hookUV1 = false, bool hookNormals = false, bool hookUV2 = false);

@@ -46,8 +46,8 @@ namespace doriax{
         DEPTH,
         GBUFFER,    // mesh geometry pass: MRT packed depth + view-space normal/roughness/metallic (SSR)
         UI,
-        SSAO,       // fullscreen screen-space ambient occlusion pass
-        SSAO_BLUR,  // fullscreen depth-aware blur of the SSAO result
+        GTAO,       // fullscreen ground truth ambient occlusion pass
+        GTAO_BLUR,  // fullscreen depth-aware blur of the GTAO result
         SSR,        // fullscreen screen-space reflections pass
         SSR_BLUR,   // fullscreen premultiplied blur of the SSR result (glossy)
         COMPOSITE,  // fullscreen composite of scene color + SSR reflections
@@ -141,8 +141,8 @@ namespace doriax{
         TERRAIN_VS_PARAMS,
         DEPTH_TERRAIN_VS_PARAMS,
         FS_TERRAIN_LAYERS,
-        SSAO_FS_PARAMS,
-        SSAO_BLUR_FS_PARAMS,
+        GTAO_FS_PARAMS,
+        GTAO_BLUR_FS_PARAMS,
         SSR_FS_PARAMS,
         SSR_BLUR_FS_PARAMS,
         COMPOSITE_FS_PARAMS,
@@ -183,7 +183,7 @@ namespace doriax{
         BLENDMAP2,
         TERRAINDETAIL,
         DEPTHTEXTURE,
-        SSAOTEXTURE,
+        GTAOTEXTURE,
         SCENECOLORTEXTURE,
         SSRTEXTURE,
         GBUFFERTEXTURE,      // view-space normal (rg, octahedral) + roughness (b) + metallic (a)

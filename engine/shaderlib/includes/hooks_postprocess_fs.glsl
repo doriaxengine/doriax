@@ -43,12 +43,12 @@ vec2 getSceneDepthUV(vec2 uv){
 #endif
 
 #ifdef HOOK_SCENE_OCCLUSION
-    uniform texture2D u_ssaoTexture;
-    uniform sampler u_ssao_smp;
+    uniform texture2D u_gtaoTexture;
+    uniform sampler u_gtao_smp;
 
-    // ambient occlusion of SSAO, 1 without it
+    // ambient occlusion of GTAO, 1 without it
     float sceneOcclusion(vec2 uv){
-        return texture(sampler2D(u_ssaoTexture, u_ssao_smp), getSceneDepthUV(uv)).r;
+        return texture(sampler2D(u_gtaoTexture, u_gtao_smp), getSceneDepthUV(uv)).r;
     }
 #endif
 

@@ -5137,7 +5137,7 @@ ActionResult EditorActionExecutor::setExportShaders(const Json& arguments) {
         }
         for (const Json& item : list) {
             if (!item.is_string()) {
-                error = std::string(field) + " must hold strings such as mesh:4184 or ssao.";
+                error = std::string(field) + " must hold strings such as mesh:4184 or gtao.";
                 return false;
             }
             const std::string spec = item.get<std::string>();

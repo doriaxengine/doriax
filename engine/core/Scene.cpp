@@ -45,7 +45,7 @@ void Scene::init(){
 
     needUpdateShaderParameterTable = true;
 
-    // All persistent scene configuration (background, SSAO/SSR, gravity, default shaders, ...)
+    // All persistent scene configuration (background, GTAO/SSR, gravity, default shaders, ...)
     // defaults through the SceneSettings member; see SceneSettings.h.
     uiEventState = UIEventState::NOT_SET;
 }
@@ -239,7 +239,7 @@ bool Scene::isDepthPrepassEnabled() const{
 void Scene::setGTAOEnabled(bool gtaoEnabled){
     if (settings.gtaoEnabled != gtaoEnabled){
         settings.gtaoEnabled = gtaoEnabled;
-        // toggling GTAO changes the mesh shader variant (USE_SSAO), so recompile
+        // toggling GTAO changes the mesh shader variant (USE_GTAO), so recompile
         getSystem<RenderSystem>()->needReloadMeshes();
     }
 }

@@ -3206,7 +3206,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v93: SSAO is GTAO.
     // v94: its thin occluders come from the scene.
     // v95: its taps never land on the center texel.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v95";
+    // v96: GTAO shader names, Gao for its mesh variant.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v96";
 }
 
 void editor::App::pushTabNotificationStyle(){

@@ -156,9 +156,9 @@ uniform u_fs_pbrParams {
     uniform sampler u_spotMaskAtlas_smp;
 #endif
 
-#ifdef USE_SSAO
-    uniform texture2D u_ssaoTexture;
-    uniform sampler u_ssao_smp;
+#ifdef USE_GTAO
+    uniform texture2D u_gtaoTexture;
+    uniform sampler u_gtao_smp;
 #endif
 
 #ifdef USE_IBL
@@ -530,14 +530,14 @@ void main() {
             f_specular *= terrainSurface.occlusion;
         #endif
 
-        #ifdef USE_SSAO
+        #ifdef USE_GTAO
             // Screen-space AO modulates only the ambient/indirect term (computed
             // above); the direct punctual lighting added below is unaffected.
             // The AO buffer is in depth orientation, so flip Y when that differs
             // from the color target (viewportInfo.w=1).
-            vec2 ssaoUV = gl_FragCoord.xy * lighting.viewportInfo.xy;
-            if (lighting.viewportInfo.w > 0.5) ssaoUV.y = 1.0 - ssaoUV.y;
-            float screenAO = texture(sampler2D(u_ssaoTexture, u_ssao_smp), ssaoUV).r;
+            vec2 aoUV = gl_FragCoord.xy * lighting.viewportInfo.xy;
+            if (lighting.viewportInfo.w > 0.5) aoUV.y = 1.0 - aoUV.y;
+            float screenAO = texture(sampler2D(u_gtaoTexture, u_gtao_smp), aoUV).r;
             // debug: visualize the raw AO buffer (viewportInfo.z = 1)
             if (lighting.viewportInfo.z > 0.5){
                 g_finalColor = vec4(vec3(screenAO), 1.0);

@@ -227,10 +227,10 @@ int ShaderData::getUniformBlockIndex(UniformBlockType type){
         ustr = "u_vs_terrainParams";
     }else if (type == UniformBlockType::FS_TERRAIN_LAYERS){
         ustr = "u_fs_terrainLayers";
-    }else if (type == UniformBlockType::SSAO_FS_PARAMS){
-        ustr = "u_fs_ssaoParams";
-    }else if (type == UniformBlockType::SSAO_BLUR_FS_PARAMS){
-        ustr = "u_fs_ssaoBlurParams";
+    }else if (type == UniformBlockType::GTAO_FS_PARAMS){
+        ustr = "u_fs_gtaoParams";
+    }else if (type == UniformBlockType::GTAO_BLUR_FS_PARAMS){
+        ustr = "u_fs_gtaoBlurParams";
     }else if (type == UniformBlockType::SSR_FS_PARAMS){
         ustr = "u_fs_ssrParams";
     }else if (type == UniformBlockType::SSR_BLUR_FS_PARAMS){
@@ -366,8 +366,8 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_terrainDetail";
     }else if (type == TextureShaderType::DEPTHTEXTURE){
         texstr = "u_depthTexture";
-    }else if (type == TextureShaderType::SSAOTEXTURE){
-        texstr = "u_ssaoTexture";
+    }else if (type == TextureShaderType::GTAOTEXTURE){
+        texstr = "u_gtaoTexture";
     }else if (type == TextureShaderType::SCENECOLORTEXTURE){
         texstr = "u_sceneColorTexture";
     }else if (type == TextureShaderType::SSRTEXTURE){

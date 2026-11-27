@@ -53,7 +53,7 @@ namespace doriax{
 		Vector4 cameraDir; // xyz = camera backward axis, w = 3D shadow PCF tap radius
 		Vector4 globalIllum; //global illumination
 		Vector4 envColor; //environment color.rgb (linear) and environment rotation.w (radians)
-		Vector4 viewportInfo; //1.0/viewportSize.xy in .xy (used by USE_SSAO)
+		Vector4 viewportInfo; //1.0/viewportSize.xy in .xy (used by USE_GTAO)
 	} fs_lighting_t;
 
 	typedef struct fs_lighting2d_t {
@@ -133,19 +133,19 @@ namespace doriax{
 		Vector4 emissiveFactor;     // for a surface hook, w = 1 when unlit
 	} fs_gbuffer_material_t;
 
-	typedef struct fs_ssao_t {
+	typedef struct fs_gtao_t {
 		Vector4 params;      // radius, thin occluders, texels per unit at 1, texel y/x in view
 		Vector4 screen;      // xy = 1 / depth size, zw = depth texels per AO texel
 		Vector4 ndcToView;   // view xy = (ndc * xy + zw) * distance
 		Vector4 depthParams; // view z from ndc depth
 		Vector4 flags;       // x = G-buffer normal, y = orthographic
-	} fs_ssao_t;
+	} fs_gtao_t;
 
-	typedef struct fs_ssao_blur_t {
+	typedef struct fs_gtao_blur_t {
 		Vector4 texelSize; // 1.0/textureSize in .xy, intensity in .z
 		Vector4 depthParams; // view z from ndc depth
-		Vector4 screen;      // as fs_ssao_t
-	} fs_ssao_blur_t;
+		Vector4 screen;      // as fs_gtao_t
+	} fs_gtao_blur_t;
 
 	typedef struct fs_ssr_t {
 		Matrix4 projection;
@@ -645,25 +645,25 @@ namespace doriax{
 		ShaderEffectView effectView;
 		ShaderParameterTable viewParameters;
 
-		// SSAO: per-frame fullscreen passes for the main camera. The depth pre-pass
-		// renders camera-space packed depth, then the ssao + blur fullscreen passes
-		// produce an AO texture sampled by lit meshes (USE_SSAO).
-		bool ssaoLoaded;
-		unsigned int ssaoWidth;
-		unsigned int ssaoHeight;
-		Framebuffer ssaoDepthFramebuffer; // color = packed depth, depth = z-test
-		Framebuffer ssaoFramebuffer;      // raw AO, half size when the scene asks
-		Framebuffer ssaoBlurFramebuffer;  // blurred AO (sampled by meshes)
-		CameraRender ssaoPassRender;      // drives the offscreen SSAO passes
-		ObjectRender ssaoRender;          // fullscreen ssao.frag draw
-		ObjectRender ssaoBlurRender;      // fullscreen ssao_blur.frag draw
-		std::shared_ptr<ShaderRender> ssaoShader;
-		std::shared_ptr<ShaderRender> ssaoBlurShader;
-		fs_ssao_t fs_ssao;
-		fs_ssao_blur_t fs_ssao_blur;
-		int ssaoSlotParams;
-		int ssaoBlurSlotParams;
-		TextureRender* currentSSAOTexture; // AO bound to meshes this camera (or empty white)
+		// GTAO: per-frame fullscreen passes for the main camera. The depth pre-pass
+		// renders camera-space packed depth, then the GTAO + blur fullscreen passes
+		// produce an AO texture sampled by lit meshes (USE_GTAO).
+		bool gtaoLoaded;
+		unsigned int gtaoWidth;
+		unsigned int gtaoHeight;
+		Framebuffer depthPrePassFramebuffer; // color = packed depth, depth = z-test
+		Framebuffer gtaoFramebuffer;      // raw AO, half size when the scene asks
+		Framebuffer gtaoBlurFramebuffer;  // blurred AO (sampled by meshes)
+		CameraRender prePassRender;      // drives the depth pre-pass and GTAO passes
+		ObjectRender gtaoRender;          // fullscreen gtao.frag draw
+		ObjectRender gtaoBlurRender;      // fullscreen gtao_blur.frag draw
+		std::shared_ptr<ShaderRender> gtaoShader;
+		std::shared_ptr<ShaderRender> gtaoBlurShader;
+		fs_gtao_t fs_gtao;
+		fs_gtao_blur_t fs_gtao_blur;
+		int gtaoSlotParams;
+		int gtaoBlurSlotParams;
+		TextureRender* currentGTAOTexture; // AO bound to meshes this camera (or empty white)
 		// packed opaque depth of this camera pass, or null
 		TextureRender* currentSceneDepthTexture;
 		bool depthPrePassRendered;
@@ -741,7 +741,7 @@ namespace doriax{
 			std::pair<int, int> slotSceneColor;
 			std::pair<int, int> slotDepth;
 			std::pair<int, int> slotGBuffer;
-			std::pair<int, int> slotSSAO;
+			std::pair<int, int> slotGTAO;
 		};
 		bool postProcessLoaded;
 		bool postProcessNeedReload;
@@ -962,24 +962,24 @@ namespace doriax{
 		void updateTerrainNodesBuffer(TerrainComponent& terrain, int viewIndex);
 		// instanceView -1 draws every instance from the component buffer; lodView null is full detail
 		bool drawMesh(Entity entity, MeshComponent& mesh, Transform& transform, CameraComponent& camera, Transform& camTransform, PipelineType pipType, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, int terrainView = 0, int instanceView = -1, const LodView* lodView = nullptr);
-		bool drawMeshDepth(MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_depth_t vsDepthParams, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, bool forSSAO = false, PipelineType pipelineType = PIP_DEPTH, int instanceView = -1, const LodView* lodView = nullptr);
+		bool drawMeshDepth(MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_depth_t vsDepthParams, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, bool forDepthPrePass = false, PipelineType pipelineType = PIP_DEPTH, int instanceView = -1, const LodView* lodView = nullptr);
 		void destroyMesh(Entity entity, MeshComponent& mesh, bool clearAssets = false);
 
-		// SSAO
-		void loadSSAO();
-		void destroySSAO();
+		// GTAO
+		void loadGTAO();
+		void destroyGTAO();
 		bool ensureDepthPrePassFramebuffer(unsigned int width, unsigned int height);
-		bool ensureSSAOFramebuffers(unsigned int width, unsigned int height);
+		bool ensureGTAOFramebuffers(unsigned int width, unsigned int height);
 		// sharedDepth != null reuses an existing packed-depth texture (the SSR G-buffer),
-		// skipping the SSAO depth pre-pass; null runs the pre-pass
-		void renderSSAO(CameraComponent& camera, TextureRender* sharedDepth = nullptr);
+		// skipping the depth pre-pass; null runs the pre-pass
+		void renderGTAO(CameraComponent& camera, TextureRender* sharedDepth = nullptr);
 
 		// SSR
 		void loadSSR();
 		void destroySSR();
 		bool ensureSceneColorFramebuffer(unsigned int width, unsigned int height);
 		bool ensureSSRFramebuffers(unsigned int width, unsigned int height);
-		void renderDepthPrePass(CameraComponent& camera); // shared depth for SSAO/SSR
+		void renderDepthPrePass(CameraComponent& camera); // shared depth for GTAO/SSR
 		// G-buffer geometry pass for SSR: MRT packed depth + view-space normal/roughness/metallic
 		bool ensureGBufferFramebuffer(unsigned int width, unsigned int height);
 		void renderGBufferPass(CameraComponent& camera);
@@ -1122,7 +1122,7 @@ namespace doriax{
 			bool receiveShadows = false;
 			bool light2d = false;
 			bool shadows2d = false;
-			bool ssao = false;
+			bool gtao = false;
 			bool alphaMask = false;
 			bool alphaOpaque = false;
 			bool depthAlphaMask = false;

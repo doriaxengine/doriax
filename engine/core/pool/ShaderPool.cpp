@@ -76,12 +76,13 @@ bool ShaderPool::parseShaderTypeToken(const std::string& typeToken, ShaderType& 
         shaderType = ShaderType::LINES;
         return true;
     }
-    if (typeToken == "ssao") {
-        shaderType = ShaderType::SSAO;
+    // older files name them ssao and ssaoblur, read until a later version
+    if (typeToken == "gtao" || typeToken == "ssao") {
+        shaderType = ShaderType::GTAO;
         return true;
     }
-    if (typeToken == "ssaoblur") {
-        shaderType = ShaderType::SSAO_BLUR;
+    if (typeToken == "gtaoblur" || typeToken == "ssaoblur") {
+        shaderType = ShaderType::GTAO_BLUR;
         return true;
     }
     if (typeToken == "ssr") {
@@ -434,8 +435,8 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
         case ShaderType::UI:     return lowerCase ? "ui"     : "UI";
         case ShaderType::POINTS: return lowerCase ? "points" : "Points";
         case ShaderType::LINES:  return lowerCase ? "lines"  : "Lines";
-        case ShaderType::SSAO:   return lowerCase ? "ssao"   : "GTAO";
-        case ShaderType::SSAO_BLUR: return lowerCase ? "ssaoblur" : "GTAO Blur";
+        case ShaderType::GTAO:   return lowerCase ? "gtao"   : "GTAO";
+        case ShaderType::GTAO_BLUR: return lowerCase ? "gtaoblur" : "GTAO Blur";
         case ShaderType::SSR:    return lowerCase ? "ssr"    : "SSR";
         case ShaderType::SSR_BLUR: return lowerCase ? "ssrblur" : "SSR Blur";
         case ShaderType::COMPOSITE: return lowerCase ? "composite" : "Composite";
@@ -461,8 +462,8 @@ int ShaderPool::getShaderPropertyCount(ShaderType shaderType){
         case ShaderType::POINTS: return 4;
         case ShaderType::LINES:  return 2;
         case ShaderType::SKYBOX: return 0;
-        case ShaderType::SSAO:   return 0;
-        case ShaderType::SSAO_BLUR: return 0;
+        case ShaderType::GTAO:   return 0;
+        case ShaderType::GTAO_BLUR: return 0;
         case ShaderType::SSR:    return 0;
         case ShaderType::SSR_BLUR: return 0;
         case ShaderType::COMPOSITE: return 0;
@@ -497,7 +498,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 18: return shortName ? "Ist" : "Instancing";
             case 19: return shortName ? "Ibl" : "IBL";
             case 20: return shortName ? "Mir" : "Mirror";
-            case 21: return shortName ? "Sao" : "GTAO";
+            case 21: return shortName ? "Gao" : "GTAO";
             case 22: return shortName ? "L2d" : "Light 2D";
             case 23: return shortName ? "S2d" : "Shadow 2D";
             case 24: return shortName ? "Ams" : "Alpha Mask";
@@ -590,6 +591,9 @@ int ShaderPool::getShaderPropertyBit(ShaderType shaderType, const std::string& n
         return result;
     };
     const std::string wanted = token(name);
+    // Sao named the GTAO bit before, read until a later version
+    if (shaderType == ShaderType::MESH && wanted == "sao")
+        return 21;
     for (int bit = 0; bit < getShaderPropertyCount(shaderType); bit++) {
         const std::string shortName = getShaderPropertyName(shaderType, bit, true);
         if (shortName == "?") // retired
@@ -867,7 +871,7 @@ uint32_t ShaderPool::getMeshProperties(
     bool punctual, bool shadows, bool normals, bool normalMap,
     bool tangents, bool vertexColorVec3, bool vertexColorVec4, bool textureRect,
     bool fog, bool skinning, bool morphTarget, bool morphNormal, bool morphTangent,
-    bool terrain, bool instanced, bool ibl, bool mirror, bool ssao, bool light2d, bool shadows2d,
+    bool terrain, bool instanced, bool ibl, bool mirror, bool gtao, bool light2d, bool shadows2d,
     bool alphaMask, bool alphaOpaque, bool instanceFade, bool terrainPBR, bool hookUV1, bool hookNormals, bool hookUV2){
     uint32_t prop = 0;
 
@@ -892,7 +896,7 @@ uint32_t ShaderPool::getMeshProperties(
     prop |= instanced        ? (1 << 18) : 0;
     prop |= ibl              ? (1 << 19) : 0;
     prop |= mirror           ? (1 << 20) : 0;
-    prop |= ssao             ? (1 << 21) : 0;
+    prop |= gtao             ? (1 << 21) : 0;
     prop |= light2d          ? (1 << 22) : 0;
     prop |= shadows2d        ? (1 << 23) : 0;
     prop |= alphaMask        ? (1 << 24) : 0;

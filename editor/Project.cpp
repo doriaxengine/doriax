@@ -4301,8 +4301,8 @@ void editor::Project::collectSceneShaderKeys(const SceneProject* sceneProject, s
     }
 
     if (scene->isGTAOEnabled()) {
-        keys.insert(ShaderPool::getShaderKey(ShaderType::SSAO, 0));
-        keys.insert(ShaderPool::getShaderKey(ShaderType::SSAO_BLUR, 0));
+        keys.insert(ShaderPool::getShaderKey(ShaderType::GTAO, 0));
+        keys.insert(ShaderPool::getShaderKey(ShaderType::GTAO_BLUR, 0));
     }
 
     if (hasReflectionProbes || capturedSky) {

@@ -1,17 +1,17 @@
 #version 450
 
-// 4x4 blur of the raw SSAO buffer, as wide as the pattern that turns its slices.
+// 4x4 blur of the raw GTAO buffer, as wide as the pattern that turns its slices.
 // Taps across a depth edge are left out, so AO stays on its own surface.
 
 in vec2 v_texcoord;
 out vec4 frag_color;
 
-uniform texture2D u_ssaoTexture;
-uniform sampler u_ssao_smp;
+uniform texture2D u_gtaoTexture;
+uniform sampler u_gtao_smp;
 uniform texture2D u_depthTexture;
 uniform sampler u_depth_smp;
 
-uniform u_fs_ssaoBlurParams {
+uniform u_fs_gtaoBlurParams {
     vec4 texelSize;   // xy = 1.0 / textureSize, z = intensity
     vec4 depthParams; // view z = (x * ndc + y) / (z * ndc + w)
     vec4 screen;      // xy = 1 / depth size, zw = depth texels per AO texel
@@ -19,10 +19,10 @@ uniform u_fs_ssaoBlurParams {
 
 #include "includes/depth_util.glsl"
 
-#define AO_TERM_SCALE 1.5 // as ssao.frag stores it
+#define AO_TERM_SCALE 1.5 // as gtao.frag stores it
 
 float viewDepth(ivec2 pixel){
-    // the depth texel ssao.frag read here, clamped as the AO taps
+    // the depth texel gtao.frag read here, clamped as the AO taps
     pixel = max(pixel, ivec2(0));
     vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * blurParams.screen.zw)) + 0.5) * blurParams.screen.xy;
     // the cleared background decodes a little past 1.0
@@ -40,7 +40,7 @@ void main(){
         for (int y = -2; y < 2; ++y){
             vec2 uv = v_texcoord + vec2(float(x), float(y)) * blurParams.texelSize.xy;
             float w = max(1.0 - abs(viewDepth(pixel + ivec2(x, y)) - center) / (0.05 * center + 0.01), 0.0);
-            result += textureLod(sampler2D(u_ssaoTexture, u_ssao_smp), uv, 0.0).r * w;
+            result += textureLod(sampler2D(u_gtaoTexture, u_gtao_smp), uv, 0.0).r * w;
             weight += w;
         }
     }

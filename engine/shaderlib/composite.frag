@@ -6,7 +6,7 @@
 // SSR replaces the environment specular already in the scene color instead of adding
 // to it: this pass rebuilds that term from the G-buffer (the sky, or the object's local
 // probe blended over it) and swaps it for the reflection by the SSR confidence. Both are
-// occluded as the color pass does it, by the material AO in color[3] and by SSAO.
+// occluded as the color pass does it, by the material AO in color[3] and by GTAO.
 //
 // G-buffer albedo.a holds the IBL source as an 8-bit code (renderGBufferPass):
 //   0 = no IBL, 1 = sky, 2 = a probe without a slot here (SSR adds on top of both),
@@ -35,8 +35,8 @@ uniform texture2D u_albedoTexture;    // G-buffer color[2]: base color + IBL sou
 uniform sampler u_albedo_smp;
 uniform textureCube u_GGXEnvTexture;  // prefiltered environment (GGX)
 uniform sampler u_GGXEnv_smp;
-uniform texture2D u_ssaoTexture;      // screen-space AO the color pass applied (white when off)
-uniform sampler u_ssao_smp;
+uniform texture2D u_gtaoTexture;      // screen-space AO the color pass applied (white when off)
+uniform sampler u_gtao_smp;
 uniform texture2D u_occlusionGBufferTexture; // G-buffer color[3]: material (baked) occlusion
 uniform sampler u_occlusionGBuffer_smp;
 uniform textureCube u_probeTexture0;  // local reflection probes, by slot
@@ -214,7 +214,7 @@ void main(){
         iblSpec = specularLight * FssEss;
 
         ao = texture(sampler2D(u_occlusionGBufferTexture, u_occlusionGBuffer_smp), d).r
-           * texture(sampler2D(u_ssaoTexture, u_ssao_smp), d).r;
+           * texture(sampler2D(u_gtaoTexture, u_gtao_smp), d).r;
     }
 
     // debug visualizations of the SSR G-buffer channels

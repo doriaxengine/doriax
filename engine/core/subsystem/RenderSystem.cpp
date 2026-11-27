@@ -474,12 +474,12 @@ RenderSystem::RenderSystem(Scene* scene): SubSystem(scene){
 
     this->scene = scene;
 
-    ssaoLoaded = false;
-    ssaoWidth = 0;
-    ssaoHeight = 0;
-    ssaoSlotParams = -1;
-    ssaoBlurSlotParams = -1;
-    currentSSAOTexture = NULL;
+    gtaoLoaded = false;
+    gtaoWidth = 0;
+    gtaoHeight = 0;
+    gtaoSlotParams = -1;
+    gtaoBlurSlotParams = -1;
+    currentGTAOTexture = NULL;
     currentSceneDepthTexture = NULL;
     depthPrePassRendered = false;
     currentSceneCopy = NULL;
@@ -623,7 +623,7 @@ void RenderSystem::destroy(){
 
     emptyTexturesCreated = false;
 
-    destroySSAO();
+    destroyGTAO();
     destroySSR();
     destroyBlit();
     destroyProbeFilter();
@@ -1347,8 +1347,8 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
         }
     }
 
-    // inverse viewport size, used by USE_SSAO to convert gl_FragCoord to a screen UV.
-    // .z = SSAO debug flag (output raw AO); .w = rendering-flipped flag (the AO buffer
+    // inverse viewport size, used by USE_GTAO to convert gl_FragCoord to a screen UV.
+    // .z = GTAO debug flag (output raw AO); .w = rendering-flipped flag (the AO buffer
     // is in logical orientation, so flip Y on sample when the color pass is flipped).
     float vpW = Engine::getViewRect().getWidth();
     float vpH = Engine::getViewRect().getHeight();
@@ -3498,7 +3498,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     }
 
     // screen-space AO modulates ambient/indirect light on lit submeshes.
-    sh.ssao = scene->isGTAOEnabled() && !sh.unlit && (sh.punctual || sh.ibl);
+    sh.gtao = scene->isGTAOEnabled() && !sh.unlit && (sh.punctual || sh.ibl);
     sh.alphaMask = material.alphaMode == MaterialAlphaMode::MASK;
     sh.alphaOpaque = material.alphaMode == MaterialAlphaMode::ALPHA_OPAQUE;
     // AUTO + textureShadow preserves the legacy opt-in for editor-created
@@ -3527,7 +3527,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
                     sh.receiveShadows, sh.hasNormal, sh.hasNormalMap,
                     sh.hasTangent, attributes.vertexColor3, attributes.vertexColor4, submesh.hasTextureRect,
                     shading.fog, attributes.skinning, attributes.morphTarget, attributes.morphNormal, attributes.morphTangent,
-                    (terrain)?true:false, (instmesh)?true:false, sh.ibl, sh.mirror, sh.ssao, sh.light2d, sh.shadows2d,
+                    (terrain)?true:false, (instmesh)?true:false, sh.ibl, sh.mirror, sh.gtao, sh.light2d, sh.shadows2d,
                     sh.alphaMask, sh.alphaOpaque, sh.instanceFade, sh.terrainSurface, sh.hookUV1 && !sh.hasTexture1, sh.hookNormals && !sh.hasNormal,
                     sh.hookUV2 && !sh.hasTexture2);
     // 'Fsk': the fog takes the sky's color, from a map the sky's own lighting would bring
@@ -3539,7 +3539,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
         sh.properties |= 1u << 28;
     }
 
-    // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
+    // the depth shader feeds shadow maps (casters) and the depth pre-pass
     sh.depthPass = (shading.shadows && mesh.castShadows) || scene->isGTAOEnabled() || scene->isDepthPrepassEnabled() || shading.waterDepth;
     sh.depthProperties = ShaderPool::getDepthMeshProperties(
         sh.depthTexture, attributes.skinning, attributes.morphTarget,
@@ -3724,7 +3724,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
         mesh.submeshes[i].shaderFileId = shaderFileId;
         mesh.submeshes[i].customShaderId = shaderFileId;
         mesh.submeshes[i].shader = ShaderPool::get(ShaderType::MESH, mesh.submeshes[i].shaderProperties, mesh.submeshes[i].customShaderId);
-        // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
+        // the depth shader feeds shadow maps (casters) and the depth pre-pass
         // (SSR uses its own G-buffer shader, built below)
         const bool needPrepass = scene->isDepthPrepassEnabled();
         if (sh.depthPass){
@@ -4220,7 +4220,7 @@ bool RenderSystem::loadMesh(Entity entity, MeshComponent& mesh, uint16_t pipelin
     // A reload recreates the terrain's per-view CDLOD node buffers empty; force a
     // re-selection next frame (the main-camera cut at view 0 is otherwise only
     // re-run on camera/transform movement), so the terrain doesn't vanish until
-    // the camera moves after a settings change such as toggling SSAO.
+    // the camera moves after a settings change such as toggling GTAO.
     if (terrain){
         if (Transform* terrainTransform = scene->findComponent<Transform>(entity)){
             terrainTransform->needUpdate = true;
@@ -5468,12 +5468,12 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
                 if (hasShadows && (mesh.submeshes[i].shaderProperties & (1u << 4))){
                     render.applyUniformBlock(mesh.submeshes[i].slotFSShadows, mesh.submeshes[i].sizeFSShadows, &fs_shadows);
                 }
-                // USE_SSAO (property bit 21): bind the screen-space AO texture for
+                // USE_GTAO (property bit 21): bind the screen-space AO texture for
                 // this view (blurred AO for the main camera, empty white otherwise)
                 if (mesh.submeshes[i].shaderProperties & (1u << 21)){
-                    ShaderData& ssaoShaderData = mesh.submeshes[i].shader.get()->shaderData;
-                    render.addTexture(ssaoShaderData.getTextureIndex(TextureShaderType::SSAOTEXTURE), ShaderStageType::FRAGMENT,
-                                      currentSSAOTexture ? currentSSAOTexture : &emptyWhite);
+                    ShaderData& gtaoShaderData = mesh.submeshes[i].shader.get()->shaderData;
+                    render.addTexture(gtaoShaderData.getTextureIndex(TextureShaderType::GTAOTEXTURE), ShaderStageType::FRAGMENT,
+                                      currentGTAOTexture ? currentGTAOTexture : &emptyWhite);
                 }
             }
             // the scene behind it, neutral where this camera has none
@@ -5552,9 +5552,9 @@ bool RenderSystem::drawMesh(Entity entity, MeshComponent& mesh, Transform& trans
     return true;
 }
 
-bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_depth_t vsDepthParams, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, bool forSSAO, PipelineType pipelineType, int instanceView, const LodView* lodView){
-    // shadow passes only draw casters; the SSAO depth pre-pass draws every opaque mesh
-    if (mesh.loaded && !mesh.needReload && (mesh.castShadows || forSSAO)){
+bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, const float cameraFar, const Plane frustumPlanes[6], vs_depth_t vsDepthParams, InstancedMeshComponent* instmesh, TerrainComponent* terrain, TilemapComponent* tilemap, bool forDepthPrePass, PipelineType pipelineType, int instanceView, const LodView* lodView){
+    // shadow passes only draw casters; the depth pre-pass draws every opaque mesh
+    if (mesh.loaded && !mesh.needReload && (mesh.castShadows || forDepthPrePass)){
 
         if (terrain && terrain->needUpdateTexture){
             return false;
@@ -5626,9 +5626,9 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
 
             if (mesh.submeshes[i].depthParamsVS.slot != -1 || mesh.submeshes[i].depthParamsFS.slot != -1){
                 ShaderEffectView passView = effectView;
-                passView.pass = forSSAO ? ShaderPass::DEPTH : ShaderPass::SHADOW;
+                passView.pass = forDepthPrePass ? ShaderPass::DEPTH : ShaderPass::SHADOW;
                 // depth offsets move what the camera sees, not the shadows
-                if (!forSSAO)
+                if (!forDepthPrePass)
                     passView.depthProjection = Vector4(0.0f, 0.0f, 0.0f, 0.0f);
                 // only the prepass draws with the color pass's matrix
                 if (pipelineType != PIP_ZPREPASS && pipelineType != PIP_ZPREPASS_RTT)
@@ -5637,7 +5637,7 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
                 applyVertexParameters(depthRender, mesh.submeshes[i].depthParamsVS, mesh, transform, passView, passResolution);
                 // shadow maps keep the whole silhouette unless the shader asks
                 const bool coverageShadows = mesh.submeshes[i].depthShader->shaderData.flags & ShaderFlag_CoverageShadows;
-                applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, passView, passResolution, forSSAO || coverageShadows);
+                applyFragmentParameters(depthRender, mesh.submeshes[i].depthParamsFS, passView, passResolution, forDepthPrePass || coverageShadows);
             }
 
             if (mesh.submeshes[i].slotFSDepthMaterial != -1){
@@ -5683,82 +5683,82 @@ bool RenderSystem::drawMeshDepth(MeshComponent& mesh, Transform& transform, cons
     return true;
 }
 
-void RenderSystem::loadSSAO(){
-    if (ssaoLoaded)
+void RenderSystem::loadGTAO(){
+    if (gtaoLoaded)
         return;
 
-    // the SSAO fullscreen shaders may still be building (async in the editor)
-    ssaoShader = ShaderPool::get(ShaderType::SSAO, 0);
-    ssaoBlurShader = ShaderPool::get(ShaderType::SSAO_BLUR, 0);
-    if (!ssaoShader || !ssaoShader->isCreated() || !ssaoBlurShader || !ssaoBlurShader->isCreated())
+    // the GTAO fullscreen shaders may still be building (async in the editor)
+    gtaoShader = ShaderPool::get(ShaderType::GTAO, 0);
+    gtaoBlurShader = ShaderPool::get(ShaderType::GTAO_BLUR, 0);
+    if (!gtaoShader || !gtaoShader->isCreated() || !gtaoBlurShader || !gtaoBlurShader->isCreated())
         return;
 
-    // fullscreen ssao pass (vertexless: no attributes added)
-    ssaoRender.beginLoad(PrimitiveType::TRIANGLES);
-    ssaoRender.setShader(ssaoShader.get());
-    ssaoSlotParams = ssaoShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::SSAO_FS_PARAMS);
-    if (!ssaoRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    // fullscreen GTAO pass (vertexless: no attributes added)
+    gtaoRender.beginLoad(PrimitiveType::TRIANGLES);
+    gtaoRender.setShader(gtaoShader.get());
+    gtaoSlotParams = gtaoShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::GTAO_FS_PARAMS);
+    if (!gtaoRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     // fullscreen blur pass
-    ssaoBlurRender.beginLoad(PrimitiveType::TRIANGLES);
-    ssaoBlurRender.setShader(ssaoBlurShader.get());
-    ssaoBlurSlotParams = ssaoBlurShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::SSAO_BLUR_FS_PARAMS);
-    if (!ssaoBlurRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    gtaoBlurRender.beginLoad(PrimitiveType::TRIANGLES);
+    gtaoBlurRender.setShader(gtaoBlurShader.get());
+    gtaoBlurSlotParams = gtaoBlurShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::GTAO_BLUR_FS_PARAMS);
+    if (!gtaoBlurRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
-    ssaoLoaded = true;
+    gtaoLoaded = true;
 }
 
-void RenderSystem::destroySSAO(){
-    if (ssaoLoaded){
-        ssaoRender.destroy();
-        ssaoBlurRender.destroy();
+void RenderSystem::destroyGTAO(){
+    if (gtaoLoaded){
+        gtaoRender.destroy();
+        gtaoBlurRender.destroy();
     }
-    if (ssaoShader){
-        ssaoShader.reset();
-        ShaderPool::remove(ShaderType::SSAO, 0);
+    if (gtaoShader){
+        gtaoShader.reset();
+        ShaderPool::remove(ShaderType::GTAO, 0);
     }
-    if (ssaoBlurShader){
-        ssaoBlurShader.reset();
-        ShaderPool::remove(ShaderType::SSAO_BLUR, 0);
+    if (gtaoBlurShader){
+        gtaoBlurShader.reset();
+        ShaderPool::remove(ShaderType::GTAO_BLUR, 0);
     }
 
-    ssaoDepthFramebuffer.destroy();
-    ssaoFramebuffer.destroy();
-    ssaoBlurFramebuffer.destroy();
+    depthPrePassFramebuffer.destroy();
+    gtaoFramebuffer.destroy();
+    gtaoBlurFramebuffer.destroy();
 
-    ssaoWidth = 0;
-    ssaoHeight = 0;
-    ssaoSlotParams = -1;
-    ssaoBlurSlotParams = -1;
-    ssaoLoaded = false;
-    currentSSAOTexture = NULL;
+    gtaoWidth = 0;
+    gtaoHeight = 0;
+    gtaoSlotParams = -1;
+    gtaoBlurSlotParams = -1;
+    gtaoLoaded = false;
+    currentGTAOTexture = NULL;
 }
 
-// only the depth pre-pass target, for water and post-process depth without SSAO
+// only the depth pre-pass target, for water and post-process depth without GTAO
 bool RenderSystem::ensureDepthPrePassFramebuffer(unsigned int width, unsigned int height){
     if (width == 0 || height == 0)
         return false;
 
-    if (ssaoDepthFramebuffer.isCreated() && ssaoDepthFramebuffer.getWidth() == width && ssaoDepthFramebuffer.getHeight() == height)
+    if (depthPrePassFramebuffer.isCreated() && depthPrePassFramebuffer.getWidth() == width && depthPrePassFramebuffer.getHeight() == height)
         return true;
 
-    ssaoDepthFramebuffer.destroy();
+    depthPrePassFramebuffer.destroy();
 
     // depth pre-pass target: packed depth in color, sampled point-exact
-    ssaoDepthFramebuffer.setWidth(width);
-    ssaoDepthFramebuffer.setHeight(height);
-    ssaoDepthFramebuffer.setMinFilter(TextureFilter::NEAREST);
-    ssaoDepthFramebuffer.setMagFilter(TextureFilter::NEAREST);
-    ssaoDepthFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
-    ssaoDepthFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
-    ssaoDepthFramebuffer.create();
+    depthPrePassFramebuffer.setWidth(width);
+    depthPrePassFramebuffer.setHeight(height);
+    depthPrePassFramebuffer.setMinFilter(TextureFilter::NEAREST);
+    depthPrePassFramebuffer.setMagFilter(TextureFilter::NEAREST);
+    depthPrePassFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
+    depthPrePassFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
+    depthPrePassFramebuffer.create();
 
-    return ssaoDepthFramebuffer.isCreated();
+    return depthPrePassFramebuffer.isCreated();
 }
 
-bool RenderSystem::ensureSSAOFramebuffers(unsigned int width, unsigned int height){
+bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int height){
     if (!ensureDepthPrePassFramebuffer(width, height))
         return false;
 
@@ -5768,38 +5768,38 @@ bool RenderSystem::ensureSSAOFramebuffers(unsigned int width, unsigned int heigh
         height = std::max(height / 2, 1u);
     }
 
-    if (ssaoFramebuffer.isCreated() && ssaoBlurFramebuffer.isCreated() && ssaoWidth == width && ssaoHeight == height)
+    if (gtaoFramebuffer.isCreated() && gtaoBlurFramebuffer.isCreated() && gtaoWidth == width && gtaoHeight == height)
         return true;
 
-    ssaoFramebuffer.destroy();
-    ssaoBlurFramebuffer.destroy();
+    gtaoFramebuffer.destroy();
+    gtaoBlurFramebuffer.destroy();
 
-    ssaoFramebuffer.setWidth(width);
-    ssaoFramebuffer.setHeight(height);
-    ssaoFramebuffer.setMinFilter(TextureFilter::NEAREST);
-    ssaoFramebuffer.setMagFilter(TextureFilter::NEAREST);
-    ssaoFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
-    ssaoFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
-    ssaoFramebuffer.create();
+    gtaoFramebuffer.setWidth(width);
+    gtaoFramebuffer.setHeight(height);
+    gtaoFramebuffer.setMinFilter(TextureFilter::NEAREST);
+    gtaoFramebuffer.setMagFilter(TextureFilter::NEAREST);
+    gtaoFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
+    gtaoFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
+    gtaoFramebuffer.create();
 
     // blurred AO is sampled bilinearly by the lit meshes
-    ssaoBlurFramebuffer.setWidth(width);
-    ssaoBlurFramebuffer.setHeight(height);
-    ssaoBlurFramebuffer.setMinFilter(TextureFilter::LINEAR);
-    ssaoBlurFramebuffer.setMagFilter(TextureFilter::LINEAR);
-    ssaoBlurFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
-    ssaoBlurFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
-    ssaoBlurFramebuffer.create();
+    gtaoBlurFramebuffer.setWidth(width);
+    gtaoBlurFramebuffer.setHeight(height);
+    gtaoBlurFramebuffer.setMinFilter(TextureFilter::LINEAR);
+    gtaoBlurFramebuffer.setMagFilter(TextureFilter::LINEAR);
+    gtaoBlurFramebuffer.setWrapU(TextureWrap::CLAMP_TO_EDGE);
+    gtaoBlurFramebuffer.setWrapV(TextureWrap::CLAMP_TO_EDGE);
+    gtaoBlurFramebuffer.create();
 
-    ssaoWidth = width;
-    ssaoHeight = height;
+    gtaoWidth = width;
+    gtaoHeight = height;
 
-    return ssaoFramebuffer.isCreated() && ssaoBlurFramebuffer.isCreated();
+    return gtaoFramebuffer.isCreated() && gtaoBlurFramebuffer.isCreated();
 }
 
-void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDepth){
-    loadSSAO();
-    if (!ssaoLoaded)
+void RenderSystem::renderGTAO(CameraComponent& camera, TextureRender* sharedDepth){
+    loadGTAO();
+    if (!gtaoLoaded)
         return;
 
     unsigned int w = (unsigned int)Engine::getViewRect().getWidth();
@@ -5813,20 +5813,20 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
         w = fixedResWidth;
         h = fixedResHeight;
     }
-    if (!ensureSSAOFramebuffers(w, h))
+    if (!ensureGTAOFramebuffers(w, h))
         return;
 
     Matrix4 renderProj = camera.projectionMatrix;
 
     // --- 1. depth + normal source: reuse the SSR G-buffer (packed depth in color[0],
-    // view-space normal in color[1]) when available, otherwise run the SSAO depth
+    // view-space normal in color[1]) when available, otherwise run the depth
     // pre-pass and reconstruct the normal from the depth gradient in the shader ---
     bool useGBufferNormal = (sharedDepth != nullptr);
     TextureRender* depthTexture = sharedDepth;
     TextureRender* normalTexture; // G-buffer normal when shared, else an unused placeholder
     if (!depthTexture){
         renderDepthPrePass(camera);
-        depthTexture = &ssaoDepthFramebuffer.getRender().getColorTexture();
+        depthTexture = &depthPrePassFramebuffer.getRender().getColorTexture();
         normalTexture = depthTexture; // placeholder binding; not sampled (flags.x = 0)
     }else{
         normalTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(1);
@@ -5836,52 +5836,52 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     Matrix4 invProj = renderProj.inverse();
     bool ortho = (renderProj[2][3] == 0.0f);
     Vector2 ndcOffset = ortho ? Vector2(-renderProj[3][0], -renderProj[3][1]) : Vector2(renderProj[2][0], renderProj[2][1]);
-    fs_ssao.params = Vector4(scene->getGTAORadius(), std::max(scene->getGTAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
+    fs_gtao.params = Vector4(scene->getGTAORadius(), std::max(scene->getGTAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
                              (renderProj[0][0] * (float)w) / (renderProj[1][1] * (float)h));
-    fs_ssao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, (float)w / (float)ssaoWidth, (float)h / (float)ssaoHeight);
-    fs_ssao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
-    fs_ssao.depthParams = Vector4(invProj[2][2], invProj[3][2], invProj[2][3], invProj[3][3]);
-    fs_ssao.flags = Vector4(useGBufferNormal ? 1.0f : 0.0f, ortho ? 1.0f : 0.0f, 0.0f, 0.0f);
+    fs_gtao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, (float)w / (float)gtaoWidth, (float)h / (float)gtaoHeight);
+    fs_gtao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
+    fs_gtao.depthParams = Vector4(invProj[2][2], invProj[3][2], invProj[2][3], invProj[3][3]);
+    fs_gtao.flags = Vector4(useGBufferNormal ? 1.0f : 0.0f, ortho ? 1.0f : 0.0f, 0.0f, 0.0f);
 
-    ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
-    ssaoPassRender.startRenderPass(&ssaoFramebuffer.getRender());
-    if (ssaoRender.beginDraw(PIP_RTT)){
-        ShaderData& sd = ssaoShader.get()->shaderData;
-        ssaoRender.addTexture(sd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
-        ssaoRender.addTexture(sd.getTextureIndex(TextureShaderType::GBUFFERTEXTURE), ShaderStageType::FRAGMENT, normalTexture);
-        ssaoRender.applyUniformBlock(ssaoSlotParams, sizeof(fs_ssao_t), &fs_ssao);
-        ssaoRender.draw(0, 3, 1);
+    prePassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
+    prePassRender.startRenderPass(&gtaoFramebuffer.getRender());
+    if (gtaoRender.beginDraw(PIP_RTT)){
+        ShaderData& sd = gtaoShader.get()->shaderData;
+        gtaoRender.addTexture(sd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
+        gtaoRender.addTexture(sd.getTextureIndex(TextureShaderType::GBUFFERTEXTURE), ShaderStageType::FRAGMENT, normalTexture);
+        gtaoRender.applyUniformBlock(gtaoSlotParams, sizeof(fs_gtao_t), &fs_gtao);
+        gtaoRender.draw(0, 3, 1);
     }
-    ssaoPassRender.endRenderPass();
+    prePassRender.endRenderPass();
 
     // --- 3. blur pass, kept to each surface by depth ---
-    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, std::max(scene->getGTAOIntensity(), 0.0f), 0.0f);
-    fs_ssao_blur.depthParams = fs_ssao.depthParams;
-    fs_ssao_blur.screen = fs_ssao.screen;
+    fs_gtao_blur.texelSize = Vector4(1.0f / (float)gtaoWidth, 1.0f / (float)gtaoHeight, std::max(scene->getGTAOIntensity(), 0.0f), 0.0f);
+    fs_gtao_blur.depthParams = fs_gtao.depthParams;
+    fs_gtao_blur.screen = fs_gtao.screen;
 
-    ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
-    ssaoPassRender.startRenderPass(&ssaoBlurFramebuffer.getRender());
-    if (ssaoBlurRender.beginDraw(PIP_RTT)){
-        ShaderData& bd = ssaoBlurShader.get()->shaderData;
-        ssaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::SSAOTEXTURE), ShaderStageType::FRAGMENT, &ssaoFramebuffer.getRender().getColorTexture());
-        ssaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
-        ssaoBlurRender.applyUniformBlock(ssaoBlurSlotParams, sizeof(fs_ssao_blur_t), &fs_ssao_blur);
-        ssaoBlurRender.draw(0, 3, 1);
+    prePassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
+    prePassRender.startRenderPass(&gtaoBlurFramebuffer.getRender());
+    if (gtaoBlurRender.beginDraw(PIP_RTT)){
+        ShaderData& bd = gtaoBlurShader.get()->shaderData;
+        gtaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::GTAOTEXTURE), ShaderStageType::FRAGMENT, &gtaoFramebuffer.getRender().getColorTexture());
+        gtaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
+        gtaoBlurRender.applyUniformBlock(gtaoBlurSlotParams, sizeof(fs_gtao_blur_t), &fs_gtao_blur);
+        gtaoBlurRender.draw(0, 3, 1);
     }
-    ssaoPassRender.endRenderPass();
+    prePassRender.endRenderPass();
 
-    currentSSAOTexture = &ssaoBlurFramebuffer.getRender().getColorTexture();
+    currentGTAOTexture = &gtaoBlurFramebuffer.getRender().getColorTexture();
 }
 
 void RenderSystem::renderDepthPrePass(CameraComponent& camera){
     // Logical (un-flipped) matrices: flipY reverses winding but PIP_DEPTH does not
     // compensate (only PIP_RTT reverses winding on GL). The depth buffer therefore
-    // stays in logical orientation; SSAO/SSR consumers flip Y on GL when sampling.
+    // stays in logical orientation; GTAO/SSR consumers flip Y on GL when sampling.
     Matrix4 renderVP = camera.viewProjectionMatrix;
 
-    ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0)); // background -> depth ~1.0
-    ssaoPassRender.startRenderPass(&ssaoDepthFramebuffer.getRender());
-    passResolution = Vector2((float)ssaoDepthFramebuffer.getWidth(), (float)ssaoDepthFramebuffer.getHeight());
+    prePassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0)); // background -> depth ~1.0
+    prePassRender.startRenderPass(&depthPrePassFramebuffer.getRender());
+    passResolution = Vector2((float)depthPrePassFramebuffer.getWidth(), (float)depthPrePassFramebuffer.getHeight());
 
     auto transforms = scene->getComponentArray<Transform>();
     for (int i = 0; i < transforms->size(); i++){
@@ -5903,7 +5903,7 @@ void RenderSystem::renderDepthPrePass(CameraComponent& camera){
         vs_depth_t params = {transform.modelMatrix, renderVP, renderVP * transform.modelMatrix, transform.normalMatrix};
         drawMeshDepth(mesh, transform, camera.farClip, camera.frustumPlanes, params, instmesh, terrain, tilemap, true, PIP_DEPTH, 0, &mainLodView);
     }
-    ssaoPassRender.endRenderPass();
+    prePassRender.endRenderPass();
 
     depthPrePassRendered = true;
 }
@@ -6378,8 +6378,8 @@ void RenderSystem::renderSSR(CameraComponent& camera, FramebufferRender* destina
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::GBUFFERALBEDOTEXTURE), ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(2));
         compositeRender.addTexture(compositeOcclusionSlot, ShaderStageType::FRAGMENT, &gbufferFramebuffer.getRender().getColorAttachmentTexture(3));
         compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::PREFILTEREDMAP), ShaderStageType::FRAGMENT, prefilteredTexture);
-        compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::SSAOTEXTURE), ShaderStageType::FRAGMENT,
-                                   currentSSAOTexture ? currentSSAOTexture : &emptyWhite);
+        compositeRender.addTexture(cd.getTextureIndex(TextureShaderType::GTAOTEXTURE), ShaderStageType::FRAGMENT,
+                                   currentGTAOTexture ? currentGTAOTexture : &emptyWhite);
         for (int s = 0; s < SSR_PROBE_SLOTS; s++){
             compositeRender.addTexture(compositeProbeSlots[s], ShaderStageType::FRAGMENT,
                                        s < ssrProbeCount ? ssrProbeTextures[s] : &emptyCubeBlack);
@@ -6602,7 +6602,7 @@ void RenderSystem::loadPostProcess(){
         pass.slotSceneColor = sd.getTextureIndexByName("u_sceneColorTexture");
         pass.slotDepth = sd.getTextureIndexByName("u_depthTexture");
         pass.slotGBuffer = sd.getTextureIndexByName("u_gbufferTexture");
-        pass.slotSSAO = sd.getTextureIndexByName("u_ssaoTexture");
+        pass.slotGTAO = sd.getTextureIndexByName("u_gtaoTexture");
 
         if (pass.slotDepth.first != -1)
             postProcessNeedsDepth = true;
@@ -6719,7 +6719,7 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom,
     if (postProcessNeedsGBuffer && gbufferFramebuffer.isCreated()){
         gbufferTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(1);
     }
-    TextureRender* ssaoTexture = currentSSAOTexture ? currentSSAOTexture : &emptyWhite;
+    TextureRender* gtaoTexture = currentGTAOTexture ? currentGTAOTexture : &emptyWhite;
 
     // the color pass (or the SSR composite) was redirected into buffer 0
     TextureRender* input = &postProcessFramebuffer[0].getRender().getColorTexture();
@@ -6765,7 +6765,7 @@ void RenderSystem::renderPostProcess(FramebufferRender* destination, bool bloom,
             pass.render.addTexture(pass.slotSceneColor, ShaderStageType::FRAGMENT, input);
             pass.render.addTexture(pass.slotDepth, ShaderStageType::FRAGMENT, depthTexture);
             pass.render.addTexture(pass.slotGBuffer, ShaderStageType::FRAGMENT, gbufferTexture);
-            pass.render.addTexture(pass.slotSSAO, ShaderStageType::FRAGMENT, ssaoTexture);
+            pass.render.addTexture(pass.slotGTAO, ShaderStageType::FRAGMENT, gtaoTexture);
             const Vector2 resolution((float)postProcessWidth, (float)postProcessHeight);
             applyParameters(pass.render, pass.paramsVS, effectView, resolution);
             applyFragmentParameters(pass.render, pass.paramsFS, effectView, resolution, false);
@@ -7038,7 +7038,7 @@ void RenderSystem::destroyMesh(Entity entity, MeshComponent& mesh, bool clearAss
                 submesh.shader.reset();
                 ShaderPool::remove(ShaderType::MESH, submesh.shaderProperties, submesh.customShaderId);
             }
-            // depth shader may have been loaded for shadows and/or SSAO
+            // depth shader may have been loaded for shadows and/or the depth pre-pass
             if (submesh.depthShader){
                 submesh.depthShader.reset();
                 ShaderPool::remove(ShaderType::DEPTH, submesh.depthShaderProperties, submesh.customDepthShaderId);
@@ -12133,7 +12133,7 @@ void RenderSystem::draw(){
         currentSceneCopy = NULL;
 
         // Screen-space reflections (main camera only). The G-buffer geometry pass runs
-        // FIRST so SSAO can share its depth (a single geometry pre-pass feeds both
+        // FIRST so GTAO can share its depth (a single geometry pre-pass feeds both
         // effects). Further below the opaque color pass is redirected into an offscreen
         // buffer, then renderSSR() marches the G-buffer and composites reflections to the
         // real destination: a framebuffer (editor / render-to-texture / fixed resolution)
@@ -12189,12 +12189,12 @@ void RenderSystem::draw(){
 
         // Screen-space AO is produced once for the main camera before its color pass.
         // When SSR is active its G-buffer already holds the camera depth (color[0]), so
-        // SSAO reuses it instead of running a second geometry pre-pass. Other cameras
-        // sample empty white (AO = 1) so their USE_SSAO meshes are unaffected.
-        currentSSAOTexture = &emptyWhite;
+        // GTAO reuses it instead of running a second geometry pre-pass. Other cameras
+        // sample empty white (AO = 1) so their USE_GTAO meshes are unaffected.
+        currentGTAOTexture = &emptyWhite;
         if (isMainCamera && scene->isGTAOEnabled()){
             TextureRender* sharedDepth = useSSR ? &gbufferFramebuffer.getRender().getColorAttachmentTexture(0) : nullptr;
-            renderSSAO(camera, sharedDepth);
+            renderGTAO(camera, sharedDepth);
         }
 
         // scene depth from the SSR G-buffer, a pre-pass already drawn or its own pre-pass
@@ -12206,7 +12206,7 @@ void RenderSystem::draw(){
                     renderDepthPrePass(camera);
                 }
                 if (depthPrePassRendered){
-                    currentSceneDepthTexture = &ssaoDepthFramebuffer.getRender().getColorTexture();
+                    currentSceneDepthTexture = &depthPrePassFramebuffer.getRender().getColorTexture();
                 }
             }
         }

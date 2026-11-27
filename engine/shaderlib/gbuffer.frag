@@ -2,7 +2,7 @@
 #include "includes/gbuffer_maps.glsl"
 
 // G-buffer geometry pass (fragment), MRT output:
-//   color[0] = packed view depth (identical to depth.frag, so SSAO/SSR depth is unchanged)
+//   color[0] = packed view depth (identical to depth.frag, so GTAO/SSR depth is unchanged)
 //   color[1] = view-space normal (octahedral .rg) + roughness (.b) + metallic (.a)
 //   color[2] = linear base color (.rgb) + IBL source code / 255 (.a): none, sky, or
 //              the local reflection probe slot and blend weight (see composite.frag)

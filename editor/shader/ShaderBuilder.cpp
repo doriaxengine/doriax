@@ -567,7 +567,7 @@ void setupShaderParameters(shadercompiler::args_t& args, const std::string& shad
         // the sky's color in the fog comes with the lighting, or as its own variant
         const bool fogSky = defined("HAS_FOG") && defined("USE_IBL");
         args.defines.erase(std::remove_if(args.defines.begin(), args.defines.end(), [&](const shadercompiler::define_t& define) {
-            static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_SSAO", "DIRECTIONAL_LIGHTS_ONLY"};
+            static const std::set<std::string> lighting = {"MATERIAL_UNLIT", "USE_PUNCTUAL", "USE_SHADOWS", "USE_IBL", "USE_GTAO", "DIRECTIONAL_LIGHTS_ONLY"};
             static const std::set<std::string> surface = {"HAS_NORMALS", "HAS_TANGENTS", "HAS_NORMAL_MAP"};
             return lighting.count(define.def) || (!light2D && surface.count(define.def));
         }), args.defines.end());
@@ -1088,7 +1088,7 @@ void editor::ShaderBuilder::addMeshPropertyDefinitions(std::vector<shadercompile
     if (prop & (1 << 18)) defs.push_back({"HAS_INSTANCING", "1"});            // 'Ist'
     if (prop & (1 << 19)) defs.push_back({"USE_IBL", "1"});                   // 'Ibl'
     if (prop & (1 << 20)) defs.push_back({"USE_MIRROR", "1"});                // 'Mir'
-    if (prop & (1 << 21)) defs.push_back({"USE_SSAO", "1"});                  // 'Sao'
+    if (prop & (1 << 21)) defs.push_back({"USE_GTAO", "1"});                  // 'Gao'
     if (prop & (1 << 22)) defs.push_back({"USE_LIGHT2D", "1"});               // 'L2d'
     if (prop & (1 << 23)) defs.push_back({"USE_SHADOWS_2D", "1"});            // 'S2d'
     if (prop & (1 << 24)) defs.push_back({"ALPHA_MASK", "1"});                 // 'Ams'
@@ -1326,12 +1326,12 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
     }else if (shaderType == ShaderType::SKYBOX){
         args.vert_file = "sky.vert";
         args.frag_file = "sky.frag";
-    }else if (shaderType == ShaderType::SSAO){
+    }else if (shaderType == ShaderType::GTAO){
         args.vert_file = "fullscreen.vert";
-        args.frag_file = "ssao.frag";
-    }else if (shaderType == ShaderType::SSAO_BLUR){
+        args.frag_file = "gtao.frag";
+    }else if (shaderType == ShaderType::GTAO_BLUR){
         args.vert_file = "fullscreen.vert";
-        args.frag_file = "ssao_blur.frag";
+        args.frag_file = "gtao_blur.frag";
     }else if (shaderType == ShaderType::SSR){
         args.vert_file = "fullscreen.vert";
         args.frag_file = "ssr.frag";
