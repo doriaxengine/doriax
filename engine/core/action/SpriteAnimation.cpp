@@ -52,11 +52,19 @@ void SpriteAnimation::setAnimation(int startFrame, int endFrame, int interval, b
     std::vector<int> framesTime;
 
     if (startFrame >= 0 && endFrame >= startFrame) {
-        for (int i=startFrame; i<=endFrame; i++){
-            frames.push_back(i);
+        // 64-bit, endFrame can be INT_MAX
+        long long count = (long long)endFrame - startFrame + 1;
+        // a fixed size array keeps its first frames, without building the rest
+        if (!decltype(SpriteAnimationComponent::frames)::validIndex((int)(count - 1))){
+            Log::warn("Sprite animation frames truncated from %lld to %d", count, MAX_SPRITE_FRAMES);
+            count = MAX_SPRITE_FRAMES;
+        }
+
+        for (long long i = 0; i < count; i++){
+            frames.push_back(startFrame + (int)i);
             framesTime.push_back(interval);
         }
     }
 
-    setAnimation(frames, framesTime, loop);
+    setAnimation(std::move(frames), std::move(framesTime), loop);
 }

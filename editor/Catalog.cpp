@@ -438,7 +438,7 @@ namespace {
         makeFastPropertyNoDefault<SpriteAnimationComponent, unsigned int, &SpriteAnimationComponent::framesTimeSize>("framesTimeSize", PropertyType::UInt, UpdateFlags_None),
         makeFastPropertyNoDefault<SpriteAnimationComponent, int, &SpriteAnimationComponent::frameIndex>("frameIndex", PropertyType::Int, UpdateFlags_Sprite),
         makeFastPropertyNoDefault<SpriteAnimationComponent, int, &SpriteAnimationComponent::frameTimeIndex>("frameTimeIndex", PropertyType::Int, UpdateFlags_None),
-        makeFastPropertyNoDefault<SpriteAnimationComponent, unsigned int, &SpriteAnimationComponent::spriteFrameCount>("spriteFrameCount", PropertyType::UInt, UpdateFlags_Sprite),
+        makeFastPropertyNoDefault<SpriteAnimationComponent, float, &SpriteAnimationComponent::spriteFrameCount>("spriteFrameCount", PropertyType::Float, UpdateFlags_Sprite),
     };
 
     static const FastPropertyDescriptor kAnimationProperties[] = {

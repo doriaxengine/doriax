@@ -301,6 +301,8 @@ void ActionSystem::actionStart(Entity entity, bool newRun){
         }
     }
 
+    const bool resume = action.state == ActionState::Paused;
+
     actionComponentStart(action);
 
     // Reset blend weight to full when an animation starts without a pending fade
@@ -323,9 +325,16 @@ void ActionSystem::actionStart(Entity entity, bool newRun){
                 SpriteComponent& sprite = scene->getComponent<SpriteComponent>(action.target);
                 MeshComponent& mesh = scene->getComponent<MeshComponent>(action.target);
 
-                spriteActionStart(mesh, sprite, spriteanim);
-                // the first update skips the frames before the start time
-                spriteanim.spriteFrameCount = startTime * 1000;
+                // frames changed while paused start over
+                if (resume && (unsigned int)spriteanim.frameIndex < spriteanim.framesSize &&
+                        (unsigned int)spriteanim.frameTimeIndex < spriteanim.framesTimeSize){
+                    // shown again, another animation may have changed the frame meanwhile
+                    setSpriteTextureRect(mesh, sprite, spriteanim);
+                }else{
+                    spriteActionStart(mesh, sprite, spriteanim);
+                    // the first update skips the frames before the start time
+                    spriteanim.spriteFrameCount = startTime * 1000;
+                }
             }
         }
 
@@ -374,7 +383,6 @@ void ActionSystem::actionStop(Entity entity){
 
     // Snapshot everything needed after onStop before invoking user code. A callback
     // may clear animation frames, remove components, or destroy this entity.
-    Entity target = action->target;
     std::vector<Entity> animationChildren;
     if (AnimationComponent* animcomp = scene->findComponent<AnimationComponent>(entity)){
         animationChildren = animationChildEntities(*animcomp);
@@ -387,6 +395,11 @@ void ActionSystem::actionStop(Entity entity){
         animcomp->stopOnFadeOut = false;
     }
 
+    // Also before callbacks, so a restart from onStop keeps its start offset
+    if (SpriteAnimationComponent* spriteanim = scene->findComponent<SpriteAnimationComponent>(entity)){
+        spriteActionStop(*spriteanim);
+    }
+
     actionComponentStop(*action);
     animationStopChildren(animationChildren);
 
@@ -396,16 +409,6 @@ void ActionSystem::actionStop(Entity entity){
 
     if (TimedActionComponent* timedaction = scene->findComponent<TimedActionComponent>(entity)){
         timedActionStop(*timedaction);
-    }
-
-    if (target != NULL_ENTITY && scene->isEntityCreated(target)){
-        SpriteAnimationComponent* spriteanim = scene->findComponent<SpriteAnimationComponent>(entity);
-        SpriteComponent* sprite = scene->findComponent<SpriteComponent>(target);
-        MeshComponent* mesh = scene->findComponent<MeshComponent>(target);
-
-        if (spriteanim && sprite && mesh){
-            spriteActionStop(*mesh, *sprite, *spriteanim);
-        }
     }
 }
 
@@ -581,7 +584,9 @@ void ActionSystem::animationPauseChildren(const std::vector<Entity>& children){
 }
 
 void ActionSystem::setSpriteTextureRect(MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim){
-    if (mesh.numSubmeshes <= 0 || !spriteanim.frames.validIndex(spriteanim.frameIndex)) {
+    // entries past framesSize are stale or unset
+    if (mesh.numSubmeshes <= 0 || !spriteanim.frames.validIndex(spriteanim.frameIndex) ||
+            (unsigned int)spriteanim.frameIndex >= spriteanim.framesSize) {
         return;
     }
 
@@ -601,11 +606,11 @@ void ActionSystem::spriteActionStart(MeshComponent& mesh, SpriteComponent& sprit
     setSpriteTextureRect(mesh, sprite, spriteanim);
 }
 
-void ActionSystem::spriteActionStop(MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim){
+// The sprite keeps the frame it shows. Writing it again would overwrite the first
+// frame of another animation started on the same sprite in this update.
+void ActionSystem::spriteActionStop(SpriteAnimationComponent& spriteanim){
     spriteanim.frameTimeIndex = 0;
     spriteanim.spriteFrameCount = 0;
-
-    setSpriteTextureRect(mesh, sprite, spriteanim);
 }
 
 void ActionSystem::spriteActionUpdate(double dt, Entity entity, ActionComponent& action, MeshComponent& mesh, SpriteComponent& sprite, SpriteAnimationComponent& spriteanim){
@@ -613,7 +618,9 @@ void ActionSystem::spriteActionUpdate(double dt, Entity entity, ActionComponent&
     while (spriteanim.spriteFrameCount >= spriteanim.framesTime[spriteanim.frameTimeIndex]) {
 
         int frameTime = spriteanim.framesTime[spriteanim.frameTimeIndex];
-        spriteanim.spriteFrameCount -= frameTime;
+        // a negative time would add to the count, it is a zero time frame
+        if (frameTime > 0)
+            spriteanim.spriteFrameCount -= frameTime;
 
         spriteanim.frameIndex++;
         spriteanim.frameTimeIndex++;

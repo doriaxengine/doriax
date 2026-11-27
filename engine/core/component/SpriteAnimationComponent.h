@@ -21,7 +21,7 @@ namespace doriax{
         int frameIndex = 0;
         int frameTimeIndex = 0;
 
-        unsigned int spriteFrameCount = 0;
+        float spriteFrameCount = 0; // ms into the current frame, fractions kept between updates
     };
     
 }

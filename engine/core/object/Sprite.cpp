@@ -247,41 +247,39 @@ void Sprite::setFrame(const std::string& name){
 }
 
 void Sprite::startAnimation(std::vector<int> frames, std::vector<int> framesTime, bool loop){
+    if (frames.size() == 0 || framesTime.size() == 0){
+        stopAnimation();
+        Log::error("Cannot start animation without frames or intervals");
+        return;
+    }
+
     if (!animation){
         animation = new SpriteAnimation(scene);
         animation->setTarget(entity);
-    }else if (animation->isRunning()){
-        stopAnimation();
     }
 
-    if (frames.size() > 0 && framesTime.size() > 0){
-        animation->setAnimation(frames, framesTime, loop);
-        animation->start();
-    }else{
-        Log::error("Cannot start animation without frames or intervals");
-    }
+    animation->setAnimation(std::move(frames), std::move(framesTime), loop);
+    // stop() then start() would cancel each other while it runs, keeping the old frame
+    animation->restart();
 }
 
 void Sprite::startAnimation(int startFrame, int endFrame, int interval, bool loop){
+    if (startFrame < 0 || endFrame < startFrame){
+        stopAnimation();
+        Log::error("Cannot start animation from frame %i to %i", startFrame, endFrame);
+        return;
+    }
+
     if (!animation){
         animation = new SpriteAnimation(scene);
         animation->setTarget(entity);
-    }else if (animation->isRunning()){
-        stopAnimation();
     }
 
     animation->setAnimation(startFrame, endFrame, interval, loop);
-    animation->start();
+    animation->restart();
 }
 
 void Sprite::startAnimation(const std::string& name, int interval, bool loop){
-    if (!animation){
-        animation = new SpriteAnimation(scene);
-        animation->setTarget(entity);
-    }else if (animation->isRunning()){
-        stopAnimation();
-    }
-
     SpriteComponent& spritecomp = getComponent<SpriteComponent>();
     std::vector<int> frames;
     std::vector<int> framesTime;
@@ -294,9 +292,9 @@ void Sprite::startAnimation(const std::string& name, int interval, bool loop){
     }
 
     if (frames.size() > 0){
-        animation->setAnimation(frames, framesTime, loop);
-        animation->start();
+        startAnimation(std::move(frames), std::move(framesTime), loop);
     }else{
+        stopAnimation();
         Log::error("Cannot start animation '%s' without frames", name.c_str());
     }
 }
