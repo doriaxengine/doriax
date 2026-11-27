@@ -2174,7 +2174,6 @@ Json sceneReadableProperties(SceneProject* sceneProject) {
     props["ssao_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_enabled")}};
     props["ssao_radius"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_radius")}};
     props["ssao_intensity"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_intensity")}};
-    props["ssao_bias"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_bias")}};
     props["ssao_half_resolution"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_half_resolution")}};
     props["ssao_debug"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_debug")}};
     props["ssr_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssr_enabled")}};
@@ -3581,7 +3580,7 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
         cmd = new ScenePropertyCmd<bool>(project, sceneId, property, arguments["bool_value"].get<bool>());
     } else if (property == "global_illumination_intensity" || property == "ambient_light_2d_intensity" ||
                property == "ssao_radius" || property == "mesh_lod_threshold" ||
-               property == "ssao_intensity" || property == "ssao_bias" ||
+               property == "ssao_intensity" ||
                property == "ssr_max_distance" || property == "ssr_thickness" ||
                property == "ssr_intensity" || property == "ssr_blur" ||
                property == "bloom_threshold" || property == "bloom_knee" ||

@@ -1,7 +1,6 @@
 #version 450
 
-// 4x4 blur of the raw SSAO buffer, matching the 4x4 rotation-noise tile.
-// Removes the high-frequency noise introduced by the random kernel rotation.
+// 4x4 blur of the raw SSAO buffer, as wide as the pattern that turns its slices.
 // Taps across a depth edge are left out, so AO stays on its own surface.
 
 in vec2 v_texcoord;
@@ -18,6 +17,8 @@ uniform u_fs_ssaoBlurParams {
 } blurParams;
 
 #include "includes/depth_util.glsl"
+
+#define AO_TERM_SCALE 1.5 // as ssao.frag stores it
 
 float viewDepth(vec2 uv){
     // the cleared background decodes a little past 1.0
@@ -38,5 +39,5 @@ void main(){
             weight += w;
         }
     }
-    frag_color = vec4(vec3(result / weight), 1.0);
+    frag_color = vec4(vec3(min(result / weight * AO_TERM_SCALE, 1.0)), 1.0);
 }

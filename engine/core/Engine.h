@@ -95,12 +95,6 @@
 #define MAX_MORPHTARGETS 8
 #endif
 
-// number of hemisphere samples in the SSAO kernel; must match the
-// SSAO_KERNEL_SIZE define injected for the ssao.frag shader (ShaderBuilder)
-#ifndef SSAO_KERNEL_SIZE
-#define SSAO_KERNEL_SIZE 32
-#endif
-
 #ifndef MAX_EXTERNAL_BUFFERS
 #define MAX_EXTERNAL_BUFFERS 20
 #endif

@@ -184,7 +184,6 @@ namespace doriax{
         TERRAINDETAIL,
         DEPTHTEXTURE,
         SSAOTEXTURE,
-        NOISETEXTURE,
         SCENECOLORTEXTURE,
         SSRTEXTURE,
         GBUFFERTEXTURE,      // view-space normal (rg, octahedral) + roughness (b) + metallic (a)

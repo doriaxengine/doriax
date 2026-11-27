@@ -3203,7 +3203,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v90: what hooks use is read from the parsed shader.
     // v91: the pass constants in every shader file.
     // v92: depth and G-buffer sample the sprite frame and instance texture rects.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v92";
+    // v93: SSAO is GTAO.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v93";
 }
 
 void editor::App::pushTabNotificationStyle(){

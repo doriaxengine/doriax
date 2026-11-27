@@ -368,8 +368,6 @@ std::pair<int, int> ShaderData::getTextureIndex(TextureShaderType type){
         texstr = "u_depthTexture";
     }else if (type == TextureShaderType::SSAOTEXTURE){
         texstr = "u_ssaoTexture";
-    }else if (type == TextureShaderType::NOISETEXTURE){
-        texstr = "u_noiseTexture";
     }else if (type == TextureShaderType::SCENECOLORTEXTURE){
         texstr = "u_sceneColorTexture";
     }else if (type == TextureShaderType::SSRTEXTURE){

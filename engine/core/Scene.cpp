@@ -264,14 +264,6 @@ float Scene::getSSAOIntensity() const{
     return settings.ssaoIntensity;
 }
 
-void Scene::setSSAOBias(float bias){
-    settings.ssaoBias = bias;
-}
-
-float Scene::getSSAOBias() const{
-    return settings.ssaoBias;
-}
-
 void Scene::setSSAOHalfResolution(bool halfResolution){
     settings.ssaoHalfResolution = halfResolution;
 }

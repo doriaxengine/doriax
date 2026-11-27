@@ -134,11 +134,10 @@ namespace doriax{
 	} fs_gbuffer_material_t;
 
 	typedef struct fs_ssao_t {
-		Matrix4 projection;
-		Matrix4 invProjection;
-		Vector4 kernel[SSAO_KERNEL_SIZE];
-		Vector4 params;     // radius.x, bias.y, intensity.z
-		Vector4 noiseScale; // screenSize/noiseSize in .xy
+		Vector4 params;      // radius, intensity, depth texels per AO texel, G-buffer normal
+		Vector4 screen;      // xy = 1 / depth size, z = texels per unit at 1, w = ortho
+		Vector4 ndcToView;   // view xy = (ndc * xy + zw) * distance
+		Vector4 depthParams; // view z from ndc depth
 	} fs_ssao_t;
 
 	typedef struct fs_ssao_blur_t {
@@ -656,10 +655,9 @@ namespace doriax{
 		CameraRender ssaoPassRender;      // drives the offscreen SSAO passes
 		ObjectRender ssaoRender;          // fullscreen ssao.frag draw
 		ObjectRender ssaoBlurRender;      // fullscreen ssao_blur.frag draw
-		TextureRender ssaoNoiseTexture;
 		std::shared_ptr<ShaderRender> ssaoShader;
 		std::shared_ptr<ShaderRender> ssaoBlurShader;
-		fs_ssao_t fs_ssao; // kernel filled once in loadSSAO; matrices/params per frame
+		fs_ssao_t fs_ssao;
 		fs_ssao_blur_t fs_ssao_blur;
 		int ssaoSlotParams;
 		int ssaoBlurSlotParams;

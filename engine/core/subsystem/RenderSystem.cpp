@@ -29,7 +29,6 @@
 #include <iterator>
 #include <limits>
 #include <map>
-#include <random>
 #include <cstdint>
 #include <cstring>
 
@@ -5691,38 +5690,6 @@ void RenderSystem::loadSSAO(){
     if (!ssaoShader || !ssaoShader->isCreated() || !ssaoBlurShader || !ssaoBlurShader->isCreated())
         return;
 
-    // hemisphere sample kernel, weighted toward the origin (more near-field samples).
-    // It is constant, so write it straight into the uniform block once here.
-    std::mt19937 rng(1337);
-    std::uniform_real_distribution<float> dist01(0.0f, 1.0f);
-    std::uniform_real_distribution<float> distm11(-1.0f, 1.0f);
-
-    for (int i = 0; i < SSAO_KERNEL_SIZE; i++){
-        Vector3 sample(distm11(rng), distm11(rng), dist01(rng)); // +Z hemisphere
-        sample.normalize();
-        sample *= dist01(rng);
-        float scale = (float)i / (float)SSAO_KERNEL_SIZE;
-        scale = 0.1f + (scale * scale) * (1.0f - 0.1f); // lerp(0.1, 1.0, scale^2)
-        sample *= scale;
-        fs_ssao.kernel[i] = Vector4(sample.x, sample.y, sample.z, 0.0f);
-    }
-
-    // 4x4 rotation-noise texture: random vectors in the tangent XY plane (z=0).
-    // Pixel layout matches the empty textures: 0xAABBGGRR in memory.
-    const int noiseDim = 4;
-    uint32_t noisePixels[noiseDim * noiseDim];
-    for (int i = 0; i < noiseDim * noiseDim; i++){
-        uint8_t r = (uint8_t)((distm11(rng) * 0.5f + 0.5f) * 255.0f);
-        uint8_t g = (uint8_t)((distm11(rng) * 0.5f + 0.5f) * 255.0f);
-        noisePixels[i] = (0xFFu << 24) | (0x80u << 16) | ((uint32_t)g << 8) | (uint32_t)r;
-    }
-
-    void* ndata[6]; size_t nsize[6];
-    ndata[0] = (void*)noisePixels; nsize[0] = noiseDim * noiseDim * 4;
-    ssaoNoiseTexture.createTexture(
-            "ssao|noise", noiseDim, noiseDim, ColorFormat::RGBA, TextureType::TEXTURE_2D, 1, ndata, nsize,
-            TextureFilter::NEAREST, TextureFilter::NEAREST, TextureWrap::REPEAT, TextureWrap::REPEAT);
-
     // fullscreen ssao pass (vertexless: no attributes added)
     ssaoRender.beginLoad(PrimitiveType::TRIANGLES);
     ssaoRender.setShader(ssaoShader.get());
@@ -5744,7 +5711,6 @@ void RenderSystem::destroySSAO(){
     if (ssaoLoaded){
         ssaoRender.destroy();
         ssaoBlurRender.destroy();
-        ssaoNoiseTexture.destroyTexture();
     }
     if (ssaoShader){
         ssaoShader.reset();
@@ -5860,12 +5826,14 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
         normalTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(1);
     }
 
-    // --- 2. ssao pass (kernel was filled once in loadSSAO) ---
-    fs_ssao.projection = renderProj;
-    fs_ssao.invProjection = renderProj.inverse();
-    fs_ssao.params = Vector4(scene->getSSAORadius(), scene->getSSAOBias(), scene->getSSAOIntensity(), useGBufferNormal ? 1.0f : 0.0f);
-    // xy = noise tiling (4x4), zw = inverse depth-texture size (neighbour taps for normals)
-    fs_ssao.noiseScale = Vector4((float)ssaoWidth / 4.0f, (float)ssaoHeight / 4.0f, 1.0f / (float)w, 1.0f / (float)h);
+    // --- 2. GTAO pass ---
+    Matrix4 invProj = renderProj.inverse();
+    bool ortho = (renderProj[2][3] == 0.0f);
+    Vector2 ndcOffset = ortho ? Vector2(-renderProj[3][0], -renderProj[3][1]) : Vector2(renderProj[2][0], renderProj[2][1]);
+    fs_ssao.params = Vector4(scene->getSSAORadius(), scene->getSSAOIntensity(), (ssaoWidth < w) ? 2.0f : 1.0f, useGBufferNormal ? 1.0f : 0.0f);
+    fs_ssao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, renderProj[0][0] * (float)w * 0.5f, ortho ? 1.0f : 0.0f);
+    fs_ssao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
+    fs_ssao.depthParams = Vector4(invProj[2][2], invProj[3][2], invProj[2][3], invProj[3][3]);
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoFramebuffer.getRender());
@@ -5873,7 +5841,6 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
         ShaderData& sd = ssaoShader.get()->shaderData;
         ssaoRender.addTexture(sd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
         ssaoRender.addTexture(sd.getTextureIndex(TextureShaderType::GBUFFERTEXTURE), ShaderStageType::FRAGMENT, normalTexture);
-        ssaoRender.addTexture(sd.getTextureIndex(TextureShaderType::NOISETEXTURE), ShaderStageType::FRAGMENT, &ssaoNoiseTexture);
         ssaoRender.applyUniformBlock(ssaoSlotParams, sizeof(fs_ssao_t), &fs_ssao);
         ssaoRender.draw(0, 3, 1);
     }
@@ -5881,7 +5848,7 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
 
     // --- 3. blur pass, kept to each surface by depth ---
     fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, 0.0, 0.0);
-    fs_ssao_blur.depthParams = Vector4(fs_ssao.invProjection[2][2], fs_ssao.invProjection[3][2], fs_ssao.invProjection[2][3], fs_ssao.invProjection[3][3]);
+    fs_ssao_blur.depthParams = fs_ssao.depthParams;
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoBlurFramebuffer.getRender());

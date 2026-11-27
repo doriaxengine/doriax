@@ -323,11 +323,6 @@ namespace doriax::editor{
                     return scene->getSSAOIntensity();
                 }
             }
-            else if (propertyName == "ssao_bias") {
-                if constexpr (std::is_same_v<T, float>) {
-                    return scene->getSSAOBias();
-                }
-            }
             else if (propertyName == "ssao_half_resolution") {
                 if constexpr (std::is_same_v<T, bool>) {
                     return scene->isSSAOHalfResolution();
@@ -553,9 +548,6 @@ namespace doriax::editor{
             else if (propertyName == "ssao_intensity") {
                 if constexpr (std::is_same_v<T, float>) return d.ssaoIntensity;
             }
-            else if (propertyName == "ssao_bias") {
-                if constexpr (std::is_same_v<T, float>) return d.ssaoBias;
-            }
             else if (propertyName == "ssao_half_resolution") {
                 if constexpr (std::is_same_v<T, bool>) return d.ssaoHalfResolution;
             }
@@ -730,11 +722,6 @@ namespace doriax::editor{
             else if (propertyName == "ssao_intensity") {
                 if constexpr (std::is_same_v<T, float>) {
                     scene->setSSAOIntensity(value);
-                }
-            }
-            else if (propertyName == "ssao_bias") {
-                if constexpr (std::is_same_v<T, float>) {
-                    scene->setSSAOBias(value);
                 }
             }
             else if (propertyName == "ssao_half_resolution") {

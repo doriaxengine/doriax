@@ -139,9 +139,6 @@ namespace doriax{
         void setSSAOIntensity(float intensity);
         float getSSAOIntensity() const;
 
-        void setSSAOBias(float bias);
-        float getSSAOBias() const;
-
         void setSSAOHalfResolution(bool halfResolution);
         bool isSSAOHalfResolution() const;
 

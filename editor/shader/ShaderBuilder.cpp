@@ -1396,9 +1396,6 @@ bool editor::ShaderBuilder::setupShaderArgs(shadercompiler::args_t& args, Shader
         // (the G-buffer fragment does not consume them); mirrors depth.vert
         args.defines.push_back({"DEPTH_SHADER", "1"});
     }
-    if (shaderType == ShaderType::SSAO){
-        args.defines.push_back({"SSAO_KERNEL_SIZE", "32"});
-    }
     if (shaderType == ShaderType::SSR){
         args.defines.push_back({"SSR_MAX_STEPS", "128"});
     }

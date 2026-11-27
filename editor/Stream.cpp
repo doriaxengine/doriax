@@ -3050,7 +3050,6 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["ssaoEnabled"] = scene->isSSAOEnabled();
     sceneNode["ssaoRadius"] = scene->getSSAORadius();
     sceneNode["ssaoIntensity"] = scene->getSSAOIntensity();
-    sceneNode["ssaoBias"] = scene->getSSAOBias();
     sceneNode["ssaoHalfResolution"] = scene->isSSAOHalfResolution();
     sceneNode["ssrEnabled"] = scene->isSSREnabled();
     sceneNode["ssrMaxDistance"] = scene->getSSRMaxDistance();
@@ -3168,9 +3167,6 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
     }
     if (node["ssaoIntensity"]) {
         scene->setSSAOIntensity(node["ssaoIntensity"].as<float>());
-    }
-    if (node["ssaoBias"]) {
-        scene->setSSAOBias(node["ssaoBias"].as<float>());
     }
     if (node["ssaoHalfResolution"]) {
         scene->setSSAOHalfResolution(node["ssaoHalfResolution"].as<bool>());
