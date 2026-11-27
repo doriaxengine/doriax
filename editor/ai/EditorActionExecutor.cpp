@@ -2171,12 +2171,12 @@ Json sceneReadableProperties(SceneProject* sceneProject) {
     props["mesh_lod_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "mesh_lod_enabled")}};
     props["mesh_lod_threshold"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "mesh_lod_threshold")}};
     props["depth_prepass_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "depth_prepass_enabled")}};
-    props["ssao_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_enabled")}};
-    props["ssao_radius"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_radius")}};
-    props["ssao_intensity"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_intensity")}};
-    props["ssao_thin_occluders"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssao_thin_occluders")}};
-    props["ssao_half_resolution"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_half_resolution")}};
-    props["ssao_debug"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssao_debug")}};
+    props["gtao_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "gtao_enabled")}};
+    props["gtao_radius"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "gtao_radius")}};
+    props["gtao_intensity"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "gtao_intensity")}};
+    props["gtao_thin_occluders"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "gtao_thin_occluders")}};
+    props["gtao_half_resolution"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "gtao_half_resolution")}};
+    props["gtao_debug"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "gtao_debug")}};
     props["ssr_enabled"] = {{"type", "bool"}, {"value", Catalog::getSceneProperty<bool>(scene, "ssr_enabled")}};
     props["ssr_max_distance"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssr_max_distance")}};
     props["ssr_thickness"] = {{"type", "float"}, {"value", Catalog::getSceneProperty<float>(scene, "ssr_thickness")}};
@@ -3572,16 +3572,16 @@ ActionResult EditorActionExecutor::setSceneProperty(const Json& arguments) {
             return failResult(property + " requires vector3_value.");
         }
         cmd = new ScenePropertyCmd<Vector3>(project, sceneId, property, value);
-    } else if (property == "ssao_enabled" || property == "mesh_lod_enabled" || property == "depth_prepass_enabled" ||
-               property == "ssao_half_resolution" || property == "ssao_debug" || property == "ssr_enabled" ||
+    } else if (property == "gtao_enabled" || property == "mesh_lod_enabled" || property == "depth_prepass_enabled" ||
+               property == "gtao_half_resolution" || property == "gtao_debug" || property == "ssr_enabled" ||
                property == "fixed_resolution_enabled" || property == "bloom_enabled" || property == "hdr_enabled") {
         if (!arguments.contains("bool_value") || !arguments["bool_value"].is_boolean()) {
             return failResult(property + " requires bool_value.");
         }
         cmd = new ScenePropertyCmd<bool>(project, sceneId, property, arguments["bool_value"].get<bool>());
     } else if (property == "global_illumination_intensity" || property == "ambient_light_2d_intensity" ||
-               property == "ssao_radius" || property == "mesh_lod_threshold" ||
-               property == "ssao_intensity" || property == "ssao_thin_occluders" ||
+               property == "gtao_radius" || property == "mesh_lod_threshold" ||
+               property == "gtao_intensity" || property == "gtao_thin_occluders" ||
                property == "ssr_max_distance" || property == "ssr_thickness" ||
                property == "ssr_intensity" || property == "ssr_blur" ||
                property == "bloom_threshold" || property == "bloom_knee" ||

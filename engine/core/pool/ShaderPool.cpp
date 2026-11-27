@@ -434,8 +434,8 @@ std::string ShaderPool::getShaderTypeName(ShaderType shaderType, bool lowerCase)
         case ShaderType::UI:     return lowerCase ? "ui"     : "UI";
         case ShaderType::POINTS: return lowerCase ? "points" : "Points";
         case ShaderType::LINES:  return lowerCase ? "lines"  : "Lines";
-        case ShaderType::SSAO:   return lowerCase ? "ssao"   : "SSAO";
-        case ShaderType::SSAO_BLUR: return lowerCase ? "ssaoblur" : "SSAO Blur";
+        case ShaderType::SSAO:   return lowerCase ? "ssao"   : "GTAO";
+        case ShaderType::SSAO_BLUR: return lowerCase ? "ssaoblur" : "GTAO Blur";
         case ShaderType::SSR:    return lowerCase ? "ssr"    : "SSR";
         case ShaderType::SSR_BLUR: return lowerCase ? "ssrblur" : "SSR Blur";
         case ShaderType::COMPOSITE: return lowerCase ? "composite" : "Composite";
@@ -497,7 +497,7 @@ std::string ShaderPool::getShaderPropertyName(ShaderType shaderType, int bit, bo
             case 18: return shortName ? "Ist" : "Instancing";
             case 19: return shortName ? "Ibl" : "IBL";
             case 20: return shortName ? "Mir" : "Mirror";
-            case 21: return shortName ? "Sao" : "SSAO";
+            case 21: return shortName ? "Sao" : "GTAO";
             case 22: return shortName ? "L2d" : "Light 2D";
             case 23: return shortName ? "S2d" : "Shadow 2D";
             case 24: return shortName ? "Ams" : "Alpha Mask";

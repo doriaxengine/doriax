@@ -236,56 +236,56 @@ bool Scene::isDepthPrepassEnabled() const{
     return settings.depthPrepassEnabled;
 }
 
-void Scene::setSSAOEnabled(bool ssaoEnabled){
-    if (settings.ssaoEnabled != ssaoEnabled){
-        settings.ssaoEnabled = ssaoEnabled;
-        // toggling SSAO changes the mesh shader variant (USE_SSAO), so recompile
+void Scene::setGTAOEnabled(bool gtaoEnabled){
+    if (settings.gtaoEnabled != gtaoEnabled){
+        settings.gtaoEnabled = gtaoEnabled;
+        // toggling GTAO changes the mesh shader variant (USE_SSAO), so recompile
         getSystem<RenderSystem>()->needReloadMeshes();
     }
 }
 
-bool Scene::isSSAOEnabled() const{
-    return settings.ssaoEnabled;
+bool Scene::isGTAOEnabled() const{
+    return settings.gtaoEnabled;
 }
 
-void Scene::setSSAORadius(float radius){
-    settings.ssaoRadius = radius;
+void Scene::setGTAORadius(float radius){
+    settings.gtaoRadius = radius;
 }
 
-float Scene::getSSAORadius() const{
-    return settings.ssaoRadius;
+float Scene::getGTAORadius() const{
+    return settings.gtaoRadius;
 }
 
-void Scene::setSSAOIntensity(float intensity){
-    settings.ssaoIntensity = intensity;
+void Scene::setGTAOIntensity(float intensity){
+    settings.gtaoIntensity = intensity;
 }
 
-float Scene::getSSAOIntensity() const{
-    return settings.ssaoIntensity;
+float Scene::getGTAOIntensity() const{
+    return settings.gtaoIntensity;
 }
 
-void Scene::setSSAOThinOccluders(float thinOccluders){
-    settings.ssaoThinOccluders = thinOccluders;
+void Scene::setGTAOThinOccluders(float thinOccluders){
+    settings.gtaoThinOccluders = thinOccluders;
 }
 
-float Scene::getSSAOThinOccluders() const{
-    return settings.ssaoThinOccluders;
+float Scene::getGTAOThinOccluders() const{
+    return settings.gtaoThinOccluders;
 }
 
-void Scene::setSSAOHalfResolution(bool halfResolution){
-    settings.ssaoHalfResolution = halfResolution;
+void Scene::setGTAOHalfResolution(bool halfResolution){
+    settings.gtaoHalfResolution = halfResolution;
 }
 
-bool Scene::isSSAOHalfResolution() const{
-    return settings.ssaoHalfResolution;
+bool Scene::isGTAOHalfResolution() const{
+    return settings.gtaoHalfResolution;
 }
 
-void Scene::setSSAODebug(bool debug){
-    settings.ssaoDebug = debug;
+void Scene::setGTAODebug(bool debug){
+    settings.gtaoDebug = debug;
 }
 
-bool Scene::isSSAODebug() const{
-    return settings.ssaoDebug;
+bool Scene::isGTAODebug() const{
+    return settings.gtaoDebug;
 }
 
 void Scene::setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value){

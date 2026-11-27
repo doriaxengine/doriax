@@ -1363,7 +1363,7 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
     fs_lighting.viewportInfo = Vector4(
         (vpW > 0.0f) ? 1.0f / vpW : 0.0f,
         (vpH > 0.0f) ? 1.0f / vpH : 0.0f,
-        scene->isSSAODebug() ? 1.0f : 0.0f,
+        scene->isGTAODebug() ? 1.0f : 0.0f,
         isRenderingFlipped(camera) ? 1.0f : 0.0f);
 
     // Setting intensity of other lights to zero
@@ -3498,7 +3498,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     }
 
     // screen-space AO modulates ambient/indirect light on lit submeshes.
-    sh.ssao = scene->isSSAOEnabled() && !sh.unlit && (sh.punctual || sh.ibl);
+    sh.ssao = scene->isGTAOEnabled() && !sh.unlit && (sh.punctual || sh.ibl);
     sh.alphaMask = material.alphaMode == MaterialAlphaMode::MASK;
     sh.alphaOpaque = material.alphaMode == MaterialAlphaMode::ALPHA_OPAQUE;
     // AUTO + textureShadow preserves the legacy opt-in for editor-created
@@ -3540,7 +3540,7 @@ RenderSystem::SubmeshShading RenderSystem::getSubmeshShading(Entity entity, cons
     }
 
     // the depth shader feeds shadow maps (casters) and the SSAO depth pre-pass
-    sh.depthPass = (shading.shadows && mesh.castShadows) || scene->isSSAOEnabled() || scene->isDepthPrepassEnabled() || shading.waterDepth;
+    sh.depthPass = (shading.shadows && mesh.castShadows) || scene->isGTAOEnabled() || scene->isDepthPrepassEnabled() || shading.waterDepth;
     sh.depthProperties = ShaderPool::getDepthMeshProperties(
         sh.depthTexture, attributes.skinning, attributes.morphTarget,
         attributes.morphNormal, attributes.morphTangent, (terrain)?true:false, (instmesh)?true:false,
@@ -5763,7 +5763,7 @@ bool RenderSystem::ensureSSAOFramebuffers(unsigned int width, unsigned int heigh
         return false;
 
     // AO only, depth stays full size
-    if (scene->isSSAOHalfResolution()){
+    if (scene->isGTAOHalfResolution()){
         width = std::max(width / 2, 1u);
         height = std::max(height / 2, 1u);
     }
@@ -5836,7 +5836,7 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     Matrix4 invProj = renderProj.inverse();
     bool ortho = (renderProj[2][3] == 0.0f);
     Vector2 ndcOffset = ortho ? Vector2(-renderProj[3][0], -renderProj[3][1]) : Vector2(renderProj[2][0], renderProj[2][1]);
-    fs_ssao.params = Vector4(scene->getSSAORadius(), std::max(scene->getSSAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
+    fs_ssao.params = Vector4(scene->getGTAORadius(), std::max(scene->getGTAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
                              (renderProj[0][0] * (float)w) / (renderProj[1][1] * (float)h));
     fs_ssao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, (float)w / (float)ssaoWidth, (float)h / (float)ssaoHeight);
     fs_ssao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
@@ -5855,7 +5855,7 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     ssaoPassRender.endRenderPass();
 
     // --- 3. blur pass, kept to each surface by depth ---
-    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, std::max(scene->getSSAOIntensity(), 0.0f), 0.0f);
+    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, std::max(scene->getGTAOIntensity(), 0.0f), 0.0f);
     fs_ssao_blur.depthParams = fs_ssao.depthParams;
     fs_ssao_blur.screen = fs_ssao.screen;
 
@@ -12192,7 +12192,7 @@ void RenderSystem::draw(){
         // SSAO reuses it instead of running a second geometry pre-pass. Other cameras
         // sample empty white (AO = 1) so their USE_SSAO meshes are unaffected.
         currentSSAOTexture = &emptyWhite;
-        if (isMainCamera && scene->isSSAOEnabled()){
+        if (isMainCamera && scene->isGTAOEnabled()){
             TextureRender* sharedDepth = useSSR ? &gbufferFramebuffer.getRender().getColorAttachmentTexture(0) : nullptr;
             renderSSAO(camera, sharedDepth);
         }

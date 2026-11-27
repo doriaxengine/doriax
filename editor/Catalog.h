@@ -308,34 +308,34 @@ namespace doriax::editor{
                     return scene->isDepthPrepassEnabled();
                 }
             }
-            else if (propertyName == "ssao_enabled") {
+            else if (propertyName == "gtao_enabled") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    return scene->isSSAOEnabled();
+                    return scene->isGTAOEnabled();
                 }
             }
-            else if (propertyName == "ssao_radius") {
+            else if (propertyName == "gtao_radius") {
                 if constexpr (std::is_same_v<T, float>) {
-                    return scene->getSSAORadius();
+                    return scene->getGTAORadius();
                 }
             }
-            else if (propertyName == "ssao_intensity") {
+            else if (propertyName == "gtao_intensity") {
                 if constexpr (std::is_same_v<T, float>) {
-                    return scene->getSSAOIntensity();
+                    return scene->getGTAOIntensity();
                 }
             }
-            else if (propertyName == "ssao_thin_occluders") {
+            else if (propertyName == "gtao_thin_occluders") {
                 if constexpr (std::is_same_v<T, float>) {
-                    return scene->getSSAOThinOccluders();
+                    return scene->getGTAOThinOccluders();
                 }
             }
-            else if (propertyName == "ssao_half_resolution") {
+            else if (propertyName == "gtao_half_resolution") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    return scene->isSSAOHalfResolution();
+                    return scene->isGTAOHalfResolution();
                 }
             }
-            else if (propertyName == "ssao_debug") {
+            else if (propertyName == "gtao_debug") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    return scene->isSSAODebug();
+                    return scene->isGTAODebug();
                 }
             }
             else if (propertyName == "ssr_enabled") {
@@ -544,23 +544,23 @@ namespace doriax::editor{
             else if (propertyName == "depth_prepass_enabled") {
                 if constexpr (std::is_same_v<T, bool>) return d.depthPrepassEnabled;
             }
-            else if (propertyName == "ssao_enabled") {
-                if constexpr (std::is_same_v<T, bool>) return d.ssaoEnabled;
+            else if (propertyName == "gtao_enabled") {
+                if constexpr (std::is_same_v<T, bool>) return d.gtaoEnabled;
             }
-            else if (propertyName == "ssao_radius") {
-                if constexpr (std::is_same_v<T, float>) return d.ssaoRadius;
+            else if (propertyName == "gtao_radius") {
+                if constexpr (std::is_same_v<T, float>) return d.gtaoRadius;
             }
-            else if (propertyName == "ssao_intensity") {
-                if constexpr (std::is_same_v<T, float>) return d.ssaoIntensity;
+            else if (propertyName == "gtao_intensity") {
+                if constexpr (std::is_same_v<T, float>) return d.gtaoIntensity;
             }
-            else if (propertyName == "ssao_thin_occluders") {
-                if constexpr (std::is_same_v<T, float>) return d.ssaoThinOccluders;
+            else if (propertyName == "gtao_thin_occluders") {
+                if constexpr (std::is_same_v<T, float>) return d.gtaoThinOccluders;
             }
-            else if (propertyName == "ssao_half_resolution") {
-                if constexpr (std::is_same_v<T, bool>) return d.ssaoHalfResolution;
+            else if (propertyName == "gtao_half_resolution") {
+                if constexpr (std::is_same_v<T, bool>) return d.gtaoHalfResolution;
             }
-            else if (propertyName == "ssao_debug") {
-                if constexpr (std::is_same_v<T, bool>) return d.ssaoDebug;
+            else if (propertyName == "gtao_debug") {
+                if constexpr (std::is_same_v<T, bool>) return d.gtaoDebug;
             }
             else if (propertyName == "ssr_enabled") {
                 if constexpr (std::is_same_v<T, bool>) return d.ssrEnabled;
@@ -717,34 +717,34 @@ namespace doriax::editor{
                     scene->setDepthPrepassEnabled(value);
                 }
             }
-            else if (propertyName == "ssao_enabled") {
+            else if (propertyName == "gtao_enabled") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    scene->setSSAOEnabled(value);
+                    scene->setGTAOEnabled(value);
                 }
             }
-            else if (propertyName == "ssao_radius") {
+            else if (propertyName == "gtao_radius") {
                 if constexpr (std::is_same_v<T, float>) {
-                    scene->setSSAORadius(value);
+                    scene->setGTAORadius(value);
                 }
             }
-            else if (propertyName == "ssao_intensity") {
+            else if (propertyName == "gtao_intensity") {
                 if constexpr (std::is_same_v<T, float>) {
-                    scene->setSSAOIntensity(value);
+                    scene->setGTAOIntensity(value);
                 }
             }
-            else if (propertyName == "ssao_thin_occluders") {
+            else if (propertyName == "gtao_thin_occluders") {
                 if constexpr (std::is_same_v<T, float>) {
-                    scene->setSSAOThinOccluders(value);
+                    scene->setGTAOThinOccluders(value);
                 }
             }
-            else if (propertyName == "ssao_half_resolution") {
+            else if (propertyName == "gtao_half_resolution") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    scene->setSSAOHalfResolution(value);
+                    scene->setGTAOHalfResolution(value);
                 }
             }
-            else if (propertyName == "ssao_debug") {
+            else if (propertyName == "gtao_debug") {
                 if constexpr (std::is_same_v<T, bool>) {
-                    scene->setSSAODebug(value);
+                    scene->setGTAODebug(value);
                 }
             }
             else if (propertyName == "ssr_enabled") {

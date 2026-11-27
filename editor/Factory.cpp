@@ -2926,11 +2926,11 @@ std::string editor::Factory::createScene(int indentSpaces, Scene* scene, uint32_
     if (!scene->getShaderParameterDefaults().empty())
         out << ind2 << "scene->setShaderParameterDefaults(" << formatShaderUniforms(scene->getShaderParameterDefaults()) << ");\n";
     out << ind2 << "scene->setLightState(" << formatLightState(scene->getLightState()) << ");\n";
-    out << ind2 << "scene->setSSAOEnabled(" << formatBool(scene->isSSAOEnabled()) << ");\n";
-    out << ind2 << "scene->setSSAORadius(" << formatFloat(scene->getSSAORadius()) << ");\n";
-    out << ind2 << "scene->setSSAOIntensity(" << formatFloat(scene->getSSAOIntensity()) << ");\n";
-    out << ind2 << "scene->setSSAOThinOccluders(" << formatFloat(scene->getSSAOThinOccluders()) << ");\n";
-    out << ind2 << "scene->setSSAOHalfResolution(" << formatBool(scene->isSSAOHalfResolution()) << ");\n";
+    out << ind2 << "scene->setGTAOEnabled(" << formatBool(scene->isGTAOEnabled()) << ");\n";
+    out << ind2 << "scene->setGTAORadius(" << formatFloat(scene->getGTAORadius()) << ");\n";
+    out << ind2 << "scene->setGTAOIntensity(" << formatFloat(scene->getGTAOIntensity()) << ");\n";
+    out << ind2 << "scene->setGTAOThinOccluders(" << formatFloat(scene->getGTAOThinOccluders()) << ");\n";
+    out << ind2 << "scene->setGTAOHalfResolution(" << formatBool(scene->isGTAOHalfResolution()) << ");\n";
     out << ind2 << "scene->setSSREnabled(" << formatBool(scene->isSSREnabled()) << ");\n";
     out << ind2 << "scene->setSSRMaxDistance(" << formatFloat(scene->getSSRMaxDistance()) << ");\n";
     out << ind2 << "scene->setSSRThickness(" << formatFloat(scene->getSSRThickness()) << ");\n";

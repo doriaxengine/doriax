@@ -443,7 +443,7 @@ vec3 graphHSVToRGB(vec3 c){
     scene("scene/depth", "Scene Depth", "Distance from the eye along the view to what is drawn behind, in world units.",
         out("depth", "Depth", "float"), "sceneDepth({uv})", {"mesh", "postprocess"});
     scene("scene/normal", "Scene Normal", "World normal of what is drawn, needs SSR on.", out("normal", "Normal", "vec3"), "sceneNormal({uv})", {"postprocess"});
-    scene("scene/occlusion", "Scene Occlusion", "SSAO, 1 without it.", out("occlusion", "Occlusion", "float"), "sceneOcclusion({uv})", {"postprocess"});
+    scene("scene/occlusion", "Scene Occlusion", "GTAO, 1 without it.", out("occlusion", "Occlusion", "float"), "sceneOcclusion({uv})", {"postprocess"});
     ShaderNodeType& sceneBlur = add("scene/blur", "Scene Blur", "Scene",
         "What is drawn behind, averaged over a disc of Radius pixels of a 1080-line view, linear. More Samples is smoother and slower.",
         {in("uv", "UV", "vec2", "@screenUV"), in("radius", "Radius", "float", 4.0f), in("samples", "Samples", "float", 16.0f)},

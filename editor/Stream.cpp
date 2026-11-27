@@ -3047,11 +3047,11 @@ YAML::Node editor::Stream::encodeScene(Scene* scene) {
     sceneNode["ambientLight2DIntensity"] = scene->getAmbientLight2DIntensity();
     sceneNode["ambientLight2DColor"] = encodeVector3(scene->getAmbientLight2DColor());
     sceneNode["shadow2DQuality"] = shadowQualityToString(scene->getShadow2DQuality());
-    sceneNode["ssaoEnabled"] = scene->isSSAOEnabled();
-    sceneNode["ssaoRadius"] = scene->getSSAORadius();
-    sceneNode["ssaoIntensity"] = scene->getSSAOIntensity();
-    sceneNode["ssaoThinOccluders"] = scene->getSSAOThinOccluders();
-    sceneNode["ssaoHalfResolution"] = scene->isSSAOHalfResolution();
+    sceneNode["gtaoEnabled"] = scene->isGTAOEnabled();
+    sceneNode["gtaoRadius"] = scene->getGTAORadius();
+    sceneNode["gtaoIntensity"] = scene->getGTAOIntensity();
+    sceneNode["gtaoThinOccluders"] = scene->getGTAOThinOccluders();
+    sceneNode["gtaoHalfResolution"] = scene->isGTAOHalfResolution();
     sceneNode["ssrEnabled"] = scene->isSSREnabled();
     sceneNode["ssrMaxDistance"] = scene->getSSRMaxDistance();
     sceneNode["ssrThickness"] = scene->getSSRThickness();
@@ -3160,20 +3160,22 @@ Scene* editor::Stream::decodeScene(Scene* scene, const YAML::Node& node) {
         scene->setShadow2DQuality(stringToShadowQuality(node["shadow2DQuality"].as<std::string>()));
     }
 
-    if (node["ssaoEnabled"]) {
-        scene->setSSAOEnabled(node["ssaoEnabled"].as<bool>());
+    // older scenes saved ssao* keys, read until a later version
+    auto gtaoNode = [&node](const char* key, const char* oldKey){ return node[key] ? node[key] : node[oldKey]; };
+    if (auto value = gtaoNode("gtaoEnabled", "ssaoEnabled")) {
+        scene->setGTAOEnabled(value.as<bool>());
     }
-    if (node["ssaoRadius"]) {
-        scene->setSSAORadius(node["ssaoRadius"].as<float>());
+    if (auto value = gtaoNode("gtaoRadius", "ssaoRadius")) {
+        scene->setGTAORadius(value.as<float>());
     }
-    if (node["ssaoIntensity"]) {
-        scene->setSSAOIntensity(node["ssaoIntensity"].as<float>());
+    if (auto value = gtaoNode("gtaoIntensity", "ssaoIntensity")) {
+        scene->setGTAOIntensity(value.as<float>());
     }
-    if (node["ssaoThinOccluders"]) {
-        scene->setSSAOThinOccluders(node["ssaoThinOccluders"].as<float>());
+    if (node["gtaoThinOccluders"]) {
+        scene->setGTAOThinOccluders(node["gtaoThinOccluders"].as<float>());
     }
-    if (node["ssaoHalfResolution"]) {
-        scene->setSSAOHalfResolution(node["ssaoHalfResolution"].as<bool>());
+    if (auto value = gtaoNode("gtaoHalfResolution", "ssaoHalfResolution")) {
+        scene->setGTAOHalfResolution(value.as<bool>());
     }
     if (node["ssrEnabled"]) {
         scene->setSSREnabled(node["ssrEnabled"].as<bool>());

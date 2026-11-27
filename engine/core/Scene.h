@@ -130,23 +130,35 @@ namespace doriax{
         void setDepthPrepassEnabled(bool enabled);
         bool isDepthPrepassEnabled() const;
 
-        void setSSAOEnabled(bool ssaoEnabled);
-        bool isSSAOEnabled() const;
+        void setGTAOEnabled(bool gtaoEnabled);
+        bool isGTAOEnabled() const;
 
-        void setSSAORadius(float radius);
-        float getSSAORadius() const;
+        void setGTAORadius(float radius);
+        float getGTAORadius() const;
 
-        void setSSAOIntensity(float intensity);
-        float getSSAOIntensity() const;
+        void setGTAOIntensity(float intensity);
+        float getGTAOIntensity() const;
 
-        void setSSAOThinOccluders(float thinOccluders);
-        float getSSAOThinOccluders() const;
+        void setGTAOThinOccluders(float thinOccluders);
+        float getGTAOThinOccluders() const;
 
-        void setSSAOHalfResolution(bool halfResolution);
-        bool isSSAOHalfResolution() const;
+        void setGTAOHalfResolution(bool halfResolution);
+        bool isGTAOHalfResolution() const;
 
-        void setSSAODebug(bool debug);
-        bool isSSAODebug() const;
+        void setGTAODebug(bool debug);
+        bool isGTAODebug() const;
+
+        // the SSAO names of the GTAO settings, removed in a later version
+        [[deprecated("use setGTAOEnabled")]] void setSSAOEnabled(bool enabled){ setGTAOEnabled(enabled); }
+        [[deprecated("use isGTAOEnabled")]] bool isSSAOEnabled() const{ return isGTAOEnabled(); }
+        [[deprecated("use setGTAORadius")]] void setSSAORadius(float radius){ setGTAORadius(radius); }
+        [[deprecated("use getGTAORadius")]] float getSSAORadius() const{ return getGTAORadius(); }
+        [[deprecated("use setGTAOIntensity")]] void setSSAOIntensity(float intensity){ setGTAOIntensity(intensity); }
+        [[deprecated("use getGTAOIntensity")]] float getSSAOIntensity() const{ return getGTAOIntensity(); }
+        [[deprecated("use setGTAOHalfResolution")]] void setSSAOHalfResolution(bool halfResolution){ setGTAOHalfResolution(halfResolution); }
+        [[deprecated("use isGTAOHalfResolution")]] bool isSSAOHalfResolution() const{ return isGTAOHalfResolution(); }
+        [[deprecated("use setGTAODebug")]] void setSSAODebug(bool debug){ setGTAODebug(debug); }
+        [[deprecated("use isGTAODebug")]] bool isSSAODebug() const{ return isGTAODebug(); }
 
         // runtime values of "#pragma scene Collection.name" parameters, over the saved defaults
         void setShaderParameter(const std::string& collection, const std::string& name, const Vector4& value);

@@ -84,12 +84,12 @@ namespace doriax{
         float ambientLight2DIntensity = 1.0f;
         ShadowQuality shadow2DQuality = ShadowQuality::LOW;
 
-        bool ssaoEnabled = false;
-        float ssaoRadius = 0.5f;
-        float ssaoIntensity = 1.0f;
-        float ssaoThinOccluders = 1.0f;
-        bool ssaoHalfResolution = false;
-        bool ssaoDebug = false;
+        bool gtaoEnabled = false;
+        float gtaoRadius = 0.5f;
+        float gtaoIntensity = 1.0f;
+        float gtaoThinOccluders = 1.0f;
+        bool gtaoHalfResolution = false;
+        bool gtaoDebug = false;
 
         // saved scene shader parameters by "Collection.name"
         ShaderUniformValues shaderParameters;

@@ -8759,7 +8759,7 @@ void editor::Properties::drawWaterComponent(ComponentType cpType, SceneProject* 
     ImGui::SeparatorText("Foam");
     beginTable(cpType, getLabelSize("Depth Effects"), "water_foam");
     RowSettings depthSettings;
-    depthSettings.help = "Shore foam, soft edges and depth tint from the scene depth. Adds a depth pass when SSAO and SSR are off.";
+    depthSettings.help = "Shore foam, soft edges and depth tint from the scene depth. Adds a depth pass when GTAO and SSR are off.";
     RowSettings shoreSettings = floatSettings;
     shoreSettings.help = "Water depth the shore foam covers. Needs Depth Effects.";
     RowSettings crestSettings = unitSettings;
@@ -14442,21 +14442,21 @@ void editor::Properties::show(){
                     ImGui::EndTable();
                 }
 
-                ImGui::SeparatorText("Ambient Occlusion (SSAO)");
+                ImGui::SeparatorText("Ambient Occlusion (GTAO)");
 
-                if (ImGui::BeginTable("scene_ssao_settings_table", 2, tableFlags)) {
+                if (ImGui::BeginTable("scene_gtao_settings_table", 2, tableFlags)) {
                     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, getLabelSize("Half Resolution"));
                     ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
 
-                    drawScenePropertyRow<bool>(sceneProject, "ssao_enabled", "Enabled", ScenePropertyInputType::Checkbox);
+                    drawScenePropertyRow<bool>(sceneProject, "gtao_enabled", "Enabled", ScenePropertyInputType::Checkbox);
 
-                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssao_enabled")) {
-                        drawScenePropertyRow<float>(sceneProject, "ssao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
-                        drawScenePropertyRow<float>(sceneProject, "ssao_thin_occluders", "Thin Occluders", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f,
+                    if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "gtao_enabled")) {
+                        drawScenePropertyRow<float>(sceneProject, "gtao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
+                        drawScenePropertyRow<float>(sceneProject, "gtao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
+                        drawScenePropertyRow<float>(sceneProject, "gtao_thin_occluders", "Thin Occluders", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f,
                             "How soon occluders far in front of a surface stop counting. 0 treats them as solid, which suits dense grass; around 1 keeps chair legs and railings from casting dark halos.");
-                        drawScenePropertyRow<bool>(sceneProject, "ssao_half_resolution", "Half Resolution", ScenePropertyInputType::Checkbox);
-                        drawScenePropertyRow<bool>(sceneProject, "ssao_debug", "Debug View", ScenePropertyInputType::Checkbox);
+                        drawScenePropertyRow<bool>(sceneProject, "gtao_half_resolution", "Half Resolution", ScenePropertyInputType::Checkbox);
+                        drawScenePropertyRow<bool>(sceneProject, "gtao_debug", "Debug View", ScenePropertyInputType::Checkbox);
                     }
 
                     ImGui::EndTable();
