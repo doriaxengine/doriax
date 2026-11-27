@@ -909,8 +909,8 @@ int CommandLine::runIdeCommand(int argc, char** argv, const char* executableName
         if (argument == "-h" || argument == "--help") {
             std::cout << "Usage:\n  " << commandName << " ide --project <project-dir|project.yaml>\n\n"
                       << "Writes the CMake and IDE files of a project, as the editor does on save: CMakeLists.txt,\n"
-                      << "CMakeUserPresets.json, .vscode, .luarc.json and the engine API in .doriax. Also compiles\n"
-                      << "the shaders its scenes use, which the project built from these files needs to run.\n";
+                      << "CMakeUserPresets.json, .vscode, .luarc.json, .clangd and the engine API in .doriax. Also\n"
+                      << "compiles the shaders its scenes use, which the project built from these files needs to run.\n";
             return 0;
         }
         if ((argument == "-p" || argument == "--project") && i + 1 < argc) {
