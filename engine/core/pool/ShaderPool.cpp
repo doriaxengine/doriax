@@ -591,8 +591,8 @@ int ShaderPool::getShaderPropertyBit(ShaderType shaderType, const std::string& n
         return result;
     };
     const std::string wanted = token(name);
-    // Sao named the GTAO bit before, read until a later version
-    if (shaderType == ShaderType::MESH && wanted == "sao")
+    // Sao and SSAO are older names, read until a later version
+    if (shaderType == ShaderType::MESH && (wanted == "sao" || wanted == "ssao"))
         return 21;
     for (int bit = 0; bit < getShaderPropertyCount(shaderType); bit++) {
         const std::string shortName = getShaderPropertyName(shaderType, bit, true);
@@ -654,7 +654,7 @@ uint32_t ShaderPool::getFallbackProperties(ShaderType shaderType, uint32_t prope
     // optional features, in the order they are given up
     std::vector<int> optionalBits;
     if (shaderType == ShaderType::MESH){
-        optionalBits = {28, 21, 5, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Sao Fsk Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
+        optionalBits = {28, 21, 5, 12, 23, 4, 20, 19, 7, 8, 2, 1}; // Dlo Gao Fsk Fog S2d Shw Mir Ibl Nmp Tan Uv2 Uv1
     }else if (shaderType == ShaderType::DEPTH){
         optionalBits = {15, 9, 7, 0}; // Txr Uv1 Ams Tex
     }else if (shaderType == ShaderType::GBUFFER){

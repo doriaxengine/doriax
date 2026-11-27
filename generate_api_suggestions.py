@@ -9,6 +9,9 @@ It scans engine/core/script/binding/*.cpp for:
   - addConstructor                → constructors
   - addFunction / addStaticFunction → methods
   - addProperty / addStaticProperty → properties
+
+A binding line ending in "// deprecated" and a [[deprecated]] C++ method are
+never suggested; the Lua stubs mark such bindings ---@deprecated.
 """
 
 import re
@@ -55,6 +58,8 @@ RE_GETTER_MEMBER = re.compile(r'&([A-Za-z0-9_]+)::([A-Za-z0-9_]+)$')
 RE_TABLE_CONTAINER = re.compile(r'(?:vector|array|list|map|unordered_map|set|pair|tuple)\s*<')
 # Lambda binding with a trailing return type: [] (const T& self, ...) -> Type {
 RE_LAMBDA_SIGNATURE = re.compile(r'\[\]\s*\(([^)]*)\)\s*->\s*([^{]+?)\s*\{')
+# An old name kept for older scripts: .addProperty("old", ...) // deprecated
+RE_DEPRECATED = re.compile(r'//\s*deprecated\s*$')
 
 EXCLUDED_HEADER_METHODS = {
     ('EntityHandle', 'addComponent'),
@@ -74,7 +79,8 @@ EXCLUDED_HEADER_METHODS = {
 class APISymbol:
     """Represents one symbol in the engine API."""
     __slots__ = ('name', 'kind', 'detail', 'parent', 'getter', 'signature', 'bound', 'shared', 'readonly', 'accessor', 'boolean',
-                 'mutator', 'cpp_read', 'cpp_write', 'callee', 'cpp_result', 'overloads', 'cpp_class', 'base', 'lua_signature')
+                 'mutator', 'cpp_read', 'cpp_write', 'callee', 'cpp_result', 'overloads', 'cpp_class', 'base', 'lua_signature',
+                 'deprecated')
 
     def __init__(self, name, kind, detail='', parent='', getter='', signature=None, bound=None, shared=False, readonly=False, accessor=''):
         self.name = name
@@ -97,6 +103,7 @@ class APISymbol:
         self.cpp_class = ''  # of a class: its C++ name and base
         self.base = ''
         self.lua_signature = None  # (params, return) the Lua stubs show
+        self.deprecated = False  # an old name, kept for older scripts
 
     def __repr__(self):
         return f'APISymbol({self.name!r}, {self.kind!r})'
@@ -107,10 +114,11 @@ def parse_binding_file(filepath):
     symbols = []
     with open(filepath, 'r') as f:
         content = f.read()
+    deprecated = {i for i, line in enumerate(content.split('\n')) if RE_DEPRECATED.search(line)}
 
-    # Remove C++ comments
+    # Remove C++ comments, keeping the line numbers
     content = re.sub(r'//.*', '', content)
-    content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
+    content = re.sub(r'/\*.*?\*/', lambda m: '\n' * m.group(0).count('\n'), content, flags=re.DOTALL)
 
     # ── Parse enums (namespace-based) ───────────────────────────────────
     ns_pattern = re.compile(
@@ -226,6 +234,7 @@ def parse_binding_file(filepath):
                 if callee:
                     static.cpp_read = f'{callee[0]}::{callee[1]}'
                     static.callee = callee
+                static.deprecated = index in deprecated
                 symbols.append(static)
             continue
 
@@ -252,6 +261,7 @@ def parse_binding_file(filepath):
                 if callee:
                     method.cpp_read = callee[1]
                     method.callee = callee
+                method.deprecated = index in deprecated
                 symbols.append(method)
             continue
 
@@ -276,6 +286,7 @@ def parse_binding_file(filepath):
                     accessor=_accessor(args)
                 )
                 shared.mutator = args[2].strip() if len(args) > 2 else ''
+                shared.deprecated = index in deprecated
                 symbols.append(shared)
             continue
 
@@ -294,6 +305,7 @@ def parse_binding_file(filepath):
                     accessor=_accessor(bound_args)
                 )
                 member.mutator = bound_args[2].strip() if len(bound_args) > 2 else ''
+                member.deprecated = index in deprecated
                 symbols.append(member)
             continue
 
@@ -861,6 +873,9 @@ def parse_cpp_headers(base_dir):
                         continue
                     if (class_name, method_name) in EXCLUDED_HEADER_METHODS:
                         continue
+                    declaration = public_body[max(public_body.rfind(c, 0, m.start(2)) for c in ';{}') + 1:m.start(2)]
+                    if '[[deprecated' in declaration:
+                        continue
                     params = _simplify_params(params_raw)
                     if method_name not in class_methods[class_name]:
                         class_methods[class_name][method_name] = []
@@ -882,7 +897,7 @@ def _unique_symbols(symbols):
 
 def generate_header(symbols, output_path):
     """Generate engine_api_suggestions.h from parsed symbols."""
-    unique = _unique_symbols(symbols)
+    unique = _unique_symbols([s for s in symbols if not s.deprecated])
 
     # Separate into categories for organized output
     enums = [s for s in unique if s.kind == 'Enum']
@@ -1163,8 +1178,8 @@ def _lua_comment(text):
     return [f'---{line}' for line in text.split('\n')] if text else []
 
 
-def _lua_function(owner, sep, name, params, returns, doc, names):
-    lines = _lua_comment(doc)
+def _lua_function(owner, sep, name, params, returns, doc, names, deprecated=False):
+    lines = _lua_comment(doc) + (['---@deprecated'] if deprecated else [])
     lua_params = _lua_params(params, names)
     for param, lua_type, optional in lua_params:
         lines.append(f'---@param {param}{"?" if optional else ""} {lua_type}')
@@ -1276,6 +1291,7 @@ def _lua_class(name, cls, members, doc, names, cpp_methods, callbacks, types):
             result = operator_returns.get(cls.cpp_class, {}).get((symbol, operand)) or name
             lines.append(f'---@operator {op}({_lua_type(operand, names) or "any"}): {_lua_type(result, names) or name}')
 
+    old = []  # a ---@field cannot be deprecated, a table field can
     for s in members:
         if s.kind not in ('Property', 'Constant', 'Event') or s.name in LUA_KEYWORDS:
             continue
@@ -1289,6 +1305,9 @@ def _lua_class(name, cls, members, doc, names, cpp_methods, callbacks, types):
             notes = ('Read-only. ' + notes).strip()
         elif s.detail.endswith('(copy)'):
             notes = ('A copy: set the whole value to change it. ' + notes).strip()
+        if s.deprecated:
+            old += _lua_comment(notes) + ['---@deprecated', f'---@type {lua_type}', f'{name}.{s.name} = nil', '']
+            continue
         lines.append(f'---@field {s.name} {lua_type}' + (f' {notes}' if notes else ''))
 
     for s in members:
@@ -1300,7 +1319,7 @@ def _lua_class(name, cls, members, doc, names, cpp_methods, callbacks, types):
                        if [_param_type(p) for p in _split_types(c)] == bound), params)
         lua_params = ', '.join(f'{p}{"?" if o else ""}: {t}' for p, t, o in _lua_params(header, names))
         lines.append(f'---@overload fun({lua_params}): {name}')
-    return lines + [f'{name} = {{}}', '']
+    return lines + [f'{name} = {{}}', ''] + old
 
 
 def _lua_methods(name, members, doc, names, cpp_methods, types):
@@ -1318,17 +1337,17 @@ def _lua_methods(name, members, doc, names, cpp_methods, types):
             params, returns = '', template.group(1)
         if params == '...':
             types.append('any')
-            lines += _lua_comment(member_docs.get(s.name, ''))
+            lines += _lua_comment(member_docs.get(s.name, '')) + (['---@deprecated'] if s.deprecated else [])
             lines.append('---@param ... any')
             lines.append(f'function {name}{sep}{s.name}(...) end')
         else:
             types.append(_lua_type(returns, names) or 'void')
-            lines += _lua_function(name, sep, s.name, params, returns, member_docs.get(s.name, ''), names)
+            lines += _lua_function(name, sep, s.name, params, returns, member_docs.get(s.name, ''), names, s.deprecated)
         overloads = cpp_methods.get(s.callee[0], {}).get(s.callee[1], []) if s.callee else []
         for bound in s.overloads:
             other = _bound_overload(overloads, bound)
             if other[0] != params:
-                lines += _lua_function(name, sep, s.name, other[0], other[1] or returns, '', names)
+                lines += _lua_function(name, sep, s.name, other[0], other[1] or returns, '', names, s.deprecated)
         lines.append('')
     return lines
 

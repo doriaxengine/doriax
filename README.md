@@ -84,7 +84,7 @@ More in the [gallery](https://doriax.org/#gallery) on the website.
 - ECS runtime shared by 2D and 3D
 - Sprites, tilemaps, and polygons, with 2D lights, normal maps, and shadows
 - glTF, OBJ, and FBX models with skeletal animation, morph targets, instancing, and LOD
-- PBR rendering with cascaded shadows, image-based lighting, SSAO, SSR, fog, water, mirrors, and reflection probes
+- PBR rendering with cascaded shadows, image-based lighting, GTAO, SSR, fog, water, mirrors, and reflection probes
 - Built-in shaders you can fork and edit, plus custom post-processing passes, recompiled live in the viewport
 - Animation timeline with keyframes and bone editing, plus sprite-sheet animation, tweened actions, and blending
 - Terrain you can sculpt and paint, rendered with clipmap LOD

@@ -1313,12 +1313,12 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addProperty("gtaoHalfResolution", &Scene::isGTAOHalfResolution, &Scene::setGTAOHalfResolution)
         .addProperty("gtaoDebug", &Scene::isGTAODebug, &Scene::setGTAODebug)
         // the SSAO names, removed in a later version
-        .addProperty("ssaoEnabled", &Scene::isGTAOEnabled, &Scene::setGTAOEnabled)
-        .addProperty("ssaoRadius", &Scene::getGTAORadius, &Scene::setGTAORadius)
-        .addProperty("ssaoIntensity", &Scene::getGTAOIntensity, &Scene::setGTAOIntensity)
-        .addProperty("ssaoHalfResolution", &Scene::isGTAOHalfResolution, &Scene::setGTAOHalfResolution)
-        .addProperty("ssaoDebug", &Scene::isGTAODebug, &Scene::setGTAODebug)
-        .addProperty("ssaoBias", [] (Scene* self) -> float { return 0.0f; }, [] (Scene* self, float bias) {})
+        .addProperty("ssaoEnabled", &Scene::isGTAOEnabled, &Scene::setGTAOEnabled) // deprecated
+        .addProperty("ssaoRadius", &Scene::getGTAORadius, &Scene::setGTAORadius) // deprecated
+        .addProperty("ssaoIntensity", &Scene::getGTAOIntensity, &Scene::setGTAOIntensity) // deprecated
+        .addProperty("ssaoHalfResolution", &Scene::isGTAOHalfResolution, &Scene::setGTAOHalfResolution) // deprecated
+        .addProperty("ssaoDebug", &Scene::isGTAODebug, &Scene::setGTAODebug) // deprecated
+        .addProperty("ssaoBias", [] (Scene*) -> float { return 0.0f; }, [] (Scene*, float) {}) // deprecated
         .addProperty("meshLodEnabled", &Scene::isMeshLodEnabled, &Scene::setMeshLodEnabled)
         .addProperty("meshLodThreshold", &Scene::getMeshLodThreshold, &Scene::setMeshLodThreshold)
         .addProperty("depthPrepassEnabled", &Scene::isDepthPrepassEnabled, &Scene::setDepthPrepassEnabled)
