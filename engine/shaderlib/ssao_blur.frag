@@ -22,10 +22,11 @@ uniform u_fs_ssaoBlurParams {
 #define AO_TERM_SCALE 1.5 // as ssao.frag stores it
 
 float viewDepth(ivec2 pixel){
-    // the depth texel ssao.frag read for this AO texel
+    // the depth texel ssao.frag read here, clamped as the AO taps
+    pixel = max(pixel, ivec2(0));
     vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * blurParams.screen.zw)) + 0.5) * blurParams.screen.xy;
     // the cleared background decodes a little past 1.0
-    float ndc = min(decodeDepth(texture(sampler2D(u_depthTexture, u_depth_smp), uv)) * 2.0 - 1.0, 1.0);
+    float ndc = min(decodeDepth(textureLod(sampler2D(u_depthTexture, u_depth_smp), uv, 0.0)) * 2.0 - 1.0, 1.0);
     vec4 p = blurParams.depthParams;
     return abs((p.x * ndc + p.y) / (p.z * ndc + p.w));
 }
@@ -39,7 +40,7 @@ void main(){
         for (int y = -2; y < 2; ++y){
             vec2 uv = v_texcoord + vec2(float(x), float(y)) * blurParams.texelSize.xy;
             float w = max(1.0 - abs(viewDepth(pixel + ivec2(x, y)) - center) / (0.05 * center + 0.01), 0.0);
-            result += texture(sampler2D(u_ssaoTexture, u_ssao_smp), uv).r * w;
+            result += textureLod(sampler2D(u_ssaoTexture, u_ssao_smp), uv, 0.0).r * w;
             weight += w;
         }
     }

@@ -5827,7 +5827,7 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     if (!depthTexture){
         renderDepthPrePass(camera);
         depthTexture = &ssaoDepthFramebuffer.getRender().getColorTexture();
-        normalTexture = depthTexture; // placeholder binding; not sampled (params.w = 0)
+        normalTexture = depthTexture; // placeholder binding; not sampled (flags.x = 0)
     }else{
         normalTexture = &gbufferFramebuffer.getRender().getColorAttachmentTexture(1);
     }

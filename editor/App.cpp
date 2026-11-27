@@ -3205,7 +3205,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v92: depth and G-buffer sample the sprite frame and instance texture rects.
     // v93: SSAO is GTAO.
     // v94: its thin occluders come from the scene.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v94";
+    // v95: its taps never land on the center texel.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v95";
 }
 
 void editor::App::pushTabNotificationStyle(){

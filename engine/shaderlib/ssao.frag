@@ -25,6 +25,7 @@ uniform u_fs_ssaoParams {
 #define STEPS 3
 #define FALLOFF 0.3 // share of the radius where occluders fade out
 #define MAX_SCREEN_RADIUS 0.25 // share of the depth height, keeps taps close
+#define FIRST_TAP 1.3 // texels, so no tap lands on the center texel
 #define AO_TERM_SCALE 1.5 // slices can pass 1, the blur scales back
 
 const float PI = 3.14159265;
@@ -89,11 +90,13 @@ void main(){
     if (dot(N, V) < 0.0) N = -N;
 
     float radius = ssao.params.x;
-    float screenRadius = min(radius * ssao.params.z / mix(dist, 1.0, ssao.flags.y), MAX_SCREEN_RADIUS / ssao.screen.y);
-    if (screenRadius < 1.0){
+    float pixelRadius = radius * ssao.params.z / mix(dist, 1.0, ssao.flags.y);
+    // under a texel in every direction
+    if (pixelRadius < min(1.0, abs(ssao.params.w))){
         frag_color = vec4(vec3(1.0 / AO_TERM_SCALE), 1.0);
         return;
     }
+    float maxRadius = MAX_SCREEN_RADIUS / ssao.screen.y;
     float falloffMul = -1.0 / (FALLOFF * radius);
     float falloffAdd = 1.0 / FALLOFF;
 
@@ -107,8 +110,7 @@ void main(){
         float phi = (float(slice) + noiseSlice) * (PI / float(SLICES));
         vec2 dir = vec2(cos(phi), sin(phi));
         vec2 viewDir = vec2(dir.x, dir.y * ssao.params.w);
-        float sliceRadius = screenRadius / length(viewDir);
-        float minS = 1.3 / sliceRadius; // first tap off the center texel
+        float sliceRadius = max(min(pixelRadius / length(viewDir), maxRadius), FIRST_TAP);
 
         vec3 directionVec = vec3(viewDir.x, viewDir.y * ySign, 0.0);
         vec3 orthoDirectionVec = directionVec - dot(directionVec, V) * V;
@@ -126,7 +128,7 @@ void main(){
         float horizonCos1 = lowHorizonCos1;
         for (int step = 0; step < STEPS; step++){
             float s = (float(step) + fract(noiseStep + float(slice + step * STEPS) * 0.618034)) / float(STEPS);
-            vec2 offset = round(mix(minS, 1.0, s * s) * sliceRadius * dir) * ssao.screen.xy;
+            vec2 offset = round(mix(FIRST_TAP, sliceRadius, s * s) * dir) * ssao.screen.xy;
             vec3 delta0 = viewPosition(uv + offset, viewDistance(uv + offset)) - P;
             vec3 delta1 = viewPosition(uv - offset, viewDistance(uv - offset)) - P;
             // occluders in front of the point fade sooner, as thin ones
@@ -134,8 +136,8 @@ void main(){
             float fall1 = length(vec3(delta1.xy, delta1.z + max(delta1.z, 0.0) * ssao.params.y));
             float weight0 = clamp(fall0 * falloffMul + falloffAdd, 0.0, 1.0);
             float weight1 = clamp(fall1 * falloffMul + falloffAdd, 0.0, 1.0);
-            horizonCos0 = max(horizonCos0, mix(lowHorizonCos0, dot(delta0, V) / length(delta0), weight0));
-            horizonCos1 = max(horizonCos1, mix(lowHorizonCos1, dot(delta1, V) / length(delta1), weight1));
+            horizonCos0 = max(horizonCos0, mix(lowHorizonCos0, dot(delta0, V) / max(length(delta0), 1e-6), weight0));
+            horizonCos1 = max(horizonCos1, mix(lowHorizonCos1, dot(delta1, V) / max(length(delta1), 1e-6), weight1));
         }
 
         float h0 = n + clamp(-fastAcos(horizonCos1) - n, -HALF_PI, HALF_PI);
