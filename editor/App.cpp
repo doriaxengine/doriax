@@ -117,6 +117,7 @@ editor::App::App(){
     loadingWindow = new LoadingWindow();
     animationWindow = new AnimationWindow(&project);
     terrainEditWindow = new TerrainEditWindow(&project);
+    tilemapEditWindow = new TilemapEditWindow(&project);
     aiChatWindow = new AiChatWindow(&project, resourcesWindow);
     mcpServer = new ai::McpServer(&project, resourcesWindow);
     // Subgraph nodes show the pins of the project's function graphs
@@ -267,6 +268,7 @@ enum class AppMenuCommand : uint32_t {
     ToggleOutput,
     ToggleAnimation,
     ToggleTerrain,
+    ToggleTilemap,
     ToggleAiChat,
     ToggleDetachableWindows,
     ResetLayout,
@@ -465,6 +467,8 @@ editor::PlatformMenuModel editor::App::buildMenuModel(){
                    animationWindow->isOpen()),
         menuToggle(AppMenuCommand::ToggleTerrain, TerrainEditWindow::WINDOW_NAME,
                    terrainEditWindow->isOpen()),
+        menuToggle(AppMenuCommand::ToggleTilemap, TilemapEditWindow::WINDOW_NAME,
+                   tilemapEditWindow->isOpen()),
         menuToggle(AppMenuCommand::ToggleAiChat, AiChatWindow::WINDOW_NAME,
                    aiChatWindow->isOpen()),
         menuSeparator(),
@@ -637,6 +641,9 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
         case AppMenuCommand::ToggleTerrain:
             terrainEditWindow->setOpen(!terrainEditWindow->isOpen());
             break;
+        case AppMenuCommand::ToggleTilemap:
+            tilemapEditWindow->setOpen(!tilemapEditWindow->isOpen());
+            break;
         case AppMenuCommand::ToggleAiChat:
             aiChatWindow->setOpen(!aiChatWindow->isOpen());
             break;
@@ -669,6 +676,7 @@ void editor::App::executeMenuCommand(const PlatformMenuCommand& command){
             outputWindow->setOpen(true);
             animationWindow->setOpen(true);
             terrainEditWindow->setOpen(false);
+            tilemapEditWindow->setOpen(false);
             aiChatWindow->setOpen(true);
             buildDockspace(true);
             break;
@@ -2061,6 +2069,7 @@ void editor::App::show(){
     debuggerWindow->show();
     animationWindow->show();
     terrainEditWindow->show();
+    tilemapEditWindow->show();
     propertiesWindow->show();
     aiChatWindow->show();
     codeEditor->show();
@@ -2925,6 +2934,7 @@ void editor::App::prepareForProjectSwitch() {
     sceneWindow->resetProjectState();
     propertiesWindow->resetProjectState();
     terrainEditWindow->resetProjectState();
+    tilemapEditWindow->resetProjectState();
     dockspaceNeedsRebuild = true;
 }
 
@@ -3021,6 +3031,9 @@ void editor::App::stopTransientPreviews() {
     if (terrainEditWindow) {
         terrainEditWindow->endStroke();
         terrainEditWindow->updateFoliagePreview();
+    }
+    if (tilemapEditWindow) {
+        tilemapEditWindow->cancelStroke();
     }
     if (propertiesWindow) {
         propertiesWindow->stopTransientPreviews();
@@ -3249,6 +3262,10 @@ editor::TerrainEditWindow* editor::App::getTerrainEditWindow() const{
     return terrainEditWindow;
 }
 
+editor::TilemapEditWindow* editor::App::getTilemapEditWindow() const{
+    return tilemapEditWindow;
+}
+
 editor::Structure* editor::App::getStructureWindow() const{
     return structureWindow;
 }
@@ -3445,6 +3462,7 @@ void editor::App::applyPanelVisibilitySettings() {
     outputWindow->setOpen(visibility.output);
     animationWindow->setOpen(visibility.animation);
     terrainEditWindow->setOpen(visibility.terrain);
+    tilemapEditWindow->setOpen(visibility.tilemap);
     aiChatWindow->setOpen(visibility.aiChat);
 }
 
@@ -3456,6 +3474,7 @@ void editor::App::persistPanelVisibilitySettings() {
     visibility.output = outputWindow->isOpen();
     visibility.animation = animationWindow->isOpen();
     visibility.terrain = terrainEditWindow->isOpen();
+    visibility.tilemap = tilemapEditWindow->isOpen();
     visibility.aiChat = aiChatWindow->isOpen();
 
     if (visibility != AppSettings::getPanelVisibility()) {

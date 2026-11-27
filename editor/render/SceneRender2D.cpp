@@ -1227,7 +1227,7 @@ void editor::SceneRender2D::update(std::vector<Entity> selEntities, std::vector<
     // --- Tile outlines for selected tilemap ---
     tileLines->clearLines();
     tileLines->setVisible(false);
-    if (selEntities.size() == 1){
+    if (selEntities.size() == 1 && !isTilemapEditing()){
         Entity selEntity = selEntities[0];
         Signature selSig = scene->getSignature(selEntity);
         if (selSig.test(scene->getComponentId<TilemapComponent>()) && selSig.test(scene->getComponentId<Transform>())){

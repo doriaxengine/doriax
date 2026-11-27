@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "TextureSlicerToolDialog.h"
+#include "App.h"
 #include "Backend.h"
+#include "Project.h"
 #include "Theme.h"
 #include "window/Widgets.h"
 #include "util/UIUtils.h"
@@ -11,9 +13,20 @@
 #include <algorithm>
 #include <cmath>
 #include <climits>
+#include <filesystem>
 
 namespace doriax {
 namespace editor {
+
+namespace {
+
+// Cells are in original pixels, and the FIT/RESIZE texture strategies change the pool copy's size
+bool hasSheetSpacePixels(TextureData& data) {
+    return data.getData() && data.getWidth() > 0 && data.getHeight() > 0 &&
+           data.getWidth() == data.getOriginalWidth() && data.getHeight() == data.getOriginalHeight();
+}
+
+}
 
 void TextureSlicerToolDialog::open(const Texture& previewTexture,
                                     int sheetWidth, int sheetHeight,
@@ -65,6 +78,9 @@ void TextureSlicerToolDialog::open(const Texture& previewTexture,
     m_offsetY = 0;
     m_paddingX = 0;
     m_paddingY = 0;
+    m_skipEmptyCells = false;
+    m_skippedEmptyCount = 0;
+    releaseAlphaData();
     strncpy(m_prefixBuffer, "frame_", sizeof(m_prefixBuffer) - 1);
     m_prefixBuffer[sizeof(m_prefixBuffer) - 1] = '\0';
 }
@@ -86,14 +102,114 @@ void TextureSlicerToolDialog::openTileset(const std::vector<SubmeshInfo>& submes
 
     // Override for tileset mode
     m_mode = Mode::TILESET;
+    m_skipEmptyCells = true;
     strncpy(m_prefixBuffer, "tile_", sizeof(m_prefixBuffer) - 1);
     m_prefixBuffer[sizeof(m_prefixBuffer) - 1] = '\0';
 }
 
+void TextureSlicerToolDialog::releaseAlphaData() {
+    m_alphaTextureData.releaseImageData();
+    m_alphaLoadedPath.clear();
+    m_alphaDataReady = false;
+    m_alphaUsesLive = false;
+}
+
+void TextureSlicerToolDialog::close() {
+    m_isOpen = false;
+    releaseAlphaData();
+}
+
+void TextureSlicerToolDialog::refreshAlphaData() {
+    std::string texPath = m_previewTexture.empty() ? std::string() : m_previewTexture.getPath(0);
+    // A texture still loading, or that failed to load, has no data array yet
+    const bool useLive = m_previewTexture.hasData() && hasSheetSpacePixels(m_previewTexture.getData());
+    // Live pixels are freed once the texture uploads, so a cache built on them can go stale
+    if (m_alphaDataReady && texPath == m_alphaLoadedPath && (!m_alphaUsesLive || useLive)) {
+        return;
+    }
+
+    m_alphaTextureData.releaseImageData();
+    m_alphaLoadedPath = texPath;
+    m_alphaDataReady = true;
+    m_alphaUsesLive = useLive;
+
+    if (useLive || texPath.empty()) {
+        return;
+    }
+
+    std::string cleanPath = TextureData::parseSvgScalePath(texPath);
+    std::filesystem::path resolved = cleanPath;
+    if (Project* proj = Backend::getApp().getProject()) {
+        resolved = proj->resolveAssetPath(cleanPath);
+    }
+
+    // Rasterize SVGs at the texture's scale, so the image has the sheet's size
+    m_alphaTextureData.setSVGScale(m_previewTexture.getSvgScale());
+    if (m_alphaTextureData.loadTextureFromFile(resolved.string().c_str()) && m_alphaTextureData.getData()) {
+        m_alphaTextureData.setDataOwned(true);
+    } else {
+        m_alphaTextureData.releaseImageData();
+    }
+}
+
+bool TextureSlicerToolDialog::isCellEmpty(int x, int y, int w, int h) {
+    TextureData* data = &m_alphaTextureData;
+    if (m_alphaUsesLive && m_previewTexture.hasData()) {
+        data = &m_previewTexture.getData();
+    }
+    if (!hasSheetSpacePixels(*data)) {
+        return false;
+    }
+
+    const int channels = data->getChannels();
+    // Only textures with an alpha channel (LA = 2, RGBA = 4) can have transparent cells
+    if (channels != 4 && channels != 2) {
+        return false;
+    }
+
+    const int imgW = data->getWidth();
+    const int imgH = data->getHeight();
+    const int bytesPerChannel = TextureData::getBytesPerChannel(data->getColorFormat());
+    const int stride = imgW * channels * bytesPerChannel;
+    const unsigned char* pixels = static_cast<const unsigned char*>(data->getData());
+    if (!pixels || imgW <= 0 || imgH <= 0) {
+        return false;
+    }
+
+    const int x0 = std::clamp(x, 0, imgW);
+    const int y0 = std::clamp(y, 0, imgH);
+    const int x1 = std::clamp(x + w, 0, imgW);
+    const int y1 = std::clamp(y + h, 0, imgH);
+    // Outside the image: keep the cell rather than drop one that may have pixels
+    if (x0 >= x1 || y0 >= y1) {
+        return false;
+    }
+
+    const int alphaOffset = (channels - 1) * bytesPerChannel;
+    for (int py = y0; py < y1; py++) {
+        const unsigned char* row = pixels + static_cast<size_t>(py) * stride;
+        for (int px = x0; px < x1; px++) {
+            const unsigned char* alphaPtr = row + static_cast<size_t>(px) * channels * bytesPerChannel + alphaOffset;
+            for (int b = 0; b < bytesPerChannel; b++) {
+                if (alphaPtr[b] != 0) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true;
+}
+
 void TextureSlicerToolDialog::generatePreview() {
     m_previewRects.clear();
+    m_skippedEmptyCount = 0;
 
     if (m_sheetWidth <= 0 || m_sheetHeight <= 0) return;
+
+    if (m_skipEmptyCells) {
+        refreshAlphaData();
+    }
 
     int cols, rows, cw, ch;
 
@@ -127,6 +243,11 @@ void TextureSlicerToolDialog::generatePreview() {
             if (fx + fw > m_sheetWidth) fw = m_sheetWidth - fx;
             if (fy + fh > m_sheetHeight) fh = m_sheetHeight - fy;
             if (fw <= 0 || fh <= 0) continue;
+
+            if (m_skipEmptyCells && isCellEmpty(static_cast<int>(fx), static_cast<int>(fy), static_cast<int>(fw), static_cast<int>(fh))) {
+                m_skippedEmptyCount++;
+                continue;
+            }
 
             SlicedRect slicedRect;
             slicedRect.name = prefix + std::to_string(rectIndex);
@@ -170,7 +291,7 @@ void TextureSlicerToolDialog::show() {
 
     if (!ImGui::BeginPopupModal(popupTitle, &m_isOpen, flags)) {
         if (m_isOpen) {
-            m_isOpen = false;
+            close();
             if (m_onCancel) m_onCancel();
         }
         return;
@@ -230,6 +351,7 @@ void TextureSlicerToolDialog::show() {
                             if (textureWidth > 0) m_sheetWidth = textureWidth;
                             if (textureHeight > 0) m_sheetHeight = textureHeight;
                         }
+                        m_alphaDataReady = false;
                         m_previewDirty = true;
                     }
                     if (isSelected) ImGui::SetItemDefaultFocus();
@@ -316,6 +438,13 @@ void TextureSlicerToolDialog::show() {
         if (ImGui::InputText("##Prefix", m_prefixBuffer, sizeof(m_prefixBuffer))) {
             m_previewDirty = true;
         }
+        beginInputRow("Skip empty cells");
+        if (ImGui::Checkbox("##SkipEmptyCells", &m_skipEmptyCells)) {
+            m_previewDirty = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Omit cells whose pixels are completely transparent.");
+        }
         ImGui::EndTable();
     }
 
@@ -329,7 +458,11 @@ void TextureSlicerToolDialog::show() {
     }
 
     // --- Visual preview ---
-    ImGui::Text("Preview: %d %s", (int)m_previewRects.size(), rectLabel);
+    if (m_skippedEmptyCount > 0) {
+        ImGui::Text("Preview: %d %s (%d empty skipped)", (int)m_previewRects.size(), rectLabel, m_skippedEmptyCount);
+    } else {
+        ImGui::Text("Preview: %d %s", (int)m_previewRects.size(), rectLabel);
+    }
 
     if (m_sheetWidth > 0 && m_sheetHeight > 0) {
         auto drawPreview = [this, isTileset](const ImVec2& canvasPos, const ImVec2& canvasSize, ImDrawList* drawList) {
@@ -422,16 +555,20 @@ void TextureSlicerToolDialog::show() {
         if (m_onApply) {
             m_onApply(buildResult());
         }
-        m_isOpen = false;
+        close();
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndDisabled();
 
     ImGui::SameLine();
     if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-        m_isOpen = false;
+        close();
         if (m_onCancel) m_onCancel();
         ImGui::CloseCurrentPopup();
+    }
+
+    if (!m_isOpen) {
+        releaseAlphaData();
     }
 
     ImGui::EndPopup();

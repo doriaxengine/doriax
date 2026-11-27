@@ -618,6 +618,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/window/CodeEditor.cpp
     ${EDITOR_DIR}/window/AnimationWindow.cpp
     ${EDITOR_DIR}/window/TerrainEditWindow.cpp
+    ${EDITOR_DIR}/window/TilemapEditWindow.cpp
     ${EDITOR_DIR}/window/AiChatWindow.cpp
     ${EDITOR_DIR}/window/LoadingWindow.cpp
     ${EDITOR_DIR}/window/dialog/SceneSaveDialog.cpp
@@ -690,6 +691,7 @@ set(DORIAX_EDITOR_SOURCES
     ${EDITOR_DIR}/command/type/ComponentToBundleLocalCmd.cpp
     ${EDITOR_DIR}/command/type/ComponentToBundleSharedCmd.cpp
     ${EDITOR_DIR}/command/type/TerrainMapPatchCmd.cpp
+    ${EDITOR_DIR}/command/type/TilemapEditCmd.cpp
 
     ${IMGUI_SOURCES}
     ${BACKEND_SOURCES}

@@ -20,6 +20,7 @@
 #include "window/CodeEditor.h"
 #include "window/AnimationWindow.h"
 #include "window/TerrainEditWindow.h"
+#include "window/TilemapEditWindow.h"
 #include "window/AiChatWindow.h"
 
 #include "window/LoadingWindow.h"
@@ -160,6 +161,7 @@ namespace doriax::editor{
         GraphEditorWindow* graphEditorWindow;
         AnimationWindow* animationWindow;
         TerrainEditWindow* terrainEditWindow;
+        TilemapEditWindow* tilemapEditWindow;
         AiChatWindow* aiChatWindow;
         ai::McpServer* mcpServer;
 
@@ -378,6 +380,7 @@ namespace doriax::editor{
         AnimationWindow* getAnimationWindow() const;
         Structure* getStructureWindow() const;
         TerrainEditWindow* getTerrainEditWindow() const;
+        TilemapEditWindow* getTilemapEditWindow() const;
         AiChatWindow* getAiChatWindow() const;
         ai::McpServer* getMcpServer() const;
         void openEditorSettings(EditorSettingsWindow::Tab tab, bool expandAiChat = false);

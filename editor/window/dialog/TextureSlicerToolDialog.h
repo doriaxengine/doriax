@@ -67,12 +67,22 @@ private:
 
     char m_prefixBuffer[64] = "frame_";
 
+    bool m_skipEmptyCells = false;
+    int m_skippedEmptyCount = 0;
+    TextureData m_alphaTextureData;
+    std::string m_alphaLoadedPath;
+    bool m_alphaDataReady = false;
+    bool m_alphaUsesLive = false;
+
     bool m_previewDirty = true;
     std::vector<SlicedRect> m_previewRects;
 
     std::function<void(const SliceResult&)> m_onApply;
     std::function<void()> m_onCancel;
 
+    void refreshAlphaData();
+    void releaseAlphaData();
+    bool isCellEmpty(int x, int y, int w, int h);
     void generatePreview();
     SliceResult buildResult();
 
@@ -92,7 +102,7 @@ public:
 
     void show();
     bool isOpen() const { return m_isOpen; }
-    void close() { m_isOpen = false; }
+    void close();
 };
 
 } // namespace editor

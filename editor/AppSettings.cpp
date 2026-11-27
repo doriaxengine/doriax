@@ -293,6 +293,7 @@ bool AppSettings::loadSettings() {
                 if (panelsNode["output"]) panelVisibility.output = panelsNode["output"].as<bool>();
                 if (panelsNode["animation"]) panelVisibility.animation = panelsNode["animation"].as<bool>();
                 if (panelsNode["terrain"]) panelVisibility.terrain = panelsNode["terrain"].as<bool>();
+                if (panelsNode["tilemap"]) panelVisibility.tilemap = panelsNode["tilemap"].as<bool>();
                 if (panelsNode["ai_chat"]) panelVisibility.aiChat = panelsNode["ai_chat"].as<bool>();
             }
         }
@@ -441,6 +442,7 @@ bool AppSettings::saveSettings() {
         panelsNode["output"] = panelVisibility.output;
         panelsNode["animation"] = panelVisibility.animation;
         panelsNode["terrain"] = panelVisibility.terrain;
+        panelsNode["tilemap"] = panelVisibility.tilemap;
         panelsNode["ai_chat"] = panelVisibility.aiChat;
         editorNode["panels"] = panelsNode;
         settingsData["editor"] = editorNode;

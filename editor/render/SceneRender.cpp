@@ -19,6 +19,7 @@ extern unsigned int bulb_icon_png_len;
 #include "command/type/MultiPropertyCmd.h"
 #include "util/GraphicUtils.h"
 #include "window/TerrainEditWindow.h"
+#include "window/TilemapEditWindow.h"
 
 #include <cmath>
 #include <cfloat>
@@ -905,6 +906,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
     syncObject2DGizmoMode();
 
     bool terrainEditing = isTerrainEditing();
+    bool tilemapEditing = isTilemapEditing();
 
     totalSelBB.setHalfExtents(totalSelBB.getHalfExtents() + Vector3(selectionOffset));
 
@@ -1046,7 +1048,7 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
     childSelLines->setVisible(!childSelBB.empty() && !displaySettings.hideSelectionOutline);
 
     // no editing while playing, hiding also clears the hovered side
-    if (terrainEditing || isPlaying){
+    if (terrainEditing || tilemapEditing || isPlaying){
         toolslayer.setGizmoVisible(false);
     }else if (toolslayer.getGizmoSelected() == GizmoSelected::OBJECT2D && !sameRotation){
         toolslayer.setGizmoVisible(false);
@@ -1066,6 +1068,11 @@ void editor::SceneRender::update(std::vector<Entity> selEntities, std::vector<En
 void editor::SceneRender::mouseHoverEvent(float x, float y){
     mouseRay = camera->screenToRay(x, y);
     updateTerrainBrushCursor();
+    if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+        if (tilemapEditWindow->isEditingScene(scene)){
+            tilemapEditWindow->updateHover(scene, mouseRay);
+        }
+    }
 }
 
 void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> selEntities){
@@ -1075,6 +1082,14 @@ void editor::SceneRender::mouseClickEvent(float x, float y, std::vector<Entity> 
         if (terrainEditWindow->isEditingScene(scene)){
             terrainEditWindow->beginStroke(scene, mouseRay);
             updateTerrainBrushCursor();
+            return;
+        }
+    }
+
+    if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+        if (tilemapEditWindow->isEditingScene(scene)){
+            mouseRay = camera->screenToRay(x, y);
+            tilemapEditWindow->beginStroke(scene, mouseRay, false);
             return;
         }
     }
@@ -1260,6 +1275,11 @@ void editor::SceneRender::mouseReleaseEvent(float x, float y){
     if (TerrainEditWindow* terrainEditWindow = Backend::getApp().getTerrainEditWindow()){
         terrainEditWindow->endStroke();
     }
+    if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+        if (!tilemapEditWindow->isRightStrokeActive()){
+            tilemapEditWindow->endStroke();
+        }
+    }
 
     mouseClicked = false;
 
@@ -1318,6 +1338,13 @@ void editor::SceneRender::mouseDragEvent(float x, float y, float origX, float or
         if (terrainEditWindow->isEditingScene(scene)){
             terrainEditWindow->paintStroke(scene, mouseRay);
             updateTerrainBrushCursor();
+            return;
+        }
+    }
+
+    if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+        if (tilemapEditWindow->isEditingScene(scene)){
+            tilemapEditWindow->paintStroke(scene, mouseRay);
             return;
         }
     }
@@ -2023,8 +2050,15 @@ bool editor::SceneRender::isTerrainEditing() const{
     return false;
 }
 
+bool editor::SceneRender::isTilemapEditing() const{
+    if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+        return tilemapEditWindow->isEditingScene(scene);
+    }
+    return false;
+}
+
 bool editor::SceneRender::hasHoverFeedback() const{
-    return toolslayer.isGizmoVisible() || isTerrainEditing();
+    return toolslayer.isGizmoVisible() || isTerrainEditing() || isTilemapEditing();
 }
 
 float editor::SceneRender::snapRotationAngle(float angle, bool invertRotationSnap) const{

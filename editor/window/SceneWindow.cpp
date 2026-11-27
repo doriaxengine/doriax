@@ -1184,12 +1184,19 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
     bool altGizmoDuplicate = altGizmoDrag &&
         (gizmoSelected != GizmoSelected::OBJECT2D || gizmo2DSide == Gizmo2DSideSelected::CENTER);
 
+    const bool terrainEditing = sceneProject->sceneRender->isTerrainEditing();
+    const bool tilemapEditing = sceneProject->sceneRender->isTilemapEditing();
+    const bool spacePan = sceneProject->sceneType != SceneType::SCENE_3D && ImGui::IsKeyDown(ImGuiKey_Space);
+    // Right-click erases tiles in 2D and UI scenes, unless the view is being panned
+    const bool tilemapRightErase = tilemapEditing && sceneProject->sceneType != SceneType::SCENE_3D && !handPanEnabled && !spacePan;
+
     bool disableSelection = 
         altHeld ||
         handPanEnabled || 
-        sceneProject->sceneRender->isTerrainEditing() ||
+        terrainEditing ||
+        tilemapEditing ||
         gizmoSideActive ||
-        sceneProject->sceneType != SceneType::SCENE_3D && ImGui::IsKeyDown(ImGuiKey_Space);
+        spacePan;
 
     if (isMouseInWindow){
 
@@ -1199,7 +1206,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
         float y = logicalY;
         toEditorCanvas(sceneProject, x, y);
 
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (!altHeld || altGizmoDrag) && !suppressLeftMouse && !handPanEnabled){
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (!altHeld || altGizmoDrag) && !suppressLeftMouse && !handPanEnabled && !(tilemapEditing && spacePan)){
             subSelectionClickConsumesRelease[sceneId] = false;
 
             // Selecting and dragging an unselected object at same time (just for 2D object mode)
@@ -1224,9 +1231,11 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                 }
             }
 
+            const bool allowSubSelection = !terrainEditing && !tilemapEditing;
+
             // Occluder polygon point sub-selection within a selected occluder entity
             // (mirrors the tile sub-selection flow below)
-            if (gizmoSelected == GizmoSelected::OBJECT2D) {
+            if (allowSubSelection && gizmoSelected == GizmoSelected::OBJECT2D) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1255,7 +1264,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
             // Line endpoint sub-selection within a selected lines entity (2D gizmo
             // or 3D translate; the side guard mirrors the instance block below)
-            if (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE) {
+            if (allowSubSelection && (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE)) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1290,7 +1299,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
             // Polygon / MeshPolygon vertex sub-selection within a selected polygon entity
             // (2D gizmo or 3D translate; same side guards as the line block above)
-            if (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE) {
+            if (allowSubSelection && (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE)) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1327,7 +1336,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
             // TranslateTracks keyframe point sub-selection within a selected tracks entity
             // (2D gizmo or 3D translate; same side guards as the line block above)
-            if (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE) {
+            if (allowSubSelection && (gizmoSelected == GizmoSelected::OBJECT2D || gizmoSelected == GizmoSelected::TRANSLATE)) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1354,7 +1363,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
             }
 
             // Body2D vertex sub-selection, before tiles so a vertex over a tile wins
-            if (gizmoSelected == GizmoSelected::OBJECT2D) {
+            if (allowSubSelection && gizmoSelected == GizmoSelected::OBJECT2D) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1390,7 +1399,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
 
             // Tile sub-selection within a selected tilemap (outside disableSelection guard
             // so clicking a tile works even when the tilemap gizmo body is hovered)
-            if (gizmoSelected == GizmoSelected::OBJECT2D) {
+            if (allowSubSelection && gizmoSelected == GizmoSelected::OBJECT2D) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift && sceneProject->sceneRender->getSelectedBody2DPointEntity() != selEntities[0]) {
                     Entity selEntity = selEntities[0];
@@ -1419,7 +1428,7 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
             }
 
             // Instance sub-selection within a selected InstancedMeshComponent entity
-            {
+            if (allowSubSelection) {
                 std::vector<Entity> selEntities = project->getSelectedEntities(sceneId);
                 if (selEntities.size() == 1 && !io.KeyShift) {
                     Entity selEntity = selEntities[0];
@@ -1501,19 +1510,32 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
             sceneProject->sceneRender->mouseClickEvent(x, y, project->getSelectedEntities(sceneId));
         }
 
+        if (tilemapRightErase){
+            if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)){
+                    Ray ray = sceneProject->sceneRender->getCamera()->screenToRay(x, y);
+                    tilemapEditWindow->beginStroke(sceneProject->scene, ray, true);
+                    ImGui::SetWindowFocus();
+                } else if (ImGui::IsMouseDown(ImGuiMouseButton_Right) && tilemapEditWindow->isRightStrokeActive()){
+                    Ray ray = sceneProject->sceneRender->getCamera()->screenToRay(x, y);
+                    tilemapEditWindow->paintStroke(sceneProject->scene, ray);
+                }
+            }
+        }
+
         if (!(ImGui::IsMouseDown(ImGuiMouseButton_Middle) || ImGui::IsMouseDown(ImGuiMouseButton_Right))){
             sceneProject->sceneRender->mouseHoverEvent(x, y);
         }
 
-        if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && (!altHeld || altGizmoDrag) && !suppressLeftMouse && !handPanEnabled){
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && (!altHeld || altGizmoDrag) && !suppressLeftMouse && !handPanEnabled && !(tilemapEditing && spacePan)){
             if (!mouseLeftDown){
                 mouseLeftStartPos = Vector2(logicalX, logicalY);
                 mouseLeftDown = true;
             }
             mouseLeftDragPos = Vector2(logicalX, logicalY);
-            // Terrain brush strokes skip the drag threshold: holding the button
-            // keeps applying flow and tiny precise drags still paint.
-            if (mouseLeftStartPos.distance(mouseLeftDragPos) > 5 || sceneProject->sceneRender->isTerrainEditing()){
+            // Brush strokes skip the drag threshold: holding the button keeps
+            // painting and tiny precise drags still register.
+            if (mouseLeftStartPos.distance(mouseLeftDragPos) > 5 || terrainEditing || tilemapEditing){
                 mouseLeftDraggedInside = true;
             }
             if (mouseLeftDraggedInside){
@@ -1617,7 +1639,15 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
         }
     }
 
-    if (isMouseInWindow && (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || ImGui::IsMouseClicked(ImGuiMouseButton_Right) ||
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)){
+        if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+            if (tilemapEditWindow->isRightStrokeActive()){
+                tilemapEditWindow->endStroke();
+            }
+        }
+    }
+
+    if (isMouseInWindow && (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || (!tilemapRightErase && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) ||
             (altHeld && !gizmoSideActive && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !suppressLeftMouse))) {
         draggingMouse[sceneId] = true;
 
@@ -1851,7 +1881,12 @@ void editor::SceneWindow::sceneEventHandler(SceneProject* sceneProject) {
                     }
                 }
 
-                if (sceneProject->sceneType != SceneType::SCENE_UI){
+                bool tilemapHandledShortcut = false;
+                if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+                    tilemapHandledShortcut = tilemapEditWindow->handleShortcutKeys(sceneProject->scene);
+                }
+
+                if (!tilemapHandledShortcut && sceneProject->sceneType != SceneType::SCENE_UI){
                     if (ImGui::IsKeyPressed(ImGuiKey_W)) {
                         sceneProject->sceneRender->getToolsLayer()->enableTranslateGizmo();
                     }
@@ -2079,6 +2114,9 @@ void editor::SceneWindow::showCanvas(SceneProject& sceneProject, bool& gameCurso
         ImTextureID previewTex = Backend::getImGuiTexture(&sceneProject.sceneRender->getTexture());
         ImVec2 canvasAvail = ImGui::GetContentRegionAvail();
 
+        ImVec2 canvasImageMin = ImGui::GetCursorScreenPos();
+        ImVec2 canvasImageSize = canvasAvail;
+
         if (isCameraPreview) {
             // Fixed-aspect cameras (autoResize == false) render distorted into the
             // full viewport; display them at their true aspect (letterbox/pillarbox)
@@ -2168,6 +2206,14 @@ void editor::SceneWindow::showCanvas(SceneProject& sceneProject, bool& gameCurso
         }
 
         sceneEventHandler(&sceneProject);
+
+        if (sceneProject.playState == ScenePlayState::STOPPED && !isCameraPreview) {
+            if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()) {
+                if (tilemapEditWindow->isEditingScene(sceneProject.scene)) {
+                    tilemapEditWindow->drawViewportOverlay(&sceneProject, canvasImageMin, canvasImageSize, ImGui::IsWindowHovered());
+                }
+            }
+        }
     }
     ImGui::EndChild();
 }

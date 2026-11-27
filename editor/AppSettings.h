@@ -18,6 +18,7 @@ struct PanelVisibilitySettings {
     bool output = true;
     bool animation = true;
     bool terrain = false;
+    bool tilemap = false;
     bool aiChat = true;
 
     bool operator==(const PanelVisibilitySettings& other) const {
@@ -27,6 +28,7 @@ struct PanelVisibilitySettings {
             && output == other.output
             && animation == other.animation
             && terrain == other.terrain
+            && tilemap == other.tilemap
             && aiChat == other.aiChat;
     }
 

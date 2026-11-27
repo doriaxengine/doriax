@@ -121,7 +121,7 @@ namespace doriax::editor{
         bool spriteFramesExpanded = false;
 
         std::map<std::string, bool> tilemapRectsButtonGroups;
-        bool tilemapRectsExpanded = true;
+        bool tilemapRectsExpanded = false;
 
         std::map<std::string, bool> tilemapTilesButtonGroups;
         bool tilemapTilesExpanded = false;

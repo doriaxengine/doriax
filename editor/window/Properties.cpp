@@ -979,6 +979,8 @@ void editor::Properties::clearSceneState(uint32_t sceneId) {
 void editor::Properties::resetProjectState(){
     scrollPositions.clear();
     scrollKey = UINT64_MAX;
+    // Its apply callback holds the old project's scene pointer
+    textureSlicerToolDialog.close();
 }
 
 void editor::Properties::beginScrollRegion(uint32_t sceneId, Entity entity){
@@ -7721,6 +7723,14 @@ void editor::Properties::drawAudioComponent(ComponentType cpType, SceneProject* 
 }
 
 void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject* sceneProject, std::vector<Entity> entities){
+    if (entities.size() == 1){
+        if (ImGui::Button(ICON_FA_PAINTBRUSH " Open Tilemap Editor", ImVec2(-1, 0))){
+            if (TilemapEditWindow* tilemapEditWindow = Backend::getApp().getTilemapEditWindow()){
+                tilemapEditWindow->openForEntity(entities[0], sceneProject->id);
+            }
+        }
+    }
+
     RowSettings settingsInt;
     settingsInt.stepSize = 1.0f;
     settingsInt.secondColSize = 6 * ImGui::GetFontSize();
@@ -7763,80 +7773,10 @@ void editor::Properties::drawTilemapComponent(ComponentType cpType, SceneProject
                 submeshInfos,
                 static_cast<int>(tilemap.width),
                 static_cast<int>(tilemap.height),
-                [this, sceneProject, entities, cpType](const TextureSlicerToolDialog::SliceResult& result) {
-                    editor::MultiPropertyCmd* multiCmd = new editor::MultiPropertyCmd();
-
-                    TilemapComponent& tilemap = sceneProject->scene->getComponent<TilemapComponent>(entities[0]);
-
-                    // Collect existing rects from other submeshes (keep them)
-                    struct KeptRect {
-                        std::string name;
-                        int submeshId;
-                        Vector4 rect;
-                        bool collision;
-                    };
-                    std::vector<KeptRect> kept;
-                    for (unsigned int i = 0; i < tilemap.numTilesRect; i++) {
-                        if (tilemap.tilesRect[i].submeshId != result.submeshId) {
-                            KeptRect kr;
-                            kr.name = tilemap.tilesRect[i].name;
-                            kr.submeshId = tilemap.tilesRect[i].submeshId;
-                            kr.rect = Vector4(tilemap.tilesRect[i].rect.getX(), tilemap.tilesRect[i].rect.getY(),
-                                              tilemap.tilesRect[i].rect.getWidth(), tilemap.tilesRect[i].rect.getHeight());
-                            kr.collision = tilemap.tilesRect[i].collision;
-                            kept.push_back(kr);
-                        }
+                [this, sceneProject, entities](const TextureSlicerToolDialog::SliceResult& result) {
+                    if (Command* cmd = TilemapEditWindow::buildApplySliceCmd(project, sceneProject->id, entities[0], result)) {
+                        CommandHandle::get(project->getSelectedSceneId())->addCommand(cmd);
                     }
-
-                    unsigned int newTotal = (unsigned int)(kept.size() + result.rects.size());
-                    unsigned int writeIndex = 0;
-
-                    // Write kept rects (from other submeshes)
-                    for (size_t i = 0; i < kept.size(); i++, writeIndex++) {
-                        std::string prefix = "tilesRect[" + std::to_string(writeIndex) + "]";
-                        multiCmd->addPropertyCmd<std::string>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".name", kept[i].name);
-                        multiCmd->addPropertyCmd<int>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".submeshId", kept[i].submeshId);
-                        multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".rect", kept[i].rect);
-                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".collision", kept[i].collision);
-                    }
-
-                    // Write new rects from slicer result
-                    for (size_t i = 0; i < result.rects.size(); i++, writeIndex++) {
-                        std::string prefix = "tilesRect[" + std::to_string(writeIndex) + "]";
-                        multiCmd->addPropertyCmd<std::string>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".name", result.rects[i].name);
-                        multiCmd->addPropertyCmd<int>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".submeshId", result.submeshId);
-                        multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".rect", Vector4(result.rects[i].rect.getX(), result.rects[i].rect.getY(),
-                                result.rects[i].rect.getWidth(), result.rects[i].rect.getHeight()));
-                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".collision", true);
-                    }
-
-                    // Clear leftover slots beyond new total
-                    for (unsigned int i = newTotal; i < tilemap.numTilesRect; i++) {
-                        std::string prefix = "tilesRect[" + std::to_string(i) + "]";
-                        multiCmd->addPropertyCmd<std::string>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".name", std::string(""));
-                        multiCmd->addPropertyCmd<int>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".submeshId", -1);
-                        multiCmd->addPropertyCmd<Vector4>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".rect", Vector4(0, 0, 0, 0));
-                        multiCmd->addPropertyCmd<bool>(project, sceneProject->id, entities[0], cpType,
-                            prefix + ".collision", true);
-                    }
-
-                    // Update numTilesRect
-                    multiCmd->addPropertyCmd<unsigned int>(project, sceneProject->id, entities[0], cpType,
-                        "numTilesRect", newTotal);
-
-                    multiCmd->setNoMerge();
-                    CommandHandle::get(project->getSelectedSceneId())->addCommand(multiCmd);
                 }
             );
         }
