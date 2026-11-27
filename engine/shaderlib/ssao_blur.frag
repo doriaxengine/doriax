@@ -12,15 +12,18 @@ uniform texture2D u_depthTexture;
 uniform sampler u_depth_smp;
 
 uniform u_fs_ssaoBlurParams {
-    vec4 texelSize; // xy = 1.0 / textureSize
+    vec4 texelSize;   // xy = 1.0 / textureSize, z = intensity
     vec4 depthParams; // view z = (x * ndc + y) / (z * ndc + w)
+    vec4 screen;      // xy = 1 / depth size, zw = depth texels per AO texel
 } blurParams;
 
 #include "includes/depth_util.glsl"
 
 #define AO_TERM_SCALE 1.5 // as ssao.frag stores it
 
-float viewDepth(vec2 uv){
+float viewDepth(ivec2 pixel){
+    // the depth texel ssao.frag read for this AO texel
+    vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * blurParams.screen.zw)) + 0.5) * blurParams.screen.xy;
     // the cleared background decodes a little past 1.0
     float ndc = min(decodeDepth(texture(sampler2D(u_depthTexture, u_depth_smp), uv)) * 2.0 - 1.0, 1.0);
     vec4 p = blurParams.depthParams;
@@ -28,16 +31,18 @@ float viewDepth(vec2 uv){
 }
 
 void main(){
-    float center = viewDepth(v_texcoord);
+    ivec2 pixel = ivec2(gl_FragCoord.xy);
+    float center = viewDepth(pixel);
     float result = 0.0;
     float weight = 0.0;
     for (int x = -2; x < 2; ++x){
         for (int y = -2; y < 2; ++y){
             vec2 uv = v_texcoord + vec2(float(x), float(y)) * blurParams.texelSize.xy;
-            float w = max(1.0 - abs(viewDepth(uv) - center) / (0.05 * center + 0.01), 0.0);
+            float w = max(1.0 - abs(viewDepth(pixel + ivec2(x, y)) - center) / (0.05 * center + 0.01), 0.0);
             result += texture(sampler2D(u_ssaoTexture, u_ssao_smp), uv).r * w;
             weight += w;
         }
     }
-    frag_color = vec4(vec3(min(result / weight * AO_TERM_SCALE, 1.0)), 1.0);
+    float visibility = clamp(result / weight * AO_TERM_SCALE, 1e-5, 1.0);
+    frag_color = vec4(vec3(pow(visibility, blurParams.texelSize.z)), 1.0);
 }

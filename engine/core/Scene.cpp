@@ -264,6 +264,14 @@ float Scene::getSSAOIntensity() const{
     return settings.ssaoIntensity;
 }
 
+void Scene::setSSAOThinOccluders(float thinOccluders){
+    settings.ssaoThinOccluders = thinOccluders;
+}
+
+float Scene::getSSAOThinOccluders() const{
+    return settings.ssaoThinOccluders;
+}
+
 void Scene::setSSAOHalfResolution(bool halfResolution){
     settings.ssaoHalfResolution = halfResolution;
 }

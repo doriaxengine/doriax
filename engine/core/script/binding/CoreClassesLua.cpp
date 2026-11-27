@@ -1309,6 +1309,7 @@ void LuaBinding::registerCoreClasses(lua_State *L){
         .addProperty("ssaoEnabled", &Scene::isSSAOEnabled, &Scene::setSSAOEnabled)
         .addProperty("ssaoRadius", &Scene::getSSAORadius, &Scene::setSSAORadius)
         .addProperty("ssaoIntensity", &Scene::getSSAOIntensity, &Scene::setSSAOIntensity)
+        .addProperty("ssaoThinOccluders", &Scene::getSSAOThinOccluders, &Scene::setSSAOThinOccluders)
         .addProperty("ssaoHalfResolution", &Scene::isSSAOHalfResolution, &Scene::setSSAOHalfResolution)
         .addProperty("meshLodEnabled", &Scene::isMeshLodEnabled, &Scene::setMeshLodEnabled)
         .addProperty("meshLodThreshold", &Scene::getMeshLodThreshold, &Scene::setMeshLodThreshold)

@@ -134,15 +134,17 @@ namespace doriax{
 	} fs_gbuffer_material_t;
 
 	typedef struct fs_ssao_t {
-		Vector4 params;      // radius, intensity, depth texels per AO texel, G-buffer normal
-		Vector4 screen;      // xy = 1 / depth size, z = texels per unit at 1, w = ortho
+		Vector4 params;      // radius, thin occluders, texels per unit at 1, texel y/x in view
+		Vector4 screen;      // xy = 1 / depth size, zw = depth texels per AO texel
 		Vector4 ndcToView;   // view xy = (ndc * xy + zw) * distance
 		Vector4 depthParams; // view z from ndc depth
+		Vector4 flags;       // x = G-buffer normal, y = orthographic
 	} fs_ssao_t;
 
 	typedef struct fs_ssao_blur_t {
-		Vector4 texelSize; // 1.0/textureSize in .xy
+		Vector4 texelSize; // 1.0/textureSize in .xy, intensity in .z
 		Vector4 depthParams; // view z from ndc depth
+		Vector4 screen;      // as fs_ssao_t
 	} fs_ssao_blur_t;
 
 	typedef struct fs_ssr_t {

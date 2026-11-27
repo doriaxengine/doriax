@@ -605,7 +605,9 @@ void editor::Properties::drawScenePropertyRow(SceneProject* sceneProject, const 
         case ScenePropertyInputType::SliderFloat:
             if constexpr (std::is_same_v<T, float>) {
                 // Slider that can be double-clicked to type an exact value (also allows values above the max).
-                ImGui::SetNextItemWidth(-1);
+                if (inputWidth <= 0.0f && help.empty()){
+                    ImGui::SetNextItemWidth(-1);
+                }
                 changed = UIUtils::sliderFloatInput(("##" + propertyName).c_str(), &value, minValue, maxValue);
             }
             break;
@@ -14451,6 +14453,8 @@ void editor::Properties::show(){
                     if (doriax::editor::Catalog::getSceneProperty<bool>(sceneProject->scene, "ssao_enabled")) {
                         drawScenePropertyRow<float>(sceneProject, "ssao_radius", "Radius", ScenePropertyInputType::SliderFloat, -1.0f, 0.05f, 2.0f);
                         drawScenePropertyRow<float>(sceneProject, "ssao_intensity", "Intensity", ScenePropertyInputType::SliderFloat, -1.0f, 0.1f, 4.0f);
+                        drawScenePropertyRow<float>(sceneProject, "ssao_thin_occluders", "Thin Occluders", ScenePropertyInputType::SliderFloat, -1.0f, 0.0f, 2.0f,
+                            "How soon occluders far in front of a surface stop counting. 0 treats them as solid, which suits dense grass; around 1 keeps chair legs and railings from casting dark halos.");
                         drawScenePropertyRow<bool>(sceneProject, "ssao_half_resolution", "Half Resolution", ScenePropertyInputType::Checkbox);
                         drawScenePropertyRow<bool>(sceneProject, "ssao_debug", "Debug View", ScenePropertyInputType::Checkbox);
                     }

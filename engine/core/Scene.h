@@ -139,6 +139,9 @@ namespace doriax{
         void setSSAOIntensity(float intensity);
         float getSSAOIntensity() const;
 
+        void setSSAOThinOccluders(float thinOccluders);
+        float getSSAOThinOccluders() const;
+
         void setSSAOHalfResolution(bool halfResolution);
         bool isSSAOHalfResolution() const;
 

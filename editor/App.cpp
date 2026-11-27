@@ -3204,7 +3204,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v91: the pass constants in every shader file.
     // v92: depth and G-buffer sample the sprite frame and instance texture rects.
     // v93: SSAO is GTAO.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v93";
+    // v94: its thin occluders come from the scene.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v94";
 }
 
 void editor::App::pushTabNotificationStyle(){

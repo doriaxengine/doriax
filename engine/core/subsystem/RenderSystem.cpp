@@ -1352,7 +1352,10 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
     // is in logical orientation, so flip Y on sample when the color pass is flipped).
     float vpW = Engine::getViewRect().getWidth();
     float vpH = Engine::getViewRect().getHeight();
-    if (isFixedResolutionActive() && !camera.renderToTexture){
+    if (camera.renderToTexture && camera.framebuffer){
+        vpW = (float)camera.framebuffer->getWidth();
+        vpH = (float)camera.framebuffer->getHeight();
+    }else if (isFixedResolutionActive()){
         // the main color pass renders into the fixed-resolution target
         vpW = (float)fixedResWidth;
         vpH = (float)fixedResHeight;
@@ -5801,7 +5804,10 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
 
     unsigned int w = (unsigned int)Engine::getViewRect().getWidth();
     unsigned int h = (unsigned int)Engine::getViewRect().getHeight();
-    if (isFixedResolutionActive() && !camera.renderToTexture){
+    if (camera.renderToTexture && camera.framebuffer){
+        w = camera.framebuffer->getWidth();
+        h = camera.framebuffer->getHeight();
+    }else if (isFixedResolutionActive()){
         // the main color pass renders into the fixed-resolution target, so the
         // AO buffer must match it (meshes convert gl_FragCoord with these sizes)
         w = fixedResWidth;
@@ -5830,10 +5836,12 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     Matrix4 invProj = renderProj.inverse();
     bool ortho = (renderProj[2][3] == 0.0f);
     Vector2 ndcOffset = ortho ? Vector2(-renderProj[3][0], -renderProj[3][1]) : Vector2(renderProj[2][0], renderProj[2][1]);
-    fs_ssao.params = Vector4(scene->getSSAORadius(), scene->getSSAOIntensity(), (ssaoWidth < w) ? 2.0f : 1.0f, useGBufferNormal ? 1.0f : 0.0f);
-    fs_ssao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, renderProj[0][0] * (float)w * 0.5f, ortho ? 1.0f : 0.0f);
+    fs_ssao.params = Vector4(scene->getSSAORadius(), std::max(scene->getSSAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
+                             (renderProj[0][0] * (float)w) / (renderProj[1][1] * (float)h));
+    fs_ssao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, (float)w / (float)ssaoWidth, (float)h / (float)ssaoHeight);
     fs_ssao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
     fs_ssao.depthParams = Vector4(invProj[2][2], invProj[3][2], invProj[2][3], invProj[3][3]);
+    fs_ssao.flags = Vector4(useGBufferNormal ? 1.0f : 0.0f, ortho ? 1.0f : 0.0f, 0.0f, 0.0f);
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoFramebuffer.getRender());
@@ -5847,8 +5855,9 @@ void RenderSystem::renderSSAO(CameraComponent& camera, TextureRender* sharedDept
     ssaoPassRender.endRenderPass();
 
     // --- 3. blur pass, kept to each surface by depth ---
-    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, 0.0, 0.0);
+    fs_ssao_blur.texelSize = Vector4(1.0f / (float)ssaoWidth, 1.0f / (float)ssaoHeight, std::max(scene->getSSAOIntensity(), 0.0f), 0.0f);
     fs_ssao_blur.depthParams = fs_ssao.depthParams;
+    fs_ssao_blur.screen = fs_ssao.screen;
 
     ssaoPassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     ssaoPassRender.startRenderPass(&ssaoBlurFramebuffer.getRender());
