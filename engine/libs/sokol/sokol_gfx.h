@@ -4498,6 +4498,9 @@ typedef struct sg_stats {
     _SG_LOGITEM_XMACRO(VULKAN_WAIT_FOR_FENCE_FAILED, "vulkan: vkWaitForFence() failed!") \
     _SG_LOGITEM_XMACRO(VULKAN_UNIFORM_BUFFER_OVERFLOW, "vulkan: uniform buffer has overflown (increase sg_desc.uniform_buffer_size)") \
     _SG_LOGITEM_XMACRO(VULKAN_DESCRIPTOR_BUFFER_OVERFLOW, "vulkan: desccriptor buffer has overflown (increase sg_desc.vulkan.descriptor_buffer_size)") \
+    _SG_LOGITEM_XMACRO(VULKAN_PUSH_DESCRIPTOR_OVERFLOW, "vulkan: more descriptors pushed in one call than the device allows (see VkPhysicalDevicePushDescriptorPropertiesKHR.maxPushDescriptors)") \
+    _SG_LOGITEM_XMACRO(VULKAN_CREATE_DESCRIPTOR_POOL_FAILED, "vulkan: vkCreateDescriptorPool() failed!") \
+    _SG_LOGITEM_XMACRO(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILED, "vulkan: vkAllocateDescriptorSets() failed!") \
     _SG_LOGITEM_XMACRO(IDENTICAL_COMMIT_LISTENER, "attempting to add identical commit listener") \
     _SG_LOGITEM_XMACRO(COMMIT_LISTENER_ARRAY_FULL, "commit listener array full") \
     _SG_LOGITEM_XMACRO(TRACE_HOOKS_NOT_ENABLED, "sg_install_trace_hooks() called, but SOKOL_TRACE_HOOKS is not defined") \
@@ -5604,6 +5607,16 @@ inline int sg_append_buffer(sg_buffer buf_id, const sg_range& data) { return sg_
     #endif
 #elif defined(SOKOL_VULKAN)
     #include <vulkan/vulkan.h>
+    // VK_EXT_descriptor_buffer is only declared by reasonably recent Vulkan
+    // headers (1.3.275+). Ubuntu 22.04 ships 1.3.204, which is enough for the
+    // push-descriptor path but doesn't know the extension at all, so the
+    // descriptor-buffer code is compiled out there and the backend always
+    // takes the push-descriptor path.
+    #if defined(VK_EXT_descriptor_buffer)
+        #define _SG_VK_HAS_DESCRIPTOR_BUFFER (1)
+    #else
+        #define _SG_VK_HAS_DESCRIPTOR_BUFFER (0)
+    #endif
 #elif defined(SOKOL_GLCORE) || defined(SOKOL_GLES3)
     #define _SOKOL_ANY_GL (1)
 
@@ -7014,7 +7027,18 @@ typedef struct {
 #define _SG_VK_MAX_UB_DESCRIPTORSET_SLOTS (2 * SG_MAX_UNIFORMBLOCK_BINDSLOTS)
 #define _SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_ENTRIES (SG_MAX_VIEW_BINDSLOTS + SG_MAX_SAMPLER_BINDSLOTS)
 #define _SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_SLOTS (128)
-#define _SG_VK_MAX_DESCRIPTOR_DATA_SIZE (256) // FIXME: llvmpipe needs 280 bytes, do we need to care about that?
+// Descriptor buffer mode (VK_EXT_descriptor_buffer) needs Vulkan 1.3 class
+// hardware. Older devices - Haswell for instance - top out at Vulkan 1.2 and
+// never get that extension, so the backend also implements the same two
+// descriptor sets through VK_KHR_push_descriptor, picked at device setup time.
+// See _sg.vk.use_push_descriptors.
+// Upper bound for the per-descriptor byte size the driver reports through
+// VkPhysicalDeviceDescriptorBufferPropertiesEXT. Must be at least as large as
+// what the driver needs: lavapipe (and other drivers) report 280 bytes for
+// every descriptor type, while real hardware usually stays at or below 256.
+// Underestimating this made the view/sampler/uniform descriptor data buffers
+// overflow silently, which then crashed the driver on the first bind.
+#define _SG_VK_MAX_DESCRIPTOR_DATA_SIZE (512)
 
 typedef enum {
     _SG_VK_MEMTYPE_STORAGE_BUFFER,
@@ -7085,8 +7109,11 @@ typedef struct _sg_sampler_s {
     _sg_sampler_common_t cmn;
     struct {
         VkSampler smp;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        // descriptor buffer mode only
         size_t descriptor_size;
         uint8_t descriptor_data[_SG_VK_MAX_DESCRIPTOR_DATA_SIZE];
+#endif
     } vk;
 } _sg_vk_sampler_t;
 typedef _sg_vk_sampler_t _sg_sampler_t;
@@ -7113,9 +7140,21 @@ typedef struct _sg_shader_s {
         uint8_t view_set1_bnd_n[SG_MAX_VIEW_BINDSLOTS];
         uint8_t smp_set1_bnd_n[SG_MAX_SAMPLER_BINDSLOTS];
         // relative descriptor offsets to start of descriptor set in descriptor buffer
+        // (descriptor buffer mode only, push descriptors push the bindings by index)
         uint16_t ub_dset_offsets[SG_MAX_UNIFORMBLOCK_BINDSLOTS];
         uint16_t view_dset_offsets[SG_MAX_VIEW_BINDSLOTS];
         uint16_t smp_dset_offsets[SG_MAX_SAMPLER_BINDSLOTS];
+        // highest spirv binding in set 0 and set 1, so the push descriptor writes
+        // can be ordered by binding index as VK_KHR_push_descriptor requires
+        uint8_t ub_set0_max_bnd_n;
+        uint8_t ub_set0_num_bnd_n;
+        uint8_t view_smp_set1_max_bnd_n;
+        // legacy (push descriptor) mode only: set 0 uses a classic descriptor
+        // set with dynamic uniform buffer offsets, because a pipeline layout
+        // may contain at most one push descriptor set (set 1 already is one).
+        // One set per in-flight frame, each bound to that frame's uniform buffer.
+        VkDescriptorPool ub_dset_pool;
+        VkDescriptorSet ub_dset[SG_NUM_INFLIGHT_FRAMES];
     } vk;
 } _sg_vk_shader_t;
 typedef _sg_vk_shader_t _sg_shader_t;
@@ -7134,8 +7173,14 @@ typedef struct _sg_view_s {
     _sg_view_common_t cmn;
     struct {
         VkImageView img_view;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        // descriptor buffer mode only
         size_t descriptor_size;
         uint8_t descriptor_data[_SG_VK_MAX_DESCRIPTOR_DATA_SIZE];
+#endif
+        // push descriptor mode only
+        VkDescriptorBufferInfo buf_info;
+        VkDescriptorImageInfo img_info;
     } vk;
 } _sg_vk_view_t;
 typedef _sg_vk_view_t _sg_view_t;
@@ -7172,12 +7217,29 @@ typedef struct {
     // extension function pointers
     struct {
         PFN_vkSetDebugUtilsObjectNameEXT set_debug_utils_object_name_ext;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
         PFN_vkGetDescriptorSetLayoutSizeEXT get_descriptor_set_layout_size;
         PFN_vkGetDescriptorSetLayoutBindingOffsetEXT get_descriptor_set_layout_binding_offset;
         PFN_vkGetDescriptorEXT get_descriptor;
         PFN_vkCmdBindDescriptorBuffersEXT cmd_bind_descriptor_buffers;
         PFN_vkCmdSetDescriptorBufferOffsetsEXT cmd_set_descriptor_buffer_offsets;
+#endif
+        PFN_vkCmdPushDescriptorSetKHR cmd_push_descriptor_set;
+
+        // Vulkan 1.3 entry points, looked up by hand. A Vulkan 1.2 driver only
+        // answers to the core name when the instance is 1.3 and no layer is in
+        // between, because the loader is what promotes them. Asking for both
+        // spellings and keeping whichever one answers works either way.
+        PFN_vkCmdPipelineBarrier2 cmd_pipeline_barrier_2;
+        PFN_vkCmdBeginRendering cmd_begin_rendering;
+        PFN_vkCmdEndRendering cmd_end_rendering;
+        PFN_vkCmdCopyBufferToImage2 cmd_copy_buffer_to_image_2;
     } ext;
+
+    // true when the device has no VK_EXT_descriptor_buffer and resource
+    // bindings go through VK_KHR_push_descriptor instead
+    bool use_push_descriptors;
+    uint32_t max_push_descriptors;
 
     uint32_t frame_slot;
     struct {
@@ -7208,10 +7270,17 @@ typedef struct {
     struct {
         bool dirty;
         _sg_vk_shared_buffer_t dbuf;    // descriptor buffer
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
         VkDescriptorAddressInfoEXT addr_info[SG_MAX_UNIFORMBLOCK_BINDSLOTS];
         VkDescriptorGetInfoEXT get_info[SG_MAX_UNIFORMBLOCK_BINDSLOTS];
+#endif
+        // push descriptor mode only: the buffer binding handed to
+        // vkCmdPushDescriptorSetKHR for each uniform block
+        VkDescriptorBufferInfo buf_info[SG_MAX_UNIFORMBLOCK_BINDSLOTS];
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
         size_t dset_cache_size;
         uint8_t* dset_cache;
+#endif
     } uniforms;
     // resource binding system (using descriptor buffers)
     _sg_vk_shared_buffer_t bind;
@@ -7222,7 +7291,10 @@ typedef struct {
     } track;
     // device properties and features (initialized at startup)
     VkPhysicalDeviceProperties2 dev_props;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     VkPhysicalDeviceDescriptorBufferPropertiesEXT descriptor_buffer_props;
+#endif
+    VkPhysicalDevicePushDescriptorPropertiesKHR push_descriptor_props;
     VkPhysicalDeviceFeatures2 dev_features;
 } _sg_vk_backend_t;
 
@@ -18975,11 +19047,18 @@ _SOKOL_PRIVATE VkImageLayout _sg_vk_image_layout(_sg_vk_access_t access) {
             return VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         case _SG_VK_ACCESS_STORAGEIMAGE:
             return VK_IMAGE_LAYOUT_GENERAL;
+        // NOTE: the attachment layouts must match the ones declared in the
+        // VkRenderingAttachmentInfo structs. Some drivers (Haswell) silently
+        // ignore the load-op clear when the barrier transitions to the generic
+        // ATTACHMENT_OPTIMAL layout while the attachment info declares
+        // COLOR_ATTACHMENT_OPTIMAL (or DEPTH_ATTACHMENT_OPTIMAL).
         case _SG_VK_ACCESS_COLOR_ATTACHMENT:
         case _SG_VK_ACCESS_RESOLVE_ATTACHMENT:
+            return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         case _SG_VK_ACCESS_DEPTH_ATTACHMENT:
+            return VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
         case _SG_VK_ACCESS_DEPTH_ATTACHMENT|_SG_VK_ACCESS_STENCIL_ATTACHMENT:
-            return VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+            return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
         case _SG_VK_ACCESS_PRESENT:
             return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
         default:
@@ -18997,7 +19076,7 @@ _SOKOL_PRIVATE void _sg_vk_swapchain_beginpass_barrier(VkCommandBuffer cmd_buf, 
     barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.dstStageMask = _sg_vk_dst_stage_mask(pass_access);
     barrier.dstAccessMask = _sg_vk_dst_access_mask(pass_access);
-    barrier.newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    barrier.newLayout = _sg_vk_image_layout(pass_access);
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.image = vkimg;
@@ -19015,7 +19094,7 @@ _SOKOL_PRIVATE void _sg_vk_swapchain_beginpass_barrier(VkCommandBuffer cmd_buf, 
     dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep_info.imageMemoryBarrierCount = 1;
     dep_info.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd_buf, &dep_info);
+    _sg.vk.ext.cmd_pipeline_barrier_2(cmd_buf, &dep_info);
     _sg_stats_inc(vk.num_cmd_pipeline_barrier);
 }
 
@@ -19025,13 +19104,13 @@ _SOKOL_PRIVATE void _sg_vk_swapchain_endpass_barrier(VkCommandBuffer cmd_buf, Vk
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
     barrier.srcStageMask = _sg_vk_src_stage_mask(pass_access);
     barrier.srcAccessMask = _sg_vk_src_access_mask(pass_access);
-    barrier.oldLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+    barrier.oldLayout = _sg_vk_image_layout(pass_access);
     barrier.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
     barrier.dstAccessMask = VK_ACCESS_2_NONE;
     if (present) {
         barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     } else {
-        barrier.newLayout = VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL;
+        barrier.newLayout = _sg_vk_image_layout(pass_access);
     }
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -19050,7 +19129,7 @@ _SOKOL_PRIVATE void _sg_vk_swapchain_endpass_barrier(VkCommandBuffer cmd_buf, Vk
     dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep_info.imageMemoryBarrierCount = 1;
     dep_info.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd_buf, &dep_info);
+    _sg.vk.ext.cmd_pipeline_barrier_2(cmd_buf, &dep_info);
     _sg_stats_inc(vk.num_cmd_pipeline_barrier);
 }
 
@@ -19084,7 +19163,7 @@ _SOKOL_PRIVATE void _sg_vk_image_barrier(VkCommandBuffer cmd_buf, _sg_image_t* i
     dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep_info.imageMemoryBarrierCount = 1;
     dep_info.pImageMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd_buf, &dep_info);
+    _sg.vk.ext.cmd_pipeline_barrier_2(cmd_buf, &dep_info);
     _sg_stats_inc(vk.num_cmd_pipeline_barrier);
     img->vk.cur_access = new_access;
 }
@@ -19109,7 +19188,7 @@ _SOKOL_PRIVATE void _sg_vk_buffer_barrier(VkCommandBuffer cmd_buf, _sg_buffer_t*
     dep_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
     dep_info.bufferMemoryBarrierCount = 1;
     dep_info.pBufferMemoryBarriers = &barrier;
-    vkCmdPipelineBarrier2(cmd_buf, &dep_info);
+    _sg.vk.ext.cmd_pipeline_barrier_2(cmd_buf, &dep_info);
     _sg_stats_inc(vk.num_cmd_pipeline_barrier);
     buf->vk.cur_access = new_access;
 }
@@ -19313,7 +19392,9 @@ _SOKOL_PRIVATE VkDeviceMemory _sg_vk_mem_alloc_device_memory(_sg_vk_memtype_t me
             break;
         case _SG_VK_MEMTYPE_STORAGE_BUFFER:
             mem_prop_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-            mem_alloc_flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+            // buffer device address is only needed to build storage buffer
+            // descriptors, which push descriptor mode does with a VkBuffer
+            mem_alloc_flags = _sg.vk.use_push_descriptors ? 0 : VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
             break;
         case _SG_VK_MEMTYPE_IMAGE:
             mem_prop_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -19326,11 +19407,17 @@ _SOKOL_PRIVATE VkDeviceMemory _sg_vk_mem_alloc_device_memory(_sg_vk_memtype_t me
             break;
         case _SG_VK_MEMTYPE_UNIFORMS:
             mem_prop_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-            mem_alloc_flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+            // push descriptor mode hands the buffer to vkCmdPushDescriptorSetKHR
+            // directly, so it needs no device address
+            mem_alloc_flags = _sg.vk.use_push_descriptors ? 0 : VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
             break;
         case _SG_VK_MEMTYPE_DESCRIPTORS:
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
             mem_prop_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
             mem_alloc_flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+#else
+            SOKOL_UNREACHABLE; // no descriptor buffer, never reached
+#endif
             break;
         default:
             SOKOL_UNREACHABLE;
@@ -19407,7 +19494,7 @@ _SOKOL_PRIVATE void _sg_vk_create_delete_queues(void) {
         (2 * _sg.desc.buffer_pool_size +
         2 * _sg.desc.image_pool_size +
         1 * _sg.desc.sampler_pool_size +
-        5 * _sg.desc.shader_pool_size +
+        6 * _sg.desc.shader_pool_size +
         2 * _sg.desc.pipeline_pool_size +
         1 * _sg.desc.view_pool_size +
         256);
@@ -19485,14 +19572,20 @@ _SOKOL_PRIVATE void _sg_vk_shared_buffer_init(_sg_vk_shared_buffer_t* shbuf, uin
             break;
         case _SG_VK_MEMTYPE_UNIFORMS:
             vk_usage  = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-            vk_usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            want_device_address = true;
+            if (!_sg.vk.use_push_descriptors) {
+                vk_usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+                want_device_address = true;
+            }
             break;
         case _SG_VK_MEMTYPE_DESCRIPTORS:
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
             vk_usage  = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT;
             vk_usage |= VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
             vk_usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
             want_device_address = true;
+#else
+            SOKOL_UNREACHABLE; // no descriptor buffer, never reached
+#endif
             break;
         default:
             SOKOL_UNREACHABLE;
@@ -19851,7 +19944,7 @@ _SOKOL_PRIVATE void _sg_vk_staging_copy_image_data(_sg_image_t* img, const sg_im
                 _sg_vk_image_barrier(cmd_buf, img, _SG_VK_ACCESS_STAGING);
                 region.imageOffset.y = (int32_t)(cur_row * block_dim);
                 region.imageExtent.height = _sg_min((uint32_t)mip_height, rows_to_copy * block_dim);
-                vkCmdCopyBufferToImage2(cmd_buf, &copy_info);
+                _sg.vk.ext.cmd_copy_buffer_to_image_2(cmd_buf, &copy_info);
                 _sg_stats_inc(vk.num_cmd_copy_buffer_to_image);
                 _sg_vk_image_barrier(cmd_buf, img, _SG_VK_ACCESS_TEXTURE);
 
@@ -19947,7 +20040,7 @@ _SOKOL_PRIVATE void _sg_vk_staging_stream_image_data(_sg_image_t* img, const sg_
             region.imageExtent.depth = 1;
             region.imageSubresource.layerCount = (uint32_t)mip_slices;
         }
-        vkCmdCopyBufferToImage2(cmd_buf, &copy_info);
+        _sg.vk.ext.cmd_copy_buffer_to_image_2(cmd_buf, &copy_info);
         _sg_stats_inc(vk.num_cmd_copy_buffer_to_image);
     }
     _sg_vk_image_barrier(cmd_buf, img, _SG_VK_ACCESS_TEXTURE);
@@ -19956,7 +20049,9 @@ _SOKOL_PRIVATE void _sg_vk_staging_stream_image_data(_sg_image_t* img, const sg_
 // uniform data system
 _SOKOL_PRIVATE void _sg_vk_uniform_init(void) {
     SOKOL_ASSERT(_sg.desc.uniform_buffer_size > 0);
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     SOKOL_ASSERT(0 == _sg.vk.uniforms.dset_cache);
+#endif
 
     _sg_vk_shared_buffer_init(&_sg.vk.uniforms.dbuf,
         (uint32_t)_sg.desc.uniform_buffer_size,
@@ -19964,6 +20059,14 @@ _SOKOL_PRIVATE void _sg_vk_uniform_init(void) {
         _SG_VK_MEMTYPE_UNIFORMS,
         "shared-uniform-buffer");
 
+    if (_sg.vk.use_push_descriptors) {
+        // push descriptor mode builds the buffer bindings per draw and never
+        // materializes descriptor bytes, so there is no cache to allocate
+        _sg_clear(_sg.vk.uniforms.buf_info, sizeof(_sg.vk.uniforms.buf_info));
+        return;
+    }
+
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
         _sg.vk.uniforms.addr_info[i].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
         _sg.vk.uniforms.get_info[i].sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
@@ -19976,22 +20079,32 @@ _SOKOL_PRIVATE void _sg_vk_uniform_init(void) {
     // descriptor size (e.g. 256 bytes)
     _sg.vk.uniforms.dset_cache_size = SG_MAX_UNIFORMBLOCK_BINDSLOTS * _SG_VK_MAX_DESCRIPTOR_DATA_SIZE;
     _sg.vk.uniforms.dset_cache = (uint8_t*)_sg_malloc_clear(_sg.vk.uniforms.dset_cache_size);
+#endif
 }
 
 _SOKOL_PRIVATE void _sg_vk_uniform_discard(void) {
-    SOKOL_ASSERT(_sg.vk.uniforms.dset_cache);
-    _sg_free(_sg.vk.uniforms.dset_cache); _sg.vk.uniforms.dset_cache = 0;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+    if (_sg.vk.uniforms.dset_cache) {
+        _sg_free(_sg.vk.uniforms.dset_cache); _sg.vk.uniforms.dset_cache = 0;
+    }
+#endif
     _sg_vk_shared_buffer_discard(&_sg.vk.uniforms.dbuf);
 }
 
 // called from _sg_vk_acquire_frame_command_buffer()
 _SOKOL_PRIVATE void _sg_vk_uniform_after_acquire(void) {
     _sg_vk_shared_buffer_after_acquire(&_sg.vk.uniforms.dbuf);
+    if (_sg.vk.use_push_descriptors) {
+        _sg_clear(_sg.vk.uniforms.buf_info, sizeof(_sg.vk.uniforms.buf_info));
+        return;
+    }
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     // reset uniform tracking data
     for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
         _sg.vk.uniforms.addr_info[i].address = 0;
         _sg.vk.uniforms.addr_info[i].range = 0;
     }
+#endif
 }
 
 // called from _sg_vk_submit_frame_command_buffer()
@@ -20007,22 +20120,36 @@ _SOKOL_PRIVATE uint32_t _sg_vk_uniform_copy(const sg_range* data) {
 
 // resource binding system
 _SOKOL_PRIVATE void _sg_vk_bind_init(void) {
+    if (_sg.vk.use_push_descriptors) {
+        // push descriptors live in the command stream, so there is no
+        // descriptor buffer to allocate or bind
+        return;
+    }
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     SOKOL_ASSERT(_sg.desc.vulkan.descriptor_buffer_size > 0);
     _sg_vk_shared_buffer_init(&_sg.vk.bind,
         (uint32_t)_sg.desc.vulkan.descriptor_buffer_size,
         (uint32_t)_sg.vk.descriptor_buffer_props.descriptorBufferOffsetAlignment,
         _SG_VK_MEMTYPE_DESCRIPTORS,
         "shared-descriptor-buffer");
+#endif
 }
 
 _SOKOL_PRIVATE void _sg_vk_bind_discard(void) {
+    if (_sg.vk.use_push_descriptors) {
+        return;
+    }
     _sg_vk_shared_buffer_discard(&_sg.vk.bind);
 }
 
 // called from _sg_vk_acquire_frame_command_buffer()
 _SOKOL_PRIVATE void _sg_vk_bind_after_acquire(void) {
+    if (_sg.vk.use_push_descriptors) {
+        return;
+    }
     _sg_vk_shared_buffer_after_acquire(&_sg.vk.bind);
 
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     // bind the current frame's descriptor buffer
     SOKOL_ASSERT(_sg.vk.frame.cmd_buf);
     SOKOL_ASSERT(_sg.vk.bind.cur_buf);
@@ -20033,10 +20160,15 @@ _SOKOL_PRIVATE void _sg_vk_bind_after_acquire(void) {
     bind_info.usage = VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
                       VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
     _sg.vk.ext.cmd_bind_descriptor_buffers(_sg.vk.frame.cmd_buf, 1, &bind_info);
+#endif
 }
 
 // called from _sg_vk_submit_frame_command_buffer()
 _SOKOL_PRIVATE void _sg_vk_bind_before_submit(void) {
+    if (_sg.vk.use_push_descriptors) {
+        // no descriptor buffer to hand back to the next frame
+        return;
+    }
     _sg_vk_shared_buffer_before_submit(&_sg.vk.bind);
 }
 
@@ -20046,7 +20178,95 @@ _SOKOL_PRIVATE bool _sg_vk_bind_view_smp_descriptor_set(VkCommandBuffer cmd_buf,
     SOKOL_ASSERT(bnd && bnd->pip);
     const _sg_shader_t* shd = _sg_shader_ref_ptr(&bnd->pip->cmn.shader);
 
+    if (_sg.vk.use_push_descriptors) {
+        // Push descriptor mode: build one write per binding, ordered by binding
+        // index as VK_KHR_push_descriptor requires. Views and samplers share the
+        // same set, so both loops fill a table indexed by binding and the
+        // compacted table is pushed in one call.
+        const size_t max_bnd_n = (size_t)shd->vk.view_smp_set1_max_bnd_n;
+        if (max_bnd_n >= _SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_SLOTS) {
+            _SG_ERROR(VULKAN_PUSH_DESCRIPTOR_OVERFLOW);
+            return false;
+        }
+        _SG_STRUCT(VkWriteDescriptorSet, writes[_SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_SLOTS]);
+        _SG_STRUCT(VkDescriptorImageInfo, smp_infos[SG_MAX_SAMPLER_BINDSLOTS]);
+        bool used[_SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_SLOTS];
+        _sg_clear(used, sizeof(used));
+
+        for (size_t i = 0; i < SG_MAX_VIEW_BINDSLOTS; i++) {
+            if (shd->cmn.views[i].stage == SG_SHADERSTAGE_NONE) {
+                continue;
+            }
+            const _sg_view_t* view = bnd->views[i];
+            SOKOL_ASSERT(view);
+            const uint8_t vk_bnd = shd->vk.view_set1_bnd_n[i];
+            SOKOL_ASSERT(!used[vk_bnd]);
+            used[vk_bnd] = true;
+            VkWriteDescriptorSet* write = &writes[vk_bnd];
+            write->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write->dstBinding = vk_bnd;
+            write->descriptorCount = 1;
+            if (view->cmn.type == SG_VIEWTYPE_STORAGEBUFFER) {
+                write->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                write->pBufferInfo = &view->vk.buf_info;
+            } else if (view->cmn.type == SG_VIEWTYPE_STORAGEIMAGE) {
+                write->descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+                write->pImageInfo = &view->vk.img_info;
+            } else {
+                write->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+                write->pImageInfo = &view->vk.img_info;
+            }
+        }
+        for (size_t i = 0; i < SG_MAX_SAMPLER_BINDSLOTS; i++) {
+            if (shd->cmn.samplers[i].stage == SG_SHADERSTAGE_NONE) {
+                continue;
+            }
+            const _sg_sampler_t* smp = bnd->smps[i];
+            SOKOL_ASSERT(smp && smp->vk.smp);
+            const uint8_t vk_bnd = shd->vk.smp_set1_bnd_n[i];
+            SOKOL_ASSERT(!used[vk_bnd]);
+            used[vk_bnd] = true;
+            smp_infos[i].sampler = smp->vk.smp;
+            VkWriteDescriptorSet* write = &writes[vk_bnd];
+            write->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            write->dstBinding = vk_bnd;
+            write->descriptorCount = 1;
+            write->descriptorType = VK_DESCRIPTOR_TYPE_SAMPLER;
+            write->pImageInfo = &smp_infos[i];
+        }
+
+        // compact in ascending binding order, which is what the extension requires
+        _SG_STRUCT(VkWriteDescriptorSet, ordered[_SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_ENTRIES]);
+        uint32_t num_writes = 0;
+        for (size_t b = 0; b <= max_bnd_n; b++) {
+            if (used[b]) {
+                SOKOL_ASSERT(num_writes < _SG_VK_MAX_VIEW_SMP_DESCRIPTORSET_ENTRIES);
+                ordered[num_writes++] = writes[b];
+            }
+        }
+        if (num_writes == 0) {
+            // nothing to bind
+            return true;
+        }
+        // one push call can carry at most maxPushDescriptors descriptors
+        if (num_writes > _sg.vk.max_push_descriptors) {
+            _SG_ERROR(VULKAN_PUSH_DESCRIPTOR_OVERFLOW);
+            return false;
+        }
+        SOKOL_ASSERT(shd->vk.pip_layout);
+        _sg.vk.ext.cmd_push_descriptor_set(
+            cmd_buf,
+            vk_bind_point,
+            shd->vk.pip_layout,
+            _SG_VK_VIEW_SMP_DESCRIPTORSET_INDEX,
+            num_writes,
+            ordered);
+        _sg_stats_inc(vk.num_cmd_set_descriptor_buffer_offsets);
+        return true;
+    }
+
     // get next pointer in descriptor buffer
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     const VkDeviceSize dset_size = shd->vk.view_smp_dset_size;
     if (dset_size == 0) {
         // nothing to bind
@@ -20097,6 +20317,12 @@ _SOKOL_PRIVATE bool _sg_vk_bind_view_smp_descriptor_set(VkCommandBuffer cmd_buf,
         &dbuf_offset);
     _sg_stats_inc(vk.num_cmd_set_descriptor_buffer_offsets);
     return true;
+#else
+    // without VK_EXT_descriptor_buffer in the headers the backend always runs
+    // in push descriptor mode, so this path is never taken
+    SOKOL_UNREACHABLE;
+    return false;
+#endif
 }
 
 _SOKOL_PRIVATE bool _sg_vk_bind_uniform_descriptor_set(VkCommandBuffer cmd_buf) {
@@ -20106,7 +20332,58 @@ _SOKOL_PRIVATE bool _sg_vk_bind_uniform_descriptor_set(VkCommandBuffer cmd_buf) 
     const _sg_pipeline_t* pip = _sg_pipeline_ref_ptr(&_sg.cur_pip);
     const _sg_shader_t* shd = _sg_shader_ref_ptr(&pip->cmn.shader);
 
+    const VkPipelineBindPoint vk_bind_point = _sg.cur_pass.is_compute
+        ? VK_PIPELINE_BIND_POINT_COMPUTE
+        : VK_PIPELINE_BIND_POINT_GRAPHICS;
+
+    if (_sg.vk.use_push_descriptors) {
+        // Push descriptor mode: set 0 is a classic descriptor set holding one
+        // UNIFORM_BUFFER_DYNAMIC binding per uniform block (all pointing at the
+        // start of the current frame's shared uniform buffer), so only the
+        // per-block offsets have to be bound per draw. Dynamic offsets are
+        // consumed in the order the bindings were declared in the descriptor
+        // set layout, which is sokol bind slot order.
+        if (0 == shd->vk.ub_set0_num_bnd_n) {
+            return true;
+        }
+        SOKOL_ASSERT(_sg.vk.frame_slot < SG_NUM_INFLIGHT_FRAMES);
+        // dynamic offsets are consumed in increasing binding order, which is
+        // not necessarily the order of the uniform block bind slots
+        uint32_t offsets[_SG_VK_MAX_UB_DESCRIPTORSET_ENTRIES];
+        uint32_t num_offsets = 0;
+        for (size_t b = 0; b <= (size_t)shd->vk.ub_set0_max_bnd_n; b++) {
+            for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
+                if (shd->cmn.uniform_blocks[i].stage == SG_SHADERSTAGE_NONE) {
+                    continue;
+                }
+                if (shd->vk.ub_set0_bnd_n[i] != (uint8_t)b) {
+                    continue;
+                }
+                // a block that was never filled in this frame still needs a
+                // valid offset, and buf_info is zeroed on pipeline switches
+                offsets[num_offsets++] = (uint32_t)_sg.vk.uniforms.buf_info[i].offset;
+                break;
+            }
+        }
+        SOKOL_ASSERT(num_offsets == shd->vk.ub_set0_num_bnd_n);
+        VkDescriptorSet dset = shd->vk.ub_dset[_sg.vk.frame_slot];
+        SOKOL_ASSERT(dset);
+        SOKOL_ASSERT(shd->vk.pip_layout);
+        vkCmdBindDescriptorSets(
+            cmd_buf,
+            vk_bind_point,
+            shd->vk.pip_layout,
+            _SG_VK_UB_DESCRIPTORSET_INDEX,
+            1,
+            &dset,
+            num_offsets,
+            offsets);
+        _sg_stats_inc(vk.num_cmd_set_descriptor_buffer_offsets);
+        return true;
+    }
+
     // get next pointer in descriptor buffer
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     const VkDeviceSize dbuf_offset = _sg_vk_shared_buffer_alloc(&_sg.vk.bind, (uint32_t)shd->vk.ub_dset_size);
     if (_sg.vk.bind.overflown) {
         _SG_ERROR(VULKAN_DESCRIPTOR_BUFFER_OVERFLOW);
@@ -20120,9 +20397,6 @@ _SOKOL_PRIVATE bool _sg_vk_bind_uniform_descriptor_set(VkCommandBuffer cmd_buf) 
     memcpy(dbuf_ptr, _sg.vk.uniforms.dset_cache, shd->vk.ub_dset_size);
 
     // record the descriptor buffer offset
-    const VkPipelineBindPoint vk_bind_point = _sg.cur_pass.is_compute
-        ? VK_PIPELINE_BIND_POINT_COMPUTE
-        : VK_PIPELINE_BIND_POINT_GRAPHICS;
     const uint32_t dbuf_index = 0;
     SOKOL_ASSERT(shd->vk.pip_layout);
     _sg.vk.ext.cmd_set_descriptor_buffer_offsets(
@@ -20135,6 +20409,10 @@ _SOKOL_PRIVATE bool _sg_vk_bind_uniform_descriptor_set(VkCommandBuffer cmd_buf) 
         &dbuf_offset);
     _sg_stats_inc(vk.num_cmd_set_descriptor_buffer_offsets);
     return true;
+#else
+    SOKOL_UNREACHABLE;
+    return false;
+#endif
 }
 
 _SOKOL_PRIVATE void _sg_vk_memory_destructor(void* obj) {
@@ -20177,6 +20455,12 @@ _SOKOL_PRIVATE void _sg_vk_descriptorsetlayout_destructor(void* obj) {
     vkDestroyDescriptorSetLayout(_sg.vk.dev, (VkDescriptorSetLayout)obj, 0);
 }
 
+_SOKOL_PRIVATE void _sg_vk_descriptorpool_destructor(void* obj) {
+    SOKOL_ASSERT(_sg.vk.dev && obj);
+    // also frees all descriptor sets allocated from the pool
+    vkDestroyDescriptorPool(_sg.vk.dev, (VkDescriptorPool)obj, 0);
+}
+
 _SOKOL_PRIVATE void _sg_vk_pipeline_destructor(void* obj) {
     SOKOL_ASSERT(_sg.vk.dev && obj);
     vkDestroyPipeline(_sg.vk.dev, (VkPipeline)obj, 0);
@@ -20191,7 +20475,12 @@ _SOKOL_PRIVATE VkBufferUsageFlags _sg_vk_buffer_usage(const sg_buffer_usage* usg
         res |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
     }
     if (usg->storage_buffer) {
-        res |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        res |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        // buffer device address is only needed to record storage buffer
+        // descriptors, which push descriptor mode does with the buffer handle
+        if (!_sg.vk.use_push_descriptors) {
+            res |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
     }
     return res;
 }
@@ -20554,24 +20843,65 @@ _SOKOL_PRIVATE void _sg_vk_load_ext_funcs(void) {
             _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
         }
     #endif
+    // Devices without VK_EXT_descriptor_buffer (anything below Vulkan 1.3 class
+    // hardware, e.g. Haswell) bind through push descriptors instead. Prefer the
+    // descriptor buffer path whenever the device has it, so the existing
+    // behaviour is unchanged on hardware that supports both. When the Vulkan
+    // headers don't even declare the extension, only the push path exists.
+    _sg.vk.ext.cmd_push_descriptor_set = (PFN_vkCmdPushDescriptorSetKHR)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdPushDescriptorSetKHR");
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     _sg.vk.ext.get_descriptor_set_layout_size = (PFN_vkGetDescriptorSetLayoutSizeEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkGetDescriptorSetLayoutSizeEXT");
-    if (0 == _sg.vk.ext.get_descriptor_set_layout_size) {
-        _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
-    }
     _sg.vk.ext.get_descriptor_set_layout_binding_offset = (PFN_vkGetDescriptorSetLayoutBindingOffsetEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkGetDescriptorSetLayoutBindingOffsetEXT");
-    if (0 == _sg.vk.ext.get_descriptor_set_layout_binding_offset) {
-        _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
-    }
     _sg.vk.ext.get_descriptor = (PFN_vkGetDescriptorEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkGetDescriptorEXT");
-    if (0 == _sg.vk.ext.get_descriptor) {
-        _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
-    }
     _sg.vk.ext.cmd_bind_descriptor_buffers = (PFN_vkCmdBindDescriptorBuffersEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdBindDescriptorBuffersEXT");
-    if (0 == _sg.vk.ext.cmd_bind_descriptor_buffers) {
+    _sg.vk.ext.cmd_set_descriptor_buffer_offsets = (PFN_vkCmdSetDescriptorBufferOffsetsEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdSetDescriptorBufferOffsetsEXT");
+    _sg.vk.use_push_descriptors = (0 == _sg.vk.ext.get_descriptor) && (0 != _sg.vk.ext.cmd_push_descriptor_set);
+    if (!_sg.vk.use_push_descriptors) {
+        if (0 == _sg.vk.ext.get_descriptor_set_layout_size) {
+            _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
+        }
+        if (0 == _sg.vk.ext.get_descriptor_set_layout_binding_offset) {
+            _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
+        }
+        if (0 == _sg.vk.ext.get_descriptor) {
+            _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
+        }
+        if (0 == _sg.vk.ext.cmd_bind_descriptor_buffers) {
+            _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
+        }
+        if (0 == _sg.vk.ext.cmd_set_descriptor_buffer_offsets) {
+            _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
+        }
+    }
+#else
+    if (0 == _sg.vk.ext.cmd_push_descriptor_set) {
         _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
     }
-    _sg.vk.ext.cmd_set_descriptor_buffer_offsets = (PFN_vkCmdSetDescriptorBufferOffsetsEXT)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdSetDescriptorBufferOffsetsEXT");
-    if (0 == _sg.vk.ext.cmd_set_descriptor_buffer_offsets) {
+    _sg.vk.use_push_descriptors = true;
+#endif
+
+    // Vulkan 1.2 devices only expose the core 1.3 entry points when the loader
+    // promotes them, which it does not do with a layer in between (a validation
+    // layer answers the KHR names and leaves the core ones null). Resolve both
+    // spellings so the same code path works with and without layers.
+    _sg.vk.ext.cmd_pipeline_barrier_2 = (PFN_vkCmdPipelineBarrier2)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdPipelineBarrier2");
+    if (0 == _sg.vk.ext.cmd_pipeline_barrier_2) {
+        _sg.vk.ext.cmd_pipeline_barrier_2 = (PFN_vkCmdPipelineBarrier2)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdPipelineBarrier2KHR");
+    }
+    _sg.vk.ext.cmd_begin_rendering = (PFN_vkCmdBeginRendering)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdBeginRendering");
+    if (0 == _sg.vk.ext.cmd_begin_rendering) {
+        _sg.vk.ext.cmd_begin_rendering = (PFN_vkCmdBeginRendering)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdBeginRenderingKHR");
+    }
+    _sg.vk.ext.cmd_end_rendering = (PFN_vkCmdEndRendering)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdEndRendering");
+    if (0 == _sg.vk.ext.cmd_end_rendering) {
+        _sg.vk.ext.cmd_end_rendering = (PFN_vkCmdEndRendering)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdEndRenderingKHR");
+    }
+    _sg.vk.ext.cmd_copy_buffer_to_image_2 = (PFN_vkCmdCopyBufferToImage2)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdCopyBufferToImage2");
+    if (0 == _sg.vk.ext.cmd_copy_buffer_to_image_2) {
+        _sg.vk.ext.cmd_copy_buffer_to_image_2 = (PFN_vkCmdCopyBufferToImage2)vkGetDeviceProcAddr(_sg.vk.dev, "vkCmdCopyBufferToImage2KHR");
+    }
+    if ((0 == _sg.vk.ext.cmd_pipeline_barrier_2) || (0 == _sg.vk.ext.cmd_begin_rendering) ||
+        (0 == _sg.vk.ext.cmd_end_rendering) || (0 == _sg.vk.ext.cmd_copy_buffer_to_image_2)) {
         _SG_PANIC(VULKAN_REQUIRED_EXTENSION_FUNCTION_MISSING);
     }
 }
@@ -20590,10 +20920,27 @@ _SOKOL_PRIVATE void _sg_vk_init_caps(void) {
     _sg.features.vertexformat_int10_n2 = true;
 
     SOKOL_ASSERT(_sg.vk.phys_dev);
-    _sg.vk.descriptor_buffer_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
     _sg.vk.dev_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
-    _sg.vk.dev_props.pNext = &_sg.vk.descriptor_buffer_props;
+    if (_sg.vk.use_push_descriptors) {
+        // the descriptor buffer properties struct is only valid when the
+        // extension is present, and nothing in the push path reads it
+        _sg.vk.push_descriptor_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES_KHR;
+        _sg.vk.dev_props.pNext = &_sg.vk.push_descriptor_props;
+    } else {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        _sg.vk.descriptor_buffer_props.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT;
+        _sg.vk.dev_props.pNext = &_sg.vk.descriptor_buffer_props;
+#else
+        SOKOL_UNREACHABLE;
+#endif
+    }
     vkGetPhysicalDeviceProperties2(_sg.vk.phys_dev, &_sg.vk.dev_props);
+    if (_sg.vk.use_push_descriptors) {
+        _sg.vk.max_push_descriptors = _sg.vk.push_descriptor_props.maxPushDescriptors;
+        if (_sg.vk.max_push_descriptors == 0) {
+            _sg.vk.max_push_descriptors = 32; // minimum guaranteed by the extension
+        }
+    }
     _sg.vk.dev_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     vkGetPhysicalDeviceFeatures2(_sg.vk.phys_dev, &_sg.vk.dev_features);
 
@@ -20885,7 +21232,7 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_buffer(_sg_buffer_t* buf, const s
         _SG_ERROR(VULKAN_BIND_BUFFER_MEMORY_FAILED);
         return SG_RESOURCESTATE_FAILED;
     }
-    if (buf->cmn.usage.storage_buffer) {
+    if (buf->cmn.usage.storage_buffer && !_sg.vk.use_push_descriptors) {
         _SG_STRUCT(VkBufferDeviceAddressInfo, addr_info);
         addr_info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         addr_info.buffer = buf->vk.buf;
@@ -21009,6 +21356,13 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_sampler(_sg_sampler_t* smp, const
     SOKOL_ASSERT(smp->vk.smp);
     _sg_vk_set_object_label(VK_OBJECT_TYPE_SAMPLER, (uint64_t)smp->vk.smp, desc->label);
 
+    if (_sg.vk.use_push_descriptors) {
+        // push descriptor mode writes the sampler straight into the command
+        // stream, so there is no descriptor blob to record
+        return SG_RESOURCESTATE_VALID;
+    }
+
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     // record sampler descriptor data
     smp->vk.descriptor_size = _sg.vk.descriptor_buffer_props.samplerDescriptorSize;
     if (_SG_VK_MAX_DESCRIPTOR_DATA_SIZE < smp->vk.descriptor_size) {
@@ -21020,6 +21374,7 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_sampler(_sg_sampler_t* smp, const
     get_info.type = VK_DESCRIPTOR_TYPE_SAMPLER;
     get_info.data.pSampler = &smp->vk.smp;
     _sg.vk.ext.get_descriptor(_sg.vk.dev, &get_info, smp->vk.descriptor_size, &smp->vk.descriptor_data);
+#endif
 
     return SG_RESOURCESTATE_VALID;
 }
@@ -21116,6 +21471,7 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_shader(_sg_shader_t* shd, const s
     SOKOL_ASSERT(shd->vk.compute_func.module == 0);
     SOKOL_ASSERT(shd->vk.ub_dsl == 0);
     SOKOL_ASSERT(shd->vk.view_smp_dsl == 0);
+    SOKOL_ASSERT(shd->vk.ub_dset_pool == 0);
 
     if (!_sg_vk_ensure_spirv_bindslot_ranges(desc)) {
         return SG_RESOURCESTATE_FAILED;
@@ -21154,13 +21510,28 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_shader(_sg_shader_t* shd, const s
         shd->vk.ub_set0_bnd_n[i] = desc->uniform_blocks[i].spirv_set0_binding_n;
         VkDescriptorSetLayoutBinding* dsl_entry = &dsl_entries[dsl_index];
         dsl_entry->binding = shd->vk.ub_set0_bnd_n[i];
-        dsl_entry->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        // in push descriptor mode set 0 is a classic descriptor set with
+        // dynamic offsets (set 1 is the push descriptor set, and a pipeline
+        // layout may only contain one of those)
+        dsl_entry->descriptorType = _sg.vk.use_push_descriptors
+            ? VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+            : VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         dsl_entry->descriptorCount = 1;
         dsl_entry->stageFlags = _sg_vk_shader_stage(shd->cmn.uniform_blocks[i].stage);
         dsl_index += 1;
     }
+    shd->vk.ub_set0_num_bnd_n = (uint8_t)dsl_index;
     dsl_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    if (_sg.vk.use_push_descriptors) {
+        // a classic descriptor set layout, so no push descriptor flag here
+        dsl_create_info.flags = 0;
+    } else {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+#else
+        SOKOL_UNREACHABLE;
+#endif
+    }
     dsl_create_info.bindingCount = dsl_index;
     dsl_create_info.pBindings = dsl_entries;
     res = vkCreateDescriptorSetLayout(_sg.vk.dev, &dsl_create_info, 0, &shd->vk.ub_dsl);
@@ -21169,20 +21540,95 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_shader(_sg_shader_t* shd, const s
         return SG_RESOURCESTATE_FAILED;
     }
 
-    // store uniform descriptor set size and descriptor offsets
-    _sg.vk.ext.get_descriptor_set_layout_size(_sg.vk.dev, shd->vk.ub_dsl, &shd->vk.ub_dset_size);
-    if (shd->vk.ub_dset_size > _sg.vk.uniforms.dset_cache_size) {
-        _SG_ERROR(VULKAN_SHADER_UNIFORM_DESCRIPTOR_SET_SIZE_VS_CACHE_SIZE);
-        return SG_RESOURCESTATE_FAILED;
-    }
+    // the highest binding index in set 0, the push descriptor writes must be
+    // ordered by binding
     for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
         if (shd->cmn.uniform_blocks[i].stage == SG_SHADERSTAGE_NONE) {
             continue;
         }
-        const uint8_t vk_bnd = shd->vk.ub_set0_bnd_n[i];
-        VkDeviceSize dset_offset = 0;
-        _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.ub_dsl, vk_bnd, &dset_offset);
-        shd->vk.ub_dset_offsets[i] = (uint16_t)dset_offset;
+        if (shd->vk.ub_set0_bnd_n[i] > shd->vk.ub_set0_max_bnd_n) {
+            shd->vk.ub_set0_max_bnd_n = shd->vk.ub_set0_bnd_n[i];
+        }
+    }
+
+    if (!_sg.vk.use_push_descriptors) {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        // store uniform descriptor set size and descriptor offsets
+        _sg.vk.ext.get_descriptor_set_layout_size(_sg.vk.dev, shd->vk.ub_dsl, &shd->vk.ub_dset_size);
+        if (shd->vk.ub_dset_size > _sg.vk.uniforms.dset_cache_size) {
+            _SG_ERROR(VULKAN_SHADER_UNIFORM_DESCRIPTOR_SET_SIZE_VS_CACHE_SIZE);
+            return SG_RESOURCESTATE_FAILED;
+        }
+        for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
+            if (shd->cmn.uniform_blocks[i].stage == SG_SHADERSTAGE_NONE) {
+                continue;
+            }
+            const uint8_t vk_bnd = shd->vk.ub_set0_bnd_n[i];
+            VkDeviceSize dset_offset = 0;
+            _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.ub_dsl, vk_bnd, &dset_offset);
+            shd->vk.ub_dset_offsets[i] = (uint16_t)dset_offset;
+        }
+#else
+        SOKOL_UNREACHABLE;
+#endif
+    } else if (shd->vk.ub_set0_num_bnd_n > 0) {
+        // push descriptor mode: create the classic descriptor set for set 0
+        // (one per in-flight frame, each permanently pointing at that frame's
+        // shared uniform buffer, the per-draw slice is selected with a dynamic
+        // offset)
+        _SG_STRUCT(VkDescriptorPoolSize, pool_sizes[1]);
+        pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        pool_sizes[0].descriptorCount = (uint32_t)shd->vk.ub_set0_num_bnd_n * SG_NUM_INFLIGHT_FRAMES;
+        _SG_STRUCT(VkDescriptorPoolCreateInfo, pool_create_info);
+        pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_create_info.maxSets = SG_NUM_INFLIGHT_FRAMES;
+        pool_create_info.poolSizeCount = 1;
+        pool_create_info.pPoolSizes = pool_sizes;
+        res = vkCreateDescriptorPool(_sg.vk.dev, &pool_create_info, 0, &shd->vk.ub_dset_pool);
+        if (res != VK_SUCCESS) {
+            _SG_ERROR(VULKAN_CREATE_DESCRIPTOR_POOL_FAILED);
+            return SG_RESOURCESTATE_FAILED;
+        }
+        VkDescriptorSetLayout dsls[SG_NUM_INFLIGHT_FRAMES];
+        for (size_t i = 0; i < SG_NUM_INFLIGHT_FRAMES; i++) {
+            dsls[i] = shd->vk.ub_dsl;
+        }
+        _SG_STRUCT(VkDescriptorSetAllocateInfo, dset_alloc_info);
+        dset_alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        dset_alloc_info.descriptorPool = shd->vk.ub_dset_pool;
+        dset_alloc_info.descriptorSetCount = SG_NUM_INFLIGHT_FRAMES;
+        dset_alloc_info.pSetLayouts = dsls;
+        res = vkAllocateDescriptorSets(_sg.vk.dev, &dset_alloc_info, shd->vk.ub_dset);
+        if (res != VK_SUCCESS) {
+            _SG_ERROR(VULKAN_ALLOCATE_DESCRIPTOR_SETS_FAILED);
+            return SG_RESOURCESTATE_FAILED;
+        }
+        // the shared uniform buffers live as long as the backend, so the
+        // descriptor sets only need to be written once
+        _SG_STRUCT(VkWriteDescriptorSet, writes[SG_MAX_UNIFORMBLOCK_BINDSLOTS]);
+        _SG_STRUCT(VkDescriptorBufferInfo, buf_infos[SG_MAX_UNIFORMBLOCK_BINDSLOTS]);
+        for (size_t frame = 0; frame < SG_NUM_INFLIGHT_FRAMES; frame++) {
+            uint32_t num_writes = 0;
+            for (size_t i = 0; i < SG_MAX_UNIFORMBLOCK_BINDSLOTS; i++) {
+                if (shd->cmn.uniform_blocks[i].stage == SG_SHADERSTAGE_NONE) {
+                    continue;
+                }
+                VkDescriptorBufferInfo* buf_info = &buf_infos[num_writes];
+                buf_info->buffer = _sg.vk.uniforms.dbuf.slots[frame].buf;
+                buf_info->offset = 0;
+                buf_info->range = (VkDeviceSize)shd->cmn.uniform_blocks[i].size;
+                VkWriteDescriptorSet* write = &writes[num_writes];
+                write->sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                write->dstSet = shd->vk.ub_dset[frame];
+                write->dstBinding = shd->vk.ub_set0_bnd_n[i];
+                write->descriptorCount = 1;
+                write->descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+                write->pBufferInfo = buf_info;
+                num_writes += 1;
+            }
+            SOKOL_ASSERT(num_writes == shd->vk.ub_set0_num_bnd_n);
+            vkUpdateDescriptorSets(_sg.vk.dev, num_writes, writes, 0, 0);
+        }
     }
 
     _sg_clear(dsl_entries, sizeof(dsl_entries));
@@ -21225,7 +21671,17 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_shader(_sg_shader_t* shd, const s
         dsl_index += 1;
     }
     dsl_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+    if (_sg.vk.use_push_descriptors) {
+        // layouts that are only ever written by vkCmdPushDescriptorSetKHR must
+        // carry the push descriptor flag, the two flags are mutually exclusive
+        dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
+    } else {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        dsl_create_info.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+#else
+        SOKOL_UNREACHABLE;
+#endif
+    }
     dsl_create_info.bindingCount = dsl_index;
     dsl_create_info.pBindings = dsl_entries;
     res = vkCreateDescriptorSetLayout(_sg.vk.dev, &dsl_create_info, 0, &shd->vk.view_smp_dsl);
@@ -21234,25 +21690,50 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_shader(_sg_shader_t* shd, const s
         return SG_RESOURCESTATE_FAILED;
     }
 
-    // store view/smp descriptor set size and descriptor offsets
-    _sg.vk.ext.get_descriptor_set_layout_size(_sg.vk.dev, shd->vk.view_smp_dsl, &shd->vk.view_smp_dset_size);
+    // the highest binding index in set 1, the push descriptor writes must be
+    // ordered by binding
     for (size_t i = 0; i < SG_MAX_VIEW_BINDSLOTS; i++) {
         if (shd->cmn.views[i].stage == SG_SHADERSTAGE_NONE) {
             continue;
         }
-        const uint8_t vk_bnd = shd->vk.view_set1_bnd_n[i];
-        VkDeviceSize dset_offset = 0;
-        _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.view_smp_dsl, vk_bnd, &dset_offset);
-        shd->vk.view_dset_offsets[i] = (uint16_t)dset_offset;
+        if (shd->vk.view_set1_bnd_n[i] > shd->vk.view_smp_set1_max_bnd_n) {
+            shd->vk.view_smp_set1_max_bnd_n = shd->vk.view_set1_bnd_n[i];
+        }
     }
     for (size_t i = 0; i < SG_MAX_SAMPLER_BINDSLOTS; i++) {
         if (shd->cmn.samplers[i].stage == SG_SHADERSTAGE_NONE) {
             continue;
         }
-        const uint8_t vk_bnd = shd->vk.smp_set1_bnd_n[i];
-        VkDeviceSize dset_offset = 0;
-        _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.view_smp_dsl, vk_bnd, &dset_offset);
-        shd->vk.smp_dset_offsets[i] = (uint16_t)dset_offset;
+        if (shd->vk.smp_set1_bnd_n[i] > shd->vk.view_smp_set1_max_bnd_n) {
+            shd->vk.view_smp_set1_max_bnd_n = shd->vk.smp_set1_bnd_n[i];
+        }
+    }
+
+    if (!_sg.vk.use_push_descriptors) {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+        // store view/smp descriptor set size and descriptor offsets
+        _sg.vk.ext.get_descriptor_set_layout_size(_sg.vk.dev, shd->vk.view_smp_dsl, &shd->vk.view_smp_dset_size);
+        for (size_t i = 0; i < SG_MAX_VIEW_BINDSLOTS; i++) {
+            if (shd->cmn.views[i].stage == SG_SHADERSTAGE_NONE) {
+                continue;
+            }
+            const uint8_t vk_bnd = shd->vk.view_set1_bnd_n[i];
+            VkDeviceSize dset_offset = 0;
+            _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.view_smp_dsl, vk_bnd, &dset_offset);
+            shd->vk.view_dset_offsets[i] = (uint16_t)dset_offset;
+        }
+        for (size_t i = 0; i < SG_MAX_SAMPLER_BINDSLOTS; i++) {
+            if (shd->cmn.samplers[i].stage == SG_SHADERSTAGE_NONE) {
+                continue;
+            }
+            const uint8_t vk_bnd = shd->vk.smp_set1_bnd_n[i];
+            VkDeviceSize dset_offset = 0;
+            _sg.vk.ext.get_descriptor_set_layout_binding_offset(_sg.vk.dev, shd->vk.view_smp_dsl, vk_bnd, &dset_offset);
+            shd->vk.smp_dset_offsets[i] = (uint16_t)dset_offset;
+        }
+#else
+        SOKOL_UNREACHABLE;
+#endif
     }
 
     VkDescriptorSetLayout set_layouts[_SG_VK_NUM_DESCRIPTORSETS] = {
@@ -21281,6 +21762,14 @@ _SOKOL_PRIVATE void _sg_vk_discard_shader(_sg_shader_t* shd) {
         _sg_vk_delete_queue_add(_sg_vk_pipelinelayout_destructor, (void*)shd->vk.pip_layout);
         shd->vk.pip_layout = 0;
     }
+    if (shd->vk.ub_dset_pool) {
+        // also frees the descriptor sets allocated from it
+        _sg_vk_delete_queue_add(_sg_vk_descriptorpool_destructor, (void*)shd->vk.ub_dset_pool);
+        shd->vk.ub_dset_pool = 0;
+        for (size_t i = 0; i < SG_NUM_INFLIGHT_FRAMES; i++) {
+            shd->vk.ub_dset[i] = 0;
+        }
+    }
     if (shd->vk.ub_dsl) {
         _sg_vk_delete_queue_add(_sg_vk_descriptorsetlayout_destructor, (void*)shd->vk.ub_dsl);
         shd->vk.ub_dsl = 0;
@@ -21302,7 +21791,13 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_pipeline(_sg_pipeline_t* pip, con
         SOKOL_ASSERT(shd->vk.compute_func.module);
         _SG_STRUCT(VkComputePipelineCreateInfo, pip_create_info);
         pip_create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
-        pip_create_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+        if (!_sg.vk.use_push_descriptors) {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+            pip_create_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+#else
+            SOKOL_UNREACHABLE;
+#endif
+        }
         pip_create_info.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         pip_create_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         pip_create_info.stage.module = shd->vk.compute_func.module;
@@ -21466,7 +21961,13 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_pipeline(_sg_pipeline_t* pip, con
         _SG_STRUCT(VkGraphicsPipelineCreateInfo, pip_create_info);
         pip_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pip_create_info.pNext = &rnd_state;
-        pip_create_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+        if (!_sg.vk.use_push_descriptors) {
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+            pip_create_info.flags = VK_PIPELINE_CREATE_DESCRIPTOR_BUFFER_BIT_EXT;
+#else
+            SOKOL_UNREACHABLE;
+#endif
+        }
         pip_create_info.stageCount = num_stages;
         pip_create_info.pStages = stages;
         pip_create_info.pVertexInputState = &vi_state;
@@ -21503,16 +22004,27 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_view(_sg_view_t* view, const sg_v
     SOKOL_ASSERT(_sg.vk.dev);
     SOKOL_ASSERT(0 == view->vk.img_view);
     VkResult res;
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     _SG_STRUCT(VkDescriptorGetInfoEXT, get_info);
     get_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT;
+#endif
     if (view->cmn.type == SG_VIEWTYPE_STORAGEBUFFER) {
+        const _sg_buffer_t* buf = _sg_buffer_ref_ptr(&view->cmn.buf.ref);
+        if (_sg.vk.use_push_descriptors) {
+            // push descriptor mode hands the buffer to the command stream, so
+            // only the buffer, offset and range need to be kept around
+            view->vk.buf_info.buffer = buf->vk.buf;
+            view->vk.buf_info.offset = (VkDeviceSize)view->cmn.buf.offset;
+            view->vk.buf_info.range = (VkDeviceSize)(buf->cmn.size - view->cmn.buf.offset);
+            return SG_RESOURCESTATE_VALID;
+        }
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
         // record descriptor data for storage buffer
         view->vk.descriptor_size = _sg.vk.descriptor_buffer_props.storageBufferDescriptorSize;
         if (_SG_VK_MAX_DESCRIPTOR_DATA_SIZE < view->vk.descriptor_size) {
             _SG_ERROR(VULKAN_VIEW_MAX_DESCRIPTOR_SIZE);
             return SG_RESOURCESTATE_FAILED;
         }
-        const _sg_buffer_t* buf = _sg_buffer_ref_ptr(&view->cmn.buf.ref);
         SOKOL_ASSERT(buf->vk.dev_addr);
         _SG_STRUCT(VkDescriptorAddressInfoEXT, addr_info);
         addr_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT;
@@ -21521,6 +22033,10 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_view(_sg_view_t* view, const sg_v
         get_info.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         get_info.data.pStorageBuffer = &addr_info;
         _sg.vk.ext.get_descriptor(_sg.vk.dev, &get_info, view->vk.descriptor_size, &view->vk.descriptor_data);
+#else
+        SOKOL_UNREACHABLE;
+        (void)buf;
+#endif
     } else {
         // create image view object
         const _sg_image_t* img = _sg_image_ref_ptr(&view->cmn.img.ref);
@@ -21563,13 +22079,23 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_view(_sg_view_t* view, const sg_v
             _SG_STRUCT(VkDescriptorImageInfo, img_info);
             img_info.imageView = view->vk.img_view;
             if (view->cmn.type == SG_VIEWTYPE_STORAGEIMAGE) {
-                view->vk.descriptor_size = _sg.vk.descriptor_buffer_props.storageImageDescriptorSize;
                 img_info.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+            } else {
+                img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+            if (_sg.vk.use_push_descriptors) {
+                // push descriptor mode keeps the image info itself instead of
+                // pre-recording descriptor bytes
+                view->vk.img_info = img_info;
+                return SG_RESOURCESTATE_VALID;
+            }
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
+            if (view->cmn.type == SG_VIEWTYPE_STORAGEIMAGE) {
+                view->vk.descriptor_size = _sg.vk.descriptor_buffer_props.storageImageDescriptorSize;
                 get_info.type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
                 get_info.data.pStorageImage = &img_info;
             } else {
                 view->vk.descriptor_size = _sg.vk.descriptor_buffer_props.sampledImageDescriptorSize;
-                img_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 get_info.type = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
                 get_info.data.pSampledImage = &img_info;
             }
@@ -21578,6 +22104,9 @@ _SOKOL_PRIVATE sg_resource_state _sg_vk_create_view(_sg_view_t* view, const sg_v
                 return SG_RESOURCESTATE_FAILED;
             }
             _sg.vk.ext.get_descriptor(_sg.vk.dev, &get_info, view->vk.descriptor_size, &view->vk.descriptor_data);
+#else
+            SOKOL_UNREACHABLE;
+#endif
         }
     }
     return SG_RESOURCESTATE_VALID;
@@ -21638,20 +22167,29 @@ _SOKOL_PRIVATE void _sg_vk_init_color_attachment_info(VkRenderingAttachmentInfo*
     info->clearValue.color.float32[3] = action->clear_value.a;
 }
 
-_SOKOL_PRIVATE void _sg_vk_init_depth_attachment_info(VkRenderingAttachmentInfo* info, const sg_depth_attachment_action* action, VkImageView ds_view) {
+// NOTE: the depth/stencil image layout must be the same as the one used in the
+// image barrier which transitions the attachment, and it must also be the same
+// for the depth and stencil attachment infos when both aspects refer to the same
+// image. Some drivers (Haswell) silently ignore the load-op clear when the
+// barrier layout doesn't match the layout declared here.
+_SOKOL_PRIVATE VkImageLayout _sg_vk_ds_attachment_layout(bool has_stencil) {
+    return has_stencil ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+}
+
+_SOKOL_PRIVATE void _sg_vk_init_depth_attachment_info(VkRenderingAttachmentInfo* info, const sg_depth_attachment_action* action, VkImageView ds_view, VkImageLayout layout) {
     info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     info->imageView = ds_view;
-    info->imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    info->imageLayout = layout;
     info->resolveMode = VK_RESOLVE_MODE_NONE;
     info->loadOp = _sg_vk_load_op(action->load_action);
     info->storeOp = _sg_vk_store_op(action->store_action);
     info->clearValue.depthStencil.depth = action->clear_value;
 }
 
-_SOKOL_PRIVATE void _sg_vk_init_stencil_attachment_info(VkRenderingAttachmentInfo* info, const sg_stencil_attachment_action* action, VkImageView ds_view) {
+_SOKOL_PRIVATE void _sg_vk_init_stencil_attachment_info(VkRenderingAttachmentInfo* info, const sg_stencil_attachment_action* action, VkImageView ds_view, VkImageLayout layout) {
     info->sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
     info->imageView = ds_view;
-    info->imageLayout = VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL;
+    info->imageLayout = layout;
     info->resolveMode = VK_RESOLVE_MODE_NONE;
     info->loadOp = _sg_vk_load_op(action->load_action);
     info->storeOp = _sg_vk_store_op(action->store_action);
@@ -21700,10 +22238,11 @@ _SOKOL_PRIVATE void _sg_vk_begin_render_pass(VkCommandBuffer cmd_buf, const sg_p
         if (_sg.vk.swapchain.depth_stencil_view) {
             VkImageView vk_ds_view = (VkImageView)_sg.vk.swapchain.depth_stencil_view;
             const bool has_stencil = _sg_is_depth_stencil_format(pass->swapchain.depth_format);
-            _sg_vk_init_depth_attachment_info(&depth_att_info, &action->depth, vk_ds_view);
+            const VkImageLayout ds_layout = _sg_vk_ds_attachment_layout(has_stencil);
+            _sg_vk_init_depth_attachment_info(&depth_att_info, &action->depth, vk_ds_view, ds_layout);
             render_info.pDepthAttachment = &depth_att_info;
             if (has_stencil) {
-                _sg_vk_init_stencil_attachment_info(&stencil_att_info, &action->stencil, vk_ds_view);
+                _sg_vk_init_stencil_attachment_info(&stencil_att_info, &action->stencil, vk_ds_view, ds_layout);
                 render_info.pStencilAttachment = &stencil_att_info;
             }
         }
@@ -21729,15 +22268,16 @@ _SOKOL_PRIVATE void _sg_vk_begin_render_pass(VkCommandBuffer cmd_buf, const sg_p
             const _sg_image_t* ds_image = _sg_image_ref_ptr(&ds_view->cmn.img.ref);
             const bool has_stencil = _sg_is_depth_stencil_format(ds_image->cmn.pixel_format);
             VkImageView vk_ds_view = ds_view->vk.img_view;
-            _sg_vk_init_depth_attachment_info(&depth_att_info, &action->depth, vk_ds_view);
+            const VkImageLayout ds_layout = _sg_vk_ds_attachment_layout(has_stencil);
+            _sg_vk_init_depth_attachment_info(&depth_att_info, &action->depth, vk_ds_view, ds_layout);
             render_info.pDepthAttachment = &depth_att_info;
             if (has_stencil) {
-                _sg_vk_init_stencil_attachment_info(&stencil_att_info, &action->stencil, vk_ds_view);
+                _sg_vk_init_stencil_attachment_info(&stencil_att_info, &action->stencil, vk_ds_view, ds_layout);
                 render_info.pStencilAttachment = &stencil_att_info;
             }
         }
     }
-    vkCmdBeginRendering(cmd_buf, &render_info);
+    _sg.vk.ext.cmd_begin_rendering(cmd_buf, &render_info);
 
     _SG_STRUCT(VkViewport, vp);
     vp.y = (float)_sg.cur_pass.dim.height;
@@ -21768,7 +22308,7 @@ _SOKOL_PRIVATE void _sg_vk_end_pass(const _sg_attachments_ptrs_t* atts) {
     SOKOL_ASSERT(atts);
     SOKOL_ASSERT(_sg.vk.frame.cmd_buf);
     if (!_sg.cur_pass.is_compute) {
-        vkCmdEndRendering(_sg.vk.frame.cmd_buf);
+        _sg.vk.ext.cmd_end_rendering(_sg.vk.frame.cmd_buf);
     }
     _sg_vk_barrier_on_end_pass(_sg.vk.frame.cmd_buf, atts, _sg.cur_pass.is_compute);
     _sg_clear(&_sg.vk.swapchain, sizeof(_sg.vk.swapchain));
@@ -21788,6 +22328,15 @@ _SOKOL_PRIVATE void _sg_vk_apply_pipeline(_sg_pipeline_t* pip) {
     SOKOL_ASSERT(pip->vk.pip);
     SOKOL_ASSERT(_sg.vk.frame.cmd_buf);
     _sg.vk.uniforms.dirty = false;
+    if (_sg.vk.use_push_descriptors) {
+        // uniform blocks that are not filled after this pipeline switch fall
+        // back to the start of the current uniform buffer, so the bindings of
+        // the previous pipeline must not survive into this one
+        _sg_clear(_sg.vk.uniforms.buf_info, sizeof(_sg.vk.uniforms.buf_info));
+        // set 0 is a classic descriptor set which has to be (re)bound for the
+        // new pipeline layout even if no uniforms are applied before the draw
+        _sg.vk.uniforms.dirty = true;
+    }
     VkPipelineBindPoint bindpoint = pip->cmn.is_compute
         ? VK_PIPELINE_BIND_POINT_COMPUTE
         : VK_PIPELINE_BIND_POINT_GRAPHICS;
@@ -21831,7 +22380,7 @@ _SOKOL_PRIVATE bool _sg_vk_apply_bindings(_sg_bindings_ptrs_t* bnd) {
 }
 
 _SOKOL_PRIVATE void _sg_vk_apply_uniforms(int ub_slot, const sg_range* data) {
-    SOKOL_ASSERT(_sg.vk.uniforms.dbuf.cur_dev_addr);
+    SOKOL_ASSERT(_sg.vk.uniforms.dbuf.cur_buf);
     SOKOL_ASSERT(data && data->ptr && (data->size > 0));
     SOKOL_ASSERT((ub_slot >= 0) && (ub_slot < SG_MAX_UNIFORMBLOCK_BINDSLOTS));
     const _sg_pipeline_t* pip = _sg_pipeline_ref_ptr(&_sg.cur_pip);
@@ -21845,6 +22394,18 @@ _SOKOL_PRIVATE void _sg_vk_apply_uniforms(int ub_slot, const sg_range* data) {
         _sg.next_draw_valid = false;
         return;
     }
+
+    if (_sg.vk.use_push_descriptors) {
+        // push descriptor mode only needs the slice of the uniform buffer that
+        // was just written, the binding is pushed in draw/dispatch
+        _sg.vk.uniforms.buf_info[ub_slot].buffer = _sg.vk.uniforms.dbuf.cur_buf;
+        _sg.vk.uniforms.buf_info[ub_slot].offset = ubuf_offset;
+        _sg.vk.uniforms.buf_info[ub_slot].range = data->size;
+        _sg.vk.uniforms.dirty = true;
+        return;
+    }
+
+#if _SG_VK_HAS_DESCRIPTOR_BUFFER
     _sg.vk.uniforms.addr_info[ub_slot].range = data->size;
     _sg.vk.uniforms.addr_info[ub_slot].address = _sg.vk.uniforms.dbuf.cur_dev_addr + ubuf_offset;
 
@@ -21859,6 +22420,7 @@ _SOKOL_PRIVATE void _sg_vk_apply_uniforms(int ub_slot, const sg_range* data) {
 
     // set uniforms dirty, applying the descriptor buffer offset is happens in draw/dispatch
     _sg.vk.uniforms.dirty = true;
+#endif // _SG_VK_HAS_DESCRIPTOR_BUFFER
 }
 
 _SOKOL_PRIVATE void _sg_vk_draw(int base_element, int num_elements, int num_instances, int base_vertex, int base_instance) {

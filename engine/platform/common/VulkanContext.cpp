@@ -9,6 +9,16 @@
 
 using namespace doriax;
 
+// VK_EXT_descriptor_buffer is only declared by recent Vulkan headers (1.3.275+).
+// Older headers (Ubuntu 22.04 ships 1.3.204) are enough for the push descriptor
+// path, so the descriptor buffer code is compiled out there and the runtime
+// always picks push descriptors.
+#if defined(VK_EXT_descriptor_buffer)
+#define DORIAX_HAS_DESCRIPTOR_BUFFER (1)
+#else
+#define DORIAX_HAS_DESCRIPTOR_BUFFER (0)
+#endif
+
 namespace {
 
     // The validation layer reports the present-complete semaphore as reused when
@@ -18,16 +28,33 @@ namespace {
     // What sokol maps SG_PIXELFORMAT_DEPTH_STENCIL to
     constexpr VkFormat DEPTH_STENCIL_FORMAT = VK_FORMAT_D32_SFLOAT_S8_UINT;
 
-    // sokol_gfx renders with dynamic rendering and keeps its bindings in
-    // descriptor buffers, so both are required
+    // sokol_gfx renders with dynamic rendering and binds resources either
+    // through descriptor buffers (Vulkan 1.3 hardware) or through push
+    // descriptors (Vulkan 1.2 hardware such as Haswell, which never gets
+    // VK_EXT_descriptor_buffer). The swapchain extension is always required.
     const char* const DEVICE_EXTENSIONS[] = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-        VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
+
+    // The extensions needed by the push descriptor path, all of them promoted
+    // to core in Vulkan 1.3 but only available as extensions on 1.2 devices.
+    const char* const PUSH_DESCRIPTOR_EXTENSIONS[] = {
+        VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+        VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME,
+        VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+        VK_KHR_COPY_COMMANDS_2_EXTENSION_NAME
+    };
+
+    // Set when the chosen device has no VK_EXT_descriptor_buffer, and therefore
+    // needs push descriptors and no buffer device address.
+    bool gUsePushDescriptors = false;
 
     // A portability driver only creates a device when this is enabled too. Spelled
     // out because the constant lives behind VK_ENABLE_BETA_EXTENSIONS.
     constexpr char PORTABILITY_SUBSET_EXTENSION[] = "VK_KHR_portability_subset";
+    // Also spelled out: the headers before Vulkan 1.3.207 don't declare the
+    // instance extension that exposes a portability driver.
+    constexpr char PORTABILITY_ENUMERATION_EXTENSION[] = "VK_KHR_portability_enumeration";
 
     struct FrameSync {
         VkSemaphore presentComplete = VK_NULL_HANDLE;  // signaled by the acquire
@@ -47,6 +74,11 @@ namespace {
     VkSwapchainKHR gSwapchain = VK_NULL_HANDLE;
     bool gSwapchainValid = false;
     bool gImageAcquired = false;
+    // Whether sokol recorded a pass into the acquired image this frame. A frame
+    // that draws nothing (an empty scene stack while a scene is being replaced)
+    // never begins the swapchain pass, so sokol submits no signal for
+    // renderFinished and presenting on it would block forever.
+    bool gSwapchainRendered = false;
     uint32_t gImageCount = 0;
     uint32_t gImageIndex = 0;
     uint32_t gSyncSlot = 0;
@@ -98,6 +130,17 @@ namespace {
         return true;
     }
 
+    // True when the device can bind through push descriptors instead of
+    // descriptor buffers. Vulkan 1.2 class hardware reports the extensions
+    // under their KHR names, so they are checked by name rather than by the
+    // promoted core feature structs.
+    bool supportsPushDescriptors(VkPhysicalDevice device) {
+        const std::vector<VkExtensionProperties> extensions = deviceExtensions(device);
+        for (const char* required : PUSH_DESCRIPTOR_EXTENSIONS)
+            if (!hasExtension(extensions, required)) return false;
+        return true;
+    }
+
     bool createInstance() {
         VkApplicationInfo application{};
         application.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
@@ -120,9 +163,10 @@ namespace {
         // A portability driver is hidden from vkEnumeratePhysicalDevices unless the
         // instance asks for it, and on macOS MoltenVK is the only driver there is.
         VkInstanceCreateFlags flags = 0;
-        if (hasInstanceExtension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
-            extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-            flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+        if (hasInstanceExtension(PORTABILITY_ENUMERATION_EXTENSION)) {
+            extensions.push_back(PORTABILITY_ENUMERATION_EXTENSION);
+            // VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+            flags |= 0x00000001;
         }
 
         VkInstanceCreateInfo instanceInfo{};
@@ -176,21 +220,35 @@ namespace {
         for (VkPhysicalDevice candidate : devices) {
             VkPhysicalDeviceProperties properties{};
             vkGetPhysicalDeviceProperties(candidate, &properties);
-            if (properties.apiVersion < VK_API_VERSION_1_3) continue;
             if (!hasDeviceExtensions(candidate)) continue;
+
+            // Descriptor buffers on Vulkan 1.3 hardware, push descriptors on
+            // everything older that has the extensions they need
+            const bool descriptorBuffers =
+#if DORIAX_HAS_DESCRIPTOR_BUFFER
+                properties.apiVersion >= VK_API_VERSION_1_3 &&
+                hasExtension(deviceExtensions(candidate), VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+#else
+                false;
+#endif
+            const bool pushDescriptors =
+                properties.apiVersion >= VK_API_VERSION_1_2 &&
+                supportsPushDescriptors(candidate);
+            if (!descriptorBuffers && !pushDescriptors) continue;
 
             const uint32_t family = findQueueFamily(candidate);
             if (family == UINT32_MAX) continue;
 
             gPhysicalDevice = candidate;
             gQueueFamily = family;
+            gUsePushDescriptors = !descriptorBuffers;
             // A software device only stands in until real hardware turns up
             if (properties.deviceType != VK_PHYSICAL_DEVICE_TYPE_CPU) break;
         }
 
         if (gPhysicalDevice == VK_NULL_HANDLE) {
             std::fprintf(stderr,
-                "Error: Vulkan 1.3 with swapchain and descriptor-buffer support is required.\n");
+                "Error: Vulkan 1.2 with swapchain and descriptor-buffer or push-descriptor support is required.\n");
 #if defined(__APPLE__)
             std::fprintf(stderr,
                 "       MoltenVK has no VK_EXT_descriptor_buffer, so macOS needs the Metal backend.\n");
@@ -205,31 +263,48 @@ namespace {
         supported.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         vkGetPhysicalDeviceFeatures2(gPhysicalDevice, &supported);
 
+        VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extendedDynamicState{};
+        extendedDynamicState.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
+#if DORIAX_HAS_DESCRIPTOR_BUFFER
         VkPhysicalDeviceDescriptorBufferFeaturesEXT descriptorBuffer{};
         descriptorBuffer.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT;
         descriptorBuffer.descriptorBuffer = VK_TRUE;
-
-        VkPhysicalDeviceExtendedDynamicStateFeaturesEXT extendedDynamicState{};
-        extendedDynamicState.sType =
-            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT;
-        extendedDynamicState.pNext = &descriptorBuffer;
+        extendedDynamicState.pNext = gUsePushDescriptors ? nullptr : &descriptorBuffer;
+#endif
         extendedDynamicState.extendedDynamicState = VK_TRUE;
 
         VkPhysicalDeviceVulkan12Features vulkan12{};
         vulkan12.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
         vulkan12.pNext = &extendedDynamicState;
-        vulkan12.bufferDeviceAddress = VK_TRUE;
+        vulkan12.bufferDeviceAddress = gUsePushDescriptors ? VK_FALSE : VK_TRUE;
 
+        // Vulkan 1.2 devices answer the KHR feature structs, and chaining the
+        // promoted core structs there is invalid
         VkPhysicalDeviceVulkan13Features vulkan13{};
         vulkan13.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
-        vulkan13.pNext = &vulkan12;
-        vulkan13.dynamicRendering = VK_TRUE;
-        vulkan13.synchronization2 = VK_TRUE;
+        VkPhysicalDeviceDynamicRenderingFeaturesKHR dynamicRendering{};
+        dynamicRendering.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES_KHR;
+        VkPhysicalDeviceSynchronization2FeaturesKHR synchronization2{};
+        synchronization2.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES_KHR;
+        if (gUsePushDescriptors) {
+            dynamicRendering.dynamicRendering = VK_TRUE;
+            synchronization2.synchronization2 = VK_TRUE;
+            dynamicRendering.pNext = &synchronization2;
+            vulkan12.pNext = &dynamicRendering;
+        } else {
+            vulkan13.pNext = &vulkan12;
+            vulkan13.dynamicRendering = VK_TRUE;
+            vulkan13.synchronization2 = VK_TRUE;
+        }
 
         VkPhysicalDeviceFeatures2 required{};
         required.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-        required.pNext = &vulkan13;
+        required.pNext = gUsePushDescriptors ? static_cast<void*>(&vulkan12)
+                                             : static_cast<void*>(&vulkan13);
         required.features.samplerAnisotropy = VK_TRUE;
         required.features.dualSrcBlend = VK_TRUE;
         // Compressed formats are per-device: ask only for the ones this one has
@@ -239,6 +314,19 @@ namespace {
 
         std::vector<const char*> extensions;
         for (const char* required : DEVICE_EXTENSIONS) extensions.push_back(required);
+        if (gUsePushDescriptors) {
+            for (const char* required : PUSH_DESCRIPTOR_EXTENSIONS)
+                extensions.push_back(required);
+        } else {
+#if DORIAX_HAS_DESCRIPTOR_BUFFER
+            extensions.push_back(VK_EXT_DESCRIPTOR_BUFFER_EXTENSION_NAME);
+#else
+            // unreachable: without the extension in the headers gUsePushDescriptors
+            // is always true above
+            std::fprintf(stderr, "Error: descriptor buffers are not available in these Vulkan headers.\n");
+            return false;
+#endif
+        }
         if (hasExtension(deviceExtensions(gPhysicalDevice), PORTABILITY_SUBSET_EXTENSION))
             extensions.push_back(PORTABILITY_SUBSET_EXTENSION);
 
@@ -596,6 +684,7 @@ void VulkanContext::beginFrame() {
     }
 
     gImageAcquired = true;
+    gSwapchainRendered = false;
 }
 
 void VulkanContext::endFrame() {
@@ -606,8 +695,16 @@ void VulkanContext::endFrame() {
     // free to hand back images out of order
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &gSync[gImageIndex].renderFinished;
+    // A frame that drew nothing (an empty scene stack while a scene is being
+    // replaced) never begins the swapchain pass, so sokol submits no signal for
+    // renderFinished and waiting on it would block the queue forever. The image
+    // was acquired, though, so it still has to be handed back or the swapchain
+    // runs out of images to acquire.
+    if (gSwapchainRendered) {
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = &gSync[gImageIndex].renderFinished;
+    }
+    gSwapchainRendered = false;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &gSwapchain;
     presentInfo.pImageIndices = &gImageIndex;
@@ -658,5 +755,8 @@ sg_swapchain VulkanContext::swapchain() {
     swapchain.vulkan.depth_stencil_view = gDepthView;
     swapchain.vulkan.render_finished_semaphore = gSync[gImageIndex].renderFinished;
     swapchain.vulkan.present_complete_semaphore = gSync[gSyncSlot].presentComplete;
+    // Handing these semaphores out is what makes sokol wait on the acquire and
+    // signal renderFinished, so from here on there is something to present.
+    gSwapchainRendered = true;
     return swapchain;
 }
