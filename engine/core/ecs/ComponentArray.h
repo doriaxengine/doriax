@@ -46,6 +46,24 @@ namespace doriax {
             indexToEntityMap.push_back(entity);
         }
 
+        void removeAt(size_t index) {
+            Entity entity = indexToEntityMap[index];
+
+            // Remove component
+            componentArray.erase(componentArray.begin() + index);
+            size_t componentSize = componentArray.size();
+
+            // Update maps
+            for (size_t i = index; i < componentSize; i++){
+                Entity temp = indexToEntityMap[i+1];
+                entityToIndexMap.set(temp, i);
+                indexToEntityMap[i] = temp;
+            }
+
+            entityToIndexMap.erase(entity);
+            indexToEntityMap.pop_back();
+        }
+
         void moveRange(size_t start, size_t length, size_t dst){
             typename std::vector<T>::iterator first, middle, last;
             if (start < dst){
@@ -74,24 +92,9 @@ namespace doriax {
         }
 
         void remove(Entity entity) {
-
-            size_t indexOfRemovedEntity = entityToIndexMap.find(entity);
-            if (indexOfRemovedEntity != SparseArray::NONE){
-
-                // Remove component
-                componentArray.erase(componentArray. begin() + indexOfRemovedEntity);
-                size_t componentSize = componentArray.size();
-                
-                // Update maps
-                for (size_t i = indexOfRemovedEntity; i < componentSize; i++){
-                    Entity temp = indexToEntityMap[i+1];
-                    entityToIndexMap.set(temp, i);
-                    indexToEntityMap[i] = temp;
-                }
-                
-                entityToIndexMap.erase(entity);
-                indexToEntityMap.pop_back();
-
+            size_t index = entityToIndexMap.find(entity);
+            if (index != SparseArray::NONE){
+                removeAt(index);
             } else {
                 Log::error("Removing non-existent component");
             }
@@ -101,7 +104,7 @@ namespace doriax {
 
             size_t startIndex = entityToIndexMap.find(start);
             size_t endIndex = entityToIndexMap.find(end);
-            if (startIndex == SparseArray::NONE || endIndex == SparseArray::NONE){
+            if (startIndex == SparseArray::NONE || endIndex == SparseArray::NONE || startIndex > endIndex){
                 Log::error("Cannot move entity range without components");
                 return;
             }
@@ -143,8 +146,8 @@ namespace doriax {
         void moveEntityToIndex(Entity entity, size_t newIndex){
 
             size_t oldIndex = entityToIndexMap.find(entity);
-            if (oldIndex == SparseArray::NONE){
-                Log::error("Cannot move entity without component");
+            if (oldIndex == SparseArray::NONE || newIndex >= componentArray.size()){
+                Log::error("Cannot move entity to index");
                 return;
             }
 
@@ -191,25 +194,32 @@ namespace doriax {
                 return indexA < indexB;
             });
 
-            // Create new arrays, same entities in the index
-            std::vector<T> newComponentArray(componentArray.size());
+            // Create new arrays, moved when that cannot throw
+            std::vector<T> newComponentArray;
+            newComponentArray.reserve(componentArray.size());
             std::vector<Entity> newIndexToEntityMap(componentArray.size());
 
             for (size_t newIndex = 0; newIndex < indices.size(); ++newIndex) {
                 size_t oldIndex = indices[newIndex];
-                Entity entity = indexToEntityMap[oldIndex];
-                newComponentArray[newIndex] = componentArray[oldIndex];
-                entityToIndexMap.set(entity, newIndex);
-                newIndexToEntityMap[newIndex] = entity;
+                newComponentArray.push_back(std::move_if_noexcept(componentArray[oldIndex]));
+                newIndexToEntityMap[newIndex] = indexToEntityMap[oldIndex];
             }
 
-            // Assign new arrays back
+            // Assign new arrays back, then their indices
             componentArray = std::move(newComponentArray);
             indexToEntityMap = std::move(newIndexToEntityMap);
+            for (size_t i = 0; i < indexToEntityMap.size(); i++) {
+                entityToIndexMap.set(indexToEntityMap[i], i);
+            }
         }
 
         bool hasEntity(Entity entity) {
             return entityToIndexMap.contains(entity);
+        }
+
+        // NONE when the entity has no component
+        size_t findIndex(Entity entity) const {
+            return entityToIndexMap.find(entity);
         }
 
         T* findComponent(Entity entity) {
@@ -277,8 +287,9 @@ namespace doriax {
         }
 
         void entityDestroyed(Entity entity) override {
-            if (entityToIndexMap.contains(entity)) {
-                remove(entity);
+            size_t index = entityToIndexMap.find(entity);
+            if (index != SparseArray::NONE) {
+                removeAt(index);
             }
         }
 
