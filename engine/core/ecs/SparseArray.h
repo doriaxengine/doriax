@@ -32,6 +32,13 @@ namespace doriax {
     public:
         static constexpr size_t NONE = std::numeric_limits<size_t>::max();
 
+        // owns its pages, an exported class must not get a copy
+        SparseArray() = default;
+        SparseArray(const SparseArray&) = delete;
+        SparseArray& operator=(const SparseArray&) = delete;
+        SparseArray(SparseArray&&) = default;
+        SparseArray& operator=(SparseArray&&) = default;
+
         size_t find(Entity entity) const {
             size_t page = entity >> PAGE_BITS;
             if (page < pages.size()){
