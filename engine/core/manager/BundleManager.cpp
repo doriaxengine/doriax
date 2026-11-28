@@ -178,10 +178,11 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
     const uint32_t id = entry.id;
     const bool ownsRoot = root == NULL_ENTITY;
 
-    size_t record = scene->beginEntityRecord();
-
     if (ownsRoot)
         root = scene->createEntity();
+
+    // ended after the factory, which cannot throw out
+    size_t record = scene->beginEntityRecord();
 
     bool ok = false;
     try {

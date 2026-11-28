@@ -74,12 +74,18 @@ namespace doriax {
     enum class EntityPool { User, System };
 
     class DORIAX_API EntityRegistry {
+        friend class BundleManager;
+
     private:
         EntityManager entityManager;
         ComponentManager componentManager;
         EntityPool defaultPool = EntityPool::User;
 
         void sortComponentsByTransform(Signature entitySignature);
+
+        // entities created in between, for bundle builds
+        size_t beginEntityRecord();
+        std::vector<Entity> endEntityRecord(size_t mark);
         void moveChildAux(Entity entity, bool increase, bool stopIfFound);
         void changeTransformChildren(Entity entity);
 
@@ -134,9 +140,6 @@ namespace doriax {
         // A scene sets it past the ids it recreates, so what it creates next stays clear of them.
         void setLastEntity(Entity entity); // for internal editor use only
         std::vector<Entity> getEntityList() const;
-        // entities created between the two calls, as a bundle build adds them
-        size_t beginEntityRecord();
-        std::vector<Entity> endEntityRecord(size_t mark);
 
         void setDefaultEntityPool(EntityPool pool);
         EntityPool getDefaultEntityPool() const;

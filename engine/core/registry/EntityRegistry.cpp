@@ -246,25 +246,29 @@ Entity EntityRegistry::findEntity(const std::string& name) const {
 
 Entity EntityRegistry::findEntity(const std::string& name, Entity parent) const {
     auto transforms = componentManager.getComponentArray<Transform>();
-    if (!transforms->hasEntity(parent)){
+    size_t start = transforms->findIndex(parent);
+    if (start == SparseArray::NONE){
         return NULL_ENTITY;
     }
 
-    // descendants follow it, each under one on the path
-    std::vector<Entity> path(1, parent);
     Entity found = NULL_ENTITY;
-    for (size_t i = transforms->getIndex(parent) + 1; i < transforms->size(); i++){
-        Entity entityParent = transforms->getComponentFromIndex(i).parent;
-        while (!path.empty() && path.back() != entityParent){
-            path.pop_back();
-        }
-        if (path.empty()){
+    for (size_t i = start + 1; i < transforms->size(); i++){
+        Entity ancestor = transforms->getComponentFromIndex(i).parent;
+        size_t index = transforms->findIndex(ancestor);
+        // a parent before this one ends its branch
+        if (index < start){
             break;
+        }
+        // children of a destroyed entity stay inside the branch
+        size_t below = i;
+        while (ancestor != parent && index > start && index < below){
+            below = index;
+            ancestor = transforms->getComponentFromIndex(index).parent;
+            index = transforms->findIndex(ancestor);
         }
 
         Entity entity = transforms->getEntity(i);
-        path.push_back(entity);
-        if ((found == NULL_ENTITY || entity < found) && entityManager.hasName(entity, name)){
+        if (ancestor == parent && (found == NULL_ENTITY || entity < found) && entityManager.hasName(entity, name)){
             found = entity;
         }
     }

@@ -17,6 +17,8 @@
 namespace doriax{
 
     class DORIAX_API EntityManager {
+        friend class EntityRegistry;
+
     private:
         static constexpr Entity FIRST_SYSTEM_ENTITY = 1;
         static constexpr Entity LAST_SYSTEM_ENTITY  = 1000;
@@ -49,6 +51,28 @@ namespace doriax{
                 }
             }
             return row;
+        }
+
+        size_t beginRecord(){
+            openRecords++;
+            return recorded.size();
+        }
+
+        // created since the mark and still alive, in id order
+        std::vector<Entity> endRecord(size_t mark){
+            std::vector<Entity> created;
+            for (size_t i = mark; i < recorded.size(); i++){
+                if (rows.contains(recorded[i])){
+                    created.push_back(recorded[i]);
+                }
+            }
+            std::sort(created.begin(), created.end());
+            created.erase(std::unique(created.begin(), created.end()), created.end());
+
+            if (openRecords > 0 && --openRecords == 0){
+                recorded.clear();
+            }
+            return created;
         }
 
     public:
@@ -145,33 +169,13 @@ namespace doriax{
             return std::vector<Entity>(entities.begin(), entities.end());
         }
 
-        size_t beginRecord(){
-            openRecords++;
-            return recorded.size();
-        }
-
-        // created since the mark and still alive, in id order
-        std::vector<Entity> endRecord(size_t mark){
-            std::vector<Entity> created;
-            for (size_t i = mark; i < recorded.size(); i++){
-                if (rows.contains(recorded[i])){
-                    created.push_back(recorded[i]);
-                }
-            }
-            std::sort(created.begin(), created.end());
-            created.erase(std::unique(created.begin(), created.end()), created.end());
-
-            if (--openRecords == 0){
-                recorded.clear();
-            }
-            return created;
-        }
-
         void setSignature(Entity entity, Signature signature) {
-            if (!rows.contains(entity)){
+            size_t row = rows.find(entity);
+            if (row == SparseArray::NONE){
                 Log::error("Entity does not exist to set signature");
+                row = getRow(entity);
             }
-            signatures[getRow(entity)] = signature;
+            signatures[row] = signature;
         }
 
         Signature getSignature(Entity entity) const{
@@ -184,10 +188,12 @@ namespace doriax{
         }
 
         void setName(Entity entity, const std::string& name) {
-            if (!rows.contains(entity)){
+            size_t row = rows.find(entity);
+            if (row == SparseArray::NONE){
                 Log::error("Entity does not exist to set name");
+                row = getRow(entity);
             }
-            names[getRow(entity)] = name;
+            names[row] = name;
         }
 
         std::string getName(Entity entity) const{
@@ -206,12 +212,13 @@ namespace doriax{
 
         // lowest id with this name
         Entity findEntity(const std::string& name) const{
-            for (Entity entity : entities){
-                if (names[rows.find(entity)] == name){
-                    return entity;
+            Entity found = NULL_ENTITY;
+            for (size_t row = 0; row < names.size(); row++){
+                if (names[row] == name && (found == NULL_ENTITY || rowEntities[row] < found)){
+                    found = rowEntities[row];
                 }
             }
-            return NULL_ENTITY;
+            return found;
         }
     };
 
