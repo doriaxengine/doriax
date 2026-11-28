@@ -111,7 +111,7 @@ namespace doriax {
             size_t length = endIndex - startIndex + 1;
             size_t oldIndex = startIndex;
 
-            if (newIndex < 0 || (newIndex + length) > componentArray.size()){
+            if (newIndex > componentArray.size() || length > componentArray.size() - newIndex){
                 Log::error("Cannot move entity range out of array");
                 return;
             }
@@ -177,21 +177,13 @@ namespace doriax {
             std::vector<size_t> indices(componentArray.size());
             std::iota(indices.begin(), indices.end(), 0);
 
-            // Sort indices based on the key in otherComponent
+            // Sort indices by their place in otherComponent, NONE last
+            std::vector<size_t> keys(componentArray.size());
+            for (size_t i = 0; i < keys.size(); i++) {
+                keys[i] = otherComponent->findIndex(indexToEntityMap[i]);
+            }
             std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
-                Entity ea = indexToEntityMap[a];
-                Entity eb = indexToEntityMap[b];
-
-                bool hasA = otherComponent->hasEntity(ea);
-                bool hasB = otherComponent->hasEntity(eb);
-
-                if (!hasA && !hasB) return false;
-                if (!hasA) return false;
-                if (!hasB) return true;
-
-                size_t indexA = otherComponent->getIndex(ea);
-                size_t indexB = otherComponent->getIndex(eb);
-                return indexA < indexB;
+                return keys[a] < keys[b];
             });
 
             // Create new arrays, moved when that cannot throw
