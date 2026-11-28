@@ -57,8 +57,10 @@ LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other) {
 
 LuaFunctionBase::LuaFunctionBase(LuaFunctionBase &&other) noexcept:
     m_vm(other.m_vm), m_func(other.m_func), m_self(other.m_self), m_generation(other.m_generation) {
+    // generations start at 1, so the moved one is not alive
     other.m_func = LUA_NOREF;
     other.m_self = LUA_NOREF;
+    other.m_generation = 0;
 }
 
 LuaFunctionBase::~LuaFunctionBase(){
@@ -69,6 +71,20 @@ LuaFunctionBase& LuaFunctionBase::operator=(const LuaFunctionBase &other){
     if (this != &other) {
         release();
         copy_function(other);
+    }
+    return *this;
+}
+
+LuaFunctionBase& LuaFunctionBase::operator=(LuaFunctionBase &&other) noexcept{
+    if (this != &other) {
+        release();
+        m_vm = other.m_vm;
+        m_func = other.m_func;
+        m_self = other.m_self;
+        m_generation = other.m_generation;
+        other.m_func = LUA_NOREF;
+        other.m_self = LUA_NOREF;
+        other.m_generation = 0;
     }
     return *this;
 }

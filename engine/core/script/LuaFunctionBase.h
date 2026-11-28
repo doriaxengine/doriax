@@ -108,6 +108,7 @@ namespace doriax{
         ~LuaFunctionBase();
 
         LuaFunctionBase &operator=(const LuaFunctionBase &other);
+        LuaFunctionBase &operator=(LuaFunctionBase &&other) noexcept;
     };
 
 }
