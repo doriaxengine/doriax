@@ -10,8 +10,8 @@ It scans engine/core/script/binding/*.cpp for:
   - addFunction / addStaticFunction → methods
   - addProperty / addStaticProperty → properties
 
-A binding line ending in "// deprecated" and a [[deprecated]] C++ method are
-never suggested; the Lua stubs mark such bindings ---@deprecated.
+A binding whose first line has a "// deprecated" comment and a [[deprecated]]
+C++ method are never suggested; the Lua stubs mark such bindings ---@deprecated.
 """
 
 import re
@@ -58,8 +58,8 @@ RE_GETTER_MEMBER = re.compile(r'&([A-Za-z0-9_]+)::([A-Za-z0-9_]+)$')
 RE_TABLE_CONTAINER = re.compile(r'(?:vector|array|list|map|unordered_map|set|pair|tuple)\s*<')
 # Lambda binding with a trailing return type: [] (const T& self, ...) -> Type {
 RE_LAMBDA_SIGNATURE = re.compile(r'\[\]\s*\(([^)]*)\)\s*->\s*([^{]+?)\s*\{')
-# An old name kept for older scripts: .addProperty("old", ...) // deprecated
-RE_DEPRECATED = re.compile(r'//\s*deprecated\s*$')
+# An old name kept for older scripts: .addProperty("old", ...) // deprecated, use new
+RE_DEPRECATED = re.compile(r'//\s*deprecated\b')
 
 EXCLUDED_HEADER_METHODS = {
     ('EntityHandle', 'addComponent'),

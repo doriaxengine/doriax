@@ -21,25 +21,28 @@ uniform u_fs_gtaoBlurParams {
 
 #define AO_TERM_SCALE 1.5 // as gtao.frag stores it
 
-float viewDepth(ivec2 pixel){
+// signed: an ortho view sees both sides of its eye
+float viewDepth(ivec2 pixel, ivec2 last){
     // the depth texel gtao.frag read here, clamped as the AO taps
-    pixel = max(pixel, ivec2(0));
+    pixel = clamp(pixel, ivec2(0), last);
     vec2 uv = (vec2(ivec2((vec2(pixel) + 0.5) * blurParams.screen.zw)) + 0.5) * blurParams.screen.xy;
     // the cleared background decodes a little past 1.0
     float ndc = min(decodeDepth(textureLod(sampler2D(u_depthTexture, u_depth_smp), uv, 0.0)) * 2.0 - 1.0, 1.0);
     vec4 p = blurParams.depthParams;
-    return abs((p.x * ndc + p.y) / (p.z * ndc + p.w));
+    return -(p.x * ndc + p.y) / (p.z * ndc + p.w);
 }
 
 void main(){
     ivec2 pixel = ivec2(gl_FragCoord.xy);
-    float center = viewDepth(pixel);
+    ivec2 last = ivec2(round(1.0 / blurParams.texelSize.xy)) - 1;
+    float center = viewDepth(pixel, last);
+    float tolerance = 0.05 * abs(center) + 0.01;
     float result = 0.0;
     float weight = 0.0;
     for (int x = -2; x < 2; ++x){
         for (int y = -2; y < 2; ++y){
             vec2 uv = v_texcoord + vec2(float(x), float(y)) * blurParams.texelSize.xy;
-            float w = max(1.0 - abs(viewDepth(pixel + ivec2(x, y)) - center) / (0.05 * center + 0.01), 0.0);
+            float w = max(1.0 - abs(viewDepth(pixel + ivec2(x, y), last) - center) / tolerance, 0.0);
             result += textureLod(sampler2D(u_gtaoTexture, u_gtao_smp), uv, 0.0).r * w;
             weight += w;
         }

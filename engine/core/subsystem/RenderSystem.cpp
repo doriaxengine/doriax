@@ -1347,25 +1347,6 @@ void RenderSystem::processLights(int numLights, CameraComponent& camera, Transfo
         }
     }
 
-    // inverse viewport size, used by USE_GTAO to convert gl_FragCoord to a screen UV.
-    // .z = GTAO debug flag (output raw AO); .w = rendering-flipped flag (the AO buffer
-    // is in logical orientation, so flip Y on sample when the color pass is flipped).
-    float vpW = Engine::getViewRect().getWidth();
-    float vpH = Engine::getViewRect().getHeight();
-    if (camera.renderToTexture && camera.framebuffer){
-        vpW = (float)camera.framebuffer->getWidth();
-        vpH = (float)camera.framebuffer->getHeight();
-    }else if (isFixedResolutionActive()){
-        // the main color pass renders into the fixed-resolution target
-        vpW = (float)fixedResWidth;
-        vpH = (float)fixedResHeight;
-    }
-    fs_lighting.viewportInfo = Vector4(
-        (vpW > 0.0f) ? 1.0f / vpW : 0.0f,
-        (vpH > 0.0f) ? 1.0f / vpH : 0.0f,
-        scene->isGTAODebug() ? 1.0f : 0.0f,
-        isRenderingFlipped(camera) ? 1.0f : 0.0f);
-
     // Setting intensity of other lights to zero
     for (int i = numLights; i < MAX_LIGHTS; i++){
         fs_lighting.color_intensity[i].w = 0.0;
@@ -5777,6 +5758,9 @@ bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int heigh
     gtaoFramebuffer.destroy();
     gtaoBlurFramebuffer.destroy();
 
+    // AO is one channel
+    const ColorFormat format = ColorFormat::RED;
+    gtaoFramebuffer.setColorAttachments(1, &format);
     gtaoFramebuffer.setWidth(width);
     gtaoFramebuffer.setHeight(height);
     gtaoFramebuffer.setMinFilter(TextureFilter::NEAREST);
@@ -5786,6 +5770,7 @@ bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int heigh
     gtaoFramebuffer.create();
 
     // blurred AO is sampled bilinearly by the lit meshes
+    gtaoBlurFramebuffer.setColorAttachments(1, &format);
     gtaoBlurFramebuffer.setWidth(width);
     gtaoBlurFramebuffer.setHeight(height);
     gtaoBlurFramebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -5841,7 +5826,7 @@ void RenderSystem::renderGTAO(CameraComponent& camera, TextureRender* sharedDept
     Matrix4 invProj = renderProj.inverse();
     bool ortho = (renderProj[2][3] == 0.0f);
     Vector2 ndcOffset = ortho ? Vector2(-renderProj[3][0], -renderProj[3][1]) : Vector2(renderProj[2][0], renderProj[2][1]);
-    fs_gtao.params = Vector4(scene->getGTAORadius(), std::max(scene->getGTAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
+    fs_gtao.params = Vector4(std::max(scene->getGTAORadius(), 0.0f), std::max(scene->getGTAOThinOccluders(), 0.0f), renderProj[0][0] * (float)w * 0.5f,
                              (renderProj[0][0] * (float)w) / (renderProj[1][1] * (float)h));
     fs_gtao.screen = Vector4(1.0f / (float)w, 1.0f / (float)h, (float)w / (float)gtaoWidth, (float)h / (float)gtaoHeight);
     fs_gtao.ndcToView = Vector4(1.0f / renderProj[0][0], 1.0f / renderProj[1][1], ndcOffset.x / renderProj[0][0], ndcOffset.y / renderProj[1][1]);
@@ -12122,8 +12107,6 @@ void RenderSystem::draw(){
         fs_lighting = mainLighting;
         if (!isMainCamera){
             applyViewLights(cameraTransform.worldPosition);
-            // no GTAO here, so no debug view either
-            fs_lighting.viewportInfo.z = 0.0f;
         }
 
         // effect functions see this camera, with its own view parameters
@@ -12378,7 +12361,12 @@ void RenderSystem::draw(){
         // a flipped or offset color target dithers the pixels the depth passes do
         effectView.ditherOrigin = Vector2(colorPassViewport.getX(),
             colorPassViewport.getY() + (isRenderingFlipped(camera) ? colorPassViewport.getHeight() : 0.0f));
-        // the GTAO texture covers the pass, letterboxed or not
+        // GTAO maps onto this pass; update() skips paused frames
+        const float passWidth = colorPassViewport.getWidth();
+        const float passHeight = colorPassViewport.getHeight();
+        fs_lighting.viewportInfo = Vector4(passWidth > 0.0f ? 1.0f / passWidth : 0.0f, passHeight > 0.0f ? 1.0f / passHeight : 0.0f,
+                                           (isMainCamera && scene->isGTAODebug()) ? 1.0f : 0.0f, isRenderingFlipped(camera) ? 1.0f : 0.0f);
+        // bars are centered: same origin from the top or bottom
         fs_lighting.viewportOrigin = Vector4(colorPassViewport.getX(), colorPassViewport.getY(), 0.0f, 0.0f);
 
 

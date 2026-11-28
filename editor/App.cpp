@@ -3209,7 +3209,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v96: GTAO shader names, Gao for its mesh variant.
     // v97: GTAO taps stay on screen, lighting has the pass origin.
     // v98: GTAO slices are even in view, for stretched texels.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v98";
+    // v99: GTAO blur depths are signed and clamped at both edges.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v99";
 }
 
 void editor::App::pushTabNotificationStyle(){
