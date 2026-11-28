@@ -165,6 +165,25 @@ std::string LuaBinding::getLuaStackErrorString(lua_State* L, int index) {
     return std::string("(") + luaL_typename(L, index) + " error value)";
 }
 
+int LuaBinding::callEventMethod(lua_State* L){
+    int nargs = lua_gettop(L);
+    luaL_checkstack(L, nargs + 3, "too many event arguments");
+
+    lua_pushvalue(L, lua_upvalueindex(1)); // method
+    lua_pushvalue(L, lua_upvalueindex(2)); // self
+
+    for (int i = 1; i <= nargs; ++i) {
+        lua_pushvalue(L, i);
+    }
+
+    // lua_error below unwinds the script frames, get the traceback here
+    if (pcallWithTraceback(L, 1 + nargs, LUA_MULTRET) != LUA_OK) {
+        return lua_error(L);
+    }
+    // Filters like preSolve2D read what the method returns
+    return lua_gettop(L) - nargs;
+}
+
 int LuaBinding::pcallWithTraceback(lua_State* L, int nargs, int nresults){
     //message handler goes below the function and its arguments
     int base = lua_gettop(L) - nargs;
@@ -283,26 +302,7 @@ int LuaBinding::luaRegisterEventImpl(lua_State* L, int eventIndex, int selfIndex
     // Build closure: function(...) return method(self, ...) end
     lua_pushvalue(L, methodFuncIndex); // method
     lua_pushvalue(L, selfIndex);       // self
-    lua_pushcclosure(L,
-        [](lua_State* Linner) -> int {
-            int nargs = lua_gettop(Linner);
-            luaL_checkstack(Linner, nargs + 3, "too many event arguments");
-
-            lua_pushvalue(Linner, lua_upvalueindex(1)); // method
-            lua_pushvalue(Linner, lua_upvalueindex(2)); // self
-
-            for (int i = 1; i <= nargs; ++i) {
-                lua_pushvalue(Linner, i);
-            }
-
-            // lua_error below unwinds the script frames, get the traceback here
-            if (pcallWithTraceback(Linner, 1 + nargs, LUA_MULTRET) != LUA_OK) {
-                return lua_error(Linner);
-            }
-            // Filters like preSolve2D read what the method returns
-            return lua_gettop(Linner) - nargs;
-        },
-        2);
+    lua_pushcclosure(L, callEventMethod, 2);
     int closureIndex = lua_gettop(L);
 
     // event:add(tag, closure)

@@ -40,14 +40,14 @@ static void reportError(const std::string& error){
     Log::error("Lua Error: %s", error.c_str());
 }
 
-LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(LuaBinding::getLuaState()) {
+LuaFunctionBase::LuaFunctionBase(lua_State *vm, const std::string &func): m_vm(LuaBinding::getLuaState()), m_self(LUA_NOREF) {
     // get the function
     lua_getglobal(vm, func.c_str());
 
     store_function(vm);
 }
 
-LuaFunctionBase::LuaFunctionBase(lua_State *vm): m_vm(LuaBinding::getLuaState()) {
+LuaFunctionBase::LuaFunctionBase(lua_State *vm): m_vm(LuaBinding::getLuaState()), m_self(LUA_NOREF) {
     store_function(vm);
 }
 
@@ -87,16 +87,22 @@ bool LuaFunctionBase::can_call(int args){
 void LuaFunctionBase::copy_function(const LuaFunctionBase &other){
     m_vm = other.m_vm;
     m_generation = other.m_generation;
+    m_self = LUA_NOREF;
     if (is_alive()) {
-        // copy the registry reference
+        // copy the registry references
         lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_func);
         m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+        if (other.m_self != LUA_NOREF) {
+            lua_rawgeti(m_vm, LUA_REGISTRYINDEX, other.m_self);
+            m_self = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+        }
     }
 }
 
 void LuaFunctionBase::release(){
     if (is_alive()) {
         luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
+        luaL_unref(m_vm, LUA_REGISTRYINDEX, m_self);
     }
 }
 
@@ -108,6 +114,13 @@ void LuaFunctionBase::store_function(lua_State *vm){
         lua_pop(vm, 1);
         throw std::runtime_error("not a valid function");
     }
+    // an event method runs with its self, not the closure
+    if (lua_tocfunction(vm, -1) == LuaBinding::callEventMethod) {
+        lua_getupvalue(vm, -1, 2);
+        m_self = luaL_ref(vm, LUA_REGISTRYINDEX);
+        lua_getupvalue(vm, -1, 1);
+        lua_replace(vm, -2);
+    }
     // store it in registry for later use
     m_func = luaL_ref(vm, LUA_REGISTRYINDEX);
     m_generation = LuaBinding::getLuaStateGeneration();
@@ -115,6 +128,14 @@ void LuaFunctionBase::store_function(lua_State *vm){
 
 void LuaFunctionBase::push_function(lua_State *vm, int func){
     lua_rawgeti(vm, LUA_REGISTRYINDEX, func);
+}
+
+int LuaFunctionBase::push_self(lua_State *vm){
+    if (m_self == LUA_NOREF) {
+        return 0;
+    }
+    lua_rawgeti(vm, LUA_REGISTRYINDEX, m_self);
+    return 1;
 }
 
 void LuaFunctionBase::call(int args, int results) {

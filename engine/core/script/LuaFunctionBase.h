@@ -40,6 +40,8 @@ namespace doriax{
         // the main state (a coroutine can be collected) and the function registry reference
         lua_State *m_vm;
         int m_func;
+        // self of an event method, pushed before the arguments
+        int m_self;
         // of the state holding the reference, it can be closed and created again
         unsigned int m_generation;
 
@@ -48,6 +50,8 @@ namespace doriax{
 
         // push the function from the registry
         void push_function(lua_State *vm, int func);
+        // push the self of an event method, how many were pushed
+        int push_self(lua_State *vm);
 
         // call the function, logs a traceback on error
         void call(int args, int results = 0);

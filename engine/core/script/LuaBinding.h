@@ -75,6 +75,9 @@ namespace doriax {
         // lua_pcall with stack traceback on error
         static int pcallWithTraceback(lua_State* L, int nargs, int nresults);
 
+        // method(self, ...) of an event subscription, both upvalues
+        static int callEventMethod(lua_State* L);
+
         static void stackDump (lua_State *L);
 
         static void cleanup();

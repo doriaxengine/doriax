@@ -27,17 +27,18 @@ namespace doriax{
 
         template <typename... Args>
         Ret operator()(const Args&... args){
-            if (!can_call(sizeof...(args)))
+            if (!can_call(sizeof...(args) + 1))
                 return Ret();
 
-            // push the function from the registry and its arguments
+            // push the function, its self and the arguments
             push_function(m_vm, m_func);
+            int self = push_self(m_vm);
             (push_value(m_vm, args), ...);
 
             if constexpr (std::is_void_v<Ret>) {
-                call(sizeof...(args));
+                call(self + sizeof...(args));
             } else {
-                call(sizeof...(args), 1);
+                call(self + sizeof...(args), 1);
                 return get_value<Ret>(m_vm);
             }
         }
