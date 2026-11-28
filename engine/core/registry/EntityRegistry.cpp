@@ -232,10 +232,6 @@ void EntityRegistry::destroyEntity(Entity entity) {
     entityManager.destroy(entity);
 }
 
-Signature EntityRegistry::getSignature(Entity entity) const {
-    return entityManager.getSignature(entity);
-}
-
 void EntityRegistry::setEntityName(Entity entity, const std::string& name) {
     entityManager.setName(entity, name);
 }

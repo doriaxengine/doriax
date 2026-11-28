@@ -6,7 +6,6 @@
     
 #include <array>
 #include <cassert>
-#include <unordered_map>
 #include <vector>
 #include <algorithm>
 #include <functional>
@@ -15,6 +14,7 @@
 #include <memory>
 #include <utility>
 #include "Entity.h"
+#include "SparseArray.h"
 #include "Log.h"
 
 namespace doriax {
@@ -30,19 +30,19 @@ namespace doriax {
     class ComponentArray : public ComponentArrayBase{
     private:
         std::vector<T> componentArray{};
-        std::unordered_map<Entity, size_t> entityToIndexMap{};
+        SparseArray entityToIndexMap{};
         std::vector<Entity> indexToEntityMap{};
 
         template<typename... Args>
         void emplace(Entity entity, Args&&... args) {
-            if (entityToIndexMap.find(entity) != entityToIndexMap.end()) {
+            if (entityToIndexMap.contains(entity)) {
                 Log::error("Component added to same entity more than once");
                 return;
             }
 
             size_t newIndex = componentArray.size();
             componentArray.emplace_back(std::forward<Args>(args)...);
-            entityToIndexMap[entity] = newIndex;
+            entityToIndexMap.set(entity, newIndex);
             indexToEntityMap.push_back(entity);
         }
 
@@ -75,17 +75,17 @@ namespace doriax {
 
         void remove(Entity entity) {
 
-            if (entityToIndexMap.find(entity) != entityToIndexMap.end()){
+            size_t indexOfRemovedEntity = entityToIndexMap.find(entity);
+            if (indexOfRemovedEntity != SparseArray::NONE){
 
                 // Remove component
-                size_t indexOfRemovedEntity = entityToIndexMap[entity];
                 componentArray.erase(componentArray. begin() + indexOfRemovedEntity);
                 size_t componentSize = componentArray.size();
                 
                 // Update maps
                 for (size_t i = indexOfRemovedEntity; i < componentSize; i++){
                     Entity temp = indexToEntityMap[i+1];
-                    entityToIndexMap[temp] = i;
+                    entityToIndexMap.set(temp, i);
                     indexToEntityMap[i] = temp;
                 }
                 
@@ -99,8 +99,12 @@ namespace doriax {
 
         void moveEntityRangeToIndex(Entity start, Entity end, size_t newIndex){
 
-            size_t startIndex = entityToIndexMap[start];
-            size_t endIndex = entityToIndexMap[end];
+            size_t startIndex = entityToIndexMap.find(start);
+            size_t endIndex = entityToIndexMap.find(end);
+            if (startIndex == SparseArray::NONE || endIndex == SparseArray::NONE){
+                Log::error("Cannot move entity range without components");
+                return;
+            }
             size_t length = endIndex - startIndex + 1;
             size_t oldIndex = startIndex;
 
@@ -117,19 +121,19 @@ namespace doriax {
             if (oldIndex > newIndex){
                 for (size_t i = oldIndex+length-1; i > newIndex+length-1; i--){
                     Entity moved = indexToEntityMap[i-length];
-                    entityToIndexMap[moved] = i;
+                    entityToIndexMap.set(moved, i);
                     indexToEntityMap[i] = moved;
                 }
             }else{
                 for (size_t i = oldIndex; i < newIndex; i++){
                     Entity moved = indexToEntityMap[i+length];
-                    entityToIndexMap[moved] = i;
+                    entityToIndexMap.set(moved, i);
                     indexToEntityMap[i] = moved;
                 }
             }
 
             for (int i = 0; i < tmp.size(); i++){
-                entityToIndexMap[tmp[i]] = newIndex+i;
+                entityToIndexMap.set(tmp[i], newIndex+i);
                 indexToEntityMap[newIndex+i] = tmp[i];
             }
 
@@ -138,23 +142,27 @@ namespace doriax {
 
         void moveEntityToIndex(Entity entity, size_t newIndex){
 
-            size_t oldIndex = entityToIndexMap[entity];
+            size_t oldIndex = entityToIndexMap.find(entity);
+            if (oldIndex == SparseArray::NONE){
+                Log::error("Cannot move entity without component");
+                return;
+            }
 
             if (oldIndex > newIndex){
                 for (size_t i = oldIndex; i > newIndex; i--){
                     Entity moved = indexToEntityMap[i-1];
-                    entityToIndexMap[moved] = i;
+                    entityToIndexMap.set(moved, i);
                     indexToEntityMap[i] = moved;
                 }
             }else{
                 for (size_t i = oldIndex; i < newIndex; i++){
                     Entity moved = indexToEntityMap[i+1];
-                    entityToIndexMap[moved] = i;
+                    entityToIndexMap.set(moved, i);
                     indexToEntityMap[i] = moved;
                 }
             }
 
-            entityToIndexMap[entity] = newIndex;
+            entityToIndexMap.set(entity, newIndex);
             indexToEntityMap[newIndex] = entity;
 
             moveRange(oldIndex, 1, newIndex);
@@ -183,54 +191,46 @@ namespace doriax {
                 return indexA < indexB;
             });
 
-            // Create new arrays/maps
+            // Create new arrays, same entities in the index
             std::vector<T> newComponentArray(componentArray.size());
-            std::unordered_map<Entity, size_t> newEntityToIndexMap;
             std::vector<Entity> newIndexToEntityMap(componentArray.size());
 
             for (size_t newIndex = 0; newIndex < indices.size(); ++newIndex) {
                 size_t oldIndex = indices[newIndex];
                 Entity entity = indexToEntityMap[oldIndex];
                 newComponentArray[newIndex] = componentArray[oldIndex];
-                newEntityToIndexMap[entity] = newIndex;
+                entityToIndexMap.set(entity, newIndex);
                 newIndexToEntityMap[newIndex] = entity;
             }
 
-            // Assign new arrays/maps back
+            // Assign new arrays back
             componentArray = std::move(newComponentArray);
-            entityToIndexMap = std::move(newEntityToIndexMap);
             indexToEntityMap = std::move(newIndexToEntityMap);
         }
 
         bool hasEntity(Entity entity) {
-            auto it = entityToIndexMap.find(entity);
-
-            if (it == entityToIndexMap.end()) {
-                 return false;
-            }
-
-            return true;
+            return entityToIndexMap.contains(entity);
         }
 
         T* findComponent(Entity entity) {
-            auto it = entityToIndexMap.find(entity);
+            size_t index = entityToIndexMap.find(entity);
 
-            if (it == entityToIndexMap.end()) {
+            if (index == SparseArray::NONE) {
                  return NULL;
             }
 
-            return &componentArray[it->second];
+            return &componentArray[index];
         }
 
         T& getComponent(Entity entity) {
-            try{
+            size_t index = entityToIndexMap.find(entity);
 
-                return componentArray[entityToIndexMap.at(entity)];
-
-            }catch (const std::out_of_range& e){
-                Log::error("Retrieving non-existent component: %s", e.what());
-                throw;
+            if (index == SparseArray::NONE) {
+                Log::error("Retrieving non-existent component");
+                throw std::out_of_range("Retrieving non-existent component");
             }
+
+            return componentArray[index];
         }
 
         T* findComponentFromIndex(size_t index) {
@@ -253,14 +253,14 @@ namespace doriax {
         }
 
         size_t getIndex(Entity entity){
-            try{
+            size_t index = entityToIndexMap.find(entity);
 
-                return entityToIndexMap.at(entity);
-
-            }catch (const std::out_of_range& e){
-                Log::error("Retrieving non-existent component: %s", e.what());
-                throw;
+            if (index == SparseArray::NONE) {
+                Log::error("Retrieving non-existent component");
+                throw std::out_of_range("Retrieving non-existent component");
             }
+
+            return index;
         }
 
         Entity getEntity(size_t index){
@@ -277,7 +277,7 @@ namespace doriax {
         }
 
         void entityDestroyed(Entity entity) override {
-            if (entityToIndexMap.find(entity) != entityToIndexMap.end()) {
+            if (entityToIndexMap.contains(entity)) {
                 remove(entity);
             }
         }

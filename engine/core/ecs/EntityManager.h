@@ -4,21 +4,16 @@
 #ifndef ENTITYMANAGER_H
 #define ENTITYMANAGER_H
 
-#include <unordered_map>
 #include <set>
 #include <vector>
 #include <string>
 #include <limits>
 #include "Entity.h"
 #include "Signature.h"
+#include "SparseArray.h"
 #include "Log.h"
 
 namespace doriax{
-
-    struct EntityMetadata{
-        std::string name;
-        Signature signature;
-    };
 
     class DORIAX_API EntityManager {
     private:
@@ -27,12 +22,25 @@ namespace doriax{
         static constexpr Entity FIRST_USER_ENTITY   = LAST_SYSTEM_ENTITY + 1;
 
         Entity lastUserEntity = LAST_SYSTEM_ENTITY; // next user entity starts at 1001
-        std::unordered_map<Entity, EntityMetadata> metadata;
+
+        // one row per entity, signatures apart from the names
+        SparseArray rows;
+        std::vector<Entity> rowEntities;
+        std::vector<Signature> signatures;
+        std::vector<std::string> names;
         std::set<Entity> entities; // the same ids in order, as getEntityList returns them
 
-        EntityMetadata& getMetadata(Entity entity){
-            entities.insert(entity);
-            return metadata[entity];
+        size_t getRow(Entity entity){
+            size_t row = rows.find(entity);
+            if (row == SparseArray::NONE){
+                row = rowEntities.size();
+                rows.set(entity, row);
+                rowEntities.push_back(entity);
+                signatures.emplace_back();
+                names.emplace_back();
+                entities.insert(entity);
+            }
+            return row;
         }
 
     public:
@@ -43,7 +51,7 @@ namespace doriax{
 
         bool recreateEntity(Entity entity) { // for internal editor use only
             if (!isCreated(entity)){
-                getMetadata(entity);
+                getRow(entity);
                 return true;
             }
             return false;
@@ -64,8 +72,8 @@ namespace doriax{
         // System entity in range [1,100], first free slot
         Entity createSystemEntity() {
             for (Entity e = FIRST_SYSTEM_ENTITY; e <= LAST_SYSTEM_ENTITY; ++e){
-                if (metadata.count(e) == 0){
-                    getMetadata(e);
+                if (!rows.contains(e)){
+                    getRow(e);
                     return e;
                 }
             }
@@ -92,22 +100,36 @@ namespace doriax{
                     candidate = FIRST_USER_ENTITY;
                 }
 
-                if (metadata.count(candidate) == 0){
+                if (!rows.contains(candidate)){
                     break;
                 }
             }
 
             lastUserEntity = candidate;
-            getMetadata(candidate);
+            getRow(candidate);
             return candidate;
         }
 
         bool isCreated(Entity entity) const {
-            return metadata.count(entity) > 0;
+            return rows.contains(entity);
         }
 
         void destroy(Entity entity) {
-            metadata.erase(entity);
+            size_t row = rows.find(entity);
+            if (row != SparseArray::NONE){
+                // the last row fills the gap
+                size_t last = rowEntities.size() - 1;
+                if (row != last){
+                    rowEntities[row] = rowEntities[last];
+                    signatures[row] = signatures[last];
+                    names[row] = std::move(names[last]);
+                    rows.set(rowEntities[row], row);
+                }
+                rowEntities.pop_back();
+                signatures.pop_back();
+                names.pop_back();
+                rows.erase(entity);
+            }
             entities.erase(entity);
         }
 
@@ -116,34 +138,35 @@ namespace doriax{
         }
 
         void setSignature(Entity entity, Signature signature) {
-            if (metadata.count(entity)==0){
+            if (!rows.contains(entity)){
                 Log::error("Entity does not exist to set signature");
             }
-            getMetadata(entity).signature = signature;
+            signatures[getRow(entity)] = signature;
         }
 
         Signature getSignature(Entity entity) const{
-            auto it = metadata.find(entity);
-            if (it == metadata.end()){
+            size_t row = rows.find(entity);
+            if (row == SparseArray::NONE){
                 Log::error("Entity does not exist to get signature");
                 return Signature();
             }
-            return it->second.signature;
+            return signatures[row];
         }
 
         void setName(Entity entity, const std::string& name) {
-            if (metadata.count(entity)==0){
+            if (!rows.contains(entity)){
                 Log::error("Entity does not exist to set name");
             }
-            getMetadata(entity).name = name;
+            names[getRow(entity)] = name;
         }
 
         std::string getName(Entity entity) const{
-            if (metadata.count(entity)==0){
+            size_t row = rows.find(entity);
+            if (row == SparseArray::NONE){
                 Log::error("Entity does not exist to get name");
                 return std::string();
             }
-            return metadata.at(entity).name;
+            return names[row];
         }
     };
 

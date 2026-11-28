@@ -113,7 +113,7 @@ namespace doriax {
         void moveChildDown(Entity entity);
         void moveChildToBottom(Entity entity);
 
-        Signature getSignature(Entity entity) const;
+        Signature getSignature(Entity entity) const { return entityManager.getSignature(entity); }
 
         void setEntityName(Entity entity, const std::string& name);
         std::string getEntityName(Entity entity) const;
