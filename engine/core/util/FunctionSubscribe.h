@@ -97,12 +97,6 @@
 #define UNREGISTER_PANEL_EVENT(EVENT, METHOD) UNREGISTER_COMPONENT_EVENT(::doriax::PanelComponent, EVENT, METHOD)
 
 
-template<size_t>
-struct MyPlaceholder {};
-
-template<size_t N>
-struct std::is_placeholder<MyPlaceholder<N>> : public std::integral_constant<size_t, N> {};
-
 namespace doriax {
 
     #ifdef DORIAX_CRASH_GUARD
@@ -197,14 +191,10 @@ namespace doriax {
             enabled = t.enabled;
         }
 
-        template<typename T, size_t... Idx>
-        std::function<Ret(Args...)> bindImpl(T *obj, Ret(T::*funcPtr)(Args...), std::index_sequence<Idx...>){
-            return std::bind(funcPtr, obj, getPlaceholder<Idx>()...);
-        }
-
-        template<size_t N>
-        MyPlaceholder<N + 1> getPlaceholder(){
-            return {};
+        // captures only the object, small enough for std::function
+        template<typename T, Ret(T::*funcPtr)(Args...)>
+        static std::function<Ret(Args...)> bindMethod(T *obj){
+            return [obj](Args... args) -> Ret { return (obj->*funcPtr)(std::forward<Args>(args)...); };
         }
 
     public:
@@ -275,13 +265,13 @@ namespace doriax {
 
         template<typename T, Ret(T::*funcPtr)(Args...)>
         bool add(const std::string& tag, std::shared_ptr<T> obj){
-            addImpl(tag, bindImpl(obj.get(), funcPtr, std::index_sequence_for<Args...>{}));
+            addImpl(tag, bindMethod<T, funcPtr>(obj.get()));
             return true;
         }
 
         template<typename T, Ret(T::*funcPtr)(Args...)>
         bool add(const std::string& tag, T* obj){
-            addImpl(tag, bindImpl(obj, funcPtr, std::index_sequence_for<Args...>{}));
+            addImpl(tag, bindMethod<T, funcPtr>(obj));
             return true;
         }
 
