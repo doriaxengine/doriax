@@ -5681,14 +5681,14 @@ void RenderSystem::loadGTAO(){
     gtaoRender.beginLoad(PrimitiveType::TRIANGLES);
     gtaoRender.setShader(gtaoShader.get());
     gtaoSlotParams = gtaoShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::GTAO_FS_PARAMS);
-    if (!gtaoRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!gtaoRender.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     // fullscreen blur pass
     gtaoBlurRender.beginLoad(PrimitiveType::TRIANGLES);
     gtaoBlurRender.setShader(gtaoBlurShader.get());
     gtaoBlurSlotParams = gtaoBlurShader.get()->shaderData.getUniformBlockIndex(UniformBlockType::GTAO_BLUR_FS_PARAMS);
-    if (!gtaoBlurRender.endLoad(PIP_RTT, false, true, CullingMode::BACK, WindingOrder::CCW))
+    if (!gtaoBlurRender.endLoad(PIP_RTT_NOBLEND, false, true, CullingMode::BACK, WindingOrder::CCW))
         return;
 
     gtaoLoaded = true;
@@ -5758,9 +5758,6 @@ bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int heigh
     gtaoFramebuffer.destroy();
     gtaoBlurFramebuffer.destroy();
 
-    // AO is one channel
-    const ColorFormat format = ColorFormat::RED;
-    gtaoFramebuffer.setColorAttachments(1, &format);
     gtaoFramebuffer.setWidth(width);
     gtaoFramebuffer.setHeight(height);
     gtaoFramebuffer.setMinFilter(TextureFilter::NEAREST);
@@ -5770,7 +5767,6 @@ bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int heigh
     gtaoFramebuffer.create();
 
     // blurred AO is sampled bilinearly by the lit meshes
-    gtaoBlurFramebuffer.setColorAttachments(1, &format);
     gtaoBlurFramebuffer.setWidth(width);
     gtaoBlurFramebuffer.setHeight(height);
     gtaoBlurFramebuffer.setMinFilter(TextureFilter::LINEAR);
@@ -5835,7 +5831,7 @@ void RenderSystem::renderGTAO(CameraComponent& camera, TextureRender* sharedDept
 
     prePassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     prePassRender.startRenderPass(&gtaoFramebuffer.getRender());
-    if (gtaoRender.beginDraw(PIP_RTT)){
+    if (gtaoRender.beginDraw(PIP_RTT_NOBLEND)){
         ShaderData& sd = gtaoShader.get()->shaderData;
         gtaoRender.addTexture(sd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
         gtaoRender.addTexture(sd.getTextureIndex(TextureShaderType::GBUFFERTEXTURE), ShaderStageType::FRAGMENT, normalTexture);
@@ -5851,7 +5847,7 @@ void RenderSystem::renderGTAO(CameraComponent& camera, TextureRender* sharedDept
 
     prePassRender.setClearColor(Vector4(1.0, 1.0, 1.0, 1.0));
     prePassRender.startRenderPass(&gtaoBlurFramebuffer.getRender());
-    if (gtaoBlurRender.beginDraw(PIP_RTT)){
+    if (gtaoBlurRender.beginDraw(PIP_RTT_NOBLEND)){
         ShaderData& bd = gtaoBlurShader.get()->shaderData;
         gtaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::GTAOTEXTURE), ShaderStageType::FRAGMENT, &gtaoFramebuffer.getRender().getColorTexture());
         gtaoBlurRender.addTexture(bd.getTextureIndex(TextureShaderType::DEPTHTEXTURE), ShaderStageType::FRAGMENT, depthTexture);
