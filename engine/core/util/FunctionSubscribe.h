@@ -234,7 +234,7 @@ namespace doriax {
         }
 
         FunctionSubscribe(std::function<Ret(Args...)> function){
-            add("cFunction", function);
+            add("cFunction", std::move(function));
         }
 
         FunctionSubscribe(lua_State *L) {
@@ -242,7 +242,7 @@ namespace doriax {
         }
 
         FunctionSubscribe& operator = (std::function<Ret(Args...)> function){
-            add("cFunction", function);
+            add("cFunction", std::move(function));
 
             return *this;
         }
