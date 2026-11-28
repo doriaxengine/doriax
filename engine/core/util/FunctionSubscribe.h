@@ -20,6 +20,9 @@
 
 #include "Log.h"
 #include "LuaFunction.h"
+#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#include <xmmintrin.h>
+#endif
 #ifdef DORIAX_CRASH_GUARD
 #include "util/CrashGuard.h"
 #endif
@@ -103,6 +106,8 @@ namespace doriax {
     inline void prefetchSubscriber(const void* subscriber) {
     #if defined(__GNUC__) || defined(__clang__)
         __builtin_prefetch(subscriber);
+    #elif defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+        _mm_prefetch(static_cast<const char*>(subscriber), _MM_HINT_T0);
     #else
         (void)subscriber;
     #endif
@@ -147,10 +152,11 @@ namespace doriax {
     private:
         // shared by copies, components are relocated by copying
         struct Subscriber {
-            std::string tag;
+            // what a call reads first, in the prefetched line
             std::function<Ret(Args...)> function;
-            int owners = 0;
             bool removed = false;
+            int owners = 0;
+            std::string tag;
         };
         using SubscriberList = std::vector<std::shared_ptr<Subscriber>>;
 
@@ -184,7 +190,7 @@ namespace doriax {
         bool addImpl(const std::string& tag, std::function<Ret(Args...)> function){
             remove(tag);
 
-            editableSubscribers().push_back(std::make_shared<Subscriber>(Subscriber{tag, std::move(function), 1}));
+            editableSubscribers().push_back(std::make_shared<Subscriber>(Subscriber{std::move(function), false, 1, tag}));
 
             return true;
         }
@@ -256,13 +262,12 @@ namespace doriax {
         }
 
         bool add(const std::string& tag, lua_State *L){
-            std::function<Ret(Args...)> function = LuaFunction<Ret>(L);
-            addImpl(tag, function);
+            addImpl(tag, LuaFunction<Ret>(L));
             return true;
         }
 
         bool add(const std::string& tag, std::function<Ret(Args...)> function) {
-            addImpl(tag, function);
+            addImpl(tag, std::move(function));
             return true;
         }
 
