@@ -24,14 +24,13 @@ std::vector<std::pair<Scene*, Entity>> BundleManager::stoppingEntities;
 
 namespace {
 
-void rollbackSpawnedEntities(Scene* scene, const std::unordered_set<Entity>& beforeSet, Entity root) {
+void rollbackSpawnedEntities(Scene* scene, const std::vector<Entity>& created, Entity root) {
     if (!scene)
         return;
 
-    std::vector<Entity> afterEntities = scene->getEntityList();
-    for (auto it = afterEntities.rbegin(); it != afterEntities.rend(); ++it) {
+    for (auto it = created.rbegin(); it != created.rend(); ++it) {
         Entity e = *it;
-        if (e != root && beforeSet.find(e) == beforeSet.end() && scene->isEntityCreated(e))
+        if (e != root && scene->isEntityCreated(e))
             scene->destroyEntity(e);
     }
 
@@ -179,8 +178,7 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
     const uint32_t id = entry.id;
     const bool ownsRoot = root == NULL_ENTITY;
 
-    std::vector<Entity> beforeEntities = scene->getEntityList();
-    std::unordered_set<Entity> beforeSet(beforeEntities.begin(), beforeEntities.end());
+    size_t record = scene->beginEntityRecord();
 
     if (ownsRoot)
         root = scene->createEntity();
@@ -194,9 +192,11 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
         Log::error("BundleManager: factory for bundle id %u threw an exception", id);
     }
 
+    std::vector<Entity> created = scene->endEntityRecord(record);
+
     if (!ok) {
         Log::error("BundleManager: factory failed for bundle id %u", id);
-        rollbackSpawnedEntities(scene, beforeSet, ownsRoot ? root : NULL_ENTITY);
+        rollbackSpawnedEntities(scene, created, ownsRoot ? root : NULL_ENTITY);
         return NULL_ENTITY;
     }
 
@@ -210,8 +210,8 @@ Entity BundleManager::build(BundleEntry& entry, Scene* scene, Entity root, Entit
     instance.bundleId = id;
     instance.ownsRoot = ownsRoot;
     instance.entities.push_back(root);
-    for (Entity e : scene->getEntityList()) {
-        if (e != root && beforeSet.find(e) == beforeSet.end())
+    for (Entity e : created) {
+        if (e != root)
             instance.entities.push_back(e);
     }
 

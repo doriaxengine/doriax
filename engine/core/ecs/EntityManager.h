@@ -4,6 +4,7 @@
 #ifndef ENTITYMANAGER_H
 #define ENTITYMANAGER_H
 
+#include <algorithm>
 #include <set>
 #include <vector>
 #include <string>
@@ -30,6 +31,10 @@ namespace doriax{
         std::vector<std::string> names;
         std::set<Entity> entities; // the same ids in order, as getEntityList returns them
 
+        // created while a record is open
+        std::vector<Entity> recorded;
+        int openRecords = 0;
+
         size_t getRow(Entity entity){
             size_t row = rows.find(entity);
             if (row == SparseArray::NONE){
@@ -39,6 +44,9 @@ namespace doriax{
                 signatures.emplace_back();
                 names.emplace_back();
                 entities.insert(entity);
+                if (openRecords > 0){
+                    recorded.push_back(entity);
+                }
             }
             return row;
         }
@@ -135,6 +143,28 @@ namespace doriax{
 
         std::vector<Entity> getEntityList() const{
             return std::vector<Entity>(entities.begin(), entities.end());
+        }
+
+        size_t beginRecord(){
+            openRecords++;
+            return recorded.size();
+        }
+
+        // created since the mark and still alive, in id order
+        std::vector<Entity> endRecord(size_t mark){
+            std::vector<Entity> created;
+            for (size_t i = mark; i < recorded.size(); i++){
+                if (rows.contains(recorded[i])){
+                    created.push_back(recorded[i]);
+                }
+            }
+            std::sort(created.begin(), created.end());
+            created.erase(std::unique(created.begin(), created.end()), created.end());
+
+            if (--openRecords == 0){
+                recorded.clear();
+            }
+            return created;
         }
 
         void setSignature(Entity entity, Signature signature) {
