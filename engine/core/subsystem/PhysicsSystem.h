@@ -125,6 +125,8 @@ namespace doriax{
 		bool createGenericJoltBody(Entity entity, Body3DComponent& body, const JPH::ShapeRefC shape);
 
 		JPH::ShapeRefC createCharacterShape3D(Entity entity, float height, float radius, float size);
+		// contacts under it hold the character up, a ramp it walks always does
+		JPH::Plane getCharacter3DSupportingVolume(const Character3DComponent& character, float radius, const Vector3& scale, float padding);
 		void refreshCharacter3DContacts(JPH::CharacterVirtual* character);
 		void updateCharacter3D(Entity entity, float stepTime);
 		// not built yet, asked again, or failed at another scale
@@ -248,6 +250,8 @@ namespace doriax{
 		void setCharacter3DPosition(Entity entity, Character3DComponent& character, Vector3 position);
 		// with checkFit, false when the new capsule does not fit
 		bool setCharacter3DShape(Entity entity, Character3DComponent& character, float height, float radius, bool checkFit);
+		// applies maxSlopeAngle and supportAngle to a built character
+		void updateCharacter3DSupport(Character3DComponent& character);
 #endif
 
 		// Draws the body in its entity, alpha of the way from its pose before the last step.

@@ -30,6 +30,8 @@ namespace doriax{
         float radius = 0.3f;
 
         float maxSlopeAngle = 45.0f;
+        // contacts up to this angle from the bottom of the lower sphere hold it up, at least maxSlopeAngle
+        float supportAngle = 90.0f;
         float stepUp = 0.4f; // 0 does not climb steps
         float stepDown = 0.5f; // 0 does not stick to the ground
         float mass = 70.0f; // kg

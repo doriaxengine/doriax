@@ -2175,8 +2175,7 @@ bool PhysicsSystem::loadCharacter3D(Entity entity){
     settings->mMass = character.mass;
     settings->mMaxStrength = character.maxStrength;
     settings->mCharacterPadding = character.padding;
-    // only the lower sphere stands on things
-    settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -character.radius * maxScaleXZ(absScale(entityScale)));
+    settings->mSupportingVolume = getCharacter3DSupportingVolume(character, character.radius, entityScale, character.padding);
     if (character.innerBody){
         settings->mInnerBodyShape = createCharacterShape3D(entity, character.height, character.radius, 0.9f);
         settings->mInnerBodyLayer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
@@ -2257,15 +2256,18 @@ bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& cha
     JPH::CharacterVirtual* jcharacter = character.character;
     const float maxPenetration = checkFit ? 1.5f * world3D.GetPhysicsSettings().mPenetrationSlop : std::numeric_limits<float>::max();
     const JPH::ObjectLayer layer = JPH::ObjectLayerPairFilterMask::sGetObjectLayer(1);
+    // SetShape finds the ground with the new capsule
+    const JPH::Plane previousSupport = jcharacter->GetSupportingVolume();
+    jcharacter->SetSupportingVolume(getCharacter3DSupportingVolume(character, radius, entityWorldScale(scene, entity), jcharacter->GetCharacterPadding()));
     if (!jcharacter->SetShape(shape, maxPenetration,
             world3D.GetDefaultBroadPhaseLayerFilter(layer), world3D.GetDefaultLayerFilter(layer),
             CharacterBodyFilter3D(scene), JPH::ShapeFilter(), *temp_allocator)){
+        jcharacter->SetSupportingVolume(previousSupport);
         return false;
     }
     if (!jcharacter->GetInnerBodyID().IsInvalid()){
         jcharacter->SetInnerBodyShape(createCharacterShape3D(entity, height, radius, 0.9f));
     }
-    jcharacter->SetSupportingVolume(JPH::Plane(JPH::Vec3::sAxisY(), -radius * maxScaleXZ(absScale(entityWorldScale(scene, entity)))));
 
     // its shouldCollide3D scripts can add or remove characters
     if (Character3DComponent* current = scene->findComponent<Character3DComponent>(entity)){
@@ -2275,6 +2277,25 @@ bool PhysicsSystem::setCharacter3DShape(Entity entity, Character3DComponent& cha
     }
 
     return true;
+}
+
+// the capsule sits padding above the feet, and contacts on its sides never hold it up
+JPH::Plane PhysicsSystem::getCharacter3DSupportingVolume(const Character3DComponent& character, float radius, const Vector3& scale, float padding){
+    radius *= maxScaleXZ(absScale(scale));
+    const float angle = std::clamp(Angle::defaultToRad(std::max(character.supportAngle, character.maxSlopeAngle)), 0.0f, Angle::degToRad(90.0f));
+    const float tolerance = 1.0e-3f; // Jolt's collision tolerance
+    const float height = std::min((radius + padding) * (1.0f - std::cos(angle)) + tolerance, radius + padding - tolerance);
+
+    return JPH::Plane(JPH::Vec3::sAxisY(), -height);
+}
+
+void PhysicsSystem::updateCharacter3DSupport(Character3DComponent& character){
+    if (!character.character){
+        return;
+    }
+
+    character.character->SetMaxSlopeAngle(Angle::defaultToRad(character.maxSlopeAngle));
+    character.character->SetSupportingVolume(getCharacter3DSupportingVolume(character, character.radius, character.loadedScale, character.character->GetCharacterPadding()));
 }
 
 void PhysicsSystem::updateCharacter3D(Entity entity, float stepTime){
@@ -2327,17 +2348,27 @@ void PhysicsSystem::updateCharacter3D(Entity entity, float stepTime){
     // standing, it moves with the ground until leaving it
     const bool onGround = jcharacter->GetGroundState() == JPH::CharacterVirtual::EGroundState::OnGround;
     JPH::Vec3 newVelocity = verticalVelocity;
+    // standing still on ground that holds it, gravity straight down would only push it along a tilted contact, off an edge
+    const bool downwardGravity = gravity.Dot(up) <= 0.0f && (gravity - gravity.Dot(up) * up).IsNearZero();
+    bool resting = false;
     if (onGround && (verticalVelocity - groundVelocity).Dot(up) < 0.1f){
         newVelocity = groundVelocity;
+        resting = isCharacterStanding3D(*character) && groundVelocity.IsNearZero() && downwardGravity;
     }
     if (character->needJump){
         newVelocity = (onGround ? groundVelocity : JPH::Vec3::sZero()) + character->jumpSpeed * up;
         character->needJump = false;
+        resting = false;
     }
-    newVelocity += gravity * stepTime;
+    if (!resting){
+        newVelocity += gravity * stepTime;
+    }
 
     if (onGround){
-        newVelocity += moveVelocity;
+        // under 1 cm/s it stays where it rests
+        if (!resting){
+            newVelocity += moveVelocity;
+        }
     }else{
         // steers from the momentum it has
         const JPH::Vec3 horizontalVelocity = velocity - verticalVelocity;

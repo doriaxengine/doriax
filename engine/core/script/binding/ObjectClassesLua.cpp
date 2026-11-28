@@ -1631,6 +1631,7 @@ void LuaBinding::registerObjectClasses(lua_State *L){
         .addFunction("getHeight", &Character3D::getHeight)
         .addFunction("getRadius", &Character3D::getRadius)
         .addProperty("maxSlopeAngle", &Character3D::getMaxSlopeAngle, &Character3D::setMaxSlopeAngle)
+        .addProperty("supportAngle", &Character3D::getSupportAngle, &Character3D::setSupportAngle)
         .addProperty("stepUp", &Character3D::getStepUp, &Character3D::setStepUp)
         .addProperty("stepDown", &Character3D::getStepDown, &Character3D::setStepDown)
         .addProperty("mass", &Character3D::getMass, &Character3D::setMass)

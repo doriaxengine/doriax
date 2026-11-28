@@ -691,6 +691,7 @@ namespace {
         makeFastProperty<Character3DComponent, float, &Character3DComponent::height>("height", PropertyType::Float, UpdateFlags_Character3D),
         makeFastProperty<Character3DComponent, float, &Character3DComponent::radius>("radius", PropertyType::Float, UpdateFlags_Character3D),
         makeFastProperty<Character3DComponent, float, &Character3DComponent::maxSlopeAngle>("maxSlopeAngle", PropertyType::Float, UpdateFlags_Character3D),
+        makeFastProperty<Character3DComponent, float, &Character3DComponent::supportAngle>("supportAngle", PropertyType::Float, UpdateFlags_Character3D),
         makeFastProperty<Character3DComponent, float, &Character3DComponent::stepUp>("stepUp", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<Character3DComponent, float, &Character3DComponent::stepDown>("stepDown", PropertyType::Float, UpdateFlags_None),
         makeFastProperty<Character3DComponent, float, &Character3DComponent::mass>("mass", PropertyType::Float, UpdateFlags_Character3D),

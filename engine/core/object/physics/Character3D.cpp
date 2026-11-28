@@ -5,7 +5,6 @@
 
 #include "object/Object.h"
 #include "subsystem/PhysicsSystem.h"
-#include "util/Angle.h"
 
 using namespace doriax;
 
@@ -153,9 +152,18 @@ void Character3D::setMaxSlopeAngle(float maxSlopeAngle){
     Character3DComponent& character = getComponent<Character3DComponent>();
     character.maxSlopeAngle = maxSlopeAngle;
 
-    if (character.character){
-        character.character->SetMaxSlopeAngle(Angle::defaultToRad(maxSlopeAngle));
-    }
+    scene->getSystem<PhysicsSystem>()->updateCharacter3DSupport(character);
+}
+
+float Character3D::getSupportAngle() const{
+    return getComponent<Character3DComponent>().supportAngle;
+}
+
+void Character3D::setSupportAngle(float supportAngle){
+    Character3DComponent& character = getComponent<Character3DComponent>();
+    character.supportAngle = supportAngle;
+
+    scene->getSystem<PhysicsSystem>()->updateCharacter3DSupport(character);
 }
 
 float Character3D::getStepUp() const{

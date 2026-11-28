@@ -1433,6 +1433,7 @@ void LuaBinding::registerECSClasses(lua_State *L){
         .addProperty("height", &Character3DComponent::height, &Character3DComponent::height)
         .addProperty("radius", &Character3DComponent::radius, &Character3DComponent::radius)
         .addProperty("maxSlopeAngle", &Character3DComponent::maxSlopeAngle, &Character3DComponent::maxSlopeAngle)
+        .addProperty("supportAngle", &Character3DComponent::supportAngle, &Character3DComponent::supportAngle)
         .addProperty("stepUp", &Character3DComponent::stepUp, &Character3DComponent::stepUp)
         .addProperty("stepDown", &Character3DComponent::stepDown, &Character3DComponent::stepDown)
         .addProperty("mass", &Character3DComponent::mass, &Character3DComponent::mass)

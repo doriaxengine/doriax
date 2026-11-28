@@ -3201,6 +3201,10 @@ bool editor::Properties::propertyRow(RowPropertyType type, ComponentType cpType,
             v_min = 0.0F;
             v_max = FLT_MAX;
         }
+        if (settings.floatMax > settings.floatMin){
+            v_min = settings.floatMin;
+            v_max = settings.floatMax;
+        }
 
         std::string newFormat = settings.format;
         if (type == RowPropertyType::HalfCone){
@@ -11777,7 +11781,11 @@ void editor::Properties::drawCharacter3DComponent(ComponentType cpType, ScenePro
     RowSettings settingsSlope;
     settingsSlope.stepSize = 1.0f;
     settingsSlope.format = "%.1f";
+    settingsSlope.floatMax = 90.0f;
     settingsSlope.help = "Steepest ramp it walks up, it slides down steeper ones.";
+
+    RowSettings settingsSupport = settingsSlope;
+    settingsSupport.help = "How far up its rounded bottom a contact still holds it up, from Max Slope to 90. Lower drops it off edges sooner.";
 
     RowSettings settingsStepUp = settingsValue;
     settingsStepUp.help = "Highest step it climbs while walking.";
@@ -11805,6 +11813,7 @@ void editor::Properties::drawCharacter3DComponent(ComponentType cpType, ScenePro
     propertyRow(RowPropertyType::FloatPositive, cpType, "height", "Height", sceneProject, entities, settingsValue);
     propertyRow(RowPropertyType::FloatPositive, cpType, "radius", "Radius", sceneProject, entities, settingsValue);
     propertyRow(RowPropertyType::FloatPositive, cpType, "maxSlopeAngle", "Max Slope", sceneProject, entities, settingsSlope);
+    propertyRow(RowPropertyType::FloatPositive, cpType, "supportAngle", "Support Angle", sceneProject, entities, settingsSupport);
     propertyRow(RowPropertyType::FloatPositive, cpType, "stepUp", "Step Up", sceneProject, entities, settingsStepUp);
     propertyRow(RowPropertyType::FloatPositive, cpType, "stepDown", "Step Down", sceneProject, entities, settingsStepDown);
     propertyRow(RowPropertyType::Float, cpType, "gravityFactor", "Gravity Factor", sceneProject, entities, settingsValue);

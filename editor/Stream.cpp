@@ -7699,6 +7699,7 @@ YAML::Node editor::Stream::encodeCharacter3DComponent(const Character3DComponent
     node["height"] = character.height;
     node["radius"] = character.radius;
     node["maxSlopeAngle"] = character.maxSlopeAngle;
+    node["supportAngle"] = character.supportAngle;
     node["stepUp"] = character.stepUp;
     node["stepDown"] = character.stepDown;
     node["mass"] = character.mass;
@@ -7721,6 +7722,7 @@ Character3DComponent editor::Stream::decodeCharacter3DComponent(const YAML::Node
     if (node["height"]) character.height = node["height"].as<float>();
     if (node["radius"]) character.radius = node["radius"].as<float>();
     if (node["maxSlopeAngle"]) character.maxSlopeAngle = node["maxSlopeAngle"].as<float>();
+    if (node["supportAngle"]) character.supportAngle = node["supportAngle"].as<float>();
     if (node["stepUp"]) character.stepUp = node["stepUp"].as<float>();
     if (node["stepDown"]) character.stepDown = node["stepDown"].as<float>();
     if (node["mass"]) character.mass = node["mass"].as<float>();

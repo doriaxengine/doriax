@@ -2068,6 +2068,7 @@ std::string editor::Factory::createCharacter3DComponent(int indentSpaces, Entity
     code << ind << "character3d.height = " << formatFloat(character.height) << ";\n";
     code << ind << "character3d.radius = " << formatFloat(character.radius) << ";\n";
     code << ind << "character3d.maxSlopeAngle = " << formatFloat(character.maxSlopeAngle) << ";\n";
+    code << ind << "character3d.supportAngle = " << formatFloat(character.supportAngle) << ";\n";
     code << ind << "character3d.stepUp = " << formatFloat(character.stepUp) << ";\n";
     code << ind << "character3d.stepDown = " << formatFloat(character.stepDown) << ";\n";
     code << ind << "character3d.mass = " << formatFloat(character.mass) << ";\n";

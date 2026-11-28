@@ -72,6 +72,9 @@ namespace doriax::editor{
         // 0/0 (min >= max) the field stays unbounded, preserving existing rows.
         int intMin = 0;
         int intMax = 0;
+        // the same for the float rows, replacing the range of their type
+        float floatMin = 0.0f;
+        float floatMax = 0.0f;
         bool child = false;
         std::string help = "";
         const char *format = "%.2f";

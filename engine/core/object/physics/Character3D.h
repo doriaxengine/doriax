@@ -60,6 +60,10 @@ namespace doriax{
         float getMaxSlopeAngle() const;
         void setMaxSlopeAngle(float maxSlopeAngle);
 
+        // from the bottom of the lower sphere, lower drops it off edges sooner, never under maxSlopeAngle
+        float getSupportAngle() const;
+        void setSupportAngle(float supportAngle);
+
         float getStepUp() const;
         void setStepUp(float stepUp);
 
