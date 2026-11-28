@@ -2999,6 +2999,7 @@
 		71E36B8525D5996400EFEED4 /* ComponentManager.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = ComponentManager.h; sourceTree = "<group>"; };
 		71E36B8625D5996400EFEED4 /* SubSystem.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SubSystem.h; sourceTree = "<group>"; };
 		71E36B8725D5996400EFEED4 /* Entity.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = Entity.h; sourceTree = "<group>"; };
+		71E36B8F25D5996400EFEED4 /* SparseArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SparseArray.h; sourceTree = "<group>"; };
 		71E36B8C25D5999C00EFEED4 /* libtinyobjloader-macos.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libtinyobjloader-macos.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		71E36BB325D599C000EFEED4 /* tiny_obj_loader.cc */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = tiny_obj_loader.cc; sourceTree = "<group>"; };
 		71E36BB425D599C000EFEED4 /* tiny_obj_loader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = tiny_obj_loader.h; sourceTree = "<group>"; };
@@ -5624,6 +5625,7 @@
 				71E36B8725D5996400EFEED4 /* Entity.h */,
 				71E36B8425D5996400EFEED4 /* EntityManager.h */,
 				71E36B8325D5996400EFEED4 /* Signature.h */,
+				71E36B8F25D5996400EFEED4 /* SparseArray.h */,
 				71E36B8625D5996400EFEED4 /* SubSystem.h */,
 			);
 			path = ecs;
