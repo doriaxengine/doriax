@@ -23,7 +23,9 @@ namespace doriax{
         : LuaFunctionBase(vm, func){ }
 
         LuaFunction(lua_State *vm)
-        : LuaFunctionBase(vm){ }
+        : LuaFunctionBase(vm){
+            unwrap_method();
+        }
 
         template <typename... Args>
         Ret operator()(const Args&... args){

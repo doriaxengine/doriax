@@ -19,6 +19,7 @@ namespace doriax {
     class DORIAX_API LuaBinding {
         
         friend class Engine;
+        friend class LuaFunctionBase;
         
     private:
         static lua_State *luastate;
@@ -33,6 +34,8 @@ namespace doriax {
         static int luaRegisterEvent(lua_State* L);
         static int luaRegisterEngineEvent(lua_State* L);
         static int luaRegisterEventImpl(lua_State* L, int eventIndex, int selfIndex, const char* methodName, const char* tag);
+        // method(self, ...) of an event subscription, both upvalues
+        static int callEventMethod(lua_State* L);
         static std::string getScriptSubscriptionTag(int luaRef);
 
         static int moduleLoader(lua_State *L);
@@ -74,9 +77,6 @@ namespace doriax {
 
         // lua_pcall with stack traceback on error
         static int pcallWithTraceback(lua_State* L, int nargs, int nresults);
-
-        // method(self, ...) of an event subscription, both upvalues
-        static int callEventMethod(lua_State* L);
 
         static void stackDump (lua_State *L);
 

@@ -55,6 +55,12 @@ LuaFunctionBase::LuaFunctionBase(const LuaFunctionBase &other) {
     copy_function(other);
 }
 
+LuaFunctionBase::LuaFunctionBase(LuaFunctionBase &&other) noexcept:
+    m_vm(other.m_vm), m_func(other.m_func), m_self(other.m_self), m_generation(other.m_generation) {
+    other.m_func = LUA_NOREF;
+    other.m_self = LUA_NOREF;
+}
+
 LuaFunctionBase::~LuaFunctionBase(){
     release();
 }
@@ -114,13 +120,6 @@ void LuaFunctionBase::store_function(lua_State *vm){
         lua_pop(vm, 1);
         throw std::runtime_error("not a valid function");
     }
-    // an event method runs with its self, not the closure
-    if (lua_tocfunction(vm, -1) == LuaBinding::callEventMethod) {
-        lua_getupvalue(vm, -1, 2);
-        m_self = luaL_ref(vm, LUA_REGISTRYINDEX);
-        lua_getupvalue(vm, -1, 1);
-        lua_replace(vm, -2);
-    }
     // store it in registry for later use
     m_func = luaL_ref(vm, LUA_REGISTRYINDEX);
     m_generation = LuaBinding::getLuaStateGeneration();
@@ -128,6 +127,21 @@ void LuaFunctionBase::store_function(lua_State *vm){
 
 void LuaFunctionBase::push_function(lua_State *vm, int func){
     lua_rawgeti(vm, LUA_REGISTRYINDEX, func);
+}
+
+void LuaFunctionBase::unwrap_method(){
+    if (!is_alive())
+        return;
+
+    // the method runs with its self, not through the closure
+    lua_rawgeti(m_vm, LUA_REGISTRYINDEX, m_func);
+    if (lua_tocfunction(m_vm, -1) == LuaBinding::callEventMethod && lua_getupvalue(m_vm, -1, 2)) {
+        m_self = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+        lua_getupvalue(m_vm, -1, 1);
+        luaL_unref(m_vm, LUA_REGISTRYINDEX, m_func);
+        m_func = luaL_ref(m_vm, LUA_REGISTRYINDEX);
+    }
+    lua_pop(m_vm, 1);
 }
 
 int LuaFunctionBase::push_self(lua_State *vm){

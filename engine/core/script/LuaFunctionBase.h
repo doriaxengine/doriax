@@ -52,6 +52,8 @@ namespace doriax{
         void push_function(lua_State *vm, int func);
         // push the self of an event method, how many were pushed
         int push_self(lua_State *vm);
+        // an event method closure is kept as its method and self
+        void unwrap_method();
 
         // call the function, logs a traceback on error
         void call(int args, int results = 0);
@@ -101,6 +103,7 @@ namespace doriax{
         LuaFunctionBase(lua_State *vm);
 
         LuaFunctionBase(const LuaFunctionBase &other);
+        LuaFunctionBase(LuaFunctionBase &&other) noexcept;
 
         ~LuaFunctionBase();
 
