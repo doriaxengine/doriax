@@ -134,6 +134,7 @@ uniform u_fs_pbrParams {
         vec4 globalIllum; //globalColor.xyz and globalIntensity.w
         vec4 envColor; //environment color.rgb (linear) and environment rotation.w (radians)
         vec4 viewportInfo; //1.0/viewportSize.xy in .xy
+        vec4 viewportOrigin; //where the color pass starts in gl_FragCoord.xy
     } lighting;
 #endif
 
@@ -535,7 +536,7 @@ void main() {
             // above); the direct punctual lighting added below is unaffected.
             // The AO buffer is in depth orientation, so flip Y when that differs
             // from the color target (viewportInfo.w=1).
-            vec2 aoUV = gl_FragCoord.xy * lighting.viewportInfo.xy;
+            vec2 aoUV = (gl_FragCoord.xy - lighting.viewportOrigin.xy) * lighting.viewportInfo.xy;
             if (lighting.viewportInfo.w > 0.5) aoUV.y = 1.0 - aoUV.y;
             float screenAO = texture(sampler2D(u_gtaoTexture, u_gtao_smp), aoUV).r;
             // debug: visualize the raw AO buffer (viewportInfo.z = 1)

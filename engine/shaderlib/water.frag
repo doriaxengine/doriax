@@ -42,6 +42,7 @@ uniform u_fs_lighting {
     vec4 globalIllum; //globalColor.xyz and globalIntensity.w
     vec4 envColor; //environment color.rgb (linear) and environment rotation.w (radians)
     vec4 viewportInfo; //1.0/viewportSize.xy in .xy, rendering-flipped flag in .w
+    vec4 viewportOrigin; //where the color pass starts in gl_FragCoord.xy
 } lighting;
 
 uniform texture2D u_waterNormalTexture;

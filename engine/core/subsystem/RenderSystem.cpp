@@ -2090,6 +2090,9 @@ void RenderSystem::renderReflectionProbeCapture(){
     fs_lighting.eyePos = Vector4(capturePosition.x, capturePosition.y, capturePosition.z, 1.0f);
     fs_lighting.cameraDir = Vector4(captureCamera.worldDirection.x, captureCamera.worldDirection.y,
                                     captureCamera.worldDirection.z, mainLighting.cameraDir.w);
+    // GTAO is the main camera's, not last frame's in a probe
+    fs_lighting.viewportInfo.z = 0.0f;
+    currentGTAOTexture = &emptyWhite;
     applyViewLights(capturePosition);
 
     capturingReflectionProbe = true;
@@ -12117,6 +12120,8 @@ void RenderSystem::draw(){
         fs_lighting = mainLighting;
         if (!isMainCamera){
             applyViewLights(cameraTransform.worldPosition);
+            // no GTAO here, so no debug view either
+            fs_lighting.viewportInfo.z = 0.0f;
         }
 
         // effect functions see this camera, with its own view parameters
@@ -12361,6 +12366,8 @@ void RenderSystem::draw(){
         // a flipped or offset color target dithers the pixels the depth passes do
         effectView.ditherOrigin = Vector2(colorPassViewport.getX(),
             colorPassViewport.getY() + (isRenderingFlipped(camera) ? colorPassViewport.getHeight() : 0.0f));
+        // the GTAO texture covers the pass, letterboxed or not
+        fs_lighting.viewportOrigin = Vector4(colorPassViewport.getX(), colorPassViewport.getY(), 0.0f, 0.0f);
 
 
         //---------Draw opaque meshes and UI----------

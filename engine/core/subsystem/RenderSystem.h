@@ -54,6 +54,7 @@ namespace doriax{
 		Vector4 globalIllum; //global illumination
 		Vector4 envColor; //environment color.rgb (linear) and environment rotation.w (radians)
 		Vector4 viewportInfo; //1.0/viewportSize.xy in .xy (used by USE_GTAO)
+		Vector4 viewportOrigin; //where the color pass starts in gl_FragCoord.xy (used by USE_GTAO)
 	} fs_lighting_t;
 
 	typedef struct fs_lighting2d_t {

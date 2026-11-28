@@ -47,6 +47,12 @@ vec3 viewPosition(vec2 uv, float dist){
     return vec3((ndc * gtao.ndcToView.xy + gtao.ndcToView.zw) * mix(dist, 1.0, gtao.flags.y), -dist);
 }
 
+// 0 past the depth texture, where nothing is known
+float onScreen(vec2 uv){
+    vec2 d = abs(uv - 0.5);
+    return step(max(d.x, d.y), 0.5);
+}
+
 float fastAcos(float x){
     float ax = min(abs(x), 1.0);
     float r = (-0.156583 * ax + HALF_PI) * sqrt(1.0 - ax);
@@ -86,8 +92,9 @@ void main(){
         vec3 dpdx = (abs(Pr.z - P.z) < abs(P.z - Pl.z)) ? (Pr - P) : (P - Pl);
         vec3 dpdy = (abs(Pu.z - P.z) < abs(P.z - Pd.z)) ? (Pu - P) : (P - Pd);
         N = normalize(cross(dpdx, dpdy));
+        // its sign follows the backend's y
+        if (dot(N, V) < 0.0) N = -N;
     }
-    if (dot(N, V) < 0.0) N = -N;
 
     float radius = gtao.params.x;
     float pixelRadius = radius * gtao.params.z / mix(dist, 1.0, gtao.flags.y);
@@ -129,13 +136,15 @@ void main(){
         for (int step = 0; step < STEPS; step++){
             float s = (float(step) + fract(noiseStep + float(slice + step * STEPS) * 0.618034)) / float(STEPS);
             vec2 offset = round(mix(FIRST_TAP, sliceRadius, s * s) * dir) * gtao.screen.xy;
-            vec3 delta0 = viewPosition(uv + offset, viewDistance(uv + offset)) - P;
-            vec3 delta1 = viewPosition(uv - offset, viewDistance(uv - offset)) - P;
+            vec2 uv0 = uv + offset;
+            vec2 uv1 = uv - offset;
+            vec3 delta0 = viewPosition(uv0, viewDistance(uv0)) - P;
+            vec3 delta1 = viewPosition(uv1, viewDistance(uv1)) - P;
             // occluders in front of the point fade sooner, as thin ones
             float fall0 = length(vec3(delta0.xy, delta0.z + max(delta0.z, 0.0) * gtao.params.y));
             float fall1 = length(vec3(delta1.xy, delta1.z + max(delta1.z, 0.0) * gtao.params.y));
-            float weight0 = clamp(fall0 * falloffMul + falloffAdd, 0.0, 1.0);
-            float weight1 = clamp(fall1 * falloffMul + falloffAdd, 0.0, 1.0);
+            float weight0 = clamp(fall0 * falloffMul + falloffAdd, 0.0, 1.0) * onScreen(uv0);
+            float weight1 = clamp(fall1 * falloffMul + falloffAdd, 0.0, 1.0) * onScreen(uv1);
             horizonCos0 = max(horizonCos0, mix(lowHorizonCos0, dot(delta0, V) / max(length(delta0), 1e-6), weight0));
             horizonCos1 = max(horizonCos1, mix(lowHorizonCos1, dot(delta1, V) / max(length(delta1), 1e-6), weight1));
         }

@@ -3207,7 +3207,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v94: its thin occluders come from the scene.
     // v95: its taps never land on the center texel.
     // v96: GTAO shader names, Gao for its mesh variant.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v96";
+    // v97: GTAO taps stay on screen, lighting has the pass origin.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v97";
 }
 
 void editor::App::pushTabNotificationStyle(){
