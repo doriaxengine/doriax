@@ -3208,7 +3208,8 @@ std::filesystem::path editor::App::getUserShaderCacheDir(){
     // v95: its taps never land on the center texel.
     // v96: GTAO shader names, Gao for its mesh variant.
     // v97: GTAO taps stay on screen, lighting has the pass origin.
-    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v97";
+    // v98: GTAO slices are even in view, for stretched texels.
+    return App::getUserCacheBaseDir() / "doriax" / "shaders" / "v98";
 }
 
 void editor::App::pushTabNotificationStyle(){

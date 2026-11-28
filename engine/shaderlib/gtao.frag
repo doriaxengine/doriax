@@ -112,12 +112,16 @@ void main(){
     // depth texture rows run down the view everywhere but GL
     float ySign = (depthUVToNDCY(1.0) - depthUVToNDCY(0.0)) * 0.5;
 
+    // slices even in view, so stretched texels keep the average
+    float phi = noiseSlice * (PI / float(SLICES));
+    vec2 viewDir = vec2(cos(phi), sin(phi));
+    const vec2 turn = vec2(cos(PI / float(SLICES)), sin(PI / float(SLICES)));
+
     float visibility = 0.0;
     for (int slice = 0; slice < SLICES; slice++){
-        float phi = (float(slice) + noiseSlice) * (PI / float(SLICES));
-        vec2 dir = vec2(cos(phi), sin(phi));
-        vec2 viewDir = vec2(dir.x, dir.y * gtao.params.w);
-        float sliceRadius = max(min(pixelRadius / length(viewDir), maxRadius), FIRST_TAP);
+        vec2 dir = vec2(viewDir.x, viewDir.y / gtao.params.w);
+        float sliceRadius = max(min(pixelRadius * length(dir), maxRadius), FIRST_TAP);
+        dir = normalize(dir);
 
         vec3 directionVec = vec3(viewDir.x, viewDir.y * ySign, 0.0);
         vec3 orthoDirectionVec = directionVec - dot(directionVec, V) * V;
@@ -152,6 +156,8 @@ void main(){
         float h0 = n + clamp(-fastAcos(horizonCos1) - n, -HALF_PI, HALF_PI);
         float h1 = n + clamp(fastAcos(horizonCos0) - n, -HALF_PI, HALF_PI);
         visibility += projectedLength * (2.0 * cosNorm + 2.0 * (h0 + h1) * sinN - cos(2.0 * h0 - n) - cos(2.0 * h1 - n)) * 0.25;
+        // the next slice, without its own sin and cos
+        viewDir = vec2(viewDir.x * turn.x - viewDir.y * turn.y, viewDir.x * turn.y + viewDir.y * turn.x);
     }
 
     // linear: the blur averages the slices, then applies intensity

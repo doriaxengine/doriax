@@ -5739,7 +5739,7 @@ void RenderSystem::destroyGTAO(){
     currentGTAOTexture = NULL;
 }
 
-// only the depth pre-pass target, for water and post-process depth without GTAO
+// depth pre-pass target, for GTAO and scene depth without SSR
 bool RenderSystem::ensureDepthPrePassFramebuffer(unsigned int width, unsigned int height){
     if (width == 0 || height == 0)
         return false;
@@ -5762,7 +5762,7 @@ bool RenderSystem::ensureDepthPrePassFramebuffer(unsigned int width, unsigned in
 }
 
 bool RenderSystem::ensureGTAOFramebuffers(unsigned int width, unsigned int height){
-    if (!ensureDepthPrePassFramebuffer(width, height))
+    if (width == 0 || height == 0)
         return false;
 
     // AO only, depth stays full size
@@ -5828,6 +5828,8 @@ void RenderSystem::renderGTAO(CameraComponent& camera, TextureRender* sharedDept
     TextureRender* depthTexture = sharedDepth;
     TextureRender* normalTexture; // G-buffer normal when shared, else an unused placeholder
     if (!depthTexture){
+        if (!ensureDepthPrePassFramebuffer(w, h))
+            return;
         renderDepthPrePass(camera);
         depthTexture = &depthPrePassFramebuffer.getRender().getColorTexture();
         normalTexture = depthTexture; // placeholder binding; not sampled (flags.x = 0)
@@ -12200,6 +12202,12 @@ void RenderSystem::draw(){
         if (isMainCamera && scene->isGTAOEnabled()){
             TextureRender* sharedDepth = useSSR ? &gbufferFramebuffer.getRender().getColorAttachmentTexture(0) : nullptr;
             renderGTAO(camera, sharedDepth);
+        }else if (isMainCamera && gtaoFramebuffer.isCreated()){
+            // switched off, so its buffers go
+            gtaoFramebuffer.destroy();
+            gtaoBlurFramebuffer.destroy();
+            gtaoWidth = 0;
+            gtaoHeight = 0;
         }
 
         // scene depth from the SSR G-buffer, a pre-pass already drawn or its own pre-pass
@@ -12214,6 +12222,10 @@ void RenderSystem::draw(){
                     currentSceneDepthTexture = &depthPrePassFramebuffer.getRender().getColorTexture();
                 }
             }
+        }
+        // the SSR G-buffer has the depth, or nothing reads it
+        if (isMainCamera && depthPrePassFramebuffer.isCreated() && (useSSR || (!scene->isGTAOEnabled() && !hasWaterDepth))){
+            depthPrePassFramebuffer.destroy();
         }
 
         // SSR, post-process and fixed resolution draw into buffers of their own
@@ -12765,8 +12777,10 @@ void RenderSystem::draw(){
         // copy it was composited already, and only the finished pass is left to present.
         if (useSSR){
             if (currentSceneCopy){
+                // letterboxed into the swapchain or the engine framebuffer
                 const Rect viewport = Engine::getViewRect();
-                renderBlit(&sceneColorFramebuffer.getRender().getColorTexture(), ssrDestination, ssrDestination ? nullptr : &viewport);
+                const bool toView = !ssrDestination || (Engine::getFramebuffer() && ssrDestination == &Engine::getFramebuffer()->getRender());
+                renderBlit(&sceneColorFramebuffer.getRender().getColorTexture(), ssrDestination, toView ? &viewport : nullptr);
             }else{
                 renderSSR(camera, ssrDestination);
             }
