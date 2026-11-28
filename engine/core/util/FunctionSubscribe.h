@@ -99,6 +99,15 @@
 
 namespace doriax {
 
+    // the next subscriber loads while one runs
+    inline void prefetchSubscriber(const void* subscriber) {
+    #if defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(subscriber);
+    #else
+        (void)subscriber;
+    #endif
+    }
+
     #ifdef DORIAX_CRASH_GUARD
     using CrashHandler = std::function<void(const std::string& tag, const std::string& errorInfo)>;
 
@@ -315,7 +324,10 @@ namespace doriax {
                     // a callback can change or destroy this object
                     auto list = subscribers;
                     if (!list) return;
-                    for (const auto& subscriber : *list) {
+                    const size_t count = list->size();
+                    for (size_t i = 0; i < count; i++) {
+                        const auto& subscriber = (*list)[i];
+                        if (i + 1 < count) prefetchSubscriber((*list)[i + 1].get());
                         if (subscriber->removed) continue;
                         auto& function = subscriber->function;
                         #ifdef DORIAX_CRASH_GUARD
