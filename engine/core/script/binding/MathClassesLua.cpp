@@ -74,7 +74,7 @@ static void addConstVectorMul(lua_State* L){
 // x, y, z or w, other keys go to the class lookup
 template <class T>
 static float* vectorField(T* v, lua_State* L, int keyArg){
-    if (lua_type(L, keyArg) != LUA_TSTRING)
+    if (!v || lua_type(L, keyArg) != LUA_TSTRING)
         return nullptr;
 
     size_t length;
@@ -97,6 +97,9 @@ static float* vectorField(T* v, lua_State* L, int keyArg){
 
 template <class T>
 static T* vectorSelf(lua_State* L){
+    if (lua_type(L, 1) != LUA_TUSERDATA)
+        return nullptr;
+
     return static_cast<T*>(static_cast<luabridge::detail::Userdata*>(lua_touserdata(L, 1))->getPointer());
 }
 
