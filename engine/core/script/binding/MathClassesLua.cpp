@@ -71,6 +71,82 @@ static void addConstVectorMul(lua_State* L){
     lua_pop(L, 1);
 }
 
+// x, y, z or w, other keys go to the class lookup
+template <class T>
+static float* vectorField(T* v, lua_State* L, int keyArg){
+    if (lua_type(L, keyArg) != LUA_TSTRING)
+        return nullptr;
+
+    size_t length;
+    const char* key = lua_tolstring(L, keyArg, &length);
+    if (length != 1)
+        return nullptr;
+
+    switch (key[0]){
+        case 'x': return &v->x;
+        case 'y': return &v->y;
+        case 'z':
+            if constexpr (!std::is_same_v<T, Vector2>) return &v->z;
+            break;
+        case 'w':
+            if constexpr (std::is_same_v<T, Vector4>) return &v->w;
+            break;
+    }
+    return nullptr;
+}
+
+template <class T>
+static T* vectorSelf(lua_State* L){
+    return static_cast<T*>(static_cast<luabridge::detail::Userdata*>(lua_touserdata(L, 1))->getPointer());
+}
+
+template <class T>
+static int vectorIndex(lua_State* L){
+    if (float* field = vectorField(vectorSelf<T>(L), L, 2)){
+        lua_pushnumber(L, *field);
+        return 1;
+    }
+
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_call(L, 2, 1);
+    return 1;
+}
+
+template <class T>
+static int vectorNewIndex(lua_State* L){
+    if (float* field = vectorField(vectorSelf<T>(L), L, 2)){
+        *field = (float)luaL_checknumber(L, 3);
+        return 0;
+    }
+
+    lua_pushvalue(L, lua_upvalueindex(1));
+    lua_insert(L, 1);
+    lua_call(L, 3, 0);
+    return 0;
+}
+
+static void wrapMetamethod(lua_State* L, const char* name, lua_CFunction function){
+    lua_pushstring(L, name);
+    lua_pushstring(L, name);
+    lua_rawget(L, -3);
+    lua_pushcclosure(L, function, 1);
+    lua_rawset(L, -3);
+}
+
+// vector fields without LuaBridge's getter calls
+template <class T>
+static void addVectorFields(lua_State* L){
+    lua_rawgetp(L, LUA_REGISTRYINDEX, luabridge::detail::getClassRegistryKey<T>());
+    wrapMetamethod(L, "__index", &vectorIndex<T>);
+    wrapMetamethod(L, "__newindex", &vectorNewIndex<T>);
+    lua_pop(L, 1);
+
+    lua_rawgetp(L, LUA_REGISTRYINDEX, luabridge::detail::getConstRegistryKey<T>());
+    wrapMetamethod(L, "__index", &vectorIndex<T>);
+    lua_pop(L, 1);
+}
+
 void LuaBinding::registerMathClasses(lua_State *L){
 #ifndef DISABLE_LUA_BINDINGS
 
@@ -131,6 +207,7 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("reflect", &Vector2::reflect)
         .endClass();
     addConstVectorMul<Vector2>(L);
+    addVectorFields<Vector2>(L);
 
     luabridge::getGlobalNamespace(L)
         .beginClass<Vector3>("Vector3")
@@ -178,6 +255,7 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("reflect", &Vector3::reflect)
         .endClass();
     addConstVectorMul<Vector3>(L);
+    addVectorFields<Vector3>(L);
 
     luabridge::getGlobalNamespace(L)
         .beginClass<Vector4>("Vector4")
@@ -216,6 +294,7 @@ void LuaBinding::registerMathClasses(lua_State *L){
         .addFunction("isNaN", &Vector4::isNaN)
         .endClass();
     addConstVectorMul<Vector4>(L);
+    addVectorFields<Vector4>(L);
 
     luabridge::getGlobalNamespace(L)
         .beginClass<Rect>("Rect")
