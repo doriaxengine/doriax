@@ -168,6 +168,21 @@ namespace doriax{
             }
             return names[row];
         }
+
+        bool hasName(Entity entity, const std::string& name) const{
+            size_t row = rows.find(entity);
+            return row != SparseArray::NONE && names[row] == name;
+        }
+
+        // lowest id with this name
+        Entity findEntity(const std::string& name) const{
+            for (Entity entity : entities){
+                if (names[rows.find(entity)] == name){
+                    return entity;
+                }
+            }
+            return NULL_ENTITY;
+        }
     };
 
 }

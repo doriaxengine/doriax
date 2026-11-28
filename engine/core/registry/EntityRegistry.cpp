@@ -241,21 +241,34 @@ std::string EntityRegistry::getEntityName(Entity entity) const {
 }
 
 Entity EntityRegistry::findEntity(const std::string& name) const {
-    for (Entity entity : entityManager.getEntityList()){
-        if (entityManager.getName(entity) == name){
-            return entity;
-        }
-    }
-    return NULL_ENTITY;
+    return entityManager.findEntity(name);
 }
 
 Entity EntityRegistry::findEntity(const std::string& name, Entity parent) const {
-    for (Entity entity : entityManager.getEntityList()){
-        if (entityManager.getName(entity) == name && isParentOf(parent, entity)){
-            return entity;
+    auto transforms = componentManager.getComponentArray<Transform>();
+    if (!transforms->hasEntity(parent)){
+        return NULL_ENTITY;
+    }
+
+    // descendants follow it, each under one on the path
+    std::vector<Entity> path(1, parent);
+    Entity found = NULL_ENTITY;
+    for (size_t i = transforms->getIndex(parent) + 1; i < transforms->size(); i++){
+        Entity entityParent = transforms->getComponentFromIndex(i).parent;
+        while (!path.empty() && path.back() != entityParent){
+            path.pop_back();
+        }
+        if (path.empty()){
+            break;
+        }
+
+        Entity entity = transforms->getEntity(i);
+        path.push_back(entity);
+        if ((found == NULL_ENTITY || entity < found) && entityManager.hasName(entity, name)){
+            found = entity;
         }
     }
-    return NULL_ENTITY;
+    return found;
 }
 
 Entity EntityRegistry::findOldestParent(Entity entity){
