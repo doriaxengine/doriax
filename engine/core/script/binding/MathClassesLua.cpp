@@ -111,20 +111,25 @@ static int vectorIndex(lua_State* L){
     }
 
     lua_pushvalue(L, lua_upvalueindex(1));
-    lua_insert(L, 1);
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 2);
     lua_call(L, 2, 1);
     return 1;
 }
 
+// other values get LuaBridge's own error
 template <class T>
 static int vectorNewIndex(lua_State* L){
-    if (float* field = vectorField(vectorSelf<T>(L), L, 2)){
-        *field = (float)luaL_checknumber(L, 3);
+    float* field = vectorField(vectorSelf<T>(L), L, 2);
+    if (field && lua_type(L, 3) == LUA_TNUMBER && luabridge::is_floating_point_representable_by<float>(L, 3)){
+        *field = (float)lua_tonumber(L, 3);
         return 0;
     }
 
     lua_pushvalue(L, lua_upvalueindex(1));
-    lua_insert(L, 1);
+    lua_pushvalue(L, 1);
+    lua_pushvalue(L, 2);
+    lua_pushvalue(L, 3);
     lua_call(L, 3, 0);
     return 0;
 }
